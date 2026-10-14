@@ -89,6 +89,14 @@ struct ResolvedZoneView final {
     bool circle{};
 };
 
+// Key hint for a zone under the active modes (ADR-0134 F1 overlay). A stick lists its four
+// sources as up, left, down, right; a zone may carry several button sources.
+struct ControlHint final {
+    ResolvedZoneView zone;
+    bool stick{};
+    std::vector<InputSource> sources;
+};
+
 struct AndroidKeyOutput final {
     std::int32_t key_code{};
     bool pressed{};
@@ -135,6 +143,8 @@ public:
     [[nodiscard]] const ControlConfig& Config() const noexcept;
     // Empty until SetSurface; zone order follows the configuration.
     [[nodiscard]] std::vector<ResolvedZoneView> Layout() const;
+    // Zones reachable by a binding active in the current base mode, "*" or a held overlay.
+    [[nodiscard]] std::vector<ControlHint> Hints() const;
 
     [[nodiscard]] bool Active() const noexcept;
     [[nodiscard]] std::string_view Mode() const noexcept;

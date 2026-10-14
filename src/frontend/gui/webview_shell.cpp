@@ -183,7 +183,11 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
             return facts;
         },
         [&] { return processes.Dashboards(); },
-        [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); }});
+        [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
+        [&](std::string_view instance) {
+            const auto editor = processes.KeyEditor(instance);
+            view->OpenKeyEditor(instance, editor.port, editor.token);
+        }});
     view = hal::CreateWebViewHost({
         HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
         options.library_root / "gui-smoke.png"}, {
@@ -203,12 +207,22 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
         [&] {
             for (const auto& result : processes.Poll()) {
                 view->CloseDashboard(result.package);
+                view->CloseKeyEditor(result.package);
                 core::JsonWriter writer;
                 const auto event = writer.Object();
                 writer.AddString(event, "installation_id", result.package);
                 writer.AddInteger(event, "exit_code", result.exit_code);
                 writer.AddString(event, "log_tail", result.exit_code == 0 ? "" : ReadLogTail(result.log_path));
                 view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-exit',{detail:" + writer.Serialize(event) + "}));");
+            }
+            // In-game F2 (ADR-0134): the game routes the request here while this launcher polls it.
+            for (const auto& instance : processes.TakeKeyEditorRequests()) {
+                try {
+                    const auto editor = processes.KeyEditor(instance);
+                    view->OpenKeyEditor(instance, editor.port, editor.token);
+                } catch (const std::exception& error) {
+                    logger.Write(core::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {}, {{"reason", std::string(error.what())}});
+                }
             }
             for (const auto& instance : processes.TakeAutoOpen()) {
                 try { view->OpenDashboard(instance, processes.DashboardPort(instance)); }

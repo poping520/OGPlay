@@ -548,6 +548,13 @@ private:
 }  // namespace
 #endif
 
+void OpenUrlInBrowser(const std::string_view url) {
+    if (!url.starts_with("http://") && !url.starts_with("https://"))
+        throw std::invalid_argument("only http(s) URLs open in the browser");
+    const std::string text(url);
+    if (!SDL_OpenURL(text.c_str())) throw std::runtime_error(std::string("SDL_OpenURL failed: ") + SDL_GetError());
+}
+
 std::unique_ptr<WindowInput> CreateSdlWindowInput(const VideoBackend backend) {
 #if OGPLAY_HAS_SDL3
     return std::make_unique<SdlWindowInput>(backend);

@@ -1,5 +1,11 @@
 #include "ogplay/frontend/gui_launch.h"
+#include "ogplay/frontend/gui_dashboard.h"
 #include "ogplay/frontend/gui_settings.h"
+#include "ogplay/core/encoding.h"
+#include "ogplay/hal/host_environment.h"
+
+#include <array>
+#include <cstddef>
 
 #include <algorithm>
 #include <fstream>
@@ -107,6 +113,16 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
         plan.dashboard_auto_open = std::get<bool>(GuiSetting(config, "dashboard_auto_open"));
         plan.argv.push_back("--mcp-port");
         plan.argv.push_back(std::to_string(std::get<std::uint32_t>(GuiSetting(config, "mcp_port"))));
+    }
+    if (mode != GuiLaunchMode::preflight) {
+        std::array<std::byte, 16> entropy{};
+        hal::FillSecureRandom(entropy);
+        plan.control_token = core::EncodeHex(entropy, core::HexCase::lower);
+        plan.key_editor_port = plan.mcp_port ? *plan.mcp_port : PickLoopbackPort();
+        if (!plan.mcp_port) {
+            plan.argv.push_back("--key-editor-port");
+            plan.argv.push_back(std::to_string(*plan.key_editor_port));
+        }
     }
     if (manual && mode != GuiLaunchMode::preflight) plan.argv.push_back("--mcp-manual-step");
     if (mode == GuiLaunchMode::preflight) plan.argv.push_back("--preflight");

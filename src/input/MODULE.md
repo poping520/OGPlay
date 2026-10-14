@@ -24,7 +24,8 @@
   `DefaultControlConfig` 为内置默认（鼠标/触摸直通、Esc→`KEYCODE_BACK`）；
   `ParseInputSource`/`ParseAnchor` 解析物理键名、鼠标键名与九宫格锚点，`FormatInputSource`/
   `AnchorName` 为其逆。`Reconfigure` 先以新配置构造并按当前 surface 校验，成功后才取消旧
-  布局并返回其 CANCEL 与按键释放；`Layout` 返回按当前 surface 解析的区域（ADR-0134）。
+  布局并返回其 CANCEL 与按键释放；`Layout` 返回按当前 surface 解析的区域（ADR-0134）；
+  `Hints` 返回当前基础模式、`*` 与按住叠加模式中有效绑定所用区域及其源，供 F1 提示。
 - M6 在此基础上定义完整映射 schema、逻辑/物理坐标转换与录制回放。
 
 ## 不变量

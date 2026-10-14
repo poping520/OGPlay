@@ -56,6 +56,13 @@ ogplay::frontend::LibraryEntry Entry(const std::filesystem::path& directory,
     return entry;
 }
 
+// The key editor port is picked per launch; compare everything else.
+std::vector<std::string> WithoutEditorPort(std::vector<std::string> argv) {
+    const auto it = std::find(argv.begin(), argv.end(), "--key-editor-port");
+    if (it != argv.end() && std::next(it) != argv.end()) argv.erase(it, std::next(it, 2));
+    return argv;
+}
+
 }  // namespace
 
 TEST_CASE("GUI global launch settings forward only supported CLI controls") {
@@ -67,16 +74,17 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
     GuiConfig config;
-    const auto baseline = BuildLaunchPlan(cli, tree.path, entry, config).argv;
+    const auto baseline = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
     SetGuiSetting(config, "network_policy", std::string("allow"));
     SetGuiSetting(config, "volume", std::uint32_t{25});
-    CHECK(BuildLaunchPlan(cli, tree.path, entry, config).argv == baseline);
+    CHECK(WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv) == baseline);
     SetGuiSetting(config, "supersample", std::uint32_t{2});
     SetGuiSetting(config, "interpreter", std::string("threaded"));
     SetGuiSetting(config, "mcp_enabled", true);
     SetGuiSetting(config, "mcp_port", std::uint32_t{12345});
     const auto argv = BuildLaunchPlan(cli, tree.path, entry, config).argv;
     CHECK(argv.size() == baseline.size() + 6);
+    CHECK(std::find(argv.begin(), argv.end(), "--key-editor-port") == argv.end());  // shares the MCP port
     for (const auto& [flag, value] : std::vector<std::pair<std::string, std::string>>{
         {"--supersample", "2"}, {"--dexvm-interpreter", "threaded"}, {"--mcp-port", "12345"}}) {
         const auto it = std::find(argv.begin(), argv.end(), flag);
@@ -137,7 +145,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 17);
+    REQUIRE(plan.argv.size() == 19);
     CHECK(plan.argv[1] == "run-apk");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -145,13 +153,15 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[8] == "1");
     CHECK(plan.argv[9] == "--cpu-frequency-mhz");
     CHECK(plan.argv[10] == "1000");
-    CHECK(plan.argv[11] == "--sandbox-dir");
-    CHECK(plan.argv[12] ==
+    CHECK(plan.argv[11] == "--key-editor-port");
+    CHECK(plan.argv[12] == std::to_string(*plan.key_editor_port));
+    CHECK(plan.argv[13] == "--sandbox-dir");
+    CHECK(plan.argv[14] ==
           ogplay::frontend::LauncherSandboxRoot(temporary.path)
               .generic_string());
-    CHECK(plan.argv[13] == "--installation-id");
-    CHECK(plan.argv[14] == "org.example.game");
-    CHECK(plan.argv[15] == "--input-config");
+    CHECK(plan.argv[15] == "--installation-id");
+    CHECK(plan.argv[16] == "org.example.game");
+    CHECK(plan.argv[17] == "--input-config");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -290,4 +300,29 @@ TEST_CASE("GUI Dashboard probe rejects foreign process and malformed protocol") 
     CHECK_FALSE(DecodeDashboardProbe(good + body + std::string(8192, ' '), 123).ready);
     CHECK_FALSE(DecodeDashboardProbe(good + R"({"id":1,"result":{"schema_version":1,"process_id":123}})", 123).ready);
     CHECK_FALSE(DecodeDashboardProbe(good + R"({"jsonrpc":"2.0","id":1,"result":{"schema_version":2,"process_id":123}})", 123).ready);
+}
+
+TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token outside argv") {
+    using namespace ogplay::frontend;
+    TemporaryDirectory tree;
+    const auto cli = tree.path / "ogplay";
+    const auto directory = tree.path / "entry";
+    Write(cli, "exe"); Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {});
+    entry.metadata->external_dir.reset();
+    GuiConfig config;
+    const auto plan = BuildLaunchPlan(cli, tree.path, entry, config);
+    REQUIRE(plan.key_editor_port.has_value());
+    CHECK(*plan.key_editor_port != 0);
+    CHECK(plan.control_token.size() == 32);
+    CHECK(std::find(plan.argv.begin(), plan.argv.end(), plan.control_token) == plan.argv.end());
+    CHECK(BuildLaunchPlan(cli, tree.path, entry, config).control_token != plan.control_token);
+    SetGuiSetting(config, "mcp_enabled", true);
+    SetGuiSetting(config, "mcp_port", std::uint32_t{12345});
+    const auto with_mcp = BuildLaunchPlan(cli, tree.path, entry, config);
+    CHECK(with_mcp.key_editor_port == std::optional<std::uint16_t>{12345});
+    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, config, GuiLaunchMode::preflight);
+    CHECK_FALSE(preflight.key_editor_port);
+    CHECK(preflight.control_token.empty());
+    CHECK(std::find(preflight.argv.begin(), preflight.argv.end(), "--key-editor-port") == preflight.argv.end());
 }

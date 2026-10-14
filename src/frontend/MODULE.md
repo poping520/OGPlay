@@ -74,12 +74,26 @@
   尺寸变化时更新 surface。GUI 总以 `--input-config <实例目录>/input.toml` 启动，该文件独立于
   `settings.toml`。
 - 按键编辑器会话（ADR-0134）：loopback 服务存在时，`/controls/rpc` 提供
-  `control.get/freeze/resume/frame/apply`，要求 `Authorization: Bearer <token>` 且 Host 为
+  `control.get/freeze/resume/frame/apply/status`，要求 `Authorization: Bearer <token>` 且 Host 为
   loopback；令牌取 `OGPLAY_CONTROL_TOKEN` 环境变量（由启动方提供，不进 argv），缺省时生成
   128 位随机令牌并打印。请求经 `ControlEditorChannel` 在主循环执行（`HandleControlRequest`）。
   冻结只停止 guest 推进与窗口输入投递并取消现有触点，不触发 Android 生命周期；`apply`
   校验失败返回 -32010 且运行布局不变，成功后热应用并原子写回用户键位文件。run-apk 的
   状态行写入后立即刷新 stdout。
+- `/controls/` 提供编辑器静态页（`data/webui/controls`，与 Dashboard 同一白名单预载与 CSP），
+  页面本身不需令牌、Host 须为 loopback；目录不存在时页面返回 404 并提示构建 webui，RPC
+  不受影响。run-apk 打印 `/controls/#token=<令牌>`（令牌在片段中，不发往服务器）；令牌
+  来自启动方时只打印地址。
+- 编辑器服务来源：`--mcp`/`--mcp-port` 时共用 MCP 服务；`--key-editor-port <port>`（与 MCP
+  互斥）启动只含 `/controls/` 的服务（`McpHttpServer::StartKeyEditor`，无 `/mcp`、`/dash/`）；
+  都没有时游戏内首次 F2 在空闲端口懒启动。帧快照存储在每个窗口会话中存在，供 `control.frame`。
+- 宿主快捷键（`HostShortcutFilter`）：F1、F2、Cmd/Win 及 Ctrl/Cmd 按住时按下的键由宿主截留，
+  同一按键的重复与抬起跟随按下的归属（先松修饰键也不漏给 guest）；Ctrl 单独按下仍是普通键。
+  F1 切换提示叠加层：`DrawControlHints` 在呈现副本上绘制 `ControlMapper::Hints` 的区域与键名
+  （内置 5×7 ASCII 字形），guest 帧、MCP 截图与 `control.frame` 不含叠加层；切换在下一帧生效。
+  F2：最近 3 秒内有启动器以 `control.status {client:"launcher"}` 轮询时计入 `edit_requests` 交给
+  启动器打开，否则用默认浏览器打开 `/controls/#token=…`。
+- 冻结看门狗：冻结期间若 8 秒内没有编辑器请求（启动器轮询不算），自动恢复并记 warn 日志。
 - pointer 按最新 guest frame 与等比内容区映射；黑边不开始手势，既有 release 必须闭合。
   窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
 - 音频只消费已解析的 resid/APK/VFS 字节区间；解码归 audio，补充有界，退出停止设备。

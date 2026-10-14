@@ -15,6 +15,8 @@
 #include <chrono>
 #include <thread>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -242,7 +244,7 @@ TEST_CASE("INP-5 key editor RPC requires the bearer token and reaches the main l
     ogplay::agent::McpInputQueue inputs;
     auto channel = std::make_shared<ogplay::agent::ControlEditorChannel>();
     const std::string token = "0123456789abcdef0123456789abcdef";
-    auto server = ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token});
+    auto server = ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token, {}});
     const std::string body = R"({"jsonrpc":"2.0","id":1,"method":"control.get"})";
 
     CHECK(Request(server->Port(), "POST", "/controls/rpc", body).starts_with("HTTP/1.1 401"));
@@ -272,6 +274,89 @@ TEST_CASE("INP-5 key editor RPC requires the bearer token and reaches the main l
     CHECK(authorized.find(R"("result":{"frozen":false})") != std::string::npos);
     CHECK(other.find(R"("code":-32601)") != std::string::npos);
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::McpHttpServer::Start(
-                        0U, frames, inputs, {}, {channel, "short"})),
+                        0U, frames, inputs, {}, {channel, "short", {}})),
                     std::invalid_argument);
+}
+
+TEST_CASE("INP-6 key editor page is served without the token and only from its allowlist") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    auto channel = std::make_shared<ogplay::agent::ControlEditorChannel>();
+    const std::string token = "0123456789abcdef0123456789abcdef";
+    const auto assets = std::filesystem::temp_directory_path() / "ogplay-inp6-controls";
+    std::filesystem::remove_all(assets);
+    std::filesystem::create_directories(assets);
+    for (const auto* name : {"index.html", "controls.js", "controls.css", "manifest.json", "THIRD-PARTY-LICENSES.txt"})
+        std::ofstream(assets / name) << "asset:" << name;
+    {
+        auto server = ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token, assets});
+        const auto port = server->Port();
+        for (const auto* target : {"/controls", "/controls/", "/controls/index.html"}) {
+            const auto page = Request(port, "GET", target, {});
+            CHECK(page.starts_with("HTTP/1.1 200"));
+            CHECK(page.find("asset:index.html") != std::string::npos);
+            CHECK(page.find("Content-Security-Policy: default-src 'none'") != std::string::npos);
+        }
+        CHECK(Request(port, "GET", "/controls/controls.js", {}).find("text/javascript") != std::string::npos);
+        for (const auto* target : {"/controls/../manifest.json", "/controls/rpc.ts", "/controls/index.html?x=1"})
+            CHECK(Request(port, "GET", target, {}).starts_with("HTTP/1.1 404"));
+        CHECK(Request(port, "POST", "/controls/", "{}").starts_with("HTTP/1.1 405"));
+        CHECK(Request(port, "GET", "/controls/", {}, {}, "evil.example").starts_with("HTTP/1.1 403"));
+        CHECK(Request(port, "GET", "/controls/rpc", {}).starts_with("HTTP/1.1 401"));
+    }
+    auto without_page = ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token, {}});
+    const auto missing = Request(without_page->Port(), "GET", "/controls/", {});
+    CHECK(missing.starts_with("HTTP/1.1 404"));
+    CHECK(missing.find("build webui") != std::string::npos);
+    std::filesystem::remove(assets / "controls.css");
+    CHECK_THROWS(static_cast<void>(ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token, assets})));
+    std::filesystem::remove_all(assets);
+}
+
+TEST_CASE("INP-7 editor-only service serves the key editor and nothing else") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    auto channel = std::make_shared<ogplay::agent::ControlEditorChannel>();
+    const std::string token = "0123456789abcdef0123456789abcdef";
+    auto server = ogplay::frontend::McpHttpServer::StartKeyEditor(0U, frames, inputs, {channel, token, {}});
+    CHECK(server->Port() != 0);
+    const std::string initialize = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})";
+    CHECK(Request(server->Port(), "POST", "/mcp", initialize).starts_with("HTTP/1.1 404"));
+    CHECK(Request(server->Port(), "GET", "/dash/", {}).starts_with("HTTP/1.1 404"));
+    CHECK(Request(server->Port(), "POST", "/controls/rpc", R"({"jsonrpc":"2.0","id":1,"method":"control.status"})")
+              .starts_with("HTTP/1.1 401"));
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::McpHttpServer::StartKeyEditor(0U, frames, inputs, {})),
+                    std::invalid_argument);
+}
+
+TEST_CASE("INP-7 launcher probe reads F2 requests with the launch token") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    auto channel = std::make_shared<ogplay::agent::ControlEditorChannel>();
+    const std::string token = "0123456789abcdef0123456789abcdef";
+    auto server = ogplay::frontend::McpHttpServer::StartKeyEditor(0U, frames, inputs, {channel, token, {}});
+    std::atomic<bool> stop{false};
+    std::string seen_client;
+    std::thread main_loop([&] {
+        while (!stop) {
+            channel->ServePending([&](std::string_view method, ogplay::core::JsonValue params) {
+                if (method != "control.status") return ogplay::agent::ControlError(-32601, "unknown");
+                seen_client = std::string(params.Member("client")->String().value_or(""));
+                return ogplay::agent::ControlResult(R"({"frozen":false,"edit_requests":2})");
+            });
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+    const auto ready = ogplay::frontend::ProbeKeyEditor(server->Port(), token);
+    const auto wrong = ogplay::frontend::ProbeKeyEditor(server->Port(), "fedcba9876543210fedcba9876543210");
+    stop = true;
+    main_loop.join();
+    CHECK(ready.ready);
+    CHECK(ready.edit_requests == 2);
+    CHECK(seen_client == "launcher");
+    CHECK_FALSE(wrong.ready);
+    CHECK(wrong.detail.find("令牌") != std::string::npos);
+    CHECK_FALSE(ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 200 OK\r\n\r\n{\"id\":1,\"result\":{}}").ready);
+    CHECK_FALSE(ogplay::frontend::DecodeKeyEditorProbe("HTTP/1.1 503 x\r\n\r\n").ready);
+    CHECK(ogplay::frontend::PickLoopbackPort() != 0);
 }

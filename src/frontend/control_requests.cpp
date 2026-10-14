@@ -106,6 +106,7 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
 agent::ControlResponse HandleControlRequest(const std::string_view method, const core::JsonValue params,
                                             const ControlRequestContext& context) {
     try {
+        if (method != "control.status" && context.seen) context.seen(false);
         if (method == "control.get") {
             RequireParams(params, {});
             return Get(context);
@@ -126,6 +127,22 @@ agent::ControlResponse HandleControlRequest(const std::string_view method, const
         if (method == "control.frame") {
             RequireParams(params, {});
             return Frame(context);
+        }
+        if (method == "control.status") {
+            RequireParams(params, {"client"});
+            bool launcher = false;
+            if (const auto client = params.IsValid() ? params.Member("client") : std::nullopt) {
+                const auto name = client->String();
+                if (!name || (*name != "launcher" && *name != "editor"))
+                    throw std::invalid_argument("client must be launcher or editor");
+                launcher = *name == "launcher";
+            }
+            if (context.seen) context.seen(launcher);
+            core::JsonWriter writer;
+            const auto root = writer.Object();
+            writer.AddBool(root, "frozen", context.frozen);
+            writer.AddUnsignedInteger(root, "edit_requests", context.edit_requests);
+            return agent::ControlResult(writer.Serialize(root));
         }
         if (method == "control.apply") return Apply(params, context);
         return agent::ControlError(-32601, "unknown key editor method");

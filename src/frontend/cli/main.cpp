@@ -46,7 +46,7 @@ int Usage() {
                   "[--cpu-cores <1..32>] [--cpu-frequency-mhz <1..10000>] "
                   "[--cpu-limit-parallelism] [--cpu-max-mticks-per-second <1..10000>] "
                   "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
-                  "[--mcp-manual-step] "
+                  "[--mcp-manual-step] [--key-editor-port <1..65535>] "
                   "[--diag] [--diag-dir <dir>] "
                   "[--diag-on-teardown-timeout <seconds>] "
                   "[--dexvm-interpreter <switch|threaded>] [--input-config <file>] "

@@ -28,6 +28,8 @@
 #include "ogplay/core/text.h"
 #include "ogplay/frontend/control_requests.h"
 #include "ogplay/frontend/mcp_http_server.h"
+#include "ogplay/frontend/control_overlay.h"
+#include "ogplay/frontend/host_shortcuts.h"
 #include "ogplay/frontend/mcp_input_dispatch.h"
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/run_apk_progress.h"
@@ -130,12 +132,12 @@ std::uint32_t ParseSupersampleFactor(const std::string_view text) {
     return value;
 }
 
-std::uint16_t ParseMcpPort(const std::string_view text) {
+std::uint16_t ParseMcpPort(const std::string_view text, const std::string_view option = "--mcp-port") {
     std::uint32_t value{};
     const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
     if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
         value == 0 || value > 65535U) {
-        throw std::invalid_argument("--mcp-port requires an integer in 1..65535");
+        throw std::invalid_argument(std::string(option) + " requires an integer in 1..65535");
     }
     return static_cast<std::uint16_t>(value);
 }
@@ -231,6 +233,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     auto profiles_directory = bundled_data.profiles_directory;
     std::optional<std::uint64_t> exit_after_frames;
     std::optional<std::uint16_t> mcp_port;
+    std::optional<std::uint16_t> key_editor_port;
     std::optional<runtime::dexvm::InterpreterBackend> dexvm_interpreter;
     std::filesystem::path diagnostic_directory{".local/diagnostics"};
     std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
@@ -304,6 +307,11 @@ int RunApkCommand(const int argc, const char* const argv[],
                 throw std::invalid_argument("run-apk accepts --mcp-port only once");
             }
             mcp_port = ParseMcpPort(argv[++index]);
+        } else if (option == "--key-editor-port" && index + 1 < argc) {
+            if (key_editor_port.has_value()) {
+                throw std::invalid_argument("run-apk accepts --key-editor-port only once");
+            }
+            key_editor_port = ParseMcpPort(argv[++index], "--key-editor-port");
         } else if (option == "--mcp") {
             if (default_mcp) {
                 throw std::invalid_argument("run-apk accepts --mcp only once");
@@ -405,6 +413,12 @@ int RunApkCommand(const int argc, const char* const argv[],
     if (mcp_manual_step && preflight) {
         throw std::invalid_argument(
             "--mcp-manual-step cannot be combined with --preflight");
+    }
+    if (key_editor_port.has_value() && (default_mcp || mcp_port.has_value())) {
+        throw std::invalid_argument("--key-editor-port cannot be combined with MCP; the editor shares the MCP port");
+    }
+    if (key_editor_port.has_value() && preflight) {
+        throw std::invalid_argument("--key-editor-port cannot be combined with --preflight");
     }
     if (default_mcp) mcp_port = kDefaultMcpPort;
 
@@ -554,11 +568,11 @@ int RunApkCommand(const int argc, const char* const argv[],
     auto diagnostic_state = (diagnostics_enabled || mcp_port.has_value())
         ? std::make_shared<runtime::debug::DiagnosticState>()
         : std::shared_ptr<runtime::debug::DiagnosticState>{};
-    if (mcp_port.has_value()) {
-        mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
-        mcp_inputs = std::make_unique<agent::McpInputQueue>();
-        mcp_session = std::make_unique<agent::McpSessionControl>();
-    }
+    // The key editor reads presented frames too (control.frame), so frame and input stores
+    // exist in every windowed session; only MCP adds the session control.
+    mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
+    mcp_inputs = std::make_unique<agent::McpInputQueue>();
+    if (mcp_port.has_value()) mcp_session = std::make_unique<agent::McpSessionControl>();
 
     auto window = hal::CreateSdlWindowInput();
     const auto base_title = "OGPlay · " + apk_path.filename().string();
@@ -831,9 +845,37 @@ int RunApkCommand(const int argc, const char* const argv[],
         // All Dashboard sources below outlive this scope-owned transport.
         // The channel outlives the server so no worker waits on a destroyed queue.
         auto control_channel = std::make_shared<agent::ControlEditorChannel>();
-        std::string control_token;
         bool control_frozen{};
         std::unique_ptr<McpHttpServer> mcp_server;
+        // The launcher passes its token through the environment (never argv); a bare CLI run
+        // gets a fresh one. The editor page receives it in the URL fragment, which browsers
+        // never send to the server.
+        std::string control_token;
+        const char* inherited_token = std::getenv("OGPLAY_CONTROL_TOKEN");
+        const bool generated_token = inherited_token == nullptr || *inherited_token == '\0';
+        if (generated_token) {
+            std::array<std::byte, 16> entropy{};
+            hal::FillSecureRandom(entropy);
+            control_token = core::EncodeHex(entropy, core::HexCase::lower);
+        } else {
+            control_token = inherited_token;
+        }
+        // The editor page is optional: without built assets /controls/ answers 404 and the RPC stays usable.
+        const auto control_assets = bundled_data.root / "webui" / "controls";
+        std::error_code control_assets_error;
+        const bool control_page = std::filesystem::is_directory(control_assets, control_assets_error);
+        const auto control_http = [&] {
+            return ControlHttpConfig{control_channel, control_token,
+                                     control_page ? control_assets : std::filesystem::path{}};
+        };
+        std::optional<std::string> editor_url;
+        const auto announce_editor = [&] {
+            editor_url = "http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/controls/";
+            if (!control_page) Write("OGPlay: key editor page missing (build webui); RPC at " + *editor_url + "rpc" +
+                                     (generated_token ? " token=" + control_token : std::string{}) + "\n");
+            else if (generated_token) Write("OGPlay: key editor at " + *editor_url + "#token=" + control_token + "\n");
+            else Write("OGPlay: key editor at " + *editor_url + " (token from launcher)\n");
+        };
         if (mcp_port) {
             agent::DashboardSources sources;
             sources.metadata = {{"package", manifest.package}, {"installation_id", sandbox.installation_id},
@@ -858,28 +900,17 @@ int RunApkCommand(const int argc, const char* const argv[],
             DashboardHttpConfig dashboard{
                 std::make_shared<agent::DashboardService>(std::move(sources)),
                 bundled_data.root / "webui" / "dashboard"};
-            // The launcher passes its token through the environment (never argv); a bare CLI
-            // run gets a fresh one printed for the user.
-            const char* inherited_token = std::getenv("OGPLAY_CONTROL_TOKEN");
-            const bool generated_token = inherited_token == nullptr || *inherited_token == '\0';
-            if (generated_token) {
-                std::array<std::byte, 16> entropy{};
-                hal::FillSecureRandom(entropy);
-                control_token = core::EncodeHex(entropy, core::HexCase::lower);
-            } else {
-                control_token = inherited_token;
-            }
-            ControlHttpConfig controls{control_channel, control_token};
             if (mcp_manual_step || diagnostics_enabled)
                 mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session, std::move(dashboard),
-                                                  std::move(controls));
+                                                  control_http());
             else mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard),
-                                                   std::move(controls));
+                                                   control_http());
             Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
             Write("OGPlay: Dashboard ready at http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/dash/\n");
-            Write("OGPlay: key editor endpoint at http://127.0.0.1:" + std::to_string(mcp_server->Port()) +
-                  "/controls/rpc" + (generated_token ? " token=" + control_token : std::string(" token=<inherited>")) +
-                  "\n");
+            announce_editor();
+        } else if (key_editor_port) {
+            mcp_server = McpHttpServer::StartKeyEditor(*key_editor_port, *mcp_frames, *mcp_inputs, control_http());
+            announce_editor();
         }
         auto* guest = &app_process->NativeProcess();
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
@@ -949,15 +980,53 @@ int RunApkCommand(const int argc, const char* const argv[],
         Write(mcp_manual_step
                   ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
                   : "OGPlay: APK guest execution started; close the window to stop.\n");
+        // F1 hints are drawn on a host copy; the guest frame and MCP/editor snapshots stay clean.
+        HostShortcutFilter host_keys;
+        bool hints_visible{};
+        std::vector<std::uint8_t> hint_frame;
+        // F2: a launcher that polled control.status recently opens its own editor window;
+        // otherwise the default browser opens the same page.
+        constexpr std::uint64_t kLauncherPollWindowNs = 3'000'000'000ULL;
+        constexpr std::uint64_t kEditorIdleResumeNs = 8'000'000'000ULL;
+        std::uint64_t edit_requests{}, launcher_seen_ns{}, editor_seen_ns{};
+        const auto open_key_editor = [&] {
+            try {
+                if (!mcp_server) {
+                    mcp_server = McpHttpServer::StartKeyEditor(0, *mcp_frames, *mcp_inputs, control_http());
+                    announce_editor();
+                }
+                const auto now = hal::Clock::SteadyTimestampNs();
+                if (launcher_seen_ns != 0 && now - launcher_seen_ns < kLauncherPollWindowNs) {
+                    ++edit_requests;
+                    logger.Write(core::LogLevel::info, "frontend.run_apk.key_editor", "key editor requested from the launcher",
+                                 {}, {{"requests", edit_requests}}, kUnrestrictedLog);
+                    return;
+                }
+                hal::OpenUrlInBrowser(*editor_url + "#token=" + control_token);
+                logger.Write(core::LogLevel::info, "frontend.run_apk.key_editor", "key editor opened in the browser",
+                             {}, {}, kUnrestrictedLog);
+            } catch (const std::exception& error) {
+                logger.Write(core::LogLevel::error, "frontend.run_apk.key_editor", "cannot open the key editor",
+                             {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+                Write(std::string("OGPlay: cannot open the key editor: ") + error.what() + "\n");
+            }
+        };
         const auto present_latest = [&] {
             bool did_present = false;
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
                 *frame = dex_lifecycle->ComposePresentedFrame(
                     std::move(*frame));
-                window->PresentRgba8(frame->rgba8, frame->width, frame->height);
                 guest_width = frame->width;
                 guest_height = frame->height;
                 control_mapper.SetSurface(guest_width, guest_height);
+                if (hints_visible) {
+                    hint_frame.assign(frame->rgba8.begin(), frame->rgba8.end());
+                    DrawControlHints(hint_frame, frame->width, frame->height, control_mapper.Hints(),
+                                     control_mapper.Mode());
+                    window->PresentRgba8(hint_frame, frame->width, frame->height);
+                } else {
+                    window->PresentRgba8(frame->rgba8, frame->width, frame->height);
+                }
                 ++presented;
                 did_present = true;
                 update_frame_rate();
@@ -977,6 +1046,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                 if (event.type == Type::quit) {
                     quit = true;
                 } else if (event.type == Type::input_reset || event.type == Type::app_background) {
+                    host_keys.Reset();
                     control_mapper.Reset();
                     mcp_pointer.Cancel(mcp_inputs.get());
                     if (!failure) driver.cancel_input();
@@ -998,6 +1068,14 @@ int RunApkCommand(const int argc, const char* const argv[],
                         mcp_lifecycle = agent::McpLifecycleState::running;
                         host_suspended_session = false;
                         publish_session();
+                    }
+                } else if (const auto decision = host_keys.Filter(event); decision.consumed) {
+                    if (decision.shortcut == HostShortcut::toggle_hints) {
+                        hints_visible = !hints_visible;
+                        logger.Write(core::LogLevel::info, "frontend.run_apk.key_hints", "key hints toggled",
+                                     {}, {{"visible", hints_visible}}, kUnrestrictedLog);
+                    } else if (decision.shortcut == HostShortcut::open_key_editor) {
+                        open_key_editor();
                     }
                 } else if (mcp_lifecycle == agent::McpLifecycleState::suspended || failure || control_frozen) {
                     continue;
@@ -1025,8 +1103,19 @@ int RunApkCommand(const int argc, const char* const argv[],
                         for (const auto& output : outputs)
                             if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
                     },
+                    .edit_requests = edit_requests,
+                    .seen = [&](const bool launcher) {
+                        (launcher ? launcher_seen_ns : editor_seen_ns) = hal::Clock::SteadyTimestampNs();
+                    },
                 });
             });
+            // An editor page polls control.status while open; a window closed without
+            // control.resume (crash, killed browser) must not leave the game frozen.
+            if (control_frozen && hal::Clock::SteadyTimestampNs() - editor_seen_ns > kEditorIdleResumeNs) {
+                control_frozen = false;
+                logger.Write(core::LogLevel::warn, "frontend.run_apk.key_editor",
+                             "key editor stopped responding; resuming the game", {}, {}, kUnrestrictedLog);
+            }
             bool frame_presented = false;
             try {
                 if (audio_pump) audio_pump->RethrowWorkerFailure();

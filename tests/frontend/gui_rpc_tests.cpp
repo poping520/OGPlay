@@ -20,6 +20,7 @@ struct Fixture {
     unsigned launches{}, opens{}, reads{}, minimized{};
     std::vector<frontend::GuiDashboard> dashboards;
     std::string opened_dashboard;
+    std::string opened_editor;
     bool fail_launch{};
     std::optional<frontend::LaunchPlan> plan;
     std::filesystem::path opened;
@@ -39,7 +40,8 @@ struct Fixture {
         [] { return std::string("2026-09-22T00:00:00Z"); },
         [this] { ++minimized; }, {}, {},
         [this] { return dashboards; },
-        [this](std::string_view id) { opened_dashboard = id; }}};
+        [this](std::string_view id) { opened_dashboard = id; },
+        [this](std::string_view id) { opened_editor = id; }}};
     Fixture() {
         std::filesystem::create_directories(root);
         std::ofstream(root / "ogplay.exe") << "fixture";
@@ -347,7 +349,7 @@ TEST_CASE("GUI Dashboard RPC only opens tracked ready instances") {
     Fixture fixture;
     const auto open = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.open","params":{"installation_id":"game"}})")); };
     CHECK(open().Root().Member("error").has_value());
-    fixture.dashboards.push_back({"game", 123, 15971, "starting", "waiting"});
+    fixture.dashboards.push_back({"game", 123, 15971, "starting", "waiting", "disabled", "starting"});
     CHECK(open().Root().Member("error").has_value());
     fixture.dashboards[0].status = "ready";
     CHECK(open().Root().Member("result").has_value());
@@ -398,4 +400,23 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
     CHECK(std::filesystem::exists(external / "data.obb"));
     CHECK(std::filesystem::exists(fixture.root / "original.apk"));
     CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
+}
+
+TEST_CASE("INP-7 GUI opens the key editor only for a running instance whose editor is ready") {
+    Fixture fixture;
+    const auto open = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"controls.open","params":{"installation_id":"game"}})")); };
+    auto response = open();
+    REQUIRE(response.Root().Member("error").has_value());
+    CHECK(response.Root().Member("error")->Member("code")->Integer() == -32004);
+    fixture.dashboards.push_back({"game", 123, std::nullopt, "disabled", "MCP off", "starting", "等待按键设置服务启动。"});
+    CHECK(open().Root().Member("error")->Member("code")->Integer() == -32002);
+    CHECK(fixture.opened_editor.empty());
+    fixture.dashboards[0].editor_status = "ready";
+    CHECK(open().Root().Member("result")->Member("opened")->Bool() == true);
+    CHECK(fixture.opened_editor == "game");
+    const auto list = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.list"})"));
+    const auto item = list.Root().Member("result")->Member("items")->Element(0);
+    CHECK(item->Member("key_editor_status")->String() == "ready");
+    CHECK_FALSE(item->Member("token").has_value());
+    CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"controls.open","params":{"installation_id":"game","token":"x"}})")).Root().Member("error").has_value());
 }

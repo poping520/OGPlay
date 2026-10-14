@@ -24,6 +24,8 @@ struct Harness final {
     agent::FrameSnapshotStore frames;
     int freezes{};
     std::size_t delivered{};
+    std::uint64_t edit_requests{};
+    std::vector<bool> seen;
 
     agent::ControlResponse Call(const std::string& method, const std::string& params = {}) {
         std::optional<core::JsonDocument> document;
@@ -40,6 +42,8 @@ struct Harness final {
             .surface_width = 800, .surface_height = 480,
             .freeze = [this] { ++freezes; },
             .deliver = [this](const std::vector<input::ControlOutput>& outputs) { delivered += outputs.size(); },
+            .edit_requests = edit_requests,
+            .seen = [this](const bool launcher) { seen.push_back(launcher); },
         });
     }
 };
@@ -114,4 +118,19 @@ TEST_CASE("INP-5 control.frame returns the latest presented frame as JPEG") {
     REQUIRE(frame.ok);
     CHECK(frame.json.find(R"("mime_type":"image/jpeg")") != std::string::npos);
     CHECK(frame.json.find(R"("sequence":9)") != std::string::npos);
+}
+
+TEST_CASE("INP-7 control.status reports F2 requests and tells launcher polls from editor traffic") {
+    Harness harness;
+    harness.edit_requests = 3;
+    auto status = harness.Call("control.status", R"({"client":"launcher"})");
+    CHECK(status.json == R"({"result":{"frozen":false,"edit_requests":3}})");
+    static_cast<void>(harness.Call("control.status"));
+    static_cast<void>(harness.Call("control.status", R"({"client":"editor"})"));
+    static_cast<void>(harness.Call("control.freeze"));
+    status = harness.Call("control.status", R"({"client":"launcher"})");
+    CHECK(status.json.find(R"("frozen":true)") != std::string::npos);
+    CHECK(harness.seen == std::vector<bool>{true, false, false, false, true});
+    CHECK(harness.Call("control.status", R"({"client":"gui"})").json.find("-32602") != std::string::npos);
+    CHECK(harness.Call("control.status", R"({"other":1})").json.find("-32602") != std::string::npos);
 }

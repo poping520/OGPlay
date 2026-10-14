@@ -20,11 +20,12 @@ struct DashboardHttpConfig final {
     std::filesystem::path assets;
 };
 
-// Key editor endpoint /controls/rpc (ADR-0134): every request needs
-// "Authorization: Bearer <token>".
+// Key editor (ADR-0134): static page under /controls/ from `assets` (empty: no page, 404) and
+// /controls/rpc, where every request needs "Authorization: Bearer <token>".
 struct ControlHttpConfig final {
     std::shared_ptr<agent::ControlEditorChannel> channel;
     std::string token;
+    std::filesystem::path assets;
 };
 
 class McpHttpServer final {
@@ -40,6 +41,12 @@ public:
         agent::McpInputQueue& inputs,
         agent::McpSessionControl& session_control, DashboardHttpConfig dashboard = {},
         ControlHttpConfig controls = {});
+
+    // Editor-only service (ADR-0134) for sessions started without MCP: /controls/ and
+    // /controls/rpc; /mcp and /dash/ are absent. Port 0 picks a free port.
+    static std::unique_ptr<McpHttpServer> StartKeyEditor(
+        std::uint16_t port, agent::FrameSnapshotStore& frames, agent::McpInputQueue& inputs,
+        ControlHttpConfig controls);
 
     ~McpHttpServer();
 

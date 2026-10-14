@@ -11,7 +11,8 @@ Linux 暂缓；macOS WebView 宿主尚未接入，本阶段仅构建 Windows GUI
 Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校验固定 WebView2 SDK；
 安装后的 WebView2 Runtime 由系统提供，不打包浏览器。CMake 配置期不访问网络。
 
-在本目录运行 `npm ci`、`npm run build`；生成 `data/webui/gui/` 和 `data/webui/dashboard/`，不入库。
+在本目录运行 `npm ci`、`npm run build`；生成 `data/webui/gui/`、`data/webui/dashboard/` 和
+`data/webui/controls/`，不入库。
 `npm run check` 执行 TypeScript、协议、库交互及分块上传测试。
 也可配置 `-DOGPLAY_BUILD_WEBUI=ON` 后构建 `webui`，GUI 目标会先构建并校验制品。
 默认关闭该选项时，GUI 构建消费已有制品，缺失或哈希不符明确失败。
@@ -48,10 +49,18 @@ GUI 页面依赖原生宿主 RPC，不能直接双击 `index.html` 作为完整�
 验证静态制品和 HTTP 路由。运行时来源和共享键面板已接通，支持范围与
 首错/停滞取证流程见 [Dashboard 操作手册](../docs/playbook/DASHBOARD.md)。
 
+## 按键设置
+
+游戏运行中按 F1 显示/隐藏键位提示，按 F2 打开按键设置（ADR-0134）。从 GUI 启动时，F2 或
+详情页“按键设置”打开独立窗口；命令行启动时 F2 用默认浏览器打开，也可直接打开终端输出的
+`http://127.0.0.1:<端口>/controls/#token=…`。页面打开即暂停游戏：拖动区域、拖圆点缩放、选中后
+按键绑定，“应用”立即生效并保存，“继续游戏”试玩，关闭页面自动恢复。
+
 ## 结构
 
 - `apps/dashboard/`：HTTP JSON-RPC 客户端、限量 snapshot/selection store 和 uPlot 帧采样图。
 - `apps/gui/`：Preact 视图及 JSON-RPC 客户端，只呈现宿主事实。
+- `apps/controls/`：按键编辑器（ADR-0134），run-apk 以 `/controls/` 提供，令牌经 URL 片段传入。
 - `packages/ui-kit/`：共享主题，Dashboard 可复用。
 - `scripts/manifest.mjs`：源码提交、工作区状态、Node/npm、文件 SHA-256 清单。
 - Vite 输出经典 IIFE，避免 `file://` 模块跨源限制；静态 CSP 禁止网络、子框架和表单提交。

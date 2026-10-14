@@ -84,6 +84,20 @@ std::string GuiRpcService::Handle(std::string_view request) {
 
 agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
     try {
+        if (method == "controls.open") {
+            CheckFields(params, {"installation_id"});
+            const auto id = RequiredString(params, "installation_id");
+            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行实例查询。");
+            const auto running = host_.dashboards();
+            const auto found = std::find_if(running.begin(), running.end(), [&](const auto& value) { return value.installation_id == id; });
+            if (found == running.end()) return Error(-32004, "实例未运行", "先启动游戏，再打开按键设置。");
+            if (found->editor_status != "ready") return Error(-32002, found->editor_detail, "等待游戏启动完成后重试。");
+            if (!host_.open_key_editor) throw std::runtime_error("宿主不支持按键设置窗口。");
+            host_.open_key_editor(id);
+            core::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            writer.AddBool(result, "opened", true);
+            writer.Add(root, "result", result); return {true, writer.Serialize(root)};
+        }
         if (method == "dashboard.list" || method == "dashboard.open") {
             if (method == "dashboard.list") CheckFields(params, {});
             else CheckFields(params, {"installation_id"});
@@ -103,7 +117,9 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
                     const auto item = writer.Object(); writer.AddString(item, "installation_id", value.installation_id);
                     writer.AddUnsignedInteger(item, "process_id", value.process_id);
                     if (value.port) writer.AddUnsignedInteger(item, "port", *value.port); else writer.AddNull(item, "port");
-                    writer.AddString(item, "status", value.status); writer.AddString(item, "detail", value.detail); writer.Append(items, item);
+                    writer.AddString(item, "status", value.status); writer.AddString(item, "detail", value.detail);
+                    writer.AddString(item, "key_editor_status", value.editor_status);
+                    writer.AddString(item, "key_editor_detail", value.editor_detail); writer.Append(items, item);
                 }
                 writer.Add(result, "items", items);
             }

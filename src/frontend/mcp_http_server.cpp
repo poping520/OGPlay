@@ -174,32 +174,39 @@ std::string MakeResponse(const int status, const std::string_view reason,
 }
 
 // Preload a fixed allowlist before the worker starts: requests never resolve disk paths.
+struct StaticAsset final { std::string type, bytes; };
+using StaticAssets = std::map<std::string, StaticAsset, std::less<>>;
+
+StaticAssets LoadStaticAssets(const std::filesystem::path& directory, const std::string_view prefix,
+                              const std::string_view script, const std::string_view style) {
+    const auto root = std::filesystem::canonical(directory);
+    StaticAssets assets;
+    for (const auto& [name, type] : std::array<std::pair<std::string_view, std::string_view>, 5>{{
+        {"index.html", "text/html; charset=utf-8"}, {script, "text/javascript; charset=utf-8"},
+        {style, "text/css; charset=utf-8"}, {"manifest.json", "application/json"},
+        {"THIRD-PARTY-LICENSES.txt", "text/plain; charset=utf-8"}}}) {
+        const auto path = std::filesystem::canonical(root / name);
+        if (path.parent_path() != root || !std::filesystem::is_regular_file(path))
+            throw std::runtime_error("Invalid Web UI asset path " + path.string());
+        const auto size = std::filesystem::file_size(path);
+        if (size > 2U * 1024U * 1024U) throw std::runtime_error("Web UI asset exceeds 2 MiB");
+        std::ifstream input(path, std::ios::binary);
+        std::string bytes(static_cast<std::size_t>(size), '\0');
+        if (!input.read(bytes.data(), static_cast<std::streamsize>(size)))
+            throw std::runtime_error("Cannot read Web UI assets; build webui");
+        assets.emplace(std::string(prefix) + std::string(name), StaticAsset{std::string(type), std::move(bytes)});
+    }
+    return assets;
+}
+
 struct DashboardHttp final {
     std::shared_ptr<agent::DashboardService> service;
     agent::JsonRpcAdapter rpc;
-    struct Asset { std::string type, bytes; };
-    std::map<std::string, Asset, std::less<>> assets;
+    StaticAssets assets;
     explicit DashboardHttp(DashboardHttpConfig config)
         : service(std::move(config.service)), rpc([this](std::string_view method, core::JsonValue params) {
             return service->Request(method, params);
-        }) {
-        const auto root = std::filesystem::canonical(config.assets);
-        for (const auto& [name, type] : std::array<std::pair<std::string_view, std::string_view>, 5>{{
-            {"index.html", "text/html; charset=utf-8"}, {"dashboard.js", "text/javascript; charset=utf-8"},
-            {"dashboard.css", "text/css; charset=utf-8"}, {"manifest.json", "application/json"},
-            {"THIRD-PARTY-LICENSES.txt", "text/plain; charset=utf-8"}}}) {
-            const auto path = std::filesystem::canonical(root / name);
-            if (path.parent_path() != root || !std::filesystem::is_regular_file(path))
-                throw std::runtime_error("Invalid Dashboard asset path");
-            const auto size = std::filesystem::file_size(path);
-            if (size > 2U * 1024U * 1024U) throw std::runtime_error("Dashboard asset exceeds 2 MiB");
-            std::ifstream input(path, std::ios::binary);
-            std::string bytes(static_cast<std::size_t>(size), '\0');
-            if (!input.read(bytes.data(), static_cast<std::streamsize>(size)))
-                throw std::runtime_error("Cannot read Dashboard assets; build webui");
-            assets.emplace("/dash/" + std::string(name), Asset{std::string(type), std::move(bytes)});
-        }
-    }
+        }), assets(LoadStaticAssets(config.assets, "/dash/", "dashboard.js", "dashboard.css")) {}
 };
 std::shared_ptr<DashboardHttp> CreateDashboard(DashboardHttpConfig config) {
     if (!config.service) return {};
@@ -210,6 +217,7 @@ struct ControlHttp final {
     std::shared_ptr<agent::ControlEditorChannel> channel;
     std::string token;
     agent::JsonRpcAdapter rpc;
+    StaticAssets assets;
     explicit ControlHttp(ControlHttpConfig config)
         : channel(std::move(config.channel)), token(std::move(config.token)),
           rpc([this](std::string_view method, core::JsonValue params) {
@@ -217,6 +225,7 @@ struct ControlHttp final {
               return channel->Call(method, params);
           }) {
         if (token.size() < 16) throw std::invalid_argument("key editor token must have at least 16 characters");
+        if (!config.assets.empty()) assets = LoadStaticAssets(config.assets, "/controls/", "controls.js", "controls.css");
     }
     // Constant time over the expected token so timing does not reveal a prefix.
     [[nodiscard]] bool Authorized(const std::string_view header) const {
@@ -238,9 +247,9 @@ std::shared_ptr<ControlHttp> CreateControls(ControlHttpConfig config) {
 class HttpSession final : public std::enable_shared_from_this<HttpSession> {
 public:
     HttpSession(tcp::socket socket, agent::McpProtocolAdapter& protocol, std::shared_ptr<DashboardHttp> dashboard,
-                std::shared_ptr<ControlHttp> controls)
+                std::shared_ptr<ControlHttp> controls, const bool serve_mcp)
         : socket_(std::move(socket)), protocol_(protocol), dashboard_(std::move(dashboard)),
-          controls_(std::move(controls)) {}
+          controls_(std::move(controls)), serve_mcp_(serve_mcp) {}
 
     void Start() {
         auto self = shared_from_this();
@@ -294,33 +303,34 @@ private:
             return;
         }
         const bool dash = request_->target == "/dash" || request_->target.starts_with("/dash/");
-        const bool control = controls_ && request_->target == "/controls/rpc";
-        if (control) {
+        const bool controls_page = controls_ && (request_->target == "/controls" || request_->target.starts_with("/controls/"));
+        const bool control = controls_page && request_->target == "/controls/rpc";
+        if ((dash && dashboard_) || controls_page) {
             if (request_->host.empty() || !IsLoopbackOrigin("http://" + request_->host)) {
                 Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Host is not loopback")); return;
             }
+        }
+        if (control) {
             if (!controls_->Authorized(request_->authorization)) {
                 Reply(MakeResponse(401, "Unauthorized", "text/plain; charset=utf-8", "key editor token required",
                                    "WWW-Authenticate: Bearer\r\n"));
                 return;
             }
-        } else if (dash && dashboard_) {
-            if (request_->host.empty() || !IsLoopbackOrigin("http://" + request_->host)) {
-                Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Host is not loopback")); return;
+        } else if (controls_page) {
+            // The page carries no secret; its RPC calls need the token.
+            if (controls_->assets.empty()) {
+                Reply(MakeResponse(404, "Not Found", "text/plain; charset=utf-8", "key editor page is not built; build webui")); return;
             }
+            ServeAsset(controls_->assets, request_->target == "/controls" ? "/controls/" : request_->target, "/controls/");
+            return;
+        } else if (dash && dashboard_) {
             if (request_->target != "/dash/rpc") {
-                if (request_->method != "GET") {
-                    Reply(MakeResponse(405, "Method Not Allowed", "text/plain", "Only GET is supported", "Allow: GET\r\n")); return;
-                }
-                const auto target = request_->target == "/dash" || request_->target == "/dash/" ? "/dash/index.html" : request_->target;
-                const auto asset = dashboard_->assets.find(target);
-                if (asset == dashboard_->assets.end()) {
-                    Reply(MakeResponse(404, "Not Found", "text/plain", "Unknown Dashboard asset")); return;
-                }
-                Reply(MakeResponse(200, "OK", asset->second.type, asset->second.bytes,
-                    "X-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n"));
+                ServeAsset(dashboard_->assets, request_->target == "/dash" ? "/dash/" : request_->target, "/dash/");
                 return;
             }
+        } else if (!serve_mcp_) {
+            Reply(MakeResponse(404, "Not Found", "text/plain; charset=utf-8", "key editor is at /controls/"));
+            return;
         } else if (request_->target != "/mcp") {
             Reply(MakeResponse(404, "Not Found", "text/plain; charset=utf-8",
                                "MCP endpoint is /mcp"));
@@ -359,6 +369,18 @@ private:
                            "MCP-Protocol-Version: 2025-11-25\r\n"));
     }
 
+    void ServeAsset(const StaticAssets& assets, const std::string_view target, const std::string_view root) {
+        if (request_->method != "GET") {
+            Reply(MakeResponse(405, "Method Not Allowed", "text/plain", "Only GET is supported", "Allow: GET\r\n")); return;
+        }
+        const auto asset = assets.find(target == root ? std::string(root) + "index.html" : std::string(target));
+        if (asset == assets.end()) {
+            Reply(MakeResponse(404, "Not Found", "text/plain", "Unknown Web UI asset")); return;
+        }
+        Reply(MakeResponse(200, "OK", asset->second.type, asset->second.bytes,
+            "X-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n"));
+    }
+
     void Reply(std::string response) {
         response_ = std::move(response);
         auto self = shared_from_this();
@@ -375,6 +397,7 @@ private:
     agent::McpProtocolAdapter& protocol_;
     std::shared_ptr<DashboardHttp> dashboard_;
     std::shared_ptr<ControlHttp> controls_;
+    bool serve_mcp_{};
     std::string request_bytes_;
     std::optional<HttpRequest> request_;
     std::string response_;
@@ -385,9 +408,10 @@ private:
 struct McpHttpServer::Impl final {
     explicit Impl(const std::uint16_t requested_port,
                   agent::FrameSnapshotStore& frames,
-                  agent::McpInputQueue& inputs, DashboardHttpConfig config, ControlHttpConfig control_config)
+                  agent::McpInputQueue& inputs, DashboardHttpConfig config, ControlHttpConfig control_config,
+                  const bool mcp = true)
         : acceptor(io), protocol(frames, inputs), dashboard(CreateDashboard(std::move(config))),
-          controls(CreateControls(std::move(control_config))) {
+          controls(CreateControls(std::move(control_config))), serve_mcp(mcp) {
         Open(requested_port);
     }
 
@@ -432,7 +456,7 @@ struct McpHttpServer::Impl final {
     void AcceptNext() {
         acceptor.async_accept([this](const boost::system::error_code& error, tcp::socket socket) {
             if (!error) {
-                std::make_shared<HttpSession>(std::move(socket), protocol, dashboard, controls)->Start();
+                std::make_shared<HttpSession>(std::move(socket), protocol, dashboard, controls, serve_mcp)->Start();
             }
             if (acceptor.is_open()) {
                 AcceptNext();
@@ -445,6 +469,7 @@ struct McpHttpServer::Impl final {
     agent::McpProtocolAdapter protocol;
     std::shared_ptr<DashboardHttp> dashboard;
     std::shared_ptr<ControlHttp> controls;
+    bool serve_mcp{true};
     std::uint16_t port = 0;
     std::thread worker;
 };
@@ -462,6 +487,14 @@ std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     ControlHttpConfig controls) {
     return std::unique_ptr<McpHttpServer>(new McpHttpServer(std::make_unique<Impl>(
         port, frames, inputs, session_control, std::move(dashboard), std::move(controls))));
+}
+
+std::unique_ptr<McpHttpServer> McpHttpServer::StartKeyEditor(
+    const std::uint16_t port, agent::FrameSnapshotStore& frames, agent::McpInputQueue& inputs,
+    ControlHttpConfig controls) {
+    if (!controls.channel) throw std::invalid_argument("key editor server needs a control channel");
+    return std::unique_ptr<McpHttpServer>(new McpHttpServer(
+        std::make_unique<Impl>(port, frames, inputs, DashboardHttpConfig{}, std::move(controls), false)));
 }
 
 McpHttpServer::McpHttpServer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

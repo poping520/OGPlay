@@ -24,6 +24,8 @@ struct GuiRpcHost final {
     std::function<std::map<std::string, std::string>(const LibraryEntry&, const GuiConfig&)> game_facts;
     std::function<std::vector<GuiDashboard>()> dashboards;
     std::function<void(std::string_view)> open_dashboard;
+    // Opens the instance's key editor window (ADR-0134) with the launch token.
+    std::function<void(std::string_view)> open_key_editor;
 };
 
 class GuiRpcService final {

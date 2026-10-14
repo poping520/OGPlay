@@ -42,7 +42,7 @@
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：raw-resource 完整链、手动音频写入、custom
   AVIO 真实解码、媒体主时钟与影音同步未验收。
 - PC 操控映射（[Input 设计](../design/input/README.md)）：P0 的 ControlMapper、配置合并与 run-apk/MCP/GUI
-  接线已完成（[INP-1..3](../tasks/input/README.md)）；提示叠加层、游戏键位数据与实机按键验收待 INP-4。
+  接线已完成（[INP-1..3](../tasks/input/README.md)）；键位由用户在 Web 按键编辑器中配置（ADR-0134）；`control.*` 会话接口已完成（INP-5），编辑器与入口待 INP-4/6/7。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。
 - 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。

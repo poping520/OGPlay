@@ -667,6 +667,7 @@ ogplay_set_project_warnings(ogplay_session)
 add_library(ogplay_agent
     src/agent/dashboard.cpp
     src/agent/control_service.cpp
+    src/agent/control_editor.cpp
     src/agent/coordinate_overlay.cpp
     src/agent/mcp_input.cpp
     src/agent/mcp_protocol.cpp
@@ -688,6 +689,7 @@ ogplay_set_project_warnings(ogplay_agent)
 
 add_library(ogplay_frontend
     src/frontend/data_directory.cpp
+    src/frontend/control_requests.cpp
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
@@ -880,6 +882,8 @@ if(OGPLAY_BUILD_TESTS)
         tests/input/touch_mapper_tests.cpp
         tests/input/control_mapper_tests.cpp
         tests/session/control_config_tests.cpp
+        tests/agent/control_editor_tests.cpp
+        tests/frontend/control_requests_tests.cpp
         tests/memory/address_tests.cpp
         tests/memory/address_space_tests.cpp
         tests/memory/bus_tests.cpp

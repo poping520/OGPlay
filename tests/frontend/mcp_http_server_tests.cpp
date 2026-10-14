@@ -1,5 +1,6 @@
 #include "doctest/doctest.h"
 
+#include "ogplay/agent/control_editor.h"
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
@@ -10,6 +11,9 @@
 #include <boost/asio.hpp>
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -231,4 +235,43 @@ TEST_CASE("Dashboard HTTP exposes actual agent snapshots without advancing sessi
     CHECK(Request(server->Port(), "POST", "/dash/rpc", R"({"jsonrpc":"2.0","id":3,"method":"run.step"})").find("-32601") != std::string::npos);
     CHECK(Request(server->Port(), "POST", "/dash/rpc", R"({"jsonrpc":"2.0","id":4,"method":"dash.snapshot","params":{"unknown":true}})").find("-32602") != std::string::npos);
     CHECK(session.Snapshot().frame == 17); CHECK(session.PendingCommands() == 0); CHECK(inputs.PendingGestures() == 0);
+}
+
+TEST_CASE("INP-5 key editor RPC requires the bearer token and reaches the main loop channel") {
+    ogplay::agent::FrameSnapshotStore frames;
+    ogplay::agent::McpInputQueue inputs;
+    auto channel = std::make_shared<ogplay::agent::ControlEditorChannel>();
+    const std::string token = "0123456789abcdef0123456789abcdef";
+    auto server = ogplay::frontend::McpHttpServer::Start(0U, frames, inputs, {}, {channel, token});
+    const std::string body = R"({"jsonrpc":"2.0","id":1,"method":"control.get"})";
+
+    CHECK(Request(server->Port(), "POST", "/controls/rpc", body).starts_with("HTTP/1.1 401"));
+    CHECK(Request(server->Port(), "POST", "/controls/rpc", body,
+                  "Authorization: Bearer 0123456789abcdef0123456789abcdee\r\n").starts_with("HTTP/1.1 401"));
+    CHECK(Request(server->Port(), "POST", "/controls/rpc", body,
+                  "Authorization: Bearer " + token + "\r\n", "example.com").starts_with("HTTP/1.1 403"));
+
+    std::atomic<bool> stop{false};
+    std::thread main_loop([&] {
+        while (!stop) {
+            channel->ServePending([](std::string_view method, ogplay::core::JsonValue) {
+                return method == "control.get" ? ogplay::agent::ControlResult(R"({"frozen":false})")
+                                               : ogplay::agent::ControlError(-32601, "unknown");
+            });
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+    const auto authorized = Request(server->Port(), "POST", "/controls/rpc", body,
+                                    "Authorization: Bearer " + token + "\r\n");
+    const auto other = Request(server->Port(), "POST", "/controls/rpc",
+                               R"({"jsonrpc":"2.0","id":2,"method":"dash.overview"})",
+                               "Authorization: Bearer " + token + "\r\n");
+    stop = true;
+    main_loop.join();
+    CHECK(authorized.starts_with("HTTP/1.1 200"));
+    CHECK(authorized.find(R"("result":{"frozen":false})") != std::string::npos);
+    CHECK(other.find(R"("code":-32601)") != std::string::npos);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::McpHttpServer::Start(
+                        0U, frames, inputs, {}, {channel, "short"})),
+                    std::invalid_argument);
 }

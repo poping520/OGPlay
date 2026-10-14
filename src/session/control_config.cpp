@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <utility>
+#include <variant>
 
 #include "ogplay/core/text.h"
 #include "ogplay/session/title_profile.h"
@@ -87,12 +88,7 @@ void ExactKeys(const Table& table, const std::string_view field,
     return *array;
 }
 
-[[nodiscard]] std::int32_t AndroidKeyCode(const TomlValue& value, const std::string_view field) {
-    if (const auto* integer = std::get_if<std::int64_t>(&value.value)) {
-        if (*integer < 1 || *integer > 255) throw ControlConfigError(std::string(field) + " is out of range");
-        return static_cast<std::int32_t>(*integer);
-    }
-    constexpr std::array names{
+constexpr std::array kAndroidKeyNames{
         std::pair{"back", 4}, std::pair{"dpad_up", 19}, std::pair{"dpad_down", 20},
         std::pair{"dpad_left", 21}, std::pair{"dpad_right", 22}, std::pair{"dpad_center", 23},
         std::pair{"volume_up", 24}, std::pair{"volume_down", 25}, std::pair{"tab", 61},
@@ -102,11 +98,19 @@ void ExactKeys(const Table& table, const std::string_view field,
         std::pair{"button_l1", 102}, std::pair{"button_r1", 103},
         std::pair{"button_start", 108}, std::pair{"button_select", 109},
         std::pair{"escape", 111},
-    };
-    if (const auto* text = std::get_if<std::string>(&value.value)) {
-        for (const auto& [name, code] : names) if (*text == name) return code;
-        throw ControlConfigError(std::string(field) + " is not a known Android key: " + *text);
+};
+
+[[nodiscard]] std::int32_t AndroidKeyCode(const TomlValue& value, const std::string_view field) {
+    if (const auto* integer = std::get_if<std::int64_t>(&value.value)) {
+        if (*integer < 1 || *integer > 255) throw ControlConfigError(std::string(field) + " is out of range");
+        return static_cast<std::int32_t>(*integer);
     }
+    for (const auto& [name, code] : kAndroidKeyNames) {
+        if (const auto* text = std::get_if<std::string>(&value.value); text != nullptr && *text == name)
+            return code;
+    }
+    if (const auto* text = std::get_if<std::string>(&value.value))
+        throw ControlConfigError(std::string(field) + " is not a known Android key: " + *text);
     throw ControlConfigError(std::string(field) + " must be a key name or keycode");
 }
 
@@ -375,6 +379,233 @@ input::ControlConfig BuildControlConfig(const ControlLayer* profile, const Contr
         throw input::ControlConfigError("binding uses unplaced zone " + binding.zone);
     }
     return config;
+}
+
+namespace {
+
+using FieldValue = std::variant<std::string, std::int64_t, double>;
+using Fields = std::vector<std::pair<std::string, FieldValue>>;
+
+[[nodiscard]] FieldValue Number(const float value) {
+    const auto cents = std::llround(static_cast<double>(value) * 100.0);
+    if (cents % 100 == 0) return static_cast<std::int64_t>(cents / 100);
+    return static_cast<double>(cents) / 100.0;
+}
+
+[[nodiscard]] std::string NumberText(const double value) {
+    const auto cents = std::llround(value * 100.0);
+    const auto magnitude = cents < 0 ? -cents : cents;
+    std::string text = cents < 0 ? "-" : "";
+    text += std::to_string(magnitude / 100) + ".";
+    const auto fraction = magnitude % 100;
+    text += fraction < 10 ? "0" + std::to_string(fraction) : std::to_string(fraction);
+    while (text.back() == '0') text.pop_back();
+    return text;
+}
+
+[[nodiscard]] std::string SourceText(const input::Binding& binding) {
+    if (binding.sources.size() == 1) return input::FormatInputSource(binding.sources[0]);
+    std::string text = "keys:";
+    for (std::size_t i = 0; i < binding.sources.size(); ++i) {
+        const auto name = input::FormatInputSource(binding.sources[i]);
+        if (!name.starts_with("key:")) throw input::ControlConfigError("grouped sources must be keys");
+        text += (i == 0 ? "" : ",") + name.substr(4);
+    }
+    return text;
+}
+
+[[nodiscard]] Fields ZoneFields(const input::ZoneSpec& zone) {
+    Fields fields{{"name", zone.name}, {"anchor", std::string(input::AnchorName(zone.anchor))},
+                  {"x", Number(zone.x)}, {"y", Number(zone.y)}};
+    if (zone.radius > 0) {
+        fields.emplace_back("r", Number(zone.radius));
+    } else {
+        fields.emplace_back("w", Number(zone.width));
+        fields.emplace_back("h", Number(zone.height));
+    }
+    return fields;
+}
+
+[[nodiscard]] Fields BindingFields(const ControlBindingEntry& entry) {
+    const auto& binding = entry.binding;
+    Fields fields{{"source", SourceText(binding)}};
+    if (binding.mode != input::kDefaultMode) fields.emplace_back("mode", binding.mode);
+    if (entry.unbind) {
+        fields.emplace_back("action", std::string("none"));
+        return fields;
+    }
+    switch (binding.action) {
+    case input::ActionKind::button: {
+        fields.emplace_back("action", std::string("button"));
+        fields.emplace_back("zone", binding.zone);
+        constexpr std::array press{"tap", "hold", "repeat"};
+        fields.emplace_back("press", std::string(press[static_cast<std::size_t>(binding.press)]));
+        if (binding.press == input::PressMode::repeat)
+            fields.emplace_back("repeat_frames", static_cast<std::int64_t>(binding.repeat_frames));
+        break;
+    }
+    case input::ActionKind::stick:
+        fields.emplace_back("action", std::string("stick"));
+        fields.emplace_back("zone", binding.zone);
+        fields.emplace_back("radius", Number(binding.stick_radius));
+        fields.emplace_back("settle_frames", static_cast<std::int64_t>(binding.stick_settle_frames));
+        fields.emplace_back("ramp_frames", static_cast<std::int64_t>(binding.stick_ramp_frames));
+        break;
+    case input::ActionKind::key: {
+        fields.emplace_back("action", std::string("key"));
+        FieldValue key = static_cast<std::int64_t>(binding.android_key_code);
+        for (const auto& [name, code] : detail::kAndroidKeyNames)
+            if (code == binding.android_key_code) key = std::string(name);
+        fields.emplace_back("key", key);
+        break;
+    }
+    case input::ActionKind::mode:
+        fields.emplace_back("action", std::string("mode"));
+        fields.emplace_back("target", binding.target_mode);
+        fields.emplace_back("switch", std::string(binding.mode_switch == input::ModeSwitch::hold ? "hold" : "toggle"));
+        break;
+    }
+    return fields;
+}
+
+[[nodiscard]] std::string Quoted(const std::string_view text) {
+    std::string result = "\"";
+    for (const char character : text) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (character == '"' || character == '\\') {
+            result += '\\';
+            result += character;
+        } else if (byte < 0x20 || byte == 0x7f) {
+            constexpr char kHex[] = "0123456789ABCDEF";
+            result += "\\u00";
+            result += kHex[byte >> 4U];
+            result += kHex[byte & 0xfU];
+        } else {
+            result += character;
+        }
+    }
+    return result + "\"";
+}
+
+void AppendTomlTable(std::string& text, const std::string_view header, const Fields& fields) {
+    text += "\n[[" + std::string(header) + "]]\n";
+    for (const auto& [key, value] : fields) {
+        text += key + " = ";
+        if (const auto* string = std::get_if<std::string>(&value)) text += Quoted(*string);
+        else if (const auto* integer = std::get_if<std::int64_t>(&value)) text += std::to_string(*integer);
+        else text += NumberText(std::get<double>(value));
+        text += "\n";
+    }
+}
+
+[[nodiscard]] core::JsonWriter::Value FieldsJson(core::JsonWriter& writer, const Fields& fields) {
+    const auto object = writer.Object();
+    for (const auto& [key, value] : fields) {
+        if (const auto* string = std::get_if<std::string>(&value)) writer.AddString(object, key, *string);
+        else if (const auto* integer = std::get_if<std::int64_t>(&value)) writer.AddInteger(object, key, *integer);
+        else writer.AddReal(object, key, std::get<double>(value));
+    }
+    return object;
+}
+
+[[nodiscard]] detail::TomlValue JsonToToml(const core::JsonValue value, const std::size_t depth) {
+    if (depth > 8) throw input::ControlConfigError("input configuration JSON is nested too deeply");
+    if (value.IsObject()) {
+        detail::TomlValue::Table table;
+        for (const auto key : value.Keys())
+            table.emplace(std::string(key), JsonToToml(*value.Member(key), depth + 1));
+        return {std::move(table)};
+    }
+    if (value.IsArray()) {
+        detail::TomlValue::Array array;
+        for (std::size_t i = 0; i < value.Size(); ++i) array.push_back(JsonToToml(*value.Element(i), depth + 1));
+        return {std::move(array)};
+    }
+    if (const auto text = value.String()) return {std::string(*text)};
+    if (const auto flag = value.Bool()) return {*flag};
+    if (const auto integer = value.Integer()) return {*integer};
+    if (const auto number = value.Number()) return {*number};
+    throw input::ControlConfigError("input configuration JSON holds an unsupported value");
+}
+
+}  // namespace
+
+ControlLayer LoadControlOverrideIfPresent(const std::filesystem::path& path) {
+    std::error_code error;
+    if (!std::filesystem::exists(path, error) && !error) return {};
+    return LoadControlOverride(path);
+}
+
+std::vector<ControlTemplate> ListControlTemplates(const std::filesystem::path& templates_directory) {
+    std::vector<std::filesystem::path> paths;
+    std::error_code error;
+    if (!std::filesystem::is_directory(templates_directory, error)) return {};
+    for (const auto& entry : std::filesystem::directory_iterator(templates_directory, error)) {
+        if (entry.path().extension() == ".toml") paths.push_back(entry.path());
+    }
+    if (error) throw input::ControlConfigError("cannot list input templates: " + templates_directory.string());
+    std::sort(paths.begin(), paths.end());
+    std::vector<ControlTemplate> templates;
+    for (const auto& path : paths) templates.push_back(LoadControlTemplate(path));
+    return templates;
+}
+
+std::string FormatControlLayer(const ControlLayer& layer) {
+    std::string text = "# OGPlay key layout, maintained by the key editor (ADR-0134).\nschema = 1\n";
+    if (layer.template_id) text += "template = " + Quoted(*layer.template_id) + "\n";
+    for (const auto& zone : layer.zones) AppendTomlTable(text, "zone", ZoneFields(zone));
+    for (const auto& entry : layer.bindings) AppendTomlTable(text, "binding", BindingFields(entry));
+    return text;
+}
+
+void SaveControlLayer(const std::filesystem::path& path, const ControlLayer& layer) {
+    const auto text = FormatControlLayer(layer);
+    static_cast<void>(LoadControlOverrideText(text));
+    std::error_code error;
+    if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
+    auto temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        output << text;
+        if (!output.flush()) throw input::ControlConfigError("cannot write input configuration: " + temporary.string());
+    }
+    std::filesystem::rename(temporary, path, error);
+    if (error) {
+        std::filesystem::remove(temporary, error);
+        throw input::ControlConfigError("cannot replace input configuration: " + path.string());
+    }
+}
+
+ControlLayer DecodeControlLayerJson(const core::JsonValue value) {
+    if (!value.IsObject()) throw input::ControlConfigError("input configuration JSON must be an object");
+    const auto table = JsonToToml(value, 0);
+    return detail::DecodeControlLayer(std::get<detail::TomlValue::Table>(table.value), "layer");
+}
+
+core::JsonWriter::Value WriteControlLayerJson(core::JsonWriter& writer, const ControlLayer& layer) {
+    const auto object = writer.Object();
+    if (layer.template_id) writer.AddString(object, "template", *layer.template_id);
+    const auto zones = writer.Array();
+    for (const auto& zone : layer.zones) writer.Append(zones, FieldsJson(writer, ZoneFields(zone)));
+    writer.Add(object, "zone", zones);
+    const auto bindings = writer.Array();
+    for (const auto& entry : layer.bindings) writer.Append(bindings, FieldsJson(writer, BindingFields(entry)));
+    writer.Add(object, "binding", bindings);
+    return object;
+}
+
+core::JsonWriter::Value WriteControlTemplateJson(core::JsonWriter& writer, const ControlTemplate& item) {
+    const auto object = writer.Object();
+    writer.AddString(object, "id", item.id);
+    writer.AddString(object, "summary", item.summary);
+    const auto zones = writer.Array();
+    for (const auto& zone : item.zones) writer.Append(zones, writer.String(zone));
+    writer.Add(object, "zones", zones);
+    const auto bindings = writer.Array();
+    for (const auto& entry : item.bindings) writer.Append(bindings, FieldsJson(writer, BindingFields(entry)));
+    writer.Add(object, "binding", bindings);
+    return object;
 }
 
 }  // namespace ogplay::session

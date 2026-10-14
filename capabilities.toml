@@ -255,8 +255,13 @@ note = "INP-1/3、ADR-0133：run-apk 全部窗口输入与 MCP 手势经 Control
 
 [session.input_control_config]
 status = "partial"
-test = "tests/session/control_config_tests.cpp; tests/frontend/gui_launch_tests.cpp#INP-3; tools.title_profiles_current; tools.title_profile_validator_self_test"
+test = "tests/session/control_config_tests.cpp; tests/frontend/gui_launch_tests.cpp#INP-5; tools.title_profiles_current; tools.title_profile_validator_self_test"
 note = "INP-2/ADR-0133：Profile [input]、data/input/templates 类型模板与用户覆盖文件共用解码，按内置默认、模板、Profile、用户覆盖合并为 ControlConfig；源冲突替换、none 解绑、未放置区域与非法字段明确失败。run-apk 以 --input-config 装载用户覆盖并在启动前校验区域，GUI 传入实例 input.toml。"
+
+[frontend.key_editor_session]
+status = "partial"
+test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/session/control_config_tests.cpp#INP-5"
+note = "INP-5/ADR-0134：run-apk 在 loopback 服务的 /controls/rpc 提供 control.get/freeze/resume/frame/apply，Bearer 令牌（环境变量或随机生成）与 loopback Host 校验；请求在 guest 主循环执行，冻结不触发生命周期，apply 校验失败不改运行布局，成功热应用并原子写回用户键位文件。仅在 loopback 服务启用时可用；Web 编辑器与 GUI/F2 入口（INP-6/7）未做。"
 
 [input.mouse_touch_mapper]
 status = "complete"

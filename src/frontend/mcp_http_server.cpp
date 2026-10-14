@@ -4,6 +4,7 @@
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/agent/json_rpc.h"
+#include "ogplay/agent/control_editor.h"
 #include <fstream>
 #include <map>
 
@@ -39,6 +40,7 @@ struct HttpRequest {
     std::string accept;
     std::string origin;
     std::string host;
+    std::string authorization;
     std::size_t content_length = 0;
     std::string body;
 };
@@ -120,6 +122,8 @@ std::optional<HttpRequest> ParseHeaders(const std::string_view bytes, std::strin
         } else if (name == "host") {
             if (seen_host || value.empty()) { error = "invalid Host"; return std::nullopt; }
             seen_host = true; request.host = LowerAscii(value);
+        } else if (name == "authorization") {
+            request.authorization = std::string(value);
         } else if (name == "transfer-encoding") {
             error = "Transfer-Encoding is unsupported";
             return std::nullopt;
@@ -202,10 +206,41 @@ std::shared_ptr<DashboardHttp> CreateDashboard(DashboardHttpConfig config) {
     return std::make_shared<DashboardHttp>(std::move(config));
 }
 
+struct ControlHttp final {
+    std::shared_ptr<agent::ControlEditorChannel> channel;
+    std::string token;
+    agent::JsonRpcAdapter rpc;
+    explicit ControlHttp(ControlHttpConfig config)
+        : channel(std::move(config.channel)), token(std::move(config.token)),
+          rpc([this](std::string_view method, core::JsonValue params) {
+              if (!method.starts_with("control.")) return agent::ControlError(-32601, "unknown key editor method");
+              return channel->Call(method, params);
+          }) {
+        if (token.size() < 16) throw std::invalid_argument("key editor token must have at least 16 characters");
+    }
+    // Constant time over the expected token so timing does not reveal a prefix.
+    [[nodiscard]] bool Authorized(const std::string_view header) const {
+        constexpr std::string_view kScheme = "Bearer ";
+        if (!header.starts_with(kScheme)) return false;
+        const auto presented = header.substr(kScheme.size());
+        unsigned difference = presented.size() == token.size() ? 0U : 1U;
+        for (std::size_t i = 0; i < token.size(); ++i)
+            difference |= static_cast<unsigned>(static_cast<unsigned char>(token[i]) ^
+                                                static_cast<unsigned char>(i < presented.size() ? presented[i] : 0));
+        return difference == 0U;
+    }
+};
+std::shared_ptr<ControlHttp> CreateControls(ControlHttpConfig config) {
+    if (!config.channel) return {};
+    return std::make_shared<ControlHttp>(std::move(config));
+}
+
 class HttpSession final : public std::enable_shared_from_this<HttpSession> {
 public:
-    HttpSession(tcp::socket socket, agent::McpProtocolAdapter& protocol, std::shared_ptr<DashboardHttp> dashboard)
-        : socket_(std::move(socket)), protocol_(protocol), dashboard_(std::move(dashboard)) {}
+    HttpSession(tcp::socket socket, agent::McpProtocolAdapter& protocol, std::shared_ptr<DashboardHttp> dashboard,
+                std::shared_ptr<ControlHttp> controls)
+        : socket_(std::move(socket)), protocol_(protocol), dashboard_(std::move(dashboard)),
+          controls_(std::move(controls)) {}
 
     void Start() {
         auto self = shared_from_this();
@@ -259,7 +294,17 @@ private:
             return;
         }
         const bool dash = request_->target == "/dash" || request_->target.starts_with("/dash/");
-        if (dash && dashboard_) {
+        const bool control = controls_ && request_->target == "/controls/rpc";
+        if (control) {
+            if (request_->host.empty() || !IsLoopbackOrigin("http://" + request_->host)) {
+                Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Host is not loopback")); return;
+            }
+            if (!controls_->Authorized(request_->authorization)) {
+                Reply(MakeResponse(401, "Unauthorized", "text/plain; charset=utf-8", "key editor token required",
+                                   "WWW-Authenticate: Bearer\r\n"));
+                return;
+            }
+        } else if (dash && dashboard_) {
             if (request_->host.empty() || !IsLoopbackOrigin("http://" + request_->host)) {
                 Reply(MakeResponse(403, "Forbidden", "text/plain; charset=utf-8", "Host is not loopback")); return;
             }
@@ -299,6 +344,9 @@ private:
             return;
         }
 
+        if (control) {
+            Reply(MakeResponse(200, "OK", "application/json", controls_->rpc.Handle(request_->body))); return;
+        }
         if (dash) {
             Reply(MakeResponse(200, "OK", "application/json", dashboard_->rpc.Handle(request_->body))); return;
         }
@@ -326,6 +374,7 @@ private:
     tcp::socket socket_;
     agent::McpProtocolAdapter& protocol_;
     std::shared_ptr<DashboardHttp> dashboard_;
+    std::shared_ptr<ControlHttp> controls_;
     std::string request_bytes_;
     std::optional<HttpRequest> request_;
     std::string response_;
@@ -336,16 +385,18 @@ private:
 struct McpHttpServer::Impl final {
     explicit Impl(const std::uint16_t requested_port,
                   agent::FrameSnapshotStore& frames,
-                  agent::McpInputQueue& inputs, DashboardHttpConfig config)
-        : acceptor(io), protocol(frames, inputs), dashboard(CreateDashboard(std::move(config))) {
+                  agent::McpInputQueue& inputs, DashboardHttpConfig config, ControlHttpConfig control_config)
+        : acceptor(io), protocol(frames, inputs), dashboard(CreateDashboard(std::move(config))),
+          controls(CreateControls(std::move(control_config))) {
         Open(requested_port);
     }
 
     Impl(const std::uint16_t requested_port,
          agent::FrameSnapshotStore& frames,
          agent::McpInputQueue& inputs,
-         agent::McpSessionControl& session_control, DashboardHttpConfig config)
-        : acceptor(io), protocol(frames, inputs, session_control), dashboard(CreateDashboard(std::move(config))) {
+         agent::McpSessionControl& session_control, DashboardHttpConfig config, ControlHttpConfig control_config)
+        : acceptor(io), protocol(frames, inputs, session_control), dashboard(CreateDashboard(std::move(config))),
+          controls(CreateControls(std::move(control_config))) {
         Open(requested_port);
     }
 
@@ -381,7 +432,7 @@ struct McpHttpServer::Impl final {
     void AcceptNext() {
         acceptor.async_accept([this](const boost::system::error_code& error, tcp::socket socket) {
             if (!error) {
-                std::make_shared<HttpSession>(std::move(socket), protocol, dashboard)->Start();
+                std::make_shared<HttpSession>(std::move(socket), protocol, dashboard, controls)->Start();
             }
             if (acceptor.is_open()) {
                 AcceptNext();
@@ -393,22 +444,24 @@ struct McpHttpServer::Impl final {
     tcp::acceptor acceptor;
     agent::McpProtocolAdapter protocol;
     std::shared_ptr<DashboardHttp> dashboard;
+    std::shared_ptr<ControlHttp> controls;
     std::uint16_t port = 0;
     std::thread worker;
 };
 
 std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     const std::uint16_t port, agent::FrameSnapshotStore& frames,
-    agent::McpInputQueue& inputs, DashboardHttpConfig dashboard) {
-    return std::unique_ptr<McpHttpServer>(
-        new McpHttpServer(std::make_unique<Impl>(port, frames, inputs, std::move(dashboard))));
+    agent::McpInputQueue& inputs, DashboardHttpConfig dashboard, ControlHttpConfig controls) {
+    return std::unique_ptr<McpHttpServer>(new McpHttpServer(
+        std::make_unique<Impl>(port, frames, inputs, std::move(dashboard), std::move(controls))));
 }
 
 std::unique_ptr<McpHttpServer> McpHttpServer::Start(
     const std::uint16_t port, agent::FrameSnapshotStore& frames,
-    agent::McpInputQueue& inputs, agent::McpSessionControl& session_control, DashboardHttpConfig dashboard) {
-    return std::unique_ptr<McpHttpServer>(new McpHttpServer(
-        std::make_unique<Impl>(port, frames, inputs, session_control, std::move(dashboard))));
+    agent::McpInputQueue& inputs, agent::McpSessionControl& session_control, DashboardHttpConfig dashboard,
+    ControlHttpConfig controls) {
+    return std::unique_ptr<McpHttpServer>(new McpHttpServer(std::make_unique<Impl>(
+        port, frames, inputs, session_control, std::move(dashboard), std::move(controls))));
 }
 
 McpHttpServer::McpHttpServer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

@@ -20,6 +20,9 @@ struct FrameSnapshot final {
     std::vector<std::uint8_t> rgba8;
 };
 
+// JPEG (quality 85) bytes of a validated RGBA8 frame.
+[[nodiscard]] std::vector<std::uint8_t> EncodeFrameJpeg(const FrameSnapshot& frame);
+
 struct FrameSnapshotMetadata final {
     std::uint32_t width{};
     std::uint32_t height{};

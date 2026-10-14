@@ -119,12 +119,10 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     }
     plan.argv.push_back("--installation-id");
     plan.argv.push_back(entry.key);
-    // Per-instance control overrides live beside settings.toml in their own file (ADR-0133).
-    const auto controls = entry.directory / "input.toml";
-    if (std::filesystem::is_regular_file(controls, error) && !error) {
-        plan.argv.push_back("--input-config");
-        plan.argv.push_back(PathUtf8(std::filesystem::absolute(controls).lexically_normal()));
-    }
+    // The instance key layout lives beside settings.toml in its own file (ADR-0134); it is
+    // always passed so the key editor has a save target before the file exists.
+    plan.argv.push_back("--input-config");
+    plan.argv.push_back(PathUtf8(std::filesystem::absolute(entry.directory / "input.toml").lexically_normal()));
     plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log")
                         .lexically_normal();
     return plan;

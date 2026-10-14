@@ -66,11 +66,20 @@
   MCP 手势阶段作为外部触点交给 `ControlMapper`，与窗口鼠标、原生触摸和绑定按键触点并存。
   输入重置时取消 session 中的按住状态，静默清空 `ControlMapper` 并清空 MCP 当前和待处理
   手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
-- 操控映射（ADR-0133）：`run-apk` 在启动前用 Profile `[input]`、`--input-config <file>`
-  用户覆盖与 payload `input/templates` 构建 `ControlConfig`，并按 Profile surface 校验区域；
-  配置错误在 guest 启动前明确失败。窗口事件全部交给 `ControlMapper`，每个 guest step 前
-  `Flush` 并经 `session::MapControlOutput` 入队；呈现尺寸变化时更新 surface。GUI 在实例
-  目录存在 `input.toml` 时以 `--input-config` 传入，该文件独立于 `settings.toml`。
+- 操控映射（ADR-0133/0134）：`run-apk` 在启动前用 Profile `[input]`、用户键位文件与 payload
+  `input/templates` 构建 `ControlConfig`，并按 Profile surface 校验区域；配置错误在 guest
+  启动前明确失败。用户键位文件为 `--input-config <file>`，否则为持久沙盒根下的
+  `<installation_id>.input.toml`，临时沙盒不落盘；文件不存在视为空布局。窗口事件全部交给
+  `ControlMapper`，每个 guest step 前 `Flush` 并经 `session::MapControlOutput` 入队；呈现
+  尺寸变化时更新 surface。GUI 总以 `--input-config <实例目录>/input.toml` 启动，该文件独立于
+  `settings.toml`。
+- 按键编辑器会话（ADR-0134）：loopback 服务存在时，`/controls/rpc` 提供
+  `control.get/freeze/resume/frame/apply`，要求 `Authorization: Bearer <token>` 且 Host 为
+  loopback；令牌取 `OGPLAY_CONTROL_TOKEN` 环境变量（由启动方提供，不进 argv），缺省时生成
+  128 位随机令牌并打印。请求经 `ControlEditorChannel` 在主循环执行（`HandleControlRequest`）。
+  冻结只停止 guest 推进与窗口输入投递并取消现有触点，不触发 Android 生命周期；`apply`
+  校验失败返回 -32010 且运行布局不变，成功后热应用并原子写回用户键位文件。run-apk 的
+  状态行写入后立即刷新 stdout。
 - pointer 按最新 guest frame 与等比内容区映射；黑边不开始手势，既有 release 必须闭合。
   窗口 FPS 使用独立 `RealtimeClock`，不改变 guest Clock。
 - 音频只消费已解析的 resid/APK/VFS 字节区间；解码归 audio，补充有界，退出停止设备。

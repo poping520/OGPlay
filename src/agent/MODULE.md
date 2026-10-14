@@ -29,6 +29,10 @@
 - `McpInputQueue`：跨 MCP worker 与 guest 主线程传递最多 64 个 pointer gesture；click 在连续
   两次 take 中输出 down/up，swipe 按请求的 1..120 个确定性步数输出 down/move/up，整个手势
   保持同一请求与起始帧序号，网络线程不直接调用 guest。
+- `ControlEditorChannel`（ADR-0134）：把按键编辑器的 `control.*` 请求从 loopback worker 交给
+  guest 主循环执行并取回结果；最多 16 个待处理请求，默认 2 秒未答复返回 “busy” 并撤回该
+  请求（不会在客户端收到失败后才生效），`Close` 后拒绝新旧请求。`EncodeFrameJpeg` 复用帧
+  截图编码。
 - `McpSessionControl`：跨 MCP worker 与 guest 主线程交换原子 lifecycle/frame/ticks/
   presented-frame/movie/process-exit/guest-fault/shutdown 快照，并以最多 64 项 FIFO 传递
   step/suspend/resume/shutdown 命令；`step` 只接受 1..1,000,000 帧。

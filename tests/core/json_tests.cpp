@@ -84,3 +84,19 @@ TEST_CASE("JSON writer rejects duplicate object members") {
     writer.AddString(root, "id", "first");
     CHECK_THROWS_AS(writer.AddString(root, "id", "second"), std::runtime_error);
 }
+
+TEST_CASE("INP-5 JSON values expose numbers and object keys in document order") {
+    ogplay::core::JsonParseError error;
+    auto document = ogplay::core::JsonDocument::ParseStrict(
+        R"({"x":12.5,"y":-3,"name":"move","list":[1]})", error);
+    REQUIRE(document.has_value());
+    const auto root = document->Root();
+    CHECK(root.Member("x")->Number() == 12.5);
+    CHECK(root.Member("y")->Number() == -3.0);
+    CHECK_FALSE(root.Member("name")->Number().has_value());
+    const auto keys = root.Keys();
+    REQUIRE(keys.size() == 4U);
+    CHECK(keys[0] == "x");
+    CHECK(keys[3] == "list");
+    CHECK(root.Member("list")->Keys().empty());
+}

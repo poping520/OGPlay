@@ -22,3 +22,8 @@
 
 库领域迁至 frontend/library，公开值类型不暴露 Manifest/Profile 内核类型。ResolveLaunch 与参数格式化替代 GUI 拼参；导入、移除、残留清理采用 OS 排他锁；运行租约跨异常保持，移除/二次运行明确拒绝。全局与库内实例配置读写同样受库锁保护。
 构建 `ogplaycore ogplay-cli ogplay_app_tests ogplay_file_lock_tests` 通过；app 23 例、HAL/并发 2 例与入口/参数 2 项通过。并发测试持锁后在另一线程调用 Import/Remove/List，明确 busy、保留活动 `.importing`，释放后清理；运行锁验证移除拒绝与释放、删除保留沙盒。证据 `wu-b-*.log`。
+
+## WU-C
+
+CLI 命令、usage、错误块与 stdio 循环迁入 ogplay_cli_app，仅依赖 app 公开头。新增 library 全部子命令；设置 patch 在库锁内原子合并，复用 schema/目录校验。library run 当前进程内运行，进度 stderr、JSON stdout、日志写实例 last-run.log。删除旧 CLI C 入口；JSON 外观隔离内核 JSON 类型。
+定向构建通过；app 26 例（含 3 个 CLI library 主题、缺 Profile/重复导入/严格设置/运行锁拒绝）和入口/参数 2 项通过。证据 `wu-c-build.log`、`wu-c-app-tests.log`、`wu-c-ctest.log`。

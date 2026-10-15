@@ -8,5 +8,6 @@ struct LogConfig final {
     LogLevel console_level{LogLevel::info};
     std::optional<std::filesystem::path> file;
     bool stderr_enabled{true};
+    bool status_to_stderr{};
 };
 }

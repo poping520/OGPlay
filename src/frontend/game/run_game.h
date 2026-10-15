@@ -6,5 +6,5 @@ using GameRunOptions = app::GameRunOptions;
 inline GameRunOptions ParseGameRunOptions(std::span<const std::string_view> args) {
     return app::ParseGameRunArgs(args);
 }
-int RunGame(GameRunOptions options, core::Logger& logger);
+int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr = false);
 }

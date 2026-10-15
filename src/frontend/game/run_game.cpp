@@ -74,12 +74,6 @@ constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
 
-// Status lines (ready endpoints, editor token) must reach a redirected stdout immediately.
-void Write(const std::string_view text) {
-    static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stdout));
-    static_cast<void>(std::fflush(stdout));
-}
-
 std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary | std::ios::ate);
     if (!input) throw std::runtime_error("cannot open " + PathUtf8(path));
@@ -182,7 +176,11 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
 
 }  // namespace
 
-int RunGame(GameRunOptions options, core::Logger& logger) {
+int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr) {
+    const auto Write = [stream = status_to_stderr ? stderr : stdout](std::string_view text) {
+        static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
+        static_cast<void>(std::fflush(stream));
+    };
     auto [apk_path, external_directory, external_guest_directory, obb_path,
           profiles_directory, exit_after_frames, mcp_port, key_editor_port,
           dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,

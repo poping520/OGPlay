@@ -1,21 +1,21 @@
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 #include <algorithm>
 #include <stdexcept>
 
-namespace ogplay::frontend {
-const std::vector<GuiSettingDefinition>& GameSettingDefinitions() {
+namespace ogplay::app {
+const std::vector<SettingDefinition>& GameSettingDefinitions() {
     static const auto fields = [] {
-        std::vector<GuiSettingDefinition> result;
+        std::vector<SettingDefinition> result;
         for (const auto& [key, group] : std::vector<std::pair<std::string, std::string>>{
             {"interpreter", "performance"}, {"clock_mode", "performance"}, {"device_preset", "device"},
             {"supersample", "display"}, {"window_mode", "display"}, {"scaling", "display"},
             {"volume", "audio"}, {"mute", "audio"}, {"input_template", "input"}, {"keymap", "input"},
             {"gamepad_deadzone", "input"}, {"network_policy", "network"}, {"profiles_dir", "compatibility"},
             {"mcp_enabled", "advanced"}, {"mcp_port", "advanced"}}) {
-            auto field = FindGuiSetting(key); field.group = group; result.push_back(std::move(field));
+            auto field = FindSetting(key); field.group = group; result.push_back(std::move(field));
         }
         const auto pending = "预留 · 运行时配置入口尚未接入";
-        const std::vector<GuiSettingDefinition> extra{
+        const std::vector<SettingDefinition> extra{
             {"max_fps", "performance", "最大帧率", std::string("unlimited"), {"30", "60", "120", "unlimited"}, 0, 0, pending},
             {"clock_rate", "performance", "时钟倍率", std::string("1"), {"0.5", "1", "1.5", "2", "3", "4"}, 0, 0, pending},
             {"jit_cache_mb", "performance", "JIT 缓存（MiB）", std::uint32_t(64), {}, 1, 4096, pending},
@@ -44,7 +44,7 @@ const std::vector<GuiSettingDefinition>& GameSettingDefinitions() {
     }();
     return fields;
 }
-const GuiSettingDefinition& FindGameSetting(std::string_view key) {
+const SettingDefinition& FindGameSetting(std::string_view key) {
     const auto& fields = GameSettingDefinitions();
     const auto found = std::find_if(fields.begin(), fields.end(), [&](const auto& field) { return field.key == key; });
     if (found == fields.end()) throw std::invalid_argument("unknown instance setting: " + std::string(key));
@@ -61,7 +61,7 @@ void ValidateGameSettings(const GameSettings& settings, bool directories) {
         }
     }
 }
-GuiSettingValue EffectiveGameSetting(const GameSettings& settings, const GuiConfig& global,
+SettingValue EffectiveGameSetting(const GameSettings& settings, const LibraryConfig& global,
                                     const LibraryEntry& entry, std::string_view key) {
     const auto& field = FindGameSetting(key);
     if (const auto it = settings.values.find(key); it != settings.values.end()) return it->second;
@@ -69,16 +69,16 @@ GuiSettingValue EffectiveGameSetting(const GameSettings& settings, const GuiConf
         const auto text = entry.metadata->external_dir->generic_u8string();
         return std::string(reinterpret_cast<const char*>(text.data()), text.size());
     }
-    const auto& globals = GuiSettings();
+    const auto& globals = SettingDefinitions();
     if (std::any_of(globals.begin(), globals.end(), [&](const auto& value) { return value.key == key; }))
-        return GuiSetting(global, key);
+        return Setting(global, key);
     return field.initial;
 }
-GuiConfig EffectiveGameConfig(const GameSettings& settings, const GuiConfig& global) {
+LibraryConfig EffectiveGameConfig(const GameSettings& settings, const LibraryConfig& global) {
     auto result = global;
     ValidateGameSettings(settings);
-    for (const auto& field : GuiSettings()) if (const auto it = settings.values.find(field.key); it != settings.values.end())
-        SetGuiSetting(result, field.key, it->second);
+    for (const auto& field : SettingDefinitions()) if (const auto it = settings.values.find(field.key); it != settings.values.end())
+        SetSetting(result, field.key, it->second);
     return result;
 }
 LibraryEntry EffectiveGameEntry(const LibraryEntry& entry, const GameSettings& settings) {

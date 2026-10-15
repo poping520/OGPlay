@@ -1,4 +1,5 @@
 #include "ogplay/app/game_run.h"
+#include "ogplay/app/library.h"
 #include "ogplay/core/logger.h"
 #include "../game/run_game.h"
 #include <memory>
@@ -10,6 +11,8 @@
 namespace ogplay::app {
 int RunGame(GameRunOptions options, const LogConfig& config) {
     ValidateGameRunOptions(options);
+    std::optional<RunningLease> running;
+    if (options.library_root && options.installation_id) running.emplace(*options.library_root, *options.installation_id);
     core::Logger logger;
     if (config.stderr_enabled) logger.AddSink(std::make_shared<core::ConsoleSink>(stderr), static_cast<core::LogLevel>(config.console_level));
     if (config.file) logger.AddSink(std::make_shared<core::FileSink>(*config.file));

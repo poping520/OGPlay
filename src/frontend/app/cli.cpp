@@ -77,7 +77,7 @@ int ogplay::frontend::RunCli(const int argc, const char* const argv[]) {
     try {
         if (std::string_view(argv[1]) == "run-apk") {
             std::vector<std::string_view> args(argv + 2, argv + argc);
-            return RunGame(ParseGameRunOptions(args), logger);
+            return app::RunGame(ParseGameRunOptions(args));
         }
         if (argc >= 5 && std::string_view(argv[1]) == "diag" &&
             std::string_view(argv[2]) == "snapshot") {

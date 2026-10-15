@@ -10,7 +10,7 @@
 #include <string>
 #include "ogplay/core/logger.h"
 #include "ogplay/frontend/gui_rpc.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 #include "ogplay/frontend/data_directory.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/webview_host.h"
@@ -21,6 +21,7 @@
 #include "process_manager.h"
 
 namespace ogplay::frontend {
+using namespace ogplay::app;
 namespace {
 std::filesystem::path Utf8Path(std::string_view text) {
     return std::filesystem::path(std::u8string_view(
@@ -101,7 +102,7 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
         context.running_packages = processes_.RunningPackages();
         try {
             const auto bundled = HostBundledDataPaths();
-            const auto config = LoadGuiConfig(store_.Root());
+            const auto config = LoadLibraryConfig(store_.Root());
             const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
             std::map<std::filesystem::path, session::TitleProfileCatalog> catalogs;
             for (const auto& entry : entries) {
@@ -135,7 +136,7 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
             [](const auto& path) { hal::OpenHostDirectory(path); },
             [&](const auto& path) {
                 const auto bundled = HostBundledDataPaths();
-                const auto config = LoadGuiConfig(store.Root());
+                const auto config = LoadLibraryConfig(store.Root());
                 const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
                 const auto profiles = session::TitleProfileCatalog::LoadDirectory(
                     config.profiles_dir.value_or(bundled.profiles_directory), quirks);
@@ -162,7 +163,7 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                 }
                 return facts;
             },
-            [](const LibraryEntry& entry, const GuiConfig& config) {
+            [](const LibraryEntry& entry, const LibraryConfig& config) {
                 std::map<std::string, std::string> facts;
                 const auto bundled = HostBundledDataPaths();
                 const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);

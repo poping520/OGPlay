@@ -28,7 +28,7 @@ int DesktopMain(int argc, char* argv[]) {
     logger.AddSink(std::make_shared<ogplay::core::ConsoleSink>(stderr), ogplay::core::LogLevel::info);
     if (argc >= 2 && std::string_view(argv[1]) == "--run-game") {
         std::vector<std::string_view> args(argv + 2, argv + argc);
-        return ogplay::frontend::RunGame(ogplay::frontend::ParseGameRunOptions(args), logger);
+        return ogplay::app::RunGame(ogplay::frontend::ParseGameRunOptions(args));
     }
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
         static_cast<void>(std::fputs("OGPlay " OGPLAY_VERSION "\n", stdout));

@@ -8,9 +8,10 @@
 #include <string_view>
 #include <vector>
 
-#include "ogplay/frontend/gui_model.h"
+#include "ogplay/app/library.h"
 
 namespace ogplay::frontend {
+using namespace ogplay::app;
 
 struct LaunchPlan final {
     std::string package;
@@ -23,15 +24,14 @@ struct LaunchPlan final {
     // Per-launch editor token, handed to the game as OGPLAY_CONTROL_TOKEN and never in argv.
     std::string control_token;
 };
-enum class GuiLaunchMode { normal, preflight, diagnostic };
 
-[[nodiscard]] std::filesystem::path LauncherSandboxRoot(
-    const std::filesystem::path& library_root);
+
+
 
 [[nodiscard]] LaunchPlan BuildLaunchPlan(
     const std::filesystem::path& game_executable,
     const std::filesystem::path& library_root,
-    const LibraryEntry& entry, const GuiConfig& config, GuiLaunchMode mode = GuiLaunchMode::normal);
+    const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode = LaunchMode::normal);
 
 struct GameExit final {
     std::string package;

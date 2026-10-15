@@ -3,13 +3,15 @@
 #include <functional>
 #include <future>
 #include <memory>
-#include "ogplay/frontend/gui_import.h"
+#include "ogplay/app/apk_inspect.h"
 #include "ogplay/frontend/gui_dashboard.h"
 #include "ogplay/agent/json_rpc.h"
 #include "ogplay/frontend/gui_launch.h"
 #include "ogplay/frontend/gui_view_model.h"
 
 namespace ogplay::frontend {
+inline bool CanDismissImportModal(bool host_dialog_pending) noexcept { return !host_dialog_pending; }
+using namespace ogplay::app;
 
 // Host operations are explicit callbacks; the RPC model has no SDL/WebView dependency.
 struct GuiRpcHost final {
@@ -21,7 +23,7 @@ struct GuiRpcHost final {
     std::function<std::string()> timestamp;
     std::function<void()> minimize;
     std::function<std::map<std::string, std::string>()> settings_facts;
-    std::function<std::map<std::string, std::string>(const LibraryEntry&, const GuiConfig&)> game_facts;
+    std::function<std::map<std::string, std::string>(const LibraryEntry&, const LibraryConfig&)> game_facts;
     std::function<std::vector<GuiDashboard>()> dashboards;
     std::function<void(std::string_view)> open_dashboard;
     // Opens the instance's key editor window (ADR-0134) with the launch token.

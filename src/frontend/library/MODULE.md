@@ -1,0 +1,8 @@
+# 子模块：frontend/library
+
+游戏库领域，编入 ogplay_library 并由 ogplaycore 的 app C++ 外观导出。拥有 APK 检视、图标提取、Profile 外观、原子导入、全局/实例 schema 与继承、ResolveLaunch。
+公开头只含 std 与 app 类型；内核 Profile、Manifest、沙盒及文件锁只在实现内使用。
+
+库根 library/.lock 排他保护导入、移除、导入残留清理。List 非阻塞尝试清理锁，冲突时跳过残留。运行租约在库锁内获取实例 .running.lock，保持至 RunGame 返回/异常；移除与单实例检查用同一 OS 锁。锁文件不得主动 unlink。
+删除条目保留 sandbox 和外部数据。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
+验证：ogplay_app_tests 的库、锁与参数主题；真实 APK 有界复跑。

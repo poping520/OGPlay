@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-#include "ogplay/frontend/gui_import.h"
+#include "ogplay/app/apk_inspect.h"
 
 namespace {
 
@@ -158,8 +158,8 @@ public:
     std::filesystem::path path;
 };
 
-ogplay::frontend::ApkImportAnalysis Analysis() {
-    ogplay::frontend::ApkImportAnalysis analysis;
+ogplay::app::ApkImportAnalysis Analysis() {
+    ogplay::app::ApkImportAnalysis analysis;
     analysis.source_apk = std::filesystem::absolute("fixture.apk");
     analysis.manifest.package = "org.example.game";
     analysis.manifest.version_code = 42;
@@ -177,7 +177,7 @@ TEST_CASE("GUI import modal stays alive while a host dialog is pending") {
 }
 
 TEST_CASE("GUI import builds exact metadata without inventing a Profile") {
-    const auto request = ogplay::frontend::BuildLibraryImport(
+    const auto request = ogplay::app::BuildLibraryImport(
         Analysis(), std::nullopt, "2026-08-13T00:00:00Z");
     CHECK(request.metadata.package == "org.example.game");
     CHECK(request.metadata.display_name == "示例游戏");
@@ -189,8 +189,8 @@ TEST_CASE("GUI import builds exact metadata without inventing a Profile") {
 }
 
 TEST_CASE("GUI import analyzes a valid unmatched APK without native libraries") {
-    const ogplay::session::TitleProfileCatalog catalog({});
-    const auto analysis = ogplay::frontend::AnalyzeApkImport(
+    const ogplay::app::ProfileCatalog catalog;
+    const auto analysis = ogplay::app::AnalyzeApkImport(
         MinimalApk(), "selected.apk", catalog);
     CHECK(analysis.manifest.package == "org.example.game");
     CHECK(analysis.manifest.version_code == 9);
@@ -205,41 +205,42 @@ TEST_CASE("GUI import accepts optional required external data only as a real dir
     const auto external = temporary.path / "external";
     std::filesystem::create_directories(external);
     auto analysis = Analysis();
-    analysis.profile = ogplay::session::ApkProfileSummary{
+    analysis.profile = ogplay::app::ProfileSummary{
         "org.example.game", "Example", true};
 
-    const auto skipped = ogplay::frontend::BuildLibraryImport(
+    const auto skipped = ogplay::app::BuildLibraryImport(
         analysis, std::nullopt, "2026-08-13T00:00:00Z");
     CHECK(skipped.metadata.profile_id == "org.example.game");
     CHECK_FALSE(skipped.metadata.external_dir.has_value());
 
-    const auto selected = ogplay::frontend::BuildLibraryImport(
+    const auto selected = ogplay::app::BuildLibraryImport(
         analysis, external, "2026-08-13T00:00:00Z");
     CHECK(selected.metadata.external_dir ==
           std::filesystem::absolute(external).lexically_normal());
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLibraryImport(
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(
                         analysis, temporary.path / "missing",
                         "2026-08-13T00:00:00Z")),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
 }
 
 TEST_CASE("GUI import rejects missing APK and empty timestamp explicitly") {
-    const ogplay::session::TitleProfileCatalog catalog({});
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::AnalyzeApkImportFile(
+    const ogplay::app::ProfileCatalog catalog;
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::AnalyzeApkImportFile(
                         "missing.apk", catalog)),
-                    ogplay::frontend::GuiModelError);
-    CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLibraryImport(
+                    ogplay::app::LibraryError);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(
                         Analysis(), std::nullopt, "")),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
 }
 
 TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     using namespace ogplay;
+    using namespace ogplay::app;
     TemporaryDirectory temporary;
-    frontend::LibraryStore store(temporary.path);
+    ogplay::app::LibraryStore store(temporary.path);
     frontend::GuiRpcService rpc(store, temporary.path / "ogplay.exe", {
         [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {},
-        [](const auto& source) { return frontend::AnalyzeApkImportFile(source, session::TitleProfileCatalog({})); }, {},
+        [](const auto& source) { return ogplay::app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); }, {},
         [] { return std::string("2026-09-22T00:00:00Z"); }});
     const auto call = [&](std::string_view method, std::string_view params) {
         core::JsonParseError error;
@@ -270,7 +271,7 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     REQUIRE(entries.size() == 1);
     CHECK(entries[0].metadata->package == "org.example.game");
     CHECK(entries[0].metadata->version_code == 9);
-    const auto analyzed = frontend::AnalyzeApkImportFile(entries[0].directory / "game.apk", session::TitleProfileCatalog({}));
+    const auto analyzed = ogplay::app::AnalyzeApkImportFile(entries[0].directory / "game.apk", app::ProfileCatalog{});
     CHECK(analyzed.manifest.version_code == 9);
     CHECK_FALSE(std::filesystem::exists(temporary.path / ".gui-import-1"));
     call("library.upload.begin", R"({"name":"broken.apk","size":1})");

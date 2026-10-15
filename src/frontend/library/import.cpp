@@ -1,4 +1,4 @@
-#include "ogplay/frontend/gui_import.h"
+#include "ogplay/app/apk_inspect.h"
 
 #include <fstream>
 #include <set>
@@ -9,8 +9,9 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_native.h"
+#include "profiles_private.h"
 
-namespace ogplay::frontend {
+namespace ogplay::app {
 namespace {
 
 [[nodiscard]] std::vector<std::byte> ReadApkBytes(
@@ -19,19 +20,19 @@ namespace {
     std::error_code error;
     const auto size = std::filesystem::file_size(path, error);
     if (error || size == 0 || size > maximum_apk_bytes) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
+        throw LibraryError(LibraryErrorCode::not_found,
                             "selected APK is unavailable or outside the size limit", path);
     }
     std::ifstream stream(path, std::ios::binary);
     if (!stream) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "selected APK cannot be opened", path);
     }
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     stream.read(reinterpret_cast<char*>(bytes.data()),
                 static_cast<std::streamsize>(bytes.size()));
     if (!stream) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "selected APK could not be read completely", path);
     }
     return bytes;
@@ -39,23 +40,19 @@ namespace {
 
 }  // namespace
 
-bool CanDismissImportModal(const bool host_dialog_pending) noexcept {
-    return !host_dialog_pending;
-}
-
 ApkImportAnalysis AnalyzeApkImport(
     const std::span<const std::byte> apk_bytes,
     const std::filesystem::path& source_apk,
-    const session::TitleProfileCatalog& profiles) {
+    const ProfileCatalog& profiles) {
     if (source_apk.empty()) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "selected APK path must not be empty");
     }
     auto visuals = ExtractApkApplicationVisuals(apk_bytes);
     const auto archive = loader::ParseApkArchive(apk_bytes);
     const auto libraries = loader::ReadApkArmNativeLibraries(apk_bytes, archive);
     const auto selection = session::SelectApkCompatibilityProfile(
-        visuals.manifest, libraries, profiles);
+        loader::ReadAndroidManifest(apk_bytes, archive), libraries, ProfileAccess::Get(profiles));
     ApkImportAnalysis result{
         .source_apk = std::filesystem::absolute(source_apk).lexically_normal(),
         .manifest = std::move(visuals.manifest),
@@ -69,17 +66,18 @@ ApkImportAnalysis AnalyzeApkImport(
         const auto end = entry.name.find('/', 4);
         if (end != std::string::npos) abis.insert(entry.name.substr(4, end - 4));
     }
+    result.profile_notes = selection.applicability_notes;
     result.abis.assign(abis.begin(), abis.end());
     if (selection.profile != nullptr) {
         result.profile =
-            session::SummarizeCompatibilityProfile(*selection.profile);
+            ProfileAccess::Summary(*selection.profile);
     }
     return result;
 }
 
 ApkImportAnalysis AnalyzeApkImportFile(
     const std::filesystem::path& source_apk,
-    const session::TitleProfileCatalog& profiles) {
+    const ProfileCatalog& profiles) {
     const auto bytes = ReadApkBytes(source_apk);
     return AnalyzeApkImport(bytes, source_apk, profiles);
 }
@@ -89,14 +87,14 @@ LibraryImport BuildLibraryImport(
     std::optional<std::filesystem::path> external_dir,
     std::string imported_at) {
     if (imported_at.empty()) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "import timestamp must not be empty");
     }
     if (external_dir.has_value()) {
         *external_dir = std::filesystem::absolute(*external_dir).lexically_normal();
         std::error_code error;
         if (!std::filesystem::is_directory(*external_dir, error) || error) {
-            throw GuiModelError(GuiModelErrorCode::not_found,
+            throw LibraryError(LibraryErrorCode::not_found,
                                 "selected external data directory is unavailable",
                                 *external_dir);
         }
@@ -115,4 +113,7 @@ LibraryImport BuildLibraryImport(
     return {analysis.source_apk, std::move(metadata), analysis.icon_png};
 }
 
-}  // namespace ogplay::frontend
+ApkInspection InspectApk(const std::filesystem::path& path, const ProfileCatalog& profiles) {
+    return AnalyzeApkImportFile(path, profiles);
+}
+}  // namespace ogplay::app

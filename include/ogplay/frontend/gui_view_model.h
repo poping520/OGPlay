@@ -10,9 +10,10 @@
 #include <string_view>
 #include <vector>
 
-#include "ogplay/frontend/gui_model.h"
+#include "ogplay/app/library.h"
 
 namespace ogplay::frontend {
+using namespace ogplay::app;
 
 enum class LibraryTileStatus : std::uint8_t {
     damaged,

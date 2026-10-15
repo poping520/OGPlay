@@ -4,7 +4,7 @@
 
 为 guest VideoView/MediaPlayer 语义提供拉模型的视频解码播放接口
 （画面 RGBA、音频 S16 PCM、seek），以及测试用的确定性合成后端。
-真实解码由运行时加载的 FFmpeg 后端提供（ADR-0021）。
+真实解码由编译期链接的裁剪版 FFmpeg 共享库 `ogplay_ffmpeg` 提供（ADR-0136）。
 
 ## 公共 API
 
@@ -28,12 +28,14 @@
 - `FakeVideoPlayer`：固定帧率、纯色帧（颜色由帧号确定，`FrameColorRgba` 可
   预测）、斜坡 PCM 的合成后端；无 I/O、无线程，供行为测试与端到端断言使用。
 - `FfmpegAvailable` / `FfmpegUnavailableReason` / `OpenFfmpegVideo` /
-  `OpenFfmpegVideoSource` / `MakeFfmpegVideoSourcePlayerFactory`：运行时加载 FFmpeg 7 的
-  真实解码后端。自定义 AVIO 使用 32 KiB buffer 和来源 ReadAt/seek，不要求宿主路径。
-  探测结果进程内稳定；不可用时打开抛带原因的 `VideoPlayerError`。共享库按
-  `OGPLAY_FFMPEG_DIR` → 可执行文件目录 → 系统默认路径的顺序整组探测
-  （Windows `avutil-59.dll` 等五个；Linux `libavutil.so.59` 等；macOS
-  `libavutil.59.dylib` 等），版本主号不匹配即不可用。
+  `MakeFfmpegVideoSourcePlayerFactory`：链接 `third_party/ffmpeg-prebuilt` 的真实解码
+  后端。所有输入（含宿主路径入口）经自定义 AVIO 读取，32 KiB buffer，来源 ReadAt/seek；
+  预编译库不含任何 FFmpeg protocol。可用性为进程内稳定的启动自检：运行库与头文件版本
+  一致，且 `mov` demuxer 与 `h264`/`mpeg4`/`aac` 解码器存在。当前平台无预编译包或
+  `OGPLAY_ENABLE_FFMPEG=OFF` 时编译 `ffmpeg_disabled.cpp`，原因来自配置期。
+  不可用时打开抛带原因的 `VideoPlayerError`。
+- `VideoCodecUnsupportedError`（`VideoPlayerError` 子类）：视频或音频轨编码未编入时
+  抛出，携带轨道类型与 FFmpeg 编码名，供调用方按编码记账；不静默丢弃音轨。
 
 ## 不变量
 
@@ -42,9 +44,6 @@
   `VideoPlayerError`。
 - 尺寸 1..4096、时长 1 ms..4 h、声道 0..2、采样率 0 或 4000..192000；
   声道与采样率必须同时存在或同时为零。
-- FFmpeg 只镜像 7.x（avutil 59 / avcodec 61 / avformat 61 / swscale 8 /
-  swresample 5）ABI 的前导字段，加载器拒绝其他主版本；五个库必须来自同一
-  目录，缺一即整体不可用。
 - FFmpeg 后端内部队列有界：视频队列 ≤64 帧，另有一张 pending；两者像素 backing
   合计 ≤256 MiB，PCM 缓冲 ≤8M 样本。按受检软件图像平面的 AVBufferRef 去重计数，
   包含 stride/padding；实际解码尺寸也须为 1..4096。音频与视频共用 demux cursor，
@@ -69,7 +68,8 @@
 
 ## 禁止
 
-- 不引入编译期 FFmpeg 依赖；不直接调用平台解码 API。
+- 不运行时按名称加载 FFmpeg，不镜像 FFmpeg 结构体；只经预编译包公共头调用。
+- 不直接调用平台解码 API；FFmpeg 组件扩充只在 OGPlay-ffmpeg 仓库进行。
 - 不出现游戏名或按 title 分支。
 
 ## 测试

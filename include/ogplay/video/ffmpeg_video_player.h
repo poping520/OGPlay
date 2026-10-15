@@ -8,15 +8,19 @@
 
 namespace ogplay::video {
 
-// True when the pinned FFmpeg 7 shared libraries are loadable in this
-// process (see ADR-0021). The probe result is stable per process.
+// True when this build links the ogplay_ffmpeg SDK and its startup self-check
+// passed: runtime and header versions agree and the mov demuxer plus the
+// h264/mpeg4/aac decoders are present (ADR-0136). Stable per process.
 [[nodiscard]] bool FfmpegAvailable();
 
 // Human-readable reason when FfmpegAvailable() is false; empty otherwise.
 [[nodiscard]] std::string FfmpegUnavailableReason();
 
 // Opens a decoded playback session; throws VideoPlayerError when FFmpeg is
-// unavailable, the file cannot be demuxed, or it has no video stream.
+// unavailable, the input cannot be demuxed or has no video stream, and
+// VideoCodecUnsupportedError when a video or audio codec is not built in.
+// The host-path overload reads the file through the same custom AVIO as
+// VideoDataSource; the SDK carries no FFmpeg protocols.
 [[nodiscard]] std::unique_ptr<VideoPlayer> OpenFfmpegVideo(
     const std::filesystem::path& host_path);
 

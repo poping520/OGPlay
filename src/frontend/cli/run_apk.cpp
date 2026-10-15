@@ -628,9 +628,9 @@ int RunApkCommand(const int argc, const char* const argv[],
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
-            // Real VideoView playback when the FFmpeg shared libraries are
-            // loadable; otherwise setVideoPath records the gap and start()
-            // keeps the immediate-completion fallback (ADR-0021).
+            // Real VideoView playback when this build links ogplay_ffmpeg and
+            // its self-check passed; otherwise opening a video records the gap
+            // and the guest receives an explicit error (ADR-0136).
             if (video::FfmpegAvailable()) {
                 dex_context->video_source_player_factory =
                     [realtime = !mcp_manual_step](auto source) {

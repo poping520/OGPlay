@@ -49,9 +49,12 @@ private:
 
 }  // namespace
 
-TEST_CASE("ffmpeg availability probe is stable and diagnosable") {
+TEST_CASE("ffmpeg availability follows the linked SDK and is diagnosable") {
     const bool available = ogplay::video::FfmpegAvailable();
     const std::string reason = ogplay::video::FfmpegUnavailableReason();
+    // A build that links ogplay_ffmpeg must pass the self-check; only a build
+    // without the SDK may report unavailability (ADR-0136).
+    CHECK(available == (OGPLAY_HAS_FFMPEG != 0));
     if (available) {
         CHECK(reason.empty());
     } else {
@@ -63,7 +66,7 @@ TEST_CASE("ffmpeg availability probe is stable and diagnosable") {
 }
 
 TEST_CASE("ffmpeg backend decodes the mp4v+aac fixture" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     auto player = ogplay::video::OpenFfmpegVideo(FixturePath());
     const auto& metadata = player->Metadata();
     CHECK(metadata.width == 64U);
@@ -104,7 +107,7 @@ TEST_CASE("ffmpeg backend decodes the mp4v+aac fixture" *
 }
 
 TEST_CASE("ffmpeg backend seek rewinds frame delivery" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     auto player = ogplay::video::OpenFfmpegVideo(FixturePath());
     auto late = player->TakeFrame(700);
     REQUIRE(late.has_value());
@@ -121,7 +124,7 @@ TEST_CASE("ffmpeg backend seek rewinds frame delivery" *
 }
 
 TEST_CASE("ffmpeg custom IO decodes and seeks without a host path" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     auto source = std::make_shared<FixtureSource>();
     auto player = ogplay::video::OpenFfmpegVideo(source);
     CHECK(player->Metadata().width == 64U);
@@ -132,7 +135,7 @@ TEST_CASE("ffmpeg custom IO decodes and seeks without a host path" *
 }
 
 TEST_CASE("ffmpeg backend rejects missing and non-video files" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     CHECK_THROWS_AS((void)ogplay::video::OpenFfmpegVideo(
                         std::filesystem::path{"does-not-exist.mp4"}),
                     ogplay::video::VideoPlayerError);
@@ -143,7 +146,7 @@ TEST_CASE("ffmpeg backend rejects missing and non-video files" *
 }
 
 TEST_CASE("ffmpeg native picture owns pixels across seek and player retirement" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     auto player = ogplay::video::OpenFfmpegVideo(FixturePath());
     auto* staged = dynamic_cast<ogplay::video::DecodedVideoPlayer*>(player.get());
     REQUIRE(staged != nullptr);
@@ -166,7 +169,7 @@ TEST_CASE("ffmpeg native picture owns pixels across seek and player retirement" 
 }
 
 TEST_CASE("ffmpeg 4k native buffering backpressures bytes and resumes without losing PCM" *
-          doctest::skip(!ogplay::video::FfmpegAvailable())) {
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     auto player = ogplay::video::OpenFfmpegVideo(
         std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video/4k60-h264-aac.mp4");
     auto* staged = dynamic_cast<ogplay::video::DecodedVideoPlayer*>(player.get());
@@ -189,4 +192,37 @@ TEST_CASE("ffmpeg 4k native buffering backpressures bytes and resumes without lo
     const auto first = staged->TakeDecodedPicture(0);
     REQUIRE(first != nullptr);
     CHECK(first->PositionMs() == 0);
+}
+
+TEST_CASE("ffmpeg names a video codec the SDK was not built with" *
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
+    try {
+        (void)ogplay::video::OpenFfmpegVideo(
+            std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video/hevc-aac.mp4");
+        FAIL("hevc must not open");
+    } catch (const ogplay::video::VideoCodecUnsupportedError& error) {
+        CHECK(error.stream() == "video");
+        CHECK(error.codec() == "hevc");
+    }
+}
+
+TEST_CASE("ffmpeg rejects an undecodable audio track instead of dropping it" *
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
+    try {
+        (void)ogplay::video::OpenFfmpegVideo(
+            std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video/h264-ac3.mp4");
+        FAIL("ac3 audio must not be silently dropped");
+    } catch (const ogplay::video::VideoCodecUnsupportedError& error) {
+        CHECK(error.stream() == "audio");
+        CHECK(error.codec() == "ac3");
+    }
+}
+
+TEST_CASE("ffmpeg video without audio reports PCM ended from open" *
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
+    auto player = ogplay::video::OpenFfmpegVideo(
+        std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video/h264-silent.mp4");
+    CHECK_FALSE(player->Metadata().HasAudio());
+    CHECK(player->PcmEnded());
+    REQUIRE(player->TakeFrame(0).has_value());
 }

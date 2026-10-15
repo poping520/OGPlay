@@ -917,6 +917,10 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             if (!context->encoded_music->Prepare(state.music)) {
                 try {
                     if (PrepareAndroidMediaVideo(*context, call.receiver.Value())) return dx::VmValue::Void();
+                } catch (const video::VideoCodecUnsupportedError& error) {
+                    state.phase = Phase::error;
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
+                    throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
                 } catch (const dx::VmJavaThrow&) {
                     state.phase = Phase::error;
                     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_prepare", 0);

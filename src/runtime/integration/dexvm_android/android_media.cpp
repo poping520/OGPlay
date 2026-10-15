@@ -137,6 +137,8 @@ bool PrepareAndroidMediaVideo(DexVmAndroidContext& context, const std::uint32_t 
             std::make_shared<EncodedVideoSource>(media.source_data));
         if (!state.player) throw video::VideoPlayerError("video decoder returned no player");
         video::ValidateVideoMetadata(state.player->Metadata());
+    } catch (const video::VideoCodecUnsupportedError&) {
+        throw;  // callers record the missing codec per name
     } catch (const video::VideoPlayerError&) { return false; }
     state.media_player = true;
     state.display_view = media.display_view;
@@ -348,6 +350,9 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
             context->ui_tree.MarkLayoutDirty(*view_node);
         }
         GuestLog(call, core::LogLevel::info, "VideoView: local video prepared; callback pending");
+    } catch (const video::VideoCodecUnsupportedError& error) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
+        throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
     } catch (const video::VideoPlayerError& error) {
         throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
     }
@@ -823,6 +828,9 @@ std::optional<std::string> PumpAndroidAudioTracks(
             if (status == audio::EncodedMusicMixer::PrepareStatus::failed) {
                 try {
                     if (PrepareAndroidMediaVideo(context, handle)) continue;
+                } catch (const video::VideoCodecUnsupportedError& error) {
+                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
+                    if (auto* logger = vm.Log()) logger->Write(core::LogLevel::warn, "runtime.video.prepare", error.what());
                 } catch (const dexvm::VmJavaThrow& error) {
                     if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.media.video_prepare", 0);
                     if (auto* logger = vm.Log()) logger->Write(core::LogLevel::warn, "runtime.video.prepare", error.message);

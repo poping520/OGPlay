@@ -26,3 +26,7 @@
 [submodule "third_party/webview"]
 	path = third_party/webview
 	url = https://github.com/webview/webview.git
+[submodule "third_party/ffmpeg-prebuilt"]
+	path = third_party/ffmpeg-prebuilt
+	url = https://github.com/poping520/OGPlay-ffmpeg-prebuilt.git
+	shallow = true

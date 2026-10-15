@@ -21,6 +21,11 @@ set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuil
 set(OGPLAY_ANGLE_SDK_CONFIGURATION "release" CACHE STRING
     "ANGLE SDK configuration to consume (release or debug)")
 set_property(CACHE OGPLAY_ANGLE_SDK_CONFIGURATION PROPERTY STRINGS release debug)
+set(OGPLAY_ENABLE_FFMPEG "AUTO" CACHE STRING
+    "Link the prebuilt ogplay_ffmpeg SDK: AUTO (when this platform has a package), ON or OFF")
+set_property(CACHE OGPLAY_ENABLE_FFMPEG PROPERTY STRINGS AUTO ON OFF)
+set(OGPLAY_FFMPEG_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg-prebuilt"
+    CACHE PATH "Root of the platform-partitioned ogplay_ffmpeg prebuilt SDK")
 
 include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
@@ -56,6 +61,23 @@ function(ogplay_stage_angle_runtime target)
         add_custom_command(TARGET ${target} POST_BUILD
             ${_ogplay_angle_stage_commands}
         )
+    endif()
+endfunction()
+
+# Places the ogplay_ffmpeg runtime beside an executable; macOS resolves its
+# @rpath install name through @loader_path.
+function(ogplay_stage_ffmpeg_runtime target)
+    if(NOT OGPLAY_FFMPEG_FOUND)
+        return()
+    endif()
+    get_filename_component(_ogplay_ffmpeg_name "${OGPLAY_FFMPEG_RUNTIME}" NAME)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${OGPLAY_FFMPEG_RUNTIME}"
+            "$<TARGET_FILE_DIR:${target}>/${_ogplay_ffmpeg_name}"
+    )
+    if(APPLE)
+        set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "@loader_path")
     endif()
 endfunction()
 
@@ -175,13 +197,21 @@ ogplay_set_project_warnings(ogplay_audio)
 add_library(ogplay_video
     src/video/video_player.cpp
     src/video/fake_video_player.cpp
-    src/video/ffmpeg_loader.cpp
-    src/video/ffmpeg_video_player.cpp
     src/video/buffered_video_player.cpp
     src/video/rgba_canvas.cpp
 )
 add_library(OGPlay::Video ALIAS ogplay_video)
 target_link_libraries(ogplay_video PRIVATE OGPlay::Hal)
+if(OGPLAY_FFMPEG_FOUND)
+    target_sources(ogplay_video PRIVATE src/video/ffmpeg_video_player.cpp)
+    target_link_libraries(ogplay_video PRIVATE FFmpeg::FFmpeg)
+    target_compile_definitions(ogplay_video PUBLIC OGPLAY_HAS_FFMPEG=1)
+else()
+    target_sources(ogplay_video PRIVATE src/video/ffmpeg_disabled.cpp)
+    target_compile_definitions(ogplay_video
+        PUBLIC OGPLAY_HAS_FFMPEG=0
+        PRIVATE "OGPLAY_FFMPEG_MISSING_REASON=\"${OGPLAY_FFMPEG_MISSING_REASON}\"")
+endif()
 target_include_directories(ogplay_video PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -753,6 +783,7 @@ target_compile_definitions(ogplay PRIVATE
 )
 ogplay_set_project_warnings(ogplay)
 ogplay_stage_angle_runtime(ogplay)
+ogplay_stage_ffmpeg_runtime(ogplay)
 
 add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -818,6 +849,7 @@ if(OGPLAY_ENABLE_SDL3 AND WIN32)
     endif()
     ogplay_set_project_warnings(ogplay-gui)
     ogplay_stage_angle_runtime(ogplay-gui)
+    ogplay_stage_ffmpeg_runtime(ogplay-gui)
     install(TARGETS ogplay-gui
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         BUNDLE DESTINATION .)
@@ -1139,6 +1171,7 @@ if(OGPLAY_BUILD_TESTS)
     endif()
 
     ogplay_stage_angle_runtime(ogplay_tests)
+    ogplay_stage_ffmpeg_runtime(ogplay_tests)
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
     doctest_discover_tests(ogplay_tests

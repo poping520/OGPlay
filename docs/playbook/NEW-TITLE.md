@@ -69,7 +69,7 @@ handler。固定清单的来源与复验命令见 `tools/README.md`。
 ### 步 3 · survey 运行：一次收割全部真实命中
 
 ```bash
-ogplay run-apk <title>.apk --profiles-dir data/profiles-dexvm \
+ogplay-cli run-apk <title>.apk --profiles-dir data/profiles-dexvm \
   --exit-after-frames 120 --survey-gaps .local/<title>_survey.json
 ```
 
@@ -101,7 +101,7 @@ survey 模式下，未声明的平台类/方法会被合成为**中性桩**（0/
 ### 步 5 · 关闭 survey 复跑
 
 ```bash
-ogplay run-apk … --exit-after-frames 600      # 不带 --survey-gaps
+ogplay-cli run-apk … --exit-after-frames 600      # 不带 --survey-gaps
 ```
 
 只有关闭 survey 的同路径复现才能证明越过原首错；600 帧未触发目标路径不能替代复现。
@@ -153,7 +153,7 @@ ctest --preset dev -R "<affected-test>"
 
 ```bash
 cd build/dev
-./ogplay run-apk <title>.apk \
+./ogplay-cli run-apk <title>.apk \
   --profiles-dir ../../data/profiles-dexvm \
   --external-dir <该 title 的外部数据目录> \
   --exit-after-frames 3

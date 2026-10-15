@@ -1,5 +1,5 @@
-if(NOT DEFINED OGPLAY_CLI)
-    message(FATAL_ERROR "OGPLAY_CLI is required")
+if(NOT DEFINED OGPLAY_GUI)
+    message(FATAL_ERROR "OGPLAY_GUI is required")
 endif()
 
 set(_cases
@@ -14,7 +14,7 @@ set(_cases
 foreach(_case IN LISTS _cases)
     string(REPLACE "|" ";" _arguments "${_case}")
     execute_process(
-        COMMAND "${OGPLAY_CLI}" gui ${_arguments}
+        COMMAND "${OGPLAY_GUI}" ${_arguments}
         RESULT_VARIABLE _result
         OUTPUT_QUIET
         ERROR_QUIET)

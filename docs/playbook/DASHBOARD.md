@@ -7,13 +7,13 @@
 ## 1. 打开页面并保留取证入口
 
 已有构建可直接使用；静态制品缺失或过期时，按 [Web UI 构建](../../webui/README.md#构建)
-生成后运行 `cmake --build --preset windows-msvc --config Release --target ogplay ogplay_stage_data`。
+生成后运行 `cmake --build --preset windows-msvc --config Release --target ogplay-cli`。
 更新制品后重启会话，HTTP 服务不会热加载。无需启动 Vite/Node 开发服务器。
 
 在仓库根启动（把 `game.apk` 换成目标 APK）：
 
 ```powershell
-./build/windows-msvc/Release/ogplay.exe run-apk game.apk `
+./build/windows-msvc/Release/ogplay-cli.exe run-apk game.apk `
   --mcp --mcp-manual-step --diag --diag-dir .local/diagnostics `
   --diag-on-teardown-timeout 5
 ```
@@ -88,7 +88,7 @@ JSON 和同序号 TXT；超时/未装配会明确失败。该工具不推进帧�
 
 ```powershell
 $guestProcessId = 12345 # 替换为该会话的 process_id
-./build/windows-msvc/Release/ogplay.exe diag snapshot --pid $guestProcessId `
+./build/windows-msvc/Release/ogplay-cli.exe diag snapshot --pid $guestProcessId `
   --diag-dir .local/diagnostics
 ```
 

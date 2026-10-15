@@ -106,7 +106,7 @@ agent::ControlResponse GuiRpcService::GameSettingsRequest(std::string_view metho
         {"normal", GuiLaunchMode::normal}, {"preflight", GuiLaunchMode::preflight}, {"diagnostic", GuiLaunchMode::diagnostic}}) {
         const auto preview = writer.Object(), argv = writer.Array();
         try {
-            const auto plan = BuildLaunchPlan(cli_, store_.Root(), entry, global, mode);
+            const auto plan = BuildLaunchPlan(game_executable_, store_.Root(), entry, global, mode);
             for (const auto& arg : plan.argv) writer.Append(argv, writer.String(arg));
             writer.AddString(preview, "error", "");
         } catch (const std::exception& error) { writer.AddString(preview, "error", error.what()); }

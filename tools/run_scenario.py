@@ -730,7 +730,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
                         default=Path(__file__).parent.parent / "data/scenarios/scenario-result-v1.schema.json")
     parser.add_argument("--scenario", type=Path)
     parser.add_argument("--profiles", type=Path)
-    parser.add_argument("--ogplay", type=Path)
+    parser.add_argument("--ogplay-cli", type=Path)
     parser.add_argument("--fixture", action="append", default=[])
     parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--fresh", action="store_true",
@@ -948,14 +948,14 @@ def main(argv: Sequence[str]) -> int:
     if args.self_test:
         return self_test(args.result_schema)
     required = {name: getattr(args, name) for name in
-                ("scenario", "profiles", "ogplay", "evidence_dir")}
+                ("scenario", "profiles", "ogplay_cli", "evidence_dir")}
     missing = [name for name, value in required.items() if value is None]
     if missing:
         raise RunnerError("missing runner arguments: " + ", ".join(missing))
     validate_result_schema(args.result_schema)
     plan = load_plan(args.scenario.resolve(), args.profiles.resolve())
     fixtures = _parse_fixtures(args.fixture)
-    ogplay = args.ogplay.resolve()
+    ogplay = args.ogplay_cli.resolve()
     if not ogplay.is_file():
         raise RunnerError(f"OGPlay executable does not exist: {ogplay}")
     evidence = _prepare_evidence_dir(args.evidence_dir, args.fresh)

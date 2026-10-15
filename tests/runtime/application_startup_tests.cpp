@@ -288,7 +288,7 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
         if (!input.good()) throw std::runtime_error("missing frontend source");
         return std::string{std::istreambuf_iterator<char>(input), {}};
     };
-    const auto cli = read_source("/src/frontend/cli/run_apk.cpp");
+    const auto cli = read_source("/src/frontend/game/run_game.cpp");
     CHECK(cli.find("AndroidAppProcess::Create") != std::string::npos);
     CHECK(cli.find("SelectApkCompatibilityProfile") != std::string::npos);
     CHECK(cli.find("AndroidGuestCallSession::Start") == std::string::npos);

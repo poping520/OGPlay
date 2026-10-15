@@ -28,3 +28,5 @@ macOS `~/Library/Application Support/OGPlay`、Linux `$XDG_DATA_HOME/ogplay` 或
 `~/.local/share/ogplay`）；宿主环境未声明时返回空，由调用方明确报错而不是猜测。
 
 DVM-105：FillSecureRandom 循环调用 getrandom，处理 EINTR/短读，其余失败抛出。
+
+`HostExecutablePath` 返回宿主完整可执行路径，`HostExecutableDirectory` 由其父目录派生；共享库不作为宿主路径锚点。

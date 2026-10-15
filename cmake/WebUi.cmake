@@ -12,7 +12,7 @@ if(OGPLAY_BUILD_WEBUI)
 endif()
 
 # Runtime developers with GUI disabled do not need Node or WebView2.
-if(OGPLAY_ENABLE_SDL3 AND WIN32)
+if(OGPLAY_BUILD_GUI)
     if(NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/webview/core/include/webview/webview.h")
         message(FATAL_ERROR "Initialize the third_party/webview submodule")
     endif()

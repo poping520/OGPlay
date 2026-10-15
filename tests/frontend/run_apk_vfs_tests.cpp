@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "ogplay/audio/encoded_audio_stream.h"
-#include "../../src/frontend/cli/run_apk_vfs.h"
+#include "../../src/frontend/game/run_game_vfs.h"
 
 namespace {
 
@@ -180,6 +180,19 @@ ogplay::session::TitleProfile ArchiveProfile(
 }
 
 }  // namespace
+
+TEST_CASE("run-apk attaches a persistent sandbox with a UTF-8 host path") {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path / u8"存档 目录";
+    auto sandbox = ogplay::frontend::OpenSandbox(
+        {.directory = root}, "org.example.game", 1);
+    ogplay::runtime::VirtualFileSystem filesystem;
+    ogplay::session::TitleProfile profile;
+    ogplay::core::Logger logger;
+    CHECK_NOTHROW(ogplay::frontend::AttachSandbox(sandbox, profile, filesystem, logger));
+    CHECK(sandbox.root == root);
+    CHECK(sandbox.Describe().find("\xe5\xad\x98\xe6\xa1\xa3") != std::string::npos);
+}
 
 TEST_CASE("direct run-apk allocates and reuses an unambiguous installation") {
     TemporaryDirectory tree;

@@ -17,16 +17,16 @@ Windows 首次在仓库根运行 `./webui/prepare-sdk.ps1`，显式下载并校�
 也可配置 `-DOGPLAY_BUILD_WEBUI=ON` 后构建 `webui`，GUI 目标会先构建并校验制品。
 默认关闭该选项时，GUI 构建消费已有制品，缺失或哈希不符明确失败。
 
-`cmake --build --preset windows-msvc --config Release --target ogplay-gui ogplay_tests`
+`cmake --build --preset windows-msvc --config Release --target ogplay ogplay_tests`
 之后运行 `ctest --test-dir build/windows-msvc -C Release -R "^frontend.gui_" --output-on-failure`。
 
 ## 当前怎么用
 
-已构建后，双击 `build/windows-msvc/Release/ogplay-gui.exe` 打开启动器。
+已构建后，双击 `build/windows-msvc/Release/ogplay.exe` 打开启动器。
 也可以在仓库根指定独立游戏库：
 
 ```powershell
-./build/windows-msvc/Release/ogplay.exe gui --library-root .local/gui-library
+./build/windows-msvc/Release/ogplay.exe --library-root .local/gui-library
 ```
 
 1. 点击“导入 APK”选择单体 APK，查看分析结果并确认入库；需要外部数据包时选择对应目录。
@@ -41,7 +41,7 @@ GUI 页面依赖原生宿主 RPC，不能直接双击 `index.html` 作为完整�
 
 ## Dashboard
 
-构建后运行 `ogplay run-apk <apk> --mcp`，在浏览器打开终端输出的
+构建后运行 `ogplay-cli run-apk <apk> --mcp`，在浏览器打开终端输出的
 `http://127.0.0.1:15971/dash/`。自定义端口沿用 `--mcp-port`。
 页面只读；控制继续使用既有 MCP。无需启动 Node 服务或额外进程。
 

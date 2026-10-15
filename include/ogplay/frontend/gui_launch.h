@@ -29,7 +29,7 @@ enum class GuiLaunchMode { normal, preflight, diagnostic };
     const std::filesystem::path& library_root);
 
 [[nodiscard]] LaunchPlan BuildLaunchPlan(
-    const std::filesystem::path& cli_executable,
+    const std::filesystem::path& game_executable,
     const std::filesystem::path& library_root,
     const LibraryEntry& entry, const GuiConfig& config, GuiLaunchMode mode = GuiLaunchMode::normal);
 

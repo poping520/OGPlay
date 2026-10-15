@@ -10,6 +10,7 @@
 - [ADR-0014 · ANGLE 预编译 SDK 交付](#adr-0014)
 - [ADR-0015 · ANGLE 维护者工作区归属](#adr-0015)
 - [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)
+- [ADR-0137 · 共享应用库与桌面/CLI 双入口](#adr-0137)
 - [ADR-0073 · Windows 启动器 WebView 宿主边界](#adr-0073)
 
 <a id="adr-0005"></a>
@@ -262,3 +263,28 @@ Windows 采用 IFileOpenDialog，由 HAL 的独立 STA 线程托管，通过 fut
 不在 WebView RPC 回调中运行原生模态循环；模型不接触 Windows 类型。拖放通过有界分块
 传入本地快照，复用相同后台分析与入库任务；没有新增依赖。现有模型只支持单体 APK，
 XAPK/APKM/APKS 拆包与目录自动识别不在本工作单实现，入口明确报不支持。
+
+<a id="adr-0137"></a>
+
+## ADR-0137 · 共享应用库与桌面/CLI 双入口
+
+- 状态：Accepted
+- 日期：2026-10-15
+- Supersedes：ADR-0071 中独立 ogplay-gui/ogplay CLI 的入口命名与同目录 CLI 启动条款。
+
+### 决定
+
+`ogplay` 是桌面产品入口，默认 GUI，通过自身 `--run-game` 模式启动独立游戏进程；
+`ogplay-cli` 提供开发、自动化与诊断。共享 target `ogplaycore` 在 Windows 生成
+`ogplaycore.dll`，包含应用实现（包括 GUI 模块）并聚合内部静态库。
+两个 EXE 仅适配系统入口与 UTF-8 参数，通过两个显式 C ABI 入口调用共享库；不直接链接
+内核或 SDL，不导出内部 C++ 对象，也不承诺跨版本 ABI。共享库不在加载时启动应用资源。
+
+公共运行选项、校验和执行只有一份，GUI 只生成自身子进程的启动计划。GUI 与游戏继续
+保持进程隔离、GUI 退出不杀游戏、MCP/编辑器既有边界。产品运行不依赖 CLI 文件。
+Windows 完整交付；其他平台仅维护共享库和 CLI，GUI 宿主接入另行实施。不保留旧命令别名。
+
+### 后果
+
+EXE 与共享库必须同版本发布；内部静态库继续供单元测试使用，真实 EXE 的集成验证负责
+覆盖共享库边界。SDL 只链接到共享应用实现，避免 EXE/DLL 各带一份静态状态。

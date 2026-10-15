@@ -12,8 +12,8 @@ MCP 服务只在 `run-apk` 会话存活期间存在，**它不能启动游戏**�
 先起会话，Agent 再调工具：
 
 ```powershell
-cmake --build --preset windows-msvc --config Release --target ogplay
-build\windows-msvc\Release\ogplay.exe run-apk <apk> --mcp
+cmake --build --preset windows-msvc --config Release --target ogplay-cli
+build\windows-msvc\Release\ogplay-cli.exe run-apk <apk> --mcp
 ```
 
 等终端打印 `OGPlay: MCP ready at http://127.0.0.1:15971/mcp` 再发第一个工具调用。

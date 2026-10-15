@@ -75,7 +75,7 @@ shutdown，超时才清理自己启动的子进程。
 ```text
 python tools/run_scenario.py \
   --scenario data/scenarios/<id>.scenario.toml \
-  --profiles data/profiles --ogplay build/dev/ogplay \
+  --profiles data/profiles --ogplay-cli build/dev/ogplay-cli \
   --fixture <logical-id>=<host-path> \
   --evidence-dir <new-output-directory>
 ```

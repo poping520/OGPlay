@@ -9,8 +9,8 @@
 
 - 目标：一个现代、可维护的桌面启动器：游戏库管理、导入、启动、每游戏设置、全局设置、
   打开沙盒/日志目录、进入运行时 Dashboard。
-- 边界（沿用 `frontend/gui/MODULE.md` 契约）：GUI 进程不运行 guest；只装配同目录
-  `run-apk` 子进程；不解析自由文本日志判断兼容性；游戏身份只来自 Profile；GUI 退出不杀游戏。
+- 边界（沿用 `frontend/gui/MODULE.md` 契约）：GUI 进程不运行 guest；只装配当前 EXE 的
+  `--run-game` 子进程（ADR-0137）；不解析自由文本日志判断兼容性；游戏身份只来自 Profile；GUI 退出不杀游戏。
 - 所有"预留"设置项在 UI 上显式标记 `预留 · 运行时未实现`，落盘但不传给 `run-apk`；
   运行时能力落地后再打开对应传参，与 `capabilities.toml` 的状态对齐。
 
@@ -33,7 +33,7 @@ ImGui 是即时模式调试 UI：无原生文本渲染栅格/字距、无 CSS �
 
 ### 决定：A
 
-- **宿主**：C++ `ogplay-gui`，用 [webview/webview](https://github.com/webview/webview)（MIT，单头文件，
+- **宿主**：C++ `ogplay`，用 [webview/webview](https://github.com/webview/webview)（MIT，单头文件，
   封装 WebView2/WKWebView/WebKitGTK）创建一个窗口并 `bind()` 一个 `rpc(string)` 入口；
   消息体是 JSON-RPC 2.0，复用 `agent::JsonRpcAdapter` 与 `core::JsonWriter`。
 - **模型层保留**：`LibraryStore`、`LoadGuiConfig/SaveGuiConfig`、`ExtractApkApplicationVisuals`、
@@ -52,7 +52,7 @@ ImGui 是即时模式调试 UI：无原生文本渲染栅格/字距、无 CSS �
 ## 3. 信息架构
 
 ```
-ogplay-gui
+ogplay
 ├─ 游戏库（默认）          网格 / 列表；搜索、排序、筛选；右侧详情抽屉
 │   ├─ 导入向导（模态）     分析 → 摘要（身份、Profile、数据包）→ 入库
 │   └─ 游戏设置（全屏页）   9 个 Tab，覆盖全局默认

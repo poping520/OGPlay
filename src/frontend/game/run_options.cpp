@@ -1,8 +1,8 @@
-#include "run_game.h"
+#include "ogplay/app/game_run.h"
 #include <charconv>
 #include <stdexcept>
 
-namespace ogplay::frontend {
+namespace ogplay::app {
 namespace {
 std::filesystem::path Utf8Path(std::string_view text) {
     return std::filesystem::path(std::u8string_view(
@@ -38,13 +38,13 @@ std::uint16_t ParseMcpPort(const std::string_view text, const std::string_view o
     return static_cast<std::uint16_t>(value);
 }
 
-runtime::dexvm::InterpreterBackend ParseDexVmInterpreter(
+InterpreterBackend ParseDexVmInterpreter(
     const std::string_view text) {
     if (text == "switch") {
-        return runtime::dexvm::InterpreterBackend::switch_dispatch;
+        return InterpreterBackend::switch_dispatch;
     }
     if (text == "threaded") {
-        return runtime::dexvm::InterpreterBackend::threaded;
+        return InterpreterBackend::threaded;
     }
     throw std::invalid_argument(
         "--dexvm-interpreter requires switch or threaded");
@@ -52,7 +52,7 @@ runtime::dexvm::InterpreterBackend ParseDexVmInterpreter(
 
 }  // namespace
 
-GameRunOptions ParseGameRunOptions(std::span<const std::string_view> args) {
+GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
     if (args.empty()) throw std::invalid_argument("run-apk requires <apk>");
     GameRunOptions options;
     options.apk_path = Utf8Path(args.front());
@@ -172,6 +172,8 @@ GameRunOptions ParseGameRunOptions(std::span<const std::string_view> args) {
             options.sandbox_directory = Utf8Path(value);
         } else if (option == "--ephemeral-sandbox") {
             options.ephemeral_sandbox = true;
+        } else if (option == "--library-root" && index + 1 < args.size()) {
+            options.library_root = Utf8Path(args[++index]);
         } else if (option == "--installation-id" && index + 1 < args.size()) {
             options.installation_id = args[++index];
         } else if (option == "--preflight") {
@@ -226,7 +228,66 @@ GameRunOptions ParseGameRunOptions(std::span<const std::string_view> args) {
     }
     if (default_mcp) options.mcp_port = kDefaultMcpPort;
 
+    ValidateGameRunOptions(options);
     return options;
 }
 
-}  // namespace ogplay::frontend
+void ValidateGameRunOptions(const GameRunOptions& o) {
+    if (o.apk_path.empty()) throw std::invalid_argument("run-apk requires <apk>");
+    if (o.supersample_factor < 1 || o.supersample_factor > 4) throw std::invalid_argument("--supersample requires 1..4");
+    if (o.cpu_config.cores < 1 || o.cpu_config.cores > 32 || o.cpu_config.frequency_mhz < 1 || o.cpu_config.frequency_mhz > 10000 || o.cpu_config.execution.max_mticks_per_second > 10000)
+        throw std::invalid_argument("invalid guest CPU configuration");
+    if ((o.mcp_port && *o.mcp_port == 0) || (o.key_editor_port && *o.key_editor_port == 0)) throw std::invalid_argument("port requires 1..65535");
+    if (o.ephemeral_sandbox && o.sandbox_directory) throw std::invalid_argument("--ephemeral-sandbox and --sandbox-dir cannot be combined");
+    if (o.external_guest_directory && !o.external_directory) throw std::invalid_argument("--external-guest-dir requires --external-dir");
+    if (o.preflight && (o.mcp_port || o.key_editor_port || o.mcp_manual_step)) throw std::invalid_argument("transport cannot be combined with --preflight");
+    if (o.mcp_manual_step && !o.mcp_port) throw std::invalid_argument("--mcp-manual-step requires --mcp or --mcp-port");
+    if (o.key_editor_port && o.mcp_port) throw std::invalid_argument("--key-editor-port cannot be combined with MCP");
+    if (o.exit_after_frames && *o.exit_after_frames == 0) throw std::invalid_argument("--exit-after-frames requires a positive integer");
+    if (o.diagnostic_teardown_timeout && (o.diagnostic_teardown_timeout->count() <= 0 || o.diagnostic_teardown_timeout->count() > 86400000 || o.diagnostic_teardown_timeout->count() % 1000 != 0)) throw std::invalid_argument("diagnostic timeout requires whole seconds in 1..86400");
+    if (o.diagnostic_directory.empty()) throw std::invalid_argument("--diag-dir requires a non-empty directory");
+    if (o.diagnostic_teardown_timeout && !o.diagnostics_enabled) throw std::invalid_argument("diagnostic timeout requires diagnostics");
+    if (o.dexvm_interpreter && *o.dexvm_interpreter != InterpreterBackend::switch_dispatch && *o.dexvm_interpreter != InterpreterBackend::threaded) throw std::invalid_argument("invalid interpreter");
+    for (const auto* path : {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory, &o.input_config_path, &o.library_root})
+        if (*path && (*path)->empty()) throw std::invalid_argument("option requires a non-empty path");
+    if (o.external_guest_directory && o.external_guest_directory->empty()) throw std::invalid_argument("external guest directory is empty");
+    if (o.installation_id && o.installation_id->empty()) throw std::invalid_argument("installation id is empty");
+    if (o.library_root && !o.installation_id) throw std::invalid_argument("--library-root requires --installation-id");
+}
+
+std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
+    ValidateGameRunOptions(o);
+    const auto path = [](const std::filesystem::path& value) {
+        auto bytes = value.generic_u8string();
+        return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    };
+    std::vector<std::string> args{path(o.apk_path)};
+    const auto add = [&](std::string key, std::string value) { args.push_back(std::move(key)); args.push_back(std::move(value)); };
+    const auto optional_path = [&](const char* key, const auto& value) { if (value) add(key, path(*value)); };
+    optional_path("--profiles-dir", o.profiles_directory);
+    optional_path("--external-dir", o.external_directory);
+    if (o.external_guest_directory) add("--external-guest-dir", *o.external_guest_directory);
+    optional_path("--obb", o.obb_path);
+    if (o.exit_after_frames) add("--exit-after-frames", std::to_string(*o.exit_after_frames));
+    add("--cpu-cores", std::to_string(o.cpu_config.cores));
+    add("--cpu-frequency-mhz", std::to_string(o.cpu_config.frequency_mhz));
+    if (o.cpu_config.execution.limit_parallelism) args.emplace_back("--cpu-limit-parallelism");
+    if (o.cpu_config.execution.max_mticks_per_second) add("--cpu-max-mticks-per-second", std::to_string(o.cpu_config.execution.max_mticks_per_second));
+    if (o.supersample_factor != 1) add("--supersample", std::to_string(o.supersample_factor));
+    if (o.mcp_port) add("--mcp-port", std::to_string(*o.mcp_port));
+    if (o.key_editor_port) add("--key-editor-port", std::to_string(*o.key_editor_port));
+    if (o.mcp_manual_step) args.emplace_back("--mcp-manual-step");
+    if (o.diagnostics_enabled) { args.emplace_back("--diag"); add("--diag-dir", path(o.diagnostic_directory)); }
+    else if (o.diagnostic_directory != std::filesystem::path(".local/diagnostics")) throw std::invalid_argument("custom diagnostic directory requires diagnostics");
+    if (o.diagnostic_teardown_timeout) add("--diag-on-teardown-timeout", std::to_string(o.diagnostic_teardown_timeout->count() / 1000));
+    if (o.dexvm_interpreter) add("--dexvm-interpreter", *o.dexvm_interpreter == InterpreterBackend::threaded ? "threaded" : "switch");
+    optional_path("--sandbox-dir", o.sandbox_directory);
+    optional_path("--library-root", o.library_root);
+    if (o.installation_id) add("--installation-id", *o.installation_id);
+    if (o.ephemeral_sandbox) args.emplace_back("--ephemeral-sandbox");
+    if (o.preflight) args.emplace_back("--preflight");
+    optional_path("--input-config", o.input_config_path);
+    optional_path("--survey-gaps", o.survey_gaps_output);
+    return args;
+}
+}  // namespace ogplay::app

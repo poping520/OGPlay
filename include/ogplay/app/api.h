@@ -10,8 +10,8 @@ extern "C" {
 
 // UTF-8 arguments are borrowed for the duration of this blocking call.
 // No C++ exceptions or owned objects cross this same-build application boundary.
-OGPLAYCORE_EXPORT int ogplay_desktop_main(int argc, const char* const argv[]) OGPLAYCORE_NOEXCEPT;
-OGPLAYCORE_EXPORT int ogplay_cli_main(int argc, const char* const argv[]) OGPLAYCORE_NOEXCEPT;
+OGPLAYCORE_API int ogplay_desktop_main(int argc, const char* const argv[]) OGPLAYCORE_NOEXCEPT;
+OGPLAYCORE_API int ogplay_cli_main(int argc, const char* const argv[]) OGPLAYCORE_NOEXCEPT;
 
 #ifdef __cplusplus
 }

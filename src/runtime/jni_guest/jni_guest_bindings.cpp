@@ -91,6 +91,51 @@ namespace {
            "  cause:\n    " + std::string(cause);
 }
 
+// FatalError is already terminal: retain every readable byte without letting a
+// bad pointer or encoding replace the original fatal diagnostic.
+[[nodiscard]] std::string FatalErrorDiagnostic(
+    memory::AddressSpace& space, const JniGuestCallFrame& frame) {
+    constexpr std::size_t kScanLimit = 4096U;
+    constexpr std::string_view kHex = "0123456789abcdef";
+    const memory::GuestAddress pointer{frame.registers[1]};
+    std::string message;
+    std::string status = pointer.IsNull() ? "null_pointer" : "scan_limit_reached";
+    std::string read_error;
+    std::size_t scanned{};
+    if (!pointer.IsNull()) {
+        try {
+            for (std::size_t offset = 0; offset < kScanLimit; ++offset) {
+                const auto byte = ReadGuest8(space, pointer.Add(offset), frame.thread_id);
+                ++scanned;
+                if (byte == 0U) {
+                    status = "complete";
+                    break;
+                }
+                if (byte == '\\' || byte == '"') {
+                    message += '\\';
+                    message += static_cast<char>(byte);
+                } else if (byte >= 0x20U && byte <= 0x7eU) {
+                    message += static_cast<char>(byte);
+                } else {
+                    message += "\\x";
+                    message += kHex[byte >> 4U];
+                    message += kHex[byte & 0xfU];
+                }
+            }
+        } catch (const memory::MemoryFault& error) {
+            status = "memory_fault";
+            read_error = "\n    read_error=" + std::string(memory::ToString(error.Reason())) +
+                         " at " + Hex32(error.Address().Value());
+        } catch (const std::overflow_error&) {
+            status = "address_overflow";
+        }
+    }
+    return JniCallFailure("FatalError", frame,
+        "JNI FatalError:\n    message=\"" + message + "\"\n    message_pointer=" +
+        Hex32(pointer.Value()) + "\n    message_status=" + status +
+        "\n    scanned_bytes=" + std::to_string(scanned) + read_error);
+}
+
 void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
                            JniGuestBindingContext& context) {
     auto& nio = *context.nio;
@@ -263,6 +308,11 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         [&environment](const JniGuestCallFrame& frame) {
             environment.ExceptionDescribe(frame.thread_id);
             return JniGuestCallResult{};
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("FatalError"),
+        [&address_space](const JniGuestCallFrame& frame) -> JniGuestCallResult {
+            throw JniGuestBindingError(FatalErrorDiagnostic(address_space, frame));
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("PushLocalFrame"),

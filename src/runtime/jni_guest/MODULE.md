@@ -37,12 +37,16 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JIT 后必须由 dispatcher 恢复原 exception type/message，不得退化为 generic fault。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
-  aggregate contract 以精确 slot 集合等价(基础 219 个 JNIEnv、注入 NIO 后 222 个，及
+  aggregate contract 以精确 slot 集合等价(基础 220 个 JNIEnv、注入 NIO 后 223 个，及
   4 个 JavaVM)机器验证，数量本身只是辅助诊断；DVM-82 的 DirectByteBuffer 三槽仅在
-  显式注入共享 `NioRuntime` 时绑定；Critical string、FatalError 与
+  显式注入共享 `NioRuntime` 时绑定；Critical string 与
   DestroyJavaVM 属于显式 expected-unbound 清单,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
   VM 状态变更前预检;非空 attach arguments 在实现其结构前明确失败。
+- FatalError 读取 r1 的 guest C 字符串，最多扫描 4096 字节（含终止符）；引号、反斜杠及
+  非打印 ASCII 字节转义，保留原始字节。空指针、扫描上限、内存故障和地址溢出均保留
+  可读前缀及读取状态，附 guest thread、LR/SP、寄存器与消息指针后沿现有宿主致命错误链
+  退出，不返回 guest、不创建 Java throwable、不改变已有 pending exception。
 - From/ToReflectedMethod/Field 四槽只解码 A32 引用、成员 ID 与 static 标志，委托
   JniEnvironment 的显式反射 hooks；Method 同时支持 Constructor。无 VM 后端时明确失败，
   不创建假 ID 或空 wrapper。返回 local reference 的发布由 VM owner 在执行锁内完成。

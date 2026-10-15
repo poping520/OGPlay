@@ -10,6 +10,8 @@
 - API 19 `libdl.so` 的公开入口本质上依赖进程 linker；`LibdlOverrideModule` 负责 guest
   字符串/指针搬运和逐 guest thread 的 `dlerror` 消费式缓冲，只通过窄 hooks 请求上层
   namespace 打开、查符号、关闭 handle，以及按 PC 查询 ARM exidx，不反向依赖 integration。
+  dlopen 只将 loader 的 LinkError/ElfError 转换为空句柄及 dlerror；构造器退出、取消与 CPU
+  故障继续传播，不被通用 std::exception 捕获降级为可恢复链接失败。
 - `BionicHleSymbolProvider` 的 `Lookup` 保持 (library, symbol) 精确 scope；`LookupAny`
   只服务 `RTLD_DEFAULT` 全进程语义，按 catalog 顺序返回首个命中，不做版本或弱符号裁决。
 

@@ -339,9 +339,14 @@ public:
     [[nodiscard]] std::size_t LoadedGuestModuleCount() const noexcept;
     [[nodiscard]] std::size_t AttachedJniThreadCount() const;
     [[nodiscard]] bool HasLoadedModule(std::string_view name) const;
+    // Install once before application execution. The callback owns its source
+    // snapshot and performs ELF loading only, without ClassLoader/JNI_OnLoad.
+    void SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
+        std::string_view, std::uint64_t)> handler);
     [[nodiscard]] AndroidGuestApplicationLoad LoadApplicationModules(
         std::string_view root_module,
-        std::span<const AndroidGuestApplicationModuleSource> modules);
+        std::span<const AndroidGuestApplicationModuleSource> modules,
+        std::uint64_t thread_id = 1U);
     [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(
         std::string_view root_module);
     [[nodiscard]] std::optional<AndroidGuestMovieRequest>

@@ -893,6 +893,7 @@ public:
                 static_cast<void>(Invoke(
                     {call.address, {}, {}}));
             });
+        constructors_started_.insert(guest_load_order_.begin(), guest_load_order_.end());
         running_ = true;
         Progress("guest-initializers-complete");
         StartOpenSlesCallbackThread();
@@ -1322,6 +1323,7 @@ public:
     std::uint32_t DynamicOpen(const std::string_view path,
                               const std::uint32_t flags,
                               const std::uint64_t thread_id) {
+        std::scoped_lock load_lock(native_load_mutex_);
         constexpr std::uint32_t kSupportedFlags = 0x3U;
         if ((flags & ~kSupportedFlags) != 0U) {
             throw loader::LinkError("dlopen flags are not supported");
@@ -1331,6 +1333,30 @@ public:
         if (path.empty()) return kRtldDefault;
         auto library =
             CanonicalDynamicLibrary(DynamicLibraryName(path));
+        // Source callbacks and guest constructors can recursively enter dlopen.
+        // The operation gate is recursive; the metadata lock never spans them.
+        bool needs_load{};
+        {
+            std::scoped_lock lock(dynamic_link_mutex_);
+            needs_load = !HasLoadedModuleLocked(library) &&
+                         boundary_.Symbols().Exports(library).empty();
+        }
+        if (needs_load && native_library_load_) {
+            const auto loaded = native_library_load_(path, thread_id);
+            std::scoped_lock lock(dynamic_link_mutex_);
+            const auto& root = loaded_.link_namespace.modules.at(loaded.root_module_index);
+            library = root.dynamic.soname.value_or(root.name);
+        }
+        std::vector<std::string> initialized;
+        std::optional<std::size_t> root_index;
+        {
+            std::scoped_lock lock(dynamic_link_mutex_);
+            for (std::size_t index = 0; index < loaded_.link_namespace.modules.size(); ++index) {
+                const auto& item = loaded_.link_namespace.modules[index];
+                if (item.name == library || item.dynamic.soname == library) { root_index = index; break; }
+            }
+        }
+        if (root_index) InitializeDynamicModule(*root_index, thread_id, initialized);
         std::scoped_lock lock(dynamic_link_mutex_);
         const auto module = std::ranges::find_if(loaded_.link_namespace.modules,
             [&](const loader::Elf32LinkModule& item) {
@@ -2174,9 +2200,66 @@ public:
         std::scoped_lock lock(dynamic_link_mutex_);
         return HasLoadedModuleLocked(name);
     }
+    void SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
+        std::string_view, std::uint64_t)> handler) {
+        std::scoped_lock load_lock(native_load_mutex_);
+        if (!handler || native_library_load_)
+            throw std::logic_error("native library source handler must be installed exactly once");
+        native_library_load_ = std::move(handler);
+    }
+    void InitializeDynamicModule(const std::size_t index, const std::uint64_t thread_id,
+                                 std::vector<std::string>& initialized) {
+        if (const auto failed = constructor_failures_.find(index); failed != constructor_failures_.end())
+            std::rethrow_exception(failed->second);
+        if (!constructors_started_.insert(index).second) return;
+        try {
+            std::vector<std::size_t> dependencies;
+            std::string name;
+            std::optional<GuestLifecycleModule> lifecycle_module;
+            {
+                std::scoped_lock lock(dynamic_link_mutex_);
+                const auto& module = loaded_.link_namespace.modules.at(index);
+                name = module.name;
+                for (const auto& needed : module.dynamic.needed) {
+                    const auto dependency = loader::ExtendElf32LinkNamespace(loaded_.link_namespace, needed, {}).scope.root_module;
+                    dependencies.push_back(dependency);
+                }
+                for (const auto& item : lifecycle_modules_)
+                    if (item.module_index == index) { lifecycle_module = item; break; }
+            }
+            for (const auto dependency : dependencies) InitializeDynamicModule(dependency, thread_id, initialized);
+            if (lifecycle_module) {
+                // Copy the lifecycle record before invoking guest: recursive loads
+                // can grow and reallocate the process lifecycle vectors.
+                const std::array modules{*lifecycle_module};
+                const std::array order{index};
+                const auto plan = BuildGuestInitializationPlan(modules, order);
+                ExecuteGuestLifecycle(plan, [this, thread_id](const GuestLifecycleCall& call) {
+                    A32GuestCallFrame frame{call.address, {}, {}};
+                    frame.thread_id = thread_id;
+                    static_cast<void>(Invoke(frame));
+                });
+                std::scoped_lock lock(dynamic_link_mutex_);
+                guest_load_order_.push_back(index);
+                initialized.push_back(name);
+            }
+        } catch (...) {
+            // Guest constructors can have escaped pointers/threads/side effects.
+            // Preserve the original fault and never retry them as fresh loads.
+            constructor_failures_[index] = std::current_exception();
+            throw;
+        }
+    }
     AndroidGuestApplicationLoad LoadApplicationModules(
         const std::string_view root_module,
-        const std::span<const AndroidGuestApplicationModuleSource> sources) {
+        const std::span<const AndroidGuestApplicationModuleSource> sources,
+        const std::uint64_t thread_id) {
+        // Outside an active guest call, admit the root CPU before taking the
+        // linker operation gate, matching Invoke -> dlopen lock order.
+        std::unique_lock<std::recursive_mutex> root_call_lock;
+        if (thread_id == kRootThreadId && !active_guest_calls.contains(this))
+            root_call_lock = std::unique_lock<std::recursive_mutex>(guest_call_mutex_);
+        std::scoped_lock load_lock(native_load_mutex_);
         if (cleanup_requested_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("new guest module rejected during teardown");
         if (!running_ || root_module.empty()) {
@@ -2185,7 +2268,6 @@ public:
         }
 
         loader::Elf32LoadedModuleExtension extension;
-        std::vector<std::size_t> initialization_order;
         std::vector<std::string> initialization_names;
         std::size_t root_module_index{};
         {
@@ -2218,18 +2300,6 @@ public:
                     {namespace_index, inputs[index].load_bias,
                      extension.modules[index].lifecycle});
             }
-            for (const auto namespace_index :
-                 extension.link_extension.scope.load_order) {
-                if (namespace_index < old_namespace_size ||
-                    namespace_index >= old_namespace_size + inputs.size()) {
-                    continue;
-                }
-                initialization_order.push_back(namespace_index);
-                initialization_names.push_back(
-                    extension.link_extension.link_namespace
-                        .modules[namespace_index]
-                        .name);
-            }
             loaded_.link_namespace =
                 extension.link_extension.link_namespace;
             dynamic_modules_.insert(
@@ -2239,23 +2309,7 @@ public:
             application_module_count_ += inputs.size();
         }
 
-        for (const auto namespace_index : initialization_order) {
-            const std::array one{namespace_index};
-            const auto plan = BuildGuestInitializationPlan(
-                lifecycle_modules_, one);
-            try {
-                ExecuteGuestLifecycle(
-                    plan, [this](const GuestLifecycleCall& call) {
-                        static_cast<void>(Invoke({call.address, {}, {}}));
-                    });
-            } catch (const std::exception& error) {
-                throw AndroidGuestProcessError(
-                    "guest constructor failed: " +
-                    std::string(error.what()));
-            }
-            std::scoped_lock lock(dynamic_link_mutex_);
-            guest_load_order_.push_back(namespace_index);
-        }
+        InitializeDynamicModule(root_module_index, thread_id, initialization_names);
         return {root_module_index, std::move(initialization_names)};
     }
     std::optional<std::uint32_t> InitializeExplicitJniLibrary(
@@ -2481,6 +2535,10 @@ private:
     bool jni_library_initialized_{};
     bool running_{};
     mutable std::mutex dynamic_link_mutex_;
+    std::recursive_mutex native_load_mutex_;
+    std::function<AndroidGuestApplicationLoad(std::string_view, std::uint64_t)> native_library_load_;
+    std::set<std::size_t> constructors_started_;
+    std::map<std::size_t, std::exception_ptr> constructor_failures_;
 
 public:
     [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
@@ -2698,11 +2756,22 @@ std::size_t AndroidGuestProcess::AttachedJniThreadCount() const { return impl_->
 bool AndroidGuestProcess::HasLoadedModule(const std::string_view name) const {
     return impl_->HasLoadedModule(name);
 }
+void AndroidGuestProcess::SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
+    std::string_view, std::uint64_t)> handler) {
+    impl_->SetNativeLibraryLoadHandler(std::move(handler));
+}
 AndroidGuestApplicationLoad AndroidGuestProcess::LoadApplicationModules(
     const std::string_view root_module,
-    const std::span<const AndroidGuestApplicationModuleSource> modules) {
+    const std::span<const AndroidGuestApplicationModuleSource> modules,
+    const std::uint64_t thread_id) {
     try {
-        return impl_->LoadApplicationModules(root_module, modules);
+        return impl_->LoadApplicationModules(root_module, modules, thread_id);
+    } catch (const loader::LinkError&) {
+        throw;
+    } catch (const loader::ElfError&) {
+        throw;
+    } catch (const memory::MemoryFault&) {
+        throw;
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {

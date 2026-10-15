@@ -137,7 +137,7 @@ int Truncate(sqlite3_file *b, sqlite3_int64 size) {
       injected != SQLITE_OK)
     return injected;
   try {
-    f->context->vfs->Truncate(f->descriptor, size);
+    f->context->vfs->Truncate(f->descriptor, static_cast<std::uint64_t>(size));
     return SQLITE_OK;
   } catch (const VfsError &e) {
     return MapError(e.ErrorNumber());
@@ -223,9 +223,11 @@ int Control(sqlite3_file *b, int op, void *out) {
 }
 int Sector(sqlite3_file *) { return 4096; }
 int Characteristics(sqlite3_file *) { return 0; }
+// Version 1: the shared-memory and mmap entries (v2/v3) stay null.
 constexpr sqlite3_io_methods methods{
     1,    Close,  Read,     Write,   Truncate, Sync,           Size,
-    Lock, Unlock, Reserved, Control, Sector,   Characteristics};
+    Lock, Unlock, Reserved, Control, Sector,   Characteristics,
+    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
 int VfsOpen(sqlite3_vfs *v, const char *name, sqlite3_file *out, int flags,
             int *out_flags) {
   auto *c = static_cast<Context *>(v->pAppData);
@@ -378,7 +380,12 @@ SqliteVfs::SqliteVfs(VirtualFileSystem &vfs, std::string path,
                 Random,
                 Sleep,
                 CurrentTime,
-                LastError};
+                LastError,
+                // Version 1: v2/v3 entries stay null.
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr};
   if (sqlite3_vfs_register(&impl_->api, 0) != SQLITE_OK)
     throw std::runtime_error("SQLite VFS registration failed");
 }

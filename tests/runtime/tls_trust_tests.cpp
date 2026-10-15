@@ -61,6 +61,13 @@ using HostSocket = int;
 constexpr HostSocket kInvalidSocket = -1;
 #endif
 
+// Winsock send/recv take an int length; POSIX takes size_t.
+#ifdef _WIN32
+using SocketLength = int;
+#else
+using SocketLength = std::size_t;
+#endif
+
 [[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(const std::string& name) {
     const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
@@ -124,7 +131,7 @@ public:
     void Send(std::uint64_t channel, std::span<const std::byte> bytes) override {
         auto socket = sockets_.at(channel);
         const auto sent = ::send(socket, reinterpret_cast<const char*>(bytes.data()),
-                                 static_cast<int>(bytes.size()), 0);
+                                 static_cast<SocketLength>(bytes.size()), 0);
         REQUIRE(sent == static_cast<int>(bytes.size()));
     }
     std::vector<std::byte> Receive(std::uint64_t channel, std::size_t maximum) override {
@@ -148,7 +155,7 @@ public:
         }
         std::vector<std::byte> buffer(maximum);
         const auto received = ::recv(socket, reinterpret_cast<char*>(buffer.data()),
-                                     static_cast<int>(buffer.size()), 0);
+                                     static_cast<SocketLength>(buffer.size()), 0);
         if (received <= 0) return {};
         buffer.resize(static_cast<std::size_t>(received));
         return buffer;

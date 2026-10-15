@@ -4,9 +4,9 @@ namespace ogplay::frontend {
 struct GuiSettingDefinition {
     std::string key, group, label;
     GuiSettingValue initial;
-    std::vector<std::string> choices;
+    std::vector<std::string> choices{};
     std::uint32_t minimum{}, maximum{};
-    std::string pending;
+    std::string pending{};
     bool directory{};
 };
 [[nodiscard]] const std::vector<GuiSettingDefinition>& GuiSettings();

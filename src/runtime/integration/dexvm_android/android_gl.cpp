@@ -655,7 +655,6 @@ dx::IntrinsicHandler EglGetConfigAttribHandler(const Context& context) {
             LatchEglError(call, context, kBadParameter); return Bool(false);
         }
         const auto attribute = call.arguments[2].AsInt();
-        const auto config = call.arguments[1].ref;
         if (context->session != nullptr) {
             const auto result = WithIntArray(call, context, output, true,
                 [&](const std::uint32_t output) {
@@ -1059,7 +1058,7 @@ dx::IntrinsicHandler EglQueryContextHandler(const Context& context) {
             LatchEglError(call, context, kBadAttribute);
             return Bool(false);
         }
-        SetIntElement(call, output, 0, found->second);
+        SetIntElement(call, output, 0, static_cast<std::int32_t>(found->second));
         return Bool(true);
     };
 }
@@ -1279,7 +1278,7 @@ void SetJavaIntOutput(dx::IntrinsicContext& call, const dx::VmObjectRef output,
                                   "GLES IntBuffer has no remaining element"};
         }
         call.vm.NIO().PutScalar(identity, dx::NioElementKind::int_value,
-                                (snapshot.position + offset) * 4, value);
+                                (snapshot.position + offset) * 4, static_cast<std::uint64_t>(value));
         return;
     }
     const auto length = call.vm.Model().ArrayLength(output);
@@ -1631,7 +1630,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                 for (std::int32_t element = offset; element < length; ++element) {
                     const auto bits = call.vm.Model().GetPrimitiveElement(value.ref, element);
                     for (std::uint32_t byte = 0; byte < size; ++byte) {
-                        bytes[(element - offset) * size + byte] =
+                        bytes[static_cast<std::size_t>(element - offset) * size + byte] =
                             static_cast<std::byte>(bits >> (byte * 8U));
                     }
                 }
@@ -1649,7 +1648,7 @@ dx::IntrinsicHandler JavaGlesHandler(const Context& context,
                         for (std::uint32_t byte = 0; byte < size; ++byte) {
                             bits |= static_cast<std::uint64_t>(
                                 std::to_integer<std::uint8_t>(
-                                    output[(element - offset) * size + byte])) <<
+                                    output[static_cast<std::size_t>(element - offset) * size + byte])) <<
                                 (byte * 8U);
                         }
                         call.vm.Model().SetPrimitiveElement(value.ref, element, bits);

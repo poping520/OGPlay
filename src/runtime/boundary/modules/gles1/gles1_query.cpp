@@ -23,8 +23,6 @@ namespace ogplay::runtime::detail {
 namespace {
 
 constexpr std::uint32_t kTexture0 = 0x84C0U;
-constexpr std::uint32_t kArrayBuffer = 0x8892U;
-constexpr std::uint32_t kElementArrayBuffer = 0x8893U;
 [[nodiscard]] bool IsScalarTextureEnvironmentPname(
     const std::uint32_t pname) noexcept {
     return pname == kGles1TextureEnvironmentMode ||

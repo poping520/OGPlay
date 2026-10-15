@@ -362,7 +362,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     static_cast<std::int64_t>(offset) + count >
                         static_cast<std::int64_t>(text.size()))
                     throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "write range"};
-                return write(c, std::u16string_view(text).substr(offset, count));
+                return write(c, std::u16string_view(text).substr(
+                    static_cast<std::size_t>(offset), static_cast<std::size_t>(count)));
             });
             b.OverrideMethod("flush", "()V", [target, closed](IntrinsicContext& c) {
                 if (IntrinsicCall(c).GetInt(closed))

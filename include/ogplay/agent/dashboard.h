@@ -47,10 +47,10 @@ private:
         std::int64_t result{};
         std::string detail;
         std::uint64_t source_detail{}; // Native method_id or DexVM tick.
-        std::optional<std::int32_t> fd;
-        std::optional<std::uint64_t> node_id;
-        std::string capability;
-        std::optional<std::uint64_t> player, observed_at;
+        std::optional<std::int32_t> fd{};
+        std::optional<std::uint64_t> node_id{};
+        std::string capability{};
+        std::optional<std::uint64_t> player{}, observed_at{};
         std::uint64_t delta{};
     };
     void CollectEvents(const runtime::debug::GuestStallSnapshot& snapshot);

@@ -13,7 +13,7 @@ struct TouchPoint final {
 struct TouchSnapshot final {
     TouchPhase phase{};
     std::size_t changed_index{};
-    std::vector<TouchPoint> points;
+    std::vector<TouchPoint> points{};
     std::uint32_t modifiers{};
 };
 

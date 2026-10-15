@@ -60,9 +60,12 @@ template<class T> bool Cap(std::vector<T>& values, std::size_t limit = 128) {
     values.resize(limit); return true;
 }
 void Bound(Snapshot& snapshot) {
-    bool truncated = Cap(snapshot.executions) | Cap(snapshot.syscalls, 256) | Cap(snapshot.native_calls, 256) |
-        Cap(snapshot.dexvm_events, 256) | Cap(snapshot.java_threads) | Cap(snapshot.monitors) | Cap(snapshot.confirmed_cycles) |
-        Cap(snapshot.gles_events) | Cap(snapshot.futexes.addresses);
+    // Every list must be capped, so no short-circuiting.
+    bool truncated = Cap(snapshot.executions);
+    truncated |= Cap(snapshot.syscalls, 256); truncated |= Cap(snapshot.native_calls, 256);
+    truncated |= Cap(snapshot.dexvm_events, 256); truncated |= Cap(snapshot.java_threads);
+    truncated |= Cap(snapshot.monitors); truncated |= Cap(snapshot.confirmed_cycles);
+    truncated |= Cap(snapshot.gles_events); truncated |= Cap(snapshot.futexes.addresses);
     for (auto& cycle : snapshot.confirmed_cycles) truncated |= Cap(cycle);
     for (auto& thread : snapshot.java_threads) truncated |= Cap(thread.frames, 32);
     for (auto& monitor : snapshot.monitors) { truncated |= Cap(monitor.entry_waiters); truncated |= Cap(monitor.notify_wait_set); }

@@ -593,7 +593,7 @@ TEST_CASE("DVM-108/109 UUID MessageDigest and serialization use BootDex with rea
             CAPTURE(owner);
             const auto builder = vm.NewIntrinsicInstance(owner);
             const auto root = vm.ProtectReferences(std::array{builder});
-            const auto text = vm.Model().NewString(std::u16string_view(u"A😀 B", 5));
+            const auto text = vm.Model().NewString(std::u16string_view(u"A😀 B", 5));
             direct(owner, "<init>", "(Ljava/lang/String;)V", {VmValue::Ref(builder), VmValue::Ref(text)});
             invoke(builder, "ensureCapacity", "(I)V", {VmValue::Int(80)});
             const auto capacity = invoke(builder, "capacity", "()I", {}).AsInt();

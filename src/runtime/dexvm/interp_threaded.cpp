@@ -130,6 +130,13 @@ void Interpreter::Impl::StepThreaded(
     } while (0)
 
 #if defined(__GNUC__) && !defined(_MSC_VER)
+// Computed goto (&&label / goto*) is this file's deliberate GCC/Clang dispatch
+// path; -Wpedantic reports the extension at every handler label.
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wgnu-label-as-value"
+#else
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 #define OGPLAY_DISPATCH_AT()                                    \
     do {                                                        \
         OGPLAY_FETCH_AND_TICK();                                \

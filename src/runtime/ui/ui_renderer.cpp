@@ -593,7 +593,8 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                     for (std::int32_t row = 0; row < glyph->height; ++row) {
                         const auto skew = italic ? std::max(0, (glyph->height - row) / 3) : 0;
                         for (std::int32_t col = 0; col < glyph->width; ++col) {
-                            const auto coverage = glyph->alpha[static_cast<std::size_t>(row) * glyph->width + col];
+                            const auto coverage = glyph->alpha[static_cast<std::size_t>(row) * static_cast<std::size_t>(glyph->width) +
+                                                               static_cast<std::size_t>(col)];
                             if (!coverage) continue;
                             const auto x = origin_x + glyph->x + col + skew;
                             const auto y = text->y + line_index * 8 * text_metrics.scale + glyph->y + row;

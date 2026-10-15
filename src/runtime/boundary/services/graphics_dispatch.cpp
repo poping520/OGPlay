@@ -425,7 +425,8 @@ public:
                 throw gles::GlesApiError(symbol, 0x0501U);
             }
             const auto client_version = RequireFrame(frame, symbol).ClientVersion();
-            static_cast<void>(VertexAttribScalarBytes(type, client_version, size));
+            static_cast<void>(VertexAttribScalarBytes(
+                type, static_cast<std::uint32_t>(client_version), size));
             std::array<std::uint32_t, 6> all{
                 args[0], args[1], args[2], args[3],
                 static_cast<std::uint32_t>(stride), pointer};

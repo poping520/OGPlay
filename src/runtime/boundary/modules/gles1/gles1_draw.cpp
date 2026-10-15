@@ -556,15 +556,18 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
         if (bytes == nullptr || array.pointer > bytes->size() ||
             size > bytes->size() - array.pointer)
             throw gles::GlesApiError("GLES1 palette buffer range", 0x0502U);
-        return std::vector<std::byte>(bytes->begin() + array.pointer,
-                                     bytes->begin() + array.pointer + size);
+        return std::vector<std::byte>(
+            bytes->begin() + static_cast<std::ptrdiff_t>(array.pointer),
+            bytes->begin() + static_cast<std::ptrdiff_t>(array.pointer + size));
     };
     const auto component = [](const Gles1ClientArray& array,
                                const std::vector<std::byte>& bytes,
                                const std::uint32_t vertex, const std::uint32_t column,
                                const bool normal) -> float {
         const auto scalar = ScalarBytes(array.type);
-        const auto stride = array.stride == 0 ? scalar * array.size : array.stride;
+        const auto stride = array.stride == 0
+            ? scalar * static_cast<std::size_t>(array.size)
+            : static_cast<std::size_t>(array.stride);
         const auto* data = bytes.data() + vertex * stride + column * scalar;
         if (array.type == kFloat) { float value; std::memcpy(&value, data, 4); return value; }
         if (array.type == kFixed) { std::int32_t value; std::memcpy(&value, data, 4); return static_cast<float>(value) / 65536.0F; }
@@ -593,11 +596,13 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
                 std::array<float, 4> input{0, 0, 0, normal ? 0.0F : 1.0F};
                 if (array.enabled) {
                     for (std::int32_t c = 0; c < array.size; ++c)
-                        input[c] = component(array, source, vertex, c, normal);
+                        input[static_cast<std::size_t>(c)] = component(
+                            array, source, vertex, static_cast<std::uint32_t>(c), normal);
                 } else std::ranges::copy(legacy.Normal(), input.begin());
                 for (std::int32_t unit = 0; unit < weights.size; ++unit) {
-                    const auto matrix_index = static_cast<std::uint32_t>(component(matrix_indices, index_bytes, vertex, unit, false));
-                    const auto weight = component(weights, weight_bytes, vertex, unit, false);
+                    const auto column = static_cast<std::uint32_t>(unit);
+                    const auto matrix_index = static_cast<std::uint32_t>(component(matrix_indices, index_bytes, vertex, column, false));
+                    const auto weight = component(weights, weight_bytes, vertex, column, false);
                     const auto& matrix = core.Matrices().Palette(matrix_index);
                     if (normal) {
                         const auto nm = NormalMatrix(matrix);
@@ -662,7 +667,7 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
                 }
                 std::ranges::copy_n(
                     source_bytes.begin() + static_cast<std::ptrdiff_t>(begin),
-                    packed,
+                    static_cast<std::ptrdiff_t>(packed),
                     expanded.begin() + static_cast<std::ptrdiff_t>(vertex * packed));
             }
             frame.BindBuffer(kArrayBuffer, program.buffers[index]);

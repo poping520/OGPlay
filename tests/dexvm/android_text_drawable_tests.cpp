@@ -49,11 +49,12 @@ TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text")
         CHECK(f.linker.Class(owner).is_boot_dex);
         std::array<VmObjectRef, 4> defaults;
         for (int style = 0; style < 4; ++style) {
-            defaults[style] = f.Static("Landroid/graphics/Typeface;", "defaultFromStyle",
+            const auto slot = static_cast<std::size_t>(style);
+            defaults[slot] = f.Static("Landroid/graphics/Typeface;", "defaultFromStyle",
                 "(I)Landroid/graphics/Typeface;", {VmValue::Int(style)}).ref;
-            CHECK(f.On(defaults[style], "getStyle", "()I").AsInt() == style);
-            CHECK(f.On(defaults[style], "isBold", "()Z").AsInt() == (style & 1));
-            CHECK(f.On(defaults[style], "isItalic", "()Z").AsInt() == ((style >> 1) & 1));
+            CHECK(f.On(defaults[slot], "getStyle", "()I").AsInt() == style);
+            CHECK(f.On(defaults[slot], "isBold", "()Z").AsInt() == (style & 1));
+            CHECK(f.On(defaults[slot], "isItalic", "()Z").AsInt() == ((style >> 1) & 1));
         }
         const auto normal = defaults[0];
         const auto create = [&](int style) {
@@ -84,8 +85,9 @@ TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text")
             ui::LayoutUiTree(f.context->ui_tree, {32, 16});
             const int extra = ((style & 1) ? 1 : 0) + ((style & 2) ? 2 : 0);
             CHECK(f.context->ui_tree.Get(node)->measured.width == 5 + extra);
-            pixels[style] = ui::RasterizeUiOverlay(ui::BuildUiRenderList(f.context->ui_tree, {}), {32, 16}).rgba8;
-            if (style != 0) CHECK(pixels[style] != pixels[0]);
+            const auto slot = static_cast<std::size_t>(style);
+            pixels[slot] = ui::RasterizeUiOverlay(ui::BuildUiRenderList(f.context->ui_tree, {}), {32, 16}).rgba8;
+            if (style != 0) CHECK(pixels[slot] != pixels[0]);
         }
         f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK_FALSE(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref.IsValid());

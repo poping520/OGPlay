@@ -468,7 +468,7 @@ TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {
     const std::array<std::uint32_t, 4> colors{
         0xff112233U, 0xff445566U, 0xff778899U, 0xffaabbccU};
     for (JniSize index = 0; index < 4; ++index) {
-        fixture.model.SetPrimitiveElement(pixels, index, colors[index]);
+        fixture.model.SetPrimitiveElement(pixels, index, colors[static_cast<std::size_t>(index)]);
     }
     fixture.On(bitmap, "setPixels", "([IIIIIII)V",
                {VmValue::Ref(pixels), VmValue::Int(0), VmValue::Int(2),

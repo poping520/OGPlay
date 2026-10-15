@@ -243,10 +243,10 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef object{}, intent{}, content{}, caller{};
     std::int32_t request_code{-1};
     bool started{};
-    std::vector<ActivityResult> results;
-    std::optional<ui::UiNodeId> focused_node;
+    std::vector<ActivityResult> results{};
+    std::optional<ui::UiNodeId> focused_node{};
     dexvm::VmObjectRef focused_edit_text{};
-    std::optional<ui::UiNodeId> window_root;
+    std::optional<ui::UiNodeId> window_root{};
     bool resumed{}, visible{}, stopped{};
     dexvm::VmObjectRef render_view{};
     std::int32_t task_id{1};
@@ -371,7 +371,7 @@ struct DexVmAndroidContext final {
     std::size_t capacity{};
     std::size_t used{};
     std::int32_t columns{};
-    std::vector<std::vector<DatabaseValue>> rows;
+    std::vector<std::vector<DatabaseValue>> rows{};
   };
   std::uint32_t next_cursor_window_token{1};
   std::unordered_map<std::uint32_t, CursorWindowState> cursor_windows;

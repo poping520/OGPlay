@@ -15,12 +15,12 @@ option(OGPLAY_BUILD_TESTS "Build OGPlay unit and contract tests" ON)
 option(OGPLAY_WARNINGS_AS_ERRORS "Treat OGPlay warnings as errors" OFF)
 option(OGPLAY_ENABLE_SDL3 "Configure the bundled SDL3 platform dependency" ON)
 set(_ogplay_gui_default OFF)
-if(WIN32 AND OGPLAY_ENABLE_SDL3)
+if((WIN32 OR APPLE) AND OGPLAY_ENABLE_SDL3)
     set(_ogplay_gui_default ON)
 endif()
-option(OGPLAY_BUILD_GUI "Build the Windows desktop WebView host" ${_ogplay_gui_default})
-if(OGPLAY_BUILD_GUI AND (NOT WIN32 OR NOT OGPLAY_ENABLE_SDL3))
-    message(FATAL_ERROR "OGPLAY_BUILD_GUI requires the Windows SDL3 host; other GUI hosts are not implemented")
+option(OGPLAY_BUILD_GUI "Build the desktop WebView host (Windows WebView2, macOS WKWebView)" ${_ogplay_gui_default})
+if(OGPLAY_BUILD_GUI AND (NOT (WIN32 OR APPLE) OR NOT OGPLAY_ENABLE_SDL3))
+    message(FATAL_ERROR "OGPLAY_BUILD_GUI requires the Windows or macOS SDL3 host; other GUI hosts are not implemented")
 endif()
 # All internal and bundled static libraries must also be usable in ogplaycore.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -47,9 +47,8 @@ function(ogplay_stage_angle_runtime target)
     if(NOT OGPLAY_ENABLE_ANGLE)
         return()
     endif()
-    # Windows keeps EGL/GLESv2 DLLs under bin/; Unix keeps shared libraries under
-    # lib/ with install names like ./libEGL.dylib that resolve against the process
-    # working directory (ctest uses the build dir beside the executable).
+    # Windows keeps EGL/GLESv2 DLLs under bin/; macOS stages the relocated
+    # @rpath copies beside the binary, which finds them through @loader_path.
     set(_ogplay_angle_stage_commands)
     if(EXISTS "${_angle_sdk}/bin")
         list(APPEND _ogplay_angle_stage_commands
@@ -59,10 +58,10 @@ function(ogplay_stage_angle_runtime target)
     endif()
     if(APPLE)
         foreach(_ogplay_angle_dylib IN ITEMS libEGL.dylib libGLESv2.dylib)
-            if(EXISTS "${_angle_sdk}/lib/${_ogplay_angle_dylib}")
+            if(EXISTS "${OGPLAY_ANGLE_RUNTIME_DIR}/${_ogplay_angle_dylib}")
                 list(APPEND _ogplay_angle_stage_commands
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${_angle_sdk}/lib/${_ogplay_angle_dylib}"
+                        "${OGPLAY_ANGLE_RUNTIME_DIR}/${_ogplay_angle_dylib}"
                         "$<TARGET_FILE_DIR:${target}>/${_ogplay_angle_dylib}"
                 )
             endif()
@@ -858,10 +857,25 @@ target_compile_definitions(ogplay-cli PRIVATE OGPLAY_NATIVE_ENTRY_ADAPTER=$<BOOL
 ogplay_set_project_warnings(ogplay-cli)
 
 if(OGPLAY_BUILD_GUI)
-    add_executable(ogplay WIN32 src/frontend/desktop/main.cpp src/hal/windows/desktop_entry.cpp)
+    if(WIN32)
+        add_executable(ogplay WIN32 src/frontend/desktop/main.cpp src/hal/windows/desktop_entry.cpp)
+    else()
+        # OGPlay.app: executable in Contents/MacOS, shared runtime in Contents/Frameworks.
+        add_executable(ogplay MACOSX_BUNDLE src/frontend/desktop/main.cpp)
+        set_target_properties(ogplay PROPERTIES
+            OUTPUT_NAME OGPlay
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos/Info.plist.in"
+            MACOSX_BUNDLE_BUNDLE_NAME OGPlay
+            MACOSX_BUNDLE_GUI_IDENTIFIER org.ogplay.OGPlay
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            BUILD_WITH_INSTALL_RPATH ON
+            INSTALL_RPATH "@executable_path/../Frameworks")
+    endif()
     target_link_libraries(ogplay PRIVATE ogplay_desktop_app ogplaycore)
     target_include_directories(ogplay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
+    target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}"
+        OGPLAY_NATIVE_ENTRY_ADAPTER=$<BOOL:${WIN32}>)
     ogplay_set_project_warnings(ogplay)
     set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ogplay)
 endif()
@@ -876,7 +890,11 @@ elseif(APPLE)
         "LINKER:-exported_symbol,__ZN6ogplay3app*"
         "LINKER:-exported_symbol,__ZNK6ogplay3app*"
         "LINKER:-exported_symbol,__ZT?N6ogplay3app*")
-    set_target_properties(ogplaycore ogplay-cli PROPERTIES
+    # ogplaycore and its runtime dependencies always sit in one directory (build tree,
+    # lib/ install or Contents/Frameworks), so it carries no absolute build paths.
+    set_target_properties(ogplaycore PROPERTIES
+        BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "@loader_path")
+    set_target_properties(ogplay-cli PROPERTIES
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
@@ -943,12 +961,36 @@ if(OGPLAY_BUILD_GUI OR
     if(OGPLAY_BUILD_GUI)
         add_dependencies(ogplay_stage_webui ogplay_check_webui)
         add_dependencies(ogplay ogplay_stage_webui)
-        install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
-            DESTINATION ${CMAKE_INSTALL_BINDIR}/data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt
-            COMPONENT Runtime)
+        if(WIN32)
+            install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
+                DESTINATION ${CMAKE_INSTALL_BINDIR}/data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt
+                COMPONENT Runtime)
+        endif()
     endif()
 endif()
-if(TARGET ogplay)
+if(TARGET ogplay AND APPLE)
+    # Complete and ad-hoc sign OGPlay.app on every build so the bundle never lags
+    # ogplaycore or the staged payload; it is self-contained and runs from any directory.
+    set(_ogplay_app "$<TARGET_BUNDLE_DIR:ogplay>")
+    set(_ogplay_frameworks
+        "$<TARGET_FILE:ogplaycore>" "$<TARGET_SONAME_FILE:SDL3::SDL3>"
+        "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib" "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib")
+    if(OGPLAY_FFMPEG_FOUND)
+        list(APPEND _ogplay_frameworks "${OGPLAY_FFMPEG_RUNTIME}")
+    endif()
+    add_custom_target(ogplay_bundle ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${_ogplay_app}/Contents/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_ogplay_frameworks} "${_ogplay_app}/Contents/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${_ogplay_app}/Contents/Resources/data"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_FILE_DIR:ogplaycore>/data" "${_ogplay_app}/Contents/Resources/data"
+        COMMAND codesign --force --sign - --timestamp=none "${_ogplay_app}"
+        COMMAND codesign --verify --strict --deep "${_ogplay_app}"
+        COMMENT "Assembling and ad-hoc signing OGPlay.app"
+        VERBATIM)
+    add_dependencies(ogplay_bundle ogplay ogplaycore ogplay_stage_data ogplay_stage_webui)
+    install(TARGETS ogplay BUNDLE DESTINATION . COMPONENT Runtime)
+elseif(TARGET ogplay)
     install(TARGETS ogplay RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 endif()
 install(TARGETS ogplaycore ogplay-cli
@@ -962,7 +1004,7 @@ if(OGPLAY_ENABLE_ANGLE)
         install(DIRECTORY "${_angle_sdk}/bin/" DESTINATION ${CMAKE_INSTALL_BINDIR}
             COMPONENT Runtime FILES_MATCHING PATTERN "*.dll")
     elseif(APPLE)
-        install(DIRECTORY "${_angle_sdk}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        install(DIRECTORY "${OGPLAY_ANGLE_RUNTIME_DIR}/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
             COMPONENT Runtime FILES_MATCHING PATTERN "*.dylib")
     else()
         install(DIRECTORY "${_angle_sdk}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -1255,6 +1297,11 @@ if(OGPLAY_BUILD_TESTS)
     add_executable(ogplay_desktop_integration_tests tests/test_main.cpp
         tests/frontend/mcp_http_server_tests.cpp tests/frontend/gui_dashboard_window_tests.cpp)
     target_link_libraries(ogplay_desktop_integration_tests PRIVATE OGPlay::Frontend ogplay_desktop_app ogplay_desktop_webview doctest::doctest)
+    if(APPLE AND OGPLAY_BUILD_GUI)
+        target_sources(ogplay_desktop_integration_tests PRIVATE tests/frontend/gui_window_test_support.mm)
+        target_compile_options(ogplay_desktop_integration_tests PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+        target_link_libraries(ogplay_desktop_integration_tests PRIVATE "-framework Cocoa")
+    endif()
     target_include_directories(ogplay_desktop_integration_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_include_directories(ogplay_desktop_integration_tests SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
     target_compile_definitions(ogplay_desktop_integration_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>

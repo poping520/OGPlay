@@ -35,7 +35,8 @@ ctest --preset windows-msvc -R "<affected-test>"
 Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay.exe`。产品由
 `ogplay.exe`、`ogplay-cli.exe` 和共享应用库 `ogplaycore.dll` 构成，三者同版本交付。
 主程序默认打开游戏库，启动游戏时创建自身 `--run-game` 子进程；关闭启动器不结束游戏，
-产品运行无需 CLI 文件。Linux/macOS 当前只构建 CLI 与共享库，GUI 宿主尚未接入。
+产品运行无需 CLI 文件。macOS 构建生成 ad-hoc 签名的 `build/dev/OGPlay.app`，可双击或用
+`open build/dev/OGPlay.app` 启动；Linux 当前只构建 CLI 与共享库。
 
 ```powershell
 cmake --build --preset windows-msvc --config Release --target ogplay
@@ -45,7 +46,8 @@ build/windows-msvc/Release/ogplay.exe --library-root .local/my-library
 构建/安装产物携带 `data/` 中的 Profile、quirk、能力账本、API 19 guest payload 与 Web UI；
 资源以宿主 EXE 为锚点定位，开发时允许源码树回退。GUI 支持导入单体 APK、设置与启动，
 移除条目只删除库内副本，保留外部数据和持久存档。`--smoke-frames N` 是有界 WebView
-加载/RPC 冒烟入口，不代表游戏帧数。`OGPLAY_BUILD_GUI=OFF` 可只构建共享库与 CLI。
+加载/RPC 冒烟入口，不代表游戏帧数。`OGPLAY_BUILD_GUI=OFF` 可只构建共享库与 CLI；macOS 旧构建目录缓存了 OFF 时需以
+`-DOGPLAY_BUILD_GUI=ON` 重新配置。
 
 命令行与自动化统一使用 `ogplay-cli`：
 

@@ -24,8 +24,8 @@ python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.js
 
 ## 跑一次
 
-必须在 `ogplay-cli` 所在目录能加载到 ANGLE 动态库，runner 会自己把工作目录设为
-可执行文件所在目录：
+ANGLE 动态库与 `ogplay-cli` 同目录，经 `@rpath`/可执行文件目录加载；runner 仍把工作目录设为
+可执行文件所在目录，命令中的相对路径以它为准：
 
 ```text
 python tools/run_scenario.py \

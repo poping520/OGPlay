@@ -215,10 +215,33 @@ if(OGPLAY_ENABLE_ANGLE)
         find_file(_angle_glesv2_runtime NAMES libGLESv2.dll GLESv2.dll
             PATHS "${_angle_sdk}/bin" NO_DEFAULT_PATH NO_CACHE)
     elseif(APPLE)
-        find_library(_angle_egl_library NAMES EGL libEGL
-            PATHS "${_angle_sdk}/lib" NO_DEFAULT_PATH NO_CACHE)
-        find_library(_angle_glesv2_library NAMES GLESv2 libGLESv2
-            PATHS "${_angle_sdk}/lib" NO_DEFAULT_PATH NO_CACHE)
+        # The prebuilt dylibs carry ./libEGL.dylib install names, which resolve against
+        # the process working directory. Link relocatable copies named @rpath/... so the
+        # CLI and the .app load them beside ogplaycore from any directory.
+        set(OGPLAY_ANGLE_RUNTIME_DIR "${CMAKE_BINARY_DIR}/angle-runtime")
+        file(MAKE_DIRECTORY "${OGPLAY_ANGLE_RUNTIME_DIR}")
+        foreach(_angle_dylib IN ITEMS libEGL.dylib libGLESv2.dylib)
+            set(_angle_dylib_source "${_angle_sdk}/lib/${_angle_dylib}")
+            set(_angle_dylib_copy "${OGPLAY_ANGLE_RUNTIME_DIR}/${_angle_dylib}")
+            if(NOT EXISTS "${_angle_dylib_source}")
+                message(FATAL_ERROR "ANGLE SDK has no ${_angle_dylib}: ${_angle_sdk}")
+            endif()
+            if(NOT EXISTS "${_angle_dylib_copy}" OR
+               "${_angle_dylib_source}" IS_NEWER_THAN "${_angle_dylib_copy}")
+                file(COPY_FILE "${_angle_dylib_source}" "${_angle_dylib_copy}")
+                execute_process(COMMAND install_name_tool -id "@rpath/${_angle_dylib}" "${_angle_dylib_copy}"
+                    RESULT_VARIABLE _angle_rename_result ERROR_VARIABLE _angle_rename_error)
+                # Rewriting the install name invalidates the linker signature.
+                execute_process(COMMAND codesign --force --sign - "${_angle_dylib_copy}"
+                    RESULT_VARIABLE _angle_sign_result ERROR_VARIABLE _angle_sign_error)
+                if(NOT _angle_rename_result EQUAL 0 OR NOT _angle_sign_result EQUAL 0)
+                    file(REMOVE "${_angle_dylib_copy}")
+                    message(FATAL_ERROR "cannot relocate ${_angle_dylib}: ${_angle_rename_error}${_angle_sign_error}")
+                endif()
+            endif()
+        endforeach()
+        set(_angle_egl_library "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib")
+        set(_angle_glesv2_library "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib")
     else()
         find_file(_angle_egl_library NAMES libEGL.so libEGL.so.1
             PATHS "${_angle_sdk}/lib" NO_DEFAULT_PATH NO_CACHE)
@@ -239,6 +262,14 @@ if(OGPLAY_ENABLE_ANGLE)
         set_target_properties(ANGLE::GLESv2 PROPERTIES
             IMPORTED_IMPLIB "${_angle_glesv2_library}"
             IMPORTED_LOCATION "${_angle_glesv2_runtime}")
+    elseif(APPLE)
+        # SHARED with an @rpath soname lets CMake add the runtime path to consumers.
+        add_library(ANGLE::EGL SHARED IMPORTED GLOBAL)
+        set_target_properties(ANGLE::EGL PROPERTIES
+            IMPORTED_LOCATION "${_angle_egl_library}" IMPORTED_SONAME "@rpath/libEGL.dylib")
+        add_library(ANGLE::GLESv2 SHARED IMPORTED GLOBAL)
+        set_target_properties(ANGLE::GLESv2 PROPERTIES
+            IMPORTED_LOCATION "${_angle_glesv2_library}" IMPORTED_SONAME "@rpath/libGLESv2.dylib")
     else()
         add_library(ANGLE::EGL UNKNOWN IMPORTED GLOBAL)
         set_target_properties(ANGLE::EGL PROPERTIES

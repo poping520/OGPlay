@@ -29,3 +29,6 @@ int OgplayMain(int argc, const char* const argv[]) noexcept {
     catch (...) { Write(stderr, "\nerror [ogplay]\n  unknown application failure\n"); }
     return 1;
 }
+#if !OGPLAY_NATIVE_ENTRY_ADAPTER
+int main(int argc, char* argv[]) { return OgplayMain(argc, argv); }
+#endif

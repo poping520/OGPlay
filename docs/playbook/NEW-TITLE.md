@@ -147,8 +147,8 @@ cmake --build --preset dev --target <affected-target>
 ctest --preset dev -R "<affected-test>"
 ```
 
-**跑 title**：必须在构建输出目录下执行（ANGLE 动态库及 Android guest 系统库随构建
-产物提供），未通过 gate 的 v2 profile 放在 `data/profiles-dexvm/`（故意不在
+**跑 title**：以下命令在构建输出目录执行，相对路径以它为准（ANGLE 动态库及 Android guest
+系统库随构建产物提供，不再依赖工作目录），未通过 gate 的 v2 profile 放在 `data/profiles-dexvm/`（故意不在
 `data/profiles/`，以免与生产 v1 profile 的门禁冲突）：
 
 ```bash

@@ -246,6 +246,7 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
     if (o.exit_after_frames && *o.exit_after_frames == 0) throw std::invalid_argument("--exit-after-frames requires a positive integer");
     if (o.diagnostic_teardown_timeout && (o.diagnostic_teardown_timeout->count() <= 0 || o.diagnostic_teardown_timeout->count() > 86400000 || o.diagnostic_teardown_timeout->count() % 1000 != 0)) throw std::invalid_argument("diagnostic timeout requires whole seconds in 1..86400");
     if (o.diagnostic_directory.empty()) throw std::invalid_argument("--diag-dir requires a non-empty directory");
+    if (!o.diagnostics_enabled && o.diagnostic_directory != std::filesystem::path(".local/diagnostics")) throw std::invalid_argument("custom diagnostic directory requires diagnostics");
     if (o.diagnostic_teardown_timeout && !o.diagnostics_enabled) throw std::invalid_argument("diagnostic timeout requires diagnostics");
     if (o.dexvm_interpreter && *o.dexvm_interpreter != InterpreterBackend::switch_dispatch && *o.dexvm_interpreter != InterpreterBackend::threaded) throw std::invalid_argument("invalid interpreter");
     for (const auto* path : {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory, &o.input_config_path, &o.library_root})
@@ -278,7 +279,6 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.key_editor_port) add("--key-editor-port", std::to_string(*o.key_editor_port));
     if (o.mcp_manual_step) args.emplace_back("--mcp-manual-step");
     if (o.diagnostics_enabled) { args.emplace_back("--diag"); add("--diag-dir", path(o.diagnostic_directory)); }
-    else if (o.diagnostic_directory != std::filesystem::path(".local/diagnostics")) throw std::invalid_argument("custom diagnostic directory requires diagnostics");
     if (o.diagnostic_teardown_timeout) add("--diag-on-teardown-timeout", std::to_string(o.diagnostic_teardown_timeout->count() / 1000));
     if (o.dexvm_interpreter) add("--dexvm-interpreter", *o.dexvm_interpreter == InterpreterBackend::threaded ? "threaded" : "switch");
     optional_path("--sandbox-dir", o.sandbox_directory);

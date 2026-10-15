@@ -1,11 +1,13 @@
 # 子模块：frontend/app
 
-共享应用 target `ogplaycore` 的装配边界；Windows 产物 `ogplaycore.dll`。
-只导出 `ogplay_desktop_main` 和 `ogplay_cli_main` 两个同构建 C ABI 阻塞入口，参数为借用的
-UTF-8 argc/argv，不跨边界传递 C++ 对象、异常或内存释放责任。EXE 与库同版本发布。
-桌面入口默认 GUI；`--run-game` 和 CLI `run-apk` 共用 game 的解析/运行服务。
-SDL bootstrap 在本层每次入口调用时执行，所有异常在 SDL C 回调及导出边界前收敛；
-不在 DLL 加载期间初始化窗口、线程或会话。一个进程仅调用一次应用入口。
-CLI 与游戏模式不创建 WebView，GUI/游戏保持独立进程。CLI 查询使用 bundled 能力账本。
-`desktop_main` 是 EXE 专用薄适配，不编入 DLL；EXE 只适配 OS 入口和 UTF-8 参数，不静态链接 OGPlay 内核或 SDL。
-验证：frontend.app_entrypoints、frontend.run_apk_options、GUI 冒烟及真实 APK 有界复跑。
+ogplaycore 的 C++ 外观装配边界，公开头为 include/ogplay/app；只导出 ogplay::app，内核类型不导出。
+公开类型只含 std/app 值或 Pimpl；EXE/DLL 同次构建、同工具链、MSVC /MD（Debug /MDd），无跨版本 ABI 承诺。
+删除旧 C main。标准异常可跨同构建 C++ 边界，SDL 的 C 回调捕获异常，回到外观后重新抛出。
+
+RunGame 校验值、持有库运行租约、配置日志并自行执行 SDL bootstrap；游戏运行宿主交给 game，库领域交给 library。
+AgentConsole 封装账本/session/agent 生命周期，提供 Request/HandleJsonRpc；JsonRpcDispatcher 只复用 envelope 机制，协议回调归 EXE。
+诊断触发、bundled payload、默认库根、Clock 单调计时/UTC、CSPRNG 控制令牌与日志/JSON/编码外观均不暴露内核头。
+JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；序列化保持严格解析、重复键/大小/深度边界。
+不拥有 CLI usage/stdio 循环、桌面模式分派、WebView、GUI 视图或子进程管理；加载共享库时不创建应用资源。
+SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library run 可选 stderr 以保持 JSON 输出。
+验证：ogplay_app_tests、frontend.app_entrypoints（含导出/导入审计）、frontend.run_apk_options 和真实 APK 有界复跑。

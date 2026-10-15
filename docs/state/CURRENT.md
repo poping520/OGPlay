@@ -37,9 +37,9 @@
 ## 支持边界与未验收项
 
 - VFS：多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
-- GUI/Dashboard（[GUI-9](../tasks/gui/GUI-9.md)）：Windows 统一为 `ogplay` 桌面入口、
-  `ogplay-cli` 与 `ogplaycore` 共享库；自身游戏子进程及无 CLI 的真实 WebView/RPC
-  导入→启动→移除、故障隔离和存档保留已验。原生选择器/拖放未复验；Linux/macOS GUI 未接入。
+- GUI/Dashboard（[GUI-10](../tasks/gui/GUI-10.md)）：core 改为 C++ 外观与共享游戏库，桌面/CLI
+  各自拥有交互；库锁/运行锁、CLI library、参数往返及两条真实 APK 有界路径已在 macOS 验证。
+  Windows Release/原生 GUI 链路待复验（GUI-9 证据属旧架构）；Linux/macOS GUI 未接入。
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
   （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；

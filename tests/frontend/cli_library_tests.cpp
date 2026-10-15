@@ -19,11 +19,16 @@
 namespace {
 class Capture final {
     FILE* stream_;
-    FILE* temporary_ = std::tmpfile();
+    FILE* temporary_{};
     int original_;
 public:
     explicit Capture(FILE* stream) : stream_(stream), original_(dup(fileno(stream))) {
         std::fflush(stream_);
+#ifdef _WIN32
+        static_cast<void>(tmpfile_s(&temporary_));
+#else
+        temporary_ = std::tmpfile();
+#endif
         if (!temporary_ || original_ < 0 || dup2(fileno(temporary_), fileno(stream_)) < 0) throw std::runtime_error("capture failed");
     }
     ~Capture() { std::fflush(stream_); static_cast<void>(dup2(original_, fileno(stream_))); close(original_); std::fclose(temporary_); }
@@ -74,6 +79,7 @@ TEST_CASE("CLI library inspect import duplicates and remove retain saves") {
     const auto inspect = f.Run({"inspect", f.Text("sample.apk")});
     JsonSuccess(inspect); CHECK(inspect.out.find("org.example.game") != std::string::npos);
     CHECK(inspect.out.find("\"profile_id\":null") != std::string::npos);
+    CHECK(inspect.out.find("\"requires_external_data\":null") != std::string::npos);
     JsonSuccess(f.Run({"import", f.Text("sample.apk")}));
     auto duplicate = f.Run({"import", f.Text("sample.apk")});
     CHECK(duplicate.code == 1); CHECK(duplicate.out.empty());

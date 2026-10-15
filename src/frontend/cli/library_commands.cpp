@@ -86,7 +86,8 @@ Value InspectJson(JsonWriter& writer, const ApkInspection& inspection) {
     writer.Add(result, "abis", abis); writer.Add(result, "visual_fallbacks", fallbacks); writer.Add(result, "profile_notes", notes);
     writer.AddBool(result, "has_icon", !inspection.icon_png.empty());
     if (inspection.profile) writer.AddString(result, "profile_id", inspection.profile->profile_id); else writer.AddNull(result, "profile_id");
-    writer.AddBool(result, "requires_external_data", inspection.profile && inspection.profile->requires_external_data);
+    if (inspection.profile) writer.AddBool(result, "requires_external_data", inspection.profile->requires_external_data);
+    else writer.AddNull(result, "requires_external_data");
     return result;
 }
 }

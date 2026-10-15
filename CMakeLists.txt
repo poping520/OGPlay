@@ -796,6 +796,11 @@ include(GenerateExportHeader)
 generate_export_header(ogplaycore BASE_NAME OGPLAYCORE
     EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h"
     EXPORT_MACRO_NAME OGPLAYCORE_API)
+if(MSVC)
+    # Same-build /MD facade deliberately carries STL/Pimpl and std exceptions.
+    target_compile_options(ogplaycore PUBLIC /wd4251 /wd4275)
+    target_compile_options(ogplay_library PRIVATE /wd4251 /wd4275)
+endif()
 
 target_include_directories(ogplaycore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -811,7 +816,7 @@ if(OGPLAY_ENABLE_SDL3)
     add_custom_command(TARGET ogplaycore POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:ogplaycore>)
-    install(TARGETS SDL3-shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    install(TARGETS SDL3-shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
 endif()
 
@@ -875,7 +880,7 @@ elseif(APPLE)
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
-        "{ global: extern \"C++\" { ogplay::app::*; }; local: *; };\n")
+        "{ global: extern \"C++\" { ogplay::app::*; }; _ZT?N6ogplay3app*; local: *; };\n")
     target_link_options(ogplaycore PRIVATE
         "LINKER:--version-script,${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
@@ -1265,12 +1270,13 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     add_executable(ogplay_file_lock_tests tests/test_main.cpp tests/hal/file_lock_tests.cpp
         tests/frontend/library_lock_contention_tests.cpp)
-    target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore doctest::doctest)
+    target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogplay_desktop_app doctest::doctest)
+    target_include_directories(ogplay_file_lock_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     ogplay_set_project_warnings(ogplay_file_lock_tests)
     add_executable(ogplay_app_tests tests/test_main.cpp
         tests/frontend/game_run_args_tests.cpp
         tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
-        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp
+        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
         tests/frontend/gui_import_tests.cpp tests/frontend/gui_launch_tests.cpp
         tests/frontend/gui_rpc_tests.cpp tests/frontend/gui_view_model_tests.cpp
         tests/frontend/library_visuals_tests.cpp)

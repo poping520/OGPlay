@@ -12,7 +12,8 @@
 - 可依赖公开 HAL 接口、SDL3 及 Windows SDK。
 - 不得被除 HAL 装配点之外的上层模块直接包含。
 - 回调上层必须经过显式 HAL 接口，不包含 guest、游戏或 Android 语义。
-- `WebViewHost` 封装固定 webview/WebView2、同一本地页面导航限制、禁止新窗口、100ms 宿主
+- `WebViewHost` 与 ogplay_webview 编入仅桌面链接的 ogplay_desktop_webview，不属于 ogplay_hal；
+  可消费 app 日志/JSON 外观。封装固定 webview/WebView2、同一本地页面导航限制、禁止新窗口、100ms 宿主
   事件计时器与 PNG 冒烟截图。绑定只转交字符串请求，方法语义由上层提供；不启动 HTTP 服务。
   文件/目录选择使用独立 STA 线程的 IFileOpenDialog，父窗口关联当前宿主；取消返回空，
   HRESULT 失败传播，避免在 WebView 消息回调中运行模态消息循环。
@@ -21,7 +22,7 @@
   不绑定启动器 RPC；主窗口关闭会回收全部 Dashboard，创建/销毁期间防止计时器重入。
   上游实现单独编译，WebView2 SDK 通过显式准备脚本提供，不在配置阶段下载。
 - `desktop_entry` / `cli_entry` 是 EXE 专用的系统启动适配，不链接入 HAL/DLL；仅将宽字符
-  参数转为 UTF-8 后交给 frontend 显式回调，不依赖应用接口，不链接 SDL 或内核。
+  参数转为 UTF-8 后交给所属 EXE 的 C++ OgplayMain，不依赖应用接口，不链接 SDL 或内核。
 - `HostExecutablePath` 返回宿主 EXE 的完整绝对路径，供 GUI 启动自身子进程；目录查询由它派生。
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。

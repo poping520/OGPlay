@@ -298,7 +298,7 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
     CHECK(cli.find("so_sha256") == std::string::npos);
     CHECK(cli.find("APK guest execution failed") == std::string::npos);
 
-    const auto gui = read_source("/src/frontend/gui/import.cpp");
+    const auto gui = read_source("/src/frontend/library/import.cpp");
     CHECK(gui.find("SelectApkCompatibilityProfile") != std::string::npos);
     CHECK(gui.find("MatchApkTitleProfile") == std::string::npos);
 }

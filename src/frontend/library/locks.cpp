@@ -1,15 +1,36 @@
 #include "locks.h"
+#include <chrono>
+#include <thread>
 namespace ogplay::app {
-std::optional<hal::FileLock> TryLibraryLock(const std::filesystem::path& root) {
+namespace {
+// About 2 s of 10 ms retries; counted attempts keep this independent of guest Clocks.
+constexpr int kLockWaitAttempts = 200;
+constexpr auto kLockRetryInterval = std::chrono::milliseconds(10);
+
+std::optional<hal::FileLock> TryLibraryLockMode(const std::filesystem::path& root, const hal::FileLockMode mode) {
     try {
         std::filesystem::create_directories(root / "library");
-        return hal::FileLock::TryAcquire(root / "library/.lock");
+        return hal::FileLock::TryAcquire(root / "library/.lock", mode);
     } catch (const std::exception& e) { throw LibraryError(LibraryErrorCode::io_error, std::string("library lock IO failed: ") + e.what(), root); }
 }
+
+hal::FileLock WaitLibraryLock(const std::filesystem::path& root, const hal::FileLockMode mode) {
+    for (int attempt = 0;; ++attempt) {
+        if (auto lock = TryLibraryLockMode(root, mode)) return std::move(*lock);
+        if (attempt + 1 >= kLockWaitAttempts) break;
+        std::this_thread::sleep_for(kLockRetryInterval);
+    }
+    throw LibraryError(LibraryErrorCode::busy, "library_busy: another library operation held the lock for over 2 s; wait for it and retry", root);
+}
+}  // namespace
+std::optional<hal::FileLock> TryLibraryLock(const std::filesystem::path& root) {
+    return TryLibraryLockMode(root, hal::FileLockMode::exclusive);
+}
 hal::FileLock RequireLibraryLock(const std::filesystem::path& root) {
-    auto lock = TryLibraryLock(root);
-    if (!lock) throw LibraryError(LibraryErrorCode::busy, "library_busy: library is locked; wait for the other operation and retry", root);
-    return std::move(*lock);
+    return WaitLibraryLock(root, hal::FileLockMode::exclusive);
+}
+hal::FileLock RequireLibraryReadLock(const std::filesystem::path& root) {
+    return WaitLibraryLock(root, hal::FileLockMode::shared);
 }
 std::optional<hal::FileLock> TryRunningLock(const LibraryStore& store, std::string_view id) {
     if (id.empty() || id == "." || id == ".." || id.find_first_of("/\\:") != std::string_view::npos || id.find('\0') != std::string_view::npos)
@@ -34,6 +55,9 @@ RunningLease::~RunningLease() = default;
 RunningLease::RunningLease(RunningLease&&) noexcept = default;
 RunningLease& RunningLease::operator=(RunningLease&&) noexcept = default;
 bool LibraryStore::IsRunning(std::string_view id) const {
+    // Probing takes the running lock briefly; the shared library lock keeps it from
+    // racing a lease, which acquires the running lock under the exclusive library lock.
+    auto library = RequireLibraryReadLock(root_);
     return !TryRunningLock(*this, id).has_value();
 }
 }

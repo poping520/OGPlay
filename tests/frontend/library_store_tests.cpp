@@ -104,10 +104,15 @@ TEST_CASE("GUI config recovers an interrupted replacement backup") {
     ogplay::app::SaveLibraryConfig(tree.path, {.profiles_dir = profiles});
     std::filesystem::rename(tree.path / "config.toml",
                             tree.path / "config.toml.bak");
+    // Shared-lock readers use the backup read-only; the next save republishes it.
     const auto recovered = ogplay::app::LoadLibraryConfig(tree.path);
     CHECK(recovered.profiles_dir == profiles);
+    CHECK_FALSE(std::filesystem::exists(tree.path / "config.toml"));
+    CHECK(std::filesystem::is_regular_file(tree.path / "config.toml.bak"));
+    ogplay::app::SaveLibraryConfig(tree.path, recovered);
     CHECK(std::filesystem::is_regular_file(tree.path / "config.toml"));
     CHECK_FALSE(std::filesystem::exists(tree.path / "config.toml.bak"));
+    CHECK(ogplay::app::LoadLibraryConfig(tree.path).profiles_dir == profiles);
 }
 
 TEST_CASE("GUI config discards the legacy external system directory") {
@@ -163,6 +168,8 @@ TEST_CASE("GUI instance settings persist only overrides with strict schema and b
     CHECK(LoadGameSettings(first) == settings);
     std::filesystem::rename(first / "settings.toml", first / "settings.toml.bak");
     CHECK(LoadGameSettings(first) == settings);
+    CHECK(std::filesystem::exists(first / "settings.toml.bak"));
+    SaveGameSettings(first, settings);
     CHECK_FALSE(std::filesystem::exists(first / "settings.toml.bak"));
     SaveGameSettings(first, {});
     CHECK(std::filesystem::file_size(first / "settings.toml") == std::string_view("schema = 1\n").size());

@@ -13,6 +13,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/cpu/interpreter.h"
+#include "ogplay/cpu/dynarmic.h"
 #include "ogplay/memory/address_space.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/jni_guest/jni_guest_abi.h"
@@ -186,7 +187,7 @@ constexpr std::string_view kArrayTypes[]{
     std::set<std::string> names{
         "FromReflectedMethod", "FromReflectedField", "ToReflectedMethod", "ToReflectedField",
         "GetVersion", "Throw", "ThrowNew", "ExceptionOccurred",
-        "ExceptionDescribe", "ExceptionClear", "ExceptionCheck",
+        "ExceptionDescribe", "ExceptionClear", "ExceptionCheck", "FatalError",
         "PushLocalFrame", "PopLocalFrame", "NewGlobalRef", "DeleteGlobalRef",
         "DeleteLocalRef", "IsSameObject", "NewLocalRef", "EnsureLocalCapacity",
         "GetJavaVM", "NewWeakGlobalRef", "DeleteWeakGlobalRef",
@@ -275,7 +276,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(Missing(expected_environment, bound_environment).empty());
     CHECK(Missing(bound_environment, expected_environment).empty());
     CHECK(bound_environment == expected_environment);
-    CHECK(bound_environment.size() == 219U);
+    CHECK(bound_environment.size() == 220U);
 
     const std::set<std::string> expected_java_vm{
         "AttachCurrentThread", "AttachCurrentThreadAsDaemon",
@@ -288,7 +289,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
 
     for (const auto name : {"GetStringCritical", "ReleaseStringCritical",
                             "NewDirectByteBuffer", "GetDirectBufferAddress",
-                            "GetDirectBufferCapacity", "FatalError"}) {
+                            "GetDirectBufferCapacity"}) {
         CAPTURE(name);
         CHECK_FALSE(expected_environment.contains(name));
         CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
@@ -1073,6 +1074,133 @@ TEST_CASE("guest JNI core bindings execute references exceptions and VM export")
     static_cast<void>(
         fixture.CallEnvironment("ExceptionClear", 201U));
     CHECK(fixture.CallEnvironment("ExceptionCheck", 201U) == 0U);
+}
+
+TEST_CASE("guest JNI FatalError preserves message and pending state on fast and slow calls") {
+    using namespace ogplay;
+    for (const auto fast : {false, true}) {
+        CAPTURE(fast);
+        GuestBindingsFixture fixture;
+        fixture.environment.AttachThread(201U);
+        fixture.Seal();
+        fixture.WriteString(64U, "Unable to load library: /data/app-lib/libmono.so [missing]");
+        const auto throwable = fixture.environment.PublishLocalObject(
+            201U, {runtime::JniObjectDomain::host, 0x9002U});
+        fixture.environment.Throw(201U, throwable);
+        const auto before = fixture.environment.PendingExceptionMetadata(201U);
+        REQUIRE(before.has_value());
+
+        const auto invoke = [&] {
+            if (!fast) {
+                static_cast<void>(fixture.CallEnvironment(
+                    "FatalError", 201U, fixture.output.Add(64U).Value()));
+                return;
+            }
+            cpu::DynarmicCpu native_cpu(fixture.bus);
+            native_cpu.SetHostCallHook({
+                +[](void* userdata, const std::uint32_t svc,
+                    cpu::A32HostCallContext& call) noexcept {
+                    if (svc != 3U) return cpu::HostCallResult::unhandled;
+                    return static_cast<runtime::JniGuestCallDispatcher*>(userdata)->TryFastCall(call);
+                }, &fixture.dispatcher});
+            const auto target = fixture.bus.Read32(runtime::kJniGuestEnvironmentTable.Add(
+                runtime::FindJniSlot("FatalError")->Value() * sizeof(std::uint32_t)));
+            cpu::A32State state;
+            state.SetState(cpu::ExecutionState::thumb);
+            state.SetThreadId(201U);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, fixture.abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, fixture.output.Add(64U).Value());
+            state.SetRegister(cpu::CoreRegister::sp, fixture.output.Add(0x800U).Value());
+            state.SetRegister(cpu::CoreRegister::lr, 0x12345679U);
+            native_cpu.SetState(state);
+            const auto stopped = native_cpu.Run(4U);
+            REQUIRE(stopped.reason == cpu::RunStopReason::host_call_fault);
+            static_cast<void>(fixture.dispatcher.Handle(native_cpu, stopped));
+        };
+        try {
+            invoke();
+            FAIL("FatalError returned to its caller");
+        } catch (const runtime::JniGuestBindingError& error) {
+            const std::string text = error.what();
+            CHECK(text.find("slot=FatalError") != std::string::npos);
+            CHECK(text.find("guest_thread=201") != std::string::npos);
+            CHECK(text.find("lr=0x12345679") != std::string::npos);
+            CHECK(text.find("sp=0x72000800") != std::string::npos);
+            CHECK(text.find("JNI FatalError:") != std::string::npos);
+            CHECK(text.find("message=\"Unable to load library: /data/app-lib/libmono.so [missing]\"") != std::string::npos);
+            CHECK(text.find("message_status=complete") != std::string::npos);
+        }
+        const auto after = fixture.environment.PendingExceptionMetadata(201U);
+        REQUIRE(after.has_value());
+        CHECK(after->throwable == before->throwable);
+        CHECK(fixture.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("guest JNI FatalError bounds and escapes diagnostic memory reads") {
+    using namespace ogplay;
+    GuestBindingsFixture fixture;
+    fixture.environment.AttachThread(201U);
+    fixture.Seal();
+    const memory::GuestAddress data{0x73000000U};
+    const auto page = fixture.memory.PageSize();
+    fixture.memory.Map({data, page}, memory::PageProtection::read | memory::PageProtection::write);
+    auto pointer = data;
+    std::string expected_message;
+    std::string status = "complete";
+    std::size_t scanned = 1U;
+    const auto write = [&](const memory::GuestAddress target, const std::string_view bytes) {
+        fixture.memory.Write(target, std::as_bytes(std::span(bytes)));
+    };
+    SUBCASE("null pointer") { pointer = memory::GuestAddress{}; status = "null_pointer"; scanned = 0U; }
+    SUBCASE("empty message") {}
+    SUBCASE("escaped arbitrary bytes") {
+        write(data, std::string_view{"\"\\\n\x1b\xff\0", 6U});
+        expected_message = "\\\"\\\\\\x0a\\x1b\\xff";
+        scanned = 6U;
+    }
+    SUBCASE("cross page terminator") {
+        fixture.memory.Map({data.Add(page), page}, memory::PageProtection::read | memory::PageProtection::write);
+        pointer = data.Add(page - 2U);
+        write(pointer, std::string_view{"abc\0", 4U});
+        expected_message = "abc"; scanned = 4U;
+    }
+    SUBCASE("unmapped pointer") { pointer = data.Add(page); status = "memory_fault"; scanned = 0U; }
+    SUBCASE("unreadable pointer") {
+        fixture.memory.Protect({data, page}, memory::PageProtection::none);
+        status = "memory_fault"; scanned = 0U;
+    }
+    SUBCASE("readable prefix before fault") {
+        pointer = data.Add(page - 2U); write(pointer, "ab");
+        expected_message = "ab"; status = "memory_fault"; scanned = 2U;
+    }
+    SUBCASE("terminator at scan limit") {
+        write(data, std::string(4095U, 'a'));
+        expected_message = std::string(4095U, 'a'); scanned = 4096U;
+    }
+    SUBCASE("scan limit preserves prefix") {
+        write(data, std::string(4096U, 'a'));
+        expected_message = std::string(4096U, 'a'); status = "scan_limit_reached"; scanned = 4096U;
+    }
+    SUBCASE("address overflow preserves prefix") {
+        fixture.memory.Map({memory::GuestAddress{0xfffff000U}, page},
+            memory::PageProtection::read | memory::PageProtection::write);
+        pointer = memory::GuestAddress{0xfffffffeU}; write(pointer, "ab");
+        expected_message = "ab"; status = "address_overflow"; scanned = 2U;
+    }
+    try {
+        static_cast<void>(fixture.CallEnvironment("FatalError", 201U, pointer.Value()));
+        FAIL("FatalError returned to its caller");
+    } catch (const runtime::JniGuestBindingError& error) {
+        const std::string text = error.what();
+        CHECK(text.find("JNI FatalError:") != std::string::npos);
+        CHECK(text.find("message=\"" + expected_message + "\"") != std::string::npos);
+        CHECK(text.find("message_status=" + status) != std::string::npos);
+        CHECK(text.find("scanned_bytes=" + std::to_string(scanned)) != std::string::npos);
+        if (status == "memory_fault") CHECK(text.find("read_error=") != std::string::npos);
+        CHECK_FALSE(fixture.environment.ExceptionCheck(201U));
+    }
 }
 
 TEST_CASE("guest JavaVM bindings attach query detach and reject unknown args") {

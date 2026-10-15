@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
+#include "ogplay/loader/link_namespace.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
 
@@ -44,7 +45,10 @@ public:
         try {
             return hooks_.open(hooks_.owner, path, call.Argument(1),
                                call.ThreadId());
-        } catch (const std::exception& error) {
+        } catch (const loader::LinkError& error) {
+            SetError(call.ThreadId(), error.what());
+            return 0U;
+        } catch (const loader::ElfError& error) {
             SetError(call.ThreadId(), error.what());
             return 0U;
         }

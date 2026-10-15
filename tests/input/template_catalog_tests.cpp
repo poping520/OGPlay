@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <iterator>
+#include <ostream>
 #include <vector>
 
 #include <doctest/doctest.h>

@@ -28,6 +28,7 @@
 #include "ogplay/gles/gles_dispatch.h"
 #include "ogplay/gles/gles_transfer_state.h"
 #include "ogplay/memory/bus.h"
+#include "ogplay/loader/link_namespace.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/modules/gles1/gles1_dispatch.h"
@@ -1134,6 +1135,7 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
         std::uint32_t flags{};
         std::uint64_t thread{};
         bool fail_open{};
+        bool fatal_open{};
         std::uint32_t unwind_pc{};
     } probe;
     const ogplay::runtime::BionicDynamicLinkHooks hooks{
@@ -1141,7 +1143,8 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
         +[](void* owner, const std::string_view library,
             const std::uint32_t flags, const std::uint64_t thread) {
             auto& state = *static_cast<Probe*>(owner);
-            if (state.fail_open) throw std::runtime_error("library unavailable");
+            if (state.fatal_open) throw std::runtime_error("constructor execution failed");
+            if (state.fail_open) throw ogplay::loader::LinkError("library unavailable");
             state.library = library;
             state.flags = flags;
             state.thread = thread;
@@ -1205,6 +1208,10 @@ TEST_CASE("libdl overrides bridge process lookup and consume per-thread errors")
     fixture.memory.Read(ogplay::memory::GuestAddress{error},
                         std::as_writable_bytes(std::span(text)), 1U);
     CHECK(text == "library unavailable");
+    CHECK(fixture.Call("libdl.so", "dlerror") == 0U);
+    probe.fatal_open = true;
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.Call("libdl.so", "dlopen",
+        {fixture.output.Value(), 2U, 0U, 0U})), "constructor execution failed", std::runtime_error);
     CHECK(fixture.Call("libdl.so", "dlerror") == 0U);
 }
 

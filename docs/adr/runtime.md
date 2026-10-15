@@ -54,6 +54,7 @@
 - [ADR-0129 · VFS 随机字符设备与 HAL 安全随机源](#adr-0129)
 - [ADR-0131 · 进程级 APK Asset 身份与资源区间](#adr-0131)
 - [ADR-0132 · 同包有界 task 与 Activity 复用](#adr-0132)
+- [ADR-0135 · 共享 native 按需装载与独立 JNI 初始化](#adr-0135)
 
 <a id="adr-0001"></a>
 
@@ -1291,3 +1292,40 @@ affinity 匹配限同包默认值、无复杂显式 flags/options；自定义/�
 窗口不被选作默认 affinity 目的 task。保留任务是游戏进程的直接调用能力，不实现多进程、系统 Recents、桌面 HOME、
 完整 ActivityManager、Binder 或 system_server。隐式 task 规则不改写 APK/Profile。
 验收及边界见 [DVM-250](../tasks/dexvm/DVM-250.md)。
+
+<a id="adr-0135"></a>
+
+## ADR-0135 · 共享 native 按需装载与独立 JNI 初始化
+
+- 状态：Accepted
+- 日期：2026-10-15
+- 任务：[APS-10](../tasks/apk-startup/APS-10.md)
+
+### 背景
+
+Java load 已支持动态 APK ELF 闭包，但 native dlopen 只查询已映射模块。按 API19
+Bionic linker 的 do_dlopen/CallConstructors 与 Dalvik dvmLoadNativeCode，库映射及构造器
+属于进程 linker，ClassLoader 归属及 JNI_OnLoad 属于 Java 层。
+
+### 决定
+
+- 从 Java loader 提取拥有所选 ABI APK/受审系统库字节的共享来源快照；进程通过显式
+  native 装载 callback 持有快照。Java 和 native 使用相同来源解析、闭包及 process namespace。
+  Java registry 生命周期结束不撤销正在运行进程的来源，也不捕获该 registry 的裸指针。
+- 保留请求目录：合成安装目录解析 APK，系统目录解析 bundled ELF，其他路径只走 guest
+  VFS；普通库名只搜索显式 guest 来源，不读取宿主目录或环境。既有 API19 basename 已装载
+  身份与 SONAME alias 规则保留。动态 LD_LIBRARY_PATH 修改不在本次范围。
+- process 装载门禁同宿主线程可重入、异线程串行；root CPU admission 在门禁前，元数据
+  短锁不跨 guest 执行。构造器在依赖递归前标记，依赖先于本库，DT_INIT 先于 INIT_ARRAY。
+  native 构造调用保留 caller thread/TLS；递归所需 lifecycle 元数据先复制，避免容器扩容失效。
+- native dlopen 不登记 Java ClassLoader、不自动调用 JNI_OnLoad；后续 Java load 复用映射，
+  并按原 registry 完成一次 JNI 初始化与 loader 检查。
+- 装载前链接失败使用事务映射回滚、返回 null 并进入线程 dlerror。执行构造器后的原始故障
+  保存在 process，禁止重跑构造器；退出、取消、CPU fault 不转换为可恢复 dlerror。
+- 保留 ADR-0076 的符号查询、soinfo 视图、引用与 process-lifetime 模块保留边界；不实现
+  RTLD_NEXT、运行期 ELF 卸载或完整 Android linker 私有结构。
+
+### 后果
+
+用真实 ARM ctor/native 调用验证依赖顺序、递归、引用及 JNI 分层；运行到下一首错只证明
+原装载缺口消失，不代表后续引擎或 title 兼容验收。

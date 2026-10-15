@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-13。
+更新：2026-10-15。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -13,6 +13,7 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
+| TML 1.0 | Windows | native dlopen 已越过 libmono 装载，第 0 帧进入 libunity 链接 | **缺 ASensorManager_getInstance**；引擎初始化未达 | [APS-10](../tasks/apk-startup/APS-10.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单、角色教学，CG 完成/跳过均返回 | CG 首图约 4 秒待用户复测；用户报告的点击崩溃未复现 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |

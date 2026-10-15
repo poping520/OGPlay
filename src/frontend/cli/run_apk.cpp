@@ -851,14 +851,14 @@ int RunApkCommand(const int argc, const char* const argv[],
         // gets a fresh one. The editor page receives it in the URL fragment, which browsers
         // never send to the server.
         std::string control_token;
-        const char* inherited_token = std::getenv("OGPLAY_CONTROL_TOKEN");
-        const bool generated_token = inherited_token == nullptr || *inherited_token == '\0';
+        const auto inherited_token = hal::HostEnvironmentValue("OGPLAY_CONTROL_TOKEN");
+        const bool generated_token = !inherited_token || inherited_token->empty();
         if (generated_token) {
             std::array<std::byte, 16> entropy{};
             hal::FillSecureRandom(entropy);
             control_token = core::EncodeHex(entropy, core::HexCase::lower);
         } else {
-            control_token = inherited_token;
+            control_token = *inherited_token;
         }
         // The editor page is optional: without built assets /controls/ answers 404 and the RPC stays usable.
         const auto control_assets = bundled_data.root / "webui" / "controls";

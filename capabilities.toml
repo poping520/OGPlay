@@ -841,7 +841,7 @@ note = "APS-3 抽出 AndroidGuestProcess rootless create：仅以 API 19 system 
 [runtime.dynamic_native_library_loader]
 status = "complete"
 test = "tests/runtime/native_library_loader_tests.cpp"
-note = "APS-4/5/9：在 AndroidGuestProcess 上事务追加所选 ABI 的 APK ELF 闭包，依赖优先执行构造器、进程反序 finalization；按规范路径加 ClassLoader 管理状态，APK basename 为身份、DT_SONAME 为别名；同 loader 幂等、同线程递归成功、跨 loader 失败；校验 JNI_OnLoad 并支持其中重入 loadLibrary。"
+note = "APS-10：Java load/native dlopen 共用拥有型 APK/系统源及进程 ELF 装载、构造器状态；按需装载所选 ABI 闭包，首次请求保留 guest 路径，VFS 不读宿主文件。装载可同线程重入、跨线程串行，依赖先初始化，失败禁止重跑构造器。native 不登记 ClassLoader/调用 JNI_OnLoad；Java 保持 loader 检查及一次 JNI 初始化。执行控制故障不降级 dlerror；保留进程生命周期模块及既有 dlsym 范围，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。"
 
 [runtime.application_startup]
 status = "complete"
@@ -916,7 +916,7 @@ note = "M8 WU-M8-005 绑定 10 种返回类型的 CallNonvirtual*Method/V/A 共 
 [runtime.jni_guest_exceptions]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/jni_environment_tests.cpp; tests/runtime/native_library_loader_tests.cpp#BootDex speech callbacks link and JNI diagnostics retain nested causes"
-note = "WU-M8-005：Throw/ThrowNew/ExceptionOccurred/Check/Clear/Describe 共用 pending 状态，ThrowNew 校验 MUTF-8 消息；ExceptionDescribe 只写结构化诊断不清除异常。pending 期间 Push/PopLocalFrame 保留原异常，NewGlobalRef 拒绝；诊断有界输出 cause 链，不执行 guest 方法。FatalError 不支持。"
+note = "Throw/ThrowNew/ExceptionOccurred/Check/Clear/Describe 共用 pending 状态；ThrowNew 校验 MUTF-8，ExceptionDescribe 有界输出 cause 链且不清除异常。pending 期间 Push/PopLocalFrame 保留原异常，NewGlobalRef 拒绝。FatalError 最多扫描 4 KiB，保留可读消息前缀、转义字节、读取状态及 guest 调用点，经宿主致命错误链退出，不返回 guest 或改变 pending。"
 
 [runtime.jni_guest_monitors]
 status = "complete"
@@ -926,7 +926,7 @@ note = "WU-M8-006/007：MonitorEnter/Exit 进入环境拥有的真实 monitor �
 [runtime.jni_guest_binding_manifest]
 status = "complete"
 test = "tests/runtime/jni_guest_bindings_tests.cpp"
-note = "M8 WU-M8-007 让 aggregate contract 以精确 slot 集合等价验证：实际绑定集合逐名与 expected manifest 相等（当前 JNIEnv 212、JavaVM 4），数量仅作辅助诊断；Critical array/string、DirectByteBuffer、Reflection、FatalError 与 DestroyJavaVM 属显式 expected-unbound 清单，reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败"
+note = "aggregate contract 逐名核对实际绑定集合与 expected manifest；FatalError 绑定致命消息诊断，DirectByteBuffer 三槽仅注入 NIO 后绑定。Critical string 与 DestroyJavaVM 保持 expected-unbound；reserved 槽拒绝绑定且 ABI 表项为 0，重复绑定与 Seal 后绑定均明确失败。"
 
 [runtime.jni_guest_static_method_lookup]
 status = "complete"

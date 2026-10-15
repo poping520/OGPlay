@@ -68,7 +68,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   ActivityManager 共用同一快照；不读取宿主内存或动态刷新，不改变 DexVM 堆配额。
 - `dl_unwind_find_exidx` 按 PC 查询 process-owned namespace 的实际 load range，返回所属模块
   经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
-- libdl handle 表归 process。dlopen 只解析 guest basename，nullptr 为 RTLD_DEFAULT，
+- libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；首次装载保留请求路径，
+  `/data/app-lib/` 使用所选 ABI APK，`/system/lib/` 使用 bundled 源，其他路径只走 guest VFS。
+  普通库名查显式 APK/系统来源及 guest `/data/app-lib/`、`/vendor/lib/`、`/system/lib/`；不读宿主
+  环境或实现动态 LD_LIBRARY_PATH。nullptr 为 RTLD_DEFAULT，
   libhgl.so 映射 sealed libGLESv2.so；dlsym 先查 handle scope，boundary 可回退 LookupAny，
   DEFAULT 先 sealed catalog 再 global namespace。dlclose 只减引用，不卸载；未知库/符号/
   handle/flags 进入逐线程 dlerror，不返回假地址或访问宿主文件。
@@ -84,6 +87,13 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；
   DT_NEEDED 可用二者，别名歧义、ET_DYN、依赖/重定位、constructor/JNI version 均受检。
+- [ADR-0135](../../../docs/adr/runtime.md#adr-0135)：共享来源快照拥有 APK/系统库字节，process
+  经显式 native callback 持有；Java registry 退役不悬空其来源。Java/native 共用 namespace
+  与构造器状态，native dlopen 不登记 ClassLoader 或执行 JNI_OnLoad，后续 Java load 复用映射。
+  process 装载门禁可同宿主线程重入、跨线程串行；root CPU admission 在门禁前，元数据锁不跨
+  guest 执行。构造器递归前标记，依赖先于本库，DT_INIT 先于 INIT_ARRAY；失败保存原故障并
+  禁止重跑，不承诺回滚 guest 副作用。native 构造调用保留 caller thread/TLS，执行前复制
+  lifecycle 记录以抵抗递归扩容。仅可恢复链接错误进入 dlerror，执行控制故障沿原路径退出。
 - NDK AssetManager 经 bridge hooks 校验 JNI env/thread/reference，与 NativeActivity 共享
   同一 Java 对象的 opaque 身份；不永久保活 Java 对象，GC 撤销 manager，现存 Asset
   持有独立来源。bridge 在停止线程后撤销 hooks、退役所有来源和注册。

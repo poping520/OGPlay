@@ -1,6 +1,7 @@
 #include "ogplay/core/json.h"
 
 #include <cstdint>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 

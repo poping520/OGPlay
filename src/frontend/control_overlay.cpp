@@ -155,7 +155,7 @@ void DrawControlHints(const std::span<std::uint8_t> rgba8, const std::uint32_t w
     for (const auto& hint : hints) {
         const auto& zone = hint.zone;
         if (hint.stick && hint.sources.size() == 4) {
-            constexpr std::array<std::pair<float, float>, 4> kDirections{{{0, -1}, {-1, 0}, {0, 1}, {1, 0}}};
+            constexpr std::array<std::pair<float, float>, 4> kDirections{{{0.0F, -1.0F}, {-1.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 0.0F}}};
             for (std::size_t i = 0; i < 4; ++i)
                 Label(canvas, HintLabel(hint.sources[i]), zone.center_x + kDirections[i].first * zone.half_width * 0.6F,
                       zone.center_y + kDirections[i].second * zone.half_height * 0.6F, scale);

@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
-#include "ogplay/frontend/gui_rpc.h"
-#include "ogplay/core/encoding.h"
+#include "frontend/gui/rpc.h"
+#include "ogplay/app/encoding.h"
 #include <optional>
 #include <span>
 #include <string>
@@ -123,8 +123,8 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
         [](const auto& source) { return ogplay::app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); }, {},
         [] { return std::string("2026-09-22T00:00:00Z"); }});
     const auto call = [&](std::string_view method, std::string_view params) {
-        core::JsonParseError error;
-        auto document = core::JsonDocument::ParseStrict(rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) + "\",\"params\":" + std::string(params) + "}"), error);
+        app::JsonParseError error;
+        auto document = app::JsonDocument::ParseStrict(rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) + "\",\"params\":" + std::string(params) + "}"), error);
         REQUIRE(document);
         REQUIRE_FALSE(document->Root().Member("error"));
         return std::move(*document);
@@ -140,7 +140,7 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     };
     const auto bytes = MinimalApk();
     call("library.upload.begin", "{\"name\":\"fixture.apk\",\"size\":" + std::to_string(bytes.size()) + "}");
-    call("library.upload.chunk", "{\"job\":\"1\",\"offset\":0,\"data\":\"" + core::EncodeBase64(bytes) + "\"}");
+    call("library.upload.chunk", "{\"job\":\"1\",\"offset\":0,\"data\":\"" + app::EncodeBase64(bytes) + "\"}");
     call("library.upload.finish", R"({"job":"1"})");
     const auto ready = poll();
     CHECK(ready.Root().Member("result")->Member("state")->String() == "ready");

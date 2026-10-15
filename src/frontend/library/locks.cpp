@@ -34,7 +34,6 @@ RunningLease::~RunningLease() = default;
 RunningLease::RunningLease(RunningLease&&) noexcept = default;
 RunningLease& RunningLease::operator=(RunningLease&&) noexcept = default;
 bool LibraryStore::IsRunning(std::string_view id) const {
-    auto library = RequireLibraryLock(root_);
     return !TryRunningLock(*this, id).has_value();
 }
 }

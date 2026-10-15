@@ -4,10 +4,10 @@
 #include <future>
 #include <memory>
 #include "ogplay/app/apk_inspect.h"
-#include "ogplay/frontend/gui_dashboard.h"
-#include "ogplay/agent/json_rpc.h"
-#include "ogplay/frontend/gui_launch.h"
-#include "ogplay/frontend/gui_view_model.h"
+#include "frontend/gui/dashboard.h"
+#include "ogplay/app/agent.h"
+#include "frontend/gui/launch.h"
+#include "frontend/gui/view_model.h"
 
 namespace ogplay::frontend {
 inline bool CanDismissImportModal(bool host_dialog_pending) noexcept { return !host_dialog_pending; }
@@ -39,18 +39,18 @@ public:
     GuiRpcService& operator=(GuiRpcService&&) = delete;
     [[nodiscard]] std::string Handle(std::string_view request);
 private:
-    [[nodiscard]] agent::ControlResponse Request(std::string_view method, core::JsonValue params);
+    [[nodiscard]] app::ConsoleResponse Request(std::string_view method, app::JsonValue params);
     struct ImportState;
     bool ImportBusy() const;
     bool SettingsBusy() const;
-    [[nodiscard]] agent::ControlResponse SettingsRequest(std::string_view method, core::JsonValue params);
-    [[nodiscard]] agent::ControlResponse GameSettingsRequest(std::string_view method, core::JsonValue params);
-    [[nodiscard]] agent::ControlResponse ImportRequest(std::string_view method, core::JsonValue params);
+    [[nodiscard]] app::ConsoleResponse SettingsRequest(std::string_view method, app::JsonValue params);
+    [[nodiscard]] app::ConsoleResponse GameSettingsRequest(std::string_view method, app::JsonValue params);
+    [[nodiscard]] app::ConsoleResponse ImportRequest(std::string_view method, app::JsonValue params);
     std::shared_ptr<ImportState> import_;
     LibraryStore& store_;
     std::filesystem::path game_executable_;
     GuiRpcHost host_;
-    agent::JsonRpcAdapter adapter_;
+    app::JsonRpcDispatcher adapter_;
 };
 
 }  // namespace ogplay::frontend

@@ -6,11 +6,11 @@
 
 #include <stdexcept>
 #include <algorithm>
-#include "ogplay/hal/clock.h"
+#include "ogplay/app/host.h"
 #include <string>
 #include <utility>
 
-#include "ogplay/core/logger.h"
+#include "ogplay/app/logging.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -73,7 +73,7 @@ private:
 
 }  // namespace
 
-GuiProcessManager::GuiProcessManager(core::Logger& logger) : logger_(logger) {}
+GuiProcessManager::GuiProcessManager(app::Logger& logger) : logger_(logger) {}
 
 GuiProcessManager::~GuiProcessManager() {
     for (const auto& active : active_) SDL_DestroyProcess(active.process);
@@ -121,7 +121,7 @@ void GuiProcessManager::Launch(const LaunchPlan& plan) {
             active.dashboard.editor_status = "starting"; active.dashboard.editor_detail = "等待按键设置服务启动。";
         }
         active_.push_back(std::move(active));
-        logger_.Write(core::LogLevel::info, "frontend.gui.launch",
+        logger_.Write(app::LogLevel::info, "frontend.gui.launch",
                       "game process started", {},
                       {{"package", plan.package},
                        {"log_path", PathUtf8(plan.log_path)}});
@@ -140,7 +140,7 @@ std::vector<GameExit> GuiProcessManager::Poll() {
         int exit_code{};
         if (!SDL_WaitProcess(iterator->process, false, &exit_code)) {
             auto& active = *iterator;
-            const auto now = hal::Clock::SteadyTimestampNs();
+            const auto now = app::MonotonicClock::NowNs();
             if (active.probe.valid() && active.probe.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 const auto result = active.probe.get();
                 active.dashboard.status = result.ready ? "ready" : "unavailable";
@@ -170,7 +170,7 @@ std::vector<GameExit> GuiProcessManager::Poll() {
         }
         SDL_DestroyProcess(iterator->process);
         auto result = tracker_.Finish(iterator->package, exit_code);
-        logger_.Write(exit_code == 0 ? core::LogLevel::info : core::LogLevel::error,
+        logger_.Write(exit_code == 0 ? app::LogLevel::info : app::LogLevel::error,
                       "frontend.gui.launch", "game process stopped", {},
                       {{"package", result.package},
                        {"exit_code", static_cast<std::int64_t>(exit_code)},

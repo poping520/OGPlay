@@ -752,25 +752,8 @@ add_library(ogplay_frontend STATIC
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
     src/frontend/game/run_game_vfs.cpp
-    src/frontend/gui/launch.cpp
-    src/frontend/gui/dashboard.cpp
-    src/frontend/gui/rpc_settings.cpp
-    src/frontend/gui/rpc.cpp
-    src/frontend/gui/rpc_import.cpp
-    src/frontend/gui/view_model.cpp
     src/frontend/user_data_dir.cpp
 )
-include(cmake/WebUi.cmake)
-if(OGPLAY_BUILD_GUI)
-    target_sources(ogplay_frontend PRIVATE
-        src/frontend/gui/process_manager.cpp
-        src/frontend/gui/webview_shell.cpp)
-    target_link_libraries(ogplay_frontend PRIVATE SDL3::SDL3)
-    target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=1)
-    add_dependencies(ogplay_frontend ogplay_check_webui)
-else()
-    target_compile_definitions(ogplay_frontend PUBLIC OGPLAY_HAS_GUI=0)
-endif()
 add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
     OGPlay::Agent OGPlay::Input OGPlay::Runtime)
@@ -785,9 +768,9 @@ if(WIN32)
 endif()
 ogplay_set_project_warnings(ogplay_frontend)
 
-# Application DLL owns the complete implementation, including the single SDL copy.
+# Application facade aggregates runtime and shared library domain only.
 add_library(ogplaycore SHARED
-    src/frontend/app/entry.cpp src/frontend/app/json.cpp
+    src/frontend/app/json.cpp src/frontend/app/logging.cpp src/frontend/app/encoding.cpp
     src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
     src/frontend/game/run_game.cpp)
 target_link_libraries(ogplaycore PRIVATE
@@ -813,7 +796,7 @@ include(GenerateExportHeader)
 generate_export_header(ogplaycore BASE_NAME OGPLAYCORE
     EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h"
     EXPORT_MACRO_NAME OGPLAYCORE_API)
-target_include_directories(ogplay_frontend PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
 target_include_directories(ogplaycore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
@@ -832,6 +815,29 @@ if(OGPLAY_ENABLE_SDL3)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
 endif()
 
+include(cmake/WebUi.cmake)
+if(OGPLAY_BUILD_GUI OR OGPLAY_BUILD_TESTS)
+    add_library(ogplay_desktop_app STATIC
+        src/frontend/gui/launch.cpp src/frontend/gui/dashboard.cpp
+        src/frontend/gui/rpc.cpp src/frontend/gui/rpc_import.cpp
+        src/frontend/gui/rpc_settings.cpp src/frontend/gui/view_model.cpp)
+    target_link_libraries(ogplay_desktop_app PUBLIC ogplaycore PRIVATE ogplay_desktop_webview)
+    target_include_directories(ogplay_desktop_app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_include_directories(ogplay_desktop_app SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
+    target_compile_definitions(ogplay_desktop_app PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
+    if(OGPLAY_ENABLE_SDL3)
+        target_sources(ogplay_desktop_app PRIVATE src/frontend/gui/process_manager.cpp src/frontend/gui/webview_shell.cpp)
+        target_link_libraries(ogplay_desktop_app PRIVATE SDL3::SDL3)
+    endif()
+    if(OGPLAY_BUILD_GUI)
+        add_dependencies(ogplay_desktop_app ogplay_check_webui)
+    endif()
+    if(WIN32)
+        target_link_libraries(ogplay_desktop_app PRIVATE ws2_32)
+    endif()
+    ogplay_set_project_warnings(ogplay_desktop_app)
+endif()
+
 add_library(ogplay_cli_app STATIC src/frontend/cli/commands.cpp src/frontend/cli/library_commands.cpp)
 target_link_libraries(ogplay_cli_app PUBLIC ogplaycore)
 target_compile_definitions(ogplay_cli_app PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
@@ -847,8 +853,10 @@ target_compile_definitions(ogplay-cli PRIVATE OGPLAY_NATIVE_ENTRY_ADAPTER=$<BOOL
 ogplay_set_project_warnings(ogplay-cli)
 
 if(OGPLAY_BUILD_GUI)
-    add_executable(ogplay WIN32 src/frontend/app/desktop_main.cpp src/hal/windows/desktop_entry.cpp)
-    target_link_libraries(ogplay PRIVATE ogplaycore)
+    add_executable(ogplay WIN32 src/frontend/desktop/main.cpp src/hal/windows/desktop_entry.cpp)
+    target_link_libraries(ogplay PRIVATE ogplay_desktop_app ogplaycore)
+    target_include_directories(ogplay PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(ogplay PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
     ogplay_set_project_warnings(ogplay)
     set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ogplay)
 endif()
@@ -860,7 +868,6 @@ if(WIN32)
 elseif(APPLE)
     set_target_properties(ogplaycore PROPERTIES INSTALL_NAME_DIR "@rpath")
     target_link_options(ogplaycore PRIVATE
-        "LINKER:-exported_symbol,_ogplay_desktop_main"
         "LINKER:-exported_symbol,__ZN6ogplay3app*"
         "LINKER:-exported_symbol,__ZNK6ogplay3app*"
         "LINKER:-exported_symbol,__ZT?N6ogplay3app*")
@@ -868,7 +875,7 @@ elseif(APPLE)
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
-        "{ global: ogplay_desktop_main; extern \"C++\" { ogplay::app::*; }; local: *; };\n")
+        "{ global: extern \"C++\" { ogplay::app::*; }; local: *; };\n")
     target_link_options(ogplaycore PRIVATE
         "LINKER:--version-script,${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
@@ -1002,16 +1009,9 @@ if(OGPLAY_BUILD_TESTS)
         tests/agent/dashboard_sources_tests.cpp
         tests/agent/dashboard_tests.cpp
         tests/agent/mcp_protocol_tests.cpp
-        tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp
         tests/frontend/run_apk_progress_tests.cpp
         tests/frontend/data_directory_tests.cpp
-        tests/frontend/gui_import_tests.cpp
-        tests/frontend/gui_dashboard_window_tests.cpp
-        tests/frontend/gui_launch_tests.cpp
-        tests/frontend/gui_rpc_tests.cpp
-        tests/frontend/gui_view_model_tests.cpp
-        tests/frontend/gui_visuals_tests.cpp
         tests/golden/golden_frame_tests.cpp
         tests/gles/angle_backend_tests.cpp
         tests/gles/angle_frame_tests.cpp
@@ -1247,16 +1247,37 @@ if(OGPLAY_BUILD_TESTS)
             tests/runtime/arm_kernel_helpers_tests.cpp
         )
     endif()
+    add_executable(ogplay_desktop_integration_tests tests/test_main.cpp
+        tests/frontend/mcp_http_server_tests.cpp tests/frontend/gui_dashboard_window_tests.cpp)
+    target_link_libraries(ogplay_desktop_integration_tests PRIVATE OGPlay::Frontend ogplay_desktop_app ogplay_desktop_webview doctest::doctest)
+    target_include_directories(ogplay_desktop_integration_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_include_directories(ogplay_desktop_integration_tests SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
+    target_compile_definitions(ogplay_desktop_integration_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
+        OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    ogplay_set_project_warnings(ogplay_desktop_integration_tests)
+    if(MSVC)
+        target_link_libraries(ogplay_desktop_integration_tests PRIVATE ws2_32)
+    else()
+        target_compile_options(ogplay_desktop_integration_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
+    if(OGPLAY_ENABLE_SDL3)
+        target_link_libraries(ogplay_desktop_integration_tests PRIVATE SDL3::SDL3)
+    endif()
     add_executable(ogplay_file_lock_tests tests/test_main.cpp tests/hal/file_lock_tests.cpp
         tests/frontend/library_lock_contention_tests.cpp)
     target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore doctest::doctest)
     ogplay_set_project_warnings(ogplay_file_lock_tests)
     add_executable(ogplay_app_tests tests/test_main.cpp
-        tests/frontend/game_run_options_tests.cpp tests/frontend/game_run_args_tests.cpp
+        tests/frontend/game_run_args_tests.cpp
         tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
-        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp)
-    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app doctest::doctest)
+        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp
+        tests/frontend/gui_import_tests.cpp tests/frontend/gui_launch_tests.cpp
+        tests/frontend/gui_rpc_tests.cpp tests/frontend/gui_view_model_tests.cpp
+        tests/frontend/library_visuals_tests.cpp)
+    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app ogplay_desktop_app doctest::doctest)
     target_include_directories(ogplay_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(ogplay_app_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
+        OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     ogplay_set_project_warnings(ogplay_app_tests)
     if(NOT MSVC)
         target_compile_options(ogplay_app_tests PRIVATE -Wno-missing-field-initializers)
@@ -1306,6 +1327,7 @@ if(OGPLAY_BUILD_TESTS)
     ogplay_stage_ffmpeg_runtime(ogplay_tests)
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
+    doctest_discover_tests(ogplay_desktop_integration_tests PROPERTIES LABELS "frontend;integration")
     doctest_discover_tests(ogplay_file_lock_tests PROPERTIES LABELS "hal;contract")
     doctest_discover_tests(ogplay_app_tests PROPERTIES LABELS "app;contract")
     doctest_discover_tests(ogplay_tests
@@ -1378,10 +1400,10 @@ if(OGPLAY_BUILD_TESTS)
 
     if(OGPLAY_BUILD_GUI)
         add_test(NAME frontend.gui_dashboard_window
-            COMMAND ogplay_tests "--test-case=GUI Dashboard windows*" --no-skip=true)
+            COMMAND ogplay_desktop_integration_tests "--test-case=GUI Dashboard windows*" --no-skip=true)
         set_tests_properties(frontend.gui_dashboard_window PROPERTIES LABELS "integration;frontend" TIMEOUT 30)
         add_test(NAME frontend.dashboard_http
-            COMMAND ogplay_tests "--test-case=Dashboard HTTP*,MCP HTTP*")
+            COMMAND ogplay_desktop_integration_tests "--test-case=Dashboard HTTP*,MCP HTTP*")
         add_test(NAME frontend.dashboard_manifest
             COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)

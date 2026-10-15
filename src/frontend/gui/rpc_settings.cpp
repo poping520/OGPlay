@@ -1,4 +1,4 @@
-#include "ogplay/frontend/gui_rpc.h"
+#include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
 #include <limits>
 #include <algorithm>
@@ -7,28 +7,28 @@
 namespace ogplay::frontend {
 using namespace ogplay::app;
 namespace {
-core::JsonWriter::Value Json(core::JsonWriter& writer, const SettingValue& value) {
+app::JsonWriter::Value Json(app::JsonWriter& writer, const SettingValue& value) {
     if (const auto flag = std::get_if<bool>(&value)) return writer.Bool(*flag);
     if (const auto number = std::get_if<std::uint32_t>(&value)) return writer.UnsignedInteger(*number);
     return writer.String(std::get<std::string>(value));
 }
-core::JsonWriter::Value Values(core::JsonWriter& writer, const LibraryConfig& config) {
+app::JsonWriter::Value Values(app::JsonWriter& writer, const LibraryConfig& config) {
     const auto values = writer.Object();
     for (const auto& field : SettingDefinitions()) writer.Add(values, field.key, Json(writer, Setting(config, field.key)));
     return values;
 }
 std::string Revision(const LibraryConfig& config) {
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     return writer.Serialize(Values(writer, config));
 }
-SettingValue ReadValue(core::JsonValue value, const SettingDefinition& field) {
+SettingValue ReadValue(app::JsonValue value, const SettingDefinition& field) {
     if (std::holds_alternative<bool>(field.initial) && value.Bool()) return *value.Bool();
     if (std::holds_alternative<std::uint32_t>(field.initial) && value.UnsignedInteger() && *value.UnsignedInteger() <= std::numeric_limits<std::uint32_t>::max())
         return static_cast<std::uint32_t>(*value.UnsignedInteger());
     if (std::holds_alternative<std::string>(field.initial) && value.String()) return std::string(*value.String());
     throw std::invalid_argument(field.key + ": invalid value type");
 }
-core::JsonWriter::Value FieldList(core::JsonWriter& writer, const std::vector<SettingDefinition>& definitions) {
+app::JsonWriter::Value FieldList(app::JsonWriter& writer, const std::vector<SettingDefinition>& definitions) {
     const auto fields = writer.Array();
     for (const auto& field : definitions) {
         const auto item = writer.Object(), choices = writer.Array();
@@ -46,7 +46,7 @@ std::string PathText(const std::filesystem::path& path) {
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
 }
-agent::ControlResponse GuiRpcService::GameSettingsRequest(std::string_view method, core::JsonValue params) {
+app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method, app::JsonValue params) {
     const bool save = method == "game_settings.set";
     const auto id = params.Member("installation_id");
     if (!id || !id->String() || id->String()->empty() || params.Size() != (save ? 3U : 1U))
@@ -71,7 +71,7 @@ agent::ControlResponse GuiRpcService::GameSettingsRequest(std::string_view metho
     const auto global = LoadLibraryConfig(store_.Root());
     auto settings = LoadGameSettings(entry.directory);
     const auto revision = [&] {
-        core::JsonWriter writer;
+        app::JsonWriter writer;
         const auto root = writer.Object(), overrides = writer.Object(), inherited = writer.Object();
         writer.AddString(root, "installation_id", entry.key);
         for (const auto& [key, value] : settings.values) writer.Add(overrides, key, Json(writer, value));
@@ -89,7 +89,7 @@ agent::ControlResponse GuiRpcService::GameSettingsRequest(std::string_view metho
         SaveGameSettings(entry.directory, replacement);
         settings = std::move(replacement);
     }
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object(), overrides = writer.Object(), inherited = writer.Object();
     writer.AddUnsignedInteger(result, "schema", 1);
     writer.AddString(result, "installation_id", entry.key);
@@ -123,7 +123,7 @@ agent::ControlResponse GuiRpcService::GameSettingsRequest(std::string_view metho
     writer.Add(root, "result", result);
     return {true, writer.Serialize(root)};
 }
-agent::ControlResponse GuiRpcService::SettingsRequest(std::string_view method, core::JsonValue params) {
+app::ConsoleResponse GuiRpcService::SettingsRequest(std::string_view method, app::JsonValue params) {
     LibraryConfig patch;
     std::string expected;
     if (method == "settings.get") {
@@ -142,7 +142,7 @@ agent::ControlResponse GuiRpcService::SettingsRequest(std::string_view method, c
         const auto kind = params.Member("kind");
         if (params.Size() != 1 || !kind || kind->String() != "library") throw std::invalid_argument("only the library directory may be opened");
         host_.open_directory(store_.Root());
-        core::JsonWriter writer;
+        app::JsonWriter writer;
         const auto root = writer.Object(), result = writer.Object();
         writer.AddString(result, "path", PathText(store_.Root())); writer.Add(root, "result", result);
         return {true, writer.Serialize(root)};
@@ -156,7 +156,7 @@ agent::ControlResponse GuiRpcService::SettingsRequest(std::string_view method, c
         ValidateLibraryConfigDirectories(config);
         SaveLibraryConfig(store_.Root(), config);
     }
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();
     writer.AddUnsignedInteger(result, "schema", 2);
     writer.AddString(result, "revision", Revision(config));

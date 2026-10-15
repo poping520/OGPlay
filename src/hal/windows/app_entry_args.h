@@ -9,7 +9,7 @@
 #include <vector>
 
 // Implemented by the executable's frontend adapter, never by the HAL library.
-extern "C" int ogplay_host_main(int argc, const char* const argv[]) noexcept;
+int OgplayMain(int argc, const char* const argv[]) noexcept;
 
 namespace {
 int ForwardApplication(int (*entry)(int, const char* const[]) noexcept) noexcept {

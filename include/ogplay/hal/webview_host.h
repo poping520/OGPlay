@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace ogplay::core { class Logger; }
+namespace ogplay::app { class Logger; }
 namespace ogplay::hal {
 
 struct WebViewHostOptions final {
@@ -39,7 +39,7 @@ public:
     virtual std::future<std::optional<std::filesystem::path>> PickPath(bool directory) = 0;
 };
 [[nodiscard]] std::unique_ptr<WebViewHost> CreateWebViewHost(
-    WebViewHostOptions options, WebViewHostCallbacks callbacks, core::Logger& logger);
+    WebViewHostOptions options, WebViewHostCallbacks callbacks, app::Logger& logger);
 void OpenHostDirectory(const std::filesystem::path& path);
 
 }  // namespace ogplay::hal

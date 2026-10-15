@@ -28,8 +28,10 @@ if(OGPLAY_BUILD_GUI)
     if(MSVC)
         target_compile_options(ogplay_webview PRIVATE /w)
     endif()
-    target_sources(ogplay_hal PRIVATE src/hal/windows/webview_host.cpp)
-    target_link_libraries(ogplay_hal PRIVATE ogplay_webview)
+    add_library(ogplay_desktop_webview STATIC src/hal/windows/webview_host.cpp)
+    target_link_libraries(ogplay_desktop_webview PUBLIC ogplaycore PRIVATE ogplay_webview)
+    target_include_directories(ogplay_desktop_webview PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    ogplay_set_project_warnings(ogplay_desktop_webview)
     add_custom_target(ogplay_check_webui
         COMMAND "${CMAKE_COMMAND}" -DWEBUI_ROOT=${PROJECT_SOURCE_DIR}/data/webui/gui
             -P "${PROJECT_SOURCE_DIR}/cmake/CheckWebUi.cmake"
@@ -41,4 +43,8 @@ if(OGPLAY_BUILD_GUI)
     if(TARGET webui)
         add_dependencies(ogplay_check_webui webui)
     endif()
+endif()
+
+if(NOT TARGET ogplay_desktop_webview)
+    add_library(ogplay_desktop_webview INTERFACE)
 endif()

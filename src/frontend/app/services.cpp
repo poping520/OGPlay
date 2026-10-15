@@ -1,4 +1,6 @@
 #include "ogplay/app/agent.h"
+#include "json_private.h"
+#include "ogplay/core/encoding.h"
 #include "ogplay/app/diagnostics.h"
 #include "ogplay/app/host.h"
 #include "ogplay/agent/control_service.h"
@@ -12,7 +14,23 @@
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 #include "ogplay/session/session.h"
 #include <stdexcept>
+#include <array>
 namespace ogplay::app {
+struct JsonRpcDispatcher::Impl {
+    agent::JsonRpcAdapter rpc;
+    explicit Impl(RequestHandler handler) : rpc([handler = std::move(handler)](std::string_view method, core::JsonValue params) {
+        auto result = handler(method, JsonAccess::Wrap(params));
+        return agent::ControlResponse{result.ok, std::move(result.json)};
+    }) {}
+};
+JsonRpcDispatcher::JsonRpcDispatcher(RequestHandler handler) : impl_(std::make_unique<Impl>(std::move(handler))) {}
+JsonRpcDispatcher::~JsonRpcDispatcher() = default;
+std::string JsonRpcDispatcher::Handle(std::string_view request) { return impl_->rpc.Handle(request); }
+std::string NewControlToken() {
+    std::array<std::byte, 16> entropy{};
+    hal::FillSecureRandom(entropy);
+    return core::EncodeHex(entropy);
+}
 struct AgentConsole::Impl {
     core::CapabilityLedger ledger;
     core::Logger logger;

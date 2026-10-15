@@ -31,7 +31,7 @@ execute_process(COMMAND "${OGPLAY_CLI}" agent-stdio INPUT_FILE "${fixtures}/requ
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 5)
 string(FIND "${output}" "\"result\"" found)
 if(NOT result EQUAL 0 OR found EQUAL -1)
-    message(FATAL_ERROR "DLL stdio transport failed: ${result}; ${output}${error}")
+    message(FATAL_ERROR "CLI stdio transport failed: ${result}; ${output}${error}")
 endif()
 
 if(DEFINED OGPLAY_GUI AND NOT "${OGPLAY_GUI}" STREQUAL "")
@@ -73,10 +73,6 @@ if(DEFINED OGPLAY_CORE)
     foreach(symbol IN LISTS exports)
         string(STRIP "${symbol}" symbol)
         if(symbol STREQUAL "")
-            continue()
-        endif()
-        # Removed once both EXE implementations have moved in WU-C/D.
-        if(symbol MATCHES "^_?ogplay_(desktop|cli)_main$")
             continue()
         endif()
         if(NOT symbol MATCHES "^_?_Z(NK?|T[ISV]N)6ogplay3app" AND

@@ -13,8 +13,8 @@
 #include <map>
 #include <stdexcept>
 #include <utility>
-#include "ogplay/core/json.h"
-#include "ogplay/core/logger.h"
+#include "ogplay/app/json.h"
+#include "ogplay/app/logging.h"
 #include "ogplay/hal/webview_host.h"
 
 namespace ogplay::hal {
@@ -32,7 +32,7 @@ void CheckWeb(webview_error_t result) {
 
 class NativeWebView final : public WebViewHost {
 public:
-    NativeWebView(WebViewHostOptions options, WebViewHostCallbacks callbacks, core::Logger& logger)
+    NativeWebView(WebViewHostOptions options, WebViewHostCallbacks callbacks, app::Logger& logger)
         : options_(std::move(options)), callbacks_(std::move(callbacks)), logger_(logger) {}
 
     ~NativeWebView() {
@@ -87,7 +87,7 @@ public:
         active_ = nullptr;
         if (options_.smoke_responses && (lists_ < *options_.smoke_responses || !smoke_capture_complete_))
             throw std::runtime_error("GUI closed before WebView load and library.list smoke completed");
-        logger_.Write(core::LogLevel::info, "frontend.gui", "WebView shell stopped", {}, {{"library_list_calls", lists_}});
+        logger_.Write(app::LogLevel::info, "frontend.gui", "WebView shell stopped", {}, {{"library_list_calls", lists_}});
         return 0;
     }
     void Evaluate(std::string_view script) override {
@@ -148,16 +148,16 @@ private:
     static void Rpc(const char* id, const char* args, void* user) noexcept {
         auto& self = *static_cast<NativeWebView*>(user);
         try {
-            core::JsonParseError error;
-            auto document = core::JsonDocument::ParseStrict(args, error);
-            const auto root = document ? document->Root() : core::JsonValue{};
+            app::JsonParseError error;
+            auto document = app::JsonDocument::ParseStrict(args, error);
+            const auto root = document ? document->Root() : app::JsonValue{};
             const auto arg = root.Element(0);
             const auto text = arg ? arg->String() : std::nullopt;
             if (!root.IsArray() || root.Size() != 1 || !text) throw std::invalid_argument("rpc requires one JSON string");
             const auto response = self.callbacks_.request(*text);
             CheckWeb(webview_return(self.view_, id, 0, response.c_str()));
         } catch (const std::exception& error) {
-            core::JsonWriter writer;
+            app::JsonWriter writer;
             const auto result = writer.Object();
             writer.AddString(result, "message", error.what());
             writer.AddString(result, "next_step", "检查 GUI 日志和前端制品后重试。");
@@ -179,7 +179,7 @@ private:
             if (self.options_.smoke_responses && self.lists_ >= *self.options_.smoke_responses && !self.smoke_capture_requested_)
                 self.CaptureSmoke();
         } catch (const std::exception& error) {
-            self.logger_.Write(core::LogLevel::error, "frontend.gui", "process polling failed", {}, {{"reason", std::string(error.what())}});
+            self.logger_.Write(app::LogLevel::error, "frontend.gui", "process polling failed", {}, {{"reason", std::string(error.what())}});
         }
     }
     void CaptureSmoke() {
@@ -248,7 +248,7 @@ private:
     inline static NativeWebView* active_{};
     WebViewHostOptions options_;
     WebViewHostCallbacks callbacks_;
-    core::Logger& logger_;
+    app::Logger& logger_;
     webview_t view_{};
     UINT_PTR timer_{};
     std::uint64_t lists_{};
@@ -259,7 +259,7 @@ private:
 };
 }  // namespace
 std::unique_ptr<WebViewHost> CreateWebViewHost(WebViewHostOptions options,
-    WebViewHostCallbacks callbacks, core::Logger& logger) {
+    WebViewHostCallbacks callbacks, app::Logger& logger) {
     if (!callbacks.request || !callbacks.poll) throw std::invalid_argument("WebView callbacks are required");
     return std::make_unique<NativeWebView>(std::move(options), std::move(callbacks), logger);
 }

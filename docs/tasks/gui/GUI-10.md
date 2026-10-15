@@ -27,3 +27,9 @@
 
 CLI 命令、usage、错误块与 stdio 循环迁入 ogplay_cli_app，仅依赖 app 公开头。新增 library 全部子命令；设置 patch 在库锁内原子合并，复用 schema/目录校验。library run 当前进程内运行，进度 stderr、JSON stdout、日志写实例 last-run.log。删除旧 CLI C 入口；JSON 外观隔离内核 JSON 类型。
 定向构建通过；app 26 例（含 3 个 CLI library 主题、缺 Profile/重复导入/严格设置/运行锁拒绝）和入口/参数 2 项通过。证据 `wu-c-build.log`、`wu-c-app-tests.log`、`wu-c-ctest.log`。
+
+## WU-D
+
+桌面模式分派、GUI/RPC/视图、导入状态机及子进程管理迁入 ogplay_desktop_app/desktop，公开前端 GUI 头改为私有。WebView 宿主单独 target ogplay_desktop_webview，仅桌面消费；core 无 GUI/WebView/OGPLAY_HAS_GUI。删除 api.h 与两个 C main；Windows 入口直接调用所属 EXE 的 C++ OgplayMain。GUI 补查 OS 运行锁，进程表只作补充。
+定向构建 `ogplaycore ogplay-cli ogplay_app_tests ogplay_desktop_integration_tests` 通过；71 个 app 例、10 个 HTTP/编辑器例和入口/参数 2 项通过。macOS 额外编译可移植 shell/process 源码，不代表原生 GUI 可用。HTTP/native host 夹具另设 integration target，app tests 只链接共享外观及两类 EXE app 库。
+最终导出 仅 app 命名空间；CLI 链接行只有自己的 ogplay_cli_app 静态库与共享 core，无内核静态库/WebView 导入。证据 `wu-d-*.log`、`link-boundary.json`、`cli-link-command.txt`、`exports.txt`、`cli-imports.txt`。Windows EXE 导入/链接表待原生构建复核。

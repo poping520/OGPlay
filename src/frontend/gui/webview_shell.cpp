@@ -1,5 +1,6 @@
-#include "ogplay/frontend/gui.h"
+#include "frontend/gui/shell.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <filesystem>
@@ -8,16 +9,12 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include "ogplay/core/logger.h"
-#include "ogplay/frontend/gui_rpc.h"
+#include "ogplay/app/logging.h"
+#include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
-#include "ogplay/frontend/data_directory.h"
-#include "ogplay/frontend/user_data_dir.h"
+#include "ogplay/app/host.h"
 #include "ogplay/hal/webview_host.h"
-#include "ogplay/hal/clock.h"
-#include "ogplay/hal/host_environment.h"
-#include "ogplay/session/profile_apk.h"
-#include "ogplay/session/quirk_registry.h"
+#include "ogplay/app/profiles.h"
 #include "process_manager.h"
 
 namespace ogplay::frontend {
@@ -72,12 +69,7 @@ struct GuiOptions final {
     }
 
     if (explicit_root.has_value()) return {*explicit_root, smoke_frames};
-    const auto root = UserDataDirectory();
-    if (!root.has_value()) {
-        throw std::runtime_error(
-            "host user-data directory is unavailable; use --library-root <dir>");
-    }
-    return {*root, smoke_frames};
+    return {app::DefaultLibraryRoot(), smoke_frames};
 }
 
 [[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
@@ -85,7 +77,7 @@ struct GuiOptions final {
     return {reinterpret_cast<const char*>(value.data()), value.size()};
 }
 
-void PrepareLog(core::Logger& logger, const std::filesystem::path& root) {
+void PrepareLog(app::Logger& logger, const std::filesystem::path& root) {
     std::filesystem::create_directories(root);
     const auto path = root / "gui.log";
     {
@@ -94,27 +86,29 @@ void PrepareLog(core::Logger& logger, const std::filesystem::path& root) {
             throw std::runtime_error("cannot create GUI log: " + PathUtf8(path));
         }
     }
-    logger.AddSink(std::make_shared<core::FileSink>(path), core::LogLevel::info);
+    logger.SetFile(path);
 }
 
 LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessManager& processes_, const std::vector<LibraryEntry>& entries) {
         LibraryViewContext context;
         context.running_packages = processes_.RunningPackages();
+        for (const auto& entry : entries) if (store_.IsRunning(entry.key) &&
+            std::find(context.running_packages.begin(), context.running_packages.end(), entry.key) == context.running_packages.end())
+            context.running_packages.push_back(entry.key);
         try {
-            const auto bundled = HostBundledDataPaths();
+            const auto bundled = app::BundledDataPaths();
             const auto config = LoadLibraryConfig(store_.Root());
-            const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-            std::map<std::filesystem::path, session::TitleProfileCatalog> catalogs;
+            std::map<std::filesystem::path, app::ProfileCatalog> catalogs;
             for (const auto& entry : entries) {
                 if (!entry.metadata || entry.Damaged()) continue;
                 try {
                     const auto effective = EffectiveGameConfig(LoadGameSettings(entry.directory), config);
                     const auto directory = effective.profiles_dir.value_or(bundled.profiles_directory);
                     if (!catalogs.contains(directory)) catalogs.emplace(directory,
-                        session::TitleProfileCatalog::LoadDirectory(directory, quirks));
+                        app::ProfileCatalog::Load(directory));
                     const auto& profiles = catalogs.at(directory);
                     if (!entry.metadata->profile_id) continue;
-                    const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
+                    const auto summary = profiles.Find(*entry.metadata->profile_id);
                     if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
                     if (summary->requires_external_data) context.external_required_packages.push_back(entry.key);
                 } catch (const std::exception& error) { context.profile_errors[entry.key] = error.what(); }
@@ -123,32 +117,31 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
         return context;
     }
 }  // namespace
-int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
+int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
     const auto options = ParseOptions(argc, argv);
     try {
         PrepareLog(logger, options.library_root);
         LibraryStore store(options.library_root);
         GuiProcessManager processes(logger);
         std::unique_ptr<hal::WebViewHost> view;
-        GuiRpcService rpc(store, hal::HostExecutablePath(), {
+        GuiRpcService rpc(store, app::ExecutablePath(), {
             [&](const auto& entries) { return BuildContext(store, processes, entries); },
             [&](const auto& plan) { processes.Launch(plan); },
             [](const auto& path) { hal::OpenHostDirectory(path); },
             [&](const auto& path) {
-                const auto bundled = HostBundledDataPaths();
+                const auto bundled = app::BundledDataPaths();
                 const auto config = LoadLibraryConfig(store.Root());
-                const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-                const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-                    config.profiles_dir.value_or(bundled.profiles_directory), quirks);
+                const auto profiles = app::ProfileCatalog::Load(
+                    config.profiles_dir.value_or(bundled.profiles_directory));
                 return AnalyzeApkImportFile(path, profiles);
             },
             [&](bool directory) { return view->PickPath(directory); },
-            [] { return hal::Clock::UtcTimestamp(); },
+            [] { return app::UtcTimestamp(); },
             [&] { view->Minimize(); },
             [] {
                 std::map<std::string, std::string> facts;
                 facts["OGPlay 版本"] = OGPLAY_VERSION;
-                const auto root = HostBundledDataPaths().root;
+                const auto root = app::BundledDataPaths().root;
                 for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{{
                     {"Web UI 构建清单", "webui/gui/manifest.json"},
                     {"Android / BootDex / guest JNI 制品清单", "android/19/manifest.json"},
@@ -165,24 +158,19 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
             },
             [](const LibraryEntry& entry, const LibraryConfig& config) {
                 std::map<std::string, std::string> facts;
-                const auto bundled = HostBundledDataPaths();
+                const auto bundled = app::BundledDataPaths();
                 const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
                 facts["有效 Profile 目录"] = PathUtf8(directory);
-                const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-                const auto profiles = session::TitleProfileCatalog::LoadDirectory(directory, quirks);
+                const auto profiles = app::ProfileCatalog::Load(directory);
                 facts["Profile 状态"] = "无导入匹配记录；启动时由运行服务重新匹配";
                 if (entry.metadata && entry.metadata->profile_id) {
-                    const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
+                    const auto summary = profiles.Find(*entry.metadata->profile_id);
                     if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
                     facts["Profile 状态"] = "目录中存在导入记录；适用性由运行服务启动时校验";
-                    for (const auto& profile : profiles.Profiles()) if (profile.identity.package == *entry.metadata->profile_id) {
-                        std::string names;
-                        if (profile.quirks) for (const auto& name : profile.quirks->enabled) {
-                            if (!names.empty()) names += ", "; names += name;
-                        }
-                        facts["Profile quirk 列表"] = names.empty() ? "无" : names;
-                        facts["Profile 输入模板"] = profile.input && profile.input->template_id ? *profile.input->template_id : "未指定";
-                    }
+                    std::string names;
+                    for (const auto& name : summary->quirks) { if (!names.empty()) names += ", "; names += name; }
+                    facts["Profile quirk 列表"] = names.empty() ? "无" : names;
+                    facts["Profile 输入模板"] = summary->input_template.value_or("未指定");
                 }
                 return facts;
             },
@@ -193,16 +181,16 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                 view->OpenKeyEditor(instance, editor.port, editor.token);
             }});
         view = hal::CreateWebViewHost({
-            HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
+            app::BundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
             options.library_root / "gui-smoke.png"}, {
             [&](std::string_view request) {
                 const auto response = rpc.Handle(request);
-                core::JsonParseError error;
-                auto decoded = core::JsonDocument::ParseStrict(response, error);
+                app::JsonParseError error;
+                auto decoded = app::JsonDocument::ParseStrict(response, error);
                 if (decoded && decoded->Root().Member("error")) {
-                    logger.Write(core::LogLevel::error, "frontend.gui.rpc", "RPC request failed", {}, {{"response", response}});
+                    logger.Write(app::LogLevel::error, "frontend.gui.rpc", "RPC request failed", {}, {{"response", response}});
                 } else {
-                    auto document = core::JsonDocument::ParseStrict(request, error);
+                    auto document = app::JsonDocument::ParseStrict(request, error);
                     const auto method = document ? document->Root().Member("method") : std::nullopt;
                     if (method && method->String() == std::optional<std::string_view>{"library.list"}) view->RecordSmokeResponse();
                 }
@@ -212,7 +200,7 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                 for (const auto& result : processes.Poll()) {
                     view->CloseDashboard(result.package);
                     view->CloseKeyEditor(result.package);
-                    core::JsonWriter writer;
+                    app::JsonWriter writer;
                     const auto event = writer.Object();
                     writer.AddString(event, "installation_id", result.package);
                     writer.AddInteger(event, "exit_code", result.exit_code);
@@ -225,14 +213,14 @@ int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
                         const auto editor = processes.KeyEditor(instance);
                         view->OpenKeyEditor(instance, editor.port, editor.token);
                     } catch (const std::exception& error) {
-                        logger.Write(core::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {}, {{"reason", std::string(error.what())}});
+                        logger.Write(app::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {}, {{"reason", std::string(error.what())}});
                     }
                 }
                 for (const auto& instance : processes.TakeAutoOpen()) {
                     try { view->OpenDashboard(instance, processes.DashboardPort(instance)); }
                     catch (const std::exception& error) {
-                        logger.Write(core::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed", {}, {{"reason", std::string(error.what())}});
-                        core::JsonWriter writer; const auto text = writer.String(error.what());
+                        logger.Write(app::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed", {}, {{"reason", std::string(error.what())}});
+                        app::JsonWriter writer; const auto text = writer.String(error.what());
                         view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-dashboard-error',{detail:" + writer.Serialize(text) + "}));");
                     }
                 }

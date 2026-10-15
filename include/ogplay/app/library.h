@@ -129,6 +129,7 @@ struct GameSettings final {
 [[nodiscard]] OGPLAYCORE_API const SettingDefinition& FindGameSetting(std::string_view key);
 OGPLAYCORE_API void ValidateGameSettings(const GameSettings& settings, bool directories = false);
 [[nodiscard]] OGPLAYCORE_API GameSettings LoadGameSettings(const std::filesystem::path& entry_directory);
+OGPLAYCORE_API GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id, const GameSettings& changes, std::span<const std::string> unset);
 OGPLAYCORE_API void SaveGameSettings(const std::filesystem::path& entry_directory, const GameSettings& settings);
 [[nodiscard]] OGPLAYCORE_API SettingValue EffectiveGameSetting(const GameSettings& settings, const LibraryConfig& global,
                                                    const LibraryEntry& entry, std::string_view key);

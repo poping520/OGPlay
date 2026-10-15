@@ -338,9 +338,7 @@ LibraryConfig LoadLibraryConfig(const std::filesystem::path& root) {
     auto lock = RequireLibraryLock(root);
     return LoadConfigFile<LibraryConfig>(root / "config.toml", DecodeConfig);
 }
-GameSettings LoadGameSettings(const std::filesystem::path& directory) {
-    std::optional<hal::FileLock> lock;
-    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& directory) {
     return LoadConfigFile<GameSettings>(directory / "settings.toml", [](std::string_view text) {
         const auto values = ParseFlatToml(text);
         if (ParseUint32(Require(values, "schema"), "schema") != 1) throw std::invalid_argument("unsupported instance settings schema");
@@ -426,9 +424,7 @@ void SaveLibraryConfig(const std::filesystem::path& root, const LibraryConfig& c
     auto lock = RequireLibraryLock(root);
     SaveConfigFile(root / "config.toml", EncodeConfig(config));
 }
-void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {
-    std::optional<hal::FileLock> lock;
-    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+static void SaveGameSettingsUnlocked(const std::filesystem::path& directory, const GameSettings& settings) {
     ValidateGameSettings(settings);
     if (!std::filesystem::is_directory(directory)) throw std::invalid_argument("instance directory unavailable");
     std::string text = "schema = 1\n";
@@ -440,6 +436,32 @@ void SaveGameSettings(const std::filesystem::path& directory, const GameSettings
         text += "\n";
     }
     SaveConfigFile(directory / "settings.toml", text);
+}
+
+GameSettings LoadGameSettings(const std::filesystem::path& directory) {
+    std::optional<hal::FileLock> lock;
+    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+    return LoadGameSettingsUnlocked(directory);
+}
+void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {
+    std::optional<hal::FileLock> lock;
+    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+    SaveGameSettingsUnlocked(directory, settings);
+}
+GameSettings PatchGameSettings(const LibraryStore& store, std::string_view id, const GameSettings& changes, std::span<const std::string> unset) {
+    ValidateGameSettings(changes, true);
+    for (const auto& key : unset) static_cast<void>(FindGameSetting(key));
+    auto lock = RequireLibraryLock(store.Root());
+    const auto entries = store.LoadEntries();
+    const auto found = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.key == id; });
+    if (found == entries.end()) throw LibraryError(LibraryErrorCode::not_found, "library entry does not exist");
+    if (found->Damaged()) throw LibraryError(LibraryErrorCode::corrupt_config, "damaged library entry cannot be configured");
+    auto result = LoadGameSettingsUnlocked(found->directory);
+    for (const auto& [key, value] : changes.values) result.values[key] = value;
+    for (const auto& key : unset) result.values.erase(key);
+    ValidateGameSettings(result, true);
+    SaveGameSettingsUnlocked(found->directory, result);
+    return result;
 }
 
 LibraryStore::LibraryStore(std::filesystem::path library_root)

@@ -787,7 +787,7 @@ ogplay_set_project_warnings(ogplay_frontend)
 
 # Application DLL owns the complete implementation, including the single SDL copy.
 add_library(ogplaycore SHARED
-    src/frontend/app/entry.cpp src/frontend/app/cli.cpp
+    src/frontend/app/entry.cpp src/frontend/app/json.cpp
     src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
     src/frontend/game/run_game.cpp)
 target_link_libraries(ogplaycore PRIVATE
@@ -832,12 +832,17 @@ if(OGPLAY_ENABLE_SDL3)
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
 endif()
 
+add_library(ogplay_cli_app STATIC src/frontend/cli/commands.cpp src/frontend/cli/library_commands.cpp)
+target_link_libraries(ogplay_cli_app PUBLIC ogplaycore)
+target_compile_definitions(ogplay_cli_app PRIVATE OGPLAY_VERSION="${PROJECT_VERSION}")
+ogplay_set_project_warnings(ogplay_cli_app)
+
 if(WIN32)
     add_executable(ogplay-cli src/frontend/cli/main.cpp src/hal/windows/cli_entry.cpp)
 else()
     add_executable(ogplay-cli src/frontend/cli/main.cpp)
 endif()
-target_link_libraries(ogplay-cli PRIVATE ogplaycore)
+target_link_libraries(ogplay-cli PRIVATE ogplay_cli_app ogplaycore)
 target_compile_definitions(ogplay-cli PRIVATE OGPLAY_NATIVE_ENTRY_ADAPTER=$<BOOL:${WIN32}>)
 ogplay_set_project_warnings(ogplay-cli)
 
@@ -856,7 +861,6 @@ elseif(APPLE)
     set_target_properties(ogplaycore PROPERTIES INSTALL_NAME_DIR "@rpath")
     target_link_options(ogplaycore PRIVATE
         "LINKER:-exported_symbol,_ogplay_desktop_main"
-        "LINKER:-exported_symbol,_ogplay_cli_main"
         "LINKER:-exported_symbol,__ZN6ogplay3app*"
         "LINKER:-exported_symbol,__ZNK6ogplay3app*"
         "LINKER:-exported_symbol,__ZT?N6ogplay3app*")
@@ -864,7 +868,7 @@ elseif(APPLE)
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
-        "{ global: ogplay_desktop_main; ogplay_cli_main; extern \"C++\" { ogplay::app::*; }; local: *; };\n")
+        "{ global: ogplay_desktop_main; extern \"C++\" { ogplay::app::*; }; local: *; };\n")
     target_link_options(ogplaycore PRIVATE
         "LINKER:--version-script,${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
@@ -1249,8 +1253,9 @@ if(OGPLAY_BUILD_TESTS)
     ogplay_set_project_warnings(ogplay_file_lock_tests)
     add_executable(ogplay_app_tests tests/test_main.cpp
         tests/frontend/game_run_options_tests.cpp tests/frontend/game_run_args_tests.cpp
-        tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp)
-    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore doctest::doctest)
+        tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
+        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp)
+    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app doctest::doctest)
     target_include_directories(ogplay_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     ogplay_set_project_warnings(ogplay_app_tests)
     if(NOT MSVC)

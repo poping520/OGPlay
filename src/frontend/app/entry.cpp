@@ -1,5 +1,4 @@
 #include "ogplay/app/api.h"
-#include "commands.h"
 #include "../game/run_game.h"
 #include "ogplay/frontend/gui.h"
 #include "ogplay/core/logger.h"
@@ -46,7 +45,6 @@ int DesktopMain(int argc, char* argv[]) {
 #endif
 }
 
-int CliMain(int argc, char* argv[]) { return ogplay::frontend::RunCli(argc, argv); }
 
 // C++ unwinding must not escape through SDL's C bootstrap.
 template <int (*Entry)(int, char**)>
@@ -83,4 +81,3 @@ int RunEntry(int argc, const char* const argv[]) noexcept {
 }  // namespace
 
 int ogplay_desktop_main(int argc, const char* const argv[]) noexcept { return RunEntry<DesktopMain>(argc, argv); }
-int ogplay_cli_main(int argc, const char* const argv[]) noexcept { return RunEntry<CliMain>(argc, argv); }

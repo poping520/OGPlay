@@ -8,20 +8,18 @@
 #include <string>
 #include <string_view>
 
-#include "ogplay/agent/control_service.h"
-#include "ogplay/agent/json_rpc.h"
-#include "ogplay/core/capability_ledger.h"
-#include "ogplay/core/logger.h"
-#include "ogplay/frontend/gui.h"
-#include "ogplay/hal/clock.h"
-#include "ogplay/hal/host_environment.h"
-#include "ogplay/session/session.h"
-#include "ogplay/runtime/debug/stall_diagnostics.h"
+#include "ogplay/app/agent.h"
+#include "ogplay/app/host.h"
+#include "ogplay/app/diagnostics.h"
 
-#include "../game/run_game.h"
+#include "ogplay/app/game_run.h"
+#include "library_commands.h"
+#include "output.h"
 #include "commands.h"
 #include <vector>
 
+using ogplay::cli::Write;
+using ogplay::cli::FormatError;
 namespace {
 
 std::filesystem::path Utf8Path(std::string_view text) {
@@ -29,22 +27,15 @@ std::filesystem::path Utf8Path(std::string_view text) {
         reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
 
-void Write(FILE* stream, const std::string_view text) {
-    static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
-}
-
-[[nodiscard]] std::string FormatError(const std::string_view message) {
-    std::string rendered{"\nerror [ogplay]\n  "};
-    for (const char character : message) {
-        rendered += character;
-        if (character == '\n') rendered += "  ";
-    }
-    rendered += '\n';
-    return rendered;
-}
-
 int Usage(FILE* stream = stderr, int code = 2) {
     Write(stream, "usage: ogplay-cli --version | capabilities [path] | agent <method> | agent-stdio\n"
+                  "       ogplay-cli library [--library-root <dir>] <command>\n"
+                  "         list | inspect <apk>\n"
+                  "         import <apk> [--external-dir <dir>] [--new-instance]\n"
+                  "         remove <installation-id> --yes\n"
+                  "         settings get <installation-id>\n"
+                  "         settings set <installation-id> <key>=<value>... [--unset <key>]...\n"
+                  "         run <installation-id> [--mode normal|preflight|diagnostic]\n"
                   "       ogplay-cli diag snapshot --pid <pid> [--diag-dir <dir>]\n"
                   "       ogplay-cli run-apk <apk> [--profiles-dir <dir>] "
                   "[--external-dir <host-dir> [--external-guest-dir </sdcard/...>]] "
@@ -63,7 +54,7 @@ int Usage(FILE* stream = stderr, int code = 2) {
 
 }  // namespace
 
-int ogplay::frontend::RunCli(const int argc, const char* const argv[]) {
+int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
         Write(stdout, "OGPlay " OGPLAY_VERSION "\n");
         return 0;
@@ -71,13 +62,11 @@ int ogplay::frontend::RunCli(const int argc, const char* const argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--help") return Usage(stdout, 0);
     if (argc < 2) return Usage();
 
-    ogplay::core::Logger logger;
-    logger.AddSink(std::make_shared<ogplay::core::ConsoleSink>(stderr),
-                   ogplay::core::LogLevel::info);
     try {
+        if (std::string_view(argv[1]) == "library") return RunLibraryCommand(std::span(argv + 2, static_cast<std::size_t>(argc - 2)));
         if (std::string_view(argv[1]) == "run-apk") {
             std::vector<std::string_view> args(argv + 2, argv + argc);
-            return app::RunGame(ParseGameRunOptions(args));
+            return app::RunGame(app::ParseGameRunArgs(args));
         }
         if (argc >= 5 && std::string_view(argv[1]) == "diag" &&
             std::string_view(argv[2]) == "snapshot") {
@@ -103,7 +92,7 @@ int ogplay::frontend::RunCli(const int argc, const char* const argv[]) {
             }
             if (!pid) throw std::invalid_argument("diag snapshot requires --pid");
             const auto trigger =
-                ogplay::runtime::debug::TriggerExternalDiagnostic(*pid, directory);
+                ogplay::app::RequestDiagnosticSnapshot(*pid, directory);
             Write(stdout, "OGPlay: requested diagnostic snapshot via " + trigger + "\n");
             return 0;
         }
@@ -112,29 +101,28 @@ int ogplay::frontend::RunCli(const int argc, const char* const argv[]) {
             !(std::string_view(argv[1]) == "agent-stdio" && argc == 2)) return Usage();
         const auto ledger_path = argc >= 3 && std::string_view(argv[1]) == "capabilities"
                                      ? Utf8Path(argv[2])
-                                     : ogplay::hal::HostExecutableDirectory() / "data" / "capabilities.toml";
-        auto ledger = ogplay::core::CapabilityLedger::Load(ledger_path);
-        ogplay::hal::FixedStepClock clock(1'000, 60'000);
-        ogplay::session::Session session(clock);
-        ogplay::agent::ControlService service(ledger, logger, session);
+                                     : ogplay::app::ExecutablePath().parent_path() / "data" / "capabilities.toml";
+        ogplay::app::AgentConsole console(ledger_path);
 
         if (std::string_view(argv[1]) == "capabilities") {
-            Write(stdout, service.Request("hle.capabilities").json + "\n");
+            Write(stdout, console.Request("hle.capabilities").json + "\n");
             return 0;
         }
         if (argc == 3 && std::string_view(argv[1]) == "agent") {
-            const auto response = service.Request(argv[2]);
+            const auto response = console.Request(argv[2]);
             Write(response.ok ? stdout : stderr, response.json + "\n");
             return response.ok ? 0 : 1;
         }
         if (argc == 2 && std::string_view(argv[1]) == "agent-stdio") {
-            ogplay::agent::JsonRpcAdapter adapter(service);
             std::string line;
-            while (std::getline(std::cin, line)) Write(stdout, adapter.Handle(line) + "\n");
+            while (std::getline(std::cin, line)) Write(stdout, console.HandleJsonRpc(line) + "\n");
             return 0;
         }
     } catch (const std::exception& error) {
         Write(stderr, FormatError(error.what()));
+        return 1;
+    } catch (...) {
+        Write(stderr, FormatError("unknown CLI failure"));
         return 1;
     }
     return Usage();

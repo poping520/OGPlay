@@ -1,8 +1,8 @@
-#include "ogplay/frontend/gui_launch.h"
-#include "ogplay/frontend/gui_dashboard.h"
+#include "frontend/gui/launch.h"
+#include "frontend/gui/dashboard.h"
 #include "ogplay/app/library.h"
-#include "ogplay/core/encoding.h"
-#include "ogplay/hal/host_environment.h"
+#include "ogplay/app/encoding.h"
+#include "ogplay/app/host.h"
 
 #include <array>
 #include <cstddef>
@@ -30,15 +30,14 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable,
                            const std::filesystem::path& library_root,
                            const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode) {
     if (!std::filesystem::is_regular_file(game_executable)) throw LibraryError(LibraryErrorCode::not_found, "OGPlay game executable is missing", game_executable);
+    if (LibraryStore(library_root).IsRunning(entry.key)) throw LibraryError(LibraryErrorCode::running, "instance_running: game is already running; close it before launching again");
     auto resolved = ResolveLaunch(LibraryStore(library_root), entry, config, mode);
     LaunchPlan plan;
     plan.package = entry.key;
     plan.mcp_port = resolved.mcp_port;
     plan.dashboard_auto_open = resolved.dashboard_auto_open;
     if (mode != LaunchMode::preflight) {
-        std::array<std::byte, 16> entropy{};
-        hal::FillSecureRandom(entropy);
-        plan.control_token = core::EncodeHex(entropy, core::HexCase::lower);
+        plan.control_token = app::NewControlToken();
         plan.key_editor_port = plan.mcp_port ? *plan.mcp_port : PickLoopbackPort();
         if (!plan.mcp_port) resolved.options.key_editor_port = plan.key_editor_port;
     }

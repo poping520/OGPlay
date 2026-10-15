@@ -1,6 +1,6 @@
-#include "ogplay/frontend/gui_dashboard.h"
-#include "ogplay/core/json.h"
-#include "ogplay/hal/clock.h"
+#include "frontend/gui/dashboard.h"
+#include "ogplay/app/json.h"
+#include "ogplay/app/host.h"
 #include <boost/asio.hpp>
 #include <array>
 #include <chrono>
@@ -20,12 +20,12 @@ Exchange LoopbackExchange(const std::uint16_t port, const std::string_view reque
     tcp::socket socket(io); boost::system::error_code error;
     socket.open(tcp::v4(), error); if (error) return Exchange::refused;
     socket.non_blocking(true, error); if (error) return Exchange::refused;
-    const auto deadline = hal::Clock::SteadyTimestampNs() + 750000000ULL;
+    const auto deadline = app::MonotonicClock::NowNs() + 750000000ULL;
     socket.connect({boost::asio::ip::make_address_v4("127.0.0.1"), port}, error);
     const auto pending = [](auto e) { return e == boost::asio::error::would_block || e == boost::asio::error::try_again || e == boost::asio::error::in_progress; };
     if (error && !pending(error)) return Exchange::refused;
     std::size_t sent{}; std::array<char, 2048> buffer{};
-    while (hal::Clock::SteadyTimestampNs() < deadline) {
+    while (app::MonotonicClock::NowNs() < deadline) {
         if (sent < request.size()) {
             sent += socket.write_some(boost::asio::buffer(request.data() + sent, request.size() - sent), error);
             if (error && !pending(error) && error != boost::asio::error::not_connected) return Exchange::send_failed;
@@ -53,9 +53,9 @@ DashboardProbe DecodeDashboardProbe(std::string_view response, std::uint64_t pid
     if (!pid || !response.starts_with("HTTP/1.1 200 ")) return {false, "Dashboard 服务尚未就绪。"};
     const auto body = response.find("\r\n\r\n");
     if (body == std::string_view::npos || response.size() > 8192) return {false, "Dashboard 响应无效。"};
-    core::JsonParseError error;
-    auto doc = core::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
-    const auto root = doc ? doc->Root() : core::JsonValue{};
+    app::JsonParseError error;
+    auto doc = app::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
+    const auto root = doc ? doc->Root() : app::JsonValue{};
     const auto result = root.Member("result");
     const auto id = result ? result->Member("process_id") : std::nullopt;
     const auto schema = result ? result->Member("schema_version") : std::nullopt;
@@ -84,9 +84,9 @@ KeyEditorProbe DecodeKeyEditorProbe(const std::string_view response) {
     if (!response.starts_with("HTTP/1.1 200 ")) return {false, 0, "按键设置服务尚未就绪。"};
     const auto body = response.find("\r\n\r\n");
     if (body == std::string_view::npos || response.size() > 8192) return {false, 0, "按键设置响应无效。"};
-    core::JsonParseError error;
-    auto doc = core::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
-    const auto root = doc ? doc->Root() : core::JsonValue{};
+    app::JsonParseError error;
+    auto doc = app::JsonDocument::ParseStrict(response.substr(body + 4), error, 8192);
+    const auto root = doc ? doc->Root() : app::JsonValue{};
     const auto result = root.Member("result");
     const auto requests = result ? result->Member("edit_requests") : std::nullopt;
     const auto count = requests ? requests->UnsignedInteger() : std::nullopt;

@@ -2,9 +2,9 @@
 #if defined(_WIN32) && OGPLAY_TEST_HAS_GUI
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/agent/mcp_protocol.h"
-#include "ogplay/core/logger.h"
+#include "ogplay/app/logging.h"
 #include "ogplay/frontend/mcp_http_server.h"
-#include "ogplay/hal/clock.h"
+#include "ogplay/app/host.h"
 #include "ogplay/hal/webview_host.h"
 #include "../../src/frontend/gui/process_manager.h"
 #define NOMINMAX
@@ -16,7 +16,7 @@
 namespace {
 struct DashboardFixture {
     std::filesystem::path root = std::filesystem::temp_directory_path() /
-        ("ogplay-dashboard-window-" + std::to_string(ogplay::hal::Clock::SteadyTimestampNs()));
+        ("ogplay-dashboard-window-" + std::to_string(ogplay::app::MonotonicClock::NowNs()));
     DashboardFixture() { std::filesystem::create_directories(root); }
     ~DashboardFixture() { std::error_code error; std::filesystem::remove_all(root, error); }
     void Write(const char* file, const char* text) { std::ofstream(root / file) << text; }
@@ -37,14 +37,14 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
     agent::FrameSnapshotStore frames; agent::McpInputQueue inputs;
     auto server = frontend::McpHttpServer::Start(0, frames, inputs,
         {std::make_shared<agent::DashboardService>(sources), fixture.root});
-    core::Logger logger;
+    app::Logger logger;
     std::unique_ptr<hal::WebViewHost> host;
     unsigned stage{};
-    const auto deadline = hal::Clock::SteadyTimestampNs() + 15000000000ULL;
+    const auto deadline = app::MonotonicClock::NowNs() + 15000000000ULL;
     host = hal::CreateWebViewHost({fixture.root / "index.html", 1, fixture.root / "capture.png"}, {
         [](std::string_view) { return std::string("{}"); },
         [&] {
-            if (hal::Clock::SteadyTimestampNs() > deadline) { host->RecordSmokeResponse(); return; }
+            if (app::MonotonicClock::NowNs() > deadline) { host->RecordSmokeResponse(); return; }
             if (stage == 0) { ++stage; host->OpenDashboard("fixture", server->Port()); host->OpenDashboard("fixture", server->Port()); }
             else if (stage == 1 && loads.load() == 1) { ++stage; host->CloseDashboard("fixture"); }
             else if (stage == 2) { ++stage; host->OpenDashboard("fixture", server->Port()); }
@@ -56,7 +56,7 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
     host.reset();
     // Exercise the actual WM_CLOSE path with a Dashboard still open.
     bool close_sent = false;
-    const auto close_deadline = hal::Clock::SteadyTimestampNs() + 5000000000ULL;
+    const auto close_deadline = app::MonotonicClock::NowNs() + 5000000000ULL;
     host = hal::CreateWebViewHost({fixture.root / "index.html", std::nullopt, {}}, {
         [](std::string_view) { return std::string("{}"); },
         [&] {
@@ -69,7 +69,7 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
                     return TRUE;
                 }, 0);
             }
-            if (hal::Clock::SteadyTimestampNs() > close_deadline) throw std::runtime_error("main close timed out");
+            if (app::MonotonicClock::NowNs() > close_deadline) throw std::runtime_error("main close timed out");
         }}, logger);
     CHECK(host->Run() == 0);
     CHECK(close_sent);
@@ -77,7 +77,7 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
 TEST_CASE("GUI Dashboard process tracking rejects duplicate ports and reaps exits") {
     using namespace ogplay;
     using namespace ogplay::app;
-    DashboardFixture fixture; core::Logger logger;
+    DashboardFixture fixture; app::Logger logger;
     frontend::GuiProcessManager processes(logger);
     frontend::LaunchPlan plan;
     plan.package = "fixture"; plan.log_path = fixture.root / "run.log";
@@ -91,8 +91,8 @@ TEST_CASE("GUI Dashboard process tracking rejects duplicate ports and reaps exit
     plan.package = "other";
     CHECK_THROWS(processes.Launch(plan));
     std::vector<frontend::GameExit> exits;
-    const auto deadline = hal::Clock::SteadyTimestampNs() + 10000000000ULL;
-    while (exits.empty() && hal::Clock::SteadyTimestampNs() < deadline) {
+    const auto deadline = app::MonotonicClock::NowNs() + 10000000000ULL;
+    while (exits.empty() && app::MonotonicClock::NowNs() < deadline) {
         exits = processes.Poll(); std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     REQUIRE(exits.size() == 1);
@@ -103,7 +103,7 @@ TEST_CASE("GUI Dashboard process tracking rejects duplicate ports and reaps exit
 TEST_CASE("GUI Dashboard tracking destruction leaves child alive") {
     using namespace ogplay;
     using namespace ogplay::app;
-    DashboardFixture fixture; core::Logger logger;
+    DashboardFixture fixture; app::Logger logger;
     fixture.Write("child.ps1", "Start-Sleep -Milliseconds 800\n[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'alive.txt'), 'alive')\n");
     {
         frontend::GuiProcessManager processes(logger);
@@ -113,8 +113,8 @@ TEST_CASE("GUI Dashboard tracking destruction leaves child alive") {
         processes.Launch(plan);
         CHECK(processes.Dashboards()[0].status == "disabled");
     }
-    const auto deadline = hal::Clock::SteadyTimestampNs() + 10000000000ULL;
-    while (!std::filesystem::exists(fixture.root / "alive.txt") && hal::Clock::SteadyTimestampNs() < deadline)
+    const auto deadline = app::MonotonicClock::NowNs() + 10000000000ULL;
+    while (!std::filesystem::exists(fixture.root / "alive.txt") && app::MonotonicClock::NowNs() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     CHECK(std::filesystem::exists(fixture.root / "alive.txt"));
 }

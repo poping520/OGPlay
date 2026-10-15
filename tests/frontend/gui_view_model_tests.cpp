@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/frontend/gui_view_model.h"
+#include "frontend/gui/view_model.h"
 
 namespace {
 

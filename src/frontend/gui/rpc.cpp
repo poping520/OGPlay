@@ -1,11 +1,11 @@
-#include "ogplay/frontend/gui_rpc.h"
+#include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
 
 #include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <utility>
-#include "ogplay/core/encoding.h"
+#include "ogplay/app/encoding.h"
 
 namespace ogplay::frontend {
 using namespace ogplay::app;
@@ -16,13 +16,13 @@ std::string PathUtf8(const std::filesystem::path& path) {
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
 
-void CheckFields(core::JsonValue params, std::initializer_list<std::string_view> fields) {
+void CheckFields(app::JsonValue params, std::initializer_list<std::string_view> fields) {
     std::size_t found{};
     for (const auto field : fields) if (params.Member(field)) ++found;
     if (params.Size() != found) throw std::invalid_argument("unknown parameter");
 }
 
-std::string RequiredString(core::JsonValue params, std::string_view key) {
+std::string RequiredString(app::JsonValue params, std::string_view key) {
     const auto member = params.Member(key);
     const auto value = member ? member->String() : std::nullopt;
     if (!value || value->empty() || value->find('\0') != std::string_view::npos)
@@ -30,8 +30,8 @@ std::string RequiredString(core::JsonValue params, std::string_view key) {
     return std::string(*value);
 }
 
-agent::ControlResponse Error(int code, std::string_view message, std::string_view next) {
-    core::JsonWriter writer;
+app::ConsoleResponse Error(int code, std::string_view message, std::string_view next) {
+    app::JsonWriter writer;
     const auto root = writer.Object();
     const auto error = writer.Object();
     writer.AddInteger(error, "code", code);
@@ -47,7 +47,7 @@ std::string_view Status(LibraryTileStatus status) {
     return names.at(static_cast<std::size_t>(status));
 }
 
-core::JsonWriter::Value Condition(core::JsonWriter& writer, const LibraryCondition& condition) {
+app::JsonWriter::Value Condition(app::JsonWriter& writer, const LibraryCondition& condition) {
     constexpr std::array names{"ready", "missing", "not_required", "unavailable"};
     const auto value = writer.Object();
     writer.AddString(value, "status", names.at(static_cast<std::size_t>(condition.status)));
@@ -59,19 +59,19 @@ core::JsonWriter::Value Condition(core::JsonWriter& writer, const LibraryConditi
 
 GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host)
     : store_(store), game_executable_(std::move(game_executable)), host_(std::move(host)),
-      adapter_([this](std::string_view method, core::JsonValue params) { return Request(method, params); }) {
+      adapter_([this](std::string_view method, app::JsonValue params) { return Request(method, params); }) {
     if (!host_.context || !host_.launch || !host_.open_directory)
         throw std::invalid_argument("GUI host callbacks are required");
 }
 
 std::string GuiRpcService::Handle(std::string_view request) {
     const auto response = adapter_.Handle(request);
-    core::JsonParseError parse_error;
-    auto document = core::JsonDocument::ParseStrict(response, parse_error);
+    app::JsonParseError parse_error;
+    auto document = app::JsonDocument::ParseStrict(response, parse_error);
     if (!document) throw std::runtime_error("GUI RPC produced invalid JSON");
     const auto error = document->Root().Member("error");
     if (!error || error->Member("next_step")) return response;
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     const auto root = writer.Object();
     writer.AddString(root, "jsonrpc", "2.0");
     writer.Add(root, "id", writer.Copy(*document->Root().Member("id")));
@@ -83,7 +83,7 @@ std::string GuiRpcService::Handle(std::string_view request) {
     return writer.Serialize(root);
 }
 
-agent::ControlResponse GuiRpcService::Request(std::string_view method, core::JsonValue params) {
+app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonValue params) {
     try {
         if (method == "controls.open") {
             CheckFields(params, {"installation_id"});
@@ -95,7 +95,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
             if (found->editor_status != "ready") return Error(-32002, found->editor_detail, "等待游戏启动完成后重试。");
             if (!host_.open_key_editor) throw std::runtime_error("宿主不支持按键设置窗口。");
             host_.open_key_editor(id);
-            core::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            app::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
             writer.AddBool(result, "opened", true);
             writer.Add(root, "result", result); return {true, writer.Serialize(root)};
         }
@@ -105,7 +105,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
             const auto id = method == "dashboard.open" ? RequiredString(params, "installation_id") : std::string{};
             if (!host_.dashboards) throw std::runtime_error("宿主未接入运行实例查询。");
             const auto dashboards = host_.dashboards();
-            core::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            app::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
             if (method == "dashboard.open") {
                 const auto found = std::find_if(dashboards.begin(), dashboards.end(), [&](const auto& value) { return value.installation_id == id; });
                 if (found == dashboards.end()) return Error(-32004, "实例未运行", "启动游戏后重试。");
@@ -165,7 +165,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         }
         const auto context = host_.context(entries);
         const auto tiles = BuildLibraryTiles(entries, context);
-        core::JsonWriter writer;
+        app::JsonWriter writer;
         const auto root = writer.Object();
         const auto result = writer.Object();
         if (method == "library.list") {
@@ -194,7 +194,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
                 writer.AddBool(item, "running", tile.running);
                 writer.AddBool(item, "can_launch", tile.can_launch);
                 writer.AddString(item, "icon", tile.icon_png.empty() ? std::string{} :
-                                 "data:image/png;base64," + core::EncodeBase64(tile.icon_png));
+                                 "data:image/png;base64," + app::EncodeBase64(tile.icon_png));
                 writer.Add(item, "profile", Condition(writer, detail.profile));
                 writer.Add(item, "external", Condition(writer, detail.external));
                 writer.Append(items, item);

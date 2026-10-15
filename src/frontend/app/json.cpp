@@ -1,10 +1,11 @@
 #include "ogplay/app/json.h"
-#include "ogplay/core/json.h"
+#include "json_private.h"
 namespace ogplay::app {
 struct JsonValue::Impl { core::JsonValue value; };
 struct JsonDocument::Impl { core::JsonDocument document; };
 struct JsonWriter::Value::Impl { core::JsonWriter::Value value; };
 struct JsonWriter::Impl { core::JsonWriter writer; };
+JsonValue JsonAccess::Wrap(core::JsonValue value) { return JsonValue(std::make_shared<JsonValue::Impl>(JsonValue::Impl{value})); }
 JsonValue::JsonValue(std::shared_ptr<Impl> value) noexcept : impl_(std::move(value)) {}
 bool JsonValue::IsValid() const noexcept { return impl_ && impl_->value.IsValid(); }
 bool JsonValue::IsNull() const noexcept { return impl_ && impl_->value.IsNull(); }

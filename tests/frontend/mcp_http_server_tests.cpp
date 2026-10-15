@@ -5,7 +5,7 @@
 #include "ogplay/agent/mcp_session_control.h"
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/frontend/mcp_http_server.h"
-#include "ogplay/frontend/gui_dashboard.h"
+#include "frontend/gui/dashboard.h"
 #include "ogplay/hal/diagnostic_trigger.h"
 
 #include <boost/asio.hpp>

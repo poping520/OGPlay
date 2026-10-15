@@ -4,16 +4,16 @@
 
 #include <filesystem>
 #include <future>
-#include "ogplay/frontend/gui_dashboard.h"
+#include "frontend/gui/dashboard.h"
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "ogplay/frontend/gui_launch.h"
+#include "frontend/gui/launch.h"
 
-namespace ogplay::core {
+namespace ogplay::app {
 class Logger;
 }
 
@@ -21,7 +21,7 @@ namespace ogplay::frontend {
 
 class GuiProcessManager final {
 public:
-    explicit GuiProcessManager(core::Logger& logger);
+    explicit GuiProcessManager(app::Logger& logger);
     ~GuiProcessManager();
 
     GuiProcessManager(const GuiProcessManager&) = delete;
@@ -55,7 +55,7 @@ private:
         std::uint64_t edit_requests{};
         bool editor_requested{};
     };
-    core::Logger& logger_;
+    app::Logger& logger_;
     LaunchTracker tracker_;
     std::vector<Active> active_;
     std::vector<std::future<DashboardProbe>> retired_probes_;

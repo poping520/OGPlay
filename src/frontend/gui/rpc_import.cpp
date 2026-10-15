@@ -1,5 +1,5 @@
-#include "ogplay/frontend/gui_rpc.h"
-#include "ogplay/core/encoding.h"
+#include "frontend/gui/rpc.h"
+#include "ogplay/app/encoding.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -16,19 +16,19 @@ std::string Text(const std::filesystem::path& path) {
 std::filesystem::path Path(std::string_view text) {
     return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
-void Fields(core::JsonValue params, std::initializer_list<std::string_view> keys) {
+void Fields(app::JsonValue params, std::initializer_list<std::string_view> keys) {
     std::size_t found{};
     for (auto key : keys) if (params.Member(key)) ++found;
     if (found != params.Size()) throw std::invalid_argument("unknown parameter");
 }
-std::string String(core::JsonValue params, std::string_view key) {
+std::string String(app::JsonValue params, std::string_view key) {
     const auto value = params.Member(key);
     const auto text = value ? value->String() : std::nullopt;
     if (!text || text->empty() || text->find('\0') != std::string_view::npos)
         throw std::invalid_argument(std::string(key) + " requires a nonempty string");
     return std::string(*text);
 }
-std::uint64_t Number(core::JsonValue params, std::string_view key) {
+std::uint64_t Number(app::JsonValue params, std::string_view key) {
     const auto value = params.Member(key);
     const auto number = value ? value->UnsignedInteger() : std::nullopt;
     if (!number) throw std::invalid_argument(std::string(key) + " requires an unsigned integer");
@@ -92,7 +92,7 @@ bool GuiRpcService::ImportBusy() const {
 bool GuiRpcService::SettingsBusy() const {
     return import_ && (import_->analyzing.valid() || import_->committing.valid());
 }
-agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, core::JsonValue params) {
+app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::JsonValue params) {
     if (!import_) import_ = std::make_shared<ImportState>();
     auto& job = *import_;
     // Schema is checked before polling, IO or host interaction.
@@ -104,7 +104,7 @@ agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, cor
     else if (method == "library.import") Fields(params, {"job", "external_dir", "new_instance"});
     else if (method == "library.job.poll" || method == "library.job.cancel" || method == "library.upload.finish") Fields(params, {"job"});
     else throw std::invalid_argument("unknown import method");
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     const auto root = writer.Object(), result = writer.Object();
     if (method == "dialog.pick") {
         const auto kind = String(params, "kind");
@@ -154,7 +154,7 @@ agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, cor
                 const auto offset = Number(params, "offset");
                 const auto data = String(params, "data");
                 if (data.size() > 262144 || offset != job.received) throw std::invalid_argument("invalid upload chunk size or offset");
-                const auto bytes = core::DecodeBase64(data, {.ignore_ascii_whitespace = false});
+                const auto bytes = app::DecodeBase64(data, {.ignore_ascii_whitespace = false});
                 if (!bytes || bytes->empty() || bytes->size() > job.expected - job.received) throw std::invalid_argument("invalid upload bytes");
                 std::ofstream stream(job.directory / "source.apk", std::ios::binary | std::ios::app);
                 stream.write(reinterpret_cast<const char*>(bytes->data()), static_cast<std::streamsize>(bytes->size()));
@@ -194,7 +194,7 @@ agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, cor
             const auto abis = writer.Array();
             for (const auto& abi : analysis.abis) writer.Append(abis, writer.String(abi));
             writer.Add(summary, "abis", abis);
-            writer.AddString(summary, "icon", analysis.icon_png.empty() ? "" : "data:image/png;base64," + core::EncodeBase64(analysis.icon_png));
+            writer.AddString(summary, "icon", analysis.icon_png.empty() ? "" : "data:image/png;base64," + app::EncodeBase64(analysis.icon_png));
             if (analysis.profile) writer.AddString(summary, "profile", analysis.profile->profile_id); else writer.AddNull(summary, "profile");
             if (analysis.profile) writer.AddBool(summary, "requires_external", analysis.profile->requires_external_data); else writer.AddNull(summary, "requires_external");
             const auto entries = store_.LoadEntries();

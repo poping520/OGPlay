@@ -15,7 +15,6 @@
 
 #include "ogplay/app/library.h"
 #include "ogplay/app/apk_visuals.h"
-#include "ogplay/runtime/integration/host_image_decode.h"
 
 namespace {
 
@@ -282,10 +281,14 @@ TEST_CASE("launcher extracts resource label and normalized PNG then caches it") 
     CHECK(visuals.display_name == "Resource Game");
     CHECK(visuals.fallbacks.empty());
     REQUIRE_FALSE(visuals.icon_png.empty());
-    const auto decoded = ogplay::runtime::DecodeImageToArgb(visuals.icon_png);
-    REQUIRE(decoded.has_value());
-    CHECK(decoded->width == 128);
-    CHECK(decoded->height == 128);
+    REQUIRE(visuals.icon_png.size() >= 24);
+    const auto dimension = [&](std::size_t offset) {
+        std::uint32_t value{};
+        for (std::size_t i = 0; i < 4; ++i) value = (value << 8U) | std::to_integer<std::uint32_t>(visuals.icon_png[offset + i]);
+        return value;
+    };
+    CHECK(dimension(16) == 128);
+    CHECK(dimension(20) == 128);
 
     TempDirectory temporary;
     const auto source = temporary.Path() / "source.apk";

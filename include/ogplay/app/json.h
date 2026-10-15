@@ -49,6 +49,7 @@ public:
     [[nodiscard]] std::size_t Size() const noexcept;
 
 private:
+    friend struct JsonAccess;
     friend class JsonDocument;
     friend class JsonWriter;
     struct Impl;

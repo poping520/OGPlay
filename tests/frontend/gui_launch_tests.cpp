@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "ogplay/frontend/gui_dashboard.h"
+#include "frontend/gui/dashboard.h"
 
 #include <atomic>
 #include <algorithm>
@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/frontend/gui_launch.h"
+#include "frontend/gui/launch.h"
 #include "ogplay/app/library.h"
 
 namespace {
@@ -70,7 +70,7 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
-    const auto directory = tree.path / "entry";
+    const auto directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
@@ -99,7 +99,7 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     using namespace ogplay::frontend;
     using namespace ogplay::app;
     TemporaryDirectory tree;
-    const auto cli = tree.path / "ogplay", directory = tree.path / "entry", external = tree.path / "external";
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game", external = tree.path / "external";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     std::filesystem::create_directories(external);
     auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
@@ -147,7 +147,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 19);
+    REQUIRE(plan.argv.size() == 21);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -161,9 +161,11 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[14] ==
           ogplay::app::LauncherSandboxRoot(temporary.path)
               .generic_string());
-    CHECK(plan.argv[15] == "--installation-id");
-    CHECK(plan.argv[16] == "org.example.game");
-    CHECK(plan.argv[17] == "--input-config");
+    CHECK(plan.argv[15] == "--library-root");
+    CHECK(plan.argv[16] == std::filesystem::absolute(temporary.path).generic_string());
+    CHECK(plan.argv[17] == "--installation-id");
+    CHECK(plan.argv[18] == "org.example.game");
+    CHECK(plan.argv[19] == "--input-config");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -223,7 +225,7 @@ TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
     using namespace ogplay::frontend;
     using namespace ogplay::app;
     TemporaryDirectory tree;
-    const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
     GameSettings settings{{{"cpu_cores", std::uint32_t{4}}, {"cpu_frequency_mhz", std::uint32_t{1500}}}};
@@ -246,7 +248,7 @@ TEST_CASE("BND-43 GUI persists optional execution limits independently of nomina
     using namespace ogplay::frontend;
     using namespace ogplay::app;
     TemporaryDirectory tree;
-    const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
+    const auto cli = tree.path / "ogplay", directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
     GameSettings settings{{{"cpu_limit_parallelism", true}, {"cpu_max_mticks_per_second", std::uint32_t{20}}}};
@@ -311,7 +313,7 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
-    const auto directory = tree.path / "entry";
+    const auto directory = tree.path / "library" / "org.example.game";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();

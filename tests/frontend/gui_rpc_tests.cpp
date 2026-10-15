@@ -5,8 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
-#include "ogplay/core/encoding.h"
-#include "ogplay/frontend/gui_rpc.h"
+#include "ogplay/app/encoding.h"
+#include "frontend/gui/rpc.h"
 #include "ogplay/app/library.h"
 
 namespace {
@@ -58,9 +58,9 @@ struct Fixture {
     }
     ~Fixture() { std::error_code error; std::filesystem::remove_all(root, error); }
 };
-core::JsonDocument Decode(const std::string& response) {
-    core::JsonParseError error;
-    auto result = core::JsonDocument::ParseStrict(response, error);
+app::JsonDocument Decode(const std::string& response) {
+    app::JsonParseError error;
+    auto result = app::JsonDocument::ParseStrict(response, error);
     REQUIRE(result.has_value());
     return std::move(*result);
 }
@@ -95,7 +95,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     CHECK(result->Member("fields")->Size() == ogplay::app::SettingDefinitions().size());
     const auto revision = std::string(*result->Member("revision")->String());
     const auto update = [&](std::string_view token, std::string_view key, auto value) {
-        core::JsonWriter writer;
+        app::JsonWriter writer;
         const auto request = writer.Object(), params = writer.Object(), values = writer.Object();
         writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 2);
         writer.AddString(request, "method", "settings.set");
@@ -121,7 +121,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     CHECK(fixture.opened == fixture.root);
     CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"settings.open_dir","params":{"kind":"library","path":"C:/"}})")).Root().Member("error").has_value());
     CHECK(fixture.opens == 1);
-    core::JsonWriter writer;
+    app::JsonWriter writer;
     const auto analyze = writer.Object(), params = writer.Object();
     writer.AddString(analyze, "jsonrpc", "2.0"); writer.AddUnsignedInteger(analyze, "id", 4);
     writer.AddString(analyze, "method", "library.analyze");
@@ -157,13 +157,13 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     const auto first = fixture.root / "library/org.example.game", second = fixture.root / "library/org.example.game-2";
     std::filesystem::copy(first, second, std::filesystem::copy_options::recursive);
     const auto get = [&](std::string_view id) {
-        core::JsonWriter writer; const auto request = writer.Object(), params = writer.Object();
+        app::JsonWriter writer; const auto request = writer.Object(), params = writer.Object();
         writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 1);
         writer.AddString(request, "method", "game_settings.get"); writer.AddString(params, "installation_id", id);
         writer.Add(request, "params", params); return Decode(fixture.rpc.Handle(writer.Serialize(request)));
     };
     const auto set = [&](std::string_view revision, std::string_view values) {
-        auto parsed = Decode(std::string(values)); core::JsonWriter writer;
+        auto parsed = Decode(std::string(values)); app::JsonWriter writer;
         const auto request = writer.Object(), params = writer.Object();
         writer.AddString(request, "jsonrpc", "2.0"); writer.AddUnsignedInteger(request, "id", 2);
         writer.AddString(request, "method", "game_settings.set"); writer.AddString(params, "installation_id", "org.example.game");

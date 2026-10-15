@@ -1,4 +1,4 @@
-#include "ogplay/frontend/gui_view_model.h"
+#include "frontend/gui/view_model.h"
 
 #include <algorithm>
 #include <stdexcept>

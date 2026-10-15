@@ -188,7 +188,7 @@ int RunGame(GameRunOptions options, core::Logger& logger) {
           dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, cpu_config, mcp_manual_step,
           preflight, survey_gaps_output, sandbox_directory, installation_id,
-          ephemeral_sandbox, input_config_path] = std::move(options);
+          ephemeral_sandbox, input_config_path, library_root] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -501,7 +501,8 @@ int RunGame(GameRunOptions options, core::Logger& logger) {
                     : runtime::dexvm::InterpreterBackend::switch_dispatch;
         }
         if (dexvm_interpreter.has_value()) {
-            bridge_config.interpreter.backend = *dexvm_interpreter;
+            bridge_config.interpreter.backend = *dexvm_interpreter == app::InterpreterBackend::threaded
+                ? runtime::dexvm::InterpreterBackend::threaded : runtime::dexvm::InterpreterBackend::switch_dispatch;
         }
         if (diagnostic_state &&
             bridge_config.interpreter.diagnostics.trace_capacity == 0U) {
@@ -523,7 +524,8 @@ int RunGame(GameRunOptions options, core::Logger& logger) {
              {"source", backend_source}},
             kUnrestrictedLog);
         session::AndroidAppProcessRequest app_request;
-        app_request.proc_facts.cpu = cpu_config;
+        app_request.proc_facts.cpu = {cpu_config.cores, cpu_config.frequency_mhz,
+            {cpu_config.execution.limit_parallelism, cpu_config.execution.max_mticks_per_second}};
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;

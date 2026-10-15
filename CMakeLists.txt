@@ -24,6 +24,7 @@ if(OGPLAY_BUILD_GUI AND (NOT WIN32 OR NOT OGPLAY_ENABLE_SDL3))
 endif()
 # All internal and bundled static libraries must also be usable in ogplaycore.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 option(OGPLAY_ENABLE_DYNARMIC "Configure the bundled Dynarmic CPU dependency" ON)
 option(OGPLAY_ENABLE_ANGLE "Link an externally GN-built ANGLE SDK" ON)
 set(OGPLAY_ANGLE_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt"
@@ -735,7 +736,6 @@ add_library(ogplay_frontend STATIC
     src/frontend/mcp_http_server.cpp
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
-    src/frontend/game/run_options.cpp
     src/frontend/game/run_game_vfs.cpp
     src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
@@ -778,6 +778,7 @@ ogplay_set_project_warnings(ogplay_frontend)
 # Application DLL owns the complete implementation, including the single SDL copy.
 add_library(ogplaycore SHARED
     src/frontend/app/entry.cpp src/frontend/app/cli.cpp
+    src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
     src/frontend/game/run_game.cpp)
 target_link_libraries(ogplaycore PRIVATE
     OGPlay::Frontend OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
@@ -800,7 +801,9 @@ target_compile_definitions(ogplaycore PRIVATE
     OGPLAY_NATIVE_ANGLE_RENDERER="${OGPLAY_NATIVE_ANGLE_RENDERER}")
 include(GenerateExportHeader)
 generate_export_header(ogplaycore BASE_NAME OGPLAYCORE
-    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h")
+    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h"
+    EXPORT_MACRO_NAME OGPLAYCORE_API)
+target_include_directories(ogplay_frontend PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_include_directories(ogplaycore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
@@ -810,6 +813,14 @@ set_target_properties(ogplaycore PROPERTIES
 ogplay_set_project_warnings(ogplaycore)
 ogplay_stage_angle_runtime(ogplaycore)
 ogplay_stage_ffmpeg_runtime(ogplaycore)
+
+if(OGPLAY_ENABLE_SDL3)
+    add_custom_command(TARGET ogplaycore POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:ogplaycore>)
+    install(TARGETS SDL3-shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
+endif()
 
 if(WIN32)
     add_executable(ogplay-cli src/frontend/cli/main.cpp src/hal/windows/cli_entry.cpp)
@@ -835,12 +846,15 @@ elseif(APPLE)
     set_target_properties(ogplaycore PROPERTIES INSTALL_NAME_DIR "@rpath")
     target_link_options(ogplaycore PRIVATE
         "LINKER:-exported_symbol,_ogplay_desktop_main"
-        "LINKER:-exported_symbol,_ogplay_cli_main")
+        "LINKER:-exported_symbol,_ogplay_cli_main"
+        "LINKER:-exported_symbol,__ZN6ogplay3app*"
+        "LINKER:-exported_symbol,__ZNK6ogplay3app*"
+        "LINKER:-exported_symbol,__ZT?N6ogplay3app*")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
-        "{ global: ogplay_desktop_main; ogplay_cli_main; local: *; };\n")
+        "{ global: ogplay_desktop_main; ogplay_cli_main; extern \"C++\" { ogplay::app::*; }; local: *; };\n")
     target_link_options(ogplaycore PRIVATE
         "LINKER:--version-script,${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
@@ -957,6 +971,7 @@ if(OGPLAY_BUILD_TESTS)
     add_test(NAME frontend.app_entrypoints
         COMMAND ${CMAKE_COMMAND}
             -DOGPLAY_CLI=$<TARGET_FILE:ogplay-cli>
+            -DOGPLAY_CORE=$<TARGET_FILE:ogplaycore>
             -DOGPLAY_GUI=${_ogplay_gui_test_path}
             -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckAppEntrypoints.cmake)
@@ -976,7 +991,6 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/mcp_http_server_tests.cpp
         tests/frontend/mcp_input_dispatch_tests.cpp
         tests/frontend/run_apk_progress_tests.cpp
-        tests/frontend/game_run_options_tests.cpp
         tests/frontend/data_directory_tests.cpp
         tests/frontend/gui_import_tests.cpp
         tests/frontend/gui_dashboard_window_tests.cpp
@@ -1220,6 +1234,13 @@ if(OGPLAY_BUILD_TESTS)
             tests/runtime/arm_kernel_helpers_tests.cpp
         )
     endif()
+    add_executable(ogplay_app_tests tests/test_main.cpp
+        tests/frontend/game_run_options_tests.cpp tests/frontend/game_run_args_tests.cpp)
+    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore doctest::doctest)
+    target_include_directories(ogplay_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    ogplay_set_project_warnings(ogplay_app_tests)
+    add_dependencies(ogplay_app_tests ogplay_stage_data)
+
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
     target_link_libraries(ogplay_tests PRIVATE
         OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video doctest::doctest
@@ -1263,6 +1284,7 @@ if(OGPLAY_BUILD_TESTS)
     ogplay_stage_ffmpeg_runtime(ogplay_tests)
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
+    doctest_discover_tests(ogplay_app_tests PROPERTIES LABELS "app;contract")
     doctest_discover_tests(ogplay_tests
         PROPERTIES LABELS "unit;contract"
     )

@@ -304,39 +304,35 @@ const std::filesystem::path& LibraryError::Path() const noexcept { return path_;
 namespace {
 template<class Config, class Decode>
 Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
-    auto backup = path;
-    backup += ".bak";
+    auto source = path;
     std::error_code error;
     if (!std::filesystem::exists(path, error)) {
         if (error) {
             throw LibraryError(LibraryErrorCode::io_error,
                                 "cannot inspect library config", path);
         }
-        error.clear();
-        if (!std::filesystem::exists(backup, error)) {
+        // Readers share the lock, so an interrupted save's backup is read without
+        // republishing it; the next exclusive save writes the primary file again.
+        source += ".bak";
+        if (!std::filesystem::exists(source, error)) {
             if (error) {
                 throw LibraryError(LibraryErrorCode::io_error,
-                                    "cannot inspect library config backup", backup);
+                                    "cannot inspect library config backup", source);
             }
             return {};
         }
-        std::filesystem::rename(backup, path, error);
-        if (error) {
-            throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot recover library config backup", backup);
-        }
     }
     try {
-        return decode(ReadText(path));
+        return decode(ReadText(source));
     } catch (const std::exception& exception) {
         throw LibraryError(LibraryErrorCode::corrupt_config,
-                            std::string("library config is damaged: ") + exception.what(), path);
+                            std::string("library config is damaged: ") + exception.what(), source);
     }
 }
 
 } // namespace
 LibraryConfig LoadLibraryConfig(const std::filesystem::path& root) {
-    auto lock = RequireLibraryLock(root);
+    auto lock = RequireLibraryReadLock(root);
     return LoadConfigFile<LibraryConfig>(root / "config.toml", DecodeConfig);
 }
 static GameSettings LoadGameSettingsUnlocked(const std::filesystem::path& directory) {
@@ -387,15 +383,16 @@ void SaveConfigFile(const std::filesystem::path& target, const std::string& text
         backup += ".bak";
         WriteText(temporary, text);
         std::error_code error;
-        static_cast<void>(std::filesystem::remove(backup, error));
-        if (error) {
-            throw std::filesystem::filesystem_error("remove", backup, error);
-        }
         const auto had_target = std::filesystem::exists(target, error);
         if (error) {
             throw std::filesystem::filesystem_error("exists", target, error);
         }
+        // Without a primary file the backup is the last good copy readers use.
         if (had_target) {
+            static_cast<void>(std::filesystem::remove(backup, error));
+            if (error) {
+                throw std::filesystem::filesystem_error("remove", backup, error);
+            }
             std::filesystem::rename(target, backup, error);
             if (error) {
                 throw std::filesystem::filesystem_error(
@@ -441,7 +438,7 @@ static void SaveGameSettingsUnlocked(const std::filesystem::path& directory, con
 
 GameSettings LoadGameSettings(const std::filesystem::path& directory) {
     std::optional<hal::FileLock> lock;
-    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
+    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryReadLock(directory.parent_path().parent_path()));
     return LoadGameSettingsUnlocked(directory);
 }
 void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {

@@ -15,3 +15,21 @@ TEST_CASE("HAL file locks conflict across handles and release on scope exit") {
     CHECK(ogplay::hal::FileLock::TryAcquire(root / ".lock"));
     std::filesystem::remove_all(root);
 }
+TEST_CASE("HAL shared file locks coexist and exclude exclusive holders") {
+    using ogplay::hal::FileLock;
+    using ogplay::hal::FileLockMode;
+    const auto root = std::filesystem::temp_directory_path() / "ogplay-hal-shared-lock";
+    std::filesystem::create_directories(root);
+    {
+        auto first = FileLock::TryAcquire(root / ".lock", FileLockMode::shared);
+        REQUIRE(first);
+        CHECK(FileLock::TryAcquire(root / ".lock", FileLockMode::shared));
+        CHECK_FALSE(FileLock::TryAcquire(root / ".lock"));
+    }
+    {
+        auto writer = FileLock::TryAcquire(root / ".lock");
+        REQUIRE(writer);
+        CHECK_FALSE(FileLock::TryAcquire(root / ".lock", FileLockMode::shared));
+    }
+    std::filesystem::remove_all(root);
+}

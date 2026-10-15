@@ -5,6 +5,8 @@
 #include <thread>
 #include <fstream>
 #include <future>
+#include <chrono>
+#include <optional>
 
 TEST_CASE("Library lock rejects mutations and List preserves active importing directories") {
     using namespace ogplay::app;
@@ -59,7 +61,7 @@ TEST_CASE("Library lock rejects mutations and List preserves active importing di
                 "\",\"params\":{\"job\":\"" + job + "\"" + (confirm ? ",\"new_instance\":true" : "") + "}}");
         };
         bool ready = false;
-        const auto deadline = MonotonicClock::NowNs() + 2000000000ULL;
+        const auto deadline = MonotonicClock::NowNs() + 10000000000ULL;
         while (MonotonicClock::NowNs() < deadline) {
             auto response = JsonDocument::ParseStrict(call("library.job.poll", false), parse_error);
             if (response && response->Root().Member("result")->Member("state")->String() == "ready") { ready = true; break; }
@@ -80,4 +82,63 @@ TEST_CASE("Library lock rejects mutations and List preserves active importing di
     }
     CHECK(store.LoadEntries().size() == 1);
     CHECK_FALSE(std::filesystem::exists(temporary));
+}
+
+TEST_CASE("Library lock waits out brief holders, shares reads, and reports long holds as busy") {
+    using namespace ogplay::app;
+    using ogplay::hal::FileLock;
+    using ogplay::hal::FileLockMode;
+    const auto root = std::filesystem::temp_directory_path() / ("ogplay-lock-wait-" + std::to_string(MonotonicClock::NowNs()));
+    struct Cleanup { std::filesystem::path root; ~Cleanup() { std::filesystem::remove_all(root); } } cleanup{root};
+    LibraryStore store(root);
+    std::filesystem::create_directories(root);
+    std::ofstream(root / "source.apk") << "apk";
+    const auto id = store.Import({root / "source.apk", {"org.example.wait", "Wait", 1, "1", "2026-10-15", {}, {}}, {}}, false);
+    const auto directory = store.EntriesRoot() / id;
+    SaveGameSettings(directory, {{{"cpu_cores", std::uint32_t{2}}}});
+    const auto lock_path = store.EntriesRoot() / ".lock";
+
+    {
+        // Settings, config and running probes only need a shared lock; writers still wait.
+        auto reader = FileLock::TryAcquire(lock_path, FileLockMode::shared);
+        REQUIRE(reader);
+        CHECK(LoadGameSettings(directory).values.size() == 1);
+        CHECK_NOTHROW(static_cast<void>(LoadLibraryConfig(root)));
+        CHECK_FALSE(store.IsRunning(id));
+        CHECK(FileLock::TryAcquire(lock_path, FileLockMode::shared));
+        CHECK_FALSE(FileLock::TryAcquire(lock_path));
+    }
+    {
+        // A list refresh holding the lock briefly must not fail a starting game.
+        std::optional<FileLock> holder = FileLock::TryAcquire(lock_path);
+        REQUIRE(holder);
+        auto release = std::async(std::launch::async, [&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            holder.reset();
+        });
+        RunningLease lease(root, id);
+        release.get();
+        CHECK(store.IsRunning(id));
+    }
+    {
+        auto holder = FileLock::TryAcquire(lock_path);
+        REQUIRE(holder);
+        auto read = std::async(std::launch::async, [&] {
+            try { static_cast<void>(LoadGameSettings(directory)); }
+            catch (const LibraryError& error) { return error.Code() == LibraryErrorCode::busy; }
+            return false;
+        });
+        CHECK(read.get());
+        // GUI list reports retryable busy instead of marking the entry damaged.
+        ogplay::frontend::GuiRpcService rpc(store, root / "ogplay", {
+            [](const auto&) { return ogplay::frontend::LibraryViewContext{}; },
+            [](const auto&) {}, [](const auto&) {}, {}, {}, [] { return "2026-10-15"; },
+            {}, {}, {}, {}, {}, {}});
+        JsonParseError parse_error;
+        const auto response = JsonDocument::ParseStrict(
+            rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})"), parse_error);
+        REQUIRE(response);
+        REQUIRE(response->Root().Member("error"));
+        CHECK(response->Root().Member("error")->Member("code")->Integer() == -32002);
+    }
 }

@@ -97,12 +97,31 @@ cmake --install build/dev --prefix .local/app-split/install --component Runtime
 - Linux 未实构建/实跑；Linux/macOS 原生 GUI 未接入。
 - 原生选择器/拖放、Dashboard/编辑器原生窗口/F2/编辑热应用未在新架构复验。
 
+## 验收修复
+
+验收发现两个阻塞问题，已修复：
+
+- 库锁原为不等待的排他锁：列表刷新（含逐条读设置与运行探测）与游戏子进程的运行租约、CLI
+  `library run`/`settings get` 相互立即失败，GUI 列表还会把 busy 记为条目损坏。现改为：读设置/配置与
+  运行探测持共享锁，写入与租约持排他锁，均有界等待约 2 秒后报 busy；GUI 列表把 busy 整体映射
+  为 -32002。配置读取不再改名恢复 `.bak`，改为只读回退，由下次保存重新发布。
+- `application_startup_tests` 仍读取已迁走的 `src/frontend/gui/import.cpp`，改为 `library/import.cpp`。
+
+证据（`.local/app-split/fix-*`）：定向构建 `ogplaycore ogplay-cli ogplay_app_tests ogplay_file_lock_tests
+ogplay_desktop_integration_tests ogplay_tests` 退出 0；app 72 例、锁 4 例（新增共享锁与等待/超时/列表忙
+回归）、HTTP/编辑器 10 例、启动源码检查 1 例、入口/参数与 3 项架构 CTest 通过；能力账本检查通过。
+把等待次数改为 1 的反向对照使新回归失败。跨进程：外部排他锁持有 1 秒时 `library run --mode preflight`
+等待后退出 0，持有 6 秒时约 2.8 秒报 `library_busy`；外部共享锁下 `settings get` 0.04 秒成功。
+`ogplay_tests` 中 `dexvm monitor diagnostics distinguish entry and notify waiters` 因 BootDex 未绑定
+`Activity.nativeFinish` 失败，与本任务无关（runtime 未改动），未处理。Windows 缺口不变。
+
 ## 工作单元提交
 
 | 工作单元 | 提交 |
 | --- | --- |
-| WU-A 外观/参数/动态 SDL | f5fdd746 |
-| WU-B 游戏库/OS 锁 | 82b1d1f6 |
-| WU-C CLI 与 library 命令 | f03f587d |
-| WU-D 桌面/WebView/导出边界 | e5c275be |
-| WU-E 契约与验收 | 本文所在提交 |
+| WU-A 外观/参数/动态 SDL | e39ff481 |
+| WU-B 游戏库/OS 锁 | 69c99bc7 |
+| WU-C CLI 与 library 命令 | 12c80c24 |
+| WU-D 桌面/WebView/导出边界 | 22648c25 |
+| WU-E 契约与验收 | 09e19807 |
+| 验收修复：库锁有界等待与过期测试路径 | 本文所在提交 |

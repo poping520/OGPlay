@@ -161,6 +161,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         auto entries = store_.LoadEntries();
         for (auto& entry : entries) {
             try { entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory)); }
+            // Lock contention is a retryable library state, never entry damage.
+            catch (const LibraryError& error) { if (error.Code() == LibraryErrorCode::busy) throw; entry.damage_reason = error.what(); }
             catch (const std::exception& error) { entry.damage_reason = error.what(); }
         }
         const auto context = host_.context(entries);

@@ -320,9 +320,11 @@ SDL3 使用单份动态库，core 和桌面共同链接，随 Runtime staging/in
 
 ### 并发与进程边界
 
-库根 `library/.lock` 使用 HAL 非阻塞 OS 排他锁（Windows LockFileEx、POSIX flock）。导入
-从暂存到发布、移除及残留清理均持锁；List 只在拿到锁时清理，否则跳过 `.importing` 并正常
-返回已发布列表。库内配置读写和 CLI 设置 patch 也受该锁保护；冲突明确给出 busy 和重试提示。
+库根 `library/.lock` 使用 HAL OS 文件锁（Windows LockFileEx、POSIX flock）。导入从暂存到
+发布、移除、配置写入、CLI 设置 patch 和运行租约获取持排他锁；读取全局/实例设置与运行探测持
+共享锁。两类获取都有界等待约 2 秒，避免列表刷新与游戏启动互相失败；超时明确给出 busy 和重试
+提示，列表不得把 busy 记为条目损坏。List 只非阻塞尝试清理，拿不到锁时跳过 `.importing` 并正常
+返回已发布列表。读取不改写配置文件，主文件缺失时只读 `.bak`，由下次排他保存重新发布。
 
 库启动显式携带 library-root/installation-id，在库锁内获取实例 `.running.lock`，由
 RunningLease 保持到 RunGame 返回或异常，进程崩溃由 OS 释放。移除和单实例以 OS 锁为准，

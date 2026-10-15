@@ -12,6 +12,7 @@
 - [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)
 - [ADR-0137 · 共享应用库与桌面/CLI 双入口](#adr-0137)
 - [ADR-0138 · 共享库 C++ 外观接口与游戏库下沉](#adr-0138)
+- [ADR-0139 · macOS WKWebView 启动器与 OGPlay.app 交付](#adr-0139)
 - [ADR-0073 · Windows 启动器 WebView 宿主边界](#adr-0073)
 
 <a id="adr-0005"></a>
@@ -339,3 +340,29 @@ MCP/Dashboard/按键编辑器边界不变；存档位于库根 sandbox，移除�
 OS 锁/HTTP 的集成夹具独立 target，避免把内部夹具引入外观测试。导出检查只允许 app
 命名空间，检查 EXE 内核导入与 CLI WebView 导入；最终链接命令另外核对静态依赖。
 原生 Windows GUI 和 Linux 仍需各自在目标环境实构建/实跑；macOS 外观与 CLI 验证不替代它们。
+
+<a id="adr-0139"></a>
+
+## ADR-0139 · macOS WKWebView 启动器与 OGPlay.app 交付
+
+- 状态：Accepted
+- 日期：2026-10-15
+- 关联：[GUI-11](../tasks/gui/GUI-11.md)；补充 [ADR-0073](#adr-0073) 的“macOS 宿主后续接入”。
+
+### 决定
+
+macOS 桌面宿主使用系统 WKWebView，经已固定的 webview 0.12 Cocoa 后端实现同一 `WebViewHost`
+接口，不新增依赖或浏览器。AppKit/WebKit 只出现在 `hal/macos`，上游实现单独编译。主页面用
+`loadFileURL:allowingReadAccessToURL:` 加载，读权限限于 GUI 目录，并叠加精确地址导航委托；
+Dashboard/按键设置窗口同样只允许精确 loopback 地址且不绑定 rpc。宿主补主菜单以保留编辑快捷键，
+菜单退出正常结束运行循环；未经 LaunchServices 启动时主动前置窗口，避免 WebKit 暂停渲染。
+
+macOS 交付 `OGPlay.app`：可执行文件位于 `Contents/MacOS`，ogplaycore、SDL3、ANGLE、ogplay_ffmpeg
+位于 `Contents/Frameworks`，payload 位于 `Contents/Resources/data`。每次构建完成包装并做 ad-hoc 签名，
+安装直接复制已签名的包。ANGLE 预编译库的 `./libEGL.dylib` 安装名在配置期复制改写为 `@rpath` 并重签，
+ogplaycore 只用 `@loader_path` 查找同目录依赖，CLI 与包不再依赖工作目录。
+
+### 后果
+
+不做 Developer ID 签名/公证与 Dock 图标合并；游戏子进程是包内同一可执行文件，各自显示 Dock 图标。
+Linux GUI 仍暂缓。

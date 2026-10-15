@@ -11,24 +11,36 @@ if(OGPLAY_BUILD_WEBUI)
         VERBATIM)
 endif()
 
-# Runtime developers with GUI disabled do not need Node or WebView2.
+# Runtime developers with GUI disabled do not need Node or a WebView SDK.
 if(OGPLAY_BUILD_GUI)
     if(NOT EXISTS "${PROJECT_SOURCE_DIR}/third_party/webview/core/include/webview/webview.h")
         message(FATAL_ERROR "Initialize the third_party/webview submodule")
     endif()
-    if(NOT EXISTS "${OGPLAY_WEBVIEW2_SDK}/build/native/include/WebView2.h")
-        message(FATAL_ERROR "WebView2 SDK missing; run webui/prepare-sdk.ps1")
+    if(WIN32)
+        if(NOT EXISTS "${OGPLAY_WEBVIEW2_SDK}/build/native/include/WebView2.h")
+            message(FATAL_ERROR "WebView2 SDK missing; run webui/prepare-sdk.ps1")
+        endif()
+        add_library(ogplay_webview STATIC src/hal/windows/webview_backend.cpp)
+        target_include_directories(ogplay_webview SYSTEM PUBLIC
+            "${PROJECT_SOURCE_DIR}/third_party/webview/core/include"
+            "${OGPLAY_WEBVIEW2_SDK}/build/native/include")
+        target_link_libraries(ogplay_webview PUBLIC advapi32 ole32 shell32 shlwapi user32 version)
+        if(MSVC)
+            target_compile_options(ogplay_webview PRIVATE /w)
+        endif()
+        add_library(ogplay_desktop_webview STATIC src/hal/windows/webview_host.cpp)
+    else()
+        # macOS uses the system WKWebView through the same pinned webview release.
+        add_library(ogplay_webview STATIC src/hal/macos/webview_backend.cpp)
+        target_include_directories(ogplay_webview SYSTEM PUBLIC
+            "${PROJECT_SOURCE_DIR}/third_party/webview/core/include")
+        target_compile_options(ogplay_webview PRIVATE -w)
+        target_link_libraries(ogplay_webview PUBLIC "-framework Cocoa" "-framework WebKit")
+        add_library(ogplay_desktop_webview STATIC src/hal/macos/webview_host.mm)
+        target_compile_options(ogplay_desktop_webview PRIVATE -fobjc-arc)
+        target_link_libraries(ogplay_desktop_webview PRIVATE "-framework UniformTypeIdentifiers")
     endif()
-    add_library(ogplay_webview STATIC src/hal/windows/webview_backend.cpp)
     target_compile_definitions(ogplay_webview PUBLIC WEBVIEW_STATIC)
-    target_include_directories(ogplay_webview SYSTEM PUBLIC
-        "${PROJECT_SOURCE_DIR}/third_party/webview/core/include"
-        "${OGPLAY_WEBVIEW2_SDK}/build/native/include")
-    target_link_libraries(ogplay_webview PUBLIC advapi32 ole32 shell32 shlwapi user32 version)
-    if(MSVC)
-        target_compile_options(ogplay_webview PRIVATE /w)
-    endif()
-    add_library(ogplay_desktop_webview STATIC src/hal/windows/webview_host.cpp)
     target_link_libraries(ogplay_desktop_webview PUBLIC ogplaycore PRIVATE ogplay_webview)
     target_include_directories(ogplay_desktop_webview PRIVATE "${PROJECT_SOURCE_DIR}/src")
     ogplay_set_project_warnings(ogplay_desktop_webview)

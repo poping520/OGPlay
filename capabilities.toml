@@ -311,7 +311,7 @@ note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其�
 [frontend.gui_shell]
 status = "complete"
 test = "frontend.app_entrypoints; frontend.gui_dashboard_window; frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts; webui/apps/gui/settings.test.ts; webui/apps/gui/game-settings.test.ts"
-note = "GUI-1..9：ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓，macOS WebView 宿主未接入。"
+note = "GUI-1..9：ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。macOS 使用 WKWebView 与 ad-hoc 签名的 OGPlay.app（GUI-11）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓。"
 
 [frontend.device_presets]
 status = "partial"

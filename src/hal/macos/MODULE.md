@@ -24,6 +24,13 @@
 - RGB 客户端表面存储使用有界尺寸的 BGRA IOSurface，创建/释放只经公共 HAL；
   BGRX/alpha 与绘制语义由 ANGLE 的 GL_RGB 导入处理。
 
+- `WebViewHost`（`webview_host.mm`）与 webview Cocoa 后端编入仅桌面链接的 ogplay_desktop_webview，
+  不属于 ogplay_hal。主窗口以限于 GUI 目录的读权限加载本地页面，精确地址导航委托取消其他导航，
+  不打开新窗口；100ms 计时器在公共运行循环模式下轮询，主窗口关闭时回收全部运行窗口并结束循环。
+  Dashboard/按键设置窗口仅允许指定 loopback 地址、不绑定 rpc，令牌只经 sessionStorage 注入。
+  文件/目录选择使用依附主窗口的 `NSOpenPanel`，异步完成 future；`OpenHostDirectory` 经 NSWorkspace。
+  宿主建立应用/编辑/窗口菜单，退出菜单正常结束运行循环；冒烟截图来自 WKWebView 快照。
+
 ## 测试
 
 契约测试放在 `tests/hal/`；需要窗口服务器的测试必须提供 headless 跳过条件。

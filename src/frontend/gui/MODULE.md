@@ -2,9 +2,9 @@
 
 ## 职责
 
-Windows 系统 WebView2 启动器的呈现、RPC、导入向导与子进程管理，编入 ogplay_desktop_app。
+桌面系统 WebView 启动器（Windows WebView2、macOS WKWebView）的呈现、RPC、导入向导与子进程管理，编入 ogplay_desktop_app。
 游戏库领域经 ogplay::app 外观共享，GUI 装配当前 EXE 的
-`--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；Linux 暂缓，macOS 宿主待接入。
+`--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；macOS 宿主见 GUI-11，Linux 暂缓。
 
 ## 公共 API
 

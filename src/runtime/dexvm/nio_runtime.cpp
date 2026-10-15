@@ -52,7 +52,7 @@ struct BufferState final {
     std::int32_t capacity{};
     std::int32_t position{};
     std::int32_t limit{};
-    std::optional<std::int32_t> mark;
+    std::optional<std::int32_t> mark{};
     std::uint32_t byte_offset{};
     std::int32_t array_offset{};
     NioElementKind element{NioElementKind::byte};

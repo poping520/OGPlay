@@ -569,7 +569,7 @@ std::int32_t EglDisplayResources::ConfigAttribute(std::uint32_t name,EglColorFor
         }
     }
     EGLint value{};CheckEgl(eglGetConfigAttrib(ReinterpretHandle<EGLDisplay>(display_),
-        ReinterpretHandle<EGLConfig>(Config(format)),name,&value),*api_);return value;
+        ReinterpretHandle<EGLConfig>(Config(format)),static_cast<EGLint>(name),&value),*api_);return value;
 #else
     static_cast<void>(name);static_cast<void>(format);throw EglLifecycleError(EglOperation::unavailable,0);
 #endif
@@ -628,7 +628,7 @@ std::uint32_t EglDisplayResources::ClientWaitSync(const EglHandle sync,
     const std::uint32_t flags, const std::uint64_t timeout) {
 #if OGPLAY_HAS_ANGLE
     const auto value = EglExtension<PFNEGLCLIENTWAITSYNCKHRPROC>("eglClientWaitSyncKHR")(
-        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), flags, timeout);
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), static_cast<EGLint>(flags), timeout);
     if (!value) ThrowLastError(*api_, EglOperation::unavailable);
     return static_cast<std::uint32_t>(value);
 #else
@@ -640,7 +640,7 @@ std::int32_t EglDisplayResources::SyncAttribute(const EglHandle sync, const std:
 #if OGPLAY_HAS_ANGLE
     EGLint value{};
     CheckEgl(EglExtension<PFNEGLGETSYNCATTRIBKHRPROC>("eglGetSyncAttribKHR")(
-        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), name, &value), *api_);
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), static_cast<EGLint>(name), &value), *api_);
     return value;
 #else
     static_cast<void>(sync); static_cast<void>(name); throw EglLifecycleError(EglOperation::unavailable, 0);
@@ -648,8 +648,8 @@ std::int32_t EglDisplayResources::SyncAttribute(const EglHandle sync, const std:
 }
 void EglDisplayResources::WaitSync(const EglHandle sync, const std::uint32_t flags) {
 #if OGPLAY_HAS_ANGLE
-    CheckEgl(EglExtension<PFNEGLWAITSYNCKHRPROC>("eglWaitSyncKHR")(
-        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), static_cast<EGLint>(flags)), *api_);
+    CheckEgl(static_cast<EGLBoolean>(EglExtension<PFNEGLWAITSYNCKHRPROC>("eglWaitSyncKHR")(
+        ReinterpretHandle<EGLDisplay>(display_), ReinterpretHandle<EGLSyncKHR>(sync), static_cast<EGLint>(flags))), *api_);
 #else
     static_cast<void>(sync); static_cast<void>(flags); throw EglLifecycleError(EglOperation::unavailable, 0);
 #endif

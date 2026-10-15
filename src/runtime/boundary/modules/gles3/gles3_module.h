@@ -487,7 +487,7 @@ private:
                 if (capacity < 0) { graphics_.SetGuestError(call, 0x0501U); return 0U; }
                 auto length_out = PrepareOutput(call, 3U, 4U, true);
                 auto name_out = PrepareOutput(call, FunctionId == 35U ? 4U : 6U,
-                                               capacity, capacity == 0);
+                                               static_cast<std::uint64_t>(capacity), capacity == 0);
                 std::optional<gles::GuestBuffer> size_out, type_out;
                 if constexpr (FunctionId == 52U) {
                     size_out.emplace(PrepareOutput(call, 4U, 4U, false));
@@ -523,7 +523,7 @@ private:
                 if (capacity < 0) { graphics_.SetGuestError(call, 0x0501U); return 0U; }
                 auto length_out = PrepareOutput(call, 2U, 4U, true);
                 auto format_out = PrepareOutput(call, 3U, 4U, false);
-                auto binary_out = PrepareOutput(call, 4U, capacity, capacity == 0);
+                auto binary_out = PrepareOutput(call, 4U, static_cast<std::uint64_t>(capacity), capacity == 0);
                 std::int32_t length{}; std::uint32_t format{};
                 const auto binary = frame.GetProgramBinary(call.Argument(0), capacity,
                                                             length, format);

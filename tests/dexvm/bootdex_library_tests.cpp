@@ -44,7 +44,7 @@ TEST_CASE("DVM-87 Arrays primitive algorithms are deterministic") {
         fixture.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 4);
     for (std::int32_t index = 0; index < 4; ++index) {
         constexpr std::int32_t values[]{7, -2, 7, 3};
-        fixture.model.SetPrimitiveElement(array, index, values[index]);
+        fixture.model.SetPrimitiveElement(array, index, static_cast<std::uint64_t>(values[index]));
     }
 
     Dvm87Vm::RequireOk(fixture.Static(

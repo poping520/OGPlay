@@ -932,7 +932,7 @@ template <typename Float>
 
 template <typename Float>
 [[nodiscard]] Float ParseFloating(std::string text) {
-    const auto whitespace = [](unsigned char unit) { return unit <= 0x20; };
+    const auto whitespace = [](char unit) { return static_cast<unsigned char>(unit) <= 0x20; };
     while (!text.empty() && whitespace(text.front())) text.erase(text.begin());
     while (!text.empty() && whitespace(text.back())) text.pop_back();
     if (text == "NaN" || text == "+NaN" || text == "-NaN") {
@@ -1287,31 +1287,31 @@ void AddWideIntegralCommon(IntrinsicClassBuilder& builder,
             return VmValue::Int(value);
         }
     };
-    const auto minimum = std::numeric_limits<T>::min();
-    const auto maximum = std::numeric_limits<T>::max();
+    static constexpr auto minimum = std::numeric_limits<T>::min();
+    static constexpr auto maximum = std::numeric_limits<T>::max();
     builder.Constructor(std::string("(") + primitive + ")V",
                     [argument](IntrinsicContext& c) {
         const auto value = argument(c.arguments[0]);
         SetBoxedBits(c, c.receiver, static_cast<U>(value), wide);
         return VmValue::Void(); });
     builder.Constructor("(Ljava/lang/String;)V",
-                    [minimum, maximum](IntrinsicContext& c) {
+                    [](IntrinsicContext& c) {
         const auto value = static_cast<T>(ParseSignedRadix(
             GuestText(c, c.arguments[0].ref), 10, minimum, maximum));
         SetBoxedBits(c, c.receiver, static_cast<U>(value), wide);
         return VmValue::Void(); });
     AddNumberConversions(builder, wide, wide ? 'J' : 'I');
     builder.StaticMethod(parse_name, std::string("(Ljava/lang/String;)") + primitive,
-                   [answer, minimum, maximum](IntrinsicContext& c) {
+                   [answer](IntrinsicContext& c) {
         return answer(static_cast<T>(ParseSignedRadix(
             GuestText(c, c.arguments[0].ref), 10, minimum, maximum))); });
     builder.StaticMethod(parse_name, std::string("(Ljava/lang/String;I)") + primitive,
-                   [answer, minimum, maximum](IntrinsicContext& c) {
+                   [answer](IntrinsicContext& c) {
         return answer(static_cast<T>(ParseSignedRadix(
             GuestText(c, c.arguments[0].ref), c.arguments[1].AsInt(), minimum,
             maximum))); });
     builder.StaticMethod("decode", std::string("(Ljava/lang/String;)") + descriptor,
-                   [descriptor, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor](IntrinsicContext& c) {
         const auto value = static_cast<T>(DecodeIntegral(
             GuestText(c, c.arguments[0].ref), minimum, maximum));
         return MakeBoxed(c, descriptor, static_cast<U>(value), wide); });
@@ -1319,12 +1319,12 @@ void AddWideIntegralCommon(IntrinsicClassBuilder& builder,
                    [descriptor, argument](IntrinsicContext& c) {
         return MakeBoxed(c, descriptor, static_cast<U>(argument(c.arguments[0])), wide); });
     builder.StaticMethod("valueOf", std::string("(Ljava/lang/String;)") + descriptor,
-                   [descriptor, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor](IntrinsicContext& c) {
         const auto value = static_cast<T>(ParseSignedRadix(
             GuestText(c, c.arguments[0].ref), 10, minimum, maximum));
         return MakeBoxed(c, descriptor, static_cast<U>(value), wide); });
     builder.StaticMethod("valueOf", std::string("(Ljava/lang/String;I)") + descriptor,
-                   [descriptor, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor](IntrinsicContext& c) {
         const auto value = static_cast<T>(ParseSignedRadix(
             GuestText(c, c.arguments[0].ref), c.arguments[1].AsInt(), minimum,
             maximum));
@@ -1361,7 +1361,7 @@ void AddWideIntegralCommon(IntrinsicClassBuilder& builder,
             return Make(c, Widen(FormatUnsigned(static_cast<U>(argument(c.arguments[0])), radix))); });
     }
     builder.StaticMethod(property_name, std::string("(Ljava/lang/String;)") + descriptor,
-                   [descriptor, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor](IntrinsicContext& c) {
         if (!c.arguments[0].ref.IsValid()) return VmValue::Ref(VmObjectRef{0});
         const auto key = GuestText(c, c.arguments[0].ref);
         if (key.empty()) return VmValue::Ref(VmObjectRef{0});
@@ -1373,7 +1373,7 @@ void AddWideIntegralCommon(IntrinsicClassBuilder& builder,
         } catch (const VmJavaThrow&) { return VmValue::Ref(VmObjectRef{}); }
     });
     builder.StaticMethod(property_name, std::string("(Ljava/lang/String;") + primitive + ")" + descriptor,
-                   [descriptor, argument, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor, argument](IntrinsicContext& c) {
         if (!c.arguments[0].ref.IsValid()) {
             return MakeBoxed(c, descriptor,
                 static_cast<U>(argument(c.arguments[1])), wide);
@@ -1390,7 +1390,7 @@ void AddWideIntegralCommon(IntrinsicClassBuilder& builder,
         return MakeBoxed(c, descriptor, static_cast<U>(value), wide);
     });
     builder.StaticMethod(property_name, std::string("(Ljava/lang/String;") + descriptor + ")" + descriptor,
-                   [descriptor, minimum, maximum](IntrinsicContext& c) {
+                   [descriptor](IntrinsicContext& c) {
         if (!c.arguments[0].ref.IsValid()) return VmValue::Ref(c.arguments[1].ref);
         const auto key = GuestText(c, c.arguments[0].ref);
         if (key.empty()) return VmValue::Ref(c.arguments[1].ref);
@@ -1583,7 +1583,7 @@ IntrinsicClassDecl Declare_java_lang_Character() {
     const auto digit = [](std::int32_t cp, std::int32_t radix) { const auto value = cp < 128 ? DigitValue(static_cast<char>(cp)) : -1; return radix >= 2 && radix <= 36 && value < radix ? value : -1; };
     builder.StaticMethod("digit", "(CI)I", [digit](IntrinsicContext& c) { return VmValue::Int(digit(static_cast<std::uint16_t>(c.arguments[0].AsInt()), c.arguments[1].AsInt())); });
     builder.StaticMethod("digit", "(II)I", [digit](IntrinsicContext& c) { return VmValue::Int(digit(c.arguments[0].AsInt(), c.arguments[1].AsInt())); });
-    builder.StaticMethod("forDigit", "(II)C", [](IntrinsicContext& c) { const auto d=c.arguments[0].AsInt(), r=c.arguments[1].AsInt(); return VmValue::Int(r>=2&&r<=36&&d>=0&&d<r ? kDigits[d] : 0); });
+    builder.StaticMethod("forDigit", "(II)C", [](IntrinsicContext& c) { const auto d=c.arguments[0].AsInt(), r=c.arguments[1].AsInt(); return VmValue::Int(r>=2&&r<=36&&d>=0&&d<r ? kDigits[static_cast<std::size_t>(d)] : 0); });
     const auto add_predicate = [&builder](const char* name, auto predicate) { builder.StaticMethod(name, "(C)Z", [predicate](IntrinsicContext& c){return Bool(predicate(static_cast<std::uint16_t>(c.arguments[0].AsInt())));}); builder.StaticMethod(name, "(I)Z", [predicate](IntrinsicContext& c){return Bool(predicate(c.arguments[0].AsInt()));}); };
     add_predicate("isDigit", [](int cp){return cp>='0'&&cp<='9';});
     add_predicate("isLetter", [](int cp){return (cp>='A'&&cp<='Z')||(cp>='a'&&cp<='z');});
@@ -1671,12 +1671,16 @@ IntrinsicClassDecl Declare_java_lang_Character() {
         const auto text = CharsValue(c, array, start, count);
         index -= start;
         while (offset > 0 && index < count) {
-            if (index + 1 < count && pair(text[index], text[index + 1])) ++index;
+            if (index + 1 < count &&
+                pair(text[static_cast<std::size_t>(index)], text[static_cast<std::size_t>(index + 1)]))
+                ++index;
             ++index; --offset;
         }
         while (offset < 0 && index > 0) {
             --index;
-            if (index > 0 && pair(text[index - 1], text[index])) --index;
+            if (index > 0 &&
+                pair(text[static_cast<std::size_t>(index - 1)], text[static_cast<std::size_t>(index)]))
+                --index;
             ++offset;
         }
         if (offset != 0)
@@ -2790,14 +2794,14 @@ IntrinsicClassDecl Declare_java_lang_RealToString() {
             if (e >= 0) {
                 minus = DecimalMagnitude(1).Shift(e);
                 if (!boundary) {
-                    r = DecimalMagnitude(f).Shift(e + 1); s = 2; plus = minus;
+                    r = DecimalMagnitude(static_cast<std::uint64_t>(f)).Shift(e + 1); s = 2; plus = minus;
                 } else {
-                    r = DecimalMagnitude(f).Shift(e + 2); s = 4; plus = DecimalMagnitude(1).Shift(e + 1);
+                    r = DecimalMagnitude(static_cast<std::uint64_t>(f)).Shift(e + 2); s = 4; plus = DecimalMagnitude(1).Shift(e + 1);
                 }
             } else if (c.Int(2) != 0 || !boundary) {
-                r = DecimalMagnitude(f).Shift(1); s = DecimalMagnitude(1).Shift(1 - e); plus = minus = 1;
+                r = DecimalMagnitude(static_cast<std::uint64_t>(f)).Shift(1); s = DecimalMagnitude(1).Shift(1 - e); plus = minus = 1;
             } else {
-                r = DecimalMagnitude(f).Shift(2); s = DecimalMagnitude(1).Shift(2 - e); plus = 2; minus = 1;
+                r = DecimalMagnitude(static_cast<std::uint64_t>(f)).Shift(2); s = DecimalMagnitude(1).Shift(2 - e); plus = 2; minus = 1;
             }
             const auto k = static_cast<int>(std::ceil((e + p - 1) * 0.30102999566398114 - 1e-10));
             for (int i = 0; i < std::abs(k); ++i) {
@@ -2831,7 +2835,8 @@ IntrinsicClassDecl Declare_java_lang_RealToString() {
                 r.Multiply(10); plus.Multiply(10); minus.Multiply(10);
             }
             for (std::size_t i = 0; i < generated.size(); ++i)
-                context.vm.Model().SetPrimitiveElement(array, static_cast<JniSize>(i), generated[i]);
+                context.vm.Model().SetPrimitiveElement(array, static_cast<JniSize>(i),
+                                                       static_cast<std::uint64_t>(generated[i]));
             c.SetInt(count, static_cast<std::int32_t>(generated.size()));
             c.SetInt(first, first_k);
             return VmValue::Void();
@@ -3309,7 +3314,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     .static_storage[linked_group.slot]};
             InitializeFields(call, fields, object, VmObjectRef{},
                              vm.NewStringUtf8(native_daemon.has_value()
-                                 ? "Thread-" + std::to_string(id) : "main"), id, 5,
+                                 ? "Thread-" + std::to_string(id) : "main"),
+                             static_cast<std::int64_t>(id), 5,
                              native_daemon.has_value() ? VmObjectRef{}
                                  : vm.ClassLoaders().ApplicationLoader(), group);
             call.SetInt(fields.has_been_started, object, 1);

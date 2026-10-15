@@ -239,7 +239,7 @@ Decl Declare_android_util_EventLog(const Context &context) {
         auto size = std::size_t{2};
         std::ostringstream payload;
         payload << "list[";
-        const auto count = std::min<std::size_t>(model.ArrayLength(array), 255);
+        const auto count = std::min<std::size_t>(static_cast<std::size_t>(model.ArrayLength(array)), 255);
         std::size_t copied = 0;
         for (; copied < count; ++copied) {
           const auto item = model.GetObjectElement(

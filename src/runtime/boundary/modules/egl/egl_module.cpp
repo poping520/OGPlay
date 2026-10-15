@@ -28,8 +28,6 @@ gles::EglColorFormat ColorFormat(std::uint32_t config) {
         config==kRgbConfig ? gles::EglColorFormat::rgb888 : gles::EglColorFormat::rgba8888;
 }
 std::uint32_t ConfigId(std::uint32_t config) { return config==kDefaultConfig ? 1U : config==kRgbConfig ? 2U : 3U; }
-constexpr std::uint32_t kFakeSurface = 3U;
-constexpr std::uint32_t kFakeContext = 4U;
 constexpr std::uint32_t kEglSuccess = 0x3000U;
 constexpr std::uint32_t kEglNotInitialized = 0x3001U;
 constexpr std::uint32_t kEglBadAccess = 0x3002U;
@@ -62,9 +60,6 @@ constexpr std::uint32_t kEglDepthSize = 0x3025U;
 constexpr std::uint32_t kEglStencilSize = 0x3026U;
 constexpr std::uint32_t kEglConfigCaveat = 0x3027U;
 constexpr std::uint32_t kEglLevel = 0x3029U;
-constexpr std::uint32_t kEglMaxPbufferHeight = 0x302AU;
-constexpr std::uint32_t kEglMaxPbufferPixels = 0x302BU;
-constexpr std::uint32_t kEglMaxPbufferWidth = 0x302CU;
 constexpr std::uint32_t kEglNativeRenderable = 0x302DU;
 constexpr std::uint32_t kEglNativeVisualId = 0x302EU;
 constexpr std::uint32_t kEglNativeVisualType = 0x302FU;
@@ -82,8 +77,6 @@ constexpr std::uint32_t kEglRenderableType = 0x3040U;
 constexpr std::uint32_t kEglConformant = 0x3042U;
 constexpr std::uint32_t kEglContextClientType = 0x3097U;
 constexpr std::uint32_t kEglContextClientVersion = 0x3098U;
-constexpr std::uint32_t kEglMinSwapInterval = 0x303BU;
-constexpr std::uint32_t kEglMaxSwapInterval = 0x303CU;
 constexpr std::uint32_t kEglLargestPbuffer = 0x3058U;
 constexpr std::uint32_t kEglTextureFormat = 0x3080U;
 constexpr std::uint32_t kEglTextureTarget = 0x3081U;
@@ -106,8 +99,6 @@ constexpr std::uint32_t kEglWindowBit = 0x0004U;
 constexpr std::uint32_t kEglPbufferBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEsBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEs2Bit = 0x0004U;
-constexpr std::uint32_t kEglOpenGlEs3Bit = 0x0040U;
-constexpr std::uint32_t kEglRgbBuffer = 0x308EU;
 constexpr memory::GuestAddress kEglStringPage{0x71C00000U};
 constexpr std::size_t kMaximumProcNameBytes = 1024U;
 constexpr std::size_t kMaximumAttributeWords = 64U;

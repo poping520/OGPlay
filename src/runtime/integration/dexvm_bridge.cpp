@@ -683,7 +683,7 @@ public:
                     << 32U);
       return FromVmValue(value, field.descriptor.front(), thread);
     }
-    return FromVmValue(dx::VmValue::Int(slots[field.slot].bits),
+    return FromVmValue(dx::VmValue::Int(static_cast<std::int32_t>(slots[field.slot].bits)),
                        field.descriptor.front(), thread);
   }
 

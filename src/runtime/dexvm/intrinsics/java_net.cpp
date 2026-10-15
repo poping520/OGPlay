@@ -1555,9 +1555,9 @@ namespace ogplay::runtime::dexvm::intrinsics {
             builder.FinalMethod("receive", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {
                     auto& packet = call.vm.Network().Packet(call.arguments[0].ref);
-                    const auto datagram = call.vm.Network().ReceivePacket(packet.length);
-                    const auto amount = std::min<std::size_t>(
-                        datagram.payload.size(), packet.length);
+                    const auto length = static_cast<std::size_t>(packet.length);
+                    const auto datagram = call.vm.Network().ReceivePacket(length);
+                    const auto amount = std::min<std::size_t>(datagram.payload.size(), length);
                     call.vm.Model().WriteByteRegion(packet.array, packet.offset,
                                                     std::span(datagram.payload).first(amount));
                     packet.length = static_cast<std::int32_t>(amount);

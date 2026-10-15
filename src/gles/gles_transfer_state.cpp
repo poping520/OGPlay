@@ -93,47 +93,6 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
     }
 }
 
-[[nodiscard]] std::uint64_t PixelBytes(
-    const std::int32_t width, const std::int32_t height,
-    const std::uint32_t format, const std::uint32_t type,
-    const std::uint32_t alignment) {
-    if (width < 0 || height < 0) {
-        throw GlesTransferStateError("GLES pixel dimensions must not be negative");
-    }
-    if (width == 0 || height == 0) {
-        return 0;
-    }
-    const auto row = CheckedMultiply(static_cast<std::uint32_t>(width),
-                                     PixelSize(format, type));
-    const auto aligned = core::AlignUp(row, alignment);
-    if (!aligned.has_value()) {
-        throw GlesTransferStateError("GLES pixel row alignment overflow");
-    }
-    const auto stride = *aligned;
-    return CheckedAdd(
-        CheckedMultiply(static_cast<std::uint32_t>(height - 1), stride), row);
-}
-
-[[nodiscard]] std::uint64_t PixelBytes3D(
-    const std::int32_t width, const std::int32_t height,
-    const std::int32_t depth, const std::uint32_t format,
-    const std::uint32_t type, const std::uint32_t alignment) {
-    if (width < 0 || height < 0 || depth < 0) {
-        throw GlesTransferStateError("GLES pixel dimensions must not be negative");
-    }
-    if (width == 0 || height == 0 || depth == 0) return 0U;
-    const auto row = CheckedMultiply(static_cast<std::uint32_t>(width),
-                                     PixelSize(format, type));
-    const auto aligned = core::AlignUp(row, alignment);
-    if (!aligned.has_value()) {
-        throw GlesTransferStateError("GLES pixel row alignment overflow");
-    }
-    const auto preceding_rows = CheckedMultiply(
-        CheckedMultiply(static_cast<std::uint32_t>(depth),
-                        static_cast<std::uint32_t>(height)), 1U) - 1U;
-    return CheckedAdd(CheckedMultiply(preceding_rows, *aligned), row);
-}
-
 [[nodiscard]] std::uint64_t IndexSize(const std::uint32_t type) {
     switch (type) {
     case 0x1401:  // GL_UNSIGNED_BYTE

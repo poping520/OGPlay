@@ -1132,6 +1132,11 @@ if(OGPLAY_BUILD_TESTS)
         target_compile_definitions(ogplay_tests PRIVATE DOCTEST_CONFIG_NO_POSIX_SIGNALS)
     endif()
     ogplay_set_project_warnings(ogplay_tests)
+    if(NOT MSVC)
+        # Test fixtures intentionally use partial aggregate initialization for
+        # request structs; production targets keep the warning enabled.
+        target_compile_options(ogplay_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
 
     ogplay_stage_angle_runtime(ogplay_tests)
 

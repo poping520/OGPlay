@@ -39,7 +39,7 @@ const void *blob_data(const std::vector<std::byte> &value) {
   return value.empty() ? &empty : value.data();
 }
 void bind(sqlite3 *d, sqlite3_stmt *s, std::span<const Value> a) {
-  if (sqlite3_bind_parameter_count(s) != a.size())
+  if (static_cast<size_t>(sqlite3_bind_parameter_count(s)) != a.size())
     throw std::runtime_error("SQLite argument count mismatch");
   for (size_t i = 0; i < a.size(); ++i) {
     int n = int(i + 1), r;
@@ -103,7 +103,7 @@ Value column(sqlite3_stmt *s, int i) {
   case SQLITE_TEXT:
     return std::string(
         reinterpret_cast<const char *>(sqlite3_column_text(s, i)),
-        sqlite3_column_bytes(s, i));
+        static_cast<size_t>(sqlite3_column_bytes(s, i)));
   default: {
     auto *p = static_cast<const std::byte *>(sqlite3_column_blob(s, i));
     const auto size = sqlite3_column_bytes(s, i);

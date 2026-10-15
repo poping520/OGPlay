@@ -200,9 +200,6 @@ private:
         bool source_started{};
     };
     std::vector<WindowHandoff> window_handoffs_;
-    // Renderer callbacks fire once when the interpreted glue registers a
-    // renderer; installer phases run frames without one.
-    bool renderer_ready_{};
     // Android delivers onStart/onResume only when the activity does not
     // finish inside onCreate; a never-started activity retires with just
     // onDestroy (no onPause/onStop).

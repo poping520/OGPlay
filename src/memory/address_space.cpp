@@ -147,7 +147,8 @@ public:
         const auto needed = size / page_size_;
         std::uint64_t run{};
         for (auto page = first; page < last; ++page) {
-            if (mapped_[page] || static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize) {
+            if (mapped_[static_cast<std::size_t>(page)] ||
+                static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize) {
                 run = 0;
             } else if (++run == needed) {
                 const GuestAddress address{static_cast<std::uint32_t>(

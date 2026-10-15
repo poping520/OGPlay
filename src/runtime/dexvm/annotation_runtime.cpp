@@ -212,8 +212,8 @@ DexClassId AnnotationRuntime::EnsureImplClass(const DexClassId annotation_type) 
         info.names.push_back(method.name);
         info.descriptors.push_back(method.descriptor);
     }
-    const auto make_override = [this](std::string name, std::string descriptor,
-                                      IntrinsicHandler handler) {
+    const auto make_override = [](std::string name, std::string descriptor,
+                                  IntrinsicHandler handler) {
         IntrinsicMethodDecl decl;
         decl.name = std::move(name);
         decl.descriptor = std::move(descriptor);

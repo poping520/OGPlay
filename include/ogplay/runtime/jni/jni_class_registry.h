@@ -31,7 +31,7 @@ struct JniClassDeclaration final {
     std::optional<std::string> superclass;
     std::vector<JniMethodDeclaration> methods;
     std::vector<JniFieldDeclaration> fields;
-    std::vector<std::string> interfaces;
+    std::vector<std::string> interfaces{};
     bool is_interface{};
 };
 

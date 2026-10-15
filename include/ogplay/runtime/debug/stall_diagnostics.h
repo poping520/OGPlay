@@ -73,12 +73,12 @@ struct DiagnosticJavaThread final {
     std::string status;
     std::string wait_state;
     std::uint64_t ticks{};
-    std::string pending_exception;
+    std::string pending_exception{};
     struct Frame final {
         std::string method;
         std::uint32_t dex_pc{};
     };
-    std::vector<Frame> frames;
+    std::vector<Frame> frames{};
 };
 
 struct DiagnosticMonitor final {

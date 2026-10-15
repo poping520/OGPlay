@@ -610,8 +610,9 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
                         continue;
                     }
                     target.argb[static_cast<std::size_t>(destination_y) *
-                                    target.width + destination_x] =
-                        source.pixels->Get(static_cast<std::size_t>(y) * source.width + x);
+                                    target.width + static_cast<std::size_t>(destination_x)] =
+                        source.pixels->Get(static_cast<std::size_t>(y) * static_cast<std::size_t>(source.width) +
+                                           static_cast<std::size_t>(x));
                 }
             }
             return dx::VmValue::Void();
@@ -841,15 +842,15 @@ Decl Declare_android_graphics_Color(const Context& context) {
         return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU);
     }).StaticMethod("rgb", "(III)I", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(0xff000000U |
-            ((call.arguments[0].AsInt() & 0xffU) << 16U) |
-            ((call.arguments[1].AsInt() & 0xffU) << 8U) |
-            (call.arguments[2].AsInt() & 0xffU)));
+            ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 16U) |
+            ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 8U) |
+            (static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU)));
     }).StaticMethod("argb", "(IIII)I", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
-            ((call.arguments[0].AsInt() & 0xffU) << 24U) |
-            ((call.arguments[1].AsInt() & 0xffU) << 16U) |
-            ((call.arguments[2].AsInt() & 0xffU) << 8U) |
-            (call.arguments[3].AsInt() & 0xffU)));
+            ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 24U) |
+            ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 16U) |
+            ((static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU) << 8U) |
+            (static_cast<std::uint32_t>(call.arguments[3].AsInt()) & 0xffU)));
     }).StaticMethod("parseColor", "(Ljava/lang/String;)I", [](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid())
             throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "colorString"};

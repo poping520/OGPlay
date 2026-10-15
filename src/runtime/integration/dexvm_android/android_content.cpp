@@ -681,7 +681,7 @@ Decl Declare_android_database_CursorWindow(const Context &context) {
   const auto cell = [require](const std::int32_t token, const std::int32_t row,
                               const std::int32_t column) -> DbValue & {
     auto &window = require(token);
-    if (row < 0 || column < 0 || row >= window.rows.size() ||
+    if (row < 0 || column < 0 || static_cast<std::size_t>(row) >= window.rows.size() ||
         column >= window.columns)
       DbThrow("CursorWindow index is invalid");
     return window
@@ -822,7 +822,7 @@ Decl Declare_android_database_CursorWindow(const Context &context) {
       auto &window = require(call.arguments[0].AsInt());
       const auto row = call.arguments[2].AsInt();
       const auto column = call.arguments[3].AsInt();
-      if (row < 0 || column < 0 || row >= window.rows.size() ||
+      if (row < 0 || column < 0 || static_cast<std::size_t>(row) >= window.rows.size() ||
           column >= window.columns)
         DbThrow("CursorWindow index is invalid");
       auto &target = window.rows[static_cast<std::size_t>(row)]
@@ -979,19 +979,19 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
   builder.StaticMethod("nativeFinalizeStatement", "(II)V",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          connection(call.arguments[0].AsInt())
-                             ->Finalize(call.arguments[1].AsInt());
+                             ->Finalize(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
                          return dx::VmValue::Void();
                        }));
   builder.StaticMethod("nativeGetParameterCount", "(II)I",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          return dx::VmValue::Int(
                              connection(call.arguments[0].AsInt())
-                                 ->ParameterCount(call.arguments[1].AsInt()));
+                                 ->ParameterCount(static_cast<std::uint32_t>(call.arguments[1].AsInt())));
                        }));
   builder.StaticMethod(
       "nativeIsReadOnly", "(II)Z", DbNative([connection](dx::IntrinsicContext &call) {
         return dx::VmValue::Int(connection(call.arguments[0].AsInt())
-                                        ->IsReadOnly(call.arguments[1].AsInt())
+                                        ->IsReadOnly(static_cast<std::uint32_t>(call.arguments[1].AsInt()))
                                     ? 1
                                     : 0);
       }));
@@ -999,19 +999,19 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
                        DbNative([connection](dx::IntrinsicContext &call) {
                          return dx::VmValue::Int(
                              connection(call.arguments[0].AsInt())
-                                 ->ColumnCount(call.arguments[1].AsInt()));
+                                 ->ColumnCount(static_cast<std::uint32_t>(call.arguments[1].AsInt())));
                        }));
   builder.StaticMethod("nativeGetColumnName", "(III)Ljava/lang/String;",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          return dx::VmValue::Ref(call.vm.NewStringUtf8(
                              connection(call.arguments[0].AsInt())
-                                 ->ColumnName(call.arguments[1].AsInt(),
+                                 ->ColumnName(static_cast<std::uint32_t>(call.arguments[1].AsInt()),
                                               call.arguments[2].AsInt())));
                        }));
   const auto bind = [connection](auto value) {
     return DbNative([connection, value](dx::IntrinsicContext &call) {
       connection(call.arguments[0].AsInt())
-          ->Bind(call.arguments[1].AsInt(), call.arguments[2].AsInt(),
+          ->Bind(static_cast<std::uint32_t>(call.arguments[1].AsInt()), call.arguments[2].AsInt(),
                  value(call));
       return dx::VmValue::Void();
     });
@@ -1041,20 +1041,20 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
   builder.StaticMethod(
       "nativeResetStatementAndClearBindings", "(II)V",
       DbNative([connection](dx::IntrinsicContext &call) {
-        connection(call.arguments[0].AsInt())->Reset(call.arguments[1].AsInt());
+        connection(call.arguments[0].AsInt())->Reset(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
         return dx::VmValue::Void();
       }));
   builder.StaticMethod("nativeExecute", "(II)V",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          connection(call.arguments[0].AsInt())
-                             ->Execute(call.arguments[1].AsInt());
+                             ->Execute(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
                          return dx::VmValue::Void();
                        }));
   builder.StaticMethod(
       "nativeExecuteForLong", "(II)J",
       DbNative([connection](dx::IntrinsicContext &call) {
         const auto value = connection(call.arguments[0].AsInt())
-                               ->ExecuteScalar(call.arguments[1].AsInt());
+                               ->ExecuteScalar(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
         if (const auto *integer = std::get_if<std::int64_t>(&value))
           return dx::VmValue::Long(*integer);
         return dx::VmValue::Long(std::stoll(ValueString(value)));
@@ -1063,7 +1063,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
                        DbNative([connection](dx::IntrinsicContext &call) {
                          const auto value =
                              connection(call.arguments[0].AsInt())
-                                 ->ExecuteScalar(call.arguments[1].AsInt());
+                                 ->ExecuteScalar(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
                          return dx::VmValue::Ref(
                              std::holds_alternative<std::monostate>(value)
                                  ? dx::VmObjectRef{}
@@ -1072,13 +1072,13 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
   builder.StaticMethod("nativeExecuteForChangedRowCount", "(II)I",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          auto db = connection(call.arguments[0].AsInt());
-                         db->Execute(call.arguments[1].AsInt());
+                         db->Execute(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
                          return dx::VmValue::Int(db->ChangedRows());
                        }));
   builder.StaticMethod("nativeExecuteForLastInsertedRowId", "(II)J",
                        DbNative([connection](dx::IntrinsicContext &call) {
                          auto db = connection(call.arguments[0].AsInt());
-                         db->Execute(call.arguments[1].AsInt());
+                         db->Execute(static_cast<std::uint32_t>(call.arguments[1].AsInt()));
                          return dx::VmValue::Long(db->ChangedRows() > 0
                                                       ? db->LastInsertRowId()
                                                       : -1);
@@ -1092,7 +1092,7 @@ Decl Declare_android_database_sqlite_SQLiteConnection(const Context &context) {
           DbThrow("CursorWindow token is stale");
         auto &window = found->second;
         auto result = connection(call.arguments[0].AsInt())
-                          ->QueryWindow(call.arguments[1].AsInt(),
+                          ->QueryWindow(static_cast<std::uint32_t>(call.arguments[1].AsInt()),
                                         call.arguments[3].AsInt(),
                                         call.arguments[4].AsInt(),
                                         call.arguments[5].AsInt() != 0,
@@ -2428,7 +2428,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
           BadFilterIndex(index, values.size());
         }
-        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[index]));
+        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
       });
   builder.FinalMethod(
       "hasAction", "(Ljava/lang/String;)Z",
@@ -2475,7 +2475,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
           BadFilterIndex(index, values.size());
         }
-        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[index]));
+        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
       });
   builder.FinalMethod("hasDataType", "(Ljava/lang/String;)Z",
                       [context, filter_values](dx::IntrinsicContext &call) {
@@ -2519,7 +2519,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
           BadFilterIndex(index, values.size());
         }
-        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[index]));
+        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
       });
   builder.FinalMethod(
       "hasDataScheme", "(Ljava/lang/String;)Z",
@@ -2583,7 +2583,7 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
           BadFilterIndex(index, values.size());
         }
-        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[index]));
+        return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
       });
   builder.FinalMethod(
       "hasCategory", "(Ljava/lang/String;)Z",

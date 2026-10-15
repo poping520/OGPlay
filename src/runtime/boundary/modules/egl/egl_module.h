@@ -91,7 +91,7 @@ private:
         std::uint32_t swap_interval{1U};
         std::uint32_t current_count{};
         bool destroy_pending{};
-        std::shared_ptr<gles::EglSurfaceResources> backing;
+        std::shared_ptr<gles::EglSurfaceResources> backing{};
         std::uint32_t texture_format{0x305CU};
         bool mipmap{};
         std::uint32_t mipmap_level{};

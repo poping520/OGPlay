@@ -81,7 +81,7 @@ private:
         NativeActivityBoundaryResources resources;
         memory::GuestAddress window{};
         bool input_active{}, input_attached{};
-        InputQueueState input;
+        InputQueueState input{};
 
     };
     struct WindowResource {

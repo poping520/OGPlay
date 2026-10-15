@@ -57,7 +57,7 @@ std::shared_ptr<const FallbackGlyph> UiFallbackFont::Glyph(const char16_t unit, 
     glyph->width -= glyph->x; glyph->height -= glyph->y;
     if (glyph->width < 0 || glyph->height < 0 || glyph->width > 256 || glyph->height > 256)
         throw std::runtime_error("fallback glyph bitmap exceeds bounds");
-    glyph->alpha.resize(static_cast<std::size_t>(glyph->width) * glyph->height);
+    glyph->alpha.resize(static_cast<std::size_t>(glyph->width) * static_cast<std::size_t>(glyph->height));
     if (!glyph->alpha.empty()) stbtt_MakeCodepointBitmap(&impl_->font, glyph->alpha.data(), glyph->width, glyph->height,
         glyph->width, scale, scale, unit);
     int ascent{}, descent{}, gap{};

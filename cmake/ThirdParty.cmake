@@ -250,3 +250,102 @@ if(OGPLAY_ENABLE_ANGLE)
     set_target_properties(ANGLE::EGL ANGLE::GLESv2 PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${_angle_include_dir}")
 endif()
+
+# ogplay_ffmpeg: trimmed FFmpeg merged into one shared library, built by the
+# separate OGPlay-ffmpeg repository and consumed only through its prebuilt
+# package (ADR-0136). AUTO builds without video decoding on platforms that
+# have no package yet; FfmpegUnavailableReason() then reports why.
+set(OGPLAY_FFMPEG_FOUND FALSE)
+set(OGPLAY_FFMPEG_MISSING_REASON "")
+if(NOT OGPLAY_ENABLE_FFMPEG MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "OGPLAY_ENABLE_FFMPEG must be AUTO, ON or OFF")
+endif()
+if(OGPLAY_ENABLE_FFMPEG STREQUAL "OFF")
+    set(OGPLAY_FFMPEG_MISSING_REASON "built with OGPLAY_ENABLE_FFMPEG=OFF")
+else()
+    if(NOT IS_ABSOLUTE "${OGPLAY_FFMPEG_SDK_ROOT}")
+        message(FATAL_ERROR "OGPLAY_FFMPEG_SDK_ROOT must be an absolute path")
+    endif()
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _ffmpeg_processor)
+    if(_ffmpeg_processor MATCHES "^(amd64|x86_64)$")
+        set(_ffmpeg_cpu "x64")
+    elseif(_ffmpeg_processor MATCHES "^(arm64|aarch64)$")
+        set(_ffmpeg_cpu "arm64")
+    else()
+        set(_ffmpeg_cpu "${_ffmpeg_processor}")
+    endif()
+    if(WIN32)
+        set(_ffmpeg_os "windows")
+    elseif(APPLE)
+        set(_ffmpeg_os "macos")
+    else()
+        set(_ffmpeg_os "linux")
+    endif()
+    set(_ffmpeg_platform "${_ffmpeg_os}-${_ffmpeg_cpu}")
+    set(_ffmpeg_sdk "${OGPLAY_FFMPEG_SDK_ROOT}/${_ffmpeg_platform}")
+
+    if(NOT EXISTS "${_ffmpeg_sdk}/manifest.json")
+        set(OGPLAY_FFMPEG_MISSING_REASON
+            "no ogplay_ffmpeg package for ${_ffmpeg_platform} in third_party/ffmpeg-prebuilt")
+        if(OGPLAY_ENABLE_FFMPEG STREQUAL "ON")
+            message(FATAL_ERROR "OGPLAY_ENABLE_FFMPEG=ON but ${OGPLAY_FFMPEG_MISSING_REASON}. "
+                "Run: git submodule update --init third_party/ffmpeg-prebuilt")
+        endif()
+        message(WARNING "Video decoding disabled: ${OGPLAY_FFMPEG_MISSING_REASON}")
+    else()
+        file(READ "${_ffmpeg_sdk}/manifest.json" _ffmpeg_manifest)
+        foreach(_ffmpeg_field schema_version kind platform ffmpeg_commit library shared_headers)
+            string(JSON _ffmpeg_value ERROR_VARIABLE _ffmpeg_json_error
+                GET "${_ffmpeg_manifest}" "${_ffmpeg_field}")
+            if(_ffmpeg_json_error)
+                message(FATAL_ERROR
+                    "ogplay_ffmpeg manifest has no valid ${_ffmpeg_field}: ${_ffmpeg_json_error}")
+            endif()
+            set("_ffmpeg_manifest_${_ffmpeg_field}" "${_ffmpeg_value}")
+        endforeach()
+        if(NOT _ffmpeg_manifest_schema_version EQUAL 1 OR
+           NOT _ffmpeg_manifest_kind STREQUAL "platform" OR
+           NOT _ffmpeg_manifest_platform STREQUAL _ffmpeg_platform)
+            message(FATAL_ERROR "ogplay_ffmpeg manifest does not match ${_ffmpeg_platform}")
+        endif()
+        foreach(_ffmpeg_relative IN ITEMS
+                "${_ffmpeg_manifest_library}" "${_ffmpeg_manifest_shared_headers}")
+            if(_ffmpeg_relative MATCHES "^[A-Za-z]:" OR _ffmpeg_relative MATCHES "^/" OR
+               _ffmpeg_relative MATCHES "(^|/)\\.\\.(/|$)")
+                message(FATAL_ERROR "ogplay_ffmpeg manifest contains unsafe path: ${_ffmpeg_relative}")
+            endif()
+        endforeach()
+        ogplay_verify_manifest_files("${_ffmpeg_manifest}" "${_ffmpeg_sdk}" "ogplay_ffmpeg SDK")
+
+        set(_ffmpeg_include_dir "${OGPLAY_FFMPEG_SDK_ROOT}/${_ffmpeg_manifest_shared_headers}")
+        if(NOT EXISTS "${_ffmpeg_include_dir}/manifest.json")
+            message(FATAL_ERROR "ogplay_ffmpeg shared header manifest is missing")
+        endif()
+        file(READ "${_ffmpeg_include_dir}/manifest.json" _ffmpeg_header_manifest)
+        string(JSON _ffmpeg_header_kind GET "${_ffmpeg_header_manifest}" kind)
+        string(JSON _ffmpeg_header_commit GET "${_ffmpeg_header_manifest}" ffmpeg_commit)
+        if(NOT _ffmpeg_header_kind STREQUAL "headers" OR
+           NOT _ffmpeg_header_commit STREQUAL _ffmpeg_manifest_ffmpeg_commit)
+            message(FATAL_ERROR "ogplay_ffmpeg headers do not match the platform package commit")
+        endif()
+        ogplay_verify_manifest_files(
+            "${_ffmpeg_header_manifest}" "${_ffmpeg_include_dir}" "ogplay_ffmpeg headers")
+
+        set(OGPLAY_FFMPEG_RUNTIME "${_ffmpeg_sdk}/${_ffmpeg_manifest_library}")
+        add_library(FFmpeg::FFmpeg SHARED IMPORTED GLOBAL)
+        set_target_properties(FFmpeg::FFmpeg PROPERTIES
+            IMPORTED_LOCATION "${OGPLAY_FFMPEG_RUNTIME}"
+            INTERFACE_INCLUDE_DIRECTORIES "${_ffmpeg_include_dir}")
+        if(WIN32)
+            string(JSON _ffmpeg_import_library GET "${_ffmpeg_manifest}" import_library)
+            set_target_properties(FFmpeg::FFmpeg PROPERTIES
+                IMPORTED_IMPLIB "${_ffmpeg_sdk}/${_ffmpeg_import_library}")
+        elseif(APPLE)
+            get_filename_component(_ffmpeg_library_name "${OGPLAY_FFMPEG_RUNTIME}" NAME)
+            set_target_properties(FFmpeg::FFmpeg PROPERTIES
+                IMPORTED_SONAME "@rpath/${_ffmpeg_library_name}")
+        endif()
+        set(OGPLAY_FFMPEG_FOUND TRUE)
+        message(STATUS "ogplay_ffmpeg: ${_ffmpeg_platform} (FFmpeg ${_ffmpeg_manifest_ffmpeg_commit})")
+    endif()
+endif()

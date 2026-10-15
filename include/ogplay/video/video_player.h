@@ -8,6 +8,8 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace ogplay::video {
@@ -33,9 +35,26 @@ struct VideoFrame final {
     std::vector<std::uint8_t> rgba8;
 };
 
-class VideoPlayerError final : public std::runtime_error {
+class VideoPlayerError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+// The stream uses a codec this build cannot decode. codec() is the FFmpeg codec
+// name (e.g. "hevc") so callers can record the gap per codec.
+class VideoCodecUnsupportedError final : public VideoPlayerError {
+public:
+    VideoCodecUnsupportedError(std::string stream, std::string codec)
+        : VideoPlayerError("no " + stream + " decoder for codec " + codec +
+                           " in this build"),
+          stream_(std::move(stream)),
+          codec_(std::move(codec)) {}
+    [[nodiscard]] const std::string& stream() const noexcept { return stream_; }
+    [[nodiscard]] const std::string& codec() const noexcept { return codec_; }
+
+private:
+    std::string stream_;
+    std::string codec_;
 };
 
 class VideoDataSource {

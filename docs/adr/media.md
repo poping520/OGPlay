@@ -21,6 +21,7 @@
 - [ADR-0116 · 原生视频图片缓存与到期转换](#adr-0116)
 - [ADR-0128 · 压缩纹理能力快照与 Manifest 声明](#adr-0128)
 - [ADR-0130 · Metal packed 表面的深度/模板存储归 Surface](#adr-0130)
+- [ADR-0136 · 裁剪版 FFmpeg 预编译库编译期直接链接](#adr-0136)
 
 <a id="adr-0003"></a>
 
@@ -622,3 +623,48 @@ published 格式以结构化日志可查询，不因没有纹理上传就伪造�
 
 Profile 不提供压缩纹理格式覆盖。无声明或无法明确选择时保持默认支持边界；
 不修改 APK/SO，不以 guest PC 补丁修正引擎，不全局撤掉 PVRTC，也不按文件名猜测。
+
+<a id="adr-0136"></a>
+
+## ADR-0136 · 裁剪版 FFmpeg 预编译库编译期直接链接
+
+- 状态：Accepted
+- 日期：2026-10-15
+- Supersedes：ADR-0021 约束 2 中“不得引入新的编译期依赖”、决定 2 的运行时动态加载
+  与按库名探测、决定 4 中“FFmpeg 后端只保留可用性探测与可选 smoke 测试”；ADR-0116 中
+  “不扩展 FFmpeg 主版本；avutil 59 前导字段镜像”条款。拉模型接口、Clock、有界队列与
+  回压规则保持。
+- 实施：[VID-1](../tasks/video/VID-1.md)。
+
+### 背景
+
+运行时加载完整 FFmpeg 7 需要随发行物放置五个大体积动态库，开发机与用户机器普遍缺失，
+视频实际不可用；结构体前导字段镜像随主版本失效，只能锁死 7.x。游戏 CG 实际只用到
+mp4/3gp 容器中的少数编码。
+
+### 决定
+
+1. FFmpeg 构建与 OGPlay 源码树分离：独立仓库 OGPlay-ffmpeg 固定上游 tag（当前
+   n8.1.3），只启用 `mov` demuxer、`h264`/`mpeg4`/`aac` 解码器及对应 parser（`h263`
+   由 mpeg4 依赖带入），无 protocol/encoder/muxer/filter/外部库，不含 GPL/nonfree。
+   五个静态库合并为单一共享库 `ogplay_ffmpeg`，只导出 FFmpeg 公共 API。产物与逐文件
+   SHA-256 清单发布到 OGPlay-ffmpeg-prebuilt，OGPlay 以浅 submodule
+   `third_party/ffmpeg-prebuilt` 消费，做法同 ANGLE 预编译 SDK（ADR-0014）。
+2. OGPlay 以导入目标 `FFmpeg::FFmpeg` 编译期链接，直接包含 FFmpeg 头文件调用，删除
+   动态加载器与 ABI 镜像。CMake 校验清单哈希与头文件 commit；运行库复制到可执行文件旁，
+   macOS 经 `@loader_path` 解析。`OGPLAY_ENABLE_FFMPEG` 为 AUTO/ON/OFF：AUTO 在当前
+   平台无包时构建无视频版本并给出原因，ON 时缺包即配置失败。
+3. 启动自检要求运行库与头文件版本一致且 `mov` 与 `h264`/`mpeg4`/`aac` 存在，否则视为
+   不可用。所有输入（含宿主路径）都经自定义 AVIO 读取。
+4. 视频或音频编码未编入时抛出带编码名的 `VideoCodecUnsupportedError`，guest 收到明确
+   错误，集成层记账 `android.video.codec.<name>`；不静默丢弃音轨。新增编码只在实际遇到
+   该记账后进入 OGPlay-ffmpeg 组件清单并重新发布预编译包。
+
+### 后果
+
+- 有预编译包的平台直接具备视频解码，测试不再因缺少 FFmpeg 而跳过；无包平台行为与旧版
+  “FFmpeg 不可用”一致且原因可查询。
+- 发行物需随附 LGPL-2.1 许可证与对应源码信息（清单记录 tag、commit、configure 参数）；
+  共享库形态允许用户替换。
+- 首次覆盖之外的编码会让对应 CG 明确失败，直到组件清单扩充；升级 FFmpeg 只需重建
+  预编译包，接口变化由编译器暴露。

@@ -13,14 +13,16 @@
 | PowerVR Native SDK | `2b1bf2f14d3365d0bb801e2a6a131a319d3a2e48` | https://github.com/powervr-graphics/Native_SDK | MIT | 原样引入 `PVRTDecompress.cpp/.h` 实现 PVRTC1 软件解码 |
 | Dear ImGui | 1.92.9b（`f1cc2ae15e53a861a874c3034aae6798fde194ab`） | https://github.com/ocornut/imgui | MIT | SDL3 + GLES2 主面板界面 |
 | SQLite amalgamation | 3.53.4（`ed6f533374f8340dee587f714115e75d6d8d6aa6`） | https://github.com/poping520/sqlite-amalgamation | Public Domain | 官方 amalgamation 源码（尚未接入构建） |
+| FFmpeg（`ogplay_ffmpeg` 预编译共享库） | n8.1.3（`1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7`） | https://github.com/poping520/OGPlay-ffmpeg-prebuilt（上游 https://git.ffmpeg.org/ffmpeg.git） | LGPL-2.1-or-later | 游戏 CG 视频解码：mov 容器、H.264/MPEG-4/H.263/AAC |
 | AOSP Bionic ARM runtime | Android 4.4.4 r2.0.1（`081db840befec895fb86e709ae95832ade2d065c`） | https://android.googlesource.com/platform/bionic/+/android-4.4.4_r2.0.1 | 见随包逐库 NOTICE | API 19 guest libc/libm/libdl/libstdc++ |
 | AOSP zlib ARM runtime | Android 4.4.4 r2.0.1（`a5c7131da47c991585a6c6ac0c063b6d7d56e3fc`） | https://android.googlesource.com/platform/external/zlib/+/android-4.4.4_r2.0.1 | zlib | API 19 guest libz |
 
 Dynarmic 的递归 submodule 版本由其固定提交的 `.gitmodules` 与 gitlink 决定，各组件
 许可证位于对应源码目录；API 19 Android guest 系统库的逐库 NOTICE 随
-`data/android/19/notices/` 发布。规划中但尚未引入发行物：ANGLE、FFmpeg、zstd
-及其它 API 版本的 AOSP Bionic。任何游戏 APK、OBB、解包资源或设备提取的系统库均不得
-提交或再分发。
+`data/android/19/notices/` 发布。FFmpeg 预编译包随各平台目录携带 LGPL 许可证，清单记录
+上游 commit 与完整 configure 参数，构建脚本见 OGPlay-ffmpeg 仓库。规划中但尚未引入
+发行物：ANGLE、zstd 及其它 API 版本的 AOSP Bionic。任何游戏 APK、OBB、解包资源或设备
+提取的系统库均不得提交或再分发。
 
 ## PowerVR Native SDK PVRTC decompression algorithm
 

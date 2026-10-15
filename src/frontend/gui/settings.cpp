@@ -15,7 +15,6 @@ const std::vector<GuiSettingDefinition>& GuiSettings() {
         {"confirm_delete", "general", "移除库中实例前二次确认", true},
         {"profiles_dir", "storage", "Profile 目录覆盖", std::string(), {}, 0, 0, "", true},
         {"default_external_dir", "storage", "默认数据包目录（导入时预填）", std::string(), {}, 0, 0, "", true},
-        {"ffmpeg_dir", "storage", "FFmpeg 目录", std::string(), {}, 0, 0, "预留 · 运行时目录配置尚未接入", true},
         {"log_retention", "storage", "每实例保留日志数", std::uint32_t(1), {}, 1, 100, "预留 · 当前只保留 last-run.log"},
         {"angle_backend", "graphics", "ANGLE 后端偏好", std::string("automatic"), {"automatic", "hardware-only", "software-only"}, 0, 0, "预留 · 启动参数尚未接入"},
         {"supersample", "graphics", "默认超采样", std::uint32_t(1), {}, 1, 4},

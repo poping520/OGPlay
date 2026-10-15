@@ -1279,7 +1279,8 @@ TEST_CASE("DVM-249 ordinary video FD range survives close and prepared callback 
     CHECK(vm.context->video_views.empty()); CHECK(vm.context->media_players.empty());
 }
 
-TEST_CASE("DVM-249 ordinary MediaPlayer decodes a real local FFmpeg video") {
+TEST_CASE("DVM-249 ordinary MediaPlayer decodes a real local FFmpeg video" *
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
     REQUIRE_MESSAGE(ogplay::video::FfmpegAvailable(), ogplay::video::FfmpegUnavailableReason());
     VideoVm vm(ogplay::video::VideoPlayerFactory{});
     vm.context->video_source_player_factory = ogplay::video::MakeFfmpegVideoSourcePlayerFactory();
@@ -1292,6 +1293,22 @@ TEST_CASE("DVM-249 ordinary MediaPlayer decodes a real local FFmpeg video") {
     std::vector<std::int16_t> pcm(480);
     CHECK(MixVideoPcmIntoStereo(*vm.context, pcm, 24000) == 1);
     vm.CallOn(player, "release", "()V");
+}
+
+TEST_CASE("ADR-0136 VideoView records a codec missing from ogplay_ffmpeg by name" *
+          doctest::skip(OGPLAY_HAS_FFMPEG == 0)) {
+    VideoVm vm(ogplay::video::VideoPlayerFactory{});
+    vm.context->video_source_player_factory = ogplay::video::MakeFfmpegVideoSourcePlayerFactory();
+    const auto view = vm.NewVideoView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnErrorListener", "(Landroid/media/MediaPlayer$OnErrorListener;)V", {VmValue::Ref(listener)});
+    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V",
+              {VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/hevc-aac.mp4"))});
+    CHECK(vm.Pump() == 0U);
+    CHECK(vm.Errors() == 1);
+    CHECK(vm.Prepared() == 0);
+    const auto gaps = vm.ledger.Unimplemented();
+    CHECK(std::any_of(gaps.begin(), gaps.end(), [](const auto& gap) { return gap.id == "android.video.codec.hevc"; }));
 }
 
 TEST_CASE("DVM-249 Surface binding rejects stale competing and wake requests") {

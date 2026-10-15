@@ -940,10 +940,40 @@ if(OGPLAY_BUILD_TESTS)
         tests/runtime/android_guest_framework_platform_tests.cpp
         tests/runtime/android_guest_java_media_tests.cpp
         tests/runtime/boundary/integration/android_boundary_hle_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp
+        tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp
+        tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp
+        tests/runtime/boundary/integration/android_gles1_exports_tests.cpp
+        tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp
+        tests/runtime/boundary/integration/android_gles1_state_tests.cpp
+        tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_looper_tests.cpp
+        tests/runtime/boundary/integration/android_egl_sharing_tests.cpp
+        tests/runtime/boundary/integration/android_frame_presentation_tests.cpp
+        tests/runtime/boundary/integration/android_native_activity_io_tests.cpp
+        tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp
+        tests/runtime/boundary/integration/android_boundary_fixture.cpp
         tests/runtime/boundary/modules/gles1_fixed_tests.cpp
         tests/runtime/android_link_preflight_tests.cpp
         tests/runtime/native_activity_runner_tests.cpp
+        tests/runtime/application_startup_tests.cpp
         tests/runtime/native_library_loader_tests.cpp
+        tests/runtime/jni_bridge_framework_tests.cpp
+        tests/runtime/jni_bridge_objects_tests.cpp
+        tests/runtime/jni_bridge_threads_tests.cpp
+        tests/runtime/activity_window_lifecycle_tests.cpp
+        tests/runtime/jni_android_platform_tests.cpp
+        tests/runtime/guest_native_values_tests.cpp
+        tests/runtime/activity_task_stack_tests.cpp
+        tests/runtime/guest_zlib_tests.cpp
+        tests/runtime/guest_crypto_bks_tests.cpp
+        tests/runtime/guest_crypto_certificates_tests.cpp
+        tests/runtime/application_exit_tests.cpp
+        tests/runtime/native_activity_process_tests.cpp
+        tests/runtime/native_dlopen_tests.cpp
+        tests/runtime/native_library_fixture.cpp
         tests/runtime/tls_trust_tests.cpp
         tests/runtime/preferences_xml_tests.cpp
         tests/runtime/ui_tree_tests.cpp
@@ -1001,18 +1031,51 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/reflection_tests.cpp
         tests/dexvm/dexasm_readback_tests.cpp
         tests/dexvm/file_vfs_tests.cpp
+        tests/dexvm/file_streams_tests.cpp
+        tests/dexvm/file_application_storage_tests.cpp
+        tests/dexvm/file_assets_resources_tests.cpp
+        tests/dexvm/file_media_descriptors_tests.cpp
+        tests/dexvm/file_serialization_tests.cpp
+        tests/dexvm/file_vfs_fixture.cpp
         tests/dexvm/fast_code_tests.cpp
         tests/dexvm/egl_facade_tests.cpp
         tests/dexvm/audio_track_tests.cpp
         tests/dexvm/scheduler_tests.cpp
+        tests/dexvm/android_context_services_tests.cpp
+        tests/dexvm/android_intent_uri_tests.cpp
+        tests/dexvm/android_parcel_bundle_tests.cpp
+        tests/dexvm/android_resources_bitmap_tests.cpp
+        tests/dexvm/android_view_state_tests.cpp
+        tests/dexvm/android_pending_notifications_tests.cpp
         tests/dexvm/android_value_tests.cpp
+        tests/dexvm/android_logging_tests.cpp
+        tests/dexvm/android_component_services_tests.cpp
+        tests/dexvm/android_package_metadata_tests.cpp
+        tests/dexvm/android_text_drawable_tests.cpp
+        tests/dexvm/android_preferences_tests.cpp
+        tests/dexvm/android_webview_tests.cpp
+        tests/dexvm/android_input_values_tests.cpp
+        tests/dexvm/android_wifi_locks_tests.cpp
+        tests/dexvm/android_value_fixture.cpp
         tests/dexvm/gap_survey_tests.cpp
         tests/dexvm/gc_tests.cpp
         tests/dexvm/dex_code_tests.cpp
+        tests/dexvm/intrinsic_contract_tests.cpp
+        tests/dexvm/core_catalog_tests.cpp
+        tests/dexvm/throwable_contract_tests.cpp
         tests/dexvm/interpreter_tests.cpp
+        tests/dexvm/interpreter_backend_tests.cpp
+        tests/dexvm/interpreter_diagnostics_tests.cpp
+        tests/dexvm/interpreter_fixture.cpp
         tests/dexvm/nio_runtime_tests.cpp
         tests/dexvm/unsafe_tests.cpp
+        tests/dexvm/bootdex_concurrency_tests.cpp
         tests/dexvm/bootdex_library_tests.cpp
+        tests/dexvm/bootdex_datetime_tests.cpp
+        tests/dexvm/bootdex_security_tests.cpp
+        tests/dexvm/bootdex_collections_io_tests.cpp
+        tests/dexvm/bootdex_shutdown_tests.cpp
+        tests/dexvm/bootdex_library_fixture.cpp
         tests/dexvm/observable_tests.cpp
         tests/dexvm/network_sqlite_tests.cpp
         tests/dexvm/session_exit_tests.cpp
@@ -1022,6 +1085,12 @@ if(OGPLAY_BUILD_TESTS)
         tests/dexvm/vm_thread_tests.cpp
         tests/dexvm/videoview_tests.cpp
         tests/dexvm/widget_click_tests.cpp
+        tests/dexvm/widget_hierarchy_tests.cpp
+        tests/dexvm/widget_inflater_tests.cpp
+        tests/dexvm/widget_resources_tests.cpp
+        tests/dexvm/widget_focus_input_tests.cpp
+        tests/dexvm/widget_window_dialog_tests.cpp
+        tests/dexvm/widget_fixture.cpp
         tests/dexvm/ui_include_tests.cpp
         tests/dexvm/arsc_tests.cpp
     )

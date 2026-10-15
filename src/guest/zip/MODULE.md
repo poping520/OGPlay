@@ -17,5 +17,5 @@ Java streamHandle 使用原版 -1 关闭标记；不得发布宿主或 guest 原
 Inflater.setFileInputImpl 不导出，由 core 按能力缺口记账并抛 UnsupportedOperationException。
 仅支持字节数组及其 GZIP/DeflaterOutputStream/InflaterInputStream 组合；RAFStream 只作为
 原版类型依赖，不声明 ZipFile、Adler32 或完整 ZIP/JAR 能力。
-验证入口：`tests/runtime/native_library_loader_tests.cpp` 的 DVM-201/DVM-214 双解释器用例，
+验证入口：`tests/runtime/guest_zlib_tests.cpp` 的 DVM-201/DVM-214 双解释器用例，
 以及 BootDex build/check、guest JNI 可重复构建和 payload 校验。

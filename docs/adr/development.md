@@ -11,6 +11,7 @@
 - [ADR-0015 · ANGLE 维护者工作区归属](#adr-0015)
 - [ADR-0072 · Web UI 使用固定 Node 构建链，产物按生成制品交付](#adr-0072)
 - [ADR-0137 · 共享应用库与桌面/CLI 双入口](#adr-0137)
+- [ADR-0138 · 共享库 C++ 外观接口与游戏库下沉](#adr-0138)
 - [ADR-0073 · Windows 启动器 WebView 宿主边界](#adr-0073)
 
 <a id="adr-0005"></a>
@@ -288,3 +289,51 @@ Windows 完整交付；其他平台仅维护共享库和 CLI，GUI 宿主接入�
 
 EXE 与共享库必须同版本发布；内部静态库继续供单元测试使用，真实 EXE 的集成验证负责
 覆盖共享库边界。SDL 只链接到共享应用实现，避免 EXE/DLL 各带一份静态状态。
+
+<a id="adr-0138"></a>
+
+## ADR-0138 · 共享库 C++ 外观接口与游戏库下沉
+
+- 状态：Accepted
+- 日期：2026-10-15
+- Supersedes：ADR-0137 中“仅两个 C 入口”“EXE 只做系统入口适配”“GUI 在共享库内”条款。
+
+### 决定
+
+ogplaycore 只导出 `ogplay::app` C++ 外观，公开头位于 `include/ogplay/app/`，类型采用纯值或
+Pimpl，只出现 std/app 类型。EXE/DLL 必须同次构建、同工具链；MSVC 统一 /MD（Debug /MDd），
+不承诺跨版本 ABI。异常和所有权按同一 C++ 运行时传递；内核内部类不导出，移除旧 C main。
+STL/Pimpl 与标准异常跨同构建边界是有意约定，外观 target 关闭 MSVC C4251/C4275 提示。
+
+core 聚合内核、游戏运行宿主、统一运行选项校验与编解码、游戏库领域、能力/agent、外部诊断、
+bundled payload 定位与日志服务。游戏库包含 APK 检视、导入分析、图标、Profile 摘要、全局/
+实例设置 schema 和继承、ResolveLaunch、跨进程锁；保留原配置和存档布局。
+
+ogplay 拥有模式分派、WebView 外壳、RPC/视图模型、导入向导与子进程/端口/令牌管理；
+ogplay-cli 拥有语法、usage、错误块、stdio JSON-RPC、JSON 输出和退出码。两个 EXE 的静态
+应用库只消费 core 外观；WebView 单独 target 仅由桌面链接，core/CLI 无 WebView 依赖。
+`OGPLAY_BUILD_GUI=OFF` 不构建 ogplay；测试可编译可移植 GUI 模型，不新增其他平台 GUI。
+
+SDL3 使用单份动态库，core 和桌面共同链接，随 Runtime staging/install；ANGLE/FFmpeg 的
+既有交付方式不变。RunGame 自行完成 SDL bootstrap，SDL C 回调先捕获异常，再在外观返回前
+重新抛出。桌面只调用 ResolveLaunch，并用 FormatGameRunArgs 格式化，禁止另写参数协议。
+
+### 并发与进程边界
+
+库根 `library/.lock` 使用 HAL 非阻塞 OS 排他锁（Windows LockFileEx、POSIX flock）。导入
+从暂存到发布、移除及残留清理均持锁；List 只在拿到锁时清理，否则跳过 `.importing` 并正常
+返回已发布列表。库内配置读写和 CLI 设置 patch 也受该锁保护；冲突明确给出 busy 和重试提示。
+
+库启动显式携带 library-root/installation-id，在库锁内获取实例 `.running.lock`，由
+RunningLease 保持到 RunGame 返回或异常，进程崩溃由 OS 释放。移除和单实例以 OS 锁为准，
+GUI 进程表仅补充跟踪；裸 APK 运行不加库运行锁。锁文件不在竞争期间 unlink。
+
+保留 ADR-0137 其余不变量：GUI 与游戏分进程，GUI 退出不杀游戏，产品不依赖 CLI 文件；
+MCP/Dashboard/按键编辑器边界不变；存档位于库根 sandbox，移除条目不删存档或 external。
+
+### 验证边界
+
+内核单元测试继续链接内部静态库；ogplay_app_tests 实际链接共享 core 与 EXE app 库。
+OS 锁/HTTP 的集成夹具独立 target，避免把内部夹具引入外观测试。导出检查只允许 app
+命名空间，检查 EXE 内核导入与 CLI WebView 导入；最终链接命令另外核对静态依赖。
+原生 Windows GUI 和 Linux 仍需各自在目标环境实构建/实跑；macOS 外观与 CLI 验证不替代它们。

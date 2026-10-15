@@ -320,8 +320,8 @@ note = "GUI-7 完成纯数据 schema 1、通用虚拟预设与严格有界校验
 
 [frontend.gui_library]
 status = "complete"
-test = "tests/frontend/data_directory_tests.cpp; tests/frontend/gui_model_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp"
-note = "GUI-2/5/7/10/12/15..17、ADR-0071：严格 LibraryStore/GuiConfig 及导入、删除、详情模型；同 package 多实例按 library/sandbox 并集分配最小空缺 installation id，并发冲突重扫。缺 Profile 时允许通用 run-apk；删除只移除库条目并保留 external 与存档；损坏输入明确失败。"
+test = "tests/frontend/data_directory_tests.cpp; tests/frontend/library_store_tests.cpp; tests/frontend/library_lock_tests.cpp; tests/frontend/library_lock_contention_tests.cpp; tests/hal/file_lock_tests.cpp; tests/frontend/cli_library_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp; frontend.app_entrypoints"
+note = "GUI-10/ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理使用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除，存档和 external 保留。CLI library 全命令与参数编解码已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
 
 [frontend.gui_launch_spawn]
 status = "complete"
@@ -330,7 +330,7 @@ note = "GUI-5/6/9/14：spawn 前校验并装配当前 ogplay EXE 的 --run-game 
 
 [loader.apk_application_visuals]
 status = "complete"
-test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/gui_visuals_tests.cpp"
+test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/library_visuals_tests.cpp"
 note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，以双线性 ARGB 缩放缓存 128x128 RGBA PNG，资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
 
 [agent.run]

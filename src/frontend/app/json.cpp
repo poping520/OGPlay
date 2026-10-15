@@ -60,9 +60,9 @@ JsonWriter::Value JsonWriter::UnsignedInteger(std::uint64_t value) { return Valu
 JsonWriter::Value JsonWriter::Real(double value) { return Value(std::make_shared<Value::Impl>(Value::Impl{impl_->writer.Real(value)})); }
 JsonWriter::Value JsonWriter::String(std::string_view value) { return Value(std::make_shared<Value::Impl>(Value::Impl{impl_->writer.String(value)})); }
 JsonWriter::Value JsonWriter::Copy(JsonValue value) { return Value(std::make_shared<Value::Impl>(Value::Impl{impl_->writer.Copy(value.impl_ ? value.impl_->value : core::JsonValue{})})); }
-void JsonWriter::Add(Value object, std::string_view name, Value value) { impl_->writer.Add(object.impl_->value, name, value.impl_->value); }
-void JsonWriter::Append(Value array, Value value) { impl_->writer.Append(array.impl_->value, value.impl_->value); }
-std::string JsonWriter::Serialize(Value root) { return impl_->writer.Serialize(root.impl_->value); }
+void JsonWriter::Add(Value object, std::string_view name, Value value) { impl_->writer.Add(object.impl_ ? object.impl_->value : core::JsonWriter::Value{}, name, value.impl_ ? value.impl_->value : core::JsonWriter::Value{}); }
+void JsonWriter::Append(Value array, Value value) { impl_->writer.Append(array.impl_ ? array.impl_->value : core::JsonWriter::Value{}, value.impl_ ? value.impl_->value : core::JsonWriter::Value{}); }
+std::string JsonWriter::Serialize(Value root) { return impl_->writer.Serialize(root.impl_ ? root.impl_->value : core::JsonWriter::Value{}); }
 void JsonWriter::AddNull(Value object, std::string_view name) { Add(object, name, Null()); }
 void JsonWriter::AddBool(Value object, std::string_view name, bool value) { Add(object, name, Bool(value)); }
 void JsonWriter::AddInteger(Value object, std::string_view name, std::int64_t value) { Add(object, name, Integer(value)); }

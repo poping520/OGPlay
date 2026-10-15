@@ -18,6 +18,12 @@ struct Fixture {
 }
 TEST_CASE("Library running lock prevents concurrent launch and remove and releases") {
     Fixture f;
+    for (const auto* invalid : {"../outside", "C:outside", ".."}) {
+        try { f.store.Remove(invalid); FAIL("unsafe id accepted"); }
+        catch (const LibraryError& e) { CHECK(e.Code() == LibraryErrorCode::invalid_argument); }
+        try { RunningLease unsafe(f.root, invalid); FAIL("unsafe run id accepted"); }
+        catch (const LibraryError& e) { CHECK(e.Code() == LibraryErrorCode::invalid_argument); }
+    }
     {
         RunningLease active(f.root, "org.example.lock");
         CHECK(f.store.IsRunning("org.example.lock"));
@@ -39,6 +45,15 @@ TEST_CASE("Library import duplicate policy is checked atomically") {
     LibraryImport request{f.root / "source.apk", {"org.example.lock", "Lock", 1, "1", "2026-10-15", {}, {}}, {}};
     CHECK_THROWS_AS(f.store.Import(request, false), LibraryError);
     CHECK(f.store.Import(request, true) == "org.example.lock-2");
+    const auto damaged = f.store.EntriesRoot() / "org.example.damaged";
+    std::filesystem::create_directory(damaged);
+    std::ofstream(damaged / "meta.toml") << "schema = 1\npackage = \"invalid\"\ndisplay_name = \"Damaged\"\nversion_code = 1\nversion_name = \"1\"\nimported_at = \"now\"\n";
+    request.metadata.package = "org.example.other";
+    CHECK(f.store.Import(request, false) == "org.example.other");
+    f.store.Remove("org.example.lock");
+    std::ofstream(f.store.EntriesRoot() / "org.example.lock-2/meta.toml") << "broken metadata";
+    request.metadata.package = "org.example.lock";
+    CHECK_THROWS_AS(f.store.Import(request, false), LibraryError);
 }
 TEST_CASE("Library launch resolution shares settings inheritance and parameter codec") {
     Fixture f;

@@ -26,7 +26,8 @@ constexpr std::uint32_t kSchema = 1;
 [[nodiscard]] bool SafeEntryKey(const std::string_view key) {
     if (key.empty() || key == "." || key == ".." ||
         key.find('/') != std::string_view::npos ||
-        key.find('\\') != std::string_view::npos) {
+        key.find('\\') != std::string_view::npos ||
+        key.find(':') != std::string_view::npos || key.find('\0') != std::string_view::npos) {
         return false;
     }
     return true;
@@ -268,7 +269,7 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 [[nodiscard]] LibraryConfig DecodeConfig(const std::string_view text) {
     const auto values = ParseFlatToml(text);
     const auto schema = ParseUint32(Require(values, "schema"), "schema");
-    if (schema != 1 && schema != 2) throw std::runtime_error("GUI config schema is not supported");
+    if (schema != 1 && schema != 2) throw std::runtime_error("library config schema is not supported");
     if (schema == 1) ExactKeys(values, {"schema", "system_dir", "profiles_dir"});
     LibraryConfig config;
     for (const auto& [key, value] : values) {
@@ -309,27 +310,27 @@ Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
     if (!std::filesystem::exists(path, error)) {
         if (error) {
             throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot inspect GUI config", path);
+                                "cannot inspect library config", path);
         }
         error.clear();
         if (!std::filesystem::exists(backup, error)) {
             if (error) {
                 throw LibraryError(LibraryErrorCode::io_error,
-                                    "cannot inspect GUI config backup", backup);
+                                    "cannot inspect library config backup", backup);
             }
             return {};
         }
         std::filesystem::rename(backup, path, error);
         if (error) {
             throw LibraryError(LibraryErrorCode::io_error,
-                                "cannot recover GUI config backup", backup);
+                                "cannot recover library config backup", backup);
         }
     }
     try {
         return decode(ReadText(path));
     } catch (const std::exception& exception) {
         throw LibraryError(LibraryErrorCode::corrupt_config,
-                            std::string("GUI config is damaged: ") + exception.what(), path);
+                            std::string("library config is damaged: ") + exception.what(), path);
     }
 }
 
@@ -415,7 +416,7 @@ void SaveConfigFile(const std::filesystem::path& target, const std::string& text
         throw;
     } catch (const std::exception& exception) {
         throw LibraryError(LibraryErrorCode::io_error,
-                            std::string("cannot save GUI config: ") + exception.what(),
+                            std::string("cannot save library config: ") + exception.what(),
                             target);
     }
 }
@@ -609,11 +610,12 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     if (!new_instance) {
         for (const auto& entry : std::filesystem::directory_iterator(EntriesRoot())) {
             if (!entry.is_directory()) continue;
-            try {
-                if (DecodeMetadata(ReadText(entry.path() / "meta.toml")).package == request.metadata.package)
-                    throw LibraryError(LibraryErrorCode::duplicate_package, "duplicate_package: use --new-instance to import another instance", entry.path());
-            } catch (const LibraryError&) { throw; }
-              catch (const std::exception&) { /* Damaged entries remain occupied but cannot prove package identity. */ }
+            const auto key = PathUtf8(entry.path().filename());
+            bool duplicate = key == request.metadata.package || key.starts_with(request.metadata.package + "-");
+            try { duplicate = duplicate || DecodeMetadata(ReadText(entry.path() / "meta.toml")).package == request.metadata.package; }
+            catch (const std::exception&) { /* Unrelated damaged entries remain visible and occupied. */ }
+            if (duplicate) throw LibraryError(LibraryErrorCode::duplicate_package,
+                "duplicate_package: use --new-instance to import another instance", entry.path());
         }
     }
     static std::atomic_uint64_t next_import_token{};

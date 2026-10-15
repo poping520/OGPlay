@@ -392,6 +392,13 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
     CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
     CHECK(std::filesystem::exists(entry / "game.apk"));
     fixture.context.running_packages.clear();
+    {
+        ogplay::app::RunningLease externally_running(fixture.root, "org.example.game");
+        auto rejected = Decode(fixture.rpc.Handle(request));
+        REQUIRE(rejected.Root().Member("error"));
+        CHECK(rejected.Root().Member("error")->Member("code")->Integer() == -32002);
+        CHECK(std::filesystem::exists(entry / "game.apk"));
+    }
     const auto removed = Decode(fixture.rpc.Handle(request));
     REQUIRE(removed.Root().Member("result").has_value());
     CHECK(removed.Root().Member("result")->Member("removed")->Bool() == true);

@@ -45,6 +45,7 @@ template<class T> bool Ready(std::future<T>& value) {
 struct GuiRpcService::ImportState {
     std::uint64_t serial{};
     std::string job, state = "idle", failure, installed;
+    std::optional<LibraryErrorCode> failure_code;
     std::filesystem::path directory;
     std::uint64_t expected{}, received{};
     std::optional<ApkImportAnalysis> analysis;
@@ -70,7 +71,8 @@ struct GuiRpcService::ImportState {
             if (Ready(analyzing)) { analysis = analyzing.get(); state = "ready"; }
             if (Ready(committing)) { installed = committing.get(); state = "imported"; Clean(); }
             if (cancelled && !analyzing.valid()) { Clean(); state = "cancelled"; }
-        } catch (const std::exception& error) { failure = error.what(); state = "failed"; Clean(); }
+        } catch (const LibraryError& error) { failure_code = error.Code(); failure = error.what(); state = "failed"; Clean(); }
+        catch (const std::exception& error) { failure = error.what(); state = "failed"; Clean(); }
     }
     void Reserve(const std::filesystem::path& root) {
         Update();
@@ -83,7 +85,7 @@ struct GuiRpcService::ImportState {
             const auto candidate = root / (".gui-import-" + job);
             if (std::filesystem::create_directory(candidate)) { directory = candidate; break; }
         }
-        failure.clear(); installed.clear(); cancelled = false; expected = received = 0;
+        failure_code.reset(); failure.clear(); installed.clear(); cancelled = false; expected = received = 0;
     }
 };
 bool GuiRpcService::ImportBusy() const {
@@ -178,6 +180,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 job.state = "importing";
             }
         }
+        if (job.state == "failed" && (job.failure_code == LibraryErrorCode::busy || job.failure_code == LibraryErrorCode::running))
+            throw LibraryError(*job.failure_code, job.failure);
         writer.AddString(result, "job", job.job);
         writer.AddString(result, "state", job.cancelled ? "cancelled" : job.state);
         if (job.state == "failed") writer.AddString(result, "message", job.failure);

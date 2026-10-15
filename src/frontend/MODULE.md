@@ -2,8 +2,9 @@
 
 ## 职责
 
-由共享应用库 `ogplaycore` 提供 CLI、GUI 与可选 loopback MCP transport；只编排公共内核 API，把 Profile、窗口、
-输入、截图和会话控制交给 session/agent，不实现游戏兼容行为。
+ogplaycore 聚合游戏运行宿主、共享游戏库与公共服务，只导出 `ogplay::app` C++ 外观；
+ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 拥有命令呈现与 stdio。
+只编排内核 API，把 Profile、窗口、输入、截图和会话控制交给 session/agent，不实现游戏兼容行为。
 
 ## 公共入口
 
@@ -16,8 +17,9 @@
   剩余空间写为无路径 StatFs 标量。
 - `ogplay`：桌面主入口，默认 GUI；ready 条目只启动当前 EXE 的 `--run-game` 子进程，
   回收状态与退出码。`ogplay-cli run-apk` 与游戏模式共用选项解析和运行服务。
-- `ogplaycore`：共享应用实现，仅导出同构建的桌面与 CLI C ABI；EXE 不静态链接内部实现。
-  运行语义归 game，入口装配归 app；GUI、游戏和 CLI 按模式初始化，不在加载 DLL 时初始化。
+- `ogplaycore`：同次构建/同工具链的 C++ 外观，MSVC 统一 /MD，不承诺跨版本 ABI。
+  运行归 game、游戏库归 library、外观装配归 app；GUI/CLI 的交互与呈现各归自己的 EXE。
+  EXE 不静态链接内核；SDL 为共享动态库，WebView 仅桌面链接，不在加载 DLL 时初始化应用资源。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
   `profiles/`、`quirks.toml` 与 `framework/bootdex.jar`，源码树仅作开发回退。
 - `--external-dir` 有 Profile external 声明时挂到其唯一 guest 根，否则挂到 `/sdcard`；
@@ -107,6 +109,9 @@
 - 日志保留 backend 来源、Profile、bootstrap、生命周期和原始 JNI/CPU 故障上下文。CLI 顶层
   每个失败只输出一个缩进的 `error [ogplay]` 块；运行循环仍发布 MCP `guest_fault`、清理并
   传播；运行首错在清理前立即写结构化日志，日志失败不得替换原错。
+- 库的导入/移除/清理和库内配置读写使用 OS 排他锁；List 锁冲突跳过 `.importing` 清理。
+  库启动显式带 library-root/installation-id，持有实例 OS 运行锁至游戏退出；移除与单实例以锁为准。
+  GUI 只将 ResolveLaunch 的选项交给 FormatGameRunArgs，禁止另一份运行参数格式。
 - GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 installation id 单实例，
   GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。CLI
   名为 `ogplay-cli`；GUI 不依赖 CLI 文件。所有用户可见失败同时写结构化日志并给出下一步。

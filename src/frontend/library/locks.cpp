@@ -12,7 +12,7 @@ hal::FileLock RequireLibraryLock(const std::filesystem::path& root) {
     return std::move(*lock);
 }
 std::optional<hal::FileLock> TryRunningLock(const LibraryStore& store, std::string_view id) {
-    if (id.empty() || id == "." || id == ".." || id.find_first_of("/\\") != std::string_view::npos)
+    if (id.empty() || id == "." || id == ".." || id.find_first_of("/\\:") != std::string_view::npos || id.find('\0') != std::string_view::npos)
         throw LibraryError(LibraryErrorCode::invalid_argument, "invalid installation id");
     const auto text = std::u8string_view(reinterpret_cast<const char8_t*>(id.data()), id.size());
     const auto directory = store.EntriesRoot() / std::filesystem::path(text);

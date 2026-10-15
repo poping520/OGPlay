@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 #include "ogplay/app/library.h"
 #include "ogplay/hal/file_lock.h"
+#include "frontend/gui/rpc.h"
+#include <thread>
 #include <fstream>
 #include <future>
 
@@ -34,6 +36,47 @@ TEST_CASE("Library lock rejects mutations and List preserves active importing di
         });
         competitor.get();
         CHECK(std::filesystem::exists(temporary));
+        // An asynchronous GUI commit must preserve the typed busy error too.
+        ogplay::frontend::GuiRpcService rpc(store, root / "ogplay", {
+            [](const auto&) { return ogplay::frontend::LibraryViewContext{}; },
+            [](const auto&) {}, [](const auto&) {},
+            [](const auto& source) {
+                ApkImportAnalysis analysis;
+                analysis.source_apk = source; analysis.manifest.package = "org.example.other";
+                analysis.display_name = "Other"; return analysis;
+            }, {}, [] { return "2026-10-15"; }, {}, {}, {}, {}, {}, {}});
+        JsonWriter writer;
+        const auto params = writer.Object(), envelope = writer.Object();
+        writer.AddString(params, "path", (root / "source.apk").generic_string());
+        writer.AddString(envelope, "jsonrpc", "2.0"); writer.AddInteger(envelope, "id", 1);
+        writer.AddString(envelope, "method", "library.analyze"); writer.Add(envelope, "params", params);
+        JsonParseError parse_error;
+        auto started = JsonDocument::ParseStrict(rpc.Handle(writer.Serialize(envelope)), parse_error);
+        REQUIRE(started); REQUIRE(started->Root().Member("result"));
+        const std::string job(*started->Root().Member("result")->Member("job")->String());
+        const auto call = [&](std::string_view method, bool confirm) {
+            return rpc.Handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + std::string(method) +
+                "\",\"params\":{\"job\":\"" + job + "\"" + (confirm ? ",\"new_instance\":true" : "") + "}}");
+        };
+        bool ready = false;
+        const auto deadline = MonotonicClock::NowNs() + 2000000000ULL;
+        while (MonotonicClock::NowNs() < deadline) {
+            auto response = JsonDocument::ParseStrict(call("library.job.poll", false), parse_error);
+            if (response && response->Root().Member("result")->Member("state")->String() == "ready") { ready = true; break; }
+            std::this_thread::yield();
+        }
+        REQUIRE(ready);
+        static_cast<void>(call("library.import", true));
+        bool busy = false;
+        while (MonotonicClock::NowNs() < deadline) {
+            auto response = JsonDocument::ParseStrict(call("library.job.poll", false), parse_error);
+            if (response && response->Root().Member("error")) {
+                busy = response->Root().Member("error")->Member("code")->Integer() == -32002;
+                break;
+            }
+            std::this_thread::yield();
+        }
+        CHECK(busy);
     }
     CHECK(store.LoadEntries().size() == 1);
     CHECK_FALSE(std::filesystem::exists(temporary));

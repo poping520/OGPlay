@@ -174,7 +174,7 @@ agent::ControlResponse GuiRpcService::ImportRequest(std::string_view method, cor
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
                 const auto request = BuildLibraryImport(*job.analysis, external, host_.timestamp());
                 auto store = store_;
-                job.committing = std::async(std::launch::async, [store, request]() mutable { return store.Import(request); });
+                job.committing = std::async(std::launch::async, [store, request]() mutable { return store.Import(request, true); });
                 job.state = "importing";
             }
         }

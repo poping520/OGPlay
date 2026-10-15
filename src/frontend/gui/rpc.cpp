@@ -1,5 +1,5 @@
 #include "ogplay/frontend/gui_rpc.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 
 #include <algorithm>
 #include <array>
@@ -8,6 +8,7 @@
 #include "ogplay/core/encoding.h"
 
 namespace ogplay::frontend {
+using namespace ogplay::app;
 namespace {
 
 std::string PathUtf8(const std::filesystem::path& path) {
@@ -144,11 +145,11 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         const auto kind = method == "library.open_dir" ? RequiredString(params, "kind") : std::string{};
         if (!kind.empty() && kind != "sandbox" && kind != "log" && kind != "external")
             throw std::invalid_argument("kind must be sandbox, log or external");
-        GuiLaunchMode mode = GuiLaunchMode::normal;
+        LaunchMode mode = LaunchMode::normal;
         if (method == "library.launch" && params.Member("mode")) {
             const auto value = RequiredString(params, "mode");
-            if (value == "preflight") mode = GuiLaunchMode::preflight;
-            else if (value == "diagnostic") mode = GuiLaunchMode::diagnostic;
+            if (value == "preflight") mode = LaunchMode::preflight;
+            else if (value == "diagnostic") mode = LaunchMode::diagnostic;
             else if (value != "normal") throw std::invalid_argument("unknown launch mode");
         }
         if (method == "library.remove") {
@@ -212,8 +213,8 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
             } else if (method == "library.launch") {
                 const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (!tile->can_launch) return Error(-32001, tile->detail, "检查运行状态、Profile 和数据包目录。");
-                const auto config = LoadGuiConfig(store_.Root());
-                const auto minimize = std::get<bool>(GuiSetting(config, "minimize_on_launch"));
+                const auto config = LoadLibraryConfig(store_.Root());
+                const auto minimize = std::get<bool>(Setting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
                 host_.launch(BuildLaunchPlan(game_executable_, store_.Root(), *entry, config, mode));
                 if (minimize) host_.minimize();
@@ -234,6 +235,9 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
         }
         writer.Add(root, "result", result);
         return {true, writer.Serialize(root)};
+    } catch (const LibraryError& error) {
+        return Error(error.Code() == LibraryErrorCode::busy || error.Code() == LibraryErrorCode::running ? -32002 : -32000,
+                     error.what(), "关闭运行中的游戏或等待其他库操作完成后重试。");
     } catch (const std::invalid_argument& error) {
         return Error(-32602, error.what(), "检查请求参数后重试。");
     } catch (const std::exception& error) {

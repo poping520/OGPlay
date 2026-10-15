@@ -132,6 +132,7 @@ if(WIN32)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
     target_link_libraries(ogplay_hal PRIVATE bcrypt)
       target_sources(ogplay_hal PRIVATE
+          src/hal/windows/file_lock.cpp
           src/hal/windows/diagnostic_trigger.cpp
           src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
@@ -144,6 +145,7 @@ elseif(APPLE)
     target_link_libraries(ogplay_hal PRIVATE "-framework Metal" "-framework Foundation")
     target_link_libraries(ogplay_hal PRIVATE "-framework IOSurface" "-framework CoreFoundation")
       target_sources(ogplay_hal PRIVATE
+          src/hal/macos/file_lock.cpp
           src/hal/macos/diagnostic_trigger.cpp
           src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
@@ -153,6 +155,7 @@ elseif(APPLE)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
       target_sources(ogplay_hal PRIVATE
+          src/hal/linux/file_lock.cpp
           src/hal/linux/diagnostic_trigger.cpp
           src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
@@ -728,6 +731,18 @@ else()
 endif()
 ogplay_set_project_warnings(ogplay_agent)
 
+add_library(ogplay_library STATIC
+    src/frontend/library/model.cpp src/frontend/library/import.cpp
+    src/frontend/library/visuals.cpp src/frontend/library/settings.cpp
+    src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
+    src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp)
+target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
+target_include_directories(ogplay_library PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
+target_compile_definitions(ogplay_library PRIVATE ogplaycore_EXPORTS)
+set_target_properties(ogplay_library PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
+ogplay_set_project_warnings(ogplay_library)
+
 add_library(ogplay_frontend STATIC
     src/frontend/data_directory.cpp
     src/frontend/control_overlay.cpp
@@ -737,17 +752,12 @@ add_library(ogplay_frontend STATIC
     src/frontend/mcp_input_dispatch.cpp
     src/frontend/run_apk_progress.cpp
     src/frontend/game/run_game_vfs.cpp
-    src/frontend/gui/import.cpp
     src/frontend/gui/launch.cpp
     src/frontend/gui/dashboard.cpp
-    src/frontend/gui/settings.cpp
-    src/frontend/gui/game_settings.cpp
     src/frontend/gui/rpc_settings.cpp
     src/frontend/gui/rpc.cpp
     src/frontend/gui/rpc_import.cpp
-    src/frontend/gui/model.cpp
     src/frontend/gui/view_model.cpp
-    src/frontend/gui/visuals.cpp
     src/frontend/user_data_dir.cpp
 )
 include(cmake/WebUi.cmake)
@@ -781,7 +791,7 @@ add_library(ogplaycore SHARED
     src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
     src/frontend/game/run_game.cpp)
 target_link_libraries(ogplaycore PRIVATE
-    OGPlay::Frontend OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
+    OGPlay::Frontend "$<LINK_LIBRARY:WHOLE_ARCHIVE,ogplay_library>" OGPlay::Hal OGPlay::Loader OGPlay::Runtime)
 target_compile_definitions(ogplaycore PRIVATE
     OGPLAY_VERSION="${PROJECT_VERSION}"
     OGPLAY_HAS_SDL3=$<BOOL:${OGPLAY_ENABLE_SDL3}>)
@@ -996,7 +1006,6 @@ if(OGPLAY_BUILD_TESTS)
         tests/frontend/gui_dashboard_window_tests.cpp
         tests/frontend/gui_launch_tests.cpp
         tests/frontend/gui_rpc_tests.cpp
-        tests/frontend/gui_model_tests.cpp
         tests/frontend/gui_view_model_tests.cpp
         tests/frontend/gui_visuals_tests.cpp
         tests/golden/golden_frame_tests.cpp
@@ -1234,11 +1243,19 @@ if(OGPLAY_BUILD_TESTS)
             tests/runtime/arm_kernel_helpers_tests.cpp
         )
     endif()
+    add_executable(ogplay_file_lock_tests tests/test_main.cpp tests/hal/file_lock_tests.cpp
+        tests/frontend/library_lock_contention_tests.cpp)
+    target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore doctest::doctest)
+    ogplay_set_project_warnings(ogplay_file_lock_tests)
     add_executable(ogplay_app_tests tests/test_main.cpp
-        tests/frontend/game_run_options_tests.cpp tests/frontend/game_run_args_tests.cpp)
+        tests/frontend/game_run_options_tests.cpp tests/frontend/game_run_args_tests.cpp
+        tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp)
     target_link_libraries(ogplay_app_tests PRIVATE ogplaycore doctest::doctest)
     target_include_directories(ogplay_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     ogplay_set_project_warnings(ogplay_app_tests)
+    if(NOT MSVC)
+        target_compile_options(ogplay_app_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
     add_dependencies(ogplay_app_tests ogplay_stage_data)
 
     add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
@@ -1284,6 +1301,7 @@ if(OGPLAY_BUILD_TESTS)
     ogplay_stage_ffmpeg_runtime(ogplay_tests)
 
     include(${OGPLAY_DOCTEST_CMAKE_MODULE})
+    doctest_discover_tests(ogplay_file_lock_tests PROPERTIES LABELS "hal;contract")
     doctest_discover_tests(ogplay_app_tests PROPERTIES LABELS "app;contract")
     doctest_discover_tests(ogplay_tests
         PROPERTIES LABELS "unit;contract"

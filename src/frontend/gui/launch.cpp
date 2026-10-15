@@ -1,6 +1,6 @@
 #include "ogplay/frontend/gui_launch.h"
 #include "ogplay/frontend/gui_dashboard.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 #include "ogplay/core/encoding.h"
 #include "ogplay/hal/host_environment.h"
 
@@ -15,6 +15,7 @@
 #include <utility>
 
 namespace ogplay::frontend {
+using namespace ogplay::app;
 namespace {
 
 [[nodiscard]] std::string PathUtf8(const std::filesystem::path& path) {
@@ -22,132 +23,36 @@ namespace {
     return {reinterpret_cast<const char*>(value.data()), value.size()};
 }
 
-void RequireDirectory(const std::filesystem::path& path,
-                      const std::string_view name) {
-    std::error_code error;
-    if (!std::filesystem::is_directory(path, error) || error) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
-                            std::string(name) + " is unavailable", path);
-    }
-}
 
 }  // namespace
 
-std::filesystem::path LauncherSandboxRoot(
-    const std::filesystem::path& library_root) {
-    if (library_root.empty()) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
-                            "library root must not be empty");
-    }
-    return (std::filesystem::absolute(library_root).lexically_normal() /
-            "sandbox").lexically_normal();
-}
-
 LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable,
                            const std::filesystem::path& library_root,
-                           const LibraryEntry& source_entry,
-                           const GuiConfig& global, GuiLaunchMode mode) {
-    const auto settings = LoadGameSettings(source_entry.directory);
-    const auto config = EffectiveGameConfig(settings, global);
-    const auto entry = EffectiveGameEntry(source_entry, settings);
-    ValidateGuiConfigValues(config);
-    if (entry.Damaged() || !entry.metadata.has_value()) {
-        throw GuiModelError(GuiModelErrorCode::corrupt_config,
-                            "damaged library entry cannot be launched",
-                            entry.directory);
-    }
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(game_executable, error) || error) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
-                            "OGPlay game executable is missing", game_executable);
-    }
-    if (config.profiles_dir.has_value()) {
-        RequireDirectory(*config.profiles_dir, "Profile directory");
-    }
-    const auto apk = std::filesystem::absolute(entry.directory / "game.apk")
-                         .lexically_normal();
-    if (!std::filesystem::is_regular_file(apk, error) || error) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
-                            "library APK copy is missing", apk);
-    }
-    if (entry.metadata->external_dir.has_value()) {
-        RequireDirectory(*entry.metadata->external_dir,
-                         "external data directory");
-    }
-
+                           const LibraryEntry& entry, const LibraryConfig& config, LaunchMode mode) {
+    if (!std::filesystem::is_regular_file(game_executable)) throw LibraryError(LibraryErrorCode::not_found, "OGPlay game executable is missing", game_executable);
+    auto resolved = ResolveLaunch(LibraryStore(library_root), entry, config, mode);
     LaunchPlan plan;
     plan.package = entry.key;
-    plan.argv = {
-        PathUtf8(std::filesystem::absolute(game_executable).lexically_normal()),
-        "--run-game", PathUtf8(apk)};
-    if (config.profiles_dir.has_value()) {
-        plan.argv.push_back("--profiles-dir");
-        plan.argv.push_back(PathUtf8(*config.profiles_dir));
-    }
-    if (entry.metadata->external_dir.has_value()) {
-        plan.argv.push_back("--external-dir");
-        plan.argv.push_back(PathUtf8(*entry.metadata->external_dir));
-    }
-    const auto supersample = std::get<std::uint32_t>(GuiSetting(config, "supersample"));
-    if (std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism")))
-        plan.argv.push_back("--cpu-limit-parallelism");
-    const auto max_mticks = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
-    if (max_mticks != 0) {
-        plan.argv.push_back("--cpu-max-mticks-per-second");
-        plan.argv.push_back(std::to_string(max_mticks));
-    }
-    for (const auto& [key, option] : {std::pair{"cpu_cores", "--cpu-cores"},
-                                    std::pair{"cpu_frequency_mhz", "--cpu-frequency-mhz"}}) {
-        plan.argv.push_back(option);
-        plan.argv.push_back(std::to_string(std::get<std::uint32_t>(
-            EffectiveGameSetting(settings, global, entry, key))));
-    }
-    if (supersample != 1) { plan.argv.push_back("--supersample"); plan.argv.push_back(std::to_string(supersample)); }
-    const auto interpreter = std::get<std::string>(GuiSetting(config, "interpreter"));
-    if (interpreter != "profile") { plan.argv.push_back("--dexvm-interpreter"); plan.argv.push_back(interpreter); }
-    const auto mcp = std::get<bool>(GuiSetting(config, "mcp_enabled"));
-    const auto manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
-    if (manual && !mcp && mode != GuiLaunchMode::preflight) throw std::invalid_argument("MCP 手动步进需要启用 MCP。");
-    if (mcp && mode != GuiLaunchMode::preflight) {
-        plan.mcp_port = static_cast<std::uint16_t>(std::get<std::uint32_t>(GuiSetting(config, "mcp_port")));
-        plan.dashboard_auto_open = std::get<bool>(GuiSetting(config, "dashboard_auto_open"));
-        plan.argv.push_back("--mcp-port");
-        plan.argv.push_back(std::to_string(std::get<std::uint32_t>(GuiSetting(config, "mcp_port"))));
-    }
-    if (mode != GuiLaunchMode::preflight) {
+    plan.mcp_port = resolved.mcp_port;
+    plan.dashboard_auto_open = resolved.dashboard_auto_open;
+    if (mode != LaunchMode::preflight) {
         std::array<std::byte, 16> entropy{};
         hal::FillSecureRandom(entropy);
         plan.control_token = core::EncodeHex(entropy, core::HexCase::lower);
         plan.key_editor_port = plan.mcp_port ? *plan.mcp_port : PickLoopbackPort();
-        if (!plan.mcp_port) {
-            plan.argv.push_back("--key-editor-port");
-            plan.argv.push_back(std::to_string(*plan.key_editor_port));
-        }
+        if (!plan.mcp_port) resolved.options.key_editor_port = plan.key_editor_port;
     }
-    if (manual && mode != GuiLaunchMode::preflight) plan.argv.push_back("--mcp-manual-step");
-    if (mode == GuiLaunchMode::preflight) plan.argv.push_back("--preflight");
-    if (mode == GuiLaunchMode::diagnostic) plan.argv.push_back("--diag");
-    if (std::get<bool>(EffectiveGameSetting(settings, global, entry, "ephemeral_sandbox")))
-        plan.argv.push_back("--ephemeral-sandbox");
-    else {
-        plan.argv.push_back("--sandbox-dir");
-        plan.argv.push_back(PathUtf8(LauncherSandboxRoot(library_root)));
-    }
-    plan.argv.push_back("--installation-id");
-    plan.argv.push_back(entry.key);
-    // The instance key layout lives beside settings.toml in its own file (ADR-0134); it is
-    // always passed so the key editor has a save target before the file exists.
-    plan.argv.push_back("--input-config");
-    plan.argv.push_back(PathUtf8(std::filesystem::absolute(entry.directory / "input.toml").lexically_normal()));
-    plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log")
-                        .lexically_normal();
+    plan.argv = {PathUtf8(std::filesystem::absolute(game_executable).lexically_normal()), "--run-game"};
+    const auto args = app::FormatGameRunArgs(resolved.options);
+    plan.argv.insert(plan.argv.end(), args.begin(), args.end());
+    plan.log_path = std::filesystem::absolute(entry.directory / "last-run.log").lexically_normal();
     return plan;
 }
 
 void LaunchTracker::Begin(std::string package,
                           std::filesystem::path log_path) {
     if (package.empty() || IsRunning(package)) {
-        throw GuiModelError(GuiModelErrorCode::duplicate_package,
+        throw LibraryError(LibraryErrorCode::duplicate_package,
                             "this package is already running", std::move(log_path));
     }
     active_.push_back({std::move(package), std::move(log_path)});
@@ -160,7 +65,7 @@ GameExit LaunchTracker::Finish(const std::string_view package,
                                         return active.package == package;
                                     });
     if (found == active_.end()) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
+        throw LibraryError(LibraryErrorCode::not_found,
                             "running package is not tracked");
     }
     GameExit result{found->package, exit_code, found->log_path};

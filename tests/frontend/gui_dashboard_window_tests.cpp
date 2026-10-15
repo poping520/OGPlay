@@ -24,6 +24,7 @@ struct DashboardFixture {
 }
 TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doctest::skip()) {
     using namespace ogplay;
+    using namespace ogplay::app;
     DashboardFixture fixture;
     fixture.Write("manifest.json", "{}");
     fixture.Write("index.html", "<!doctype html><title>Dashboard isolation test</title><script src='dashboard.js'></script>");
@@ -75,6 +76,7 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
 }
 TEST_CASE("GUI Dashboard process tracking rejects duplicate ports and reaps exits") {
     using namespace ogplay;
+    using namespace ogplay::app;
     DashboardFixture fixture; core::Logger logger;
     frontend::GuiProcessManager processes(logger);
     frontend::LaunchPlan plan;
@@ -100,6 +102,7 @@ TEST_CASE("GUI Dashboard process tracking rejects duplicate ports and reaps exit
 }
 TEST_CASE("GUI Dashboard tracking destruction leaves child alive") {
     using namespace ogplay;
+    using namespace ogplay::app;
     DashboardFixture fixture; core::Logger logger;
     fixture.Write("child.ps1", "Start-Sleep -Milliseconds 800\n[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'alive.txt'), 'alive')\n");
     {

@@ -7,15 +7,16 @@
 #include <thread>
 #include "ogplay/core/encoding.h"
 #include "ogplay/frontend/gui_rpc.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 
 namespace {
 using namespace ogplay;
+    using namespace ogplay::app;
 struct Fixture {
     static inline std::atomic<unsigned> sequence{};
     std::filesystem::path root = std::filesystem::temp_directory_path() /
         ("ogplay-gui-rpc-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(sequence++));
-    frontend::LibraryStore store{root};
+    ogplay::app::LibraryStore store{root};
     frontend::LibraryViewContext context;
     unsigned launches{}, opens{}, reads{}, minimized{};
     std::vector<frontend::GuiDashboard> dashboards;
@@ -29,7 +30,7 @@ struct Fixture {
         [this](const auto& value) { if (fail_launch) throw std::runtime_error("spawn failed"); ++launches; plan = value; },
         [this](const auto& path) { ++opens; opened = path; },
         [](const auto& path) {
-            frontend::ApkImportAnalysis result;
+            ogplay::app::ApkImportAnalysis result;
             result.source_apk = path;
             result.display_name = "导入游戏";
             result.manifest.package = "org.example.game";
@@ -53,7 +54,7 @@ struct Fixture {
             "version_code = 1\nversion_name = \"1.0\"\nimported_at = \"now\"\n";
         const auto profiles = root / "profiles";
         std::filesystem::create_directories(profiles);
-        frontend::SaveGuiConfig(root, {.profiles_dir = profiles});
+        ogplay::app::SaveLibraryConfig(root, {.profiles_dir = profiles});
     }
     ~Fixture() { std::error_code error; std::filesystem::remove_all(root, error); }
 };
@@ -91,7 +92,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     const auto result = initial.Root().Member("result");
     REQUIRE(result.has_value());
     CHECK(result->Member("schema")->UnsignedInteger() == 2);
-    CHECK(result->Member("fields")->Size() == frontend::GuiSettings().size());
+    CHECK(result->Member("fields")->Size() == ogplay::app::SettingDefinitions().size());
     const auto revision = std::string(*result->Member("revision")->String());
     const auto update = [&](std::string_view token, std::string_view key, auto value) {
         core::JsonWriter writer;
@@ -105,9 +106,9 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
         return Decode(fixture.rpc.Handle(writer.Serialize(request)));
     };
     CHECK(update(revision, "theme", "light").Root().Member("result").has_value());
-    auto saved = frontend::LoadGuiConfig(fixture.root);
+    auto saved = ogplay::app::LoadLibraryConfig(fixture.root);
     CHECK(saved.profiles_dir == fixture.root / "profiles");
-    CHECK(std::get<std::string>(frontend::GuiSetting(saved, "theme")) == "light");
+    CHECK(std::get<std::string>(ogplay::app::Setting(saved, "theme")) == "light");
     CHECK(update(revision, "theme", "dark").Root().Member("error").has_value());
     auto current = get();
     const auto token = std::string(*current.Root().Member("result")->Member("revision")->String());
@@ -115,7 +116,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     CHECK(update(token, "supersample", "2").Root().Member("error").has_value());
     CHECK(update(token, "unknown", "value").Root().Member("error").has_value());
     CHECK(update(token, "profiles_dir", (fixture.root / "missing").generic_string()).Root().Member("error").has_value());
-    CHECK(frontend::LoadGuiConfig(fixture.root) == saved);
+    CHECK(ogplay::app::LoadLibraryConfig(fixture.root) == saved);
     CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"settings.open_dir","params":{"kind":"library"}})")).Root().Member("result").has_value());
     CHECK(fixture.opened == fixture.root);
     CHECK(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"settings.open_dir","params":{"kind":"library","path":"C:/"}})")).Root().Member("error").has_value());
@@ -128,7 +129,7 @@ TEST_CASE("GUI settings RPC applies validated patches and rejects stale writes")
     writer.Add(analyze, "params", params);
     REQUIRE(Decode(fixture.rpc.Handle(writer.Serialize(analyze))).Root().Member("result"));
     CHECK(update(token, "theme", "dark").Root().Member("error").has_value());
-    CHECK(frontend::LoadGuiConfig(fixture.root) == saved);
+    CHECK(ogplay::app::LoadLibraryConfig(fixture.root) == saved);
     std::ofstream(fixture.root / "config.toml", std::ios::binary) << "schema = 99\n";
     CHECK(get().Root().Member("error").has_value());
     CHECK(update(token, "theme", "dark").Root().Member("error").has_value());
@@ -140,9 +141,9 @@ TEST_CASE("GUI minimizes only after a successful launch when requested") {
     const auto* launch = R"({"jsonrpc":"2.0","id":1,"method":"library.launch","params":{"installation_id":"org.example.game"}})";
     REQUIRE(Decode(fixture.rpc.Handle(launch)).Root().Member("result"));
     CHECK(fixture.minimized == 0);
-    auto config = frontend::LoadGuiConfig(fixture.root);
-    frontend::SetGuiSetting(config, "minimize_on_launch", true);
-    frontend::SaveGuiConfig(fixture.root, config);
+    auto config = ogplay::app::LoadLibraryConfig(fixture.root);
+    ogplay::app::SetSetting(config, "minimize_on_launch", true);
+    ogplay::app::SaveLibraryConfig(fixture.root, config);
     fixture.fail_launch = true;
     CHECK(Decode(fixture.rpc.Handle(launch)).Root().Member("error").has_value());
     CHECK(fixture.minimized == 0);
@@ -178,20 +179,20 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     CHECK_FALSE(std::filesystem::exists(first / "settings.toml"));
     auto changed = set(revision, R"({"supersample":3,"mcp_enabled":true,"mcp_manual_step":true,"ephemeral_sandbox":true})");
     REQUIRE(changed.Root().Member("result"));
-    CHECK(frontend::LoadGameSettings(second).values.empty());
+    CHECK(ogplay::app::LoadGameSettings(second).values.empty());
     CHECK(set(revision, "{}").Root().Member("error").has_value());
     const auto preview = changed.Root().Member("result")->Member("previews")->Member("normal")->Member("argv");
     REQUIRE(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":3,"method":"library.launch","params":{"installation_id":"org.example.game"}})")).Root().Member("result"));
     REQUIRE(fixture.plan); REQUIRE(preview->Size() == fixture.plan->argv.size());
     for (std::size_t i = 0; i < preview->Size(); ++i) CHECK(preview->Element(i)->String() == fixture.plan->argv[i]);
     const auto current = std::string(*changed.Root().Member("result")->Member("revision")->String());
-    auto global = frontend::LoadGuiConfig(fixture.root);
-    frontend::SetGuiSetting(global, "supersample", std::uint32_t{4}); frontend::SaveGuiConfig(fixture.root, global);
+    auto global = ogplay::app::LoadLibraryConfig(fixture.root);
+    ogplay::app::SetSetting(global, "supersample", std::uint32_t{4}); ogplay::app::SaveLibraryConfig(fixture.root, global);
     CHECK(set(current, "{}").Root().Member("error").has_value());
     auto reload = get("org.example.game");
     const auto fresh = std::string(*reload.Root().Member("result")->Member("revision")->String());
     REQUIRE(set(fresh, "{}").Root().Member("result"));
-    CHECK(frontend::LoadGameSettings(first).values.empty());
+    CHECK(ogplay::app::LoadGameSettings(first).values.empty());
     CHECK(get("../org.example.game").Root().Member("error").has_value());
     std::ofstream(first / "settings.toml") << "schema = 99\n";
     CHECK(get("org.example.game").Root().Member("error").has_value());
@@ -208,7 +209,7 @@ TEST_CASE("GUI library facts use instance external directory and isolate broken 
     auto before = list();
     CHECK(before.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "missing_external");
     const auto external = fixture.root / "external"; std::filesystem::create_directories(external);
-    frontend::SaveGameSettings(directory, {{{"external_dir", external.generic_string()}}});
+    ogplay::app::SaveGameSettings(directory, {{{"external_dir", external.generic_string()}}});
     auto after = list();
     CHECK(after.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "ready");
     REQUIRE(Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":2,"method":"library.open_dir","params":{"installation_id":"org.example.game","kind":"external"}})")).Root().Member("result"));
@@ -366,7 +367,7 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
     Fixture fixture;
     const auto entry = fixture.store.EntriesRoot() / "org.example.game";
     const auto sibling = fixture.store.EntriesRoot() / "org.example.game-2";
-    const auto sandbox = frontend::LauncherSandboxRoot(fixture.root) / "org.example.game";
+    const auto sandbox = ogplay::app::LauncherSandboxRoot(fixture.root) / "org.example.game";
     const auto external = fixture.root / "external";
     std::filesystem::create_directories(sibling);
     std::filesystem::create_directories(sandbox);

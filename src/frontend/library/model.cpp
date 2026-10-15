@@ -1,5 +1,5 @@
-#include "ogplay/frontend/gui_model.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
+#include "locks.h"
 
 #include <algorithm>
 #include <array>
@@ -18,7 +18,7 @@
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
 
-namespace ogplay::frontend {
+namespace ogplay::app {
 namespace {
 
 constexpr std::uint32_t kSchema = 1;
@@ -50,7 +50,7 @@ constexpr std::uint32_t kSchema = 1;
         case '\t': result.append("\\t"); break;
         default:
             if (static_cast<unsigned char>(character) < 0x20U) {
-                throw GuiModelError(GuiModelErrorCode::invalid_argument,
+                throw LibraryError(LibraryErrorCode::invalid_argument,
                                     "TOML string contains a control character");
             }
             result.push_back(character);
@@ -190,22 +190,22 @@ void ExactKeys(const FlatToml& values,
 
 void ValidateMetadata(const LibraryMetadata& metadata) {
     if (!core::IsValidPackageName(metadata.package)) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library package name is invalid");
     }
     if (metadata.display_name.empty() || !core::IsValidUtf8(metadata.display_name) ||
         !core::IsValidUtf8(metadata.version_name) || metadata.imported_at.empty() ||
         !core::IsValidUtf8(metadata.imported_at)) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library metadata is incomplete or invalid");
     }
     if (metadata.profile_id.has_value() &&
         (metadata.profile_id->empty() || !core::IsValidUtf8(*metadata.profile_id))) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library profile id is invalid");
     }
     if (metadata.external_dir.has_value() && !metadata.external_dir->is_absolute()) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library external directory must be absolute");
     }
 }
@@ -251,8 +251,8 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     return metadata;
 }
 
-[[nodiscard]] std::string EncodeConfig(const GuiConfig& config) {
-    ValidateGuiConfigValues(config);
+[[nodiscard]] std::string EncodeConfig(const LibraryConfig& config) {
+    ValidateLibraryConfigValues(config);
     std::string text = "schema = 2\n";
     if (config.profiles_dir) text += "profiles_dir = " + EscapeToml(PathUtf8(*config.profiles_dir)) + "\n";
     for (const auto& [key, value] : config.values) {
@@ -265,21 +265,21 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     return text;
 }
 
-[[nodiscard]] GuiConfig DecodeConfig(const std::string_view text) {
+[[nodiscard]] LibraryConfig DecodeConfig(const std::string_view text) {
     const auto values = ParseFlatToml(text);
     const auto schema = ParseUint32(Require(values, "schema"), "schema");
     if (schema != 1 && schema != 2) throw std::runtime_error("GUI config schema is not supported");
     if (schema == 1) ExactKeys(values, {"schema", "system_dir", "profiles_dir"});
-    GuiConfig config;
+    LibraryConfig config;
     for (const auto& [key, value] : values) {
         if (key == "schema") continue;
         if (schema == 1 && key == "system_dir") { static_cast<void>(ParseTomlString(value)); continue; }
-        const auto& field = FindGuiSetting(key);
+        const auto& field = FindSetting(key);
         if (std::holds_alternative<bool>(field.initial)) {
             if (value != "true" && value != "false") throw std::runtime_error(key + " requires a boolean");
-            SetGuiSetting(config, key, value == "true");
-        } else if (std::holds_alternative<std::uint32_t>(field.initial)) SetGuiSetting(config, key, ParseUint32(value, key));
-        else SetGuiSetting(config, key, ParseTomlString(value));
+            SetSetting(config, key, value == "true");
+        } else if (std::holds_alternative<std::uint32_t>(field.initial)) SetSetting(config, key, ParseUint32(value, key));
+        else SetSetting(config, key, ParseTomlString(value));
     }
     return config;
 }
@@ -292,13 +292,13 @@ void RemoveTree(const std::filesystem::path& path) {
 
 }  // namespace
 
-GuiModelError::GuiModelError(const GuiModelErrorCode code, std::string message,
+LibraryError::LibraryError(const LibraryErrorCode code, std::string message,
                              std::filesystem::path path)
     : std::runtime_error(std::move(message)), code_(code), path_(std::move(path)) {}
 
-GuiModelErrorCode GuiModelError::Code() const noexcept { return code_; }
+LibraryErrorCode LibraryError::Code() const noexcept { return code_; }
 
-const std::filesystem::path& GuiModelError::Path() const noexcept { return path_; }
+const std::filesystem::path& LibraryError::Path() const noexcept { return path_; }
 
 namespace {
 template<class Config, class Decode>
@@ -308,36 +308,39 @@ Config LoadConfigFile(const std::filesystem::path& path, Decode decode) {
     std::error_code error;
     if (!std::filesystem::exists(path, error)) {
         if (error) {
-            throw GuiModelError(GuiModelErrorCode::io_error,
+            throw LibraryError(LibraryErrorCode::io_error,
                                 "cannot inspect GUI config", path);
         }
         error.clear();
         if (!std::filesystem::exists(backup, error)) {
             if (error) {
-                throw GuiModelError(GuiModelErrorCode::io_error,
+                throw LibraryError(LibraryErrorCode::io_error,
                                     "cannot inspect GUI config backup", backup);
             }
             return {};
         }
         std::filesystem::rename(backup, path, error);
         if (error) {
-            throw GuiModelError(GuiModelErrorCode::io_error,
+            throw LibraryError(LibraryErrorCode::io_error,
                                 "cannot recover GUI config backup", backup);
         }
     }
     try {
         return decode(ReadText(path));
     } catch (const std::exception& exception) {
-        throw GuiModelError(GuiModelErrorCode::corrupt_config,
+        throw LibraryError(LibraryErrorCode::corrupt_config,
                             std::string("GUI config is damaged: ") + exception.what(), path);
     }
 }
 
 } // namespace
-GuiConfig LoadGuiConfig(const std::filesystem::path& root) {
-    return LoadConfigFile<GuiConfig>(root / "config.toml", DecodeConfig);
+LibraryConfig LoadLibraryConfig(const std::filesystem::path& root) {
+    auto lock = RequireLibraryLock(root);
+    return LoadConfigFile<LibraryConfig>(root / "config.toml", DecodeConfig);
 }
 GameSettings LoadGameSettings(const std::filesystem::path& directory) {
+    std::optional<hal::FileLock> lock;
+    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
     return LoadConfigFile<GameSettings>(directory / "settings.toml", [](std::string_view text) {
         const auto values = ParseFlatToml(text);
         if (ParseUint32(Require(values, "schema"), "schema") != 1) throw std::invalid_argument("unsupported instance settings schema");
@@ -345,7 +348,7 @@ GameSettings LoadGameSettings(const std::filesystem::path& directory) {
         for (const auto& [key, value] : values) {
             if (key == "schema") continue;
             const auto& field = FindGameSetting(key);
-            GuiSettingValue parsed;
+            SettingValue parsed;
             if (std::holds_alternative<bool>(field.initial)) {
                 if (value != "true" && value != "false") throw std::invalid_argument("invalid boolean: " + key);
                 parsed = value == "true";
@@ -358,19 +361,19 @@ GameSettings LoadGameSettings(const std::filesystem::path& directory) {
     });
 }
 
-void ValidateGuiConfigDirectories(const GuiConfig& config) {
+void ValidateLibraryConfigDirectories(const LibraryConfig& config) {
     const auto require_directory = [](const std::filesystem::path& path,
                                       const std::string_view name) {
         std::error_code error;
         if (path.empty() || !std::filesystem::is_directory(path, error) || error) {
-            throw GuiModelError(GuiModelErrorCode::not_found,
+            throw LibraryError(LibraryErrorCode::not_found,
                                 std::string(name) + " is unavailable", path);
         }
     };
-    ValidateGuiConfigValues(config);
-    for (const auto& field : GuiSettings()) {
+    ValidateLibraryConfigValues(config);
+    for (const auto& field : SettingDefinitions()) {
         if (!field.directory) continue;
-        const auto text = std::get<std::string>(GuiSetting(config, field.key));
+        const auto text = std::get<std::string>(Setting(config, field.key));
         if (!text.empty()) require_directory(Utf8Path(text), field.label);
     }
 }
@@ -410,19 +413,22 @@ void SaveConfigFile(const std::filesystem::path& target, const std::string& text
             throw std::filesystem::filesystem_error("rename", temporary, target, error);
         }
         static_cast<void>(std::filesystem::remove(backup, error));
-    } catch (const GuiModelError&) {
+    } catch (const LibraryError&) {
         throw;
     } catch (const std::exception& exception) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             std::string("cannot save GUI config: ") + exception.what(),
                             target);
     }
 }
 } // namespace
-void SaveGuiConfig(const std::filesystem::path& root, const GuiConfig& config) {
+void SaveLibraryConfig(const std::filesystem::path& root, const LibraryConfig& config) {
+    auto lock = RequireLibraryLock(root);
     SaveConfigFile(root / "config.toml", EncodeConfig(config));
 }
 void SaveGameSettings(const std::filesystem::path& directory, const GameSettings& settings) {
+    std::optional<hal::FileLock> lock;
+    if (directory.parent_path().filename() == "library") lock.emplace(RequireLibraryLock(directory.parent_path().parent_path()));
     ValidateGameSettings(settings);
     if (!std::filesystem::is_directory(directory)) throw std::invalid_argument("instance directory unavailable");
     std::string text = "schema = 1\n";
@@ -439,7 +445,7 @@ void SaveGameSettings(const std::filesystem::path& directory, const GameSettings
 LibraryStore::LibraryStore(std::filesystem::path library_root)
     : root_() {
     if (library_root.empty()) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library root must not be empty");
     }
     root_ = std::filesystem::absolute(std::move(library_root)).lexically_normal();
@@ -452,7 +458,7 @@ std::filesystem::path LibraryStore::EntriesRoot() const { return root_ / "librar
 std::string LibraryStore::NextInstallationId(
     const std::string_view package) const {
     if (!core::IsValidPackageName(package) || package.find('-') != std::string_view::npos) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "package cannot be used as an installation id");
     }
     std::set<std::uint32_t> occupied;
@@ -478,7 +484,7 @@ std::string LibraryStore::NextInstallationId(
             }
         }
         if (error) {
-            throw GuiModelError(GuiModelErrorCode::io_error,
+            throw LibraryError(LibraryErrorCode::io_error,
                                 "cannot inspect installation ids", parent);
         }
     };
@@ -495,19 +501,20 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     std::error_code error;
     std::filesystem::create_directories(EntriesRoot(), error);
     if (error) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "cannot create game library", EntriesRoot());
     }
+    auto cleanup_lock = TryLibraryLock(root_);
     std::vector<std::filesystem::path> stale_imports;
     for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end;
          !error && iterator != end; iterator.increment(error)) {
-        if (iterator->is_directory(error) &&
+        if (cleanup_lock && iterator->is_directory(error) &&
             ImportTemporaryKey(PathUtf8(iterator->path().filename()))) {
             stale_imports.push_back(iterator->path());
         }
     }
     if (error) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "cannot inspect import temporary directories",
                             EntriesRoot());
     }
@@ -515,8 +522,8 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         try {
             RemoveTree(stale);
         } catch (const std::exception& exception) {
-            throw GuiModelError(
-                GuiModelErrorCode::io_error,
+            throw LibraryError(
+                LibraryErrorCode::io_error,
                 std::string("cannot clean stale import: ") + exception.what(),
                 stale);
         }
@@ -528,6 +535,7 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
             continue;
         }
         const auto key = PathUtf8(iterator->path().filename());
+        if (ImportTemporaryKey(key)) continue;
         LibraryEntry entry{.key = key, .directory = iterator->path()};
         try {
             auto metadata = DecodeMetadata(ReadText(iterator->path() / "meta.toml"));
@@ -545,7 +553,7 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
         entries.push_back(std::move(entry));
     }
     if (error) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "cannot enumerate game library", EntriesRoot());
     }
     std::sort(entries.begin(), entries.end(), [](const LibraryEntry& left,
@@ -558,22 +566,33 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     return entries;
 }
 
-std::string LibraryStore::Import(const LibraryImport& request) {
+std::string LibraryStore::Import(const LibraryImport& request, bool new_instance) {
+    auto library_lock = RequireLibraryLock(root_);
     ValidateMetadata(request.metadata);
     std::error_code error;
     if (!std::filesystem::is_regular_file(request.source_apk, error) || error) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
+        throw LibraryError(LibraryErrorCode::not_found,
                             "source APK is unavailable", request.source_apk);
     }
     std::filesystem::create_directories(EntriesRoot(), error);
     if (error) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "cannot create game library", EntriesRoot());
     }
     std::filesystem::create_directories(root_ / "sandbox", error);
     if (error) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             "cannot create sandbox root", root_ / "sandbox");
+    }
+    if (!new_instance) {
+        for (const auto& entry : std::filesystem::directory_iterator(EntriesRoot())) {
+            if (!entry.is_directory()) continue;
+            try {
+                if (DecodeMetadata(ReadText(entry.path() / "meta.toml")).package == request.metadata.package)
+                    throw LibraryError(LibraryErrorCode::duplicate_package, "duplicate_package: use --new-instance to import another instance", entry.path());
+            } catch (const LibraryError&) { throw; }
+              catch (const std::exception&) { /* Damaged entries remain occupied but cannot prove package identity. */ }
+        }
     }
     static std::atomic_uint64_t next_import_token{};
     std::filesystem::path temporary;
@@ -585,7 +604,7 @@ std::string LibraryStore::Import(const LibraryImport& request) {
         error.clear();
         if (std::filesystem::create_directory(temporary, error)) break;
         if (error) {
-            throw GuiModelError(GuiModelErrorCode::io_error,
+            throw LibraryError(LibraryErrorCode::io_error,
                                 "cannot reserve import temporary directory", temporary);
         }
     }
@@ -631,7 +650,7 @@ std::string LibraryStore::Import(const LibraryImport& request) {
             }
             reserved_sandbox.clear();
         }
-    } catch (const GuiModelError&) {
+    } catch (const LibraryError&) {
         if (std::filesystem::exists(temporary)) RemoveTree(temporary);
         throw;
     } catch (const std::exception& exception) {
@@ -641,30 +660,35 @@ std::string LibraryStore::Import(const LibraryImport& request) {
             static_cast<void>(std::filesystem::remove_all(
                 reserved_sandbox, cleanup_error));
         }
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             std::string("cannot import game: ") + exception.what(), target);
     }
     return PathUtf8(target.filename());
 }
 
 void LibraryStore::Remove(const std::string_view key) {
+    auto library_lock = RequireLibraryLock(root_);
     if (!SafeEntryKey(key)) {
-        throw GuiModelError(GuiModelErrorCode::invalid_argument,
+        throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library entry key is unsafe");
     }
     const auto target = EntriesRoot() / Utf8Path(key);
     std::error_code error;
     if (!std::filesystem::is_directory(target, error) || error) {
-        throw GuiModelError(GuiModelErrorCode::not_found,
+        throw LibraryError(LibraryErrorCode::not_found,
                             "library entry does not exist", target);
     }
+    auto running = TryRunningLock(*this, key);
+    if (!running) throw LibraryError(LibraryErrorCode::running, "instance_running: game is running; stop it before removing this instance", target);
+    // The library lock prevents another launch while the directory is removed.
+    running.reset();
     try {
         RemoveTree(target);
     } catch (const std::exception& exception) {
-        throw GuiModelError(GuiModelErrorCode::io_error,
+        throw LibraryError(LibraryErrorCode::io_error,
                             std::string("cannot remove library entry: ") + exception.what(),
                             target);
     }
 }
 
-}  // namespace ogplay::frontend
+}  // namespace ogplay::app

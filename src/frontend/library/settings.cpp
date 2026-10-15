@@ -1,12 +1,12 @@
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 #include "ogplay/core/text.h"
 #include <algorithm>
 #include <stdexcept>
 
-namespace ogplay::frontend {
-const std::vector<GuiSettingDefinition>& GuiSettings() {
+namespace ogplay::app {
+const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
-    static const std::vector<GuiSettingDefinition> fields{
+    static const std::vector<SettingDefinition> fields{
         {"language", "general", "语言", std::string("zh-CN"), {"zh-CN", "en-US"}, 0, 0, "预留 · 英文翻译尚未接入"},
         {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}},
         {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}},
@@ -41,14 +41,14 @@ const std::vector<GuiSettingDefinition>& GuiSettings() {
     };
     return fields;
 }
-const GuiSettingDefinition& FindGuiSetting(std::string_view key) {
-    const auto& fields = GuiSettings();
+const SettingDefinition& FindSetting(std::string_view key) {
+    const auto& fields = SettingDefinitions();
     const auto found = std::find_if(fields.begin(), fields.end(), [&](const auto& field) { return field.key == key; });
     if (found == fields.end()) throw std::invalid_argument("unknown setting: " + std::string(key));
     return *found;
 }
-GuiSettingValue GuiSetting(const GuiConfig& config, std::string_view key) {
-    const auto& field = FindGuiSetting(key);
+SettingValue Setting(const LibraryConfig& config, std::string_view key) {
+    const auto& field = FindSetting(key);
     if (key == "profiles_dir") {
         if (!config.profiles_dir) return std::string();
         const auto text = config.profiles_dir->generic_u8string();
@@ -57,7 +57,7 @@ GuiSettingValue GuiSetting(const GuiConfig& config, std::string_view key) {
     const auto found = config.values.find(key);
     return found == config.values.end() ? field.initial : found->second;
 }
-void ValidateSettingValue(const GuiSettingDefinition& field, const GuiSettingValue& value) {
+void ValidateSettingValue(const SettingDefinition& field, const SettingValue& value) {
     if (field.initial.index() != value.index()) throw std::invalid_argument(field.key + ": invalid type");
     if (const auto number = std::get_if<std::uint32_t>(&value)) {
         if (*number < field.minimum || *number > field.maximum) throw std::invalid_argument(field.key + ": outside allowed range");
@@ -71,19 +71,19 @@ void ValidateSettingValue(const GuiSettingDefinition& field, const GuiSettingVal
             throw std::invalid_argument(field.key + ": directory must be absolute");
     }
 }
-void SetGuiSetting(GuiConfig& config, std::string_view key, GuiSettingValue value) {
-    ValidateSettingValue(FindGuiSetting(key), value);
+void SetSetting(LibraryConfig& config, std::string_view key, SettingValue value) {
+    ValidateSettingValue(FindSetting(key), value);
     if (key == "profiles_dir") {
         const auto& text = std::get<std::string>(value);
         config.profiles_dir = text.empty() ? std::nullopt : std::optional(std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size())));
     } else config.values[std::string(key)] = std::move(value);
 }
-void ValidateGuiConfigValues(const GuiConfig& config) {
-    GuiConfig validated;
-    SetGuiSetting(validated, "profiles_dir", GuiSetting(config, "profiles_dir"));
+void ValidateLibraryConfigValues(const LibraryConfig& config) {
+    LibraryConfig validated;
+    SetSetting(validated, "profiles_dir", Setting(config, "profiles_dir"));
     for (const auto& [key, value] : config.values) {
         if (key == "profiles_dir") throw std::invalid_argument("duplicate profiles_dir representation");
-        SetGuiSetting(validated, key, value);
+        SetSetting(validated, key, value);
     }
 }
 }

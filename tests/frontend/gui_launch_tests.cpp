@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "ogplay/frontend/gui_launch.h"
-#include "ogplay/frontend/gui_settings.h"
+#include "ogplay/app/library.h"
 
 namespace {
 
@@ -39,12 +39,12 @@ void Write(const std::filesystem::path& path, const std::string_view text) {
     REQUIRE(output.good());
 }
 
-ogplay::frontend::LibraryEntry Entry(const std::filesystem::path& directory,
+ogplay::app::LibraryEntry Entry(const std::filesystem::path& directory,
                                      const std::filesystem::path& external) {
-    ogplay::frontend::LibraryEntry entry;
+    ogplay::app::LibraryEntry entry;
     entry.key = "org.example.game";
     entry.directory = directory;
-    entry.metadata = ogplay::frontend::LibraryMetadata{
+    entry.metadata = ogplay::app::LibraryMetadata{
         .package = entry.key,
         .display_name = "Game",
         .version_code = 7,
@@ -67,21 +67,22 @@ std::vector<std::string> WithoutEditorPort(std::vector<std::string> argv) {
 
 TEST_CASE("GUI global launch settings forward only supported CLI controls") {
     using namespace ogplay::frontend;
+    using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "entry";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
-    GuiConfig config;
+    LibraryConfig config;
     const auto baseline = WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv);
-    SetGuiSetting(config, "network_policy", std::string("allow"));
-    SetGuiSetting(config, "volume", std::uint32_t{25});
+    SetSetting(config, "network_policy", std::string("allow"));
+    SetSetting(config, "volume", std::uint32_t{25});
     CHECK(WithoutEditorPort(BuildLaunchPlan(cli, tree.path, entry, config).argv) == baseline);
-    SetGuiSetting(config, "supersample", std::uint32_t{2});
-    SetGuiSetting(config, "interpreter", std::string("threaded"));
-    SetGuiSetting(config, "mcp_enabled", true);
-    SetGuiSetting(config, "mcp_port", std::uint32_t{12345});
+    SetSetting(config, "supersample", std::uint32_t{2});
+    SetSetting(config, "interpreter", std::string("threaded"));
+    SetSetting(config, "mcp_enabled", true);
+    SetSetting(config, "mcp_port", std::uint32_t{12345});
     const auto argv = BuildLaunchPlan(cli, tree.path, entry, config).argv;
     CHECK(argv.size() == baseline.size() + 6);
     CHECK(std::find(argv.begin(), argv.end(), "--key-editor-port") == argv.end());  // shares the MCP port
@@ -96,15 +97,16 @@ TEST_CASE("GUI global launch settings forward only supported CLI controls") {
 
 TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combinations") {
     using namespace ogplay::frontend;
+    using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "entry", external = tree.path / "external";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     std::filesystem::create_directories(external);
     auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
-    GuiConfig global;
-    SetGuiSetting(global, "supersample", std::uint32_t{4});
-    SetGuiSetting(global, "mcp_enabled", true);
-    SetGuiSetting(global, "dashboard_auto_open", true);
+    LibraryConfig global;
+    SetSetting(global, "supersample", std::uint32_t{4});
+    SetSetting(global, "mcp_enabled", true);
+    SetSetting(global, "dashboard_auto_open", true);
     GameSettings settings{{{"supersample", std::uint32_t{2}}, {"mcp_manual_step", true},
         {"ephemeral_sandbox", true}, {"external_dir", external.generic_string()}, {"model", std::string("reserved")}}};
     SaveGameSettings(directory, settings);
@@ -112,19 +114,19 @@ TEST_CASE("GUI instance launch overrides inherit and emit valid CLI mode combina
     const auto normal_plan = BuildLaunchPlan(cli, tree.path, entry, global);
     CHECK(normal_plan.mcp_port == 15971);
     CHECK(normal_plan.dashboard_auto_open);
-    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).mcp_port);
-    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).dashboard_auto_open);
+    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).mcp_port);
+    CHECK_FALSE(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).dashboard_auto_open);
     const auto normal = normal_plan.argv;
     CHECK(has(normal, "2")); CHECK_FALSE(has(normal, "4")); CHECK_FALSE(has(normal, "reserved"));
     CHECK(has(normal, "--external-dir")); CHECK(has(normal, external.generic_string()));
     CHECK(has(normal, "--mcp-port")); CHECK(has(normal, "--mcp-manual-step"));
     CHECK(has(normal, "--ephemeral-sandbox")); CHECK_FALSE(has(normal, "--sandbox-dir"));
-    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight).argv;
+    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight).argv;
     CHECK(has(preflight, "--preflight")); CHECK_FALSE(has(preflight, "--mcp-port")); CHECK_FALSE(has(preflight, "--mcp-manual-step"));
-    CHECK(has(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::diagnostic).argv, "--diag"));
-    SetGuiSetting(global, "mcp_enabled", false);
+    CHECK(has(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::diagnostic).argv, "--diag"));
+    SetSetting(global, "mcp_enabled", false);
     CHECK_THROWS(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global)));
-    CHECK_NOTHROW(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global, GuiLaunchMode::preflight)));
+    CHECK_NOTHROW(static_cast<void>(BuildLaunchPlan(cli, tree.path, entry, global, LaunchMode::preflight)));
     SaveGameSettings(directory, {});
     const auto inherited = BuildLaunchPlan(cli, tree.path, entry, global).argv;
     CHECK(has(inherited, "4")); CHECK(has(inherited, "--sandbox-dir")); CHECK_FALSE(has(inherited, "--external-dir"));
@@ -157,7 +159,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[12] == std::to_string(*plan.key_editor_port));
     CHECK(plan.argv[13] == "--sandbox-dir");
     CHECK(plan.argv[14] ==
-          ogplay::frontend::LauncherSandboxRoot(temporary.path)
+          ogplay::app::LauncherSandboxRoot(temporary.path)
               .generic_string());
     CHECK(plan.argv[15] == "--installation-id");
     CHECK(plan.argv[16] == "org.example.game");
@@ -188,37 +190,38 @@ TEST_CASE("GUI LaunchPlan fails before spawn for every missing required input") 
     const auto entry = Entry(entry_dir, temporary.path / "missing-external");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, temporary.path, entry, {})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
     auto damaged = entry;
     damaged.damage_reason = "broken";
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, temporary.path, damaged,
                         {})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
 
     auto valid = Entry(entry_dir, temporary.path / "external");
     std::filesystem::create_directories(*valid.metadata->external_dir);
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         temporary.path / "missing-cli", temporary.path, valid,
                         {})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
     std::filesystem::remove(entry_dir / "game.apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, temporary.path, valid,
                         {})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
     Write(entry_dir / "game.apk", "apk");
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, temporary.path, valid,
                         {.profiles_dir = temporary.path / "missing-profiles"})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
     CHECK_THROWS_AS(static_cast<void>(ogplay::frontend::BuildLaunchPlan(
                         cli, {}, valid, {})),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
 }
 
 TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
     using namespace ogplay::frontend;
+    using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
@@ -241,6 +244,7 @@ TEST_CASE("BND-42 GUI persists and forwards bounded CPU configuration") {
 
 TEST_CASE("BND-43 GUI persists optional execution limits independently of nominal frequency") {
     using namespace ogplay::frontend;
+    using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay", directory = tree.path / "entry";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
@@ -268,7 +272,7 @@ TEST_CASE("GUI launch tracker rejects duplicates and returns exact exits") {
     CHECK(tracker.RunningPackages() ==
           std::vector<std::string>{"org.example.a", "org.example.b"});
     CHECK_THROWS_AS(tracker.Begin("org.example.a", "again.log"),
-                    ogplay::frontend::GuiModelError);
+                    ogplay::app::LibraryError);
     const auto result = tracker.Finish("org.example.a", 17);
     CHECK(result.package == "org.example.a");
     CHECK(result.exit_code == 17);
@@ -304,24 +308,25 @@ TEST_CASE("GUI Dashboard probe rejects foreign process and malformed protocol") 
 
 TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token outside argv") {
     using namespace ogplay::frontend;
+    using namespace ogplay::app;
     TemporaryDirectory tree;
     const auto cli = tree.path / "ogplay";
     const auto directory = tree.path / "entry";
     Write(cli, "exe"); Write(directory / "game.apk", "apk");
     auto entry = Entry(directory, {});
     entry.metadata->external_dir.reset();
-    GuiConfig config;
+    LibraryConfig config;
     const auto plan = BuildLaunchPlan(cli, tree.path, entry, config);
     REQUIRE(plan.key_editor_port.has_value());
     CHECK(*plan.key_editor_port != 0);
     CHECK(plan.control_token.size() == 32);
     CHECK(std::find(plan.argv.begin(), plan.argv.end(), plan.control_token) == plan.argv.end());
     CHECK(BuildLaunchPlan(cli, tree.path, entry, config).control_token != plan.control_token);
-    SetGuiSetting(config, "mcp_enabled", true);
-    SetGuiSetting(config, "mcp_port", std::uint32_t{12345});
+    SetSetting(config, "mcp_enabled", true);
+    SetSetting(config, "mcp_port", std::uint32_t{12345});
     const auto with_mcp = BuildLaunchPlan(cli, tree.path, entry, config);
     CHECK(with_mcp.key_editor_port == std::optional<std::uint16_t>{12345});
-    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, config, GuiLaunchMode::preflight);
+    const auto preflight = BuildLaunchPlan(cli, tree.path, entry, config, LaunchMode::preflight);
     CHECK_FALSE(preflight.key_editor_port);
     CHECK(preflight.control_token.empty());
     CHECK(std::find(preflight.argv.begin(), preflight.argv.end(), "--key-editor-port") == preflight.argv.end());

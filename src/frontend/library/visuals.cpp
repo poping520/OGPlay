@@ -1,4 +1,4 @@
-#include "ogplay/frontend/gui_visuals.h"
+#include "ogplay/app/apk_visuals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,10 +10,11 @@
 #include <stb_image_write.h>
 
 #include "ogplay/loader/apk.h"
+#include "ogplay/loader/apk_manifest.h"
 #include "ogplay/loader/arsc.h"
 #include "ogplay/runtime/integration/host_image_decode.h"
 
-namespace ogplay::frontend {
+namespace ogplay::app {
 namespace {
 
 struct PngOutput final {
@@ -158,13 +159,14 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
     const std::span<const std::byte> apk_bytes) {
     const auto archive = loader::ParseApkArchive(apk_bytes);
     ApkApplicationVisuals result;
-    result.manifest = loader::ReadAndroidManifest(apk_bytes, archive);
+    const auto manifest = loader::ReadAndroidManifest(apk_bytes, archive);
+    result.manifest = {manifest.package, manifest.version_code, manifest.version_name, manifest.min_sdk, manifest.target_sdk};
     result.display_name = result.manifest.package;
 
     const auto label_is_reference =
-        result.manifest.application_label.has_value() &&
-        std::holds_alternative<std::uint32_t>(*result.manifest.application_label);
-    const auto needs_resources = result.manifest.application_icon.has_value() ||
+        manifest.application_label.has_value() &&
+        std::holds_alternative<std::uint32_t>(*manifest.application_label);
+    const auto needs_resources = manifest.application_icon.has_value() ||
                                  label_is_reference;
     auto resources = needs_resources ? ReadResources(apk_bytes, archive)
                                      : std::optional<loader::ArscTable>{};
@@ -173,13 +175,13 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
         resources.reset();
     }
 
-    if (!result.manifest.application_label.has_value()) {
+    if (!manifest.application_label.has_value()) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::label_attribute_missing);
     } else if (std::holds_alternative<std::string>(
-                   *result.manifest.application_label)) {
+                   *manifest.application_label)) {
         const auto& literal =
-            std::get<std::string>(*result.manifest.application_label);
+            std::get<std::string>(*manifest.application_label);
         if (literal.empty()) {
             result.fallbacks.push_back(
                 ApplicationVisualFallback::label_literal_empty);
@@ -191,7 +193,7 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
             ApplicationVisualFallback::label_resources_unavailable);
     } else {
         const auto resource_id =
-            std::get<std::uint32_t>(*result.manifest.application_label);
+            std::get<std::uint32_t>(*manifest.application_label);
         const auto* entry = resources->FindById(resource_id);
         if (entry == nullptr || !entry->string_value.has_value() ||
             entry->string_value->empty()) {
@@ -207,7 +209,7 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
             ApplicationVisualFallback::label_control_characters);
     }
 
-    if (!result.manifest.application_icon.has_value()) {
+    if (!manifest.application_icon.has_value()) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::icon_attribute_missing);
         return result;
@@ -217,7 +219,7 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
             ApplicationVisualFallback::icon_resources_unavailable);
         return result;
     }
-    const auto* icon = resources->FindById(*result.manifest.application_icon);
+    const auto* icon = resources->FindById(*manifest.application_icon);
     if (icon == nullptr || !icon->string_value.has_value()) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::icon_resource_missing);
@@ -244,4 +246,4 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
     return result;
 }
 
-}  // namespace ogplay::frontend
+}  // namespace ogplay::app

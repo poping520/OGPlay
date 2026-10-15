@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-#include "ogplay/frontend/gui_model.h"
-#include "ogplay/frontend/gui_visuals.h"
+#include "ogplay/app/library.h"
+#include "ogplay/app/apk_visuals.h"
 #include "ogplay/runtime/integration/host_image_decode.h"
 
 namespace {
@@ -262,14 +262,14 @@ void WriteBytes(const std::filesystem::path& path,
 TEST_CASE("launcher icon resize uses bilinear interpolation") {
     constexpr std::array<std::uint32_t, 4> source{
         0xffff0000U, 0xff00ff00U, 0xff0000ffU, 0xffffffffU};
-    const auto resized = ogplay::frontend::ResizeArgbBilinear(
+    const auto resized = ogplay::app::ResizeArgbBilinear(
         source, 2, 2, 3, 3);
     REQUIRE(resized.size() == 9);
     CHECK(resized[4] == 0xff808080U);
     CHECK(resized.front() == source.front());
     CHECK(resized.back() == source.back());
     CHECK_THROWS_AS(static_cast<void>(
-                        ogplay::frontend::ResizeArgbBilinear(
+                        ogplay::app::ResizeArgbBilinear(
                             source, 0, 2, 3, 3)),
                     std::invalid_argument);
 }
@@ -278,7 +278,7 @@ TEST_CASE("launcher extracts resource label and normalized PNG then caches it") 
     const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true)},
                                 {"resources.arsc", Resources()},
                                 {"res/drawable/icon.png", OnePixelPng()}});
-    const auto visuals = ogplay::frontend::ExtractApkApplicationVisuals(apk);
+    const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
     CHECK(visuals.display_name == "Resource Game");
     CHECK(visuals.fallbacks.empty());
     REQUIRE_FALSE(visuals.icon_png.empty());
@@ -290,55 +290,55 @@ TEST_CASE("launcher extracts resource label and normalized PNG then caches it") 
     TempDirectory temporary;
     const auto source = temporary.Path() / "source.apk";
     WriteBytes(source, apk);
-    ogplay::frontend::LibraryStore store(temporary.Path() / "root");
+    ogplay::app::LibraryStore store(temporary.Path() / "root");
     store.Import({source,
                   {visuals.manifest.package, visuals.display_name,
                    visuals.manifest.version_code, "", "2026-08-13T00:00:00Z",
                    std::nullopt, std::nullopt},
-                  visuals.icon_png});
+                  visuals.icon_png}, true);
     CHECK(std::filesystem::file_size(store.EntriesRoot() / visuals.manifest.package /
                                      "icon.png") == visuals.icon_png.size());
 }
 
 TEST_CASE("launcher visual extraction uses literal and explicit fallbacks") {
     const auto literal = StoredZip({{"AndroidManifest.xml", Manifest(true, true)}});
-    const auto literal_result = ogplay::frontend::ExtractApkApplicationVisuals(literal);
+    const auto literal_result = ogplay::app::ExtractApkApplicationVisuals(literal);
     CHECK(literal_result.display_name == "Example Game");
     CHECK(literal_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_resources_unavailable));
+        ogplay::app::ApplicationVisualFallback::icon_resources_unavailable));
     CHECK_FALSE(literal_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::label_resources_unavailable));
+        ogplay::app::ApplicationVisualFallback::label_resources_unavailable));
 
     const auto empty_label = StoredZip({{"AndroidManifest.xml", Manifest(
         true, true, 0x7f010000U, 0x7f010001U, "")}});
     const auto empty_result =
-        ogplay::frontend::ExtractApkApplicationVisuals(empty_label);
+        ogplay::app::ExtractApkApplicationVisuals(empty_label);
     CHECK(empty_result.display_name == "org.example.game");
     CHECK(empty_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::label_literal_empty));
+        ogplay::app::ApplicationVisualFallback::label_literal_empty));
 
     const auto controlled_label = StoredZip({{"AndroidManifest.xml", Manifest(
         true, true, 0x7f010000U, 0x7f010001U, "Bad\x01Label")}});
     const auto controlled_result =
-        ogplay::frontend::ExtractApkApplicationVisuals(controlled_label);
+        ogplay::app::ExtractApkApplicationVisuals(controlled_label);
     CHECK(controlled_result.display_name == "org.example.game");
     CHECK(controlled_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::label_control_characters));
+        ogplay::app::ApplicationVisualFallback::label_control_characters));
 
     const auto missing = StoredZip({{"AndroidManifest.xml", Manifest(false)}});
-    const auto missing_result = ogplay::frontend::ExtractApkApplicationVisuals(missing);
+    const auto missing_result = ogplay::app::ExtractApkApplicationVisuals(missing);
     CHECK(missing_result.display_name == "org.example.game");
     CHECK(missing_result.icon_png.empty());
     CHECK(missing_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_attribute_missing));
+        ogplay::app::ApplicationVisualFallback::icon_attribute_missing));
     CHECK(missing_result.Used(
-        ogplay::frontend::ApplicationVisualFallback::label_attribute_missing));
+        ogplay::app::ApplicationVisualFallback::label_attribute_missing));
 }
 
 TEST_CASE("launcher visual extraction rejects damaged APK identity") {
     const std::vector<std::byte> invalid{std::byte{1}, std::byte{2}};
     CHECK_THROWS(static_cast<void>(
-        ogplay::frontend::ExtractApkApplicationVisuals(invalid)));
+        ogplay::app::ExtractApkApplicationVisuals(invalid)));
 }
 
 TEST_CASE("launcher visual extraction records every resource and image fallback") {
@@ -346,28 +346,28 @@ TEST_CASE("launcher visual extraction records every resource and image fallback"
         {"AndroidManifest.xml", Manifest(true, false, 0x7f010002U,
                                           0x7f010003U)},
         {"resources.arsc", Resources()}});
-    const auto missing = ogplay::frontend::ExtractApkApplicationVisuals(missing_ids);
+    const auto missing = ogplay::app::ExtractApkApplicationVisuals(missing_ids);
     CHECK(missing.Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_resource_missing));
+        ogplay::app::ApplicationVisualFallback::icon_resource_missing));
     CHECK(missing.Used(
-        ogplay::frontend::ApplicationVisualFallback::label_resource_missing));
+        ogplay::app::ApplicationVisualFallback::label_resource_missing));
 
     const auto unsupported = StoredZip({
         {"AndroidManifest.xml", Manifest(true)},
         {"resources.arsc", Resources("res/drawable/icon.xml")}});
-    CHECK(ogplay::frontend::ExtractApkApplicationVisuals(unsupported).Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_path_unsupported));
+    CHECK(ogplay::app::ExtractApkApplicationVisuals(unsupported).Used(
+        ogplay::app::ApplicationVisualFallback::icon_path_unsupported));
 
     const auto absent_entry = StoredZip({
         {"AndroidManifest.xml", Manifest(true)},
         {"resources.arsc", Resources()}});
-    CHECK(ogplay::frontend::ExtractApkApplicationVisuals(absent_entry).Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_entry_unavailable));
+    CHECK(ogplay::app::ExtractApkApplicationVisuals(absent_entry).Used(
+        ogplay::app::ApplicationVisualFallback::icon_entry_unavailable));
 
     const auto bad_image = StoredZip({
         {"AndroidManifest.xml", Manifest(true)},
         {"resources.arsc", Resources()},
         {"res/drawable/icon.png", {std::byte{1}, std::byte{2}}}});
-    CHECK(ogplay::frontend::ExtractApkApplicationVisuals(bad_image).Used(
-        ogplay::frontend::ApplicationVisualFallback::icon_decode_failed));
+    CHECK(ogplay::app::ExtractApkApplicationVisuals(bad_image).Used(
+        ogplay::app::ApplicationVisualFallback::icon_decode_failed));
 }

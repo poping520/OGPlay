@@ -6,11 +6,19 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/loader/apk_manifest.h"
+#include "ogplay/app/export.h"
+#include <optional>
+#include <variant>
 
-namespace ogplay::frontend {
+namespace ogplay::app {
+struct ManifestSummary final {
+    std::string package;
+    std::uint32_t version_code{};
+    std::optional<std::string> version_name;
+    std::optional<std::uint32_t> min_sdk, target_sdk;
+};
 
-[[nodiscard]] std::vector<std::uint32_t> ResizeArgbBilinear(
+[[nodiscard]] OGPLAYCORE_API std::vector<std::uint32_t> ResizeArgbBilinear(
     std::span<const std::uint32_t> source, std::uint32_t source_width,
     std::uint32_t source_height, std::uint32_t destination_width,
     std::uint32_t destination_height);
@@ -31,8 +39,8 @@ enum class ApplicationVisualFallback : std::uint8_t {
     label_resource_missing,
 };
 
-struct ApkApplicationVisuals final {
-    loader::AndroidManifestFacts manifest;
+struct OGPLAYCORE_API ApkApplicationVisuals final {
+    ManifestSummary manifest;
     std::string display_name;
     // Empty means that the view must render its built-in placeholder tile.
     std::vector<std::byte> icon_png;
@@ -43,7 +51,7 @@ struct ApkApplicationVisuals final {
 
 // APK/archive/manifest damage is fatal. Resource, label and image failures are
 // recorded in fallbacks and use the documented package/placeholder behavior.
-[[nodiscard]] ApkApplicationVisuals ExtractApkApplicationVisuals(
+[[nodiscard]] OGPLAYCORE_API ApkApplicationVisuals ExtractApkApplicationVisuals(
     std::span<const std::byte> apk_bytes);
 
-}  // namespace ogplay::frontend
+}  // namespace ogplay::app

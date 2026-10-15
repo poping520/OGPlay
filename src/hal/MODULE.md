@@ -7,6 +7,8 @@
 
 ## 公共 API
 
+- `FileLock::TryAcquire`：不阻塞的 OS 排他文件锁；冲突返回空，IO 错误抛出；句柄不继承，析构/进程退出释放，锁文件不得在竞争期间删除。Windows 使用 LockFileEx，POSIX 使用 flock。
+
 - `HostReadFile` / `OpenHostReadFile`：拥有打开对象的身份与尺寸，拒绝最终路径 symlink/
   reparse point 和非普通文件；原生定位读取不共享 offset，取消与 IO 错误明确传播。
   Windows 使用原生 HANDLE/独立 OVERLAPPED，macOS/Linux 使用 fd/pread；无 CRT stream、

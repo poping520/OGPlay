@@ -32,12 +32,12 @@ public:
     std::filesystem::path path;
 };
 
-ogplay::frontend::LibraryEntry Entry(
+ogplay::app::LibraryEntry Entry(
     std::string package, std::string name,
     std::optional<std::string> profile = "profile") {
-    ogplay::frontend::LibraryEntry entry;
+    ogplay::app::LibraryEntry entry;
     entry.key = std::move(package);
-    entry.metadata = ogplay::frontend::LibraryMetadata{
+    entry.metadata = ogplay::app::LibraryMetadata{
         .package = entry.key,
         .display_name = std::move(name),
         .version_code = 1,
@@ -73,7 +73,7 @@ TEST_CASE("library tiles sort by display name and preserve cached icons") {
     auto second = Entry("org.example.second", "Zulu");
     auto first = Entry("org.example.first", "Alpha");
     first.icon_png = {std::byte{1}, std::byte{2}};
-    const std::vector<ogplay::frontend::LibraryEntry> entries{
+    const std::vector<ogplay::app::LibraryEntry> entries{
         std::move(second), std::move(first)};
     const auto tiles = ogplay::frontend::BuildLibraryTiles(entries, {});
     REQUIRE(tiles.size() == 2);
@@ -95,7 +95,7 @@ TEST_CASE("library tile status follows the documented strict priority") {
     auto running = Entry("org.example.running", "Running");
     running.metadata->external_dir = available;
     auto ready = Entry("org.example.ready", "Ready");
-    const std::vector<ogplay::frontend::LibraryEntry> entries{
+    const std::vector<ogplay::app::LibraryEntry> entries{
         damaged, no_profile, no_external, running, ready};
     const ogplay::frontend::LibraryViewContext context{
         .running_packages = {damaged.key, no_profile.key, no_external.key, running.key},
@@ -133,7 +133,7 @@ TEST_CASE("library tile status follows the documented strict priority") {
 
     auto idle_generic = Entry("org.example.generic", "Generic", std::nullopt);
     const auto generic_tiles = ogplay::frontend::BuildLibraryTiles(
-        std::span<const ogplay::frontend::LibraryEntry>(&idle_generic, 1), {});
+        std::span<const ogplay::app::LibraryEntry>(&idle_generic, 1), {});
     REQUIRE(generic_tiles.size() == 1);
     CHECK(generic_tiles.front().status ==
           ogplay::frontend::LibraryTileStatus::missing_profile);
@@ -145,7 +145,7 @@ TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
     damaged.metadata.reset();
     damaged.damage_reason = "bad metadata";
     const auto ready = Entry("org.example.ready", "Ready");
-    const std::vector<ogplay::frontend::LibraryEntry> entries{damaged, ready};
+    const std::vector<ogplay::app::LibraryEntry> entries{damaged, ready};
     const auto tiles = ogplay::frontend::BuildLibraryTiles(
         entries, {.running_packages = {ready.key},
                   .external_required_packages = {},
@@ -171,7 +171,7 @@ TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
 }
 
 TEST_CASE("library selection preserves packages and falls back beside removals") {
-    const std::vector<ogplay::frontend::LibraryEntry> entries{
+    const std::vector<ogplay::app::LibraryEntry> entries{
         Entry("org.example.alpha", "Alpha"),
         Entry("org.example.bravo", "Bravo"),
         Entry("org.example.charlie", "Charlie")};
@@ -208,7 +208,7 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
         .external_required_packages = {entry.key},
     };
     const auto tiles = ogplay::frontend::BuildLibraryTiles(
-        std::span<const ogplay::frontend::LibraryEntry>(&entry, 1), context);
+        std::span<const ogplay::app::LibraryEntry>(&entry, 1), context);
     REQUIRE(tiles.size() == 1);
     const auto detail =
         ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context);
@@ -237,7 +237,7 @@ TEST_CASE("library detail distinguishes external and damaged states") {
     const ogplay::frontend::LibraryViewContext context{
         .external_required_packages = {missing.key},
     };
-    const std::vector<ogplay::frontend::LibraryEntry> entries{
+    const std::vector<ogplay::app::LibraryEntry> entries{
         optional, missing, unknown, damaged};
     const auto tiles = ogplay::frontend::BuildLibraryTiles(entries, context);
     const auto detail = [&entries, &tiles, &context](const std::string& key) {

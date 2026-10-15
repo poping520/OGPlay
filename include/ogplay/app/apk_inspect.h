@@ -7,41 +7,43 @@
 #include <string>
 #include <vector>
 
-#include "ogplay/frontend/gui_model.h"
-#include "ogplay/frontend/gui_visuals.h"
-#include "ogplay/session/profile_apk.h"
+#include "ogplay/app/library.h"
+#include "ogplay/app/apk_visuals.h"
+#include "ogplay/app/profiles.h"
 
-namespace ogplay::frontend {
-
-// A native file/folder dialog cannot be closed programmatically. The owning
-// import modal must therefore stay alive until its callback is delivered.
-[[nodiscard]] bool CanDismissImportModal(bool host_dialog_pending) noexcept;
+namespace ogplay::app {
 
 struct ApkImportAnalysis final {
     std::filesystem::path source_apk;
-    loader::AndroidManifestFacts manifest;
+    ManifestSummary manifest;
     std::string display_name;
     std::vector<std::byte> icon_png;
     std::vector<ApplicationVisualFallback> visual_fallbacks;
-    std::optional<session::ApkProfileSummary> profile;
+    std::optional<ProfileSummary> profile;
     std::vector<std::string> abis;
+    std::vector<std::string> profile_notes;
 };
 
-[[nodiscard]] ApkImportAnalysis AnalyzeApkImport(
+[[nodiscard]] OGPLAYCORE_API ApkImportAnalysis AnalyzeApkImport(
     std::span<const std::byte> apk_bytes,
     const std::filesystem::path& source_apk,
-    const session::TitleProfileCatalog& profiles);
+    const ProfileCatalog& profiles);
 
-[[nodiscard]] ApkImportAnalysis AnalyzeApkImportFile(
+[[nodiscard]] OGPLAYCORE_API ApkImportAnalysis AnalyzeApkImportFile(
     const std::filesystem::path& source_apk,
-    const session::TitleProfileCatalog& profiles);
+    const ProfileCatalog& profiles);
 
 // external_dir may be omitted even when required; the entry is imported with
 // the documented missing-data badge. A selected path must be an existing
 // absolute directory. imported_at is injected so tests never read wall time.
-[[nodiscard]] LibraryImport BuildLibraryImport(
+[[nodiscard]] OGPLAYCORE_API LibraryImport BuildLibraryImport(
     const ApkImportAnalysis& analysis,
     std::optional<std::filesystem::path> external_dir,
     std::string imported_at);
 
-}  // namespace ogplay::frontend
+}  // namespace ogplay::app
+
+namespace ogplay::app {
+using ApkInspection = ApkImportAnalysis;
+[[nodiscard]] OGPLAYCORE_API ApkInspection InspectApk(const std::filesystem::path& source, const ProfileCatalog& profiles);
+}

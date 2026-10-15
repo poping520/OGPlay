@@ -10,7 +10,7 @@
 
 ## 前置
 
-1. 构建 `ogplay`（Windows 用 `windows-msvc` 预设，其他平台用 `dev`）。
+1. 构建 `ogplay-cli`（Windows 用 `windows-msvc` 预设，其他平台用 `dev`）。
 2. 场景已通过校验：
 
 ```text
@@ -24,14 +24,14 @@ python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.js
 
 ## 跑一次
 
-必须在 `ogplay` 所在目录能加载到 ANGLE 动态库，runner 会自己把工作目录设为
+必须在 `ogplay-cli` 所在目录能加载到 ANGLE 动态库，runner 会自己把工作目录设为
 可执行文件所在目录：
 
 ```text
 python tools/run_scenario.py \
   --scenario data/scenarios/<id>.scenario.toml \
   --profiles data/profiles \
-  --ogplay build/windows-msvc/Release/ogplay.exe \
+  --ogplay-cli build/windows-msvc/Release/ogplay-cli.exe \
   --fixture <logical-id>=<host-apk> \
   --evidence-dir .local/evidence/<id> --fresh
 ```

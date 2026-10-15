@@ -2,12 +2,13 @@
 
 ## 职责
 
-Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主游戏库、装配同目录 CLI
-子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；Linux 暂缓，macOS 宿主待接入。
+Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主游戏库、装配当前 EXE 的
+`--run-game` 子进程，不拥有 guest/runtime。GUI v2 第一阶段已替换 ImGui；Linux 暂缓，macOS 宿主待接入。
 
 ## 公共 API
 
-- `RunGuiCommand` / `RunGuiStandalone`：CLI 与双击入口；失败记录日志，独立入口显示消息框。
+- `RunGuiCommand`：桌面默认模式，直接接受 `--library-root`、`--smoke-frames`；参数错误与
+  冒烟失败只返回日志/退出码，交互 GUI 初始化失败显示消息框。入口由 ogplaycore 装配。
   原生窗口、导航限制和目录打开经 `hal::WebViewHost`，不直接包含 Windows/WebView2 API。
 - `GuiRpcService::Handle`：复用 `agent::JsonRpcAdapter` 注入模式；同步分派
   `library.list`、`library.launch`、`library.open_dir`、`library.remove`，以及导入任务与对话框 RPC。
@@ -34,7 +35,7 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 - `ExtractApkApplicationVisuals` / `ResizeArgbBilinear`：APK 名称、128×128 PNG 与明确资源回退原因。
 - `BuildLibraryTiles` / `BuildLibraryDetail` / `LibrarySelection`：统一状态、详情和稳定选择模型。
 - `AnalyzeApkImport` / `BuildLibraryImport`：只读 APK 分析、Profile 匹配和原子入库请求。
-- `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一 run-apk argv 与 spawn 前宿主输入验证。
+- `LauncherSandboxRoot` / `BuildLaunchPlan`：唯一游戏模式 argv 与 spawn 前宿主输入验证。
 - `GuiProcessManager`：SDL3 子进程启动、单实例/端口约束、非阻塞回收；析构只解除跟踪，不杀游戏。
 - `dashboard.list {}` / `dashboard.open {installation_id}`：仅查询/打开当前启动器跟踪的子进程，
   不接受前端 URL/端口。每实例记录 PID、MCP 端口和 disabled/starting/ready/unavailable。
@@ -67,12 +68,12 @@ Windows 系统 WebView2 启动器与独立游戏库模型。GUI 只管理宿主�
 - 模型/RPC 层不 include SDL/WebView，不直接调用窗口或进程 API。
 - `library.open_dir` 只由已枚举 installation id 映射 sandbox/log/external；目录不存在明确失败，
   不创建沙盒。log 为保存 last-run.log 的条目目录。
-- GUI 日志覆盖写入 `<library-root>/gui.log`，CLI 同时保留 stderr sink。
+- GUI 日志覆盖写入 `<library-root>/gui.log`，桌面入口同时保留 stderr sink。
 - 兼容 `--smoke-frames N` 正整数参数：现表示 WebView 加载后 N 次成功 `library.list`，
   不再声称 ANGLE present 次数；未完成前关闭窗口视为失败。
 - 100ms 宿主事件计时器回收进程，不忙轮询。退出 0 静默，非零结构化退出码及有界 UTF-8
   日志尾部经前端队列呈现；不据此推断兼容性。
-- 子进程只解析同目录 CLI，stdin 关闭、stdout 继承、stderr 覆盖 last-run.log；显式传递
+- 子进程使用宿主绝对 EXE 路径和 `--run-game`，不查找 CLI，stdin 关闭、stdout 继承、stderr 覆盖 last-run.log；显式传递
   `--sandbox-dir <library-root>/sandbox` 与 `--installation-id`，同实例不重复启动。
 - 全局设置仅将超采样、解释器和 MCP 端口转为已支持的 CLI 参数；预留选项只保存，
   不改变运行时行为。启动成功后通过宿主回调最小化；GUI 配置不覆盖正在运行的进程。

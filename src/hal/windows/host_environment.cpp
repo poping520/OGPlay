@@ -108,7 +108,7 @@ ScopedHostEnvironment::ScopedHostEnvironment(
 
 ScopedHostEnvironment::~ScopedHostEnvironment() = default;
 
-std::filesystem::path HostExecutableDirectory() {
+std::filesystem::path HostExecutablePath() {
     std::vector<wchar_t> path(256);
     while (path.size() <= 32768U) {
         SetLastError(ERROR_SUCCESS);
@@ -121,12 +121,15 @@ std::filesystem::path HostExecutableDirectory() {
             (length == path.size() &&
              GetLastError() != ERROR_INSUFFICIENT_BUFFER)) {
             return std::filesystem::path(
-                       std::wstring(path.data(), length))
-                .parent_path();
+                       std::wstring(path.data(), length));
         }
         path.resize(path.size() * 2U);
     }
     throw std::length_error("host executable path is too long");
+}
+
+std::filesystem::path HostExecutableDirectory() {
+    return HostExecutablePath().parent_path();
 }
 
 std::optional<std::string> HostEnvironmentValue(

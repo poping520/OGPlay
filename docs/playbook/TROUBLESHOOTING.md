@@ -16,14 +16,14 @@ title 的通用症状。手册总览见 [README.md](README.md)。
 启动时显式打开诊断；超时值只触发取证，不会强杀 guest：
 
 ```powershell
-.\build\windows-msvc\Release\ogplay.exe run-apk game.apk `
+.\build\windows-msvc\Release\ogplay-cli.exe run-apk game.apk `
   --diag --diag-dir .local\diagnostics --diag-on-teardown-timeout 5
 ```
 
 控制台会打印 `diag-control-<pid>.json`。主循环已卡住时，从另一终端触发 OS 路径：
 
 ```powershell
-.\build\windows-msvc\Release\ogplay.exe diag snapshot --pid <pid> `
+.\build\windows-msvc\Release\ogplay-cli.exe diag snapshot --pid <pid> `
   --diag-dir .local\diagnostics
 ```
 

@@ -20,6 +20,9 @@
   Dashboard 按实例使用独立 WebView，仅允许指定 loopback 端口 `/dash/`、禁止新窗口，
   不绑定启动器 RPC；主窗口关闭会回收全部 Dashboard，创建/销毁期间防止计时器重入。
   上游实现单独编译，WebView2 SDK 通过显式准备脚本提供，不在配置阶段下载。
+- `desktop_entry` / `cli_entry` 是 EXE 专用的系统启动适配，不链接入 HAL/DLL；仅将宽字符
+  参数转为 UTF-8 后交给 frontend 显式回调，不依赖应用接口，不链接 SDL 或内核。
+- `HostExecutablePath` 返回宿主 EXE 的完整绝对路径，供 GUI 启动自身子进程；目录查询由它派生。
 - `HostExecutableDirectory` 与宿主环境覆盖使用 Win32 模块路径及进程环境 API，
   不把 Windows SDK 类型泄漏到公共 HAL。
 - 共享库加载使用 `LoadLibraryW`/`GetProcAddress`，命名规则为 `<name>-<major>.dll`。

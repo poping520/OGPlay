@@ -37,14 +37,15 @@
 ## 支持边界与未验收项
 
 - VFS：多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
-- GUI/Dashboard（[GUI](../tasks/gui/README.md)）：Windows 定向通过；导入→启动→移除全链路
-  按用户安排延后；Linux/macOS GUI 未完成，移动端仅预留接口。
+- GUI/Dashboard（[GUI-9](../tasks/gui/GUI-9.md)）：Windows 统一为 `ogplay` 桌面入口、
+  `ogplay-cli` 与 `ogplaycore` 共享库；自身游戏子进程及无 CLI 的真实 WebView/RPC
+  导入→启动→移除、故障隔离和存档保留已验。原生选择器/拖放未复验；Linux/macOS GUI 未接入。
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
-  （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常，其余平台暂无预编译包；
+  （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；
   raw-resource 完整链、手动音频写入、媒体主时钟与影音同步未验收。
 - PC 操控映射（[Input 设计](../design/input/README.md)）：P0 的 ControlMapper、配置合并与 run-apk/MCP/GUI
-  接线已完成（[INP-1..3](../tasks/input/README.md)）；键位由用户在 Web 按键编辑器中配置（ADR-0134）；INP-4..7 已实现：F1 提示、F2/GUI“按键设置”打开 Web 编辑器（macOS 浏览器路径实测）；Windows GUI 未编译实跑，P0.5 待用户验收。
+  接线已完成（[INP-1..3](../tasks/input/README.md)）；键位由用户在 Web 按键编辑器中配置（ADR-0134）；INP-4..7 已实现：F1 提示、F2/GUI“按键设置”打开 Web 编辑器（macOS 浏览器路径实测）；Windows 已编译并实跑 GUI 编辑器窗口；编辑/热应用与游戏内 F2 联动仍待验收。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。
 - 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。

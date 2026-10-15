@@ -15,12 +15,17 @@
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/webview_host.h"
 #include "ogplay/hal/clock.h"
+#include "ogplay/hal/host_environment.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/session/quirk_registry.h"
 #include "process_manager.h"
 
 namespace ogplay::frontend {
 namespace {
+std::filesystem::path Utf8Path(std::string_view text) {
+    return std::filesystem::path(std::u8string_view(
+        reinterpret_cast<const char8_t*>(text.data()), text.size()));
+}
 struct GuiOptions final {
     std::filesystem::path library_root;
     std::optional<std::uint64_t> smoke_frames;
@@ -38,12 +43,9 @@ struct GuiOptions final {
 }
 
 [[nodiscard]] GuiOptions ParseOptions(const int argc, const char* const argv[]) {
-    if (argc < 2 || std::string_view(argv[1]) != "gui") {
-        throw std::invalid_argument("gui command entry is invalid");
-    }
     std::optional<std::filesystem::path> explicit_root;
     std::optional<std::uint64_t> smoke_frames;
-    for (int index = 2; index < argc; ++index) {
+    for (int index = 1; index < argc; ++index) {
         const std::string_view option(argv[index]);
         if (option == "--library-root") {
             if (explicit_root.has_value()) {
@@ -53,7 +55,7 @@ struct GuiOptions final {
                 throw std::invalid_argument("gui --library-root requires a directory");
             }
             explicit_root = std::filesystem::absolute(
-                std::filesystem::path(argv[index])).lexically_normal();
+                Utf8Path(argv[index])).lexically_normal();
         } else if (option == "--smoke-frames") {
             if (smoke_frames.has_value()) {
                 throw std::invalid_argument("gui accepts --smoke-frames only once");
@@ -122,128 +124,124 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
 }  // namespace
 int RunGuiCommand(int argc, const char* const argv[], core::Logger& logger) {
     const auto options = ParseOptions(argc, argv);
-    PrepareLog(logger, options.library_root);
-    LibraryStore store(options.library_root);
-    GuiProcessManager processes(logger);
-    std::unique_ptr<hal::WebViewHost> view;
-    GuiRpcService rpc(store, FindSiblingCliExecutable(), {
-        [&](const auto& entries) { return BuildContext(store, processes, entries); },
-        [&](const auto& plan) { processes.Launch(plan); },
-        [](const auto& path) { hal::OpenHostDirectory(path); },
-        [&](const auto& path) {
-            const auto bundled = HostBundledDataPaths();
-            const auto config = LoadGuiConfig(store.Root());
-            const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-            const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-                config.profiles_dir.value_or(bundled.profiles_directory), quirks);
-            return AnalyzeApkImportFile(path, profiles);
-        },
-        [&](bool directory) { return view->PickPath(directory); },
-        [] { return hal::Clock::UtcTimestamp(); },
-        [&] { view->Minimize(); },
-        [] {
-            std::map<std::string, std::string> facts;
-            facts["OGPlay 版本"] = OGPLAY_VERSION;
-            const auto root = HostBundledDataPaths().root;
-            for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{{
-                {"Web UI 构建清单", "webui/gui/manifest.json"},
-                {"Android / BootDex / guest JNI 制品清单", "android/19/manifest.json"},
-                {"Web UI 第三方许可", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
-                std::error_code error;
-                const auto size = std::filesystem::file_size(root / path, error);
-                if (error || size > 65536) { facts[key] = "文件不可用或超过读取上限"; continue; }
-                std::ifstream file(root / path, std::ios::binary);
-                std::string text(static_cast<std::size_t>(size), '\0');
-                file.read(text.data(), static_cast<std::streamsize>(size));
-                facts[key] = file ? text : "读取失败";
-            }
-            return facts;
-        },
-        [](const LibraryEntry& entry, const GuiConfig& config) {
-            std::map<std::string, std::string> facts;
-            const auto bundled = HostBundledDataPaths();
-            const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
-            facts["有效 Profile 目录"] = PathUtf8(directory);
-            const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
-            const auto profiles = session::TitleProfileCatalog::LoadDirectory(directory, quirks);
-            facts["Profile 状态"] = "无导入匹配记录；启动时由 CLI 重新匹配";
-            if (entry.metadata && entry.metadata->profile_id) {
-                const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
-                if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
-                facts["Profile 状态"] = "目录中存在导入记录；适用性由 CLI 启动时校验";
-                for (const auto& profile : profiles.Profiles()) if (profile.identity.package == *entry.metadata->profile_id) {
-                    std::string names;
-                    if (profile.quirks) for (const auto& name : profile.quirks->enabled) {
-                        if (!names.empty()) names += ", "; names += name;
-                    }
-                    facts["Profile quirk 列表"] = names.empty() ? "无" : names;
-                    facts["Profile 输入模板"] = profile.input && profile.input->template_id ? *profile.input->template_id : "未指定";
-                }
-            }
-            return facts;
-        },
-        [&] { return processes.Dashboards(); },
-        [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
-        [&](std::string_view instance) {
-            const auto editor = processes.KeyEditor(instance);
-            view->OpenKeyEditor(instance, editor.port, editor.token);
-        }});
-    view = hal::CreateWebViewHost({
-        HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
-        options.library_root / "gui-smoke.png"}, {
-        [&](std::string_view request) {
-            const auto response = rpc.Handle(request);
-            core::JsonParseError error;
-            auto decoded = core::JsonDocument::ParseStrict(response, error);
-            if (decoded && decoded->Root().Member("error")) {
-                logger.Write(core::LogLevel::error, "frontend.gui.rpc", "RPC request failed", {}, {{"response", response}});
-            } else {
-                auto document = core::JsonDocument::ParseStrict(request, error);
-                const auto method = document ? document->Root().Member("method") : std::nullopt;
-                if (method && method->String() == std::optional<std::string_view>{"library.list"}) view->RecordSmokeResponse();
-            }
-            return response;
-        },
-        [&] {
-            for (const auto& result : processes.Poll()) {
-                view->CloseDashboard(result.package);
-                view->CloseKeyEditor(result.package);
-                core::JsonWriter writer;
-                const auto event = writer.Object();
-                writer.AddString(event, "installation_id", result.package);
-                writer.AddInteger(event, "exit_code", result.exit_code);
-                writer.AddString(event, "log_tail", result.exit_code == 0 ? "" : ReadLogTail(result.log_path));
-                view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-exit',{detail:" + writer.Serialize(event) + "}));");
-            }
-            // In-game F2 (ADR-0134): the game routes the request here while this launcher polls it.
-            for (const auto& instance : processes.TakeKeyEditorRequests()) {
-                try {
-                    const auto editor = processes.KeyEditor(instance);
-                    view->OpenKeyEditor(instance, editor.port, editor.token);
-                } catch (const std::exception& error) {
-                    logger.Write(core::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {}, {{"reason", std::string(error.what())}});
-                }
-            }
-            for (const auto& instance : processes.TakeAutoOpen()) {
-                try { view->OpenDashboard(instance, processes.DashboardPort(instance)); }
-                catch (const std::exception& error) {
-                    logger.Write(core::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed", {}, {{"reason", std::string(error.what())}});
-                    core::JsonWriter writer; const auto text = writer.String(error.what());
-                    view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-dashboard-error',{detail:" + writer.Serialize(text) + "}));");
-                }
-            }
-        }}, logger);
-    return view->Run();
-}
-int RunGuiStandalone() {
-    core::Logger logger;
     try {
-        const std::array<const char*, 2> args{"ogplay", "gui"};
-        return RunGuiCommand(static_cast<int>(args.size()), args.data(), logger);
+        PrepareLog(logger, options.library_root);
+        LibraryStore store(options.library_root);
+        GuiProcessManager processes(logger);
+        std::unique_ptr<hal::WebViewHost> view;
+        GuiRpcService rpc(store, hal::HostExecutablePath(), {
+            [&](const auto& entries) { return BuildContext(store, processes, entries); },
+            [&](const auto& plan) { processes.Launch(plan); },
+            [](const auto& path) { hal::OpenHostDirectory(path); },
+            [&](const auto& path) {
+                const auto bundled = HostBundledDataPaths();
+                const auto config = LoadGuiConfig(store.Root());
+                const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
+                const auto profiles = session::TitleProfileCatalog::LoadDirectory(
+                    config.profiles_dir.value_or(bundled.profiles_directory), quirks);
+                return AnalyzeApkImportFile(path, profiles);
+            },
+            [&](bool directory) { return view->PickPath(directory); },
+            [] { return hal::Clock::UtcTimestamp(); },
+            [&] { view->Minimize(); },
+            [] {
+                std::map<std::string, std::string> facts;
+                facts["OGPlay 版本"] = OGPLAY_VERSION;
+                const auto root = HostBundledDataPaths().root;
+                for (const auto& [key, path] : std::array<std::pair<const char*, const char*>, 3>{{
+                    {"Web UI 构建清单", "webui/gui/manifest.json"},
+                    {"Android / BootDex / guest JNI 制品清单", "android/19/manifest.json"},
+                    {"Web UI 第三方许可", "webui/gui/THIRD-PARTY-LICENSES.txt"}}}) {
+                    std::error_code error;
+                    const auto size = std::filesystem::file_size(root / path, error);
+                    if (error || size > 65536) { facts[key] = "文件不可用或超过读取上限"; continue; }
+                    std::ifstream file(root / path, std::ios::binary);
+                    std::string text(static_cast<std::size_t>(size), '\0');
+                    file.read(text.data(), static_cast<std::streamsize>(size));
+                    facts[key] = file ? text : "读取失败";
+                }
+                return facts;
+            },
+            [](const LibraryEntry& entry, const GuiConfig& config) {
+                std::map<std::string, std::string> facts;
+                const auto bundled = HostBundledDataPaths();
+                const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
+                facts["有效 Profile 目录"] = PathUtf8(directory);
+                const auto quirks = session::QuirkRegistry::LoadPackaged(bundled.quirk_registry);
+                const auto profiles = session::TitleProfileCatalog::LoadDirectory(directory, quirks);
+                facts["Profile 状态"] = "无导入匹配记录；启动时由运行服务重新匹配";
+                if (entry.metadata && entry.metadata->profile_id) {
+                    const auto summary = session::FindApkProfileSummary(profiles, *entry.metadata->profile_id);
+                    if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
+                    facts["Profile 状态"] = "目录中存在导入记录；适用性由运行服务启动时校验";
+                    for (const auto& profile : profiles.Profiles()) if (profile.identity.package == *entry.metadata->profile_id) {
+                        std::string names;
+                        if (profile.quirks) for (const auto& name : profile.quirks->enabled) {
+                            if (!names.empty()) names += ", "; names += name;
+                        }
+                        facts["Profile quirk 列表"] = names.empty() ? "无" : names;
+                        facts["Profile 输入模板"] = profile.input && profile.input->template_id ? *profile.input->template_id : "未指定";
+                    }
+                }
+                return facts;
+            },
+            [&] { return processes.Dashboards(); },
+            [&](std::string_view instance) { view->OpenDashboard(instance, processes.DashboardPort(instance)); },
+            [&](std::string_view instance) {
+                const auto editor = processes.KeyEditor(instance);
+                view->OpenKeyEditor(instance, editor.port, editor.token);
+            }});
+        view = hal::CreateWebViewHost({
+            HostBundledDataPaths().root / "webui/gui/index.html", options.smoke_frames,
+            options.library_root / "gui-smoke.png"}, {
+            [&](std::string_view request) {
+                const auto response = rpc.Handle(request);
+                core::JsonParseError error;
+                auto decoded = core::JsonDocument::ParseStrict(response, error);
+                if (decoded && decoded->Root().Member("error")) {
+                    logger.Write(core::LogLevel::error, "frontend.gui.rpc", "RPC request failed", {}, {{"response", response}});
+                } else {
+                    auto document = core::JsonDocument::ParseStrict(request, error);
+                    const auto method = document ? document->Root().Member("method") : std::nullopt;
+                    if (method && method->String() == std::optional<std::string_view>{"library.list"}) view->RecordSmokeResponse();
+                }
+                return response;
+            },
+            [&] {
+                for (const auto& result : processes.Poll()) {
+                    view->CloseDashboard(result.package);
+                    view->CloseKeyEditor(result.package);
+                    core::JsonWriter writer;
+                    const auto event = writer.Object();
+                    writer.AddString(event, "installation_id", result.package);
+                    writer.AddInteger(event, "exit_code", result.exit_code);
+                    writer.AddString(event, "log_tail", result.exit_code == 0 ? "" : ReadLogTail(result.log_path));
+                    view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-exit',{detail:" + writer.Serialize(event) + "}));");
+                }
+                // In-game F2 (ADR-0134): the game routes the request here while this launcher polls it.
+                for (const auto& instance : processes.TakeKeyEditorRequests()) {
+                    try {
+                        const auto editor = processes.KeyEditor(instance);
+                        view->OpenKeyEditor(instance, editor.port, editor.token);
+                    } catch (const std::exception& error) {
+                        logger.Write(core::LogLevel::error, "frontend.gui.key_editor", "key editor open failed", {}, {{"reason", std::string(error.what())}});
+                    }
+                }
+                for (const auto& instance : processes.TakeAutoOpen()) {
+                    try { view->OpenDashboard(instance, processes.DashboardPort(instance)); }
+                    catch (const std::exception& error) {
+                        logger.Write(core::LogLevel::error, "frontend.gui.dashboard", "automatic Dashboard open failed", {}, {{"reason", std::string(error.what())}});
+                        core::JsonWriter writer; const auto text = writer.String(error.what());
+                        view->Evaluate("window.dispatchEvent(new CustomEvent('ogplay-dashboard-error',{detail:" + writer.Serialize(text) + "}));");
+                    }
+                }
+            }}, logger);
+        return view->Run();
     } catch (const std::exception& error) {
-        static_cast<void>(SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OGPlay could not start", error.what(), nullptr));
-        return 1;
+        if (!options.smoke_frames) {
+            static_cast<void>(SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OGPlay could not start", error.what(), nullptr));
+        }
+        throw;
     }
 }
 }  // namespace ogplay::frontend
-

@@ -10,6 +10,7 @@ function(expect_failure label expected)
         RESULT_VARIABLE result
         OUTPUT_VARIABLE output
         ERROR_VARIABLE error
+        TIMEOUT 5
     )
     if(NOT result EQUAL 1)
         message(FATAL_ERROR "${label}: expected exit 1, got ${result}; stdout=${output}; stderr=${error}")
@@ -25,6 +26,7 @@ function(expect_usage expected)
         COMMAND "${OGPLAY_CLI}"
         RESULT_VARIABLE result
         ERROR_VARIABLE error
+        TIMEOUT 5
     )
     if(NOT result EQUAL 2)
         message(FATAL_ERROR "usage: expected exit 2, got ${result}; stderr=${error}")
@@ -35,10 +37,15 @@ function(expect_usage expected)
     endif()
 endfunction()
 
-set(_base run-apk "${_missing_apk}")
-expect_usage("[--mcp | --mcp-port <1..65535>]")
-expect_usage("[--mcp-manual-step]")
-expect_usage("[--key-editor-port <1..65535>]")
+if(NOT DEFINED OGPLAY_RUN_COMMAND)
+    set(OGPLAY_RUN_COMMAND run-apk)
+endif()
+set(_base ${OGPLAY_RUN_COMMAND} "${_missing_apk}")
+if(NOT OGPLAY_GAME_MODE)
+    expect_usage("[--mcp | --mcp-port <1..65535>]")
+    expect_usage("[--mcp-manual-step]")
+    expect_usage("[--key-editor-port <1..65535>]")
+endif()
 expect_failure(removed_system_dir
     "unknown or incomplete run-apk option: --system-dir"
     ${_base} --system-dir old-bionic)

@@ -101,7 +101,7 @@ ScopedHostEnvironment::ScopedHostEnvironment(
 
 ScopedHostEnvironment::~ScopedHostEnvironment() = default;
 
-std::filesystem::path HostExecutableDirectory() {
+std::filesystem::path HostExecutablePath() {
     std::uint32_t size{1};
     char placeholder{};
     if (_NSGetExecutablePath(&placeholder, &size) != -1 || size <= 1) {
@@ -111,8 +111,11 @@ std::filesystem::path HostExecutableDirectory() {
     if (_NSGetExecutablePath(path.data(), &size) != 0) {
         throw std::runtime_error("failed to locate host executable");
     }
-    return std::filesystem::canonical(std::filesystem::path(path.data()))
-        .parent_path();
+    return std::filesystem::canonical(std::filesystem::path(path.data()));
+}
+
+std::filesystem::path HostExecutableDirectory() {
+    return HostExecutablePath().parent_path();
 }
 
 std::optional<std::string> HostEnvironmentValue(

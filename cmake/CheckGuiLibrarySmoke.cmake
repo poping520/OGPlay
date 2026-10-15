@@ -1,5 +1,5 @@
-if(NOT DEFINED OGPLAY_CLI OR NOT DEFINED GUI_LIBRARY_ROOT)
-    message(FATAL_ERROR "GUI library smoke requires OGPLAY_CLI and GUI_LIBRARY_ROOT")
+if(NOT DEFINED OGPLAY_GUI OR NOT DEFINED GUI_LIBRARY_ROOT)
+    message(FATAL_ERROR "GUI library smoke requires OGPLAY_GUI and GUI_LIBRARY_ROOT")
 endif()
 
 file(REMOVE_RECURSE "${GUI_LIBRARY_ROOT}")
@@ -14,7 +14,7 @@ file(WRITE "${GUI_LIBRARY_ROOT}/library/org.example.game/meta.toml"
     "imported_at = \"2026-08-13T00:00:00Z\"\n")
 
 execute_process(
-    COMMAND "${OGPLAY_CLI}" gui --library-root "${GUI_LIBRARY_ROOT}" --smoke-frames 3
+    COMMAND "${OGPLAY_GUI}" --library-root "${GUI_LIBRARY_ROOT}" --smoke-frames 3
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE error)

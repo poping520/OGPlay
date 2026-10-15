@@ -34,6 +34,7 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+[[nodiscard]] std::filesystem::path HostExecutablePath();
 [[nodiscard]] std::filesystem::path HostExecutableDirectory();
 // Per-platform root for this user's application data (roadmap 08). Empty
 // when the host environment does not say where it belongs, which callers

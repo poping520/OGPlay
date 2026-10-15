@@ -266,7 +266,7 @@ note = "INP-4/ADR-0134：F1 在呈现副本上绘制当前模式有效区域与�
 [frontend.key_editor_session]
 status = "partial"
 test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/frontend/mcp_http_server_tests.cpp#INP-6; tests/frontend/mcp_http_server_tests.cpp#INP-7; tests/frontend/gui_launch_tests.cpp#INP-7; tests/frontend/gui_rpc_tests.cpp#INP-7; tests/session/control_config_tests.cpp#INP-5; webui/apps/controls/controls.test.ts; frontend.key_editor_manifest; frontend.run_apk_options"
-note = "INP-5..7/ADR-0134：/controls/ Web 编辑器与 control.* 接口随 MCP 端口、--key-editor-port 或首次 F2 懒启动；Bearer 令牌经环境变量或 URL 片段/sessionStorage 交给页面。冻结编辑、拖放缩放、物理键绑定、冲突标红、热应用并原子写回；编辑器心跳中断 8 秒自动恢复。GUI 每局生成令牌与端口，按钮或 F2 打开窗口；无 GUI 时 F2 用浏览器。Windows GUI 未实跑。"
+note = "INP-5..7/ADR-0134：/controls/ Web 编辑器与 control.* 接口随 MCP 端口、--key-editor-port 或首次 F2 懒启动；Bearer 令牌经环境变量或 URL 片段/sessionStorage 交给页面。冻结编辑、拖放缩放、物理键绑定、冲突标红、热应用并原子写回；编辑器心跳中断 8 秒自动恢复。GUI 每局生成令牌与端口，按钮或 F2 打开窗口；无 GUI 时 F2 用浏览器。Windows 已验证 GUI 打开编辑器；编辑/热应用与 F2 联动待验。"
 
 [input.mouse_touch_mapper]
 status = "complete"
@@ -310,8 +310,8 @@ note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其�
 
 [frontend.gui_shell]
 status = "complete"
-test = "frontend.gui_dashboard_window; frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts; webui/apps/gui/settings.test.ts; webui/apps/gui/game-settings.test.ts"
-note = "GUI-1..8：Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓，macOS WebView 宿主未接入。"
+test = "frontend.app_entrypoints; frontend.gui_dashboard_window; frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts; webui/apps/gui/settings.test.ts; webui/apps/gui/game-settings.test.ts"
+note = "GUI-1..9：ogplay 桌面主入口与 ogplay-cli 共用 ogplaycore；Windows 使用 WebView2 + Preact 外壳，closed schema JSON-RPC、导航限制与 CSP；支持库视图、单体 APK 导入（分包拒绝）、全局与每实例设置、运行实例 Dashboard 窗口及移除（保留存档）。部分设置仅保存不生效，沙盒管理未接入；Linux 暂缓，macOS WebView 宿主未接入。"
 
 [frontend.device_presets]
 status = "partial"
@@ -326,7 +326,7 @@ note = "GUI-2/5/7/10/12/15..17、ADR-0071：严格 LibraryStore/GuiConfig 及导
 [frontend.gui_launch_spawn]
 status = "complete"
 test = "tests/frontend/gui_launch_tests.cpp; tests/frontend/gui_dashboard_window_tests.cpp; frontend.gui_smoke; frontend.gui_library_smoke"
-note = "GUI-5/6/9/14：spawn 前校验并装配同目录 ogplay run-apk 参数，显式传递 sandbox 根与 --installation-id；子进程 stderr 重定向，100ms 计时器回收退出码并按 UTF-8 边界展示日志尾。合并全局与实例设置，支持正常/预检/诊断模式；预检不传 MCP，临时沙盒不传持久根，预留字段不转发。"
+note = "GUI-5/6/9/14：spawn 前校验并装配当前 ogplay EXE 的 --run-game 参数；与 ogplay-cli 共用运行服务，显式传递 sandbox 根与 --installation-id；子进程 stderr 重定向，100ms 计时器回收退出码并按 UTF-8 边界展示日志尾。合并全局与实例设置，支持正常/预检/诊断模式；预检不传 MCP，临时沙盒不传持久根，预留字段不转发。"
 
 [loader.apk_application_visuals]
 status = "complete"

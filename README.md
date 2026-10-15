@@ -32,26 +32,28 @@ ctest --preset windows-msvc -R "<affected-test>"
 
 ## 主面板（游戏启动器）
 
-Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay-gui.exe`；Linux 开发构建
-产物为 `build/dev/ogplay-gui`，macOS 为 `OGPlay.app`，bundle 内同时携带同目录启动所需
-的 `ogplay-cli` CLI（macOS 大小写不敏感文件系统下避免与 GUI 可执行名冲突）。构建/安装
-产物同时携带 `data/profiles`、`data/quirks.toml` 与可再分发的 API 19 Android guest
-系统库；默认 Profile 不依赖源码树。开发与 CI 也可从终端启动有界入口：
+Windows 构建后可直接双击 `build/windows-msvc/Debug/ogplay.exe`。产品由
+`ogplay.exe`、`ogplay-cli.exe` 和共享应用库 `ogplaycore.dll` 构成，三者同版本交付。
+主程序默认打开游戏库，启动游戏时创建自身 `--run-game` 子进程；关闭启动器不结束游戏，
+产品运行无需 CLI 文件。Linux/macOS 当前只构建 CLI 与共享库，GUI 宿主尚未接入。
 
-```sh
-build/dev/ogplay gui [--library-root <dir>] [--smoke-frames <count>]
+```powershell
+cmake --build --preset windows-msvc --config Release --target ogplay
+build/windows-msvc/Release/ogplay.exe --library-root .local/my-library
 ```
 
-Android guest 系统库由程序从随包数据中自动选择，无需额外设置；Profile 目录留空使用
-内置默认。随后通过“导入游戏”选择 APK 与可选数据包目录，点击无角标磁贴即通过同一
-`run-apk` 路径启动。右键磁贴可删除库内副本；原地数据包和持久存档不会被删除。
+构建/安装产物携带 `data/` 中的 Profile、quirk、能力账本、API 19 guest payload 与 Web UI；
+资源以宿主 EXE 为锚点定位，开发时允许源码树回退。GUI 支持导入单体 APK、设置与启动，
+移除条目只删除库内副本，保留外部数据和持久存档。`--smoke-frames N` 是有界 WebView
+加载/RPC 冒烟入口，不代表游戏帧数。`OGPLAY_BUILD_GUI=OFF` 可只构建共享库与 CLI。
 
-运行最小 CLI：
+命令行与自动化统一使用 `ogplay-cli`：
 
 ```sh
-build/dev/ogplay --version
-build/dev/ogplay capabilities
-build/dev/ogplay agent-stdio
+build/dev/ogplay-cli --version
+build/dev/ogplay-cli capabilities
+build/dev/ogplay-cli agent-stdio
+build/dev/ogplay-cli run-apk game.apk --mcp
 ```
 
 `agent-stdio` 使用一行一个 JSON-RPC 2.0 请求，可驱动 M0 的确定性空会话：

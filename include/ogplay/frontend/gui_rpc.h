@@ -30,7 +30,7 @@ struct GuiRpcHost final {
 
 class GuiRpcService final {
 public:
-    GuiRpcService(LibraryStore& store, std::filesystem::path cli, GuiRpcHost host);
+    GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host);
     GuiRpcService(const GuiRpcService&) = delete;
     GuiRpcService& operator=(const GuiRpcService&) = delete;
     GuiRpcService(GuiRpcService&&) = delete;
@@ -46,7 +46,7 @@ private:
     [[nodiscard]] agent::ControlResponse ImportRequest(std::string_view method, core::JsonValue params);
     std::shared_ptr<ImportState> import_;
     LibraryStore& store_;
-    std::filesystem::path cli_;
+    std::filesystem::path game_executable_;
     GuiRpcHost host_;
     agent::JsonRpcAdapter adapter_;
 };

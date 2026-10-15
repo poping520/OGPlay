@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#if defined(_WIN32) && OGPLAY_TEST_HAS_SDL3
+#if defined(_WIN32) && OGPLAY_TEST_HAS_GUI
 #include "ogplay/agent/dashboard.h"
 #include "ogplay/agent/mcp_protocol.h"
 #include "ogplay/core/logger.h"

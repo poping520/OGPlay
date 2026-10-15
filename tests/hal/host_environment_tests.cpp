@@ -43,7 +43,11 @@ TEST_CASE("host environment rejects an invalid override set atomically") {
 }
 
 TEST_CASE("host executable directory is absolute and contains the test binary") {
+    const auto executable = ogplay::hal::HostExecutablePath();
     const auto directory = ogplay::hal::HostExecutableDirectory();
+    CHECK(executable.is_absolute());
+    CHECK(std::filesystem::is_regular_file(executable));
+    CHECK(executable.parent_path() == directory);
     CHECK(directory.is_absolute());
     CHECK(std::filesystem::is_directory(directory));
 }

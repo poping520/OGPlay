@@ -2,7 +2,7 @@
 
 ## 职责
 
-提供 CLI、GUI 与可选 loopback MCP transport；只编排公共内核 API，把 Profile、窗口、
+由共享应用库 `ogplaycore` 提供 CLI、GUI 与可选 loopback MCP transport；只编排公共内核 API，把 Profile、窗口、
 输入、截图和会话控制交给 session/agent，不实现游戏兼容行为。
 
 ## 公共入口
@@ -14,8 +14,10 @@
   working directory 可覆盖它。
   文件系统容量只由 guest VFS 的配额卷统计发布，前端不再将 external-dir 的宿主
   剩余空间写为无路径 StatFs 标量。
-- `ogplay-gui` / `ogplay gui`：共用 GUI shell；ready 条目只启动同目录 `run-apk`，回收状态
-  与退出码。
+- `ogplay`：桌面主入口，默认 GUI；ready 条目只启动当前 EXE 的 `--run-game` 子进程，
+  回收状态与退出码。`ogplay-cli run-apk` 与游戏模式共用选项解析和运行服务。
+- `ogplaycore`：共享应用实现，仅导出同构建的桌面与 CLI C ABI；EXE 不静态链接内部实现。
+  运行语义归 game，入口装配归 app；GUI、游戏和 CLI 按模式初始化，不在加载 DLL 时初始化。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
   `profiles/`、`quirks.toml` 与 `framework/bootdex.jar`，源码树仅作开发回退。
 - `--external-dir` 有 Profile external 声明时挂到其唯一 guest 根，否则挂到 `/sdcard`；
@@ -33,7 +35,7 @@
   FFmpeg 装配事实在启动时封存进 metadata，不在 HTTP 查询中初始化 decoder。
   HTTP server 作用域比 app_process 短，析构 stop/join 后才允许销毁诊断来源。
 - `--mcp`/`--mcp-port` 提供本机服务；`--mcp-manual-step` 等待 step/suspend/resume/
-  shutdown。`--diag*` 与 `ogplay diag snapshot` 提供不依赖 SDL 主循环的停滞取证。
+  shutdown。`--diag*` 与 `ogplay-cli diag snapshot` 提供不依赖 SDL 主循环的停滞取证。
 
 `run-apk` 默认使用持久沙盒（ADR-0020）；裸 APK 启动在没有实例时分配 package 首实例，
 唯一已有实例自动复用，多实例则要求 `--installation-id` 消歧。GUI 始终传递库中选定的实例。
@@ -106,8 +108,8 @@
   每个失败只输出一个缩进的 `error [ogplay]` 块；运行循环仍发布 MCP `guest_fault`、清理并
   传播；运行首错在清理前立即写结构化日志，日志失败不得替换原错。
 - GUI 子进程关闭 stdin、继承 stdout、stderr 覆盖写入 `last-run.log`；同 installation id 单实例，
-  GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。macOS CLI
-  名为 `ogplay-cli`。所有用户可见失败同时写结构化日志并给出下一步。
+  GUI 退出不杀游戏。存档固定在库根 `sandbox/`；删除条目不删除 external 或存档。CLI
+  名为 `ogplay-cli`；GUI 不依赖 CLI 文件。所有用户可见失败同时写结构化日志并给出下一步。
 
 ## 禁止
 

@@ -43,7 +43,7 @@ std::filesystem::path LauncherSandboxRoot(
             "sandbox").lexically_normal();
 }
 
-LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
+LaunchPlan BuildLaunchPlan(const std::filesystem::path& game_executable,
                            const std::filesystem::path& library_root,
                            const LibraryEntry& source_entry,
                            const GuiConfig& global, GuiLaunchMode mode) {
@@ -57,9 +57,9 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
                             entry.directory);
     }
     std::error_code error;
-    if (!std::filesystem::is_regular_file(cli_executable, error) || error) {
+    if (!std::filesystem::is_regular_file(game_executable, error) || error) {
         throw GuiModelError(GuiModelErrorCode::not_found,
-                            "OGPlay CLI executable is missing", cli_executable);
+                            "OGPlay game executable is missing", game_executable);
     }
     if (config.profiles_dir.has_value()) {
         RequireDirectory(*config.profiles_dir, "Profile directory");
@@ -78,8 +78,8 @@ LaunchPlan BuildLaunchPlan(const std::filesystem::path& cli_executable,
     LaunchPlan plan;
     plan.package = entry.key;
     plan.argv = {
-        PathUtf8(std::filesystem::absolute(cli_executable).lexically_normal()),
-        "run-apk", PathUtf8(apk)};
+        PathUtf8(std::filesystem::absolute(game_executable).lexically_normal()),
+        "--run-game", PathUtf8(apk)};
     if (config.profiles_dir.has_value()) {
         plan.argv.push_back("--profiles-dir");
         plan.argv.push_back(PathUtf8(*config.profiles_dir));

@@ -62,6 +62,5 @@ private:
     std::vector<std::future<KeyEditorProbe>> retired_editor_probes_;
 };
 
-[[nodiscard]] std::filesystem::path FindSiblingCliExecutable();
 
 }  // namespace ogplay::frontend

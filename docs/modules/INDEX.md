@@ -13,6 +13,9 @@ MODULE.md；能力状态见 [能力账本](../../capabilities.toml)。
 | [`src/core`](../../src/core/MODULE.md) | core |
 | [`src/cpu`](../../src/cpu/MODULE.md) | cpu |
 | [`src/frontend`](../../src/frontend/MODULE.md) | frontend |
+| [`src/frontend/app`](../../src/frontend/app/MODULE.md) | 共享应用入口 |
+| [`src/frontend/cli`](../../src/frontend/cli/MODULE.md) | CLI 系统入口 |
+| [`src/frontend/game`](../../src/frontend/game/MODULE.md) | 统一游戏运行服务 |
 | [`src/frontend/gui`](../../src/frontend/gui/MODULE.md) | frontend/gui |
 | [`src/gles`](../../src/gles/MODULE.md) | gles |
 | [`src/guest`](../../src/guest/MODULE.md) | guest 生产代码 |

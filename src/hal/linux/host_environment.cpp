@@ -99,7 +99,7 @@ ScopedHostEnvironment::ScopedHostEnvironment(
 
 ScopedHostEnvironment::~ScopedHostEnvironment() = default;
 
-std::filesystem::path HostExecutableDirectory() {
+std::filesystem::path HostExecutablePath() {
     std::vector<char> path(256);
     while (path.size() <= 1024U * 1024U) {
         const auto length = readlink("/proc/self/exe", path.data(), path.size());
@@ -109,12 +109,15 @@ std::filesystem::path HostExecutableDirectory() {
         if (static_cast<std::size_t>(length) < path.size()) {
             return std::filesystem::path(
                        std::string(path.data(),
-                                   static_cast<std::size_t>(length)))
-                .parent_path();
+                                   static_cast<std::size_t>(length)));
         }
         path.resize(path.size() * 2U);
     }
     throw std::length_error("host executable path is too long");
+}
+
+std::filesystem::path HostExecutableDirectory() {
+    return HostExecutablePath().parent_path();
 }
 
 std::optional<std::string> HostEnvironmentValue(

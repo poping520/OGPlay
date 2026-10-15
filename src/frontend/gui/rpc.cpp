@@ -56,8 +56,8 @@ core::JsonWriter::Value Condition(core::JsonWriter& writer, const LibraryConditi
 }
 }  // namespace
 
-GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path cli, GuiRpcHost host)
-    : store_(store), cli_(std::move(cli)), host_(std::move(host)),
+GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_executable, GuiRpcHost host)
+    : store_(store), game_executable_(std::move(game_executable)), host_(std::move(host)),
       adapter_([this](std::string_view method, core::JsonValue params) { return Request(method, params); }) {
     if (!host_.context || !host_.launch || !host_.open_directory)
         throw std::invalid_argument("GUI host callbacks are required");
@@ -215,7 +215,7 @@ agent::ControlResponse GuiRpcService::Request(std::string_view method, core::Jso
                 const auto config = LoadGuiConfig(store_.Root());
                 const auto minimize = std::get<bool>(GuiSetting(config, "minimize_on_launch"));
                 if (minimize && !host_.minimize) throw std::runtime_error("宿主不支持最小化窗口。");
-                host_.launch(BuildLaunchPlan(cli_, store_.Root(), *entry, config, mode));
+                host_.launch(BuildLaunchPlan(game_executable_, store_.Root(), *entry, config, mode));
                 if (minimize) host_.minimize();
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "started", true);

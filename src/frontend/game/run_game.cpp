@@ -1,5 +1,5 @@
-#include "run_apk.h"
-#include "run_apk_vfs.h"
+#include "run_game.h"
+#include "run_game_vfs.h"
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -63,7 +63,10 @@
 namespace ogplay::frontend {
 namespace {
 
-constexpr std::uint16_t kDefaultMcpPort = 15971U;
+std::string PathUtf8(const std::filesystem::path& path) {
+    const auto text = path.generic_u8string();
+    return {reinterpret_cast<const char*>(text.data()), text.size()};
+}
 
 constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{
     48000U, 2U, hal::AudioSampleFormat::signed_16_le};
@@ -79,12 +82,12 @@ void Write(const std::string_view text) {
 
 std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input) throw std::runtime_error("cannot open " + path.string());
+    if (!input) throw std::runtime_error("cannot open " + PathUtf8(path));
     const auto size = input.tellg();
-    if (size <= 0) throw std::runtime_error("input file is empty: " + path.string());
+    if (size <= 0) throw std::runtime_error("input file is empty: " + PathUtf8(path));
     std::vector<std::byte> result(static_cast<std::size_t>(size));
     input.seekg(0); input.read(reinterpret_cast<char*>(result.data()), size);
-    if (!input) throw std::runtime_error("input file was truncated: " + path.string());
+    if (!input) throw std::runtime_error("input file was truncated: " + PathUtf8(path));
     return result;
 }
 
@@ -99,7 +102,7 @@ std::vector<OwnedSystemLibrary> ReadSystemLibraries(
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error) || error) {
         throw std::runtime_error("bundled Android library directory is unavailable: " +
-                                 directory.string());
+                                 PathUtf8(directory));
     }
     std::vector<OwnedSystemLibrary> result;
     for (const auto name : profile.guest_libraries) {
@@ -111,47 +114,6 @@ std::vector<OwnedSystemLibrary> ReadSystemLibraries(
         }
     }
     return result;
-}
-
-std::uint64_t ParsePositive(const std::string_view text, const std::string_view option) {
-    std::uint64_t value{};
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value == 0) {
-        throw std::invalid_argument(std::string(option) + " requires a positive integer");
-    }
-    return value;
-}
-
-std::uint32_t ParseSupersampleFactor(const std::string_view text) {
-    std::uint32_t value{};
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
-        value < 1 || value > 4) {
-        throw std::invalid_argument("--supersample requires an integer in 1..4");
-    }
-    return value;
-}
-
-std::uint16_t ParseMcpPort(const std::string_view text, const std::string_view option = "--mcp-port") {
-    std::uint32_t value{};
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
-        value == 0 || value > 65535U) {
-        throw std::invalid_argument(std::string(option) + " requires an integer in 1..65535");
-    }
-    return static_cast<std::uint16_t>(value);
-}
-
-runtime::dexvm::InterpreterBackend ParseDexVmInterpreter(
-    const std::string_view text) {
-    if (text == "switch") {
-        return runtime::dexvm::InterpreterBackend::switch_dispatch;
-    }
-    if (text == "threaded") {
-        return runtime::dexvm::InterpreterBackend::threaded;
-    }
-    throw std::invalid_argument(
-        "--dexvm-interpreter requires switch or threaded");
 }
 
 std::string FrameRateTitle(const std::string_view base, const double fps) {
@@ -220,215 +182,23 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
 
 }  // namespace
 
-int RunApkCommand(const int argc, const char* const argv[],
-                  core::Logger& logger) {
-    if (argc < 3) {
-        throw std::invalid_argument("run-apk requires <apk>");
-    }
-    const std::filesystem::path apk_path{argv[2]};
-    std::optional<std::filesystem::path> external_directory;
-    std::optional<std::string> external_guest_directory;
-    std::optional<std::filesystem::path> obb_path;
+int RunGame(GameRunOptions options, core::Logger& logger) {
+    auto [apk_path, external_directory, external_guest_directory, obb_path,
+          profiles_directory, exit_after_frames, mcp_port, key_editor_port,
+          dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
+          diagnostics_enabled, supersample_factor, cpu_config, mcp_manual_step,
+          preflight, survey_gaps_output, sandbox_directory, installation_id,
+          ephemeral_sandbox, input_config_path] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
-    auto profiles_directory = bundled_data.profiles_directory;
-    std::optional<std::uint64_t> exit_after_frames;
-    std::optional<std::uint16_t> mcp_port;
-    std::optional<std::uint16_t> key_editor_port;
-    std::optional<runtime::dexvm::InterpreterBackend> dexvm_interpreter;
-    std::filesystem::path diagnostic_directory{".local/diagnostics"};
-    std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
-    bool diagnostics_enabled{};
-    std::uint32_t supersample_factor{1};
-    runtime::GuestCpuConfig cpu_config;
-    bool default_mcp{};
-    bool mcp_manual_step{};
-    bool preflight{};
-    // Diagnostic gap survey (dex_activity only): substitutes recorded neutral
-    // stubs for unresolved platform surfaces so one run harvests the whole
-    // work queue. Never a compatibility result.
-    std::optional<std::filesystem::path> survey_gaps_output;
-    // Saves persist by default (ADR-0020); automation opts out so golden
-    // frames stay reproducible.
-    std::optional<std::filesystem::path> sandbox_directory;
-    std::optional<std::string> installation_id;
-    bool ephemeral_sandbox{};
-    std::optional<std::filesystem::path> input_config_path;
-    for (int index = 3; index < argc; ++index) {
-        const std::string_view option{argv[index]};
-        if (option == "--profiles-dir" && index + 1 < argc) {
-            profiles_directory = std::filesystem::path{argv[++index]};
-        } else if (option == "--external-dir" && index + 1 < argc) {
-            if (external_directory.has_value()) {
-                throw std::invalid_argument(
-                    "run-apk accepts --external-dir only once");
-            }
-            external_directory = std::filesystem::path{argv[++index]};
-            if (external_directory->empty()) {
-                throw std::invalid_argument(
-                    "--external-dir requires a non-empty host directory");
-            }
-        } else if (option == "--external-guest-dir" && index + 1 < argc) {
-            if (external_guest_directory.has_value()) {
-                throw std::invalid_argument(
-                    "run-apk accepts --external-guest-dir only once");
-            }
-            external_guest_directory = argv[++index];
-            if (external_guest_directory->empty()) {
-                throw std::invalid_argument(
-                    "--external-guest-dir requires a non-empty guest path");
-            }
-        } else if (option == "--obb" && index + 1 < argc) {
-            if (obb_path.has_value()) {
-                throw std::invalid_argument("run-apk accepts --obb only once");
-            }
-            obb_path = std::filesystem::path{argv[++index]};
-            if (obb_path->empty()) {
-                throw std::invalid_argument("--obb requires a non-empty archive path");
-            }
-        } else if (option == "--exit-after-frames" && index + 1 < argc) {
-            exit_after_frames = ParsePositive(argv[++index], option);
-        } else if (option == "--cpu-limit-parallelism") {
-            cpu_config.execution.limit_parallelism = true;
-        } else if (option == "--cpu-max-mticks-per-second" && index + 1 < argc) {
-            const auto value = ParsePositive(argv[++index], option);
-            if (value > 10000U) throw std::invalid_argument("--cpu-max-mticks-per-second requires 1..10000");
-            cpu_config.execution.max_mticks_per_second = static_cast<std::uint32_t>(value);
-        } else if ((option == "--cpu-cores" || option == "--cpu-frequency-mhz") && index + 1 < argc) {
-            const auto value = ParsePositive(argv[++index], option);
-            const auto maximum = option == "--cpu-cores" ? 32U : 10000U;
-            if (value > maximum)
-                throw std::invalid_argument(std::string(option) + " exceeds " + std::to_string(maximum));
-            if (option == "--cpu-cores") cpu_config.cores = static_cast<std::uint32_t>(value);
-            else cpu_config.frequency_mhz = static_cast<std::uint32_t>(value);
-        } else if (option == "--supersample" && index + 1 < argc) {
-            supersample_factor = ParseSupersampleFactor(argv[++index]);
-        } else if (option == "--mcp-port" && index + 1 < argc) {
-            if (mcp_port.has_value()) {
-                throw std::invalid_argument("run-apk accepts --mcp-port only once");
-            }
-            mcp_port = ParseMcpPort(argv[++index]);
-        } else if (option == "--key-editor-port" && index + 1 < argc) {
-            if (key_editor_port.has_value()) {
-                throw std::invalid_argument("run-apk accepts --key-editor-port only once");
-            }
-            key_editor_port = ParseMcpPort(argv[++index], "--key-editor-port");
-        } else if (option == "--mcp") {
-            if (default_mcp) {
-                throw std::invalid_argument("run-apk accepts --mcp only once");
-            }
-            default_mcp = true;
-        } else if (option == "--mcp-manual-step") {
-            if (mcp_manual_step) {
-                throw std::invalid_argument(
-                    "run-apk accepts --mcp-manual-step only once");
-            }
-            mcp_manual_step = true;
-        } else if (option == "--diag") {
-            diagnostics_enabled = true;
-        } else if (option == "--diag-dir" && index + 1 < argc) {
-            diagnostic_directory = std::filesystem::path{argv[++index]};
-            if (diagnostic_directory.empty()) {
-                throw std::invalid_argument(
-                    "--diag-dir requires a non-empty directory");
-            }
-            diagnostics_enabled = true;
-        } else if (option == "--diag-on-teardown-timeout" &&
-                   index + 1 < argc) {
-            const auto seconds = ParsePositive(argv[++index], option);
-            if (seconds > 86'400U) {
-                throw std::invalid_argument(
-                    "--diag-on-teardown-timeout must not exceed 86400 seconds");
-            }
-            diagnostic_teardown_timeout = std::chrono::duration_cast<
-                std::chrono::milliseconds>(std::chrono::seconds(seconds));
-            diagnostics_enabled = true;
-        } else if (option.starts_with("--diag-on-teardown-timeout=")) {
-            const auto seconds = ParsePositive(
-                option.substr(std::string_view{"--diag-on-teardown-timeout="}.size()),
-                "--diag-on-teardown-timeout");
-            if (seconds > 86'400U) {
-                throw std::invalid_argument(
-                    "--diag-on-teardown-timeout must not exceed 86400 seconds");
-            }
-            diagnostic_teardown_timeout = std::chrono::duration_cast<
-                std::chrono::milliseconds>(std::chrono::seconds(seconds));
-            diagnostics_enabled = true;
-        } else if (option == "--dexvm-interpreter" && index + 1 < argc) {
-            if (dexvm_interpreter.has_value()) {
-                throw std::invalid_argument(
-                    "run-apk accepts --dexvm-interpreter only once");
-            }
-            dexvm_interpreter = ParseDexVmInterpreter(argv[++index]);
-        } else if (option == "--sandbox-dir" && index + 1 < argc) {
-            const std::string_view value{argv[++index]};
-            if (value.empty()) {
-                throw std::invalid_argument(
-                    "--sandbox-dir requires a non-empty host directory");
-            }
-            sandbox_directory = std::filesystem::path{value};
-        } else if (option == "--ephemeral-sandbox") {
-            ephemeral_sandbox = true;
-        } else if (option == "--installation-id" && index + 1 < argc) {
-            installation_id = argv[++index];
-        } else if (option == "--preflight") {
-            preflight = true;
-        } else if (option == "--input-config" && index + 1 < argc) {
-            if (input_config_path.has_value()) {
-                throw std::invalid_argument("run-apk accepts --input-config only once");
-            }
-            input_config_path = std::filesystem::path{argv[++index]};
-            if (input_config_path->empty()) throw std::invalid_argument("--input-config requires a file path");
-        } else if (option == "--survey-gaps" && index + 1 < argc) {
-            if (survey_gaps_output.has_value()) {
-                throw std::invalid_argument(
-                    "run-apk accepts --survey-gaps only once");
-            }
-            survey_gaps_output = std::filesystem::path{argv[++index]};
-        } else {
-            throw std::invalid_argument("unknown or incomplete run-apk option: " +
-                                        std::string(option));
-        }
-    }
-    if (ephemeral_sandbox && sandbox_directory.has_value()) {
-        throw std::invalid_argument(
-            "--ephemeral-sandbox and --sandbox-dir cannot be combined");
-    }
-    if (external_guest_directory.has_value() && !external_directory.has_value()) {
-        throw std::invalid_argument(
-            "--external-guest-dir requires --external-dir");
-    }
-    if (default_mcp && mcp_port.has_value()) {
-        throw std::invalid_argument("--mcp and --mcp-port cannot be combined");
-    }
-    if (preflight && default_mcp) {
-        throw std::invalid_argument("--mcp cannot be combined with --preflight");
-    }
-    if (preflight && mcp_port.has_value()) {
-        throw std::invalid_argument("--mcp-port cannot be combined with --preflight");
-    }
-    if (mcp_manual_step && !default_mcp && !mcp_port.has_value()) {
-        throw std::invalid_argument(
-            "--mcp-manual-step requires --mcp or --mcp-port");
-    }
-    if (mcp_manual_step && preflight) {
-        throw std::invalid_argument(
-            "--mcp-manual-step cannot be combined with --preflight");
-    }
-    if (key_editor_port.has_value() && (default_mcp || mcp_port.has_value())) {
-        throw std::invalid_argument("--key-editor-port cannot be combined with MCP; the editor shares the MCP port");
-    }
-    if (key_editor_port.has_value() && preflight) {
-        throw std::invalid_argument("--key-editor-port cannot be combined with --preflight");
-    }
-    if (default_mcp) mcp_port = kDefaultMcpPort;
-
+    logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
+                 {{"data_root", PathUtf8(bundled_data.root)}});
     const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(
         ReadBytes(apk_path));
     const auto archive = loader::ParseApkArchive(*apk_bytes);
     const auto quirks =
         session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
     const auto profiles = session::TitleProfileCatalog::LoadDirectory(
-        profiles_directory, quirks);
+        profiles_directory.value_or(bundled_data.profiles_directory), quirks);
     const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
@@ -456,7 +226,7 @@ int RunApkCommand(const int argc, const char* const argv[],
         throw std::runtime_error("Profile requires --obb for its OBB mount");
     }
     if (obb_path.has_value()) {
-        const auto filename = obb_path->filename().string();
+        const auto filename = PathUtf8(obb_path->filename());
         const auto suffix = "." + manifest.package + ".obb";
         const auto prefix_length = filename.starts_with("main.") ? 5U :
                                    filename.starts_with("patch.") ? 6U : 0U;
@@ -575,7 +345,7 @@ int RunApkCommand(const int argc, const char* const argv[],
     if (mcp_port.has_value()) mcp_session = std::make_unique<agent::McpSessionControl>();
 
     auto window = hal::CreateSdlWindowInput();
-    const auto base_title = "OGPlay · " + apk_path.filename().string();
+    const auto base_title = "OGPlay · " + PathUtf8(apk_path.filename());
     window->Open({.title = base_title + " · FPS --",
                   .width = profile.runtime.surface.width,
                   .height = profile.runtime.surface.height,
@@ -826,7 +596,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                  .teardown_timeout = diagnostic_teardown_timeout,
                  .logger = &logger});
             Write("OGPlay: diagnostics ready; control=" +
-                  diagnostic_coordinator->ControlFile().string() + "\n");
+                  PathUtf8(diagnostic_coordinator->ControlFile()) + "\n");
             if (mcp_session) {
                 std::weak_ptr<runtime::debug::DiagCoordinator> weak =
                     diagnostic_coordinator;
@@ -836,7 +606,7 @@ int RunApkCommand(const int argc, const char* const argv[],
                     const auto files = coordinator->RequestSnapshotAndWait(
                         "mcp", std::chrono::seconds(5));
                     return files
-                        ? std::optional<std::string>{files->json.string()}
+                        ? std::optional<std::string>{PathUtf8(files->json)}
                         : std::optional<std::string>{};
                 });
             }
@@ -1243,7 +1013,7 @@ int RunApkCommand(const int argc, const char* const argv[],
             const auto hits = app_process->DexVm().Linker().GapSurveyHits();
             std::ofstream report(*survey_gaps_output, std::ios::binary);
             report << runtime::dexvm::RenderGapSurveyJson(
-                hits, apk_path.filename().string());
+                hits, PathUtf8(apk_path.filename()));
             Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) +
                   " entries to " + survey_gaps_output->string() + "\n");
         }

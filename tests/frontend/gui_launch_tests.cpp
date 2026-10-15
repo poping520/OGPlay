@@ -146,7 +146,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
     REQUIRE(plan.argv.size() == 19);
-    CHECK(plan.argv[1] == "run-apk");
+    CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
     CHECK(plan.argv[7] == "--cpu-cores");

@@ -1,7 +1,7 @@
 // Guest filesystem assembly for run-apk (ADR-0020): the Profile's read-only
 // base layers first, then the per-title save sandbox on top.
 
-#include "run_apk_vfs.h"
+#include "run_game_vfs.h"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +20,11 @@
 
 namespace ogplay::frontend {
 namespace {
+
+std::string PathUtf8(const std::filesystem::path& path) {
+    const auto text = path.generic_u8string();
+    return {reinterpret_cast<const char*>(text.data()), text.size()};
+}
 
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
@@ -124,7 +129,7 @@ private:
     if (error) {
         throw std::runtime_error(
             "cannot inspect save sandbox installation ids at " +
-            root.string());
+            PathUtf8(root));
     }
     if (matches.empty()) return std::string(package);
     if (matches.size() == 1U) return matches.front();
@@ -161,7 +166,7 @@ private:
 
 std::string SandboxSession::Describe() const {
     if (!store) return "ephemeral";
-    return root.string() + " used=" + std::to_string(store->UsedBytes()) +
+    return PathUtf8(root) + " used=" + std::to_string(store->UsedBytes()) +
            "/" + std::to_string(store->QuotaBytes());
 }
 
@@ -345,7 +350,7 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
     std::filesystem::create_directories(session.root, root_error);
     if (root_error) {
         throw std::runtime_error(
-            "cannot create the save sandbox root at " + session.root.string());
+            "cannot create the save sandbox root at " + PathUtf8(session.root));
     }
     try {
         if (options.installation_id.has_value() &&
@@ -367,7 +372,7 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
         // The repair action has to be in the message: the user owns this
         // directory and may well have edited it.
         throw std::runtime_error(
-            "cannot open the save sandbox at " + session.root.string() + ": " +
+            "cannot open the save sandbox at " + PathUtf8(session.root) + ": " +
             error.what() +
             " (back up and clear that directory, or pass "
             "--ephemeral-sandbox)");
@@ -406,7 +411,7 @@ void AttachSandbox(const SandboxSession& sandbox,
     }
     logger.Write(core::LogLevel::info, "frontend.run_apk",
                  "save sandbox attached", {},
-                 {{"root", sandbox.root.string()},
+                 {{"root", PathUtf8(sandbox.root)},
                   {"package", sandbox.store->Package()},
                   {"used_bytes", sandbox.store->UsedBytes()},
                   {"quota_bytes", sandbox.store->QuotaBytes()}},

@@ -1,0 +1,2 @@
+// First icon resource is also used by SDL windows and Windows Explorer.
+OGPLAY_ICON ICON "@CMAKE_CURRENT_SOURCE_DIR@/assets/icons/ogplay.ico"

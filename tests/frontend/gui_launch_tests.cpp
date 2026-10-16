@@ -327,7 +327,7 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     SetSetting(config, "mcp_enabled", true);
     SetSetting(config, "mcp_port", std::uint32_t{12345});
     const auto with_mcp = BuildLaunchPlan(cli, tree.path, entry, config);
-    CHECK(with_mcp.key_editor_port == std::optional<std::uint16_t>{12345});
+    CHECK(with_mcp.key_editor_port == std::optional<std::uint16_t>{std::uint16_t{12345}});
     const auto preflight = BuildLaunchPlan(cli, tree.path, entry, config, LaunchMode::preflight);
     CHECK_FALSE(preflight.key_editor_port);
     CHECK(preflight.control_token.empty());

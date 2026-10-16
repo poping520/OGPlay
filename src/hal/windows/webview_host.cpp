@@ -30,6 +30,19 @@ void CheckWeb(webview_error_t result) {
     if (result != WEBVIEW_ERROR_OK) throw std::runtime_error("WebView operation failed: " + std::to_string(result));
 }
 
+void SetApplicationIcon(webview_t view) {
+    const auto window = static_cast<HWND>(webview_get_native_handle(view, WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
+    const auto module = GetModuleHandleW(nullptr);
+    // LR_SHARED icons belong to the module and remain valid for every WebView window.
+    const auto large_icon = static_cast<HICON>(LoadImageW(module, L"OGPLAY_ICON", IMAGE_ICON,
+        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
+    const auto small_icon = static_cast<HICON>(LoadImageW(module, L"OGPLAY_ICON", IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
+    if (!window || !large_icon || !small_icon) throw std::runtime_error("Cannot load OGPlay application icon");
+    SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
+    SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+}
+
 class NativeWebView final : public WebViewHost {
 public:
     NativeWebView(WebViewHostOptions options, WebViewHostCallbacks callbacks, app::Logger& logger)
@@ -50,6 +63,7 @@ public:
             throw std::runtime_error("GUI Web UI is missing; build webui and stage data/webui/gui");
         view_ = webview_create(0, nullptr);
         if (!view_) throw std::runtime_error("Cannot create WebView2; install Microsoft Edge WebView2 Runtime");
+        SetApplicationIcon(view_);
         CheckWeb(webview_set_title(view_, "OGPlay"));
         CheckWeb(webview_set_size(view_, 960, 640, WEBVIEW_HINT_MIN));
         CheckWeb(webview_set_size(view_, 1280, 800, WEBVIEW_HINT_NONE));
@@ -217,6 +231,7 @@ private:
         }
         DashboardWindow child(webview_create(0, nullptr));
         if (!child) throw std::runtime_error("Cannot create runtime WebView2 window");
+        SetApplicationIcon(child.get());
         CheckWeb(webview_set_title(child.get(), title.c_str()));
         CheckWeb(webview_set_size(child.get(), 960, 640, WEBVIEW_HINT_MIN));
         CheckWeb(webview_set_size(child.get(), 1280, 800, WEBVIEW_HINT_NONE));

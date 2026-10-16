@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -350,7 +351,7 @@ TEST_CASE("GUI Dashboard RPC only opens tracked ready instances") {
     Fixture fixture;
     const auto open = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"dashboard.open","params":{"installation_id":"game"}})")); };
     CHECK(open().Root().Member("error").has_value());
-    fixture.dashboards.push_back({"game", 123, 15971, "starting", "waiting", "disabled", "starting"});
+    fixture.dashboards.push_back({"game", 123, static_cast<std::uint16_t>(15971), "starting", "waiting", "disabled", "starting"});
     CHECK(open().Root().Member("error").has_value());
     fixture.dashboards[0].status = "ready";
     CHECK(open().Root().Member("result").has_value());

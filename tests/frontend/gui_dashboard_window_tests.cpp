@@ -25,6 +25,21 @@ struct DashboardFixture {
     ~DashboardFixture() { std::error_code error; std::filesystem::remove_all(root, error); }
     void Write(const char* file, const char* text) { std::ofstream(root / file) << text; }
 };
+#if defined(_WIN32)
+unsigned CheckApplicationWindowIcons() {
+    unsigned count{};
+    EnumThreadWindows(GetCurrentThreadId(), [](HWND window, LPARAM data) -> BOOL {
+        wchar_t title[256]{};
+        GetWindowTextW(window, title, 256);
+        if (!std::wstring_view(title).starts_with(L"OGPlay")) return TRUE;
+        ++*reinterpret_cast<unsigned*>(data);
+        CHECK(SendMessageW(window, WM_GETICON, ICON_BIG, 0) != 0);
+        CHECK(SendMessageW(window, WM_GETICON, ICON_SMALL, 0) != 0);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&count));
+    return count;
+}
+#endif
 }
 TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doctest::skip()) {
     using namespace ogplay;
@@ -49,9 +64,19 @@ TEST_CASE("GUI Dashboard windows load without launcher bridge and reopen" * doct
         [](std::string_view) { return std::string("{}"); },
         [&] {
             if (app::MonotonicClock::NowNs() > deadline) { host->RecordSmokeResponse(); return; }
-            if (stage == 0) { ++stage; host->OpenDashboard("fixture", server->Port()); host->OpenDashboard("fixture", server->Port()); }
+            if (stage == 0) {
+                ++stage; host->OpenDashboard("fixture", server->Port()); host->OpenDashboard("fixture", server->Port());
+#if defined(_WIN32)
+                CHECK(CheckApplicationWindowIcons() == 2);
+#endif
+            }
             else if (stage == 1 && loads.load() == 1) { ++stage; host->CloseDashboard("fixture"); }
-            else if (stage == 2) { ++stage; host->OpenDashboard("fixture", server->Port()); }
+            else if (stage == 2) {
+                ++stage; host->OpenDashboard("fixture", server->Port());
+#if defined(_WIN32)
+                CHECK(CheckApplicationWindowIcons() == 2);
+#endif
+            }
             else if (stage == 3 && loads.load() == 2) { ++stage; host->CloseDashboard("fixture"); host->RecordSmokeResponse(); }
         }}, logger);
     CHECK(host->Run() == 0);

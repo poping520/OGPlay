@@ -18,6 +18,7 @@
   文件/目录选择使用独立 STA 线程的 IFileOpenDialog，父窗口关联当前宿主；取消返回空，
   HRESULT 失败传播，避免在 WebView 消息回调中运行模态消息循环。
   `Minimize` 只最小化当前宿主窗口，不改变子进程生命周期。
+  主窗口与辅助窗口从当前 EXE 的 `OGPLAY_ICON` 资源设置大小图标；资源缺失明确失败，共享图标随模块存活。
   Dashboard 按实例使用独立 WebView，仅允许指定 loopback 端口 `/dash/`、禁止新窗口，
   不绑定启动器 RPC；主窗口关闭会回收全部 Dashboard，创建/销毁期间防止计时器重入。
   上游实现单独编译，WebView2 SDK 通过显式准备脚本提供，不在配置阶段下载。

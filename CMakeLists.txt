@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(OGPlay VERSION 0.1.0 LANGUAGES C CXX)
+if(WIN32)
+    enable_language(RC)
+    configure_file(cmake/ogplay.rc.in generated/ogplay.rc @ONLY)
+    set(_ogplay_icon_resource "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay.rc")
+endif()
 if(APPLE)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 20)
@@ -848,7 +853,7 @@ target_compile_definitions(ogplay_cli_app PRIVATE OGPLAY_VERSION="${PROJECT_VERS
 ogplay_set_project_warnings(ogplay_cli_app)
 
 if(WIN32)
-    add_executable(ogplay-cli src/frontend/cli/main.cpp src/hal/windows/cli_entry.cpp)
+    add_executable(ogplay-cli src/frontend/cli/main.cpp src/hal/windows/cli_entry.cpp ${_ogplay_icon_resource})
 else()
     add_executable(ogplay-cli src/frontend/cli/main.cpp)
 endif()
@@ -858,14 +863,17 @@ ogplay_set_project_warnings(ogplay-cli)
 
 if(OGPLAY_BUILD_GUI)
     if(WIN32)
-        add_executable(ogplay WIN32 src/frontend/desktop/main.cpp src/hal/windows/desktop_entry.cpp)
+        add_executable(ogplay WIN32 src/frontend/desktop/main.cpp src/hal/windows/desktop_entry.cpp ${_ogplay_icon_resource})
     else()
         # OGPlay.app: executable in Contents/MacOS, shared runtime in Contents/Frameworks.
         add_executable(ogplay MACOSX_BUNDLE src/frontend/desktop/main.cpp)
+        target_sources(ogplay PRIVATE assets/icons/ogplay.icns)
+        set_source_files_properties(assets/icons/ogplay.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
         set_target_properties(ogplay PROPERTIES
             OUTPUT_NAME OGPlay
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos/Info.plist.in"
             MACOSX_BUNDLE_BUNDLE_NAME OGPlay
+            MACOSX_BUNDLE_ICON_FILE ogplay.icns
             MACOSX_BUNDLE_GUI_IDENTIFIER org.ogplay.OGPlay
             MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
@@ -1296,6 +1304,9 @@ if(OGPLAY_BUILD_TESTS)
     endif()
     add_executable(ogplay_desktop_integration_tests tests/test_main.cpp
         tests/frontend/mcp_http_server_tests.cpp tests/frontend/gui_dashboard_window_tests.cpp)
+    if(WIN32)
+        target_sources(ogplay_desktop_integration_tests PRIVATE ${_ogplay_icon_resource})
+    endif()
     target_link_libraries(ogplay_desktop_integration_tests PRIVATE OGPlay::Frontend ogplay_desktop_app ogplay_desktop_webview doctest::doctest)
     if(APPLE AND OGPLAY_BUILD_GUI)
         target_sources(ogplay_desktop_integration_tests PRIVATE tests/frontend/gui_window_test_support.mm)
@@ -1308,6 +1319,7 @@ if(OGPLAY_BUILD_TESTS)
         OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     ogplay_set_project_warnings(ogplay_desktop_integration_tests)
     if(MSVC)
+        target_compile_options(ogplay_desktop_integration_tests PRIVATE /wd5285)
         target_link_libraries(ogplay_desktop_integration_tests PRIVATE ws2_32)
     else()
         target_compile_options(ogplay_desktop_integration_tests PRIVATE -Wno-missing-field-initializers)
@@ -1320,6 +1332,9 @@ if(OGPLAY_BUILD_TESTS)
     target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogplay_desktop_app doctest::doctest)
     target_include_directories(ogplay_file_lock_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     ogplay_set_project_warnings(ogplay_file_lock_tests)
+    if(MSVC)
+        target_compile_options(ogplay_file_lock_tests PRIVATE /wd5285)
+    endif()
     add_executable(ogplay_app_tests tests/test_main.cpp
         tests/frontend/game_run_args_tests.cpp
         tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
@@ -1332,7 +1347,9 @@ if(OGPLAY_BUILD_TESTS)
     target_compile_definitions(ogplay_app_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
         OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     ogplay_set_project_warnings(ogplay_app_tests)
-    if(NOT MSVC)
+    if(MSVC)
+        target_compile_options(ogplay_app_tests PRIVATE /wd5285)
+    else()
         target_compile_options(ogplay_app_tests PRIVATE -Wno-missing-field-initializers)
     endif()
     add_dependencies(ogplay_app_tests ogplay_stage_data)

@@ -61,6 +61,43 @@ public:
         }
         return OpenEntry("assets/" + std::string(name));
     }
+    std::vector<AndroidAssetDirectoryEntry> ListDirectory(std::string_view name) override {
+        const auto context = context_.lock();
+        if (!context) throw std::runtime_error("APK asset source is retired");
+        // An invalid/nonexistent directory is an empty iterator, never a host path.
+        if (!name.empty()) {
+            if (name.front() == '/' || name.back() == '/' || name.find('\\') != std::string_view::npos) return {};
+            for (std::size_t cursor = 0; cursor < name.size();) {
+                const auto end = name.find('/', cursor);
+                const auto part = name.substr(cursor, end == std::string_view::npos ? name.size() - cursor : end - cursor);
+                if (part.empty() || part == "." || part == "..") return {};
+                if (end == std::string_view::npos) break;
+                cursor = end + 1;
+            }
+        }
+        const auto prefix = "assets/" + std::string(name) + (name.empty() ? "" : "/");
+        std::map<std::string, bool, std::less<>> entries;
+        std::uint64_t name_bytes{};
+        for (const auto& entry : context->archive.entries) {
+            if (!entry.name.starts_with(prefix)) continue;
+            const auto suffix = std::string_view(entry.name).substr(prefix.size());
+            if (suffix.empty()) continue;
+            const auto slash = suffix.find('/');
+            const auto base = suffix.substr(0, slash);
+            if (base.empty()) continue;
+            const bool regular = slash == std::string_view::npos;
+            if (!entries.contains(base)) {
+                if (base.size() >= 4096 || entries.size() >= 4096 || name_bytes + base.size() > 1024U * 1024U)
+                    throw std::length_error("asset directory listing budget exhausted");
+                name_bytes += base.size();
+            }
+            const auto [it, inserted] = entries.emplace(base, regular);
+            if (!inserted && !regular) it->second = false;
+        }
+        std::vector<AndroidAssetDirectoryEntry> result;
+        for (const auto& [base, regular] : entries) result.push_back({base, regular});
+        return result;
+    }
     std::shared_ptr<const AndroidAssetSource> OpenEntry(std::string_view name) {
         const auto context = context_.lock();
         if (!context) throw std::runtime_error("APK asset source is retired");

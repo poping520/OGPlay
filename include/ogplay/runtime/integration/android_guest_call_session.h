@@ -260,6 +260,11 @@ public:
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
     void SetBitmapHooks(AndroidBitmapHooks hooks);
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
+    void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void RetireSurfaceWindow(memory::GuestAddress identity);
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
     [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,

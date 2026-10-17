@@ -27,29 +27,82 @@ std::filesystem::path Utf8Path(std::string_view text) {
         reinterpret_cast<const char8_t*>(text.data()), text.size()));
 }
 
-int Usage(FILE* stream = stderr, int code = 2) {
-    Write(stream, "usage: ogplay-cli --version | capabilities [path] | agent <method> | agent-stdio\n"
-                  "       ogplay-cli library [--library-root <dir>] <command>\n"
-                  "         list | inspect <apk>\n"
-                  "         import <apk> [--external-dir <dir>] [--new-instance]\n"
-                  "         remove <installation-id> --yes\n"
-                  "         settings get <installation-id>\n"
-                  "         settings set <installation-id> <key>=<value>... [--unset <key>]...\n"
-                  "         run <installation-id> [--mode normal|preflight|diagnostic]\n"
-                  "       ogplay-cli diag snapshot --pid <pid> [--diag-dir <dir>]\n"
-                  "       ogplay-cli run-apk <apk> [--profiles-dir <dir>] "
-                  "[--external-dir <host-dir> [--external-guest-dir </sdcard/...>]] "
-                  "[--obb <archive>] "
-                  "[--preflight] [--supersample <1..4>] "
-                  "[--cpu-cores <1..32>] [--cpu-frequency-mhz <1..10000>] "
-                  "[--cpu-limit-parallelism] [--cpu-max-mticks-per-second <1..10000>] "
-                  "[--exit-after-frames <count>] [--mcp | --mcp-port <1..65535>] "
-                  "[--mcp-manual-step] [--key-editor-port <1..65535>] "
-                  "[--diag] [--diag-dir <dir>] "
-                  "[--diag-on-teardown-timeout <seconds>] "
-                  "[--dexvm-interpreter <switch|threaded>] [--input-config <file>] "
-                  "[--sandbox-dir <host-dir> --installation-id <id> | --ephemeral-sandbox]\n");
-    return code;
+constexpr std::string_view kSynopsis =
+    "usage: ogplay-cli <command> [arguments]\n"
+    "\n"
+    "Commands:\n"
+    "  run-apk <apk> [options]       Run an APK directly\n"
+    "  library [--library-root <dir>] <subcommand>\n"
+    "                                Manage the game library\n"
+    "  diag snapshot --pid <pid> [--diag-dir <dir>]\n"
+    "                                Request a snapshot from a running game\n"
+    "  capabilities [path]           Print the capability ledger as JSON\n"
+    "  agent <method>                Send one agent request, print the reply\n"
+    "  agent-stdio                   Serve JSON-RPC over stdin/stdout\n"
+    "  --version                     Print the version\n"
+    "  -h, --help                    Show the full help\n";
+
+constexpr std::string_view kDetails =
+    "\n"
+    "Library subcommands:\n"
+    "  list                          List installations\n"
+    "  inspect <apk>                 Inspect an APK without importing it\n"
+    "  import <apk> [--external-dir <dir>] [--new-instance]\n"
+    "                                Import an APK; --new-instance adds a copy\n"
+    "  remove <installation-id> --yes\n"
+    "                                Remove an installation; saves are kept\n"
+    "  settings get <installation-id>\n"
+    "  settings set <installation-id> <key>=<value>... [--unset <key>]...\n"
+    "  run <installation-id> [--mode normal|preflight|diagnostic]\n"
+    "\n"
+    "run-apk options:\n"
+    "  Data\n"
+    "    --profiles-dir <dir>        Profile directory\n"
+    "    --external-dir <host-dir>   Host directory exposed as external storage\n"
+    "    --external-guest-dir </sdcard/...>\n"
+    "                                Guest mount point; needs --external-dir\n"
+    "    --obb <archive>             OBB expansion archive\n"
+    "    --input-config <file>       Control config (input.toml)\n"
+    "  Sandbox\n"
+    "    --sandbox-dir <host-dir>    Sandbox root directory\n"
+    "    --installation-id <id>      Installation instance to run\n"
+    "    --ephemeral-sandbox         Throw-away sandbox; excludes --sandbox-dir\n"
+    "  Execution\n"
+    "    --preflight                 Check APK and dependencies, then exit\n"
+    "    --exit-after-frames <count> Exit after <count> frames\n"
+    "    --supersample <1..4>        Render scale factor (default 1)\n"
+    "    --dexvm-interpreter <switch|threaded>\n"
+    "                                DexVM interpreter override\n"
+    "  Guest CPU\n"
+    "    --cpu-cores <1..32>         Core count (default 1)\n"
+    "    --cpu-frequency-mhz <1..10000>\n"
+    "                                Core frequency (default 1000)\n"
+    "    --cpu-limit-parallelism     Run at most --cpu-cores threads at once\n"
+    "    --cpu-max-mticks-per-second <1..10000>\n"
+    "                                Cap total ticks per second, in millions\n"
+    "  Automation (not with --preflight)\n"
+    "    --mcp                       Serve MCP on the default port 15971\n"
+    "    --mcp-port <1..65535>       Serve MCP on the given port\n"
+    "    --mcp-manual-step           Step frames over MCP; needs an MCP option\n"
+    "    --key-editor-port <1..65535>\n"
+    "                                Serve the key editor; excludes MCP\n"
+    "  Diagnostics\n"
+    "    --diag                      Enable diagnostics\n"
+    "    --diag-dir <dir>            Output directory; implies --diag\n"
+    "                                (default .local/diagnostics)\n"
+    "    --diag-on-teardown-timeout <seconds>\n"
+    "                                Snapshot when teardown stalls; implies --diag\n";
+
+int Help() {
+    Write(stdout, kSynopsis);
+    Write(stdout, kDetails);
+    return 0;
+}
+
+int Usage() {
+    Write(stderr, kSynopsis);
+    Write(stderr, "\nRun 'ogplay-cli --help' for subcommands and run-apk options.\n");
+    return 2;
 }
 
 }  // namespace
@@ -59,7 +112,8 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
         Write(stdout, "OGPlay " OGPLAY_VERSION "\n");
         return 0;
     }
-    if (argc == 2 && std::string_view(argv[1]) == "--help") return Usage(stdout, 0);
+    if (argc == 2 && (std::string_view(argv[1]) == "--help" ||
+                      std::string_view(argv[1]) == "-h")) return Help();
     if (argc < 2) return Usage();
 
     try {

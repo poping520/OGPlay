@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ogplay/core/logger.h"
+#include "ogplay/core/capability_ledger.h"
 #include "ogplay/cpu/interpreter.h"
 #include "ogplay/memory/bus.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
@@ -86,6 +87,7 @@ public:
     ogplay::memory::CheckedMemoryBus bus;
     ogplay::cpu::InterpreterCpu cpu;
     ogplay::core::Logger logger;
+    ogplay::core::CapabilityLedger ledger;
     std::unordered_map<std::string, std::vector<std::byte>> guest_files;
     ogplay::runtime::AndroidBoundaryHle boundary;
     const ogplay::memory::GuestAddress stack{0x6e100000U};

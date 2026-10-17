@@ -99,7 +99,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 | PendingIntent/AlarmManager | 当前 APK service/broadcast 令牌，创建不解析/启动目标；原 Intent 复制/filterEquals/replaceExtras 快照，extras 不参与身份，种类/包/requestCode/ONE_SHOT/fill-in flags 参与，NO_CREATE/CANCEL_CURRENT/UPDATE_CURRENT 控制查找，CANCEL_CURRENT\|NO_CREATE 返回旧已取消令牌。仅普通 Intent/BootDex Uri；selector/content MIME provider/未知 flags/Parcel/克隆失败。VM 锁串行 registry、非永久根，live wrapper trace Intent、GC 删除记录、包装同对象；闹钟条目为 session roots。alarm 单例，cancel(null/无匹配) 正常，移除闹钟不取消令牌；令牌 cancel 后不匹配。退出停止创建/清理；注册/调度/send/started service UOE |
 | Connectivity/Wifi | core policy/transport 默认离线，仅注入事实，无 host 网络/DNS/代理/证书探测。默认断开的逻辑 WiFi，可声明类型缺席；独立原版 NetworkInfo=DISCONNECTED/不可用、活动网络 null/Wifi 禁用。查询需 ACCESS_NETWORK_STATE，缺事实/online policy UOE，不支持类型按 API19 null；值/枚举/Parcel/范围算法归 Java，native 校验并调用原构造/setter；无在线 provider/事件/无线控制 |
 | WifiLock/MulticastLock | Java 客户端/native 租约；校验 WAKE_LOCK、mode 1/2/3 或 CHANGE_WIFI_MULTICAST_STATE（获取/释放均受检），每 manager 合计≤50，owner/GC/退出释放；不改变连接/网卡/组播，无 WorkSource/无线服务（ADR-0092/0093） |
-| Sensor/Telephony/Location/Keyguard | Sensor 算法/缓存/Legacy 位掩码/监听映射归 Java，Context 执行原 LocalSensorManager 构造；native 空目录、注册 false、无登记注销，Legacy 旋转为 managed viewport ROTATION_0，无 WMS/C++ 副本/伪回调。电话按 API 允许缺席，getSubscriberId 公开可覆盖、无订阅 null，Java/JNI 同源；listen(null) 沿 API19 捕获 NPE 返回。location 仅值/listener/facade，无 provider/历史，更新注册/移除失败。Keyguard 不缓存对象，三查询读进程 provider，未注入为桌面无锁屏；无 Sensor/SystemUI/WMS 事件源不伪造回调 |
+| Sensor/Telephony/Location/Keyguard | Sensor 算法/缓存/Legacy 位掩码/监听映射归 Java，Context 执行原 LocalSensorManager 构造；native 读取与 NDK 共用的注入设备目录（当前仅空目录）、注册 false、无登记注销，Legacy 旋转为 managed viewport ROTATION_0，无 WMS/C++ 副本/伪回调。电话按 API 允许缺席，getSubscriberId 公开可覆盖、无订阅 null，Java/JNI 同源；listen(null) 沿 API19 捕获 NPE 返回。location 仅值/listener/facade，无 provider/历史，更新注册/移除失败。Keyguard 不缓存对象，三查询读进程 provider，未注入为桌面无锁屏；无 Sensor/SystemUI/WMS 事件源不伪造回调 |
 
 ## 资源、图像与存储
 
@@ -175,6 +175,9 @@ getChildAt/indexOfChild；无 onViewAdded/onViewRemoved、addViewInLayout/detach
 只消费已遍历子树的 pending，回调中新挂载子树等待后续遍历。
 
 SurfaceView 构造时登记稳定 holder，getHolder 只返回对象、不激活 Surface。
+NDK fromSurface 在 VM 锁内从 JNI Surface 映射有效 holder（含 surfaceDestroyed 回调期间），交同一
+boundary window registry acquire；changed/销毁/GC 经显式通知同步几何/退役，销毁通知在
+surfaceDestroyed 回调之后，销毁后不重建旧身份。
 SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，detached 不提前收事件/
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
 像素尺寸、destroyed 保留末值，旧 holder 不随新代更新；不从 View bounds 推导独立 buffer。

@@ -107,7 +107,7 @@ public:
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
                        }},
-          android_module_(call_services_, android_services_, options.loopers),
+          android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger),
           bitmap_module_(call_services_),
           egl_module_(call_services_, egl_context_),
           gles1_module_(call_services_, graphics_context_, gles1_state_,
@@ -206,6 +206,11 @@ public:
         SealBindings();
     }
     void SetBitmapHooks(AndroidBitmapHooks hooks) { bitmap_module_.SetHooks(hooks); }
+    void SetSurfaceHooks(AndroidSurfaceHooks hooks) { android_module_.SetSurfaceHooks(hooks); }
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return android_module_.AcquireSurfaceWindow(surface); }
+    void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { android_module_.UpdateSurfaceWindow(surface); }
+    void RetireSurfaceWindow(memory::GuestAddress identity) { android_module_.RetireSurfaceWindow(identity); }
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { android_module_.SetSensorDirectory(std::move(directory)); }
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { android_module_.SetAssetManagerHooks(hooks); }
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return android_module_.RegisterAssetManager(std::move(source)); }
     void UnregisterAssetManager(memory::GuestAddress manager) { android_module_.UnregisterAssetManager(manager); }
@@ -1192,6 +1197,11 @@ void AndroidBoundaryHle::SetNativeActivityInput(memory::GuestAddress activity, b
 
 namespace ogplay::runtime {
 void AndroidBoundaryHle::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
+void AndroidBoundaryHle::SetSurfaceHooks(AndroidSurfaceHooks hooks) { impl_->SetSurfaceHooks(hooks); }
+memory::GuestAddress AndroidBoundaryHle::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return impl_->AcquireSurfaceWindow(surface); }
+void AndroidBoundaryHle::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { impl_->UpdateSurfaceWindow(surface); }
+void AndroidBoundaryHle::RetireSurfaceWindow(memory::GuestAddress identity) { impl_->RetireSurfaceWindow(identity); }
+void AndroidBoundaryHle::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { impl_->SetSensorDirectory(std::move(directory)); }
 void AndroidBoundaryHle::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { impl_->SetAssetManagerHooks(hooks); }
 memory::GuestAddress AndroidBoundaryHle::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return impl_->RegisterAssetManager(std::move(source)); }
 void AndroidBoundaryHle::UnregisterAssetManager(memory::GuestAddress manager) { impl_->UnregisterAssetManager(manager); }

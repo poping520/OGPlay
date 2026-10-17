@@ -80,7 +80,12 @@ public:
                         [this](std::uint64_t tid) {
                             try { return lifecycle_.State(tid).status == GuestThreadStatus::running; }
                             catch (const GuestThreadLifecycleError&) { return false; }
-                        }}}),
+                        },
+                        [this] {
+                            const auto pipe = vfs_.CreatePipe();
+                            return std::array{pipe.read_descriptor, pipe.write_descriptor};
+                        },
+                        [this](std::int32_t fd) { vfs_.Close(fd); }}, .ledger = &ledger_}),
           dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
           threads_([this] {
               auto result = std::make_unique<cpu::DynarmicCpu>(
@@ -207,6 +212,7 @@ public:
         ExecuteGuestLifecycle(finalization, [this](const GuestLifecycleCall& call) {
             Invoke(call.address, {});
         });
+        boundary_.ShutdownLoopers();
         running_ = false;
     }
 
@@ -369,13 +375,15 @@ private:
 
     memory::AddressSpace address_space_;
     memory::CheckedMemoryBus memory_bus_{address_space_};
-    AndroidBoundaryHle boundary_;
+    // Pipe/ledger hooks remain alive through boundary destruction, including
+    // partial construction and a failed guest initialization.
     core::CapabilityLedger ledger_;
+    VirtualFileSystem vfs_;
+    GuestThreadLifecycle lifecycle_;
+    AndroidBoundaryHle boundary_;
     A32SyscallDispatcher dispatcher_;
     hal::RealtimeClock clock_;
     cpu::FutexTable futex_table_;
-    VirtualFileSystem vfs_;
-    GuestThreadLifecycle lifecycle_;
     std::vector<GuestVmaAnnotation> vma_annotations_;
     std::mutex vma_mutex_;
     mutable std::mutex child_failure_mutex_;

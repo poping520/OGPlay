@@ -73,3 +73,88 @@ TEST_CASE("Android link preflight maps and relocates without executing guest") {
                         {19, "", {}})),
                     ogplay::runtime::AndroidLinkPreflightError);
 }
+
+namespace {
+std::vector<std::byte> ImportModule(std::string name, std::vector<std::string> needed,
+    std::vector<std::pair<std::string, std::uint8_t>> imports,
+    std::vector<std::string> exports = {}) {
+    auto bytes = MinimalModule();
+    bytes.resize(0x1000);
+    Put32(bytes, 68, 0x1000); Put32(bytes, 72, 0x1000);
+    std::string strings(1, '\0');
+    const auto text = [&](const std::string& value) {
+        const auto offset = static_cast<std::uint32_t>(strings.size());
+        strings += value; strings += '\0'; return offset;
+    };
+    std::size_t dynamic = 0x100;
+    const auto tag = [&](std::int32_t kind, std::uint32_t value) {
+        Put32(bytes, dynamic, static_cast<std::uint32_t>(kind));
+        Put32(bytes, dynamic + 4, value); dynamic += 8;
+    };
+    tag(ogplay::loader::kElfDynamicStringTable, 0x10400);
+    const auto string_size = dynamic + 4;
+    tag(ogplay::loader::kElfDynamicStringTableSize, 0);
+    tag(ogplay::loader::kElfDynamicSoname, text(name));
+    tag(ogplay::loader::kElfDynamicHash, 0x10900);
+    tag(ogplay::loader::kElfDynamicSymbolTable, 0x10600);
+    tag(ogplay::loader::kElfDynamicSymbolEntrySize, 16);
+    for (const auto& dependency : needed) tag(ogplay::loader::kElfDynamicNeeded, text(dependency));
+    tag(0, 0);
+    Put32(bytes, 100, static_cast<std::uint32_t>(dynamic - 0x100));
+    Put32(bytes, 104, static_cast<std::uint32_t>(dynamic - 0x100));
+    const auto count = imports.size() + exports.size() + 1;
+    Put32(bytes, 0x900, 1); Put32(bytes, 0x904, static_cast<std::uint32_t>(count));
+    std::size_t index = 1;
+    for (const auto& [symbol, binding] : imports) {
+        const auto base = 0x600 + index++ * 16;
+        Put32(bytes, base, text(symbol)); bytes[base + 12] = static_cast<std::byte>(binding << 4U);
+    }
+    for (const auto& symbol : exports) {
+        const auto base = 0x600 + index++ * 16;
+        Put32(bytes, base, text(symbol)); Put32(bytes, base + 4, 0x10f00);
+        bytes[base + 12] = std::byte{0x12}; Put16(bytes, base + 14, 1);
+    }
+    Put32(bytes, string_size, static_cast<std::uint32_t>(strings.size()));
+    for (std::size_t i = 0; i < strings.size(); ++i) bytes[0x400 + i] = static_cast<std::byte>(strings[i]);
+    return bytes;
+}
+ogplay::loader::ApkNativeLibrary AuditLibrary(std::string name, std::vector<std::byte> bytes) {
+    return {"lib/armeabi-v7a/" + name, name, ogplay::loader::AndroidArmAbi::armeabi_v7a,
+        "", std::move(bytes), name, std::nullopt};
+}
+}
+
+TEST_CASE("APS-11 preflight lists all strong imports and separately reports unresolved weak symbols") {
+    using namespace ogplay;
+    const auto module = ImportModule("sample.so", {}, {{"missing_a", 1}, {"missing_b", 1}, {"optional", 2}});
+    loader::ApkNativeLibraryInventory inventory({AuditLibrary("sample.so", module)});
+    const auto report = runtime::AuditAndroidNativeImports(
+        loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a), runtime::SelectBionicProfile(19), {});
+    CHECK(report.strong_missing == 2); CHECK(report.weak_missing == 1);
+    REQUIRE(report.gaps.size() == 3);
+    CHECK(report.gaps[0].library == "sample.so"); CHECK(report.gaps[0].symbol == "missing_a");
+    CHECK_FALSE(report.gaps[0].weak); CHECK(report.gaps[1].symbol == "missing_b"); CHECK(report.gaps[2].weak);
+}
+
+TEST_CASE("APS-11 preflight uses NEEDED scopes SONAME aliases system sources and boundary catalog") {
+    using namespace ogplay;
+    const auto root = ImportModule("sample.so", {"alias.so", "libandroid.so", "libm.so"},
+        {{"provided", 1}, {"ASensorManager_getInstance", 1}, {"cos", 1}, {"optional", 2}});
+    const auto dependency = ImportModule("alias.so", {}, {}, {"provided"});
+    const auto system = ImportModule("libm.so", {}, {}, {"cos"});
+    loader::ApkNativeLibraryInventory inventory({AuditLibrary("sample.so", root), AuditLibrary("other.so", dependency)});
+    const runtime::BionicModuleSource source{"libm.so", system};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto report = runtime::AuditAndroidNativeImports(selected, runtime::SelectBionicProfile(19), std::span{&source, 1});
+    CHECK(report.strong_missing == 0); CHECK(report.weak_missing == 1);
+    // An unrelated exported name must not leak into a root's NEEDED lookup scope.
+    loader::ApkNativeLibraryInventory isolated({
+        AuditLibrary("sample.so", ImportModule("sample.so", {}, {{"provided", 1}})),
+        AuditLibrary("other.so", dependency)});
+    const auto missing = runtime::AuditAndroidNativeImports(
+        loader::SelectApkNativeLibraries(isolated, loader::AndroidArmAbi::armeabi_v7a), runtime::SelectBionicProfile(19), {});
+    CHECK(missing.strong_missing == 1);
+    CHECK(missing.gaps[0].symbol == "provided");
+    // Same symbol rules as actual loading; a missing dependency remains a hard error.
+    CHECK_THROWS(static_cast<void>(runtime::AuditAndroidNativeImports(selected, runtime::SelectBionicProfile(19), {})));
+}

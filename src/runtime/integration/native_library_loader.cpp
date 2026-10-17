@@ -276,7 +276,7 @@ public:
                 }
                 for (const auto& needed : dynamic.needed) {
                     if (selected.contains(needed) ||
-                        process_->HasLoadedModule(needed) ||
+                        (process_ && process_->HasLoadedModule(needed)) ||
                         IsBoundary(needed)) {
                         continue;
                     }
@@ -318,7 +318,13 @@ public:
          const loader::ApkSelectedNativeLibraries& libraries,
          const BionicProfile& bionic,
          const std::span<const BionicModuleSource> system_libraries)
-        : process_(&process), inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())), selected_(inventory_, libraries.Abi()), libraries_(&selected_),
+        : NativeLibrarySources(&process, libraries, bionic, system_libraries) {}
+
+    NativeLibrarySources(AndroidGuestProcess* process,
+         const loader::ApkSelectedNativeLibraries& libraries,
+         const BionicProfile& bionic,
+         const std::span<const BionicModuleSource> system_libraries)
+        : process_(process), inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())), selected_(inventory_, libraries.Abi()), libraries_(&selected_),
           boundary_api_(bionic.api) {
         IndexApkSonameAliases();
         system_libraries_.reserve(system_libraries.size());
@@ -459,6 +465,21 @@ private:
     std::map<std::string, const loader::ApkNativeLibrary*, std::less<>> apk_soname_aliases_;
     std::set<std::string, std::less<>> ambiguous_apk_soname_aliases_;
 };
+
+std::vector<BionicOwnedModule> CollectApkNativeLibraryClosure(
+    const loader::ApkSelectedNativeLibraries& libraries,
+    const BionicProfile& bionic, const std::span<const BionicModuleSource> system_libraries,
+    const std::string_view root) {
+    NativeLibrarySources sources(nullptr, libraries, bionic, system_libraries);
+    const auto closure = sources.Closure(sources.ResolvePath(
+        NativeLibraryLoader::SyntheticGuestPath(root)));
+    std::vector<BionicOwnedModule> result;
+    for (const auto& source : closure) {
+        result.push_back({source.name, {source.image.begin(), source.image.end()},
+                          memory::GuestAddress{}});
+    }
+    return result;
+}
 
 class NativeLibraryLoader::Impl final {
 public:

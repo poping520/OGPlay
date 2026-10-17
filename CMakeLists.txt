@@ -344,6 +344,9 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/boundary/modules/android/android_module.cpp
     src/runtime/boundary/modules/android/android_input.cpp
     src/runtime/boundary/modules/android/android_looper.cpp
+    src/runtime/boundary/modules/android/android_surface.cpp
+    src/runtime/boundary/modules/android/android_sensor.cpp
+    src/runtime/boundary/modules/android/android_asset.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_bounds.cpp
     src/runtime/boundary/modules/gles1/gles1_completion.cpp

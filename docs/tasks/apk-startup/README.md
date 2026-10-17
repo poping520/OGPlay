@@ -96,3 +96,4 @@ APS-10.md
 | [APS-8](APS-8.md) | optional Profile v3 + legacy adapter |
 | [APS-9](APS-9.md) | integration gates + design migration closeout |
 | [APS-10](APS-10.md) | native dlopen 按需装载、共享构造器状态及独立 JNI 初始化 |
+| [APS-11](APS-11.md) | libandroid 无传感器、Surface/Asset 边界与 preflight 导入审计 |

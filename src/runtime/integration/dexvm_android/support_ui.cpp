@@ -216,6 +216,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 DetachAndroidMediaSurface(context, key);
                 context.surface_callbacks.erase(key);
                 context.holder_surfaces.erase(key);
+                if (context.retire_native_surface) context.retire_native_surface(dexvm::VmObjectRef(key));
                 context.active_surface_holders.erase(key);
                 context.surface_callback_sizes.erase(key);
                 context.surface_holders.erase(holder);

@@ -19,10 +19,12 @@
 #include "ogplay/runtime/boundary/opensles_callback.h"
 #include "ogplay/runtime/boundary/bitmap_boundary.h"
 #include "ogplay/runtime/boundary/asset_boundary.h"
+#include "ogplay/runtime/boundary/sensor_directory.h"
 #include "ogplay/runtime/common/supervisor_call_progress.h"
 
 namespace ogplay::core {
 class Logger;
+class CapabilityLedger;
 }
 
 namespace ogplay::runtime {
@@ -106,10 +108,23 @@ struct NativeActivityBoundaryResources final {
     std::uint32_t width{}, height{};
 };
 
+struct SurfaceJavaReference final { std::uint32_t token{}; };
+struct AndroidSurfaceWindow final {
+    memory::GuestAddress identity;
+    std::uint32_t width{}, height{};
+};
+struct AndroidSurfaceHooks final {
+    void* owner{};
+    memory::GuestAddress (*from_java)(void*, std::uint64_t, memory::GuestAddress, SurfaceJavaReference){};
+};
+
 struct AndroidLooperHooks final {
     // nullopt: descriptor type is unsupported; bits use ALOOPER_EVENT_*.
     std::function<std::optional<std::uint32_t>(std::int32_t)> poll_events;
     std::function<bool(std::uint64_t)> thread_running;
+    // Both ends stay open while a no-device sensor queue lives: never ready.
+    std::function<std::array<std::int32_t, 2>()> create_pipe{};
+    std::function<void(std::int32_t)> close_fd{};
 };
 
 struct AndroidBoundaryOptions final {
@@ -122,6 +137,7 @@ struct AndroidBoundaryOptions final {
     BionicDynamicLinkHooks dynamic_link{};
     OpenSlesCallbackSink open_sles_callbacks{};
     AndroidLooperHooks loopers{};
+    core::CapabilityLedger* ledger{};
     bool async_present_readback{};
     gles::CompressedTextureFamily compressed_texture_family{gles::CompressedTextureFamily::all};
 };
@@ -144,6 +160,11 @@ public:
 
     void MapThunks();
     void SetBitmapHooks(AndroidBitmapHooks hooks);
+    void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void RetireSurfaceWindow(memory::GuestAddress identity);
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
     // Install before guest calls; clear only after workers stop, retiring assets.
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);

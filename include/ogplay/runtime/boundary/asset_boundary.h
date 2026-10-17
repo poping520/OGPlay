@@ -5,6 +5,8 @@
 #include <memory>
 #include <span>
 #include <string_view>
+#include <string>
+#include <vector>
 #include "ogplay/memory/address.h"
 
 namespace ogplay::runtime {
@@ -26,10 +28,17 @@ public:
     virtual void CloseFileDescriptor(std::int32_t) const = 0;
 };
 
+struct AndroidAssetDirectoryEntry final {
+    std::string name;
+    bool regular_file{};
+};
+inline constexpr std::uint64_t kAndroidAssetBufferLimit = 32U * 1024U * 1024U;
+
 class AndroidAssetManagerSource {
 public:
     virtual ~AndroidAssetManagerSource() = default;
     virtual std::shared_ptr<const AndroidAssetSource> Open(std::string_view) = 0;
+    virtual std::vector<AndroidAssetDirectoryEntry> ListDirectory(std::string_view) = 0;
 };
 
 struct AssetManagerJavaReference final { std::uint32_t token{}; };

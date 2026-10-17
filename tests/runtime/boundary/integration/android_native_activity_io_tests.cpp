@@ -40,6 +40,8 @@
 #include "runtime/boundary/modules/opensles/opensles_abi.h"
 
 #include "android_boundary_fixture.h"
+#include "ogplay/runtime/integration/apk_assets.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 
 using namespace ogplay::test::android_boundary;
 
@@ -67,6 +69,9 @@ public:
 };
 class BoundaryAssetManager final : public ogplay::runtime::AndroidAssetManagerSource {
 public:
+    std::vector<ogplay::runtime::AndroidAssetDirectoryEntry> ListDirectory(std::string_view) override {
+        return {{"folder", false}, {"hello", true}, {"other", true}};
+    }
     std::shared_ptr<BoundaryAssetSource> source = std::make_shared<BoundaryAssetSource>();
     std::shared_ptr<const ogplay::runtime::AndroidAssetSource> Open(std::string_view name) override {
         return name == "hello" ? source : nullptr;
@@ -421,4 +426,150 @@ TEST_CASE("BND46 malformed snapshots fail before publication") {
     input.pointers.resize(17);
     for (std::size_t i = 0; i < input.pointers.size(); ++i) input.pointers[i].id = static_cast<std::int32_t>(i);
     CHECK_THROWS(static_cast<void>(runtime::NormalizeAndroidInput(input)));
+}
+
+TEST_CASE("APS-11 NDK Asset directories cache guest names and retire with their manager") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto manager = f.boundary.RegisterAssetManager(std::make_shared<BoundaryAssetManager>());
+    WriteGuestString(f, f.output, "");
+    const auto directory = f.Call("libandroid.so", "AAssetManager_openDir", {manager.Value(), f.output.Value()});
+    REQUIRE(directory != 0);
+    const memory::GuestAddress name{f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory})};
+    std::array<std::byte, 6> bytes{};
+    f.memory.Read(name, bytes);
+    CHECK(std::string(reinterpret_cast<const char*>(bytes.data()), 5) == "hello");
+    CHECK_THROWS(f.memory.Write(name, bytes));
+    const auto next = f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory});
+    REQUIRE(next != 0);
+    CHECK(f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory}) == 0);
+    CHECK(f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory}) == 0);
+    CHECK_THROWS(f.memory.Read(memory::GuestAddress{next}, bytes));
+    f.Call("libandroid.so", "AAssetDir_close", {directory});
+    CHECK_THROWS(f.Call("libandroid.so", "AAssetDir_close", {directory}));
+    const auto other = f.Call("libandroid.so", "AAssetManager_openDir", {manager.Value(), f.output.Value()});
+    CHECK(other > directory);
+    const memory::GuestAddress cached{f.Call("libandroid.so", "AAssetDir_getNextFileName", {other})};
+    f.boundary.UnregisterAssetManager(manager);
+    CHECK_THROWS(f.Call("libandroid.so", "AAssetDir_getNextFileName", {other}));
+    CHECK_THROWS(f.memory.Read(cached, bytes));
+    const auto manager2 = f.boundary.RegisterAssetManager(std::make_shared<BoundaryAssetManager>());
+    const auto last = f.Call("libandroid.so", "AAssetManager_openDir", {manager2.Value(), f.output.Value()});
+    f.boundary.SetAssetManagerHooks({});
+    CHECK_THROWS(f.Call("libandroid.so", "AAssetDir_getNextFileName", {last}));
+}
+
+TEST_CASE("APS-11 NDK Asset getBuffer is lazy stable readonly bounded and released on close") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    const auto source = std::make_shared<BoundaryAssetManager>();
+    const auto manager = f.boundary.RegisterAssetManager(source);
+    WriteGuestString(f, f.output, "hello");
+    const auto open = [&] { return f.Call("libandroid.so", "AAssetManager_open", {manager.Value(), f.output.Value(), 2}); };
+    const auto asset = open();
+    CHECK(source->source->largest_read == 0);
+    const memory::GuestAddress buffer{f.Call("libandroid.so", "AAsset_getBuffer", {asset})};
+    REQUIRE_FALSE(buffer.IsNull());
+    CHECK(source->source->largest_read == 3);
+    CHECK(f.Call("libandroid.so", "AAsset_getBuffer", {asset}) == buffer.Value());
+    CHECK(f.Call("libandroid.so", "AAsset_getRemainingLength", {asset}) == 3);
+    std::array<std::byte, 3> bytes{};
+    f.memory.Read(buffer, bytes);
+    CHECK(bytes == std::array{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}});
+    CHECK_THROWS(f.memory.Write(buffer, bytes));
+    f.Call("libandroid.so", "AAsset_close", {asset});
+    CHECK_THROWS(f.memory.Read(buffer, bytes));
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_getBuffer", {asset}));
+    source->source->length = runtime::kAndroidAssetBufferLimit + 1;
+    const auto large = open();
+    const auto largest_read = source->source->largest_read;
+    CHECK_THROWS(f.Call("libandroid.so", "AAsset_getBuffer", {large}));
+    CHECK(source->source->largest_read == largest_read);
+    CHECK(std::ranges::any_of(f.ledger.Unimplemented(), [](const auto& hit) { return hit.id == "runtime.asset_manager"; }));
+    source->source->length = 0;
+    const auto empty = open();
+    CHECK(f.Call("libandroid.so", "AAsset_getBuffer", {empty}) != 0);
+    source->source->length = 3;
+    const auto last = open();
+    const memory::GuestAddress last_buffer{f.Call("libandroid.so", "AAsset_getBuffer", {last})};
+    f.boundary.SetAssetManagerHooks({});
+    CHECK_THROWS(f.memory.Read(last_buffer, bytes));
+}
+
+TEST_CASE("APS-11 NDK fromSurface acquires the holder window and respects destroyed generations") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    struct Source { BoundaryFixture* fixture; bool live{true}; } source{&f};
+    f.boundary.SetSurfaceHooks({&source,
+        +[](void* owner, std::uint64_t, memory::GuestAddress env, runtime::SurfaceJavaReference ref) {
+            auto& s = *static_cast<Source*>(owner);
+            if (!s.live || env.Value() != 123 || ref.token != 456) return memory::GuestAddress{};
+            return s.fixture->boundary.AcquireSurfaceWindow({memory::GuestAddress{789}, 4, 3});
+        }});
+    CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 0}) == 0);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 1}) == 0);
+    const auto window = f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 456});
+    REQUIRE(window != 0);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 456}) == window);
+    f.Call("libandroid.so", "ANativeWindow_acquire", {window});
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window}) == 4);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window, 4, 3, 1}) == 0);
+    CHECK(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
+    const auto egl = f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, window, 0});
+    REQUIRE(egl != 0);
+    f.boundary.UpdateSurfaceWindow({memory::GuestAddress{789}, 8, 6});
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window}) == 8);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_getHeight", {window}) == 6);
+    CHECK(f.Call("libandroid.so", "ANativeWindow_setBuffersGeometry", {window, 8, 6, 1}) == 0);
+    source.live = false;
+    f.boundary.RetireSurfaceWindow(memory::GuestAddress{789});
+    CHECK(f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 456}) == 0);
+    CHECK(f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, window, 0}) == 0);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300b);
+    // Three acquired references survive holder retirement; none is implicit.
+    for (int i = 0; i < 3; ++i) {
+        CHECK(f.Call("libandroid.so", "ANativeWindow_getWidth", {window}) == 8);
+        f.Call("libandroid.so", "ANativeWindow_release", {window});
+    }
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_getWidth", {window}));
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_release", {window}));
+    source.live = true;
+    const auto next = f.Call("libandroid.so", "ANativeWindow_fromSurface", {123, 456});
+    CHECK(next > window);
+    CHECK(f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, next, 0}) != 0);
+    f.boundary.SetSurfaceHooks({});
+    CHECK_THROWS(f.Call("libandroid.so", "ANativeWindow_getWidth", {next}));
+}
+
+TEST_CASE("APS-11 APK Asset directories enumerate root subdirectory and absent paths through ARM ABI") {
+    using namespace ogplay;
+    BoundaryFixture f;
+    auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    for (const auto* name : {"assets/z", "assets/a", "assets/sub/", "assets/sub/file",
+                             "assets/sub/deeper/item", "assets/sub/other", "res/raw/ignored"})
+        context->archive.entries.push_back({name, 0, 0, 0, 0, 0, 0});
+    const auto manager = f.boundary.RegisterAssetManager(runtime::ApkAssets(context));
+    const auto list = [&](const char* path) {
+        WriteGuestString(f, f.output, path);
+        const auto directory = f.Call("libandroid.so", "AAssetManager_openDir", {manager.Value(), f.output.Value()});
+        REQUIRE(directory != 0);
+        std::vector<std::string> names;
+        for (;;) {
+            const memory::GuestAddress name{f.Call("libandroid.so", "AAssetDir_getNextFileName", {directory})};
+            if (name.IsNull()) break;
+            std::string value;
+            for (std::uint32_t i = 0; i < 4096; ++i) {
+                const auto byte = f.bus.Read8(name.Add(i));
+                if (!byte) break;
+                value += static_cast<char>(byte);
+            }
+            names.push_back(value);
+        }
+        f.Call("libandroid.so", "AAssetDir_close", {directory});
+        return names;
+    };
+    CHECK(list("") == std::vector<std::string>{"a", "z"});
+    CHECK(list("sub") == std::vector<std::string>{"file", "other"});
+    for (const auto* path : {"missing", "a", "../sub", "/sub", "sub/../sub", "sub//deeper"}) CHECK(list(path).empty());
+    CHECK(context->apk_bytes.empty()); // Enumeration never extracts file contents.
 }

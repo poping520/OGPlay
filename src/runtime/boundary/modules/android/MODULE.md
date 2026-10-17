@@ -15,7 +15,13 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   Asset.close 不关闭交付的 FD；manager 退役不销毁已打开 Asset 的来源。
 - NativeActivity 退役只处理窗口/输入；Java manager GC 独立撤销注册。owner 停止 guest
   线程后解除 hooks，同时退役所有 Asset/manager source。无永久 Java 引用、宿主指针或 FD。
-  目录、64 位导出和 getBuffer 未实现。验证范围见 DVM-237。
+  64 位导出未实现。
+- openDir 发布有界、排序的直接条目快照（≤4096 项、名称合计≤1 MiB），不存在目录仍返回
+  非空迭代器；next 只返回普通文件 basename，guest 只读名称在下一次 next/close 失效。
+  目录句柄单调、不复用、≤4096 live，manager 退役/解除 hooks 一并回收。
+- getBuffer 是唯一允许物化整个条目的路径：调用时才读取完整 STORED/Deflate 内容，单资源
+  上限 32 MiB；guest 缓冲只读、地址在 Asset 生存期内稳定、不改读取游标，close/解除 hooks
+  释放映射。超限记账并明确失败，普通 read 仍使用有界窗口。
 
 ## 输入事件
 
@@ -43,3 +49,28 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
   模式明确失败。命令通知只唤醒查询，不把任意 write 转换为输入/命令事件。
 
 验证：BND45 定向边界、真实 libdl/ARM 调用与原 APK 路径；见 BND-45。
+
+## 空传感器目录
+
+- Java/NDK 读取 integration 注入的同一不可变 AndroidSensorDirectory；当前 Count=0，
+  非空 provider 明确记账失败，不探测宿主、运行 SensorService 或产生事件。
+- manager 是进程唯一非空 opaque token；getSensorList 返回零并可写非空空数组 guest 地址，
+  写失败传播；任意类型 getDefaultSensor 返回 null。没有合法 ASensor，getter/enable/disable/
+  setEventRate 对任何 sensor 都记账、结构化错误并失败；float getter 不返回伪造位模式。
+- queue 单调分配且不复用，≤1024 live；持有真实 VFS pipe 两端且永不写入。使用 Looper
+  共用 addFd 路径，按 API19 忽略结果；callback 登记拒绝时 warn/记账，无 callback 派发。
+  null/stale Looper 与 queue 明确失败；destroy 移除登记、关闭 pipe、退役 token。
+- getEvents 无事件返回零；hasEvents 保留 API19 revents!=POLLIN 返回 -1 的语义，不能改成零。
+  creator thread 退役（含借用其他线程 Looper）及 shutdown 回收队列；进程结束释放空数组。
+
+## Java Surface 窗口
+
+- fromSurface 经显式 hooks 在 VM 锁内解析真实 JNI 引用、校验 holder 有效（active 且 host
+  surface 打开，或仍在 surfaceDestroyed 回调中，同 Surface.isValid），
+  将既有 holder 身份交给同一 windows_ registry；不在 boundary 解析 JNI 或反向依赖 integration。
+- 每个 holder active generation 共用一个 native window，holder 自有一次引用，fromSurface 每次
+  acquire；release 不得释放 owner 引用。changed 同步 managed 几何；destroyed 按 AOSP 先交付
+  surfaceDestroyed（期间窗口仍可用于 EGL），回调结束后撤销 active/owner 引用；留存引用
+  允许读取/释放，但 EGL 拒绝 retired window。
+- 无效/已销毁 Surface 返回 null。新代使用新 token，不复用；解除 hooks 只在 guest 停止后
+  回收 Java 窗口。窗口仍使用现有 ANGLE/SurfaceHolder 生命周期，不提供独立 buffer 模型。

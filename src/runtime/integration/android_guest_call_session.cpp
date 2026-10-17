@@ -1284,6 +1284,12 @@ public:
                 return static_cast<Impl*>(userdata)->DynamicFindExidx(
                     pc, thread_id);
             }};
+        options.ledger = &owner->ledger_;
+        options.loopers.create_pipe = [owner] {
+            const auto pipe = owner->filesystem_->CreatePipe();
+            return std::array{pipe.read_descriptor, pipe.write_descriptor};
+        };
+        options.loopers.close_fd = [owner](std::int32_t fd) { owner->filesystem_->Close(fd); };
         options.loopers.poll_events = [owner](std::int32_t fd) {
             return owner->filesystem_->PipePollEvents(fd);
         };
@@ -1938,6 +1944,11 @@ public:
 
     dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
     void SetBitmapHooks(AndroidBitmapHooks hooks) { boundary_.SetBitmapHooks(hooks); }
+    void SetSurfaceHooks(AndroidSurfaceHooks hooks) { boundary_.SetSurfaceHooks(hooks); }
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return boundary_.AcquireSurfaceWindow(surface); }
+    void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { boundary_.UpdateSurfaceWindow(surface); }
+    void RetireSurfaceWindow(memory::GuestAddress identity) { boundary_.RetireSurfaceWindow(identity); }
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { boundary_.SetSensorDirectory(std::move(directory)); }
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { boundary_.SetAssetManagerHooks(hooks); }
     memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return boundary_.RegisterAssetManager(std::move(source)); }
     void UnregisterAssetManager(memory::GuestAddress manager) { boundary_.UnregisterAssetManager(manager); }
@@ -3009,6 +3020,11 @@ void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, 
 
 namespace ogplay::runtime {
 void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
+void AndroidGuestProcess::SetSurfaceHooks(AndroidSurfaceHooks hooks) { impl_->SetSurfaceHooks(hooks); }
+memory::GuestAddress AndroidGuestProcess::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return impl_->AcquireSurfaceWindow(surface); }
+void AndroidGuestProcess::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { impl_->UpdateSurfaceWindow(surface); }
+void AndroidGuestProcess::RetireSurfaceWindow(memory::GuestAddress identity) { impl_->RetireSurfaceWindow(identity); }
+void AndroidGuestProcess::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { impl_->SetSensorDirectory(std::move(directory)); }
 void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { impl_->SetAssetManagerHooks(hooks); }
 memory::GuestAddress AndroidGuestProcess::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return impl_->RegisterAssetManager(std::move(source)); }
 void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) { impl_->UnregisterAssetManager(manager); }

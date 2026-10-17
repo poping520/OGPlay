@@ -1,5 +1,6 @@
 #pragma once
 #include "ogplay/runtime/common/guest_memory_facts.h"
+#include "ogplay/runtime/boundary/sensor_directory.h"
 
 #include <deque>
 
@@ -493,6 +494,11 @@ struct DexVmAndroidContext final {
   dexvm::VmObjectRef window_surface_holder;
   dexvm::VmObjectRef window_input_callback;
   dexvm::VmObjectRef window_input_queue;
+  std::shared_ptr<const AndroidSensorDirectory> sensor_directory =
+      std::make_shared<const AndroidSensorDirectory>();
+  // Lifecycle notification only; window state remains owned by the holder.
+  std::function<void(dexvm::VmObjectRef)> retire_native_surface;
+  std::function<void(dexvm::VmObjectRef, std::uint32_t, std::uint32_t)> update_native_surface;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
   std::int32_t window_format{1};
   std::unordered_set<std::uint32_t> active_surface_holders;

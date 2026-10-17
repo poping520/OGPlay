@@ -2,6 +2,13 @@
 
 ## 职责与依赖
 
+静态 native 导入审计与 NativeLibraryLoader 共用来源快照、APK basename/SONAME 别名和依赖
+选择；逐个所选 ABI APK 根构建 Bionic namespace，用现有 lookup/version 规则聚合强/弱缺口。
+不映射或执行 guest，不把全 APK 导出并成虚假全局 scope。JNI bridge 向 boundary 注入与
+Java 同源的空传感器目录、VFS pipe hooks，以及 Surface 引用→active holder→window 的显式
+转换；转换/acquire 在 VM 锁内完成，holder changed/destroyed 同步边界窗口，退出后解除 hooks。
+
+
 DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRuntime 的成员元数据
 取得已有 registry ID；ToReflected 根据声明成员还原真实 Method/Constructor/Field wrapper。
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不

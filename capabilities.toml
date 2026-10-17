@@ -750,8 +750,8 @@ note = "M4 提供受检 1..4x 布局和确定性 RGBA8 box resolve，覆盖溢�
 
 [runtime.android_boundary_hle]
 status = "partial"
-test = "tests/runtime/guest_looper_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp"
-note = "NativeActivity 所需 Android/Looper/input/EGL/GLES 导入经 Virtual SO catalog 直接绑定（BND-1..4）。Looper 支持线程身份、prepare/forThread、wake、removeFd、pollOnce 与 ident polling（BND-45/ADR-0083）；输入 getter 全集与多指/历史快照（BND-46）。不支持 callback、非 pipe fd 与 native poll 派发 Java 消息；无 current Context 时 glGetString 返回 null。"
+test = "tests/runtime/guest_looper_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#APS-11"
+note = "libandroid/Looper/input 与 EGL/GLES 由 Virtual SO catalog 绑定。NDK 空传感器与 Java 共用目录，队列使用 VFS pipe，API19 hasEvents 无事件为 -1；callback 登记拒绝并告警。fromSurface 复用 holder 窗口、引用计数及代际；无宿主传感器/callback 派发/非 pipe fd。"
 
 [runtime.native_activity_session]
 status = "partial"
@@ -765,8 +765,8 @@ note = "APS-7 将 CLI 切到 Manifest→rootless AndroidAppProcess→Application
 
 [loader.hle_boundary_namespace]
 status = "complete"
-test = "tests/loader/module_loader_tests.cpp"
-note = "M4 允许统一 ELF 装载事务追加绝对 HLE 边界模块；边界参与符号解析但不映射为 guest ELF，guest 顺序、名称和 load bias 保持受检"
+test = "tests/loader/module_loader_tests.cpp; tests/runtime/android_link_preflight_tests.cpp#APS-11"
+note = "ELF namespace 可追加仅参与解析的绝对 HLE boundary 模块，保留 guest 身份与排序。preflight 逐个所选 ABI APK 根共用 native 依赖/SONAME 选择和版本查找，按库聚合所有强/弱导入缺口；强缺口失败，弱缺口单列，不执行 guest。"
 
 [loader.apk_stored_entry]
 status = "complete"
@@ -2040,13 +2040,13 @@ note = "DVM-219：API19 Bionic tzdata 2014a 原版归档经来源/哈希/TZif �
 
 [dexvm.sensor_absent_facade]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services"
-note = "DVM-220：Sensor/SensorManager 及监听接口与值类为原版 Java，Context 缓存进程单例；native 提供空传感器目录，注册/trigger/flush 返回 false，viewport 固定 ROTATION_0，OrientationEventListener 无回调。不提供宿主传感器、动态目录、真实事件与旋转 watcher。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-220; tests/dexvm/android_context_services_tests.cpp#DVM-136; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp#APS-11"
+note = "Java Sensor/SensorManager 保留原版算法；LocalSensorManager 与 NDK ASensorManager 共用注入空目录。NDK 非空 manager/空 guest 数组，队列持 VFS pipe；无事件 getEvents=0/hasEvents=-1，失效句柄明确失败。无宿主设备/真实事件/动态目录/Looper callback 派发；viewport 为 ROTATION_0。"
 
 [runtime.asset_manager]
 status = "partial"
-test = "tests/runtime/jni_android_platform_tests.cpp#DVM-237; tests/runtime/native_activity_process_tests.cpp#DVM-195; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#DVM-237; tests/dexvm/file_assets_resources_tests.cpp#AssetManager openFd; tests/dexvm/file_assets_resources_tests.cpp#Parcel; tests/dexvm/file_assets_resources_tests.cpp#asset file descriptors; architecture.boundary_hot_path"
-note = "DVM-237/ADR-0131：AAssetManager_fromJava/open 与 AAsset read/seek/length/remaining/close/openFileDescriptor，与 Java manager 及 NativeActivity 共用身份；STORED 条目按区间读取不整条物化，压缩条目直接 FD 返回负值；Java openFd 与 raw-resource FD 共用校验。系统 assets 记账拒绝；目录、64 位导出、getBuffer 与 addAssetPath 未支持。"
+test = "tests/runtime/jni_android_platform_tests.cpp#DVM-237; tests/runtime/native_activity_process_tests.cpp#DVM-195; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#DVM-237; tests/dexvm/file_assets_resources_tests.cpp#AssetManager openFd; tests/dexvm/file_assets_resources_tests.cpp#Parcel; tests/dexvm/file_assets_resources_tests.cpp#asset file descriptors; architecture.boundary_hot_path; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp#APS-11"
+note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有界窗口，STORED FD 共用校验。openDir 枚举排序直接条目、只返回文件，名称在下次 next/close 失效；getBuffer 按需物化 STORED/Deflate，只读稳定地址，单项≤32 MiB，close 释放。系统 assets、64 位导出与 addAssetPath 未支持。"
 
 [dexvm.bitmap_decode]
 status = "partial"

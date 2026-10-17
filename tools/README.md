@@ -1,5 +1,18 @@
 # 开发工具
 
+## 应用图标
+
+`assets/icons/ogplay.png` 保留最初原图，供 Windows 图标使用；`assets/icons/ogplay-macos.png` 是 macOS 图标源图，使用已调整好的 1024×1024 图案、留白及透明度。
+macOS 直接从该 PNG 生成 `ogplay.icns`，不再裁剪、缩放主体或覆盖源图。图标产物随仓库保存。
+替换源图后运行（需要 Pillow）：
+
+```text
+python3 tools/build_app_icons.py
+```
+
+Windows EXE 内嵌 `assets/icons/ogplay.ico`；macOS `OGPlay.app` 携带
+`assets/icons/ogplay.icns`。日常 CMake 构建直接使用生成产物，不依赖 Pillow。
+
 ## 能力账本
 
 `capabilities.py` 查询和校验 [`capabilities.toml`](../capabilities.toml)，字段与 test 入口格式见账本文件头：

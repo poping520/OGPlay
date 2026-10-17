@@ -17,3 +17,12 @@ function(ogplay_set_project_warnings target)
         endif()
     endif()
 endfunction()
+
+# Vendored sources compiled inside OGPlay targets keep upstream warnings silent.
+function(ogplay_suppress_source_warnings)
+    if(MSVC)
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "/w")
+    else()
+        set_source_files_properties(${ARGN} PROPERTIES COMPILE_OPTIONS "-w")
+    endif()
+endfunction()

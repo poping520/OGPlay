@@ -119,8 +119,11 @@ class Index:
 
     def ctests(self) -> set[str]:
         if self._ctests is None:
-            text = (self.root / "CMakeLists.txt").read_text(encoding="utf-8")
-            self._ctests = set(ADD_TEST.findall(text))
+            paths = [self.root / "CMakeLists.txt", *sorted((self.root / "cmake").glob("*.cmake"))]
+            self._ctests = {
+                name for path in paths
+                for name in ADD_TEST.findall(path.read_text(encoding="utf-8"))
+            }
         return self._ctests
 
 
@@ -141,7 +144,7 @@ def selector_errors(selector: Selector, index: Index) -> list[str]:
             return [f"'{selector.text}' is not tests/<file>.cpp[#name], a ctest name, "
                     "a tools/<script>.py command or webui/<file>.test.ts"]
         if selector.ctest not in index.ctests():
-            return [f"ctest '{selector.ctest}' is not registered in CMakeLists.txt"]
+            return [f"ctest '{selector.ctest}' is not registered in project CMake files"]
         return []
     source = selector.source or ""
     if not source.startswith("tests/") or not source.endswith(".cpp"):

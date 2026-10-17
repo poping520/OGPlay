@@ -18,9 +18,8 @@ python tools/validate_scenarios.py --schema data/scenarios/scenario-v1.schema.js
   --scenarios data/scenarios --profiles data/profiles
 ```
 
-3. 场景的 `[profile]` 必须精确命中 `--profiles` 目录里的一个 Title Profile
-   （package + 单一 version code + `.so` SHA-256 + ABI）。未迁移的 title profile
-   放在 `data/profiles-dexvm/`，就把 `--profiles` 指向那里。
+3. 场景的 `[profile]` 标识 exact APK（package + 单一 version code + `.so` SHA-256 + ABI）。
+   Title Profile 可选；`--profiles` 目录里存在同包 Profile 时，身份必须精确命中它。
 
 ## 跑一次
 

@@ -5,8 +5,8 @@
 
 Scenario v1 只冻结运行身份与 checkpoint 外壳：
 
-- `profile` 必须用 package、单个 version code、单个 `.so` SHA-256 和 ARM ABI 精确命中
-  `data/profiles/` 中的一个 Title Profile。
+- `profile` 用 package、单个 version code、单个 `.so` SHA-256 和 ARM ABI 标识 exact APK。
+  Title Profile 可选：同包没有 Profile 时走通用路径；同包存在 Profile 时必须精确命中其身份。
 - `fixture` 只保存规范化 logical id 和 `apk` / `obb` / `external` 类型；至少有一个 required
   APK fixture。不得保存宿主路径、下载地址、凭据或受版权保护内容。
 - `limits` 同时限制 startup 与整个场景的 frame、guest tick 和 wall time。

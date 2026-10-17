@@ -48,55 +48,19 @@ include(cmake/CompilerWarnings.cmake)
 include(cmake/ThirdParty.cmake)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-function(ogplay_stage_angle_runtime target)
-    if(NOT OGPLAY_ENABLE_ANGLE)
-        return()
-    endif()
-    # Windows keeps EGL/GLESv2 DLLs under bin/; macOS stages the relocated
-    # @rpath copies beside the binary, which finds them through @loader_path.
-    set(_ogplay_angle_stage_commands)
-    if(EXISTS "${_angle_sdk}/bin")
-        list(APPEND _ogplay_angle_stage_commands
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${_angle_sdk}/bin" $<TARGET_FILE_DIR:${target}>
-        )
-    endif()
-    if(APPLE)
-        foreach(_ogplay_angle_dylib IN ITEMS libEGL.dylib libGLESv2.dylib)
-            if(EXISTS "${OGPLAY_ANGLE_RUNTIME_DIR}/${_ogplay_angle_dylib}")
-                list(APPEND _ogplay_angle_stage_commands
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${OGPLAY_ANGLE_RUNTIME_DIR}/${_ogplay_angle_dylib}"
-                        "$<TARGET_FILE_DIR:${target}>/${_ogplay_angle_dylib}"
-                )
-            endif()
-        endforeach()
-    endif()
-    if(_ogplay_angle_stage_commands)
-        add_custom_command(TARGET ${target} POST_BUILD
-            ${_ogplay_angle_stage_commands}
-        )
-    endif()
+include(cmake/RuntimeStaging.cmake)
+
+set(OGPLAY_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+# Internal static module: OGPlay::<alias>, public include/ tree, project warnings.
+function(ogplay_add_module target alias)
+    add_library(${target} STATIC ${ARGN})
+    add_library(OGPlay::${alias} ALIAS ${target})
+    target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
+    ogplay_set_project_warnings(${target})
 endfunction()
 
-# Places the ogplay_ffmpeg runtime beside an executable; macOS resolves its
-# @rpath install name through @loader_path.
-function(ogplay_stage_ffmpeg_runtime target)
-    if(NOT OGPLAY_FFMPEG_FOUND)
-        return()
-    endif()
-    get_filename_component(_ogplay_ffmpeg_name "${OGPLAY_FFMPEG_RUNTIME}" NAME)
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${OGPLAY_FFMPEG_RUNTIME}"
-            "$<TARGET_FILE_DIR:${target}>/${_ogplay_ffmpeg_name}"
-    )
-    if(APPLE)
-        set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "@loader_path")
-    endif()
-endfunction()
-
-add_library(ogplay_core STATIC
+ogplay_add_module(ogplay_core Core
     src/core/sha256.cpp
     third_party/yyjson/src/yyjson.c
     src/core/capability_ledger.cpp
@@ -107,25 +71,11 @@ add_library(ogplay_core STATIC
     src/core/software_surface.cpp
     src/core/text.cpp
 )
-add_library(OGPlay::Core ALIAS ogplay_core)
-target_include_directories(ogplay_core
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
 target_include_directories(ogplay_core SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/yyjson/src)
-if(MSVC)
-    set_source_files_properties(third_party/yyjson/src/yyjson.c PROPERTIES
-        COMPILE_OPTIONS "/w")
-else()
-    set_source_files_properties(third_party/yyjson/src/yyjson.c PROPERTIES
-        COMPILE_OPTIONS "-w")
-endif()
-target_compile_features(ogplay_core PUBLIC cxx_std_20)
-ogplay_set_project_warnings(ogplay_core)
+ogplay_suppress_source_warnings(third_party/yyjson/src/yyjson.c)
 
-add_library(ogplay_hal STATIC
+ogplay_add_module(ogplay_hal Hal
     src/hal/clock.cpp
     src/hal/fs.cpp
     src/hal/sdl_audio_output.cpp
@@ -135,10 +85,10 @@ add_library(ogplay_hal STATIC
 if(WIN32)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
     target_link_libraries(ogplay_hal PRIVATE bcrypt)
-      target_sources(ogplay_hal PRIVATE
-          src/hal/windows/file_lock.cpp
-          src/hal/windows/diagnostic_trigger.cpp
-          src/hal/from_chars.cpp
+    target_sources(ogplay_hal PRIVATE
+        src/hal/windows/file_lock.cpp
+        src/hal/windows/diagnostic_trigger.cpp
+        src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
         src/hal/windows/host_read_file.cpp
         src/hal/windows/shared_library.cpp
@@ -148,20 +98,20 @@ elseif(APPLE)
     target_sources(ogplay_hal PRIVATE src/hal/macos/packed_rgb_surface_storage.mm)
     target_link_libraries(ogplay_hal PRIVATE "-framework Metal" "-framework Foundation")
     target_link_libraries(ogplay_hal PRIVATE "-framework IOSurface" "-framework CoreFoundation")
-      target_sources(ogplay_hal PRIVATE
-          src/hal/macos/file_lock.cpp
-          src/hal/macos/diagnostic_trigger.cpp
-          src/hal/macos/from_chars.cpp
+    target_sources(ogplay_hal PRIVATE
+        src/hal/macos/file_lock.cpp
+        src/hal/macos/diagnostic_trigger.cpp
+        src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
         src/hal/macos/host_read_file.cpp
         src/hal/macos/shared_library.cpp
         src/hal/macos/virtual_memory.cpp)
 elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
-      target_sources(ogplay_hal PRIVATE
-          src/hal/linux/file_lock.cpp
-          src/hal/linux/diagnostic_trigger.cpp
-          src/hal/from_chars.cpp
+    target_sources(ogplay_hal PRIVATE
+        src/hal/linux/file_lock.cpp
+        src/hal/linux/diagnostic_trigger.cpp
+        src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
         src/hal/linux/host_read_file.cpp
         src/hal/linux/shared_library.cpp
@@ -169,11 +119,6 @@ elseif(UNIX)
 else()
     message(FATAL_ERROR "OGPlay has no virtual memory HAL for this host platform")
 endif()
-add_library(OGPlay::Hal ALIAS ogplay_hal)
-target_include_directories(ogplay_hal PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
 if(OGPLAY_ENABLE_SDL3)
     target_compile_definitions(ogplay_hal PRIVATE OGPLAY_HAS_SDL3=1)
     target_link_libraries(ogplay_hal PRIVATE SDL3::SDL3)
@@ -183,9 +128,8 @@ endif()
 if(NOT WIN32)
     target_link_libraries(ogplay_hal PRIVATE ${CMAKE_DL_LIBS})
 endif()
-ogplay_set_project_warnings(ogplay_hal)
 
-add_library(ogplay_audio STATIC
+ogplay_add_module(ogplay_audio Audio
     src/audio/java_sound_pool_mixer.cpp
     src/audio/mp3.cpp
     src/audio/open_sles_pcm_mixer.cpp
@@ -197,28 +141,15 @@ add_library(ogplay_audio STATIC
     src/audio/encoded_audio_stream.cpp
     third_party/stb/stb_vorbis.c
 )
-add_library(OGPlay::Audio ALIAS ogplay_audio)
-target_include_directories(ogplay_audio PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
 set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES LANGUAGE CXX)
-if(MSVC)
-    set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES
-        COMPILE_OPTIONS "/w")
-else()
-    set_source_files_properties(third_party/stb/stb_vorbis.c PROPERTIES
-        COMPILE_OPTIONS "-w")
-endif()
-ogplay_set_project_warnings(ogplay_audio)
+ogplay_suppress_source_warnings(third_party/stb/stb_vorbis.c)
 
-add_library(ogplay_video STATIC
+ogplay_add_module(ogplay_video Video
     src/video/video_player.cpp
     src/video/fake_video_player.cpp
     src/video/buffered_video_player.cpp
     src/video/rgba_canvas.cpp
 )
-add_library(OGPlay::Video ALIAS ogplay_video)
 target_link_libraries(ogplay_video PRIVATE OGPlay::Hal)
 if(OGPLAY_FFMPEG_FOUND)
     target_sources(ogplay_video PRIVATE src/video/ffmpeg_video_player.cpp)
@@ -230,51 +161,29 @@ else()
         PUBLIC OGPLAY_HAS_FFMPEG=0
         PRIVATE "OGPLAY_FFMPEG_MISSING_REASON=\"${OGPLAY_FFMPEG_MISSING_REASON}\"")
 endif()
-target_include_directories(ogplay_video PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-ogplay_set_project_warnings(ogplay_video)
 
-add_library(ogplay_input STATIC
+ogplay_add_module(ogplay_input Input
     src/input/mouse_touch_mapper.cpp
     src/input/touch_mapper.cpp
     src/input/template_catalog.cpp
     src/input/control_mapper.cpp
 )
-add_library(OGPlay::Input ALIAS ogplay_input)
 target_link_libraries(ogplay_input PUBLIC OGPlay::Hal OGPlay::Core)
-target_include_directories(ogplay_input PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-ogplay_set_project_warnings(ogplay_input)
 
-add_library(ogplay_memory STATIC
+ogplay_add_module(ogplay_memory Memory
     src/memory/address_space.cpp
     src/memory/bus.cpp
 )
-add_library(OGPlay::Memory ALIAS ogplay_memory)
 target_link_libraries(ogplay_memory PRIVATE OGPlay::Hal)
-target_include_directories(ogplay_memory PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-ogplay_set_project_warnings(ogplay_memory)
 
-add_library(ogplay_cpu STATIC
+ogplay_add_module(ogplay_cpu Cpu
     src/cpu/execution_budget.cpp
     src/cpu/futex.cpp
     src/cpu/interpreter.cpp
     src/cpu/state.cpp
     src/cpu/thread_group.cpp
 )
-add_library(OGPlay::Cpu ALIAS ogplay_cpu)
 target_link_libraries(ogplay_cpu PUBLIC OGPlay::Memory PRIVATE OGPlay::Hal)
-target_include_directories(ogplay_cpu PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
 if(OGPLAY_ENABLE_DYNARMIC)
     target_sources(ogplay_cpu PRIVATE src/cpu/dynarmic.cpp)
     target_compile_definitions(ogplay_cpu PUBLIC OGPLAY_HAS_DYNARMIC=1)
@@ -282,9 +191,8 @@ if(OGPLAY_ENABLE_DYNARMIC)
 else()
     target_compile_definitions(ogplay_cpu PUBLIC OGPLAY_HAS_DYNARMIC=0)
 endif()
-ogplay_set_project_warnings(ogplay_cpu)
 
-add_library(ogplay_loader STATIC
+ogplay_add_module(ogplay_loader Loader
     src/loader/apk.cpp
     src/loader/apk_manifest.cpp
     src/loader/apk_native.cpp
@@ -303,23 +211,13 @@ add_library(ogplay_loader STATIC
     src/loader/symbol_version.cpp
     src/loader/tls.cpp
 )
-add_library(OGPlay::Loader ALIAS ogplay_loader)
 target_link_libraries(ogplay_loader PUBLIC OGPlay::Memory PRIVATE OGPlay::Core)
-target_include_directories(ogplay_loader PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-ogplay_set_project_warnings(ogplay_loader)
 
 add_library(ogplay_pvrtc_vendor OBJECT
     third_party/powervr/PVRTDecompress.cpp
 )
 target_include_directories(ogplay_pvrtc_vendor PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr")
-target_compile_features(ogplay_pvrtc_vendor PRIVATE cxx_std_20)
-set_target_properties(ogplay_pvrtc_vendor PROPERTIES
-    CXX_EXTENSIONS OFF
-    POSITION_INDEPENDENT_CODE ON)
 
 # Pinned upstream decoder inputs must remain byte-for-byte reproducible.
 foreach(_atc_input IN ITEMS
@@ -339,9 +237,8 @@ add_library(ogplay_atc_vendor OBJECT
     third_party/compressonator/compressonatori_tc.c)
 target_include_directories(ogplay_atc_vendor PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator")
-set_target_properties(ogplay_atc_vendor PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(ogplay_gles STATIC
+ogplay_add_module(ogplay_gles Gles
     src/gles/angle_readback.cpp
     $<TARGET_OBJECTS:ogplay_atc_vendor>
     src/gles/atc.cpp
@@ -361,131 +258,17 @@ add_library(ogplay_gles STATIC
     src/gles/pvrtc.cpp
     src/gles/supersample.cpp
 )
-set(OGPLAY_GLES_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(OGPLAY_GLES2_CATALOG
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_catalog.h")
-set(OGPLAY_GLES3_CATALOG
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles3_catalog.h")
-set(OGPLAY_GLES1_CATALOG
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles1_catalog.h")
-set(OGPLAY_GLES1_EXTENSIONS_CATALOG
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles1_extensions_catalog.h")
-add_custom_command(
-    OUTPUT "${OGPLAY_GLES2_CATALOG}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json"
-        --output "${OGPLAY_GLES2_CATALOG}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json"
-    VERBATIM
-)
-add_custom_target(ogplay_gles_codegen DEPENDS "${OGPLAY_GLES2_CATALOG}")
-add_custom_command(
-    OUTPUT "${OGPLAY_GLES3_CATALOG}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json"
-        --output "${OGPLAY_GLES3_CATALOG}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json"
-    VERBATIM
-)
-add_custom_target(ogplay_gles3_codegen DEPENDS "${OGPLAY_GLES3_CATALOG}")
-add_dependencies(ogplay_gles_codegen ogplay_gles3_codegen)
-set(OGPLAY_DEXVM_OPCODE_TABLE
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/runtime/dexvm/generated/opcode_table.h")
-add_custom_command(
-    OUTPUT "${OGPLAY_DEXVM_OPCODE_TABLE}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py"
-        --catalog "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
-        --output "${OGPLAY_DEXVM_OPCODE_TABLE}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
-    VERBATIM
-)
-add_custom_target(ogplay_dexvm_codegen DEPENDS "${OGPLAY_DEXVM_OPCODE_TABLE}")
-set(OGPLAY_DEXVM_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/dexvm_fixtures")
-file(GLOB OGPLAY_DEXVM_FIXTURE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/*.dexasm")
+include(cmake/Codegen.cmake)
 file(GLOB OGPLAY_DEXVM_INTRINSIC_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/dexvm/intrinsics/*.cpp")
 file(GLOB OGPLAY_DEXVM_ANDROID_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/integration/dexvm_android/*.cpp")
-add_custom_command(
-    OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py"
-        --catalog "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
-        --batch-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures"
-        --batch-output "${OGPLAY_DEXVM_FIXTURE_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E touch "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/dex_survey_lib.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json"
-        ${OGPLAY_DEXVM_FIXTURE_SOURCES}
-    VERBATIM
-)
-add_custom_target(ogplay_dexvm_fixtures
-    DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp")
-add_custom_command(
-    OUTPUT "${OGPLAY_GLES1_CATALOG}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1.json"
-        --output "${OGPLAY_GLES1_CATALOG}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1.json"
-    VERBATIM
-)
-add_custom_target(ogplay_gles1_codegen DEPENDS "${OGPLAY_GLES1_CATALOG}")
-add_dependencies(ogplay_gles_codegen ogplay_gles1_codegen)
-add_custom_command(
-    OUTPUT "${OGPLAY_GLES1_EXTENSIONS_CATALOG}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json"
-        --output "${OGPLAY_GLES1_EXTENSIONS_CATALOG}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json"
-    VERBATIM
-)
-add_custom_target(ogplay_gles1_extensions_codegen
-    DEPENDS "${OGPLAY_GLES1_EXTENSIONS_CATALOG}")
-add_dependencies(ogplay_gles_codegen ogplay_gles1_extensions_codegen)
-set(OGPLAY_GLES2_EXTENSIONS_CATALOG
-    "${OGPLAY_GLES_GENERATED_DIR}/ogplay/gles/generated/gles2_extensions_catalog.h")
-add_custom_command(
-    OUTPUT "${OGPLAY_GLES2_EXTENSIONS_CATALOG}"
-    COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        --idl "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json"
-        --output "${OGPLAY_GLES2_EXTENSIONS_CATALOG}"
-    DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json"
-    VERBATIM
-)
-add_custom_target(ogplay_gles2_extensions_codegen DEPENDS "${OGPLAY_GLES2_EXTENSIONS_CATALOG}")
-add_dependencies(ogplay_gles_codegen ogplay_gles2_extensions_codegen)
 add_dependencies(ogplay_gles ogplay_gles_codegen)
-add_library(OGPlay::Gles ALIAS ogplay_gles)
-target_include_directories(ogplay_gles PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE
-        "${OGPLAY_GLES_GENERATED_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator"
+target_include_directories(ogplay_gles PRIVATE
+    "${OGPLAY_GENERATED_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/powervr"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/compressonator"
 )
-ogplay_set_project_warnings(ogplay_gles)
 target_link_libraries(ogplay_gles PRIVATE OGPlay::Hal OGPlay::Memory)
 if(OGPLAY_ENABLE_ANGLE)
     target_compile_definitions(ogplay_gles PRIVATE
@@ -514,7 +297,7 @@ target_compile_definitions(ogplay_sqlite PRIVATE
     SQLITE_DEFAULT_MEMSTATUS=0)
 set_target_properties(ogplay_sqlite PROPERTIES C_EXTENSIONS ON)
 
-add_library(ogplay_runtime STATIC
+ogplay_add_module(ogplay_runtime Runtime
     src/runtime/database/database_runtime.cpp
     src/runtime/database/sqlite_vfs.cpp
     src/runtime/debug/stall_diagnostics.cpp
@@ -653,37 +436,24 @@ add_library(ogplay_runtime STATIC
     src/runtime/vfs/vfs_sandbox.cpp
     ${OGPLAY_BOOST_URL_CODEC_SOURCES}
 )
-add_library(OGPlay::Runtime ALIAS ogplay_runtime)
 target_link_libraries(ogplay_runtime PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Cpu OGPlay::Hal OGPlay::Loader OGPlay::Memory
     OGPlay::Video
 )
 target_link_libraries(ogplay_runtime PRIVATE OGPlay::Gles ogplay_sqlite)
-target_include_directories(ogplay_runtime PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE "${OGPLAY_GLES_GENERATED_DIR}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+target_include_directories(ogplay_runtime PRIVATE
+    "${OGPLAY_GENERATED_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 add_dependencies(ogplay_runtime ogplay_dexvm_codegen)
 target_include_directories(ogplay_runtime SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_compile_definitions(ogplay_runtime PRIVATE BOOST_URL_NO_LIB=1)
-if(MSVC)
-    set_source_files_properties(src/runtime/integration/host_image_decode.cpp
-        PROPERTIES COMPILE_OPTIONS "/w")
-    set_source_files_properties(${OGPLAY_BOOST_URL_CODEC_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "/w")
-else()
-    set_source_files_properties(src/runtime/integration/host_image_decode.cpp
-        PROPERTIES COMPILE_OPTIONS "-w")
-    set_source_files_properties(${OGPLAY_BOOST_URL_CODEC_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "-w")
-endif()
-ogplay_set_project_warnings(ogplay_runtime)
+ogplay_suppress_source_warnings(src/runtime/integration/host_image_decode.cpp
+    ${OGPLAY_BOOST_URL_CODEC_SOURCES})
 
-add_library(ogplay_session STATIC
+ogplay_add_module(ogplay_session Session
     src/session/android_input_mapping.cpp
     src/session/android_app_process.cpp
     src/session/audio_output_pump.cpp
@@ -701,18 +471,12 @@ add_library(ogplay_session STATIC
     src/session/title_profile_toml.cpp
     src/session/control_config.cpp
 )
-add_library(OGPlay::Session ALIAS ogplay_session)
 target_link_libraries(ogplay_session PUBLIC
     OGPlay::Audio OGPlay::Core OGPlay::Hal OGPlay::Input OGPlay::Memory
     OGPlay::Runtime
 )
-target_include_directories(ogplay_session PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-ogplay_set_project_warnings(ogplay_session)
 
-add_library(ogplay_agent STATIC
+ogplay_add_module(ogplay_agent Agent
     src/agent/dashboard.cpp
     src/agent/control_service.cpp
     src/agent/control_editor.cpp
@@ -722,18 +486,10 @@ add_library(ogplay_agent STATIC
     src/agent/mcp_session_control.cpp
     src/agent/stb_image_write.cpp
 )
-add_library(OGPlay::Agent ALIAS ogplay_agent)
 target_link_libraries(ogplay_agent PUBLIC OGPlay::Core OGPlay::Session)
 target_include_directories(ogplay_agent SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
-if(MSVC)
-    set_source_files_properties(src/agent/stb_image_write.cpp PROPERTIES
-        COMPILE_OPTIONS "/w")
-else()
-    set_source_files_properties(src/agent/stb_image_write.cpp PROPERTIES
-        COMPILE_OPTIONS "-w")
-endif()
-ogplay_set_project_warnings(ogplay_agent)
+ogplay_suppress_source_warnings(src/agent/stb_image_write.cpp)
 
 add_library(ogplay_library STATIC
     src/frontend/library/model.cpp src/frontend/library/import.cpp
@@ -741,13 +497,13 @@ add_library(ogplay_library STATIC
     src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
     src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp)
 target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
-target_include_directories(ogplay_library PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 target_compile_definitions(ogplay_library PRIVATE ogplaycore_EXPORTS)
 set_target_properties(ogplay_library PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
 ogplay_set_project_warnings(ogplay_library)
 
-add_library(ogplay_frontend STATIC
+ogplay_add_module(ogplay_frontend Frontend
     src/frontend/data_directory.cpp
     src/frontend/control_overlay.cpp
     src/frontend/control_requests.cpp
@@ -758,7 +514,6 @@ add_library(ogplay_frontend STATIC
     src/frontend/game/run_game_vfs.cpp
     src/frontend/user_data_dir.cpp
 )
-add_library(OGPlay::Frontend ALIAS ogplay_frontend)
 target_link_libraries(ogplay_frontend PUBLIC
     OGPlay::Agent OGPlay::Input OGPlay::Runtime)
 target_include_directories(ogplay_frontend SYSTEM PRIVATE
@@ -770,7 +525,6 @@ target_compile_definitions(ogplay_frontend PRIVATE
 if(WIN32)
     target_link_libraries(ogplay_frontend PRIVATE ws2_32)
 endif()
-ogplay_set_project_warnings(ogplay_frontend)
 
 # Application facade aggregates runtime and shared library domain only.
 add_library(ogplaycore SHARED
@@ -798,7 +552,7 @@ target_compile_definitions(ogplaycore PRIVATE
     OGPLAY_NATIVE_ANGLE_RENDERER="${OGPLAY_NATIVE_ANGLE_RENDERER}")
 include(GenerateExportHeader)
 generate_export_header(ogplaycore BASE_NAME OGPLAYCORE
-    EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h"
+    EXPORT_FILE_NAME "${OGPLAY_GENERATED_DIR}/ogplay/app/export.h"
     EXPORT_MACRO_NAME OGPLAYCORE_API)
 if(MSVC)
     # Same-build /MD facade deliberately carries STL/Pimpl and std exceptions.
@@ -808,7 +562,7 @@ endif()
 
 target_include_directories(ogplaycore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
+    $<BUILD_INTERFACE:${OGPLAY_GENERATED_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 set_target_properties(ogplaycore PROPERTIES
     CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
@@ -905,922 +659,16 @@ elseif(APPLE)
     set_target_properties(ogplay-cli PROPERTIES
         BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 else()
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports"
+    file(WRITE "${OGPLAY_GENERATED_DIR}/ogplaycore.exports"
         "{ global: extern \"C++\" { ogplay::app::*; }; _ZT?N6ogplay3app*; local: *; };\n")
     target_link_options(ogplaycore PRIVATE
-        "LINKER:--version-script,${CMAKE_CURRENT_BINARY_DIR}/generated/ogplaycore.exports")
+        "LINKER:--version-script,${OGPLAY_GENERATED_DIR}/ogplaycore.exports")
     set_target_properties(ogplaycore ogplay-cli PROPERTIES
         BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
 
-add_custom_target(ogplay_stage_data ALL
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/quirks.toml"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/capabilities.toml"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/capabilities.toml"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data/profiles"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/profiles"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/profiles"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data/input"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/input"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/input"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data/bionic"
-    COMMAND ${CMAKE_COMMAND} -E remove_directory
-        "$<TARGET_FILE_DIR:ogplaycore>/data/android"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/data/android"
-        "$<TARGET_FILE_DIR:ogplaycore>/data/android"
-    COMMENT "Staging OGPlay runtime data"
-    VERBATIM)
-
-add_dependencies(ogplay-cli ogplay_stage_data)
-if(TARGET ogplay)
-    add_dependencies(ogplay ogplay_stage_data)
-endif()
-
-# CLI MCP/controls pages remain available when the desktop host is disabled.
-if(OGPLAY_BUILD_GUI OR
-   (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard/manifest.json" AND
-    EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/controls/manifest.json"))
-    set(_ogplay_webui_parts dashboard controls)
-    if(OGPLAY_BUILD_GUI)
-        list(APPEND _ogplay_webui_parts gui)
-    endif()
-    set(_ogplay_webui_commands)
-    foreach(_part IN LISTS _ogplay_webui_parts)
-        list(APPEND _ogplay_webui_commands
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/${_part}"
-                "$<TARGET_FILE_DIR:ogplaycore>/data/webui/${_part}")
-        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/webui/${_part}"
-            DESTINATION ${CMAKE_INSTALL_BINDIR}/data/webui COMPONENT Runtime)
-    endforeach()
-    add_custom_target(ogplay_stage_webui ${_ogplay_webui_commands} VERBATIM)
-    add_dependencies(ogplay-cli ogplay_stage_webui)
-    if(OGPLAY_BUILD_GUI)
-        add_dependencies(ogplay_stage_webui ogplay_check_webui)
-        add_dependencies(ogplay ogplay_stage_webui)
-        if(WIN32)
-            install(FILES "${OGPLAY_WEBVIEW2_SDK}/LICENSE.txt"
-                DESTINATION ${CMAKE_INSTALL_BINDIR}/data/webui/gui RENAME WEBVIEW2-SDK-LICENSE.txt
-                COMPONENT Runtime)
-        endif()
-    endif()
-endif()
-if(TARGET ogplay AND APPLE)
-    # Complete and ad-hoc sign OGPlay.app on every build so the bundle never lags
-    # ogplaycore or the staged payload; it is self-contained and runs from any directory.
-    set(_ogplay_app "$<TARGET_BUNDLE_DIR:ogplay>")
-    set(_ogplay_frameworks
-        "$<TARGET_FILE:ogplaycore>" "$<TARGET_SONAME_FILE:SDL3::SDL3>"
-        "${OGPLAY_ANGLE_RUNTIME_DIR}/libEGL.dylib" "${OGPLAY_ANGLE_RUNTIME_DIR}/libGLESv2.dylib")
-    if(OGPLAY_FFMPEG_FOUND)
-        list(APPEND _ogplay_frameworks "${OGPLAY_FFMPEG_RUNTIME}")
-    endif()
-    add_custom_target(ogplay_bundle ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${_ogplay_app}/Contents/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_ogplay_frameworks} "${_ogplay_app}/Contents/Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E remove_directory "${_ogplay_app}/Contents/Resources/data"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "$<TARGET_FILE_DIR:ogplaycore>/data" "${_ogplay_app}/Contents/Resources/data"
-        COMMAND codesign --force --sign - --timestamp=none "${_ogplay_app}"
-        COMMAND codesign --verify --strict --deep "${_ogplay_app}"
-        COMMENT "Assembling and ad-hoc signing OGPlay.app"
-        VERBATIM)
-    add_dependencies(ogplay_bundle ogplay ogplaycore ogplay_stage_data ogplay_stage_webui)
-    install(TARGETS ogplay BUNDLE DESTINATION . COMPONENT Runtime)
-elseif(TARGET ogplay)
-    install(TARGETS ogplay RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
-endif()
-install(TARGETS ogplaycore ogplay-cli
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/ogplay/app/export.h"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ogplay/app COMPONENT Development)
-if(OGPLAY_ENABLE_ANGLE)
-    if(WIN32)
-        install(DIRECTORY "${_angle_sdk}/bin/" DESTINATION ${CMAKE_INSTALL_BINDIR}
-            COMPONENT Runtime FILES_MATCHING PATTERN "*.dll")
-    elseif(APPLE)
-        install(DIRECTORY "${OGPLAY_ANGLE_RUNTIME_DIR}/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT Runtime FILES_MATCHING PATTERN "*.dylib")
-    else()
-        install(DIRECTORY "${_angle_sdk}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT Runtime FILES_MATCHING PATTERN "*.so*")
-    endif()
-endif()
-if(OGPLAY_FFMPEG_FOUND)
-    if(WIN32)
-        set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_BINDIR})
-    else()
-        set(_ogplay_ffmpeg_install_dir ${CMAKE_INSTALL_LIBDIR})
-    endif()
-    install(FILES "${OGPLAY_FFMPEG_RUNTIME}" DESTINATION ${_ogplay_ffmpeg_install_dir} COMPONENT Runtime)
-endif()
-
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES data/quirks.toml capabilities.toml
-    DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
-install(DIRECTORY data/profiles
-    DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
-install(DIRECTORY data/android
-    DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
-install(DIRECTORY data/input
-    DESTINATION ${CMAKE_INSTALL_BINDIR}/data COMPONENT Runtime)
+include(cmake/RuntimePackaging.cmake)
 
 if(OGPLAY_BUILD_TESTS)
-    include(CTest)
-    set(_ogplay_gui_test_path "")
-    if(TARGET ogplay)
-        set(_ogplay_gui_test_path "$<TARGET_FILE:ogplay>")
-    endif()
-    add_test(NAME frontend.app_entrypoints
-        COMMAND ${CMAKE_COMMAND}
-            -DOGPLAY_CLI=$<TARGET_FILE:ogplay-cli>
-            -DOGPLAY_CORE=$<TARGET_FILE:ogplaycore>
-            -DOGPLAY_GUI=${_ogplay_gui_test_path}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckAppEntrypoints.cmake)
-    set_tests_properties(frontend.app_entrypoints PROPERTIES LABELS "integration;frontend" TIMEOUT 30)
-    include(cmake/TestDependencies.cmake)
-
-    set(OGPLAY_TEST_SOURCES
-        tests/test_main.cpp
-        tests/core/capability_ledger_tests.cpp
-        tests/core/encoding_tests.cpp
-        tests/core/json_tests.cpp
-        tests/core/logger_tests.cpp
-        tests/agent/control_service_tests.cpp
-        tests/agent/dashboard_sources_tests.cpp
-        tests/agent/dashboard_tests.cpp
-        tests/agent/mcp_protocol_tests.cpp
-        tests/frontend/mcp_input_dispatch_tests.cpp
-        tests/frontend/run_apk_progress_tests.cpp
-        tests/frontend/data_directory_tests.cpp
-        tests/golden/golden_frame_tests.cpp
-        tests/gles/angle_backend_tests.cpp
-        tests/gles/angle_frame_tests.cpp
-        tests/gles/egl_lifecycle_tests.cpp
-        tests/gles/atc_tests.cpp
-        tests/gles/etc1_tests.cpp
-        tests/gles/gles_call_preparation_tests.cpp
-        tests/gles/gles_dispatch_tests.cpp
-        tests/gles/gles_transfer_state_tests.cpp
-        tests/gles/guest_transfer_tests.cpp
-        tests/gles/supersample_tests.cpp
-        tests/hal/clock_tests.cpp
-        tests/hal/from_chars_tests.cpp
-        tests/hal/audio_output_tests.cpp
-        tests/hal/host_environment_tests.cpp
-        tests/hal/service_contract_tests.cpp
-        tests/hal/thread_tests.cpp
-        tests/hal/window_input_tests.cpp
-        tests/hal/virtual_memory_tests.cpp
-        tests/input/template_catalog_tests.cpp
-        tests/input/mouse_touch_mapper_tests.cpp
-        tests/input/touch_mapper_tests.cpp
-        tests/input/control_mapper_tests.cpp
-        tests/session/control_config_tests.cpp
-        tests/agent/control_editor_tests.cpp
-        tests/frontend/control_requests_tests.cpp
-        tests/frontend/key_hints_tests.cpp
-        tests/memory/address_tests.cpp
-        tests/memory/address_space_tests.cpp
-        tests/memory/bus_tests.cpp
-        tests/memory/snapshot_tests.cpp
-        tests/runtime/syscall_tests.cpp
-        tests/runtime/stall_diagnostics_tests.cpp
-        tests/runtime/syscall_bridge_tests.cpp
-        tests/runtime/syscall_process_tests.cpp
-        tests/runtime/syscall_signal_tests.cpp
-        tests/runtime/bionic_module_set_tests.cpp
-        tests/runtime/bionic_profile_tests.cpp
-        tests/runtime/bionic_selfcheck_tests.cpp
-        tests/runtime/bionic_tls_tests.cpp
-        tests/runtime/framework_asset_tests.cpp
-        tests/runtime/framework_lifecycle_tests.cpp
-        tests/runtime/framework_locale_tests.cpp
-        tests/runtime/framework_package_tests.cpp
-        tests/runtime/framework_preferences_tests.cpp
-        tests/runtime/guest_lifecycle_tests.cpp
-        tests/runtime/headless_bionic_runner_tests.cpp
-        tests/runtime/headless_jni_contract_tests.cpp
-        tests/runtime/jni_tests.cpp
-        tests/runtime/jni_exception_tests.cpp
-        tests/runtime/jni_field_store_tests.cpp
-        tests/runtime/jni_environment_tests.cpp
-        tests/runtime/jni_guest_abi_tests.cpp
-        tests/runtime/jni_guest_bindings_tests.cpp
-        tests/runtime/jni_guest_instance_calls_tests.cpp
-        tests/runtime/jni_guest_library_lifecycle_tests.cpp
-        tests/runtime/jni_java_vm_tests.cpp
-        tests/runtime/jni_array_tests.cpp
-        tests/runtime/jni_class_registry_tests.cpp
-        tests/runtime/jni_invocation_tests.cpp
-        tests/runtime/jni_native_registry_tests.cpp
-        tests/runtime/jni_native_export_tests.cpp
-        tests/runtime/jni_object_tests.cpp
-        tests/runtime/jni_object_array_tests.cpp
-        tests/runtime/jni_signature_tests.cpp
-        tests/runtime/jni_utf_tests.cpp
-        tests/runtime/guest_thread_lifecycle_tests.cpp
-        tests/runtime/guest_clone_thread_runtime_tests.cpp
-        tests/runtime/guest_thread_runner_tests.cpp
-        tests/runtime/api19_guest_process_tests.cpp
-        tests/runtime/android_guest_call_session_tests.cpp
-        tests/runtime/guest_cpu_environment_tests.cpp
-        tests/runtime/guest_looper_tests.cpp
-        tests/runtime/android_guest_framework_platform_tests.cpp
-        tests/runtime/android_guest_java_media_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_hle_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp
-        tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp
-        tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp
-        tests/runtime/boundary/integration/android_gles1_exports_tests.cpp
-        tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp
-        tests/runtime/boundary/integration/android_gles1_state_tests.cpp
-        tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_looper_tests.cpp
-        tests/runtime/boundary/integration/android_egl_sharing_tests.cpp
-        tests/runtime/boundary/integration/android_frame_presentation_tests.cpp
-        tests/runtime/boundary/integration/android_native_activity_io_tests.cpp
-        tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp
-        tests/runtime/boundary/integration/android_boundary_fixture.cpp
-        tests/runtime/boundary/modules/gles1_fixed_tests.cpp
-        tests/runtime/android_link_preflight_tests.cpp
-        tests/runtime/native_activity_runner_tests.cpp
-        tests/runtime/application_startup_tests.cpp
-        tests/runtime/native_library_loader_tests.cpp
-        tests/runtime/jni_bridge_framework_tests.cpp
-        tests/runtime/jni_bridge_objects_tests.cpp
-        tests/runtime/jni_bridge_threads_tests.cpp
-        tests/runtime/activity_window_lifecycle_tests.cpp
-        tests/runtime/jni_android_platform_tests.cpp
-        tests/runtime/guest_native_values_tests.cpp
-        tests/runtime/activity_task_stack_tests.cpp
-        tests/runtime/guest_zlib_tests.cpp
-        tests/runtime/guest_crypto_bks_tests.cpp
-        tests/runtime/guest_crypto_certificates_tests.cpp
-        tests/runtime/application_exit_tests.cpp
-        tests/runtime/native_activity_process_tests.cpp
-        tests/runtime/native_dlopen_tests.cpp
-        tests/runtime/native_library_fixture.cpp
-        tests/runtime/tls_trust_tests.cpp
-        tests/runtime/preferences_xml_tests.cpp
-        tests/runtime/ui_tree_tests.cpp
-        tests/runtime/ui_renderer_tests.cpp
-        tests/runtime/sandbox_store_tests.cpp
-        tests/runtime/vfs_sandbox_tests.cpp
-        tests/runtime/vfs_tests.cpp
-        tests/frontend/run_apk_vfs_tests.cpp
-        tests/loader/apk_tests.cpp
-        tests/loader/apk_manifest_tests.cpp
-        tests/loader/binary_xml_tests.cpp
-        tests/loader/apk_native_tests.cpp
-        tests/loader/elf_tests.cpp
-        tests/loader/dex_tests.cpp
-        tests/loader/dex_analysis_tests.cpp
-        tests/loader/dex_class_data_tests.cpp
-        tests/loader/dynamic_linker_tests.cpp
-        tests/loader/lifecycle_tests.cpp
-        tests/loader/link_namespace_tests.cpp
-        tests/loader/module_loader_tests.cpp
-        tests/loader/relocation_tests.cpp
-        tests/loader/symbol_version_tests.cpp
-        tests/loader/tls_tests.cpp
-        tests/cpu/state_tests.cpp
-        tests/cpu/execution_budget_tests.cpp
-        tests/cpu/futex_tests.cpp
-        tests/cpu/interpreter_tests.cpp
-        tests/cpu/m1_guest_sample_tests.cpp
-        tests/cpu/thread_group_tests.cpp
-        tests/gles/pvrtc_tests.cpp
-        tests/audio/ogg_vorbis_tests.cpp
-        tests/audio/mp3_tests.cpp
-        tests/audio/wav_tests.cpp
-        tests/audio/encoded_audio_tests.cpp
-        tests/audio/encoded_music_tests.cpp
-        tests/audio/java_sound_pool_mixer_tests.cpp
-        tests/audio/open_sles_pcm_mixer_tests.cpp
-        tests/session/audio_output_pump_tests.cpp
-        tests/video/video_player_tests.cpp
-        tests/video/ffmpeg_video_player_tests.cpp
-        tests/session/quirk_registry_tests.cpp
-        tests/session/android_input_mapping_tests.cpp
-        tests/session/lifecycle_tests.cpp
-        tests/session/ui_compositor_tests.cpp
-        tests/session/profile_asset_bundle_tests.cpp
-        tests/session/profile_apk_tests.cpp
-        tests/session/profile_entry_scope_tests.cpp
-        tests/session/profile_audio_tests.cpp
-        tests/session/profile_vfs_tests.cpp
-        tests/session/session_tests.cpp
-        tests/session/title_profile_tests.cpp
-        tests/dexvm/class_loader_tests.cpp
-        tests/dexvm/class_name_codec_tests.cpp
-        tests/dexvm/reflection_tests.cpp
-        tests/dexvm/dexasm_readback_tests.cpp
-        tests/dexvm/file_vfs_tests.cpp
-        tests/dexvm/file_streams_tests.cpp
-        tests/dexvm/file_application_storage_tests.cpp
-        tests/dexvm/file_assets_resources_tests.cpp
-        tests/dexvm/file_media_descriptors_tests.cpp
-        tests/dexvm/file_serialization_tests.cpp
-        tests/dexvm/file_vfs_fixture.cpp
-        tests/dexvm/fast_code_tests.cpp
-        tests/dexvm/egl_facade_tests.cpp
-        tests/dexvm/audio_track_tests.cpp
-        tests/dexvm/scheduler_tests.cpp
-        tests/dexvm/android_context_services_tests.cpp
-        tests/dexvm/android_intent_uri_tests.cpp
-        tests/dexvm/android_parcel_bundle_tests.cpp
-        tests/dexvm/android_resources_bitmap_tests.cpp
-        tests/dexvm/android_view_state_tests.cpp
-        tests/dexvm/android_pending_notifications_tests.cpp
-        tests/dexvm/android_value_tests.cpp
-        tests/dexvm/android_logging_tests.cpp
-        tests/dexvm/android_component_services_tests.cpp
-        tests/dexvm/android_package_metadata_tests.cpp
-        tests/dexvm/android_text_drawable_tests.cpp
-        tests/dexvm/android_preferences_tests.cpp
-        tests/dexvm/android_webview_tests.cpp
-        tests/dexvm/android_input_values_tests.cpp
-        tests/dexvm/android_wifi_locks_tests.cpp
-        tests/dexvm/android_value_fixture.cpp
-        tests/dexvm/gap_survey_tests.cpp
-        tests/dexvm/gc_tests.cpp
-        tests/dexvm/dex_code_tests.cpp
-        tests/dexvm/intrinsic_contract_tests.cpp
-        tests/dexvm/core_catalog_tests.cpp
-        tests/dexvm/throwable_contract_tests.cpp
-        tests/dexvm/interpreter_tests.cpp
-        tests/dexvm/interpreter_backend_tests.cpp
-        tests/dexvm/interpreter_diagnostics_tests.cpp
-        tests/dexvm/interpreter_fixture.cpp
-        tests/dexvm/nio_runtime_tests.cpp
-        tests/dexvm/unsafe_tests.cpp
-        tests/dexvm/bootdex_concurrency_tests.cpp
-        tests/dexvm/bootdex_library_tests.cpp
-        tests/dexvm/bootdex_datetime_tests.cpp
-        tests/dexvm/bootdex_security_tests.cpp
-        tests/dexvm/bootdex_collections_io_tests.cpp
-        tests/dexvm/bootdex_shutdown_tests.cpp
-        tests/dexvm/bootdex_library_fixture.cpp
-        tests/dexvm/observable_tests.cpp
-        tests/dexvm/network_sqlite_tests.cpp
-        tests/dexvm/session_exit_tests.cpp
-        tests/dexvm/intrinsics_p1_tests.cpp
-        tests/dexvm/thread_intrinsic_tests.cpp
-        tests/dexvm/vm_monitor_tests.cpp
-        tests/dexvm/vm_thread_tests.cpp
-        tests/dexvm/videoview_tests.cpp
-        tests/dexvm/widget_click_tests.cpp
-        tests/dexvm/widget_hierarchy_tests.cpp
-        tests/dexvm/widget_inflater_tests.cpp
-        tests/dexvm/widget_resources_tests.cpp
-        tests/dexvm/widget_focus_input_tests.cpp
-        tests/dexvm/widget_window_dialog_tests.cpp
-        tests/dexvm/widget_fixture.cpp
-        tests/dexvm/ui_include_tests.cpp
-        tests/dexvm/arsc_tests.cpp
-    )
-    if(OGPLAY_ENABLE_DYNARMIC)
-        list(APPEND OGPLAY_TEST_SOURCES
-            tests/cpu/dynarmic_tests.cpp
-            tests/runtime/arm_kernel_helpers_tests.cpp
-        )
-    endif()
-    add_executable(ogplay_desktop_integration_tests tests/test_main.cpp
-        tests/frontend/mcp_http_server_tests.cpp tests/frontend/gui_dashboard_window_tests.cpp)
-    if(WIN32)
-        target_sources(ogplay_desktop_integration_tests PRIVATE ${_ogplay_icon_resource})
-    endif()
-    target_link_libraries(ogplay_desktop_integration_tests PRIVATE OGPlay::Frontend ogplay_desktop_app ogplay_desktop_webview doctest::doctest)
-    if(APPLE AND OGPLAY_BUILD_GUI)
-        target_sources(ogplay_desktop_integration_tests PRIVATE tests/frontend/gui_window_test_support.mm)
-        target_compile_options(ogplay_desktop_integration_tests PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
-        target_link_libraries(ogplay_desktop_integration_tests PRIVATE "-framework Cocoa")
-    endif()
-    target_include_directories(ogplay_desktop_integration_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_include_directories(ogplay_desktop_integration_tests SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")
-    target_compile_definitions(ogplay_desktop_integration_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
-        OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    ogplay_set_project_warnings(ogplay_desktop_integration_tests)
-    if(MSVC)
-        target_compile_options(ogplay_desktop_integration_tests PRIVATE /wd5285)
-        target_link_libraries(ogplay_desktop_integration_tests PRIVATE ws2_32)
-    else()
-        target_compile_options(ogplay_desktop_integration_tests PRIVATE -Wno-missing-field-initializers)
-    endif()
-    if(OGPLAY_ENABLE_SDL3)
-        target_link_libraries(ogplay_desktop_integration_tests PRIVATE SDL3::SDL3)
-    endif()
-    add_executable(ogplay_file_lock_tests tests/test_main.cpp tests/hal/file_lock_tests.cpp
-        tests/frontend/library_lock_contention_tests.cpp)
-    target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogplay_desktop_app doctest::doctest)
-    target_include_directories(ogplay_file_lock_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    ogplay_set_project_warnings(ogplay_file_lock_tests)
-    if(MSVC)
-        target_compile_options(ogplay_file_lock_tests PRIVATE /wd5285)
-    endif()
-    add_executable(ogplay_app_tests tests/test_main.cpp
-        tests/frontend/game_run_args_tests.cpp
-        tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
-        tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
-        tests/frontend/gui_import_tests.cpp tests/frontend/gui_launch_tests.cpp
-        tests/frontend/gui_rpc_tests.cpp tests/frontend/gui_view_model_tests.cpp
-        tests/frontend/library_visuals_tests.cpp)
-    target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app ogplay_desktop_app doctest::doctest)
-    target_include_directories(ogplay_app_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_compile_definitions(ogplay_app_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
-        OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    ogplay_set_project_warnings(ogplay_app_tests)
-    if(MSVC)
-        target_compile_options(ogplay_app_tests PRIVATE /wd5285)
-    else()
-        target_compile_options(ogplay_app_tests PRIVATE -Wno-missing-field-initializers)
-    endif()
-    add_dependencies(ogplay_app_tests ogplay_stage_data)
-
-    add_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
-    target_link_libraries(ogplay_tests PRIVATE
-        OGPlay::Frontend OGPlay::Cpu OGPlay::Gles OGPlay::Loader OGPlay::Runtime OGPlay::Video doctest::doctest
-    )
-    target_include_directories(ogplay_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/samples/m1_guest/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests
-    )
-    target_include_directories(ogplay_tests SYSTEM PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost)
-    if(OGPLAY_ENABLE_SDL3)
-        target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=1)
-        target_link_libraries(ogplay_tests PRIVATE SDL3::SDL3)
-    else()
-        target_compile_definitions(ogplay_tests PRIVATE OGPLAY_TEST_HAS_SDL3=0)
-    endif()
-    target_compile_definitions(ogplay_tests PRIVATE
-        OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
-        OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-        OGPLAY_DEXVM_FIXTURE_DIR="${OGPLAY_DEXVM_FIXTURE_DIR}"
-        OGPLAY_ANGLE_HAS_SWIFTSHADER=$<BOOL:${_angle_has_swiftshader}>
-    )
-    add_dependencies(ogplay_tests ogplay_dexvm_fixtures)
-    add_dependencies(ogplay_tests ogplay_stage_data)
-    if(MSVC)
-        target_compile_options(ogplay_tests PRIVATE /wd5285)
-        target_link_libraries(ogplay_tests PRIVATE ws2_32)
-    endif()
-    if(CYGWIN)
-        target_compile_definitions(ogplay_tests PRIVATE DOCTEST_CONFIG_NO_POSIX_SIGNALS)
-    endif()
-    ogplay_set_project_warnings(ogplay_tests)
-    if(NOT MSVC)
-        # Test fixtures intentionally use partial aggregate initialization for
-        # request structs; production targets keep the warning enabled.
-        target_compile_options(ogplay_tests PRIVATE -Wno-missing-field-initializers)
-    endif()
-
-    ogplay_stage_angle_runtime(ogplay_tests)
-    ogplay_stage_ffmpeg_runtime(ogplay_tests)
-
-    include(${OGPLAY_DOCTEST_CMAKE_MODULE})
-    doctest_discover_tests(ogplay_desktop_integration_tests PROPERTIES LABELS "frontend;integration")
-    doctest_discover_tests(ogplay_file_lock_tests PROPERTIES LABELS "hal;contract")
-    doctest_discover_tests(ogplay_app_tests PROPERTIES LABELS "app;contract")
-    doctest_discover_tests(ogplay_tests
-        PROPERTIES LABELS "unit;contract"
-    )
-
-    add_test(
-        NAME architecture.no_raw_output
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoRawOutput.cmake
-    )
-    set_tests_properties(architecture.no_raw_output PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME architecture.capabilities_monotonic
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckCapabilitiesMonotonic.cmake
-    )
-    set_tests_properties(architecture.capabilities_monotonic PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME tools.capabilities_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/capabilities.py check
-    )
-    set_tests_properties(tools.capabilities_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME architecture.platform_boundaries
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckPlatformBoundaries.cmake
-    )
-    set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME architecture.documentation_layout
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDocumentationLayout.cmake
-    )
-    set_tests_properties(architecture.documentation_layout PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME architecture.dexvm_intrinsic_layout
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckDexVmIntrinsicLayout.cmake
-    )
-    set_tests_properties(architecture.dexvm_intrinsic_layout PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME architecture.boundary_hot_path
-        COMMAND ${CMAKE_COMMAND}
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckBoundaryHotPath.cmake
-    )
-    set_tests_properties(architecture.boundary_hot_path PROPERTIES LABELS architecture)
-
-    add_test(
-        NAME frontend.run_apk_options
-        COMMAND ${CMAKE_COMMAND}
-            -DOGPLAY_CLI=$<TARGET_FILE:ogplay-cli>
-            -DROOT=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckRunApkOptions.cmake
-    )
-    set_tests_properties(frontend.run_apk_options PROPERTIES LABELS "unit;frontend")
-
-    if(OGPLAY_BUILD_GUI)
-        add_test(NAME frontend.gui_dashboard_window
-            COMMAND ogplay_desktop_integration_tests "--test-case=GUI Dashboard windows*" --no-skip=true)
-        set_tests_properties(frontend.gui_dashboard_window PROPERTIES LABELS "integration;frontend" TIMEOUT 30)
-        add_test(NAME frontend.dashboard_http
-            COMMAND ogplay_desktop_integration_tests "--test-case=Dashboard HTTP*,MCP HTTP*")
-        add_test(NAME frontend.dashboard_manifest
-            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/dashboard
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
-        add_test(NAME frontend.key_editor_manifest
-            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/controls
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
-        set_tests_properties(frontend.dashboard_http frontend.dashboard_manifest frontend.key_editor_manifest
-            PROPERTIES LABELS "unit;frontend" TIMEOUT 30)
-        add_test(
-            NAME frontend.gui_webui_manifest
-            COMMAND ${CMAKE_COMMAND} -DWEBUI_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/data/webui/gui
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckWebUi.cmake)
-        add_test(
-            NAME frontend.gui_options
-            COMMAND ${CMAKE_COMMAND}
-                -DOGPLAY_GUI=$<TARGET_FILE:ogplay>
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiOptions.cmake
-        )
-        set_tests_properties(frontend.gui_options PROPERTIES LABELS "unit;frontend")
-
-        add_test(
-            NAME frontend.gui_smoke
-            COMMAND $<TARGET_FILE:ogplay>
-                --library-root ${CMAKE_CURRENT_BINARY_DIR}/gui-smoke-library
-                --smoke-frames 3
-        )
-        set_tests_properties(frontend.gui_smoke PROPERTIES
-            LABELS "integration;frontend"
-            TIMEOUT 30)
-
-        add_test(
-            NAME frontend.gui_library_smoke
-            COMMAND ${CMAKE_COMMAND}
-                -DOGPLAY_GUI=$<TARGET_FILE:ogplay>
-                -DGUI_LIBRARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}/gui-library-smoke
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckGuiLibrarySmoke.cmake
-        )
-        set_tests_properties(frontend.gui_library_smoke PROPERTIES
-            LABELS "integration;frontend"
-            TIMEOUT 30)
-
-
-    endif()
-
-    add_test(
-        NAME integration.m4_exit_strict_environment
-        COMMAND ${CMAKE_COMMAND}
-            -DOGPLAY_TESTS=$<TARGET_FILE:ogplay_tests>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckM4ExitStrict.cmake
-    )
-    set_tests_properties(integration.m4_exit_strict_environment
-        PROPERTIES LABELS "integration;fixtures")
-
-    add_test(
-        NAME tools.gles_idl_generator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --self-test
-    )
-    set_tests_properties(tools.gles_idl_generator_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.dexvm_stub_generator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_stub_gen.py
-            --self-test
-    )
-    set_tests_properties(tools.dexvm_stub_generator_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.dexvm_api19_surface_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_api19_surface.py
-            --self-test
-    )
-    set_tests_properties(tools.dexvm_api19_surface_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.dexvm_gap_report_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexvm_gap_report.py
-            --repo ${CMAKE_CURRENT_SOURCE_DIR}
-            --self-test
-    )
-    set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.bootdex_builder_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/build_bootdex.py
-            --self-test
-    )
-    set_tests_properties(tools.bootdex_builder_self_test
-        PROPERTIES LABELS "tools;dexvm;distribution")
-
-    add_test(
-        NAME tools.diagnostics_align_host_threads
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_align_host_threads.py
-    )
-    set_tests_properties(tools.diagnostics_align_host_threads PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.gles2_extensions_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2_extensions.json
-            --output ${OGPLAY_GLES2_EXTENSIONS_CATALOG}
-            --check
-            --verify-header ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2ext.h
-    )
-    set_tests_properties(tools.gles2_extensions_catalog_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.gles2_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles2.json
-            --output ${OGPLAY_GLES2_CATALOG}
-            --check
-            --verify-header
-                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES2/gl2.h
-    )
-    set_tests_properties(tools.gles2_catalog_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.gles3_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles3.json
-            --output ${OGPLAY_GLES3_CATALOG}
-            --check
-            --verify-header
-                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES3/gl3.h
-    )
-    set_tests_properties(tools.gles3_catalog_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.gles1_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1.json
-            --output ${OGPLAY_GLES1_CATALOG}
-            --check
-            --verify-header
-                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/gl.h
-    )
-    set_tests_properties(tools.gles1_catalog_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.gles1_extensions_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_gles_api.py
-            --idl ${CMAKE_CURRENT_SOURCE_DIR}/data/gles/gles1_extensions.json
-            --output ${OGPLAY_GLES1_EXTENSIONS_CATALOG}
-            --check
-            --verify-header
-                ${OGPLAY_ANGLE_SDK_ROOT}/include/GLES/glext.h
-    )
-    set_tests_properties(tools.gles1_extensions_catalog_current PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.android_payload_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_android_payload.py
-            --root ${CMAKE_CURRENT_SOURCE_DIR}/data/android/19
-    )
-    set_tests_properties(tools.android_payload_current
-        PROPERTIES LABELS "tools;bionic;distribution")
-
-    add_test(
-        NAME tools.title_profile_validator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
-            --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
-            --self-test
-    )
-    set_tests_properties(tools.title_profile_validator_self_test
-        PROPERTIES LABELS "tools;profiles")
-
-    add_test(
-        NAME tools.title_profiles_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
-            --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
-            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-    )
-    set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")
-
-    add_test(
-        NAME tools.scenario_validator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
-            --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
-            --self-test
-    )
-    set_tests_properties(tools.scenario_validator_self_test
-        PROPERTIES LABELS "tools;automation;scenarios")
-
-    add_test(
-        NAME tools.scenarios_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_scenarios.py
-            --schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-v1.schema.json
-            --scenarios ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios
-            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-    )
-    set_tests_properties(tools.scenarios_current
-        PROPERTIES LABELS "tools;automation;scenarios")
-
-    add_test(
-        NAME tools.scenario_model_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/scenario_model.py
-            --result-schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-result-v1.schema.json
-            --self-test
-    )
-    set_tests_properties(tools.scenario_model_self_test
-        PROPERTIES LABELS "tools;automation;scenarios")
-
-    add_test(
-        NAME tools.scenario_runner_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/run_scenario.py
-            --result-schema
-                ${CMAKE_CURRENT_SOURCE_DIR}/data/scenarios/scenario-result-v1.schema.json
-            --self-test
-    )
-    set_tests_properties(tools.scenario_runner_self_test
-        PROPERTIES LABELS "tools;automation;scenarios")
-
-    add_test(
-        NAME tools.device_presets_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_devices.py
-            --devices ${CMAKE_CURRENT_SOURCE_DIR}/data/devices
-    )
-    add_test(
-        NAME tools.device_presets_validator
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_validate_devices.py
-    )
-    set_tests_properties(tools.device_presets_current tools.device_presets_validator
-        PROPERTIES LABELS "tools;devices")
-
-    add_test(
-        NAME tools.quirk_registry_validator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
-            --self-test
-    )
-    set_tests_properties(tools.quirk_registry_validator_self_test
-        PROPERTIES LABELS "tools;profiles;quirks")
-
-    add_test(
-        NAME tools.quirk_registry_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_quirks.py
-            --registry ${CMAKE_CURRENT_SOURCE_DIR}/data/quirks.toml
-            --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
-            --root ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    set_tests_properties(tools.quirk_registry_current
-        PROPERTIES LABELS "tools;profiles;quirks")
-
-    add_test(
-        NAME tools.m4_exit_sample_contract
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/samples/m4_exit/tools/build.py
-            --contract-only
-    )
-    set_tests_properties(tools.m4_exit_sample_contract PROPERTIES LABELS "tools;fixtures")
-
-    add_test(
-        NAME tools.remote_incremental_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/remote_incremental.py
-            --self-test
-    )
-    set_tests_properties(tools.remote_incremental_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.dexvm_opcode_generator_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
-            --self-test
-    )
-    set_tests_properties(tools.dexvm_opcode_generator_self_test
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
-        NAME tools.dexvm_opcode_catalog_current
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dexvm_opcodes.py
-            --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
-            --output ${OGPLAY_DEXVM_OPCODE_TABLE}
-            --check
-    )
-    set_tests_properties(tools.dexvm_opcode_catalog_current
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
-        NAME tools.dexasm_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dexasm.py
-            --catalog ${CMAKE_CURRENT_SOURCE_DIR}/data/dexvm/dalvik_opcodes.json
-            --self-test
-    )
-    set_tests_properties(tools.dexasm_self_test
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
-        NAME tools.dex_dependency_survey_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/dex_dependency_survey.py
-            --self-test
-    )
-    set_tests_properties(tools.dex_dependency_survey_self_test
-        PROPERTIES LABELS "tools;dexvm")
-
-    add_test(
-        NAME tools.m4_local_exit_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/m4_exit.py
-            --self-test
-    )
-    set_tests_properties(tools.m4_local_exit_self_test
-        PROPERTIES LABELS "tools;fixtures")
-
-    add_test(
-        NAME tools.angle_build_driver_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/build_angle.py
-            --self-test
-    )
-    set_tests_properties(tools.angle_build_driver_self_test PROPERTIES LABELS tools)
-
-    add_test(
-        NAME tools.angle_sdk_packager_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/angle-prebuilt/tools/package_angle_sdk.py
-            --self-test
-    )
-    set_tests_properties(tools.angle_sdk_packager_self_test PROPERTIES LABELS tools)
+    include(cmake/Tests.cmake)
 endif()

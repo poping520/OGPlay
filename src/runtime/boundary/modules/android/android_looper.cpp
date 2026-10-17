@@ -16,6 +16,7 @@ AndroidModule::Looper& AndroidModule::RequireLooper(memory::GuestAddress handle)
 }
 
 void AndroidModule::RetireThreadLooperLocked(std::uint64_t tid) {
+    RetireSensorQueues(tid);
     const auto found = thread_loopers_.find(tid);
     if (found == thread_loopers_.end()) return;
     const auto handle = found->second;
@@ -35,6 +36,13 @@ void AndroidModule::RetireThreadLooperLocked(std::uint64_t tid) {
 
 void AndroidModule::SweepLoopers() {
     if (!looper_hooks_.thread_running) return;
+    for (auto it = sensor_queues_.begin(); it != sensor_queues_.end();) {
+        const auto current = it++;
+        if (!looper_hooks_.thread_running(current->second.owner)) {
+            CloseSensorQueue(current->second);
+            sensor_queues_.erase(current);
+        }
+    }
     for (auto it = thread_loopers_.begin(); it != thread_loopers_.end();) {
         const auto tid = (it++)->first;
         if (!looper_hooks_.thread_running(tid)) RetireThreadLooperLocked(tid);
@@ -67,6 +75,7 @@ void AndroidModule::RetireThreadLooper(std::uint64_t tid) {
 void AndroidModule::ShutdownLoopers() {
     std::scoped_lock lock(mutex_);
     loopers_shutdown_ = true;
+    RetireSensorQueues(std::nullopt);
     while (!thread_loopers_.empty()) RetireThreadLooperLocked(thread_loopers_.begin()->first);
     ready_.notify_all();
 }

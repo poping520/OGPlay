@@ -126,6 +126,7 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/boundary/integration/android_gles1_state_tests.cpp
     tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp
     tests/runtime/boundary/integration/android_boundary_looper_tests.cpp
+    tests/runtime/boundary/integration/android_boundary_sensor_tests.cpp
     tests/runtime/boundary/integration/android_egl_sharing_tests.cpp
     tests/runtime/boundary/integration/android_frame_presentation_tests.cpp
     tests/runtime/boundary/integration/android_native_activity_io_tests.cpp

@@ -924,10 +924,19 @@ std::optional<std::string> DispatchHolderCallbacks(
             DexVmAndroidContext& context;
             std::uint32_t holder;
             bool destroying;
-            ~DestroyScope() { if (destroying) context.destroying_surface_holders.erase(holder); }
+            // AOSP keeps the Surface valid through surfaceDestroyed and
+            // releases it afterwards; NDK windows retire at the same point.
+            ~DestroyScope() {
+                if (!destroying) return;
+                if (context.retire_native_surface)
+                    context.retire_native_surface(dexvm::VmObjectRef(holder));
+                context.destroying_surface_holders.erase(holder);
+            }
         } scope{context, holder_handle, phase == SurfaceHolderPhase::destroyed};
         if (scope.destroying) context.destroying_surface_holders.insert(holder_handle);
         if (phase == SurfaceHolderPhase::changed) {
+            if (context.update_native_surface) context.update_native_surface(
+                dx::VmObjectRef(holder_handle), context.surface_width, context.surface_height);
             const auto size = std::pair{context.surface_width, context.surface_height};
             const auto previous = context.surface_callback_sizes.find(holder_handle);
             if (previous != context.surface_callback_sizes.end() && previous->second == size) continue;

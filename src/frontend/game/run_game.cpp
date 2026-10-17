@@ -41,6 +41,7 @@
 #include "ogplay/session/control_config.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/bionic/bionic_profile.h"
+#include "ogplay/runtime/integration/android_link_preflight.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 #include "ogplay/session/profile_apk.h"
 #include "ogplay/loader/arsc.h"
@@ -313,6 +314,23 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                                   native_inventory.Libraries().size())}},
         kUnrestrictedLog);
     if (preflight) {
+        runtime::AndroidImportAudit audit;
+        if (process_abi) audit = runtime::AuditAndroidNativeImports(
+            loader::ApkSelectedNativeLibraries(native_inventory, *process_abi), bionic, system_sources);
+        for (const auto& gap : audit.gaps) {
+            Write("OGPlay: preflight import: library=" + gap.library + " binding=" +
+                  (gap.weak ? "weak" : "strong") + " symbol=" + gap.symbol + "\n");
+            logger.Write(gap.weak ? core::LogLevel::warn : core::LogLevel::error,
+                "frontend.preflight", "unresolved native import", {},
+                {{"library", gap.library}, {"symbol", gap.symbol}, {"weak", gap.weak}}, kUnrestrictedLog);
+        }
+        Write("OGPlay: preflight imports: strong_missing=" + std::to_string(audit.strong_missing) +
+              " weak_missing=" + std::to_string(audit.weak_missing) + "\n");
+        logger.Write(audit.strong_missing ? core::LogLevel::error : core::LogLevel::info,
+            "frontend.preflight", "native import audit completed", {},
+            {{"strong_missing", static_cast<std::uint64_t>(audit.strong_missing)},
+             {"weak_missing", static_cast<std::uint64_t>(audit.weak_missing)}}, kUnrestrictedLog);
+        if (audit.strong_missing) return 1;
         Write("OGPlay: preflight ready: package=" + manifest.package +
               " rootless=true abi=" +
               (process_abi.has_value()

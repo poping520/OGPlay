@@ -16,8 +16,9 @@ std::uint32_t SignedResult(const std::int32_t value) noexcept {
 }  // namespace
 
 AndroidModule::AndroidModule(BoundaryCallServices& calls,
-                             AndroidBoundaryServices& services, AndroidLooperHooks hooks)
-    : looper_hooks_(std::move(hooks)), calls_(calls), services_(services) {}
+                             AndroidBoundaryServices& services, AndroidLooperHooks hooks,
+                             core::Logger* logger, core::CapabilityLedger* ledger)
+    : looper_hooks_(std::move(hooks)), calls_(calls), services_(services), logger_(logger), ledger_(ledger) {}
 
 BoundaryCallServices& AndroidModule::CallServices() noexcept { return calls_; }
 
@@ -40,6 +41,7 @@ void AndroidModule::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
         // Owner retires hooks only after guest workers have stopped. Release
         // native leases too; no resource survives until a later VM destruction.
         std::scoped_lock lock(mutex_);
+        asset_directories_.clear();
         asset_managers_.clear();
         assets_.clear();
     }
@@ -57,6 +59,7 @@ memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<Android
 void AndroidModule::UnregisterAssetManager(memory::GuestAddress manager) {
     std::scoped_lock guard(mutex_);
     // Existing Assets have independent backing leases, like API19 _FileAsset.
+    std::erase_if(asset_directories_, [&](const auto& item) { return item.second.manager == manager; });
     asset_managers_.erase(manager.Value());
 }
 
@@ -169,6 +172,9 @@ template <std::uint16_t FunctionId>
 BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     const auto args = call.RegisterArguments();
     const auto tid = call.ThreadId();
+    if constexpr (FunctionId == 100U) return SurfaceFromJava(call);
+    if constexpr (FunctionId >= 101U && FunctionId <= 104U) return AssetExtension(call, FunctionId);
+    if constexpr (FunctionId >= 85U && FunctionId <= 99U) return SensorExport(call, FunctionId);
     if constexpr (FunctionId == 83U) {
         std::scoped_lock guard(asset_hook_mutex_);
         if (!asset_hooks_.from_java)
@@ -198,7 +204,7 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 19U || (FunctionId >= 26U && FunctionId <= 30U)) {
         std::scoped_lock lock(mutex_);
         if constexpr (FunctionId == 19U) {
-            if (!managed_activity_seen_) return 0; // legacy standalone runner
+            if (!managed_activity_seen_ && !windows_.contains(args[0])) return 0; // legacy standalone runner
         }
         auto& item = Window(args[0]);
         if constexpr (FunctionId == 19U) {
@@ -211,7 +217,10 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         if constexpr (FunctionId == 26U) return item.width;
         if constexpr (FunctionId == 27U) return item.height;
         if constexpr (FunctionId == 28U) return 1;
-        if constexpr (FunctionId == 29U) { ++item.references; return 0; }
+        if constexpr (FunctionId == 29U) {
+            if (item.references == UINT32_MAX) throw std::overflow_error("ANativeWindow reference overflow");
+            ++item.references; return 0;
+        }
         if constexpr (FunctionId == 30U) {
             if (item.references <= (item.owned ? 1U : 0U)) throw std::invalid_argument("unbalanced ANativeWindow_release");
             if (--item.references == 0) windows_.erase(args[0]);
@@ -336,24 +345,16 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             if (--looper.references == 0) loopers_.erase(args[0]);
         }
         if constexpr (FunctionId == 35U) { looper.wake = true; ready_.notify_all(); }
-        if constexpr (FunctionId == 36U) return static_cast<std::uint32_t>(looper.requests.erase(static_cast<std::int32_t>(args[1])));
+        if constexpr (FunctionId == 36U) return SignedResult(RemoveLooperFdLocked(
+            call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1])));
         return 0;
     }
     if constexpr (FunctionId == 6U) {
         std::scoped_lock lock(mutex_);
         SweepLoopers();
-        auto& looper = RequireLooper(call.Pointer<void>(0).Address());
-        const auto fd = static_cast<std::int32_t>(args[1]);
-        const auto ident = static_cast<std::int32_t>(args[2]);
-        // Callback execution is outside this bounded ident-polling contract.
-        if (looper.retired || fd < 0 || ident < 0 || !looper.allow_non_callbacks ||
-            call.Argument(4) != 0 || !looper_hooks_.poll_events ||
-            (args[3] & ~31U) != 0) return SignedResult(-1);
-        const auto events = looper_hooks_.poll_events(fd);
-        if (!events || (*events & 16U) != 0) return SignedResult(-1);
-        looper.requests[fd] = {ident, args[3], call.Pointer<void>(5).Address()};
-        ready_.notify_all();
-        return 1;
+        return SignedResult(AddLooperFdLocked(call.Pointer<void>(0).Address(),
+            std::bit_cast<std::int32_t>(args[1]), std::bit_cast<std::int32_t>(args[2]), args[3],
+            call.Pointer<void>(4).Address(), call.Pointer<void>(5).Address()));
     }
     if constexpr (FunctionId == 7U || FunctionId == 34U) return PollAll(args, tid);
     if constexpr (FunctionId == 8U) {

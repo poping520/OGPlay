@@ -177,6 +177,39 @@ TEST_CASE("DVM-245 Window append preserves Surface and destruction reentry stops
     }
 }
 
+TEST_CASE("APS-11 SurfaceView native window retires after surfaceDestroyed callbacks") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        vm.context->activity = vm.activity;
+        vm.context->managed_host_surface_open = true;
+        std::vector<std::uint32_t> retired;
+        vm.context->retire_native_surface = [&](VmObjectRef holder) { retired.push_back(holder.Value()); };
+        const auto surface = vm.interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
+        const auto surface_root = vm.interpreter.ProtectReferences(std::array{surface});
+        vm.CallDirect(surface, "Landroid/view/SurfaceView;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(vm.activity)});
+        const auto holder = vm.CallOn(surface, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto callback = vm.interpreter.NewIntrinsicInstance("LContentSurfaceCallback;");
+        vm.CallOn(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(surface)});
+        REQUIRE(vm.content_surface_creates == 1);
+        const auto backing = vm.CallOn(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        bool observed{};
+        vm.content_surface_destroy_hook = [&] {
+            // AOSP SurfaceView: the Surface is still valid inside surfaceDestroyed.
+            observed = true;
+            CHECK(retired.empty());
+            CHECK(vm.CallOn(backing, "isValid", "()Z").AsInt() == 1);
+        };
+        const auto replacement = vm.interpreter.NewIntrinsicInstance("Landroid/view/View;");
+        const auto replacement_root = vm.interpreter.ProtectReferences(std::array{replacement});
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(replacement)});
+        CHECK(observed);
+        CHECK(vm.content_surface_destroys == 1);
+        CHECK(retired == std::vector<std::uint32_t>{holder.Value()});
+        CHECK(vm.CallOn(backing, "isValid", "()Z").AsInt() == 0);
+    }
+}
+
 TEST_CASE("managed dynamic SurfaceView attach exposes its holder at the next traversal") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ClickVm vm(backend);

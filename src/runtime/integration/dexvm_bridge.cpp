@@ -283,6 +283,7 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->gl_surface_config_specs.erase(key);
             context->surface_holders.erase(key);
             context->surface_callbacks.erase(key);
+            if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
             context->active_surface_holders.erase(key);
             context->view_tree_observers.erase(key);
             context->global_layout_listeners.erase(key);
@@ -396,6 +397,31 @@ public:
         try { return AssetManagerObject(FromReference(JniReference{reference.token}, thread)); }
         catch (const dx::VmJavaThrow& error) { static_cast<void>(NativeApiException(thread, error)); }
         catch (const std::exception& error) {
+            static_cast<void>(NativeApiException(thread,
+                dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
+        }
+        return memory::GuestAddress{};
+    }
+
+    memory::GuestAddress SurfaceFromJava(std::uint64_t thread, memory::GuestAddress env,
+                                         SurfaceJavaReference reference) {
+        const dx::VmExecutionLockScope guard(vm->ExecutionLock());
+        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread) ||
+            !android_context) return memory::GuestAddress{};
+        try {
+            const auto object = FromReference(JniReference{reference.token}, thread);
+            if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;") return memory::GuestAddress{};
+            for (const auto& [holder, surface] : android_context->holder_surfaces) {
+                // Surface.isValid(): live holders, and holders still inside
+                // surfaceDestroyed, whose window retires after the callbacks.
+                const bool live = android_context->managed_host_surface_open &&
+                                  android_context->active_surface_holders.contains(holder);
+                if (surface != object ||
+                    !(live || android_context->destroying_surface_holders.contains(holder))) continue;
+                return session->Process().AcquireSurfaceWindow(
+                    {memory::GuestAddress{holder}, android_context->surface_width, android_context->surface_height});
+            }
+        } catch (const std::exception& error) {
             static_cast<void>(NativeApiException(thread,
                 dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
         }
@@ -1779,6 +1805,17 @@ DexVmGuestBridge::DexVmGuestBridge(
     }
 
     if (android_context) {
+        session.Process().SetSensorDirectory(android_context->sensor_directory);
+        session.Process().SetSurfaceHooks({bridge_state,
+            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
+                return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
+            }});
+        android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width, std::uint32_t height) {
+            bridge_state->session->Process().UpdateSurfaceWindow({memory::GuestAddress{holder.Value()}, width, height});
+        };
+        android_context->retire_native_surface = [bridge_state](dx::VmObjectRef holder) {
+            bridge_state->session->Process().RetireSurfaceWindow(memory::GuestAddress{holder.Value()});
+        };
         session.Process().SetAssetManagerHooks({bridge_state,
             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
                 return static_cast<Impl*>(owner)->AssetManagerFromJava(thread, env, ref);
@@ -1863,6 +1900,11 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
     if (impl_->threads) impl_->threads->Shutdown();
     impl_->session->Process().SetBitmapHooks({});
+    if (impl_->android_context) {
+        impl_->android_context->retire_native_surface = {};
+        impl_->android_context->update_native_surface = {};
+    }
+    impl_->session->Process().SetSurfaceHooks({});
     impl_->session->Process().SetAssetManagerHooks({});
     for (const auto& [_, manager] : impl_->asset_managers)
         impl_->session->Process().UnregisterAssetManager(manager);

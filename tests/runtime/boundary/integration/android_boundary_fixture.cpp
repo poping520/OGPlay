@@ -198,6 +198,7 @@ BoundaryFixture::BoundaryFixture(
                            ->push_back(callback);
                    }
                }}, .loopers = std::move(loopers),
+           .ledger = &ledger,
            .async_present_readback = async_readback,
            .compressed_texture_family = texture_family}) {
     memory.Map({stack, memory.PageSize()},

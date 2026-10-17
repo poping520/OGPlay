@@ -61,7 +61,11 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
 - 仅接受规范化的 `dex_activity` Profile。entry/presets 在生命周期前应用，required 数据先
   验证；`--external-dir` 最多一个。quirk 必须在 `data/quirks.toml` 注册并有测试引用。
-- `--preflight` 只验证身份、ELF 闭包、API、surface 与 boundary 映射，不执行 guest。
+- `--preflight`/`library run --mode preflight` 在所选 ABI 下逐个将 APK `.so` 作为静态根，
+  复用 native 来源与 NEEDED/SONAME 闭包、Bionic boundary catalog 及 ELF 查找/版本规则；
+  无关 APK 导出不能跨 scope 消除缺口。逐库输出 `preflight import`（binding=strong/weak）及
+  `preflight imports: strong_missing=N weak_missing=N`，同步结构化日志。强缺口退出 1，
+  仅弱缺口不失败；无缺口沿用 ready 输出。坏 ELF/缺依赖保持明确失败，全程不执行 guest。
 - MCP 仅绑定 `127.0.0.1`，拒绝非 loopback Origin、错误路径/方法、chunked 或超限 body；
   控制请求在 worker 只排队。manual-step 必须启用 transport，且不能与 preflight 共用；无许可不得推进
   Clock、输入、frame 或 present。

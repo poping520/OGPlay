@@ -79,6 +79,13 @@ struct NativeLibrarySnapshot final {
     std::size_t total{};
 };
 
+// Static inspection uses the exact APK/SONAME/system dependency selection of
+// native loading, without a process, mappings, constructors or JNI execution.
+[[nodiscard]] std::vector<BionicOwnedModule> CollectApkNativeLibraryClosure(
+    const loader::ApkSelectedNativeLibraries& libraries,
+    const BionicProfile& bionic, std::span<const BionicModuleSource> system_libraries,
+    std::string_view root);
+
 class NativeLibraryLoader final {
 public:
     NativeLibraryLoader(

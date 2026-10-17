@@ -54,7 +54,7 @@
 
 using namespace ogplay::test::native_library;
 
-TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK descriptors") {
+TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries share platform facts") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -63,6 +63,12 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
         core::CapabilityLedger ledger;
         core::Logger logger;
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        struct ObservedSensorDirectory final : runtime::AndroidSensorDirectory {
+            mutable std::size_t queries{};
+            std::size_t Count() const noexcept override { ++queries; return 0; }
+        };
+        const auto directory_facts = std::make_shared<ObservedSensorDirectory>();
+        context->sensor_directory = directory_facts;
         // Local ZIP fixture exercises the same metadata/CRC/range reader as a
         // parsed sealed archive. The FD still exposes the complete ZIP backing.
         const std::string entry = "assets/hello";
@@ -126,6 +132,32 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
             for (std::size_t i = 0; i < out.size(); ++i) result |= std::to_integer<std::uint32_t>(out[i]) << (i * 8);
             return result;
         };
+        const auto sensor_manager = invoke("ASensorManager_getInstance", {});
+        REQUIRE(sensor_manager != 0);
+        const auto native_queries = directory_facts->queries;
+        CHECK(invoke("ASensorManager_getSensorList", {sensor_manager, scratch.Add(32).Value(), 0, 0}) == 0);
+        CHECK(word(32) != 0);
+        CHECK(invoke("ASensorManager_getDefaultSensor", {sensor_manager, 1, 0, 0}) == 0);
+        CHECK(directory_facts->queries > native_queries);
+        const auto java_queries = directory_facts->queries;
+        const auto sensor_class = vm.Linker().ResolveDescriptor("Landroid/hardware/LocalSensorManager;");
+        const auto sensor_method = vm.Linker().FindDirectMethod(sensor_class, "nativeGetSensors", "()[Landroid/hardware/Sensor;");
+        REQUIRE(sensor_method.has_value());
+        const auto java_sensors = vm.Call(*sensor_method, {});
+        REQUIRE_FALSE(java_sensors.exception.IsValid());
+        CHECK(vm.Model().ArrayLength(java_sensors.value.ref) == 0);
+        CHECK(directory_facts->queries > java_queries); // Both sides read this exact object.
+        const auto native_looper = invoke("ALooper_forThread", {});
+        REQUIRE(native_looper != 0);
+        const auto queue_target = provider.Lookup("libandroid.so", "ASensorManager_createEventQueue");
+        REQUIRE(queue_target.has_value());
+        const std::array<std::uint32_t, 2> queue_data{0, 0};
+        const auto sensor_queue = process.Invoke({*queue_target,
+            {sensor_manager, native_looper, 2, 0x12345678}, queue_data}).return_value;
+        REQUIRE(sensor_queue != 0);
+        CHECK(static_cast<std::int32_t>(invoke("ASensorEventQueue_hasEvents", {sensor_queue, 0, 0, 0})) == -1);
+        CHECK(invoke("ASensorEventQueue_getEvents", {sensor_queue, scratch.Value(), 1, 0}) == 0);
+        CHECK(invoke("ASensorManager_destroyEventQueue", {sensor_manager, sensor_queue, 0, 0}) == 0);
         const auto object = vm.NewIntrinsicInstance("Landroid/content/res/AssetManager;");
         auto reference = bridge.PublishLocal(object);
         const auto convert = [&](runtime::JniReference ref) {
@@ -133,6 +165,28 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
         };
         const auto manager = convert(reference);
         REQUIRE(manager != 0);
+        // Real ARM JNI Surface conversion uses the existing active holder facts.
+        const auto surface_object = vm.NewIntrinsicInstance("Landroid/view/Surface;");
+        const auto holder_object = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+        context->holder_surfaces.emplace(holder_object.Value(), surface_object);
+        context->active_surface_holders.insert(holder_object.Value());
+        context->managed_host_surface_open = true;
+        const auto surface_reference = bridge.PublishLocal(surface_object);
+        const auto from_surface = [&](runtime::JniReference ref) {
+            return invoke("ANativeWindow_fromSurface", {process.GuestEnvironment().Value(), ref.Value(), 0, 0});
+        };
+        CHECK(from_surface(runtime::JniReference{}) == 0);
+        CHECK(from_surface(reference) == 0);
+        const auto surface_window = from_surface(surface_reference);
+        REQUIRE(surface_window != 0);
+        CHECK(from_surface(surface_reference) == surface_window);
+        CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
+        CHECK_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *context, runtime::SurfaceHolderPhase::destroyed).has_value());
+        CHECK(from_surface(surface_reference) == 0);
+        invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
+        invoke("ANativeWindow_release", {surface_window, 0, 0, 0});
+        env.DeleteLocalRef(1, surface_reference);
+        context->holder_surfaces.clear();
         CHECK(convert(reference) == manager);
         const auto weak = env.NewWeakGlobalRef(1, reference);
         CHECK(convert(weak) == manager);
@@ -180,6 +234,21 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
         CHECK(invoke("AAsset_read", {asset, scratch.Add(32).Value(), 2, 0}) == 2);
         CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
         CHECK(invoke("AAsset_getRemainingLength", {other, 0, 0, 0}) == 3);
+        const memory::GuestAddress buffer{invoke("AAsset_getBuffer", {asset, 0, 0, 0})};
+        REQUIRE_FALSE(buffer.IsNull());
+        CHECK(invoke("AAsset_getBuffer", {asset, 0, 0, 0}) == buffer.Value());
+        std::vector<std::byte> buffered(3);
+        memory.read(buffer, buffered);
+        CHECK(buffered == payload); // STORED and Deflate use the same entire contents.
+        CHECK(invoke("AAsset_getRemainingLength", {asset, 0, 0, 0}) == 1);
+        const auto directory = invoke("AAssetManager_openDir", {manager, scratch.Add(16).Value(), 0, 0});
+        REQUIRE(directory != 0);
+        const memory::GuestAddress filename{invoke("AAssetDir_getNextFileName", {directory, 0, 0, 0})};
+        REQUIRE_FALSE(filename.IsNull());
+        std::array<std::byte, 6> name_bytes{}; memory.read(filename, name_bytes);
+        CHECK(std::string(reinterpret_cast<const char*>(name_bytes.data())) == "hello");
+        CHECK(invoke("AAssetDir_getNextFileName", {directory, 0, 0, 0}) == 0);
+        invoke("AAssetDir_close", {directory, 0, 0, 0});
         const auto fd = invoke("AAsset_openFileDescriptor", {asset, scratch.Add(64).Value(), scratch.Add(68).Value(), 0});
         if (compressed) {
             CHECK(static_cast<std::int32_t>(fd) == -1);
@@ -200,6 +269,7 @@ TEST_CASE("DVM-237 real ARM AssetManager shares JNI identity and independent APK
             CHECK(libc("close", {second_fd, 0, 0, 0}) == 0);
         }
         if (compressed) invoke("AAsset_close", {asset, 0, 0, 0});
+        CHECK_THROWS(memory.read(buffer, buffered));
         // Conversion must preserve a pending throwable and never root a manager.
         const auto throwable = vm.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
         const auto throwable_reference = bridge.PublishLocal(throwable);

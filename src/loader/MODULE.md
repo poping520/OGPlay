@@ -134,6 +134,9 @@
   local/global/definition/requirement 及版本名和依赖库；GNU base definition 的索引 1
   保持 global，旧版 Android 的 local undefined 按无版本导入解析；链表、flags 或索引
   不一致时明确失败。
+- 静态导入审计消费者复用 ELF/dynsym/version 事实及 BuildElf32LinkNamespace/LookupElf32Symbol，
+  逐根只查 NEEDED scope、保留 visibility/版本/旧 provider 回退规则；聚合未定义 GLOBAL 与
+  WEAK 的查找缺口，不修改解析表、强符号规则或运行时首错失败行为，不执行 guest。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量

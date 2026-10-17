@@ -86,4 +86,24 @@
     X("AMotionEvent_getHistoricalAxisValue", 81, 4, AMotionEvent_getHistoricalAxisValue) \
     X("AInputQueue_hasEvents", 82, 1, InputQueueHasEvents) \
     X("AAssetManager_fromJava", 83, 2, AssetManagerFromJava) \
-    X("AAsset_openFileDescriptor", 84, 3, AssetOpenFileDescriptor)
+    X("AAsset_openFileDescriptor", 84, 3, AssetOpenFileDescriptor) \
+    X("ASensorManager_getInstance", 85, 0, ASensorManager_getInstance) \
+    X("ASensorManager_getSensorList", 86, 2, ASensorManager_getSensorList) \
+    X("ASensorManager_getDefaultSensor", 87, 2, ASensorManager_getDefaultSensor) \
+    X("ASensorManager_createEventQueue", 88, 5, ASensorManager_createEventQueue) \
+    X("ASensorManager_destroyEventQueue", 89, 2, ASensorManager_destroyEventQueue) \
+    X("ASensorEventQueue_enableSensor", 90, 2, ASensorEventQueue_enableSensor) \
+    X("ASensorEventQueue_disableSensor", 91, 2, ASensorEventQueue_disableSensor) \
+    X("ASensorEventQueue_setEventRate", 92, 3, ASensorEventQueue_setEventRate) \
+    X("ASensorEventQueue_hasEvents", 93, 1, ASensorEventQueue_hasEvents) \
+    X("ASensorEventQueue_getEvents", 94, 3, ASensorEventQueue_getEvents) \
+    X("ASensor_getName", 95, 1, ASensor_getName) \
+    X("ASensor_getVendor", 96, 1, ASensor_getVendor) \
+    X("ASensor_getType", 97, 1, ASensor_getType) \
+    X("ASensor_getResolution", 98, 1, ASensor_getResolution) \
+    X("ASensor_getMinDelay", 99, 1, ASensor_getMinDelay) \
+    X("ANativeWindow_fromSurface", 100, 2, NativeWindowFromSurface) \
+    X("AAssetManager_openDir", 101, 2, AssetManagerOpenDir) \
+    X("AAssetDir_getNextFileName", 102, 1, AssetDirNextFileName) \
+    X("AAssetDir_close", 103, 1, AssetDirClose) \
+    X("AAsset_getBuffer", 104, 1, AssetGetBuffer)

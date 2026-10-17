@@ -20,7 +20,14 @@ namespace ogplay::runtime {
 class AndroidModule final {
 public:
     AndroidModule(BoundaryCallServices& calls,
-                  AndroidBoundaryServices& services, AndroidLooperHooks hooks = {});
+                  AndroidBoundaryServices& services, AndroidLooperHooks hooks = {},
+                  core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr);
+    ~AndroidModule();
+    void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void RetireSurfaceWindow(memory::GuestAddress identity);
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void NotifyFileWrite();
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id, std::uint32_t opts = 0);
@@ -53,6 +60,9 @@ private:
         std::map<std::int32_t, Request> requests;
         std::int32_t last_fd{-1};
     };
+    std::int32_t AddLooperFdLocked(memory::GuestAddress looper, std::int32_t fd,
+        std::int32_t ident, std::uint32_t events, memory::GuestAddress callback, memory::GuestAddress data);
+    std::int32_t RemoveLooperFdLocked(memory::GuestAddress looper, std::int32_t fd);
     Looper& RequireLooper(memory::GuestAddress handle);
     void RetireThreadLooperLocked(std::uint64_t thread_id);
     void SweepLoopers();
@@ -87,13 +97,32 @@ private:
     struct WindowResource {
         std::uint32_t width{}, height{}, references{1};
         bool active{}, owned{true};
+        memory::GuestAddress surface_identity{};
     };
     std::map<std::uint32_t, WindowResource> windows_;
     memory::GuestAddress next_window_{kNativeActivityWindowHandleBegin};
     void RetireWindow(Resource& resource);
+    struct GuestBuffer {
+        memory::AddressSpace& memory;
+        memory::GuestRange range;
+        GuestBuffer(memory::AddressSpace& memory, std::uint64_t size);
+        ~GuestBuffer();
+    };
+    std::unique_ptr<GuestBuffer> ReadOnlyBuffer(std::span<const std::byte> bytes, std::uint64_t thread);
+    std::string AssetPath(const A32CallFrame& call, std::size_t argument);
+    BoundaryResult AssetExtension(const A32CallFrame& call, std::uint16_t id);
+    struct AssetDirectory {
+        memory::GuestAddress manager;
+        std::vector<AndroidAssetDirectoryEntry> entries;
+        std::size_t index{};
+        std::unique_ptr<GuestBuffer> cached_name;
+    };
+    std::map<std::uint32_t, AssetDirectory> asset_directories_;
+    memory::GuestAddress next_asset_directory_{0x6ea00000U};
     struct Asset {
         std::shared_ptr<const AndroidAssetSource> source;
         std::uint64_t offset{};
+        std::unique_ptr<GuestBuffer> buffer;
         std::mutex mutex;
     };
     bool managed_activity_seen_{};
@@ -103,10 +132,29 @@ private:
     memory::GuestAddress next_asset_manager_{0x6e300000U};
     std::recursive_mutex asset_hook_mutex_;
     AndroidAssetManagerHooks asset_hooks_;
+    AndroidSurfaceHooks surface_hooks_;
+    std::recursive_mutex surface_hook_mutex_;
+    BoundaryResult SurfaceFromJava(const A32CallFrame& call);
     // Asset handles are opaque tokens, never dereferenced as guest structures.
     std::uint32_t next_asset_{0x6e100000U};
     Resource& Queue(std::uint32_t handle);
     WindowResource& Window(std::uint32_t handle);
+    struct SensorQueue {
+        std::uint64_t owner{};
+        memory::GuestAddress looper;
+        std::array<std::int32_t, 2> pipe;
+    };
+    std::map<std::uint32_t, SensorQueue> sensor_queues_;
+    memory::GuestAddress next_sensor_queue_{0x6e900000U};
+    memory::GuestAddress sensor_list_{};
+    std::shared_ptr<const AndroidSensorDirectory> sensor_directory_ =
+        std::make_shared<const AndroidSensorDirectory>();
+    core::Logger* logger_{};
+    core::CapabilityLedger* ledger_{};
+    BoundaryResult SensorExport(const A32CallFrame& call, std::uint16_t id);
+    void RetireSensorQueues(std::optional<std::uint64_t> thread);
+    void CloseSensorQueue(const SensorQueue& queue);
+    [[noreturn]] void SensorFailure(std::string_view message, std::uint64_t thread);
     std::mutex mutex_;
     std::condition_variable ready_;
     InputQueueState standalone_input_;

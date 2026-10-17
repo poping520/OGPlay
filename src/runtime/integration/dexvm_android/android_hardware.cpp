@@ -2,11 +2,15 @@
 
 namespace ogplay::runtime::android_intrinsics {
 
-Decl Declare_android_hardware_LocalSensorManager(const Context&) {
+Decl Declare_android_hardware_LocalSensorManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/hardware/LocalSensorManager;", "Landroid/hardware/SensorManager;");
     builder.StaticMethod("nativeGetSensors", "()[Landroid/hardware/Sensor;",
-        [](dx::IntrinsicContext& call) {
+        [context](dx::IntrinsicContext& call) {
+            if (!context->sensor_directory || context->sensor_directory->Count() != 0) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.sensor_absent_facade", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "nonempty sensor directory is unsupported"};
+            }
             auto& linker = call.vm.Linker();
             return dx::VmValue::Ref(call.vm.Model().NewObjectArray(
                 linker.ResolveDescriptor("[Landroid/hardware/Sensor;"),

@@ -185,7 +185,11 @@ def _validate_profile(value: Any,
     abi = _string(profile["abi"], "profile.abi")
     if abi not in ABIS:
         raise ScenarioError("profile.abi must be armeabi or armeabi-v7a")
-    if (package, version_code, digest, abi) not in profile_identities:
+    # Title Profiles are optional: a package without one runs generically, but a
+    # package that has one must hit an exact identity so the run is not silently generic.
+    profiled_packages = {identity[0] for identity in profile_identities}
+    if (package in profiled_packages and
+            (package, version_code, digest, abi) not in profile_identities):
         raise ScenarioError("profile does not match an exact Title Profile identity")
 
 
@@ -626,6 +630,9 @@ def self_test(schema_path: Path) -> int:
             _scenario_text(), encoding="utf-8", newline="\n"
         )
         assert validate_directory(scenarios, profiles) == 1
+        empty_profiles = root / "empty_profiles"
+        empty_profiles.mkdir()
+        assert validate_directory(scenarios, empty_profiles) == 1
 
         invalid_cases = {
             "filename mismatch": _scenario_text().replace(

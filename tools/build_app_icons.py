@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate desktop icon containers from assets/icons/ogplay.png (requires Pillow)."""
+"""Generate desktop icons from platform PNG sources (requires Pillow)."""
 
 from io import BytesIO
 from pathlib import Path
@@ -41,6 +41,11 @@ def save_windows_icon(image: Image.Image, path: Path) -> None:
     path.write_bytes(directory + payload)
 
 
+def save_macos_icon(image: Image.Image, path: Path) -> None:
+    # The PNG already contains the final artwork, padding, and transparency.
+    image.save(path)
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[1] / "assets" / "icons"
     with Image.open(root / "ogplay.png") as source:
@@ -48,7 +53,10 @@ def main() -> None:
             raise ValueError("Application icon must be square")
         image = source.convert("RGBA")
     save_windows_icon(image, root / "ogplay.ico")
-    image.resize((1024, 1024), Image.Resampling.LANCZOS).save(root / "ogplay.icns")
+    with Image.open(root / "ogplay-macos.png") as source:
+        if source.width != source.height:
+            raise ValueError("macOS application icon must be square")
+        save_macos_icon(source.convert("RGBA"), root / "ogplay.icns")
 
 
 if __name__ == "__main__":

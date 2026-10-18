@@ -402,6 +402,13 @@ void AttachSandbox(const SandboxSession& sandbox,
         return;
     }
     filesystem.AttachSandbox(*sandbox.store, writable_roots);
+    for (const auto& root : sandbox.store->RecreatedSemanticRoots()) {
+        logger.Write(core::LogLevel::warn, "frontend.run_apk",
+                     "recreated missing save sandbox semantic root", {},
+                     {{"installation_id", sandbox.store->InstallationId()},
+                      {"root", PathUtf8(sandbox.store->Directory() / root)}},
+                     kUnrestrictedLog);
+    }
     if (sandbox.store->TemporaryFilesRemoved() != 0) {
         logger.Write(core::LogLevel::warn, "frontend.run_apk",
                      "cleared save sandbox temporaries left by an earlier "

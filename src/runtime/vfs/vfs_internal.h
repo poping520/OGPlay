@@ -27,6 +27,7 @@ inline constexpr std::int32_t kEnoent = 2;
 inline constexpr std::int32_t kEio = 5;
 inline constexpr std::int32_t kEbadf = 9;
 inline constexpr std::int32_t kEacces = 13;
+inline constexpr std::int32_t kEbusy = 16;
 inline constexpr std::int32_t kEexist = 17;
 inline constexpr std::int32_t kEnotdir = 20;
 inline constexpr std::int32_t kEisdir = 21;

@@ -63,3 +63,23 @@ MediaPlayer 纹理生产者和前端后端设置留到下一阶段，不顺带�
   SwiftShader 上的合成 producer。默认 Metal 仍明确不支持 external，不切换后端。
   Windows/Linux、MediaPlayer/NDK/EGL producer、Camera、Canvas/Parcel、context-loss 与前端
   renderer 偏好接线不在本阶段验收范围。
+- Activity 首错局部修复：isFinishing/isDestroyed 仅读 Java 实例字段；nativeFinish 正常返回才置
+  mFinished，实例销毁改经 final performDestroy 先置 mDestroyed 再虚派 onDestroy，其余顺序不变；
+  进程关闭不合成 finish/onDestroy，未改 finishing_activity 或扩充其他 Activity 方法。
+  BootDex build/check、Activity 两个既有 native 的逐类签名审计、payload 校验通过，证据
+  `.local/aps14-activity-bootdex-{build,check}.log`、`aps14-activity-bootdex-proof.json`、
+  `aps14-activity-payload-check.log`。Release 仅构建 ogplay-cli/ogplay_tests；过滤两个 Activity
+  主题文件中的 `APS-14 Activity* / DVM-223* / DVM-250* / Activity.isTaskRoot* / DVM-219*`，
+  **7 cases / 706 assertions** 全过（`aps14-activity-build.log`、`aps14-activity-tests.log`）。
+  新增双解释器回归覆盖未 finish、成功后及 pause/stop/destroy 内外状态、实例隔离、
+  进程关闭不置位/不调用 onDestroy、process_stopping 时 finish 抛 ISE 且不置位。
+  原 APK `run-apk .local/games/tml/TML_v1.0.apk --ephemeral-sandbox` 运行一次，4.466 秒、退出 0，
+  surfaceCreated 已交付，推进 378 逻辑帧后 guest_exit，呈现 0 帧；机器断言原解析错消失，
+  无新方法解析错。下一原生 fatal 为 Mono `mini-posix.c:382` 的 `sigaction (...) != -1` 断言，
+  同次还记录 Unity 创建 surface 失败及 `EGL_BAD_ATTRIBUTE`，暂不判定二者因果。
+  再运行一次相同 ephemeral 命令并加 `--exit-after-frames 120 --survey-gaps .local/tml_survey.json`，
+  3.133 秒、退出 0，358 逻辑帧/呈现 0 帧时 guest 自退，未达 120 呈现帧上限。
+  按 hits 汇总的 Java 缺口队列为空：missing_classes=0、missing_members=0、stub_hits=0；
+  survey 不覆盖上述 native/EGL 错误，未据此修复其他缺口。两次日志/退出元数据分别见
+  `aps14-activity-tml-{run,survey}.log/json`，机器断言见 `aps14-activity-tml-proof.json`。
+  本次只提供 reached-fault 证据，不是 title gate；剩余 native/EGL、无呈现及真实消费路径待查。

@@ -1127,7 +1127,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 if (const auto error = runtime::DetachSurfaceViewSubtree(vm, context, *old.window_root)) Fail(*error);
             }
             StopRendererThread(old.render_view);
-            CallOnView(old.object, "onDestroy", "()V", {});
+            CallOnView(old.object, "performDestroy", "()V", {});
             runtime::DismissAndroidActivityDialogs(vm, context, old.object);
             if (old.window_root) runtime::RetireViewUiSubtree(context, *old.window_root);
             else if (old.content.IsValid()) {

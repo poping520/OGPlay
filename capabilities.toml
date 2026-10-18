@@ -571,7 +571,7 @@ note = "SBX-2：VFS 目录创建/删除、文件删除/改名、Truncate/Flush/F
 [runtime.vfs_sandbox_persistence]
 status = "partial"
 test = "tests/runtime/sandbox_store_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp; tests/runtime/preferences_xml_tests.cpp"
-note = "ADR-0071/VFS-01：沙盒按安装层显式 installation id 隔离，schema 3 仅 internal/external/obb/sdcard 四根，旧布局拒绝且不迁移；同包多实例存档与 ANDROID_ID 隔离并跨重开稳定；语义根 ASCII case-fold。用户级真实游戏存档闭环未演示。"
+note = "ADR-0071/VFS-01：沙盒按安装层显式 installation id 隔离，schema 3 仅 internal/external/obb/sdcard 四根，旧布局拒绝且不迁移；同包多实例存档与 ANDROID_ID 隔离并跨重开稳定；语义根 ASCII case-fold、挂载即存在且删除返回 EBUSY，缺失根自动重建并记 warn，meta/未知布局/非目录根仍失败。用户级真实游戏存档闭环未演示。"
 
 [runtime.vfs]
 status = "complete"
@@ -2090,8 +2090,8 @@ note = "ActivityManager.getRunningAppProcesses明确记账并抛可捕获Unsuppo
 
 [dexvm.activity_result]
 status = "partial"
-test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250"
-note = "DVM-223/235/250、ADR-0104/0114/0132：同包有界 task，保留实例、Intent、窗口内容/焦点与结果；standard/singleTop/singleTask/singleInstance 按默认 affinity 处理，复用时交付 onNewIntent，不自动 setIntent；结果先于恢复回调；后台窗口附着隐藏，Surface 与 GL 按 View 归属保留。自定义 affinity、跨 task 或跨包结果、复杂 flags 记账失败；多窗口、透明 Activity 与 context-loss 未验收。"
+test = "tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/runtime/activity_task_stack_tests.cpp#APS-14; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-197; tests/runtime/activity_task_stack_tests.cpp#DVM-250; tests/loader/apk_manifest_tests.cpp#DVM-223; tests/loader/apk_manifest_tests.cpp#DVM-250"
+note = "DVM-223/235/250、ADR-0104/0114/0132：同包有界 task 保留实例、Intent、窗口/焦点与结果；四种 launchMode 按默认 affinity 处理，复用交付 onNewIntent、不自动 setIntent，结果先于恢复。后台窗口附着隐藏，Surface/GL 按 View 保留。isFinishing/isDestroyed 取 Java 实例字段，finish 成功/销毁回调前置位，进程关闭不合成。自定义 affinity、跨 task/包结果及复杂 flags 失败；多窗口、透明 Activity、context-loss 未验。"
 
 [dexvm.surface_buffer_geometry]
 status = "partial"

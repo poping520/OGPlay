@@ -94,6 +94,37 @@ void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
 
 }  // namespace
 
+TEST_CASE("VFS sandbox preinstalls semantic roots for obb mkdirs and preserves them on rmdir") {
+    const TemporaryRoot root("semantic-roots");
+    constexpr auto obb = "/sdcard/Android/obb/com.example.game";
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+        for (const auto& path : store->SemanticRoots()) {
+            CHECK(vfs.Stat(path).is_directory);
+            CHECK(ErrnoOf([&] { vfs.CreateDirectory(path); }) == 17);
+            CHECK(ErrnoOf([&] { vfs.RemoveDirectory(path); }) == 16);
+            CHECK(vfs.Stat(path).is_directory);
+        }
+        CHECK(ErrnoOf([&] { vfs.RemoveDirectory("/storage/emulated/0/Android/obb/com.example.game/."); }) == 16);
+        // mkdirs/EnsureDirectory returns at the isDirectory check, without
+        // issuing a create for an already-existing platform directory.
+        if (!vfs.Stat(obb).is_directory) vfs.CreateDirectory(obb);
+        CHECK(vfs.Stat(obb).is_directory);
+        CHECK(store->Entries().empty());
+        WriteThrough(vfs, "/data/data/com.example.game/save", "keep");
+    }
+    CHECK(std::filesystem::is_directory(root.path / kPackage / "obb"));
+    auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+    CHECK(reopened->RecreatedSemanticRoots().empty());
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*reopened, kWritableRoots);
+    CHECK(vfs.Stat(obb).is_directory);
+    CHECK(ReadAll(vfs, "/data/data/com.example.game/save") == "keep");
+}
+
 TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts") {
     const TemporaryRoot root("statvfs");
     constexpr std::uint64_t quota = 8 * 4096;

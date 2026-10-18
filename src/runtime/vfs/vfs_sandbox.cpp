@@ -343,6 +343,10 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
 void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    if (sandbox_ != nullptr && std::ranges::find(sandbox_->SemanticRoots(), normalized) !=
+        sandbox_->SemanticRoots().end()) {
+        throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
+    }
     if (files_.contains(normalized)) {
         throw VfsError(kEnotdir, "VFS path is not a directory");
     }
@@ -360,12 +364,13 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
         child_directory->starts_with(prefix)) {
         throw VfsError(kEnotempty, "VFS directory is not empty");
     }
-    if (directories_.erase(normalized) == 0) {
+    if (!directories_.contains(normalized)) {
         // Implicit directories exist only through their children, and the
         // checks above proved there are none left.
         throw VfsError(kEnoent, "VFS directory not found");
     }
     PersistRemovalLocked(normalized);
+    directories_.erase(normalized);
 }
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from,
@@ -618,7 +623,9 @@ void VirtualFileSystem::Impl::AttachSandbox(
     }
     // The writable roots are directories on the platform, so they have to
     // be directories here before anything can mkdir inside them.
-    for (const auto& root : roots) {
+    auto directory_roots = roots;
+    for (const auto& root : store.SemanticRoots()) directory_roots.push_back(root);
+    for (const auto& root : directory_roots) {
         for (std::size_t cursor = 1; cursor <= root.size(); ++cursor) {
             if (cursor == root.size() || root[cursor] == '/') {
                 directories_.insert(root.substr(0, cursor));

@@ -54,6 +54,83 @@
 
 using namespace ogplay::test::native_library;
 
+TEST_CASE("APS-14 Activity finish and destroy state follows each Java instance") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        { // Finish remains visible through pause, stop, destroy and retirement.
+            OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+            loader::AndroidManifestActivityComponent component;
+            component.name = "fixture.ActivityState";
+            f.context->activity_components.push_back(std::move(component));
+            f.app->StartApplication();
+            REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            auto& vm = f.app->DexVm().Vm();
+            const auto on = [&](VmObjectRef object, const char* name, const char* signature,
+                                std::vector<VmValue> args = {}) {
+                return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+            };
+            const auto parent = f.context->activity;
+            const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+            const auto intent_root = vm.ProtectReferences(std::array{intent});
+            const auto ctor = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/content/Intent;"), "<init>", "()V");
+            REQUIRE(ctor);
+            REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(intent)}).exception.IsValid());
+            on(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+                {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ActivityState"))});
+            on(parent, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+            const auto child = f.context->activity;
+            REQUIRE(child != parent);
+            const auto child_root = vm.ProtectReferences(std::array{child});
+            CHECK(on(child, "state", "()I").AsInt() == 0);
+            CHECK(on(child, "destroyState", "()I").AsInt() == -1);
+            on(child, "finish", "()V");
+            CHECK(on(child, "state", "()I").AsInt() == 1);
+            CHECK(on(parent, "isFinishing", "()Z").AsInt() == 0);
+            CHECK(on(parent, "isDestroyed", "()Z").AsInt() == 0);
+            static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+            CHECK(f.context->activity == parent);
+            CHECK(f.context->finishing_activity.load() == 0);
+            CHECK(on(child, "pauseState", "()I").AsInt() == 1);
+            CHECK(on(child, "stopState", "()I").AsInt() == 1);
+            CHECK(on(child, "destroyState", "()I").AsInt() == 3);
+            CHECK(on(child, "state", "()I").AsInt() == 3);
+            CHECK(on(parent, "isFinishing", "()Z").AsInt() == 0);
+            static_cast<void>(f.app->Stop());
+            CHECK(on(child, "state", "()I").AsInt() == 3);
+        }
+        { // Process shutdown and rejected finish do not mark the instance.
+            OrchestratedApp f("fixture.ActivityState", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+            auto& vm = f.app->DexVm().Vm();
+            const auto activity = f.context->activity;
+            const auto root = vm.ProtectReferences(std::array{activity});
+            const auto state = [&](const char* name) {
+                return runtime::android_intrinsics::CallAndroidMethod(vm, activity, name, "()I").AsInt();
+            };
+            CHECK(state("state") == 0);
+            f.context->process_stopping = true;
+            const auto type = vm.Model().ObjectClass(activity);
+            const auto slot = vm.Linker().FindVtableIndex(type, "finish", "()V");
+            REQUIRE(slot);
+            const auto rejected = vm.Call(vm.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(activity)});
+            REQUIRE(rejected.exception.IsValid());
+            CHECK(vm.Linker().Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+            CHECK(state("state") == 0);
+            CHECK(f.context->activity_commands.empty());
+            f.context->process_stopping = false;
+            static_cast<void>(f.app->Stop());
+            CHECK(state("pauseState") == 0);
+            CHECK(state("stopState") == 0);
+            CHECK(state("destroyState") == -1);
+            CHECK(state("state") == 0);
+        }
+    }
+}
+
 TEST_CASE("DVM-223 Activity result stack restores caller identity and content") {
     using namespace ogplay;
     using namespace runtime::dexvm;

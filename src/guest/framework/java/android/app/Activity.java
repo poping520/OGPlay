@@ -33,6 +33,8 @@ public class Activity extends ContextThemeWrapper {
     private Window mWindow;
     private int mResultCode = RESULT_CANCELED;
     private Intent mResultData;
+    boolean mFinished;
+    private boolean mDestroyed;
 
     public Activity() { super(); }
 
@@ -72,6 +74,15 @@ public class Activity extends ContextThemeWrapper {
             data = mResultData;
         }
         nativeFinish(code, data == null ? null : new Intent(data));
+        mFinished = true;
+    }
+
+    public boolean isFinishing() { return mFinished; }
+    public boolean isDestroyed() { return mDestroyed; }
+
+    final void performDestroy() {
+        mDestroyed = true;
+        onDestroy();
     }
 
     private static final class ManagedDialog {

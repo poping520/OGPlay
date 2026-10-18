@@ -381,6 +381,101 @@ TEST_CASE("sandbox store maps four semantic roots without leaking host names") {
     CHECK(reopened->InstallationId() == kPackage);
 }
 
+TEST_CASE("sandbox store semantic roots survive mkdir and reject deletion with EBUSY") {
+    const TemporaryRoot root("semantic-root-lifetime");
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage, {.maximum_files = 1});
+    const std::array paths{"/DATA/data/COM.EXAMPLE.GAME/.",
+        "/sdcard/Android/data/com.example.game/", "/sdcard/Android/obb/com.example.game", "/SDCARD/"};
+    const std::array host_names{"internal", "external", "obb", "sdcard"};
+    const auto rejects_busy = [](const auto& action) {
+        try {
+            action();
+            FAIL("semantic root deletion succeeded");
+        } catch (const VfsError& error) {
+            CHECK(error.ErrorNumber() == 16);
+        }
+    };
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        CAPTURE(paths[i]);
+        store->CreateDirectory(paths[i]);
+        store->CreateDirectory(paths[i]);
+        CHECK(store->Entries().empty());
+        CHECK(store->FileCount() == 0);
+        rejects_busy([&] { store->Remove(paths[i]); });
+        rejects_busy([&] { store->WriteTombstone(paths[i]); });
+        CHECK(std::filesystem::is_directory(root.path / kPackage / host_names[i]));
+        store.reset();
+        store = SandboxStore::Open(root.path, kPackage, kPackage, {.maximum_files = 1});
+        CHECK(store->RecreatedSemanticRoots().empty());
+    }
+    // Roots remain idempotent even when the ordinary-entry quota is full.
+    store->WriteFileAtomic("/sdcard/save", Bytes("keep"));
+    for (const auto* path : paths) CHECK_NOTHROW(store->CreateDirectory(path));
+    CHECK(store->FileCount() == 1);
+    CHECK(Text(store->ReadFile("/sdcard/save")) == "keep");
+    store->Remove("/sdcard/save");
+    // Ordinary child-directory tombstones must still be cleared by mkdir.
+    for (const auto& path : store->SemanticRoots()) {
+        const auto child = path + "/child";
+        store->CreateDirectory(child);
+        store->WriteTombstone(child);
+        CHECK(store->Entries().front().is_tombstone);
+        store->CreateDirectory(child);
+        CHECK(store->Entries().front().is_directory);
+        CHECK_FALSE(store->Entries().front().is_tombstone);
+        store->Remove(child);
+        CHECK(store->Entries().empty());
+    }
+}
+
+TEST_CASE("sandbox store recreates missing semantic roots without changing surviving data") {
+    for (const auto* missing : {"internal", "external", "obb", "sdcard"}) {
+        CAPTURE(missing);
+        const TemporaryRoot root(std::string("recover-") + missing);
+        const auto survivor = std::string(missing) == "internal"
+            ? "/sdcard/save" : "/data/data/com.example.game/save";
+        {
+            auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+            store->WriteFileAtomic(survivor, Bytes("progress"));
+        }
+        const auto meta = root.path / kPackage / "meta.toml";
+        std::ifstream before(meta);
+        const std::string metadata{std::istreambuf_iterator<char>(before), {}};
+        REQUIRE(std::filesystem::remove(root.path / kPackage / missing));
+        auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
+        CHECK(std::filesystem::is_directory(root.path / kPackage / missing));
+        REQUIRE(reopened->RecreatedSemanticRoots().size() == 1);
+        CHECK(reopened->RecreatedSemanticRoots().front() == missing);
+        CHECK(Text(reopened->ReadFile(survivor)) == "progress");
+        std::ifstream after(meta);
+        CHECK(std::string(std::istreambuf_iterator<char>(after), {}) == metadata);
+        reopened.reset();
+        CHECK(SandboxStore::Open(root.path, kPackage, kPackage)->RecreatedSemanticRoots().empty());
+    }
+}
+
+TEST_CASE("sandbox store does not repair invalid layouts or replace a root file") {
+    const TemporaryRoot root("invalid-recovery");
+    { auto store = SandboxStore::Open(root.path, kPackage, kPackage); }
+    const auto obb = root.path / kPackage / "obb";
+    REQUIRE(std::filesystem::remove(obb));
+    const auto legacy = root.path / kPackage / "fs";
+    std::filesystem::create_directory(legacy);
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)), VfsError);
+    CHECK_FALSE(std::filesystem::exists(obb));
+    std::filesystem::remove(legacy);
+    const auto meta = root.path / kPackage / "meta.toml";
+    std::ifstream input(meta);
+    const std::string metadata{std::istreambuf_iterator<char>(input), {}};
+    { std::ofstream(meta) << "schema = 99\n"; }
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)), VfsError);
+    CHECK_FALSE(std::filesystem::exists(obb));
+    { std::ofstream(meta) << metadata; }
+    { std::ofstream(obb) << "keep"; }
+    CHECK_THROWS_AS(static_cast<void>(SandboxStore::Open(root.path, kPackage, kPackage)), VfsError);
+    CHECK(std::filesystem::is_regular_file(obb));
+}
+
 TEST_CASE("same-package installation instances isolate saves and ANDROID_ID") {
     const TemporaryRoot root("instance-isolation");
     constexpr std::array<std::byte, 8> first_id{

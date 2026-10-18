@@ -55,6 +55,8 @@ public:
     // Index snapshot in guest-path order, so directory enumeration built on
     // top of it is deterministic.
     [[nodiscard]] std::vector<SandboxEntry> Entries() const;
+    // Canonical guest mount roots; they exist independently of overlay entries.
+    [[nodiscard]] std::span<const std::string> SemanticRoots() const;
     [[nodiscard]] std::vector<std::byte> ReadFile(
         std::string_view guest_path) const;
 
@@ -65,6 +67,7 @@ public:
     void WriteTombstone(std::string_view guest_path);
     void CreateDirectory(std::string_view guest_path);
     // Removes a file, tombstone or empty directory; absent is -ENOENT.
+    // Remove/WriteTombstone reject semantic roots with EBUSY.
     // A guest rename is composed by the VFS overlay (write the new name,
     // tombstone the old one); the store has no rename of its own.
     void Remove(std::string_view guest_path);
@@ -78,6 +81,8 @@ public:
     [[nodiscard]] const std::string& InstallationId() const;
     [[nodiscard]] const std::filesystem::path& Directory() const;
     [[nodiscard]] std::uint64_t TemporaryFilesRemoved() const;
+    // Host root names recreated while opening; the frontend logs the recovery.
+    [[nodiscard]] std::span<const std::string> RecreatedSemanticRoots() const;
     // Diagnostic fact recorded in meta.toml; never used to pick behaviour.
     void RecordVersionCode(std::uint32_t version_code);
     // Returns the sandbox-stable API 19 ANDROID_ID. The caller supplies

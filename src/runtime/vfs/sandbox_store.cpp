@@ -11,6 +11,7 @@
 #include <charconv>
 #include <fstream>
 #include <map>
+#include <stdexcept>
 #include <system_error>
 
 #include "ogplay/runtime/vfs/vfs.h"
@@ -20,6 +21,7 @@ namespace {
 
 constexpr std::int32_t kEnoent = 2;
 constexpr std::int32_t kEio = 5;
+constexpr std::int32_t kEbusy = 16;
 constexpr std::int32_t kEexist = 17;
 constexpr std::int32_t kEnotdir = 20;
 constexpr std::int32_t kEinval = 22;
@@ -198,6 +200,8 @@ public:
     std::filesystem::path overlay;
     std::string installation_id;
     std::string package;
+    std::array<std::string, 4> semantic_roots;
+    std::vector<std::string> recreated_semantic_roots;
     SandboxConfig config;
     std::uint64_t used_bytes{};
     std::uint64_t temporaries_removed{};
@@ -205,6 +209,10 @@ public:
     std::string android_id;
     // Guest path -> entry, ordered so enumeration is deterministic.
     std::map<std::string, SandboxEntry, std::less<>> entries;
+
+    [[nodiscard]] bool IsSemanticRoot(const std::string_view canonical_path) const {
+        return std::ranges::find(semantic_roots, canonical_path) != semantic_roots.end();
+    }
 
     // VFS folds path names, but package/installation identity keeps its original
     // spelling. Canonicalize only the semantic root; preserve stored file names.
@@ -252,6 +260,9 @@ public:
             begin = 1;
         } else {
             throw VfsError(kEinval, "sandbox path is outside its semantic roots");
+        }
+        if (tombstone && segments.size() == begin) {
+            throw std::logic_error("sandbox semantic root cannot have a tombstone path");
         }
         for (std::size_t index = begin; index < segments.size(); ++index) {
             auto name = SandboxStore::EscapeSegment(segments[index]);
@@ -554,6 +565,10 @@ std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
     impl->directory = root / std::string(installation_id);
     impl->installation_id = std::string(installation_id);
     impl->package = std::string(package);
+    const auto folded_package = FoldGuestPath(package);
+    impl->semantic_roots = {"/data/data/" + folded_package,
+        "/sdcard/android/data/" + folded_package,
+        "/sdcard/android/obb/" + folded_package, "/sdcard"};
     impl->config = config;
     std::error_code error;
     const auto existed = std::filesystem::exists(impl->directory, error);
@@ -593,10 +608,22 @@ std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
             }
         }
         if (error) throw VfsError(kEio, "cannot validate sandbox roots");
+        std::vector<std::string> missing_roots;
         for (const auto root_name : {"internal", "external", "obb", "sdcard"}) {
-            if (!std::filesystem::is_directory(impl->directory / root_name, error) || error) {
-                throw VfsError(kEinval, "sandbox semantic root is missing");
+            const auto status = std::filesystem::symlink_status(impl->directory / root_name, error);
+            if (error && error != std::errc::no_such_file_or_directory)
+                throw VfsError(kEio, "cannot inspect sandbox semantic root");
+            if (status.type() == std::filesystem::file_type::not_found) {
+                missing_roots.emplace_back(root_name);
+            } else if (!std::filesystem::is_directory(status)) {
+                throw VfsError(kEinval, "sandbox semantic root is not a directory");
             }
+        }
+        // Validate metadata, layout and all existing roots before repairing any.
+        for (const auto& root_name : missing_roots) {
+            std::filesystem::create_directory(impl->directory / root_name, error);
+            if (error) throw VfsError(kEio, "cannot recreate sandbox semantic root");
+            impl->recreated_semantic_roots.push_back(root_name);
         }
     }
     impl->Load();
@@ -720,6 +747,8 @@ void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path,
 
 void SandboxStore::WriteTombstone(const std::string_view raw_guest_path) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
+    if (impl_->IsSemanticRoot(guest_path))
+        throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_tombstone) {
@@ -750,6 +779,12 @@ void SandboxStore::WriteTombstone(const std::string_view raw_guest_path) {
 
 void SandboxStore::CreateDirectory(const std::string_view raw_guest_path) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
+    if (impl_->IsSemanticRoot(guest_path)) {
+        std::error_code error;
+        std::filesystem::create_directories(impl_->HostPathFor(guest_path, false), error);
+        if (error) throw VfsError(kEio, "cannot create sandbox semantic root");
+        return;
+    }
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && !existing->second.is_tombstone) {
@@ -773,6 +808,8 @@ void SandboxStore::CreateDirectory(const std::string_view raw_guest_path) {
 
 void SandboxStore::Remove(const std::string_view raw_guest_path) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
+    if (impl_->IsSemanticRoot(guest_path))
+        throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
     const auto found = impl_->entries.find(guest_path);
     if (found == impl_->entries.end()) {
         throw VfsError(kEnoent, "sandbox path not found");
@@ -796,6 +833,12 @@ void SandboxStore::Remove(const std::string_view raw_guest_path) {
 }
 
 std::uint64_t SandboxStore::UsedBytes() const { return impl_->used_bytes; }
+std::span<const std::string> SandboxStore::SemanticRoots() const {
+    return impl_->semantic_roots;
+}
+std::span<const std::string> SandboxStore::RecreatedSemanticRoots() const {
+    return impl_->recreated_semantic_roots;
+}
 std::uint64_t SandboxStore::FileCount() const {
     return static_cast<std::uint64_t>(impl_->entries.size());
 }

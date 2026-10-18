@@ -1397,6 +1397,71 @@
     return-void
 .end method
 
+# Activity state belongs to each Java instance, including lifecycle callbacks.
+.class public Lfixture/ActivityState;
+.super Lfixture/ResultChild;
+.field private pauseState:I
+.field private stopState:I
+.field private destroyState:I
+.method public constructor <init>()V
+.registers 2
+    invoke-direct {v1}, Lfixture/ResultChild;-><init>()V
+    const/4 v0, -1
+    iput v0, v1, Lfixture/ActivityState;->pauseState:I
+    iput v0, v1, Lfixture/ActivityState;->stopState:I
+    iput v0, v1, Lfixture/ActivityState;->destroyState:I
+    return-void
+.end method
+.method public state()I
+.registers 3
+    invoke-virtual {v2}, Landroid/app/Activity;->isFinishing()Z
+    move-result v0
+    invoke-virtual {v2}, Landroid/app/Activity;->isDestroyed()Z
+    move-result v1
+    shl-int/lit8 v1, v1, 1
+    or-int/2addr v0, v1
+    return v0
+.end method
+.method protected onPause()V
+.registers 2
+    invoke-virtual {v1}, Lfixture/ActivityState;->state()I
+    move-result v0
+    iput v0, v1, Lfixture/ActivityState;->pauseState:I
+    invoke-super {v1}, Landroid/app/Activity;->onPause()V
+    return-void
+.end method
+.method public pauseState()I
+.registers 1
+    iget v0, v0, Lfixture/ActivityState;->pauseState:I
+    return v0
+.end method
+.method protected onStop()V
+.registers 2
+    invoke-virtual {v1}, Lfixture/ActivityState;->state()I
+    move-result v0
+    iput v0, v1, Lfixture/ActivityState;->stopState:I
+    invoke-super {v1}, Landroid/app/Activity;->onStop()V
+    return-void
+.end method
+.method public stopState()I
+.registers 1
+    iget v0, v0, Lfixture/ActivityState;->stopState:I
+    return v0
+.end method
+.method protected onDestroy()V
+.registers 2
+    invoke-virtual {v1}, Lfixture/ActivityState;->state()I
+    move-result v0
+    iput v0, v1, Lfixture/ActivityState;->destroyState:I
+    invoke-super {v1}, Landroid/app/Activity;->onDestroy()V
+    return-void
+.end method
+.method public destroyState()I
+.registers 1
+    iget v0, v0, Lfixture/ActivityState;->destroyState:I
+    return v0
+.end method
+
 .class public Lfixture/ResultOnStartCaller;
 .super Lfixture/ResultCaller;
 .field static public once:I

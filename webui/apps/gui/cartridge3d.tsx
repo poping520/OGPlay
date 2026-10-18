@@ -63,7 +63,7 @@ export function Hero3D({ api, item, tone, shown }: { api: Cart3D | 'waiting'; it
 const shownStills = new Map<string, string>();
 // Rail tile: a rendered still once available (the previous one stays while a changed state re-renders); empty
 // while 3D is on its way, CSS only when 3D is off or failed. `ready` fires once the tile shows its cartridge.
-export function TileCart({ api, item, tone, ready }: { api: Cart3D | 'waiting' | null; item: LibraryItem; tone: string; ready: () => void }) {
+export function TileCart({ api, item, tone, ready }: { api: Cart3D | 'waiting' | null; item: LibraryItem; tone: string; ready?: () => void }) {
   const face = useFace(item, tone);
   const [still, setStill] = useState(() => face ? shownStills.get(face.key) ?? '' : '');
   useEffect(() => {
@@ -73,7 +73,7 @@ export function TileCart({ api, item, tone, ready }: { api: Cart3D | 'waiting' |
     return () => { live = false; };
   }, [api, face?.key]);
   const done = !api || Boolean(still);
-  useEffect(() => { if (done) ready(); }, [done]);
+  useEffect(() => { if (done) ready?.(); }, [done]);
   if (!api || still === 'failed') return <Cartridge item={item} tone={tone} />;
   return still ? <img class="tile-3d" src={still} alt="" /> : <span class="tile-3d" />;
 }

@@ -11,6 +11,7 @@
 
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/angle_readback.h"
+#include "ogplay/gles/egl_lifecycle.h"
 #include "ogplay/hal/clock.h"
 
 namespace {
@@ -27,6 +28,145 @@ constexpr ogplay::gles::AngleRenderer kNativeRenderer =
 #endif
 
 }  // namespace
+
+namespace {
+
+bool HasExtensionToken(const std::string& extensions, const std::string& name) {
+    return (" " + extensions + " ").find(" " + name + " ") != std::string::npos;
+}
+
+void CheckExternalTextureBackend(const ogplay::gles::AngleBackend backend,
+                                const bool require_import) {
+    using namespace ogplay::gles;
+    auto display = EglDisplayResources::Create(backend);
+    auto surface = EglSurfaceResources::Create(display, 2, 2);
+    auto frame = AngleFrame::CreateContext(display, 2);
+    frame.BindSurfaces(surface, surface);
+    const auto renderer = frame.GetString(0x1F01U);
+    const bool external = HasExtensionToken(frame.GetString(0x1F03U),
+                                            "GL_OES_EGL_image_external");
+    MESSAGE("SurfaceTexture backend probe: renderer=" << renderer
+            << " external=" << external);
+    if (require_import) REQUIRE(external);
+
+    const auto fragment = frame.CreateShader(0x8B30U);
+    const std::string fragment_source =
+        "#extension GL_OES_EGL_image_external : require\n"
+        "precision mediump float; uniform samplerExternalOES image;"
+        "varying vec2 uv; void main(){gl_FragColor=texture2D(image,uv);}";
+    frame.ShaderSource(fragment, {&fragment_source, 1});
+    frame.CompileShader(fragment);
+    const auto destination = frame.GenerateTextures(1);
+    if (!external) {
+        CHECK(frame.GetShaderParameter(fragment, 0x8B81U) == 0);
+        CHECK_FALSE(frame.GetShaderInfoLog(fragment).empty());
+        try {
+            frame.BindTexture(0x8D65U, destination.front());
+            FAIL("unpublished external target unexpectedly accepted");
+        } catch (const GlesApiError& error) {
+            CHECK(error.Code() == 0x0500U);
+        }
+        frame.DeleteTextures(destination);
+        frame.DeleteShader(fragment);
+        return;
+    }
+    INFO(frame.GetShaderInfoLog(fragment));
+    REQUIRE(frame.GetShaderParameter(fragment, 0x8B81U) == 1);
+    REQUIRE(HasExtensionToken(frame.GetString(0x1F03U), "GL_OES_EGL_image"));
+    REQUIRE(HasExtensionToken(display->Extensions(), "EGL_KHR_gl_texture_2D_image"));
+
+    const auto vertex = frame.CreateShader(0x8B31U);
+    const std::string vertex_source =
+        "attribute vec2 p; varying vec2 uv;"
+        "void main(){gl_Position=vec4(p,0.,1.);uv=(p+1.)*.5;}";
+    frame.ShaderSource(vertex, {&vertex_source, 1});
+    frame.CompileShader(vertex);
+    REQUIRE(frame.GetShaderParameter(vertex, 0x8B81U) == 1);
+    const auto program = frame.CreateProgram();
+    frame.AttachShader(program, vertex);
+    frame.AttachShader(program, fragment);
+    frame.LinkProgram(program);
+    INFO(frame.GetProgramInfoLog(program));
+    REQUIRE(frame.GetProgramParameter(program, 0x8B82U) == 1);
+    frame.UseProgram(program);
+    frame.Uniform1i(frame.GetUniformLocation(program, "image"), 0);
+    const std::array<float, 6> triangle{-1, -1, 3, -1, -1, 3};
+    const auto buffers = frame.GenerateBuffers(1);
+    frame.BindBuffer(0x8892U, buffers.front());
+    frame.BufferData(0x8892U, sizeof(triangle),
+                     std::as_bytes(std::span(triangle)), 0x88E4U);
+    const auto position = static_cast<std::uint32_t>(frame.GetAttribLocation(program, "p"));
+    frame.VertexAttributePointer(position, 2, 0x1406U, false, 0, 0);
+    frame.SetVertexAttributeEnabled(position, true);
+    frame.ActiveTexture(0x84C0U);
+    frame.BindTexture(0x8D65U, destination.front());
+    for (const auto parameter : {0x2801U, 0x2800U})
+        frame.TextureParameter(0x8D65U, parameter, 0x2600);
+    for (const auto parameter : {0x2802U, 0x2803U})
+        frame.TextureParameter(0x8D65U, parameter, 0x812F);
+    frame.Viewport(0, 0, 2, 2);
+
+    std::array<std::uint8_t, 16> rgba{
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 255, 255, 255, 255};
+    for (const bool replace : {false, true}) {
+        CAPTURE(replace);
+        if (replace) for (auto& channel : rgba) channel ^= 0xFFU;
+        const auto source = frame.GenerateTextures(1);
+        frame.BindTexture(0x0DE1U, source.front());
+        frame.TextureParameter(0x0DE1U, 0x2801U, 0x2600);
+        frame.TextureImage2D(0x0DE1U, 0, 0x1908, 2, 2, 0, 0x1908U,
+                            0x1401U, std::as_bytes(std::span(rgba)));
+        const std::array<std::int32_t, 3> attributes{0x30D2, 1, 0x3038};
+        const auto image = display->CreateImage(frame.NativeContext(), 0x30B1U,
+                                                 source.front(), attributes);
+        REQUIRE(image != 0);
+        frame.BindTexture(0x8D65U, destination.front());
+        try {
+            frame.BindEglImage(0x8D65U, image, false);
+        } catch (...) {
+            display->DestroyImage(image);
+            throw;
+        }
+        // The external sibling must retain image storage independently of
+        // both the producer texture name and the EGLImage handle.
+        display->DestroyImage(image);
+        frame.DeleteTextures(source);
+        frame.DrawArrays(0x0004U, 0, 3);
+        const auto pixels = frame.ReadRgba8();
+        REQUIRE(pixels.size() == rgba.size());
+        for (std::size_t y = 0; y < 2; ++y)
+            for (std::size_t x = 0; x < 2; ++x)
+                for (std::size_t channel = 0; channel < 4; ++channel)
+                    CHECK(pixels[(y * 2 + x) * 4 + channel] ==
+                          rgba[((1 - y) * 2 + x) * 4 + channel]);
+    }
+    frame.DeleteTextures(destination);
+    frame.DeleteBuffers(buffers);
+    frame.DeleteProgram(program);
+    frame.DeleteShader(vertex);
+    frame.DeleteShader(fragment);
+}
+
+}  // namespace
+
+TEST_CASE("SurfaceTexture native ANGLE external image sampling follows backend capability") {
+    if (!ogplay::gles::IsNativeAngleEglAvailable()) {
+        MESSAGE("native ANGLE unavailable; backend probe not executed");
+        return;
+    }
+    CheckExternalTextureBackend({kNativeRenderer, ogplay::gles::AngleDevice::hardware}, false);
+}
+
+TEST_CASE("SurfaceTexture SwiftShader imports and replaces real external image pixels") {
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+    REQUIRE(ogplay::gles::IsNativeAngleEglAvailable());
+    CheckExternalTextureBackend({ogplay::gles::AngleRenderer::vulkan,
+                                 ogplay::gles::AngleDevice::swiftshader}, true);
+#else
+    MESSAGE("SDK has no SwiftShader; external pixel probe not executed");
+#endif
+}
 
 TEST_CASE("ANGLE bounded buffer read observes updates and preserves mappings and bindings") {
     if (!ogplay::gles::IsNativeAngleEglAvailable()) return;

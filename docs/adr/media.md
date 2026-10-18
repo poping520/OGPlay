@@ -22,6 +22,7 @@
 - [ADR-0128 · 压缩纹理能力快照与 Manifest 声明](#adr-0128)
 - [ADR-0130 · Metal packed 表面的深度/模板存储归 Surface](#adr-0130)
 - [ADR-0136 · 裁剪版 FFmpeg 预编译库编译期直接链接](#adr-0136)
+- [ADR-0140 · Surface 生产端与有界纹理消费链](#adr-0140)
 
 <a id="adr-0003"></a>
 
@@ -668,3 +669,70 @@ mp4/3gp 容器中的少数编码。
   共享库形态允许用户替换。
 - 首次覆盖之外的编码会让对应 CG 明确失败，直到组件清单扩充；升级 FFmpeg 只需重建
   预编译包，接口变化由编译器暴露。
+
+<a id="adr-0140"></a>
+
+## ADR-0140 · Surface 生产端与有界纹理消费链
+
+- 状态：Accepted
+- 日期：2026-10-17
+- 实施：[APS-12](../tasks/apk-startup/APS-12.md)（契约及后端验证；Java/队列/媒体接入待后续）。
+
+### 背景
+
+API19 SurfaceTexture 可在无 current GL 时建立消费者，构造本身不证明有摄像头或图像。
+当前 Surface/MediaPlayer 只按 active managed holder 绑定；简单导入类族或返回空成功不能
+承接图像生产、GL 上下文、缓冲所有权与回收。已有 ANGLE EGLImage 不证明每个后端支持
+EXTERNAL_OES target 与 samplerExternalOES，必须先验证真实路径。
+
+### 决定
+
+1. 统一解析 Surface 的强类型端点身份，backing 明确区分 managed holder/display 与
+   buffer-stream producer；保留各自真实存储，不迁移屏幕 framebuffer。
+   Surface(SurfaceTexture) 引用同一队列生产端，Java/JNI/NDK 不建立重复身份或猜屏幕窗口。
+2. 进程拥有不依赖 JNI 的有界队列，integration 装配，boundary 仅经显式注入窄接口消费。
+   SurfaceTexture 持消费端、Surface 持生产端引用、MediaPlayer 持排他 producer 租约、
+   ANGLE 持 latched image lease。句柄强类型且单调，保存 generation/producer epoch、
+   sequence、尺寸/stride/格式、来源 PTS、crop/transform 与 backing 所有权。
+   默认异步路径按 API19 允许跳帧；single-buffer 必须在 releaseTexImage 后才能交还生产者。
+   队列受容量/内存预算约束，只管理交付所有权，解码预读仍归现有播放器。
+3. 普通 Java 保留 AOSP BootDex 的 Handler/Looper/WeakReference/监听与异常包装；native
+   只处理受检 metadata、资源与图形边界。构造保存 GLuint 位型（包括 -1），不要求当前 GL、
+   不分配屏幕窗口或制造帧。SurfaceTexture.release abandon 消费者；Surface.release 仅释放
+   producer 引用，播放器 reset/release 只断开自己的连接。finalize/GC/退出统一回收；native
+   表不能强根保活 SurfaceTexture。原版类族与 native 可用范围须在能力账本明确记载。
+4. updateTexImage 在调用线程合法 current Context 执行 acquire/latch/upload/import/bind，
+   复用已有 ANGLE registry/current/share-group/error；成功后原子提交图像/矩阵/时间戳。
+   无新帧保留当前图像，仍执行规定的 EGL 校验和 external target bind。矩阵来自图像事实，
+   timestamp 来自源 PTS，seek 可重新定位；不以宿主墙钟或固定 identity 伪造未知信息。
+5. 首个图像范围为受检 RGBA；通过真实 texture→EGLImage→EXTERNAL_OES 绑定与原版 external
+   sampler 的非均匀像素测试准入。缺失扩展/导入/采样任一步均不发布完整能力；禁止把 2D
+   target 冒充 external 或改写 guest shader。先正确传输再优化零拷贝，不修改 ANGLE vendor。
+6. 解码复用当前 VideoPlayer/来源租约/Clock/PCM 与 seek/loop，仅增加输出端点 adapter。
+   worker 只发布拥有型图像和待交付事件，不入 VM/GL；原版 Handler 只接收真实提交的帧通知。
+   队列锁内不做 GL、guest callback、阻塞解码或 join；取得 lease/snapshot 后解锁再执行，
+   等待遵守 VM execution 锁释放规则。退役先断 producer、递增代际撤销旧帧/事件，再于合法
+   Context 清理 GPU lease，不让跨线程资源在错误 Context 析构。
+7. renderer 在任何进程图形资源创建前选择并冻结。可由既有通用 angle_backend 偏好接线
+   选择已验证后端；默认策略不因可选 SurfaceTexture 构造而切换，不在运行中迁移纹理。
+   当前预留设置未接线，软件后端通过底层测试不等于 frontend 已能启用。
+8. 不引入 Binder/SurfaceFlinger/CameraService/gralloc 系统。Camera 是独立 producer；
+   只有注入设备目录确为空时才能报告无设备，不因 SurfaceTexture 提前构造而实现宿主摄像头。
+
+### 后果与实施顺序
+
+- APS-12 先交付契约及后端像素证据；随后按端点/队列/Java/native 完整合成帧通路、
+  真实 MediaPlayer 与启动后端设置分 WU 实施。仅构造/释放不能标为 SurfaceTexture 完成。
+- 默认 Metal、Windows D3D11、Vulkan/SwiftShader 等分别记录实际验证；后端不可用或
+  未实现分支明确记账失败，不用空更新/黑帧继续。完整媒体路径以前保留 partial/unimplemented。
+- 保持既有 managed holder 的 Surface 生命周期、层序、窗口退役与视频输出，不为了统一
+  端点重写已验证的显示路径。每阶段只跑直接相关定向验证，原 APK reached-fault 不等于 title gate。
+
+### 实施补充（2026-10-18）
+
+[APS-13](../tasks/apk-startup/APS-13.md) 实现有界交付队列与严格 current 的 ANGLE 冷接口；
+[APS-14](../tasks/apk-startup/APS-14.md) 接入原版 SurfaceTexture 与有界 Surface Java 客户端。
+Surface 的 public 锁/代际/释放在 Java，private native 显式携 owner 归属 native endpoint，
+Canvas/Parcel/SurfaceControl 未准入；不得将此实现视为完整 API19 Surface。
+原版遗留未注册 nativeGetQueuedCount 显式拒绝，以满足 BootDex native 必须绑定的链接契约。
+完整 MediaPlayer producer 与前端 renderer 选择仍属后续阶段；本地合成帧闭环不等于 title gate。

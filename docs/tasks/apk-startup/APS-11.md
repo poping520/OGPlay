@@ -82,3 +82,24 @@
   API19 context config` 在 APS-11 之前的二进制上同样失败，属既有问题，未处理。
 - TML 用 `run-apk --ephemeral-sandbox` 复跑，首错仍为 ApplicationErrorReport。库实例沙盒运行后
   再次缺少 `obb` 语义根，`library run` 无法打开，属既有沙盒缺陷，另行排查。
+
+## 后续 BootDex 配方补齐（2026-10-17）
+
+- 从固定 `framework.jar` 整体导入 ApplicationErrorReport 及其内部类，复用 BootDex→JNI
+  身份/方法注册，无 C++ 空壳、新 native 或 overlay。类集合与制品身份仍以配方和 manifest 为准。
+- 语义依据：AOSP `framework/base/core/java/android/app/ApplicationErrorReport.java` 的
+  `getErrorReportReceiver(Context,String,int)`；先读 Settings.Global，缺省或显式 0 时返回 null，
+  不查询安装器/外部接收方。未覆盖的报告启用路径不因类准入而宣称完成。
+- `CrashInfo(Throwable)` 依赖 FastPrintWriter，完整 Writer/charset 依赖另行收口；
+  JNI FindClass 合法缺类的 null/pending/ClassLoader/no-init 语义亦为独立工作，本次未修改。
+- BootDex build/check、payload 身份校验及类族层级/native/overlay 审计通过，证据
+  `.local/aps12-bootdex-{build,check}.log`、`aps12-payload-check.log`、`aps12-family-proof.json`。
+- Release 仅构建 `ogplay_tests` 目标；复用 `JNI framework services use VM methods objects and state`
+  夹具，验证类族共享 JNI 身份/方法归属及缺省、显式关闭两种查询：switch/threaded 后端均通过，
+  **1 case / 1724 assertions**（0.504 秒）。日志 `.local/aps12-tests-build-final.log`、
+  `aps12-tests.log/json`。capabilities check、文档布局、UTF-8 与 diff 检查通过；未跑全量测试。
+- 使用同一 APK 的 `run-apk --ephemeral-sandbox` 复现一次（持久沙盒仍有上述既有根目录问题），
+  退出 1、耗时 2.812 秒：旧 JNI 缺类错误消失，下一首错为
+  **`class is not available: Landroid/graphics/SurfaceTexture;`**，位于 `player/e.<clinit>` 的
+  new-instance，经 `player/l.<clinit>` 回到 UnityPlayer 构造器 dex_pc=271。日志和机器断言见
+  `.local/aps12-tml-run.log/json`、`aps12-tml-proof.json`。此为 reached-fault，不是 title gate。

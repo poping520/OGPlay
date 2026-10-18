@@ -296,3 +296,19 @@ runtime JNI/native loader、frontend lifecycle，按实际范围覆盖 switch/th
 不等于 Scenario 验收。外部 package/service resolver、ContentProvider、完整 UI/framework/传感器、
 现代支付/社交/反作弊不在范围；能力与证据仅在 [capabilities](../../../../capabilities.toml)、
 [CURRENT](../../../../docs/state/CURRENT.md) 及任务单维护。
+
+## SurfaceTexture 与进程内生产端
+
+SurfaceTexture 原版 Java 保留 Handler/WeakReference/监听与参数包装；native 字段仅是逻辑令牌。
+构造可无 GL，允许完整 GLuint 位型；最多 64 consumer、256 Surface producer endpoint，
+进程 CPU 图像 lease 共享 64 MiB 预算，RGBA 1..4096、紧密 bottom-origin 布局及显式 transform。
+Surface Java 客户端普通锁/代际/释放归 guest，private native 携 owner；holder 创建时执行构造并
+登记同源 token。Surface.release 不 abandon consumer，SurfaceTexture release/GC/进程退出使
+队列永久失效。native 表只沿存活 owner trace weakSelf 包装，不成为 consumer 强根。
+
+producer 不入 VM；主泵只把实际 enqueue 通知投给原版 postEventFromNative/Handler，异步 pending
+替换不重发。update 在合法 current Context 上传/import/bind 后锁存图像/PTS/矩阵；空更新保留
+图像且仍校验/bind。detach/attach 复用同一 ANGLE Context 身份，releaseTexImage 归还消费权并使用
+固定 API19 debug bitmap；遗留 queued-count、媒体/NDK/EGL window producer、Camera 与 context-loss
+恢复不在范围。默认 Metal 无 external，纹理更新记账失败；构造不触发后端切换。已排入 Java
+Handler 的消息沿原版语义，不宣称 abandon 能撤销已交付消息。普通 MediaPlayer 仍只连接 holder。

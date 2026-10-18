@@ -163,6 +163,9 @@ void BindAndroidMediaSurface(DexVmAndroidContext& context, const std::uint32_t o
     auto& media = context.media_players.at(owner);
     dexvm::VmObjectRef view;
     if (surface.IsValid()) {
+        if (const auto endpoint = context.stream_surface_owners.find(surface.Value());
+            endpoint != context.stream_surface_owners.end() && context.stream_surfaces.contains(endpoint->second))
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "MediaPlayer stream producer is not connected yet"};
         for (const auto& [holder, candidate] : context.holder_surfaces) {
             if (candidate != surface || !context.active_surface_holders.contains(holder)) continue;
             for (const auto& [handle, object] : context.surface_holders) {

@@ -92,6 +92,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/nfc/NfcAdapter.java",
     "android/view/ContextThemeWrapper.java",
     "android/view/LayoutInflater.java",
+    "android/view/Surface.java",
     "android/widget/VideoView.java",
     "com/google/android/gles_jni/GLImpl.java",
 )

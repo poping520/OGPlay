@@ -310,6 +310,7 @@ public:
     [[nodiscard]] std::uint32_t InvokeManagedEgl(
         std::string_view name, std::span<const std::uint32_t> arguments,
         std::uint64_t thread_id = 0);
+    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call);
     void PresentManagedSurface();
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "ogplay/gles/external_texture.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -187,6 +188,7 @@ public:
     // teardown. Calls already past the boundary may finish, but no later
     // GLES work is allowed to enter ANGLE.
     void RetireGuestGraphics() noexcept;
+    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call);
     void PresentManagedSurface();
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;

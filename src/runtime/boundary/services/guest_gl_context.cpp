@@ -20,7 +20,7 @@ constexpr std::uint32_t kTexture2dArray = 0x8C1AU;
         return kTextureCubeMap;
     }
     if (target == kTexture2d || target == kTextureCubeMap ||
-        target == kTexture3d || target == kTexture2dArray) return target;
+        target == kTexture3d || target == kTexture2dArray || target == 0x8D65U) return target;
     throw std::invalid_argument("shared GL texture metadata target is invalid");
 }
 
@@ -63,7 +63,7 @@ void SharedGlState::SetActiveTexture(const std::uint32_t texture) {
 
 void SharedGlState::ValidateTextureTarget(const std::uint32_t target) const {
     if (target != kTexture2d && target != kTextureCubeMap &&
-        target != kTexture3d && target != kTexture2dArray) {
+        target != kTexture3d && target != kTexture2dArray && target != 0x8D65U) {
         throw std::invalid_argument("shared GL texture target is invalid");
     }
 }

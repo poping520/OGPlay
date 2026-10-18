@@ -131,6 +131,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_app_NativeActivity(context),
       Declare_android_view_InputQueue(context),
         Declare_android_view_Surface(context),
+      Declare_android_graphics_SurfaceTexture(context),
       Declare_android_app_Activity(context),
       Declare_android_app_Notification(context),
       Declare_android_app_ActivityManager(context),

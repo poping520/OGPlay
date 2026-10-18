@@ -411,6 +411,11 @@ public:
         try {
             const auto object = FromReference(JniReference{reference.token}, thread);
             if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;") return memory::GuestAddress{};
+            if (!android_context->stream_surface_owners.contains(object.Value())) return memory::GuestAddress{};
+            if (ResolveAndroidSurfaceStream(*vm, *android_context, object)) {
+                if (auto* ledger = vm->Ledger()) ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "stream ANativeWindow producer is not connected"};
+            }
             for (const auto& [holder, surface] : android_context->holder_surfaces) {
                 // Surface.isValid(): live holders, and holders still inside
                 // surfaceDestroyed, whose window retires after the callbacks.
@@ -421,6 +426,8 @@ public:
                 return session->Process().AcquireSurfaceWindow(
                     {memory::GuestAddress{holder}, android_context->surface_width, android_context->surface_height});
             }
+        } catch (const dx::VmJavaThrow& error) {
+            static_cast<void>(NativeApiException(thread, error));
         } catch (const std::exception& error) {
             static_cast<void>(NativeApiException(thread,
                 dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
@@ -1536,6 +1543,7 @@ DexVmGuestBridge::DexVmGuestBridge(
                                        android_context->network_transport);
     }
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
+    RegisterAndroidSurfaceStreamStateTable(*impl_->vm, android_context);
     if (android_context) {
         android_context->prepare_native_looper = [bridge_state](std::uint64_t token) {
             static_cast<void>(bridge_state->session->PrepareThreadLooper(bridge_state->ProcessThreadForToken(token)));
@@ -1925,6 +1933,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->wifi_lock_leases.clear();
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
     }
+    if (impl_->android_context) ReleaseAndroidSurfaceStreams(*impl_->android_context);
     ReleaseAndroidDatabaseResources(impl_->android_context);
     if (impl_->vm && impl_->session->Running() && !impl_->session->NativeExitCode()) {
         try { impl_->vm->ReleaseGuestNativeResources(true); }

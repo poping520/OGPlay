@@ -144,3 +144,7 @@ boundary 实现和 TryFastCall；运行证据、未闭合验收以 CURRENT、任
 
 AndroidBoundaryOptions 可在创建前注入压缩纹理格式族策略；所有 Context 继承且只收窄真实
 能力。native/managed 扩展查询与上传遵守同一发布集合，详见 services 契约与 ADR-0128。
+
+SurfaceTexture 冷入口只访问实际 current frame，缺 Context/失配明确失败，不隐式 bind 或借用
+其他线程；图像载荷来自上层拥有型 lease，不含 JNI。成功 external bind/delete 同步唯一 shared
+shadow；内部 staging texture/EGLImage 上传恢复 2D/unpack 状态，不发布中间对象或软件 renderer。

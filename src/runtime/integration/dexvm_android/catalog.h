@@ -279,3 +279,5 @@ Declare_javax_microedition_khronos_egl_EGLSurface(const Context &context);
 [[nodiscard]] dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context);
 
 } // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics { Decl Declare_android_graphics_SurfaceTexture(const Context&); }

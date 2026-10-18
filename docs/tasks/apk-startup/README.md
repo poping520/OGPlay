@@ -97,3 +97,6 @@ APS-10.md
 | [APS-9](APS-9.md) | integration gates + design migration closeout |
 | [APS-10](APS-10.md) | native dlopen 按需装载、共享构造器状态及独立 JNI 初始化 |
 | [APS-11](APS-11.md) | libandroid 无传感器、Surface/Asset 边界与 preflight 导入审计 |
+| [APS-12](APS-12.md) | SurfaceTexture 端点契约与 ANGLE 外部纹理后端验证 |
+| [APS-13](APS-13.md) | 有界 Surface 队列与 ANGLE 图像交付 |
+| [APS-14](APS-14.md) | SurfaceTexture 原版 Java 与 Surface 端点闭环 |

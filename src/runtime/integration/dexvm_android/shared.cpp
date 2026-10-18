@@ -2008,6 +2008,7 @@ std::optional<std::string> PumpJavaThreads(dx::Interpreter& vm,
     const auto main = android_intrinsics::EnsureMainLooper(
         vm, std::shared_ptr<DexVmAndroidContext>(&context,
                                                 [](DexVmAndroidContext*) {}));
+    DispatchAndroidSurfaceStreamEvents(vm, context);
     android_intrinsics::FlushPendingViewActions(vm, context);
     if (const auto error =
             android_intrinsics::PumpLooperDue(vm, context, main);

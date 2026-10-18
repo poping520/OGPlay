@@ -930,7 +930,11 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
 dx::IntrinsicHandler HolderGetSurface(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         auto& surface = context->holder_surfaces[call.receiver.Value()];
-        if (!surface.IsValid()) surface = call.vm.NewIntrinsicInstance("Landroid/view/Surface;");
+        if (!surface.IsValid()) {
+            surface = call.vm.NewIntrinsicInstance("Landroid/view/Surface;");
+            try { InitializeManagedJavaSurface(call.vm, *context, surface, call.receiver.Value()); }
+            catch (...) { surface = dx::VmObjectRef{}; throw; }
+        }
         return dx::VmValue::Ref(surface);
     };
 }
@@ -2703,17 +2707,7 @@ Decl Declare_android_view_InputQueue(const Context&) {
     });
     return std::move(builder).Build();
 }
-Decl Declare_android_view_Surface(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Surface;", "Ljava/lang/Object;");
-    builder.FinalMethod("isValid", "()Z", [context](dx::IntrinsicContext& call) {
-        for (const auto& [holder, surface] : context->holder_surfaces)
-            if (surface == call.receiver)
-                return dx::VmValue::Int(context->active_surface_holders.contains(holder) ||
-                                       context->destroying_surface_holders.contains(holder));
-        return dx::VmValue::Int(0);
-    });
-    return std::move(builder).Build();
-}
+
 } // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {

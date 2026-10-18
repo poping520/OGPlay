@@ -7,7 +7,10 @@ const root = resolve(`../data/webui/${app}`);
 copyFileSync(`apps/${app}/index.html`, resolve(root, 'index.html'));
 writeFileSync(resolve(root, 'THIRD-PARTY-LICENSES.txt'),
   'Preact\n\n' + readFileSync('node_modules/preact/LICENSE', 'utf8') +
-  (app === 'gui' ? '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8') :
+  (app === 'gui' ? '\n\nwebview\n\n' + readFileSync('../third_party/webview/LICENSE', 'utf8') +
+    '\n\nthree.js (cart3d.js)\n\n' + readFileSync('node_modules/three/LICENSE', 'utf8') +
+    '\n\nDraco decoder (cart3d.js, three/examples/jsm/libs/draco/gltf/draco_decoder.js)\n\n' +
+    'Copyright Google LLC. Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0\n' :
    app === 'dashboard' ? '\n\nuPlot\n\n' + readFileSync('node_modules/uplot/LICENSE', 'utf8') : ''));
 const files = readdirSync(root).filter(name => name !== 'manifest.json').sort().map(path => {
   const bytes = readFileSync(resolve(root, path));

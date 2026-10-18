@@ -13,6 +13,15 @@ python3 tools/build_app_icons.py
 Windows EXE 内嵌 `assets/icons/ogplay.ico`；macOS `OGPlay.app` 携带
 `assets/icons/ogplay.icns`。日常 CMake 构建直接使用生成产物，不依赖 Pillow。
 
+## 启动器 3D 卡带模型
+
+`webui/apps/gui/assets/cartridge.glb`（Draco 14/10/12 位）与 `cartridge-ao.png`（1024 灰度 AO）由 Blender 5.2 程序化生成，产物随仓库保存，
+webui 构建时内联进 `cart3d.js`。修改模型后运行，再 `npm run build`：
+
+```text
+blender -b --factory-startup -P tools/build_cartridge_model.py -- webui/apps/gui/assets/cartridge.glb
+```
+
 ## 能力账本
 
 `capabilities.py` 查询和校验 [`capabilities.toml`](../capabilities.toml)，字段与 test 入口格式见账本文件头：

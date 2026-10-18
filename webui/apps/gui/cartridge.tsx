@@ -32,6 +32,7 @@ export function useIconColor(icon: string): Rgb {
   }, [icon]);
   return color;
 }
+export const iconSampled = (icon: string) => !icon || sampled.has(icon);
 export function shellStyle(color: Rgb): Record<string, string> {
   const palette = shellPalette(color);
   return { '--shell': palette.shell, '--shell-l': palette.light, '--shell-d': palette.dark };

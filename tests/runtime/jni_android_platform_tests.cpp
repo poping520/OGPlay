@@ -170,6 +170,7 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
         const auto holder_object = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
         context->holder_surfaces.emplace(holder_object.Value(), surface_object);
         context->active_surface_holders.insert(holder_object.Value());
+        runtime::InitializeManagedJavaSurface(vm, *context, surface_object, holder_object.Value());
         context->managed_host_surface_open = true;
         const auto surface_reference = bridge.PublishLocal(surface_object);
         const auto from_surface = [&](runtime::JniReference ref) {
@@ -180,6 +181,12 @@ TEST_CASE("DVM-237 APS-11 real ARM Android asset surface and sensor boundaries s
         const auto surface_window = from_surface(surface_reference);
         REQUIRE(surface_window != 0);
         CHECK(from_surface(surface_reference) == surface_window);
+        CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
+        const auto release_method = vm.Linker().FindVtableIndex(vm.Model().ObjectClass(surface_object), "release", "()V");
+        REQUIRE(release_method);
+        const auto released_surface = vm.Call(vm.Linker().Class(vm.Model().ObjectClass(surface_object)).vtable[*release_method], std::array{runtime::dexvm::VmValue::Ref(surface_object)});
+        REQUIRE_FALSE(released_surface.exception.IsValid());
+        CHECK(from_surface(surface_reference) == 0);
         CHECK(invoke("ANativeWindow_getWidth", {surface_window, 0, 0, 0}) == context->surface_width);
         CHECK_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *context, runtime::SurfaceHolderPhase::destroyed).has_value());
         CHECK(from_surface(surface_reference) == 0);

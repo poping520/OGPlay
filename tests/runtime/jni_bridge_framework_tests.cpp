@@ -215,7 +215,14 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         for (const auto name : {"android/content/Context", "android/content/ContextWrapper",
                                "android/content/ContentResolver", "android/app/Activity",
                                "android/telephony/TelephonyManager", "android/provider/Settings$Secure",
-                               "android/os/Bundle", "android/media/AudioTrack"}) {
+                               "android/os/Bundle", "android/media/AudioTrack",
+                               "android/app/ApplicationErrorReport",
+                               "android/app/ApplicationErrorReport$1",
+                               "android/app/ApplicationErrorReport$AnrInfo",
+                               "android/app/ApplicationErrorReport$BatteryInfo",
+                               "android/app/ApplicationErrorReport$CrashInfo",
+                               "android/app/ApplicationErrorReport$RunningServiceInfo",
+                               "android/graphics/SurfaceTexture", "android/view/Surface"}) {
             const auto owner = linker.ResolveDescriptor("L" + std::string(name) + ";");
             const auto identity = classes.FindClass(name);
             REQUIRE(identity.has_value());
@@ -297,6 +304,24 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;", true);
         const std::array<JniValue, 2> args{resolver, text("android_id")};
         CHECK(string_value(invocations.InvokeStatic(1U, secure, get, args, JniArgumentSource::value_array)) == "0123456789abcdef");
+        const auto report = *classes.FindClass("android/app/ApplicationErrorReport");
+        CHECK(linker.Class(linker.ResolveDescriptor("Landroid/app/ApplicationErrorReport;")).is_boot_dex);
+        const auto receiver = classes.GetMethodId(report, "getErrorReportReceiver",
+            "(Landroid/content/Context;Ljava/lang/String;I)Landroid/content/ComponentName;", true);
+        REQUIRE(receiver.has_value());
+        const std::array<JniValue, 3> report_args{
+            bridge.PublishLocal(activity), text("fixture.app"), JniInt{1}};
+        // Both an absent setting and explicit zero execute the original API19
+        // early return, before any installer or external receiver query.
+        for (const bool explicit_zero : {false, true}) {
+            if (explicit_zero) {
+                fixture.context->preferences["__android.settings.global"]
+                    ["send_action_app_error"] = std::string("0");
+            }
+            CHECK(std::get<JniReference>(invocations.InvokeStatic(
+                1U, report, *receiver, report_args, JniArgumentSource::value_array)).IsNull());
+            REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+        }
         const auto bundle = construct("Landroid/os/Bundle;", "()V");
         CHECK(linker.Class(vm.Model().ObjectClass(bundle)).is_boot_dex);
         static_cast<void>(call(bundle, "putInt", "(Ljava/lang/String;I)V", {text("answer"), JniInt{42}}));

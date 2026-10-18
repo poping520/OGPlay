@@ -174,6 +174,7 @@ std::vector<std::string_view> GuestGlesExtensions(const std::string_view native_
         return false;
     };
     if (supports("GL_OES_EGL_image")) values.push_back("GL_OES_EGL_image");
+    if (supports("GL_OES_EGL_image_external")) values.push_back("GL_OES_EGL_image_external");
     if (supports("GL_OES_mapbuffer") && supports("GL_EXT_map_buffer_range"))
         values.push_back("GL_OES_mapbuffer");
     // Core renderbuffer storage/attachment handlers already forward D24S8 to ANGLE.

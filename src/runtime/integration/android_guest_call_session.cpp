@@ -2093,6 +2093,7 @@ public:
         const std::uint64_t thread_id) {
         return boundary_.InvokeManagedEgl(name, arguments, thread_id);
     }
+    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call) { return boundary_.UseExternalTexture(call); }
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
     void RegisterNativeActivity(NativeActivityBoundaryResources resources) { boundary_.RegisterNativeActivity(std::move(resources)); }
@@ -2735,6 +2736,9 @@ bool AndroidGuestProcess::ManagedSurfaceIsOpen() const noexcept { return impl_->
 std::string AndroidGuestProcess::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
 std::string AndroidGuestProcess::ManagedEglString(const std::uint32_t parameter) { return impl_->ManagedEglString(parameter); }
 void AndroidGuestProcess::LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) { impl_->LatchManagedEglError(thread_id, error); }
+gles::ExternalTextureContext AndroidGuestProcess::UseExternalTexture(const gles::ExternalTextureCall& call) {
+    return impl_->UseExternalTexture(call);
+}
 std::uint32_t AndroidGuestProcess::InvokeManagedGles(
     const gles::GlesApi api, const std::string_view name,
     const std::span<const std::uint32_t> arguments,

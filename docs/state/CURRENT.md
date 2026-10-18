@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-17。
+更新：2026-10-18。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -13,7 +13,7 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| TML 1.0 | macOS | 第 0 帧已越过 libunity 链接，进入 UnityPlayer.nativeFile | **缺 JNI 类 android.app.ApplicationErrorReport**；后续传感器线程路径未达 | [APS-11](../tasks/apk-startup/APS-11.md) |
+| TML 1.0 | macOS | 第 0 帧已交付 surfaceCreated，UnityMain 启动 | **缺方法 Activity.isFinishing()Z**；SurfaceTexture 构造已越过，真实传感器/纹理消费未验 | [APS-14](../tasks/apk-startup/APS-14.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单、角色教学，CG 完成/跳过均返回 | CG 首图约 4 秒待用户复测；用户报告的点击崩溃未复现 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
@@ -42,6 +42,8 @@
   Windows Release/原生 GUI 链路待复验（GUI-9 证据属旧架构）。macOS 交付 ad-hoc 签名 OGPlay.app
   （[GUI-11](../tasks/gui/GUI-11.md)），冒烟/包/游戏模式与真实导入→启动→移除流程已验；Linux GUI 未接入。
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
+  SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，
+  MediaPlayer/NDK producer 与启动后端选择未接入（[APS-14](../tasks/apk-startup/APS-14.md)）。
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
   （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；
   raw-resource 完整链、手动音频写入、媒体主时钟与影音同步未验收。

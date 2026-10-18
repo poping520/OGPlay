@@ -276,3 +276,8 @@ headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Androi
 DexVM bridge 通过 token→guest TID 显式准备 NDK Looper，Java 主线程在 Activity/JNI 启动前
 已关联，HandlerThread.prepare 复用该 registry。线程退出释放内部引用，进程 teardown
 先 shutdown Looper 以唤醒阻塞轮询。native clone 的存活来自 lifecycle hook，不继承父 Looper。
+
+SurfaceStream 是无 JNI/GL/回调的进程内有界交付队列：producer 带 stream identity/epoch，
+async pending 替换不重发事件；acquire 将待上传帧独立持有，commit 锁存、abort 在无更新帧时归还，
+上传期间新 enqueue 保留自己的通知。single-buffer 在消费归还前明确 busy。snapshot 持不可变 RGBA
+与源 PTS/transform，所有 lease 的实际 backing capacity 共享进程预算；不维护第二播放时钟。

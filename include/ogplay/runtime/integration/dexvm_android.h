@@ -1,4 +1,6 @@
 #pragma once
+#include "ogplay/runtime/integration/surface_stream.h"
+#include "ogplay/gles/external_texture.h"
 #include "ogplay/runtime/common/guest_memory_facts.h"
 #include "ogplay/runtime/boundary/sensor_directory.h"
 
@@ -504,6 +506,24 @@ struct DexVmAndroidContext final {
   std::unordered_set<std::uint32_t> active_surface_holders;
   std::unordered_set<std::uint32_t> destroying_surface_holders;
   std::unordered_map<std::uint32_t, std::pair<std::uint32_t, std::uint32_t>> surface_callback_sizes;
+
+  struct SurfaceTextureState final {
+    std::shared_ptr<SurfaceStream> stream;
+    dexvm::VmObjectRef weak_self;
+    std::uint32_t token{}, texture{};
+    gles::ExternalTextureContext binding;
+    bool attached{true};
+    bool released_image{};
+    std::int64_t timestamp_ns{};
+    std::array<float, 16> transform{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+  };
+  std::shared_ptr<SurfaceStreamBudget> surface_stream_budget = std::make_shared<SurfaceStreamBudget>();
+  std::unordered_map<std::uint32_t, SurfaceTextureState> surface_textures;
+  std::unordered_map<std::uint32_t, std::shared_ptr<SurfaceStream>> stream_surfaces;
+  std::unordered_map<std::uint32_t, std::uint32_t> managed_surface_tokens;
+  std::unordered_map<std::uint32_t, std::uint32_t> stream_surface_owners;
+  std::uint32_t next_surface_token{1};
+  std::function<gles::ExternalTextureContext(const gles::ExternalTextureCall&)> surface_texture_graphics;
 
   struct EglFacadeState final {
     dexvm::VmObjectRef display;
@@ -1217,3 +1237,11 @@ struct AndroidBoundaryInput;
                                                  float y, std::int32_t pointer);
 
 } // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void RegisterAndroidSurfaceStreamStateTable(dexvm::Interpreter&, const std::shared_ptr<DexVmAndroidContext>&);
+void DispatchAndroidSurfaceStreamEvents(dexvm::Interpreter&, DexVmAndroidContext&);
+void ReleaseAndroidSurfaceStreams(DexVmAndroidContext&);
+void InitializeManagedJavaSurface(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef, std::uint32_t holder);
+std::shared_ptr<SurfaceStream> ResolveAndroidSurfaceStream(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
+}

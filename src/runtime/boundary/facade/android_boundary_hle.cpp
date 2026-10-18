@@ -298,6 +298,19 @@ public:
                               const std::uint32_t error) {
         egl_module_.LatchError(thread_id, error);
     }
+    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call) {
+        if (guest_graphics_retired_.load(std::memory_order_acquire))
+            throw gles::ExternalTextureError(gles::ExternalTextureError::Reason::no_context, "guest graphics retired");
+        auto* frame = egl_module_.CurrentFrameForHostThread(std::this_thread::get_id(), "SurfaceTexture");
+        if (!frame && angle_frame_ && angle_frame_->IsCurrentOnCallingThread()) frame = &*angle_frame_;
+        if (!frame) throw gles::ExternalTextureError(gles::ExternalTextureError::Reason::no_context, "SurfaceTexture has no current EGL context");
+        const auto result = frame->UseExternalTexture(call);
+        if (call.operation == gles::ExternalTextureCall::Operation::detach)
+            gl_context_.Shared().DeleteTextures(std::span(&call.texture, 1));
+        else if (call.operation != gles::ExternalTextureCall::Operation::query)
+            gl_context_.Shared().BindTexture(0x8D65U, call.texture);
+        return result;
+    }
     [[nodiscard]] std::uint32_t InvokeManagedGles(
         const gles::GlesApi api, const std::string_view name,
         const std::span<const std::uint32_t> arguments,
@@ -1095,6 +1108,9 @@ std::string AndroidBoundaryHle::ManagedEglString(
 void AndroidBoundaryHle::LatchManagedEglError(
     const std::uint64_t thread_id, const std::uint32_t error) {
     impl_->LatchManagedEglError(thread_id, error);
+}
+gles::ExternalTextureContext AndroidBoundaryHle::UseExternalTexture(const gles::ExternalTextureCall& call) {
+    return impl_->UseExternalTexture(call);
 }
 std::uint32_t AndroidBoundaryHle::InvokeManagedGles(
     const gles::GlesApi api, const std::string_view name,

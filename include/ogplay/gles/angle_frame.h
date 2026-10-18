@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/gles/external_texture.h"
 
 #include <array>
 #include <cstddef>
@@ -63,6 +64,7 @@ public:
     };
     void TransferPixelBuffer(PixelBufferOperation operation,
                              std::span<const std::uint32_t> arguments);
+    ExternalTextureContext UseExternalTexture(const ExternalTextureCall& call);
     void BindEglImage(std::uint32_t target, std::uintptr_t image, bool renderbuffer);
     static AngleFrame CreateContext(std::shared_ptr<EglDisplayResources> display,
                                    int client_version, EglHandle share_context = 0,

@@ -238,3 +238,8 @@ compatibility/GLES2，不支持 GLES3、texture binding/mipmap；见 ADR-0130。
 隐藏格式返回 GL_INVALID_ENUM。选择厂商族时保留 ETC1 与实际支持的 GLES3 核心 ETC2/EAC。
 策略创建时固定，无 setter；共享/重建 Context 由上层传入同一策略，不读取 Profile。
 原生解码路径不受其他 Context 策略影响。见 ADR-0128。
+
+`AngleFrame::UseExternalTexture` 在实际 current Context 上校验 expected display/context，提供
+query/bind、紧密 RGBA→EGLImage→EXTERNAL_OES 上传及 detach 删除。图像尺寸/长度受检，
+内部 2D texture/EGLImage 仅作存储导入，绑定后由 external sibling 保有存储；恢复 2D binding 和
+unpack PBO/行状态。无 current、失配与缺 external 能力分别明确失败，不新建 Context 或改写 shader。

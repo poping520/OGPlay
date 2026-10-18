@@ -15,6 +15,7 @@
 
 #if OGPLAY_HAS_ANGLE
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #define GL_GLEXT_PROTOTYPES
 #include <GLES2/gl2ext.h>
@@ -85,6 +86,62 @@ constexpr std::uint32_t kEtc1Rgb8LossyDecodeAngle = 0x9690U;
 }
 
 }  // namespace
+
+ExternalTextureContext AngleFrame::UseExternalTexture(const ExternalTextureCall& call) {
+#if OGPLAY_HAS_ANGLE
+    if (!IsCurrentOnCallingThread()) throw ExternalTextureError(ExternalTextureError::Reason::no_context, "SurfaceTexture has no current EGL context");
+    const ExternalTextureContext current{NativeDisplay(), NativeContext()};
+    if (call.expected.context && call.expected != current)
+        throw ExternalTextureError(ExternalTextureError::Reason::wrong_context, "SurfaceTexture EGL context mismatch");
+    if (call.operation == ExternalTextureCall::Operation::query) return current;
+    if (call.operation == ExternalTextureCall::Operation::detach) {
+        DeleteTextures(std::span(&call.texture, 1)); return current;
+    }
+    const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    if (!HasExtension(extensions, "GL_OES_EGL_image_external"))
+        throw ExternalTextureError(ExternalTextureError::Reason::unsupported, "ANGLE backend has no external texture support");
+    if (call.operation == ExternalTextureCall::Operation::bind) {
+        BindTexture(GL_TEXTURE_EXTERNAL_OES, call.texture); return current;
+    }
+    if (!call.width || !call.height || call.width > 4096 || call.height > 4096 ||
+        call.rgba.size() != static_cast<std::uint64_t>(call.width) * call.height * 4)
+        throw std::invalid_argument("invalid external RGBA image");
+    const auto create = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+    const auto destroy = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(eglGetProcAddress("eglDestroyImageKHR"));
+    if (!create || !destroy) throw ExternalTextureError(ExternalTextureError::Reason::unsupported, "ANGLE EGL image import unavailable");
+    GLint previous{}; glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous);
+    const auto source = GenerateTextures(1).front();
+    EGLImageKHR image = EGL_NO_IMAGE_KHR;
+    try {
+        // Actual driver version controls unpack capabilities; an ES2 guest can
+        // run on an ANGLE ES3 context with an unpack PBO/row state installed.
+        const auto* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        const ScopedTightUnpack unpack(version && std::string_view(version).starts_with("OpenGL ES 3"));
+        BindTexture(GL_TEXTURE_2D, source);
+        TextureParameter(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        TextureImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<std::int32_t>(call.width),
+                       static_cast<std::int32_t>(call.height), 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                       std::as_bytes(call.rgba));
+        const EGLint attributes[]{EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
+        image = create(reinterpret_cast<EGLDisplay>(NativeDisplay()),
+                       reinterpret_cast<EGLContext>(NativeContext()), EGL_GL_TEXTURE_2D_KHR,
+                       reinterpret_cast<EGLClientBuffer>(static_cast<std::uintptr_t>(source)), attributes);
+        if (!image) throw ExternalTextureError(ExternalTextureError::Reason::unsupported, "ANGLE rejected RGBA EGL image import");
+        BindTexture(GL_TEXTURE_EXTERNAL_OES, call.texture);
+        BindEglImage(GL_TEXTURE_EXTERNAL_OES, reinterpret_cast<std::uintptr_t>(image), false);
+    } catch (...) {
+        if (image) destroy(reinterpret_cast<EGLDisplay>(NativeDisplay()), image);
+        DeleteTextures(std::span(&source, 1)); BindTexture(GL_TEXTURE_2D, static_cast<std::uint32_t>(previous));
+        throw;
+    }
+    destroy(reinterpret_cast<EGLDisplay>(NativeDisplay()), image);
+    DeleteTextures(std::span(&source, 1)); BindTexture(GL_TEXTURE_2D, static_cast<std::uint32_t>(previous));
+    return current;
+#else
+    static_cast<void>(call);
+    throw ExternalTextureError(ExternalTextureError::Reason::unsupported, "ANGLE unavailable");
+#endif
+}
 
 AngleFrame AngleFrame::CreatePbuffer(const AngleBackend backend,
                                      const std::uint32_t width,

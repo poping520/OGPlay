@@ -3,6 +3,8 @@
 #include <doctest/doctest.h>
 
 #include <cstdint>
+#include <bit>
+#include "ogplay/gles/angle_frame.h"
 #include <array>
 #include <fstream>
 #include <iterator>
@@ -1651,4 +1653,232 @@ TEST_CASE("View size callback subtree replacement never notifies detached snapsh
         CHECK(DispatchAndroidViewSizes(vm.interpreter,*state));CHECK(child_calls==0);
         CHECK_FALSE(state->ui_layout_dispatching);
     }
+}
+
+TEST_CASE("SurfaceTexture original Java connects a Surface producer to real external pixels and events") {
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+    using namespace ogplay::gles;
+    REQUIRE(IsNativeAngleEglAvailable());
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int callbacks{};
+        VmObjectRef notified;
+        const auto listener = std::move(IntrinsicClassBuilder::Class("Lfixture/FrameListener;", "Ljava/lang/Object;",
+            {"Landroid/graphics/SurfaceTexture$OnFrameAvailableListener;"})
+            .VirtualMethod("onFrameAvailable", "(Landroid/graphics/SurfaceTexture;)V", [&](IntrinsicContext& call) {
+                ++callbacks; notified = call.arguments[0].ref; return VmValue::Void();
+            })).Build();
+        EglVm fixture(backend, nullptr, nullptr, {listener});
+        VmThreadRuntime threads(fixture.interpreter); fixture.context->threads = &threads;
+        auto& vm = fixture.interpreter;
+        RegisterAndroidSchedulerStateTable(vm, fixture.context);
+        RegisterAndroidSurfaceStreamStateTable(vm, fixture.context);
+        const auto construct = [&](const char* descriptor, const char* signature, std::vector<VmValue> args) {
+            auto object = vm.NewIntrinsicInstance(descriptor);
+            const auto roots = vm.ProtectReferences(std::array{object});
+            const auto method = fixture.linker.FindDirectMethod(fixture.model.ObjectClass(object), "<init>", signature);
+            REQUIRE(method); args.insert(args.begin(), VmValue::Ref(object));
+            const auto result = vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return object;
+        };
+        const auto texture = construct("Landroid/graphics/SurfaceTexture;", "(I)V", {VmValue::Int(-1)});
+        const auto texture_root = vm.ProtectReferences(std::array{texture});
+        CHECK(fixture.CallOn(texture, "getTimestamp", "()J").wide == 0);
+        CHECK(fixture.context->surface_textures.at(texture.Value()).texture == UINT32_MAX);
+        const auto failed = fixture.CallOnOutcome(texture, "updateTexImage", "()V");
+        REQUIRE(failed.exception.IsValid());
+        CHECK(fixture.linker.Class(failed.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(fixture.CallOnOutcome(texture, "releaseTexImage", "()V").exception.IsValid());
+        fixture.CallOn(texture, "detachFromGLContext", "()V"); // no current context before first use
+
+        const auto display = EglDisplayResources::Create({AngleRenderer::vulkan, AngleDevice::swiftshader});
+        const auto target = EglSurfaceResources::Create(display, 2, 2);
+        auto frame = AngleFrame::CreateContext(display, 2); frame.BindSurfaces(target, target);
+        fixture.context->surface_texture_graphics = [&](const ExternalTextureCall& call) { return frame.UseExternalTexture(call); };
+        const auto name = frame.GenerateTextures(1).front();
+        fixture.CallOn(texture, "attachToGLContext", "(I)V", {VmValue::Int(static_cast<std::int32_t>(name))});
+        const auto surface = construct("Landroid/view/Surface;", "(Landroid/graphics/SurfaceTexture;)V", {VmValue::Ref(texture)});
+        const auto surface_root = vm.ProtectReferences(std::array{surface});
+        CHECK(fixture.CallOn(surface, "getGenerationId", "()I").AsInt() == 1);
+        const auto endpoints_before = fixture.context->stream_surfaces.size();
+        const auto create_endpoint = fixture.linker.FindDirectMethod(fixture.model.ObjectClass(surface),
+            "nativeCreateFromSurfaceTexture", "(Landroid/view/Surface;Landroid/graphics/SurfaceTexture;)I");
+        REQUIRE(create_endpoint);
+        const auto duplicate = vm.Call(*create_endpoint, std::array{VmValue::Ref(surface), VmValue::Ref(texture)});
+        REQUIRE(duplicate.exception.IsValid());
+        CHECK(fixture.linker.Class(duplicate.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(fixture.context->stream_surfaces.size() == endpoints_before);
+        CHECK(fixture.CallOn(surface, "isValid", "()Z").AsInt() == 1);
+        const auto stream = ResolveAndroidSurfaceStream(vm, *fixture.context, surface);
+        REQUIRE(stream);
+        fixture.context->media_players.try_emplace(surface.Value());
+        try {
+            BindAndroidMediaSurface(*fixture.context, surface.Value(), surface);
+            FAIL("unconnected MediaPlayer stream producer accepted");
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.descriptor == "Ljava/lang/UnsupportedOperationException;");
+        }
+        fixture.context->media_players.erase(surface.Value());
+        const auto producer = stream->Connect();
+        const auto callback = vm.NewIntrinsicInstance("Lfixture/FrameListener;");
+        fixture.CallOn(texture, "setOnFrameAvailableListener", "(Landroid/graphics/SurfaceTexture$OnFrameAvailableListener;)V", {VmValue::Ref(callback)});
+        CHECK_FALSE(PumpJavaThreads(vm, *fixture.context)); CHECK(callbacks == 0);
+
+        SurfaceStreamFrame input; input.width = 2; input.height = 2; input.timestamp_ns = 123456789;
+        input.rgba = {255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255};
+        input.transform[0] = 0.5F;
+        CHECK(stream->Submit(producer, std::move(input)) == SurfaceStream::SubmitResult::queued);
+        CHECK(callbacks == 0); // producer never enters Java
+        CHECK_FALSE(PumpJavaThreads(vm, *fixture.context));
+        CHECK(callbacks == 1); CHECK(notified == texture);
+        const auto unpack = frame.GenerateBuffers(1);
+        frame.BindBuffer(0x88EC, unpack.front()); frame.BufferData(0x88EC, 256, std::nullopt, 0x88E4);
+        frame.PixelStore(0x0CF5, 8); frame.PixelStore(0x0CF2, 7);
+        fixture.CallOn(texture, "updateTexImage", "()V");
+        CHECK(frame.BoundBuffer(0x88EC) == unpack.front());
+        CHECK(frame.GetIntegers(0x0CF5, 1).front() == 8);
+        CHECK(frame.GetIntegers(0x0CF2, 1).front() == 7);
+        CHECK(fixture.CallOn(texture, "getTimestamp", "()J").wide == 123456789);
+        const auto matrix = fixture.model.NewPrimitiveArray(fixture.linker.ResolveDescriptor("[F"), JniPrimitiveKind::float_value, 16);
+        fixture.CallOn(texture, "getTransformMatrix", "([F)V", {VmValue::Ref(matrix)});
+        CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(fixture.model.GetPrimitiveElement(matrix, 0))) == 0.5F);
+        fixture.CallOn(texture, "updateTexImage", "()V"); // empty queue keeps the current image and timestamp
+        CHECK(fixture.CallOn(texture, "getTimestamp", "()J").wide == 123456789);
+
+        const auto vertex = frame.CreateShader(0x8B31), fragment = frame.CreateShader(0x8B30);
+        const std::string vs = "attribute vec2 p;varying vec2 uv;void main(){gl_Position=vec4(p,0.,1.);uv=(p+1.)*.5;}";
+        const std::string fs = "#extension GL_OES_EGL_image_external : require\nprecision mediump float;uniform samplerExternalOES t;varying vec2 uv;void main(){gl_FragColor=texture2D(t,uv);}";
+        frame.ShaderSource(vertex, {&vs,1}); frame.ShaderSource(fragment, {&fs,1});
+        frame.CompileShader(vertex); frame.CompileShader(fragment);
+        const auto program = frame.CreateProgram(); frame.AttachShader(program, vertex); frame.AttachShader(program, fragment);
+        frame.LinkProgram(program); REQUIRE(frame.GetProgramParameter(program, 0x8B82) == 1);
+        frame.UseProgram(program); frame.Uniform1i(frame.GetUniformLocation(program, "t"), 0);
+        const std::array<float,6> triangle{-1,-1,3,-1,-1,3};
+        const auto buffers = frame.GenerateBuffers(1); frame.BindBuffer(0x8892, buffers.front());
+        frame.BufferData(0x8892, sizeof(triangle), std::as_bytes(std::span(triangle)), 0x88E4);
+        const auto position = static_cast<std::uint32_t>(frame.GetAttribLocation(program,"p"));
+        frame.VertexAttributePointer(position,2,0x1406,false,0,0); frame.SetVertexAttributeEnabled(position,true);
+        frame.Viewport(0,0,2,2); frame.DrawArrays(4,0,3);
+        CHECK(frame.ReadRgba8() == std::vector<std::uint8_t>{0,0,255,255,255,255,255,255,255,0,0,255,0,255,0,255});
+        const auto wrong_context = fixture.context->surface_textures.at(texture.Value()).binding;
+        frame.ReleaseCurrent();
+        CHECK(fixture.CallOnOutcome(texture,"updateTexImage","()V").exception.IsValid());
+        {
+            auto alien = AngleFrame::CreateContext(display, 2); alien.BindSurfaces(target, target);
+            fixture.context->surface_texture_graphics = [&](const ExternalTextureCall& call) { return alien.UseExternalTexture(call); };
+            const auto mismatch = fixture.CallOnOutcome(texture, "updateTexImage", "()V");
+            REQUIRE(mismatch.exception.IsValid());
+            CHECK(fixture.linker.Class(mismatch.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+            alien.ReleaseCurrent();
+        }
+        fixture.context->surface_texture_graphics = [&](const ExternalTextureCall& call) { return frame.UseExternalTexture(call); };
+        frame.BindSurfaces(target, target);
+        fixture.CallOn(texture, "detachFromGLContext", "()V");
+        const auto replacement = frame.GenerateTextures(1).front();
+        fixture.CallOn(texture, "attachToGLContext", "(I)V", {VmValue::Int(static_cast<std::int32_t>(replacement))});
+        CHECK(fixture.context->surface_textures.at(texture.Value()).binding == wrong_context);
+        fixture.CallOn(texture, "releaseTexImage", "()V");
+        CHECK(fixture.CallOn(texture, "getTimestamp", "()J").wide == 0);
+        fixture.CallOn(texture, "detachFromGLContext", "()V");
+        const auto released_name = frame.GenerateTextures(1).front();
+        fixture.CallOn(texture, "attachToGLContext", "(I)V", {VmValue::Int(static_cast<std::int32_t>(released_name))});
+        frame.TextureParameter(0x8D65, 0x2801, 0x2600); frame.TextureParameter(0x8D65, 0x2800, 0x2600);
+        frame.DrawArrays(4, 0, 3);
+        const auto released_pixels = frame.ReadRgba8();
+        const std::string pattern =
+            "___________________________________XX_XX_______X_X_____X_X____X_XXXXXXX_X____XXXXXXXXXXX__"
+            "___XX_XXX_XX_______XXXXXXX_________X___X_________X_____X__________________________________";
+        for (std::size_t row = 0; row < 2; ++row) for (std::size_t col = 0; col < 2; ++col) {
+            const auto value = pattern[(row == 0 ? 9U : 3U) * 15 + (col == 0 ? 3U : 11U)] == 'X' ? 0 : 255;
+            for (std::size_t channel = 0; channel < 3; ++channel) CHECK(released_pixels[(row * 2 + col) * 4 + channel] == value);
+            CHECK(released_pixels[(row * 2 + col) * 4 + 3] == 255);
+        }
+        fixture.CallOn(surface, "release", "()V"); CHECK(stream->Live());
+        CHECK(fixture.CallOn(surface, "getGenerationId", "()I").AsInt() == 2);
+        CHECK_FALSE(ResolveAndroidSurfaceStream(vm, *fixture.context, surface));
+        CHECK(fixture.CallOn(surface, "isValid", "()Z").AsInt() == 0);
+        fixture.CallOn(texture, "release", "()V"); fixture.CallOn(texture, "release", "()V");
+        CHECK_FALSE(stream->Live()); CHECK(fixture.context->surface_stream_budget->Used() == 0);
+        frame.DeleteTextures(std::array{released_name}); frame.DeleteBuffers(buffers); frame.DeleteBuffers(unpack);
+        frame.DeleteShader(vertex); frame.DeleteShader(fragment); frame.DeleteProgram(program);
+        fixture.context->surface_texture_graphics = {};
+        fixture.context->threads = nullptr;
+    }
+#endif
+}
+
+TEST_CASE("SurfaceTexture GC abandons consumers without producer endpoints retaining Java owners") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        EglVm fixture(backend);
+        VmThreadRuntime threads(fixture.interpreter); fixture.context->threads = &threads;
+        RegisterAndroidSurfaceStreamStateTable(fixture.interpreter, fixture.context);
+        auto& vm = fixture.interpreter;
+        auto texture = vm.NewIntrinsicInstance("Landroid/graphics/SurfaceTexture;");
+        VmObjectRef surface;
+        {
+            const auto roots = vm.ProtectReferences(std::array{texture});
+            const auto type = fixture.linker.ResolveDescriptor("Landroid/graphics/SurfaceTexture;");
+            const auto init = fixture.linker.FindDirectMethod(type, "<init>", "(IZ)V");
+            REQUIRE(init);
+            const auto result = vm.Call(*init, std::array{VmValue::Ref(texture), VmValue::Int(-1), VmValue::Int(1)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            surface = vm.NewIntrinsicInstance("Landroid/view/Surface;");
+            const auto surface_root = vm.ProtectReferences(std::array{surface});
+            const auto constructor = fixture.linker.FindDirectMethod(fixture.model.ObjectClass(surface), "<init>", "(Landroid/graphics/SurfaceTexture;)V");
+            REQUIRE(constructor);
+            const auto made = vm.Call(*constructor, std::array{VmValue::Ref(surface), VmValue::Ref(texture)});
+            REQUIRE_MESSAGE(!made.exception.IsValid(), made.exception_message);
+        }
+        auto stream = ResolveAndroidSurfaceStream(vm, *fixture.context, surface);
+        REQUIRE(stream); CHECK(stream->SingleBuffered());
+        {
+            const auto roots = vm.ProtectReferences(std::array{surface});
+            static_cast<void>(vm.CollectGarbage("SurfaceTexture weak owner"));
+            CHECK_FALSE(stream->Live()); CHECK(fixture.context->surface_textures.empty());
+            CHECK(fixture.CallOn(surface, "isValid", "()Z").AsInt() == 0);
+        }
+        static_cast<void>(vm.CollectGarbage("Surface producer endpoint"));
+        CHECK(fixture.context->stream_surface_owners.empty());
+        CHECK(fixture.context->stream_surfaces.empty());
+        ReleaseAndroidSurfaceStreams(*fixture.context);
+        CHECK(fixture.context->surface_stream_budget->Used() == 0);
+        fixture.context->threads = nullptr;
+    }
+}
+
+TEST_CASE("SurfaceTexture production cold graphics uses current context and shared external binding") {
+#if OGPLAY_ANGLE_HAS_SWIFTSHADER
+    using namespace ogplay::gles;
+    auto libc = MinimalLibcElf();
+    const ogplay::loader::Elf32ModuleInput module{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    VirtualFileSystem filesystem;
+    auto session = AndroidGuestCallSession::Start({19, "libc.so", std::span{&module,1},
+        {AngleRenderer::vulkan,AngleDevice::swiftshader},2,2,1000,1,&filesystem,{}});
+    CHECK_THROWS_AS(session->Process().UseExternalTexture({}), ExternalTextureError);
+    session->OpenManagedSurface();
+    std::array<std::byte,4> bytes{}; std::vector<std::byte> output;
+    static_cast<void>(session->NIO().WithTemporaryGuestMemory(bytes, true, [&](ogplay::memory::GuestAddress address) {
+        return session->InvokeManagedGles(GlesApi::gles2,"glGenTextures",std::array{1U,address.Value()},1);
+    }, &output));
+    const auto word = [&] {
+        std::uint32_t value{};
+        for (std::size_t i=0;i<4;++i) value |= std::to_integer<std::uint32_t>(output[i]) << (i*8);
+        return value;
+    };
+    const auto texture = word(); REQUIRE(texture != 0);
+    const std::array<std::uint8_t,4> rgba{23,59,107,255};
+    const auto binding = session->Process().UseExternalTexture({ExternalTextureCall::Operation::upload,{},texture,1,1,rgba});
+    const auto query = [&] {
+        static_cast<void>(session->NIO().WithTemporaryGuestMemory(bytes, true, [&](ogplay::memory::GuestAddress address) {
+            return session->InvokeManagedGles(GlesApi::gles2,"glGetIntegerv",std::array{0x8D67U,address.Value()},1);
+        }, &output));
+        return word();
+    };
+    CHECK(query() == texture);
+    static_cast<void>(session->Process().UseExternalTexture({ExternalTextureCall::Operation::detach,binding,texture}));
+    CHECK(query() == 0);
+    session->ReleaseManagedSurfaceFromCallingThread();
+    CHECK_THROWS_AS(session->Process().UseExternalTexture({}), ExternalTextureError);
+    session->Stop();
+#endif
 }

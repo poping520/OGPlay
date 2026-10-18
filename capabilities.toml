@@ -1990,8 +1990,13 @@ note = "DVM-150：Runtime add/removeShutdownHook/exit/halt 执行原版 Java，h
 
 [runtime.egl_khr_object_boundary]
 status = "partial"
-test = "tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND34 EGL fences images and texture pbuffers use real ANGLE objects"
-note = "BND-34 发布 8 个 KHR sync/image handler 及两个 OES image target thunk，使用 guest identity 与真实 ANGLE 对象。Windows D3D11 实测 reusable sync、GL texture image、texture pbuffer；fence/wait 等只按后端实际支持宣告；Android native-buffer/native-fence FD/presentation-time 未发布。"
+test = "tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND34 EGL fences images and texture pbuffers use real ANGLE objects; tests/gles/angle_frame_tests.cpp#SurfaceTexture"
+note = "BND-34：KHR sync/image、OES image target 共用 guest identity/ANGLE。D3D11 已验 reusable sync/texture image/pbuffer；APS-12 macOS 底层 Vulkan/SwiftShader 已验 RGBA image 外部采样像素与替换，Metal 无 external 且正确拒绝。MediaPlayer 纹理端未接入；native-buffer/native-fence FD/presentation-time 未发布。"
+
+[dexvm.surface_texture]
+status = "partial"
+test = "tests/gles/angle_frame_tests.cpp#SurfaceTexture; tests/dexvm/egl_facade_tests.cpp#SurfaceTexture; tests/runtime/surface_stream_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#JNI framework services; tools/bootdex/build_bootdex.py check; tools.android_payload_current"
+note = "APS-13/14：原版 SurfaceTexture Java、native 生命周期、Surface producer 与有界 RGBA 队列已接入，双解释器/SwiftShader 验证像素、事件、PTS/矩阵、GC/释放。Metal 无 external，更新明确失败。MediaPlayer/NDK/EGL window producer、Camera、Parcel、context-loss 恢复及启动后端选择未接入，跨平台未验收。"
 
 [dexvm.native_activity]
 status = "partial"

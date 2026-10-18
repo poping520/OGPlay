@@ -143,7 +143,7 @@ constexpr std::uint32_t kElementArrayBuffer = 0x8893;
         UINT32_C(0x8800), UINT32_C(0x8801), UINT32_C(0x8802),
         UINT32_C(0x8803),
         UINT32_C(0x86A2), UINT32_C(0x86A4),
-        UINT32_C(0x8069), UINT32_C(0x84E0), UINT32_C(0x8514),
+        UINT32_C(0x8069), UINT32_C(0x84E0), UINT32_C(0x8514), UINT32_C(0x8D67),
         UINT32_C(0x86A5),
         UINT32_C(0x8869), UINT32_C(0x8894), UINT32_C(0x8895),
         UINT32_C(0x8B4C),

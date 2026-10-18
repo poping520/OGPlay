@@ -7,6 +7,7 @@ import { GameSettingsPage } from './game-settings-page';
 import { resolvedTheme, type Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { Cartridge, shellStyle, useIconColor } from './cartridge';
+import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
 import '../../packages/ui-kit/theme.css';
 import './console.css';
@@ -29,6 +30,28 @@ function Backdrop({ item }: { item: LibraryItem | undefined }) {
     <div class="backdrop-fade" /><div class="backdrop-grain" />
   </div>;
 }
+// Launch splash: icon and wordmark stay up at least SPLASH_MIN_MS and until the main screen is ready (library,
+// settings, and with 3D the hero's first frame and the first rail stills), never longer than SPLASH_MAX_MS.
+const SPLASH_MIN_MS = 900, SPLASH_MAX_MS = 8000;
+function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
+  const started = useRef(performance.now());
+  const [expired, setExpired] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => { const timer = window.setTimeout(() => setExpired(true), SPLASH_MAX_MS); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => {
+    if (!(ready || expired) || leaving) return;
+    const timer = window.setTimeout(() => setLeaving(true), Math.max(0, SPLASH_MIN_MS - (performance.now() - started.current)));
+    return () => window.clearTimeout(timer);
+  }, [ready, expired, leaving]);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(onDone, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 450);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  return <div class={`splash ${leaving ? 'leaving' : ''}`} role="status" aria-label="OGPlay 正在启动">
+    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>安卓老游戏兼容层</small><i class="splash-bar" />
+  </div>;
+}
 function Clock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 10000); return () => window.clearInterval(timer); }, []);
@@ -44,6 +67,11 @@ function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [settingsFailed, setSettingsFailed] = useState(false);
+  const [splash, setSplash] = useState(true);
+  const [heroShown, setHeroShown] = useState(false);
+  const readyTiles = useRef(new Set<string>());
+  const [, setReadyTileCount] = useState(0);
   const settingsRef = useRef<Settings | null>(null);
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
@@ -68,6 +96,12 @@ function App() {
   const runningCount = library.items.filter(game => game.running).length;
   const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
   const applySettings = (value: Settings) => { settingsRef.current = value; setSettings(value); };
+  // Pending until settings load, so a CSS preference never starts loading the 3D bundle; unreadable settings use the default.
+  const cartMode: CartMode = settings ? (settings.values.cartridge === 'css' ? 'css' : '3d') : settingsFailed ? '3d' : 'pending';
+  const cart3d = useCart3D(cartMode, report);
+  const tileReady = (id: string) => { if (!readyTiles.current.has(id)) { readyTiles.current.add(id); setReadyTileCount(readyTiles.current.size); } };
+  const startReady = !loading && cartMode !== 'pending' && cart3d !== 'waiting' && (cart3d === null ||
+    (!item || heroShown) && items.slice(0, 12).every(game => readyTiles.current.has(game.installation_id)));
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: light)');
     const apply = () => {
@@ -93,7 +127,8 @@ function App() {
       }
     };
     void initial().catch(report);
-    void rpc<Settings>('settings.get').then(value => { if (!disposed) applySettings(value); }).catch(report);
+    void rpc<Settings>('settings.get').then(value => { if (!disposed) applySettings(value); })
+      .catch(reason => { if (!disposed) setSettingsFailed(true); report(reason); });
     const exited = (event: Event) => {
       const detail = (event as CustomEvent<{ installation_id: string; exit_code: number; log_tail: string }>).detail;
       setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
@@ -258,7 +293,8 @@ function App() {
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
         {(item.running || status.tone !== 'ready') && <span class={`flag ${item.running ? 'running' : status.tone}`}>{item.running ? '● 运行中' : status.label}</span>}
-        <div class="float"><div class="tilt"><Cartridge item={item} tone={item.running ? 'running' : status.tone} hero /></div></div><div class="floor" />
+        {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)} /> :
+          <><div class="float"><div class="tilt"><Cartridge item={item} tone={item.running ? 'running' : status.tone} hero /></div></div><div class="floor" /></>}
       </div>
     </>;
   };
@@ -300,7 +336,7 @@ function App() {
           return <button key={game.installation_id} class="tile" data-instance={game.installation_id}
             aria-pressed={item?.installation_id === game.installation_id} aria-label={`${game.display_name}，${status.label}`} title={`${game.display_name} · ${versionLabel(game)}`}
             onClick={() => setSelected(game.installation_id)} onDblClick={() => { if (game.can_launch && !game.running) void act('library.launch', game); }}>
-            <Cartridge item={game} tone={tone} /><span class="name">{game.display_name}</span>
+            <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
           </button>;
         })}
         <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>制作卡带<small>导入 APK</small></button>
@@ -311,6 +347,7 @@ function App() {
       <span class="hint"><Key>X</Key>按键设置</span><span class="hint"><Key>Y</Key>游戏设置</span><span class="hint"><Key>L R</Key>切换分类<kbd>Q E</kbd></span>
       <span class="path" title={library.library_root}><span dir="ltr">{library.library_root}</span></span>
     </footer>
+    {splash && <Splash ready={startReady} onDone={() => setSplash(false)} />}
     {dragging && <div class="drop" aria-live="polite"><div class="slot" /><h2>松开，插入卡槽</h2><p>单体 APK · 一次一个文件</p></div>}
     {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); setSearchOpen(false); await refresh(); setSelected(id); setImporting(false); setPendingFile(null);

@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   'zh-CN': '简体中文', 'en-US': 'English', profile: '跟随 Profile', windowed: '窗口', fullscreen: '全屏',
   aspect: '保持比例', stretch: '拉伸', automatic: '自动', 'hardware-only': '仅硬件', 'software-only': '仅软件',
   disabled: '禁用', loopback: '仅回环', allow: '允许网络', realtime: '实时', fixed: '固定步进',
+  '3d': '3D 模型', css: 'CSS（轻量）',
 };
 export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved: (settings: Settings) => void }) {
   const [saved, setSaved] = useState<Settings | null>(null);

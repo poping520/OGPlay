@@ -10,6 +10,7 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
         {"language", "general", "语言", std::string("zh-CN"), {"zh-CN", "en-US"}, 0, 0, "预留 · 英文翻译尚未接入"},
         {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}},
         {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}},
+        {"cartridge", "general", "主界面卡带", std::string("3d"), {"3d", "css"}},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
         {"confirm_delete", "general", "移除库中实例前二次确认", true},

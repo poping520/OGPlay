@@ -86,12 +86,26 @@ async function createCart3D(): Promise<Cart3D> {
   thumbCam.lookAt(0, 0, 0);
   const stills = new Map<string, Promise<string>>();
   let queue = Promise.resolve();
+  // Each renderer has its own GL context, so a look built for the rail still has to be compiled and uploaded for the
+  // hero. Doing that here, off the switch path, keeps a selection change from stalling on texImage2D/shader setup.
+  type Look = Awaited<ReturnType<typeof kit.lookFor>>;
+  const warmed = new WeakSet<Look>();
+  const warm = (target: Look) => {
+    if (warmed.has(target)) return;
+    warmed.add(target);
+    kit.wear(target);
+    useEnv(heroEnv);
+    hero.compile(scene, camera);
+    for (const texture of kit.texturesOf(target)) hero.initTexture(texture);
+    if (look) kit.wear(look);
+  };
+  const pinned = () => face?.key ?? null;
   const thumb = (entry: CartFace) => {
     let url = stills.get(entry.key);
     if (!url) {
       // one at a time, so a long library never builds every look at once
       url = queue.then(async () => {
-        const stillLook = await kit.lookFor(entry, () => face?.key ?? null);
+        const stillLook = await kit.lookFor(entry, pinned);
         kit.wear(stillLook);
         stillLook.LED.emissiveIntensity = 2.2;
         const saved = [pivot.position.clone(), pivot.rotation.clone()] as const;
@@ -99,7 +113,9 @@ async function createCart3D(): Promise<Cart3D> {
         useEnv(thumbEnv);
         thumbs.render(scene, thumbCam);
         pivot.position.copy(saved[0]); pivot.rotation.copy(saved[1]);
-        return thumbs.domElement.toDataURL('image/png');
+        const url = thumbs.domElement.toDataURL('image/png');
+        warm(stillLook);
+        return url;
       });
       queue = url.then(() => {}, () => {});
       stills.set(entry.key, url);
@@ -126,7 +142,13 @@ async function createCart3D(): Promise<Cart3D> {
       if (face?.key === next.key) return;
       if (face && face.id !== next.id) swapT = 0;
       face = next;
-      void kit.lookFor(next, () => face?.key ?? null).then(value => { if (face?.key === next.key) look = value; });
+      void kit.lookFor(next, pinned).then(value => { if (face?.key === next.key) { warm(value); look = value; } });
+    },
+    prefetch(faces) {
+      for (const next of faces) queue = queue.then(async () => {
+        await new Promise(resolve => setTimeout(resolve, 60));    // yield so the swap animation keeps its frames
+        warm(await kit.lookFor(next, pinned));
+      }).catch(() => {});
     },
     thumb,
   };

@@ -18,6 +18,8 @@ export interface Cart3D {
   // `shown` fires once the first frame with a cartridge has been drawn after mounting.
   mount(stage: HTMLElement, shown: () => void): () => void;
   show(face: CartFace): void;
+  // Prepares looks the hero is likely to show next (rail neighbours) while idle, so switching does not stall.
+  prefetch(faces: CartFace[]): void;
   // Still frame for the rail, as a PNG data URL (img-src data: is the only image source the CSP allows).
   thumb(face: CartFace): Promise<string>;
 }

@@ -33,6 +33,65 @@ export function useIconColor(icon: string): Rgb {
   return color;
 }
 export const iconSampled = (icon: string) => !icon || sampled.has(icon);
+export const knownIconColor = (icon: string): Rgb | null => iconSampled(icon) ? sampled.get(icon) ?? fallback : null;
+// Backdrop art: the icon blurred and saturated once into a tiny bitmap that CSS only scales. A CSS blur of this size
+// is re-rasterised on every image change (and every frame of a crossfade) in the system WebView, stalling the hero.
+const BACKDROP_W = 64, BACKDROP_H = 40;
+const backdrops = new Map<string, Promise<string>>();
+function blurredArt(icon: string): Promise<string> {
+  let art = backdrops.get(icon);
+  if (!art) backdrops.set(icon, art = new Promise<string>(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = BACKDROP_W; canvas.height = BACKDROP_H;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) { resolve(''); return; }
+      const side = BACKDROP_W;                          // cover: the square icon fills the width
+      context.drawImage(image, 0, (BACKDROP_H - side) / 2, side, side);
+      const pixels = context.getImageData(0, 0, BACKDROP_W, BACKDROP_H);
+      boxBlur(pixels.data, BACKDROP_W, BACKDROP_H, 3, 3);
+      for (let i = 0; i < pixels.data.length; i += 4) {   // saturate 1.5
+        const d = pixels.data, luma = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        for (let c = 0; c < 3; c++) d[i + c] = luma + (d[i + c] - luma) * 1.5;
+      }
+      context.putImageData(pixels, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.onerror = () => resolve('');
+    image.src = icon;
+  }));
+  return art;
+}
+// Separable box blur, repeated so it approximates a gaussian; edges clamp.
+function boxBlur(data: Uint8ClampedArray, width: number, height: number, radius: number, passes: number) {
+  const buffer = new Float32Array(width * height * 4);
+  const run = (count: number, length: number, at: (line: number, index: number) => number) => {
+    for (let line = 0; line < count; line++) for (let c = 0; c < 4; c++) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k++) sum += data[at(line, Math.min(length - 1, Math.max(0, k))) + c];
+      for (let index = 0; index < length; index++) {
+        buffer[at(line, index) + c] = sum / (radius * 2 + 1);
+        sum += data[at(line, Math.min(length - 1, index + radius + 1)) + c] - data[at(line, Math.max(0, index - radius)) + c];
+      }
+      for (let index = 0; index < length; index++) data[at(line, index) + c] = buffer[at(line, index) + c];
+    }
+  };
+  for (let pass = 0; pass < passes; pass++) {
+    run(height, width, (y, x) => (y * width + x) * 4);
+    run(width, height, (x, y) => (y * width + x) * 4);
+  }
+}
+export function useBackdropArt(icon: string): string | null {
+  const [art, setArt] = useState<{ icon: string; url: string } | null>(null);
+  useEffect(() => {
+    if (!icon) { setArt({ icon, url: '' }); return; }
+    let live = true;
+    void blurredArt(icon).then(url => { if (live) setArt({ icon, url }); });
+    return () => { live = false; };
+  }, [icon]);
+  return art?.icon === icon ? art.url : null;
+}
 export function shellStyle(color: Rgb): Record<string, string> {
   const palette = shellPalette(color);
   return { '--shell': palette.shell, '--shell-l': palette.light, '--shell-d': palette.dark };

@@ -6,7 +6,7 @@ import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
-import { Cartridge, shellStyle, useIconColor } from './cartridge';
+import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
 import '../../packages/ui-kit/theme.css';
@@ -23,10 +23,23 @@ function Modal({ title, onDismiss, children }: { title: string; onDismiss: () =>
     <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>关闭</button></div>
   </dialog>;
 }
+// Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred.
 function Backdrop({ item }: { item: LibraryItem | undefined }) {
   const color = useIconColor(item?.icon ?? '');
+  const art = useBackdropArt(item?.icon ?? '');
+  const [layers, setLayers] = useState<{ key: number; welcome: boolean; style: Record<string, string> }[]>([]);
+  const serial = useRef(0);
+  const style: Record<string, string> = item ? { ...shellStyle(color), ...(art ? { backgroundImage: `url("${art}")` } : {}) } : {};
+  const signature = item ? `${art ?? ''}|${style['--shell-l']}` : 'welcome';
+  useEffect(() => {
+    if (item && art === null) return;                 // wait for the blurred art instead of flashing the gradient
+    const key = ++serial.current;
+    setLayers(current => [...current.slice(-1), { key, welcome: !item, style }]);
+    const timer = window.setTimeout(() => setLayers(current => current.filter(layer => layer.key >= key)), 600);
+    return () => window.clearTimeout(timer);
+  }, [signature]);
   return <div class="backdrop" aria-hidden="true">
-    <div class={`backdrop-art ${item ? '' : 'welcome'}`} style={item ? { ...shellStyle(color), backgroundImage: item.icon ? `url("${item.icon}")` : '' } : {}} />
+    {layers.map(layer => <div key={layer.key} class={`backdrop-art ${layer.welcome ? 'welcome' : ''}`} style={layer.style} />)}
     <div class="backdrop-fade" /><div class="backdrop-grain" />
   </div>;
 }
@@ -287,7 +300,9 @@ function App() {
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
         {(item.running || status.tone !== 'ready') && <span class={`flag ${item.running ? 'running' : status.tone}`}>{item.running ? '● 运行中' : status.label}</span>}
-        {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)} /> :
+        {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)}
+          neighbours={[items[(position - 2 + items.length) % items.length], items[position % items.length]].filter(game => game !== item)
+            .map(game => [game, game.running ? 'running' : statusOf(game).tone] as [LibraryItem, string])} /> :
           <><div class="float"><div class="tilt"><Cartridge item={item} tone={item.running ? 'running' : status.tone} hero /></div></div><div class="floor" /></>}
       </div>
     </>;

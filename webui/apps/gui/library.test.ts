@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { averageIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
+import { cycle, shellPalette, vividIconColor, validatePackageSelection, versionLabel, visibleItems } from './library';
 import type { LibraryItem } from './rpc';
 
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
@@ -32,15 +32,32 @@ describe('library presentation', () => {
     expect(versionLabel(item('broken', { version_code: null, version: '元数据不可用' }))).toBe('元数据不可用');
   });
 });
-describe('file intake and icon colors', () => {
+describe('file intake', () => {
   it('accepts supported suffixes and rejects batches, directories and empty files', () => {
     for (const name of ['a.apk', 'a.XAPK', 'a.apkm', 'a.apks']) expect(validatePackageSelection([{ name, size: 1 }])).toBeNull();
     for (const files of [[], [{ name: 'a.txt', size: 1 }], [{ name: 'folder', size: 1 }], [{ name: 'a.apk', size: 0 }], [{ name: 'a.apk', size: 1 }, { name: 'b.apk', size: 1 }]])
       expect(validatePackageSelection(files)).not.toBeNull();
   });
-  it('weights alpha and uses a deterministic transparent fallback', () => {
-    expect(averageIconColor(new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 0]))).toEqual([255, 0, 0]);
-    expect(averageIconColor(new Uint8ClampedArray(4))).toEqual([124, 156, 255]);
-    expect(averageIconColor(new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 255]))).toEqual([128, 0, 128]);
+});
+describe('console navigation and cartridge tint', () => {
+  it('wraps selection and category cycling in both directions', () => {
+    expect(cycle(['a', 'b', 'c'], 'c', 1)).toBe('a');
+    expect(cycle(['a', 'b', 'c'], 'a', -1)).toBe('c');
+    expect(cycle(['a', 'b'], 'missing', 1)).toBe('b');
+    expect(cycle([], 'x', 1)).toBe('x');
+  });
+  it('takes the dominant saturated hue instead of averaging highlights and opposite accents', () => {
+    const blue = [40, 120, 230, 255], red = [230, 50, 50, 255], white = [255, 255, 255, 255], hidden = [0, 255, 0, 0];
+    const pixels = new Uint8ClampedArray([...blue, ...blue, ...blue, ...red, ...white, ...white, ...white, ...white, ...hidden, ...hidden]);
+    expect(vividIconColor(pixels)).toEqual([40, 120, 230]);
+    expect(vividIconColor(new Uint8ClampedArray(4))).toEqual([124, 156, 255]);
+  });
+  it('derives ordered light, base and dark shell tones from the icon colour', () => {
+    const luminance = (value: string) => value.match(/\d+/g)!.map(Number).reduce((sum, part) => sum + part, 0);
+    for (const color of [[0, 0, 0], [255, 255, 255], [124, 156, 255]] as [number, number, number][]) {
+      const palette = shellPalette(color);
+      expect(luminance(palette.light)).toBeGreaterThan(luminance(palette.shell));
+      expect(luminance(palette.shell)).toBeGreaterThan(luminance(palette.dark));
+    }
   });
 });

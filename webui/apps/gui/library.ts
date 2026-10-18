@@ -2,6 +2,7 @@ import type { LibraryItem } from './rpc';
 
 export type Filter = 'all' | 'launchable' | 'running' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';
+export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'], ['launchable', '可启动'], ['running', '运行中'], ['attention', '需检查']];
 export const statuses: Record<string, { label: string; tone: string }> = {
   damaged: { label: '条目损坏', tone: 'danger' },
   profile_catalog_unavailable: { label: 'Profile 不可用', tone: 'danger' },
@@ -43,12 +44,31 @@ export function validatePackageSelection(files: Pick<File, 'name' | 'size'>[]): 
   if (files[0].size === 0) return '文件为空，请选择完整的安装包。';
   return null;
 }
-// Ignore transparent pixels so icon padding does not darken the glow.
-export function averageIconColor(pixels: Uint8ClampedArray): [number, number, number] {
-  let red = 0, green = 0, blue = 0, weight = 0;
+// Wraps around so L/R and arrow keys can cycle without dead ends.
+export function cycle<T>(values: readonly T[], current: T, delta: number): T {
+  const index = values.indexOf(current);
+  return values.length ? values[((index < 0 ? 0 : index) + delta + values.length * Math.abs(delta)) % values.length] : current;
+}
+// Picks the dominant hue (weighted by saturation) so white highlights, outlines and small accents do not muddy the tint.
+export function vividIconColor(pixels: Uint8ClampedArray): [number, number, number] {
+  const bins = Array.from({ length: 13 }, () => [0, 0, 0, 0]);
   for (let i = 0; i + 3 < pixels.length; i += 4) {
-    const alpha = pixels[i + 3] / 255;
-    red += pixels[i] * alpha; green += pixels[i + 1] * alpha; blue += pixels[i + 2] * alpha; weight += alpha;
+    const [red, green, blue] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    const max = Math.max(red, green, blue), chroma = max - Math.min(red, green, blue);
+    const hue = !chroma ? 0 : max === red ? ((green - blue) / chroma + 6) % 6 : max === green ? (blue - red) / chroma + 2 : (red - green) / chroma + 4;
+    const bin = bins[chroma < 24 ? 12 : Math.floor(hue * 2) % 12];
+    const weight = pixels[i + 3] / 255 * (0.04 + (chroma / 255) ** 2);
+    bin[0] += red * weight; bin[1] += green * weight; bin[2] += blue * weight; bin[3] += weight;
   }
-  return weight ? [Math.round(red / weight), Math.round(green / weight), Math.round(blue / weight)] : [124, 156, 255];
+  const best = bins.reduce((left, right) => right[3] > left[3] ? right : left);
+  return best[3] ? [0, 1, 2].map(channel => Math.round(best[channel] / best[3])) as [number, number, number] : [124, 156, 255];
+}
+// Cartridge shell tints from the icon colour: very dark or very pale icons are pulled toward a printable plastic tone.
+export function shellPalette([red, green, blue]: [number, number, number]): { shell: string; light: string; dark: string } {
+  const mix = (value: number, target: number, amount: number) => Math.round(value + (target - value) * amount);
+  const luma = 0.299 * red + 0.587 * green + 0.114 * blue;
+  const lift = luma < 80 ? (80 - luma) / 80 * 0.45 : luma > 210 ? -(luma - 210) / 45 * 0.25 : 0;
+  const base = [red, green, blue].map(value => lift >= 0 ? mix(value, 150, lift) : mix(value, 40, -lift));
+  const rgb = (values: number[]) => `rgb(${values.join(', ')})`;
+  return { shell: rgb(base), light: rgb(base.map(value => mix(value, 255, 0.32))), dark: rgb(base.map(value => mix(value, 0, 0.42))) };
 }

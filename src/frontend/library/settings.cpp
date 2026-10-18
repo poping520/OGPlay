@@ -8,9 +8,10 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
     static const std::vector<SettingDefinition> fields{
         {"language", "general", "语言", std::string("zh-CN"), {"zh-CN", "en-US"}, 0, 0, "预留 · 英文翻译尚未接入"},
-        {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}},
-        {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}},
+        {"theme", "general", "主题", std::string("dark"), {"dark", "light", "system"}, 0, 0, "预留 · 新界面暂无浅色主题"},
+        {"density", "general", "游戏库密度", std::string("comfortable"), {"comfortable", "compact"}, 0, 0, "预留 · 新界面暂不区分密度"},
         {"cartridge", "general", "主界面卡带", std::string("3d"), {"3d", "css"}},
+        {"settings_style", "general", "设置页风格", std::string("console"), {"console", "glass"}},
         {"minimize_on_launch", "general", "启动游戏后最小化", false},
         {"show_exit_log", "general", "异常退出时显示日志末尾", true},
         {"confirm_delete", "general", "移除库中实例前二次确认", true},

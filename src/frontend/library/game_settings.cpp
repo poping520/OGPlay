@@ -12,7 +12,10 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
             {"volume", "audio"}, {"mute", "audio"}, {"input_template", "input"}, {"keymap", "input"},
             {"gamepad_deadzone", "input"}, {"network_policy", "network"}, {"profiles_dir", "compatibility"},
             {"mcp_enabled", "advanced"}, {"mcp_port", "advanced"}}) {
-            auto field = FindSetting(key); field.group = group; result.push_back(std::move(field));
+            auto field = FindSetting(key); field.group = group;
+            // Per-instance values are not defaults: "默认解释器" reads "解释器" here.
+            if (field.label.starts_with("默认")) field.label.erase(0, std::string_view("默认").size());
+            result.push_back(std::move(field));
         }
         const auto pending = "预留 · 运行时配置入口尚未接入";
         const std::vector<SettingDefinition> extra{

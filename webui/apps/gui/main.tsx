@@ -4,7 +4,7 @@ import { rpc, type Library, type LibraryItem } from './rpc';
 import { cycle, filters, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
-import { resolvedTheme, type Settings } from './settings';
+import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { Cartridge, shellStyle, useIconColor } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
@@ -102,15 +102,6 @@ function App() {
   const tileReady = (id: string) => { if (!readyTiles.current.has(id)) { readyTiles.current.add(id); setReadyTileCount(readyTiles.current.size); } };
   const startReady = !loading && cartMode !== 'pending' && cart3d !== 'waiting' && (cart3d === null ||
     (!item || heroShown) && items.slice(0, 12).every(game => readyTiles.current.has(game.installation_id)));
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: light)');
-    const apply = () => {
-      document.documentElement.dataset.theme = resolvedTheme(settings?.values.theme, media.matches);
-      document.documentElement.dataset.density = String(settings?.values.density ?? 'comfortable');
-    };
-    apply(); media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, [settings]);
   async function refresh() {
     const request = ++generation.current;
     try {
@@ -189,6 +180,7 @@ function App() {
   // Keyboard stands in for the gamepad legend: ←/→ select, Enter = A, Esc = B, X/Y shortcuts, Q/E = L/R.
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (settingsOpen || gameSettingsId) return;   // the settings pages own the keyboard while open
       if (event.key === 'Escape') {
         if (menuOpen) { setMenuOpen(false); return; }
         if (searchOpen && !query && document.activeElement === search.current) { setSearchOpen(false); search.current?.blur(); }
@@ -227,7 +219,9 @@ function App() {
   }, [menuOpen]);
 
   if (settingsOpen) return <SettingsPage onBack={() => { setSettingsOpen(false); void refresh().catch(report); }} onSaved={applySettings} />;
-  if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
+  if (gameSettingsId) return <GameSettingsPage id={gameSettingsId} item={library.items.find(game => game.installation_id === gameSettingsId)}
+    skin={settings?.values.settings_style === 'glass' ? 'glass' : 'console'} cart3d={cart3d}
+    onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
 
   const filterLabel = filters.find(([value]) => value === filter)![1];
   const moreMenu = (game: LibraryItem) => <div class="more">

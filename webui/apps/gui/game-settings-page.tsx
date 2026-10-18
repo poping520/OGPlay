@@ -1,81 +1,111 @@
+import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { rpc } from './rpc';
+import { rpc, type LibraryItem } from './rpc';
 import { pickPath } from './import';
-import { isDirty, type SettingValue } from './settings';
+import { changedKeys, displayValue, type SettingValue } from './settings';
 import { gameGroups, gameSettingsError, inheritSetting, type GameSettings } from './game-settings';
+import { statuses, versionLabel } from './library';
+import { useIconColor } from './cartridge';
+import { TileCart } from './cartridge3d';
+import type { Cart3D } from './cart3d/api';
+import { Note, Paths, SettingsFrame, type Skin, useToast } from './settings-ui';
 
-export function GameSettingsPage({ id, onBack }: { id: string; onBack: () => void }) {
+const modes = [['normal', '正常启动'], ['preflight', '预检'], ['diagnostic', '带诊断启动']] as const;
+// argv from the host, one flag per line; the page never assembles arguments itself.
+function Argv({ argv }: { argv: string[] }) {
+  return <pre class="term" aria-label="生成的 argv">{argv.map((token, index) => <Fragment key={index}>
+    {index > 0 && (token.startsWith('--') ? ' \\\n  ' : ' ')}
+    <span class={index === 0 ? 'p' : token.startsWith('--') ? 'f' : ''}>{token}</span>
+  </Fragment>)}</pre>;
+}
+
+export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
+  id: string; item?: LibraryItem; skin: Skin; cart3d: Cart3D | 'waiting' | null; onBack: () => void;
+}) {
   const [saved, setSaved] = useState<GameSettings | null>(null);
   const [draft, setDraft] = useState<Record<string, SettingValue>>({});
   const [group, setGroup] = useState<string>('performance');
-  const [mode, setMode] = useState('normal');
+  const [mode, setMode] = useState<string>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [discard, setDiscard] = useState<'back' | 'reload' | null>(null);
-  const confirmation = useRef<HTMLDialogElement>(null);
+  const [toast, say] = useToast();
   const lock = useRef(false);
-  const dirty = saved ? isDirty(saved.values, draft) : false;
+  const color = useIconColor(item?.icon ?? '');
+  const changed = saved ? changedKeys(saved.values, draft) : [];
   const run = async (action: () => Promise<void>) => {
     if (lock.current) return;
-    lock.current = true; setBusy(true); setError(''); setNotice('');
+    lock.current = true; setBusy(true); setError('');
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { lock.current = false; setBusy(false); }
   };
   const accept = (value: GameSettings) => { setSaved(value); setDraft({ ...value.values }); };
   const load = async () => accept(await rpc<GameSettings>('game_settings.get', { installation_id: id }));
   useEffect(() => { void run(load); }, [id]);
-  useEffect(() => { if (discard) confirmation.current?.showModal(); else confirmation.current?.close(); }, [discard]);
   const leave = (action: 'back' | 'reload') => {
     if (busy) return;
-    if (dirty) setDiscard(action); else if (action === 'back') onBack(); else void run(load);
+    if (changed.length) setDiscard(action);
+    else if (action === 'back') onBack();
+    else void run(async () => { await load(); say('已重新载入'); });
   };
-  const change = (key: string, value: SettingValue) => { setDraft(current => ({ ...current, [key]: value })); setNotice(''); };
   const open = (kind: string) => void run(async () => { await rpc('library.open_dir', { installation_id: id, kind }); });
+  const name = saved?.display_name ?? item?.display_name ?? id;
+  const tone = item?.running ? 'running' : statuses[item?.status ?? '']?.tone ?? 'warning';
+  const dirty = changed.length > 0;
   const preview = saved?.previews[mode];
-  return <div class="shell"><nav class="navigation" aria-label="游戏设置导航">
-    <div class="brand"><span>O</span><b>OGPlay</b></div>
-    <button disabled={busy} onClick={() => leave('back')}>← 返回游戏库</button>
-    <div class="settings-nav">{gameGroups.map(([key, label]) => <button key={key} aria-current={group === key ? 'page' : undefined} onClick={() => setGroup(key)}>{label}</button>)}</div>
-  </nav><main><header class="topbar"><h1>游戏设置 · {saved?.display_name ?? id}</h1>
-    <span class="subtle">{dirty ? '有未保存的修改' : '下次启动生效'}</span>
-    <div class="settings-toolbar"><button disabled={busy} onClick={() => leave('reload')}>重新载入</button>
-      <button disabled={busy || !saved} onClick={() => { setDraft({}); setNotice('已恢复继承，保存后生效。'); }}>全部继承</button>
-      <button class="primary" disabled={busy || !dirty || !saved} onClick={() => void run(async () => {
-        const invalid = gameSettingsError(saved!, draft); if (invalid) throw new Error(invalid);
-        accept(await rpc<GameSettings>('game_settings.set', { installation_id: id, revision: saved!.revision, values: draft }));
-        setNotice('实例设置已保存。');
-      })}>保存设置</button></div></header>
-    <section class="settings-content" aria-busy={busy}><h2>{gameGroups.find(([key]) => key === group)?.[1]}</h2>
-      <p class="instance-identity">实例：{id} · 继承项使用全局值或默认值；数据包目录继承导入记录。</p>
-      {error && <pre class="settings-error" role="alert">{error}</pre>}{notice && <p class="settings-notice" role="status">{notice}</p>}
-      {!saved && <p>{busy ? '正在读取…' : '设置不可用；不会覆盖损坏的配置。'}</p>}
-      {saved && <>
-        {group === 'device' && <div class="settings-fact"><p>Android 4.4.4 / API 19（固定）</p><p>CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。机型预设尚未接入，其他预留项仅保存配置。</p><button disabled>ANDROID_ID 查看/重新生成 · 管理接口待接入</button></div>}
-        {group === 'data' && <div class="settings-fact"><p>{saved.config_path}</p><div class="game-actions"><button disabled={busy} onClick={() => open('sandbox')}>打开沙盒目录</button><button disabled={busy} onClick={() => open('log')}>打开日志目录</button><button disabled={busy} onClick={() => open('external')}>打开数据包目录</button></div><p>存档管理接口尚未接入。</p><div class="game-actions"><button disabled>导出/导入存档 · 预留</button><button disabled>重置沙盒 · 暂未开放</button></div></div>}
-        {group === 'network' && <p class="settings-fact">仅保存意向，不改变运行时网络策略；“allow”表示允许网络的预留配置。</p>}
-        {group === 'compatibility' && <div class="settings-fact"><p>导入时记录的 Profile：{saved.profile_id}</p>{Object.entries(saved.facts).map(([key, value]) => <p key={key}>{key}：{value}</p>)}</div>}
-        {saved.fields.filter(field => field.group === group).map(field => {
-          const overridden = Object.hasOwn(draft, field.key);
-          const value = overridden ? draft[field.key] : saved.inherited[field.key];
-          return <div class="setting-row" key={field.key}><div><label for={`game-${field.key}`}>{field.label}</label>
-            <label class="inherit-control"><input type="checkbox" checked={!overridden} disabled={busy} onChange={event => {
-              setDraft(current => event.currentTarget.checked ? inheritSetting(current, field.key) : { ...current, [field.key]: saved.inherited[field.key] }); setNotice('');
-            }} />继承{field.key === 'external_dir' ? '导入记录' : '全局 / 默认'}</label>
-            {field.pending && <small class="setting-pending">{field.pending}；仅保存</small>}</div>
-            <div class="setting-control">{typeof field.initial === 'boolean' ? <input id={`game-${field.key}`} type="checkbox" checked={value === true} disabled={busy || !overridden} onChange={event => change(field.key, event.currentTarget.checked)} /> : field.choices.length ?
-              <select id={`game-${field.key}`} value={String(value)} disabled={busy || !overridden} onChange={event => change(field.key, event.currentTarget.value)}>{field.choices.map(choice => <option key={choice} value={choice}>{choice === 'unlimited' ? '不限' : choice}</option>)}</select> : typeof field.initial === 'number' ?
-              <input id={`game-${field.key}`} type="number" step={1} min={field.min} max={field.max} value={Number.isNaN(value) ? '' : String(value)} disabled={busy || !overridden} onInput={event => change(field.key, event.currentTarget.valueAsNumber)} /> :
-              <input id={`game-${field.key}`} type="text" value={String(value)} disabled={busy || !overridden} onInput={event => change(field.key, event.currentTarget.value)} />}
-              {field.directory && <button disabled={busy || !overridden} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) change(field.key, path); })}>浏览…</button>}</div>
-          </div>;
-        })}
-        {(group === 'advanced' || group === 'compatibility') && <div class="settings-fact"><h3>启动与参数预览</h3><p>预览来自已保存设置；修改后须先保存。预检不会启用 MCP。</p>
-          <div class="game-actions"><label>启动模式 <select value={mode} onChange={event => setMode(event.currentTarget.value)}><option value="normal">正常启动</option><option value="preflight">预检</option><option value="diagnostic">带诊断启动</option></select></label>
-          <button disabled={busy || dirty || !!preview?.error} onClick={() => void run(async () => { await rpc('library.launch', { installation_id: id, mode }); setNotice('已启动子进程；预检结果与诊断信息见实例日志。'); })}>执行{mode === 'preflight' ? '预检' : '启动'}</button></div>
-          {preview?.error ? <pre role="alert">{preview.error}</pre> : <pre aria-label="生成的 argv">{JSON.stringify(preview?.argv ?? [], null, 2)}</pre>}</div>}
-      </>}
-    </section></main>
-    <dialog ref={confirmation} aria-label="未保存的实例设置" onCancel={event => { event.preventDefault(); setDiscard(null); }}><h2>有未保存的修改</h2><p>放弃这些修改？</p><div class="modal-actions"><button autoFocus onClick={() => setDiscard(null)}>继续编辑</button><button onClick={() => { const action = discard; setDiscard(null); if (action === 'back') onBack(); else void run(load); }}>放弃修改</button></div></dialog>
+  const actions = (...buttons: ComponentChildren[]) => <div class="acts">{buttons}</div>;
+  const launch = <div class="launch">
+    <div class="launch-h"><b>启动与参数预览</b><span class={`tag ${dirty ? 'pending' : 'over'}`}>{dirty ? '有未保存修改 · 预览为已保存设置' : '来自已保存设置'}</span>
+      <div class="seg" role="radiogroup" aria-label="启动模式">{modes.map(([key, label]) =>
+        <button key={key} role="radio" aria-checked={mode === key} class={mode === key ? 'on' : ''} onClick={() => setMode(key)}>{label}</button>)}</div></div>
+    {preview?.error ? <pre class="term" role="alert">{preview.error}</pre> : <Argv argv={preview?.argv ?? []} />}
+    <div class="launch-f"><span>{mode === 'preflight' ? '预检不会启用 MCP，结果写入实例日志。' : '参数由宿主生成，前端不拼接自由参数。'}</span>
+      <button class="pill main" disabled={busy || dirty || !!preview?.error} title={dirty ? '先保存设置' : undefined}
+        onClick={() => void run(async () => { await rpc('library.launch', { installation_id: id, mode }); say('已启动子进程；预检结果与诊断信息见实例日志'); })}>
+        执行{mode === 'preflight' ? '预检' : '启动'}</button></div>
   </div>;
+  const top: Record<string, ComponentChildren> = saved ? {
+    device: <Note icon="device" title="Android 4.4.4 · API 19"><p>系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。机型预设尚未接入，其他预留项仅保存配置。</p>
+      {actions(<button class="mini" disabled>ANDROID_ID 查看 / 重新生成<em>管理接口待接入</em></button>)}</Note>,
+    data: <Note icon="data" title="存档与目录"><Paths rows={[...(item ? [['沙盒', item.sandbox_path], ['日志', item.log_directory]] as [string, string][] : []), ['实例配置', saved.config_path]]} />
+      {actions(<button class="mini" disabled={busy} onClick={() => open('sandbox')}>打开沙盒目录</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>打开日志目录</button>,
+        <button class="mini" disabled={busy} onClick={() => open('external')}>打开数据包目录</button>, <button class="mini" disabled>导出 / 导入存档<em>预留</em></button>,
+        <button class="mini" disabled>重置沙盒<em>暂未开放</em></button>)}</Note>,
+    network: <Note icon="network" title="仅保存意向" warn><p>不改变运行时网络策略；“允许网络”是预留配置。</p></Note>,
+    compatibility: <Note icon="compatibility" title={`导入记录的 Profile · ${saved.profile_id || '无（通用启动）'}`}>
+      {Object.keys(saved.facts).length > 0 && <Paths rows={Object.entries(saved.facts)} />}</Note>,
+  } : {};
+  return <SettingsFrame skin={skin} art={item?.icon} tint={item ? color : undefined}
+    crumb={<>游戏设置 · <b>{name}</b></>} idle="下次启动生效" resetLabel="全部继承" busy={busy} loaded={!!saved} changed={changed}
+    who={<div class="who">
+      <span class="cart">{item && <TileCart api={cart3d} item={item} tone={tone} />}</span>
+      <div><b>{name}</b><small>{id}</small>
+        <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? ` · 已覆盖 ${Object.keys(saved.values).length} 项` : ''}</span></div>
+    </div>}
+    groupsTitle="实例设置" groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
+    sectionBefore={{ brand: '设备身份 · 预留' }}
+    model={field => {
+      const overridden = Object.hasOwn(draft, field.key);
+      return {
+        value: overridden ? draft[field.key] : saved!.inherited[field.key], changed: changed.includes(field.key), disabled: busy,
+        inherit: { overridden, saved: Object.hasOwn(saved!.values, field.key), source: field.key === 'external_dir' ? '导入记录' : '全局',
+          shown: displayValue(field, saved!.inherited[field.key]) },
+      };
+    }}
+    change={(field, value) => setDraft(current => ({ ...current, [field.key]: value }))}
+    toggleInherit={field => { if (!saved || busy) return; setDraft(current => Object.hasOwn(current, field.key) ? inheritSetting(current, field.key) : { ...current, [field.key]: saved.inherited[field.key] }); }}
+    browse={field => void run(async () => { const path = await pickPath('directory'); if (path) setDraft(current => ({ ...current, [field.key]: path })); })}
+    fileLabel="实例配置" filePath={saved?.config_path ?? ''} kicker="Game settings · 下次启动生效" note="运行中可保存，下次启动生效"
+    top={top[group]} end={group === 'advanced' || group === 'compatibility' ? launch : undefined} error={error} toast={toast}
+    discard={discard} keep={() => setDiscard(null)} confirmDiscard={() => {
+      const action = discard; setDiscard(null);
+      if (action === 'back') onBack(); else void run(async () => { await load(); say('已重新载入'); });
+    }}
+    back={() => leave('back')} reload={() => leave('reload')}
+    reset={() => { if (!saved || busy) return; setDraft({}); say('已恢复继承，保存后生效'); }}
+    save={() => { if (!saved || busy || !dirty) return; void run(async () => {
+      const invalid = gameSettingsError(saved, draft); if (invalid) throw new Error(invalid);
+      accept(await rpc<GameSettings>('game_settings.set', { installation_id: id, revision: saved.revision, values: draft }));
+      say('实例设置已保存 · 下次启动生效');
+    }); }} />;
 }

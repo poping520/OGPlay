@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Cart3D, CartFace } from './cart3d/api';
-import { Cartridge, iconSampled, useIconColor } from './cartridge';
+import { Cartridge, iconSampled, knownIconColor, useIconColor } from './cartridge';
 import { versionLabel } from './library';
 import type { LibraryItem } from './rpc';
 
@@ -52,11 +52,18 @@ function useFace(item: LibraryItem, tone: string) {
   return iconSampled(item.icon) ? cartFace(item, tone, color) : null;
 }
 // `shown` reports the first drawn cartridge, so the splash can stay up until the hero is really there.
-export function Hero3D({ api, item, tone, shown }: { api: Cart3D | 'waiting'; item: LibraryItem; tone: string; shown: () => void }) {
+// `neighbours` are the rail entries either side, prefetched so the next switch is ready.
+export function Hero3D({ api, item, tone, shown, neighbours }: {
+  api: Cart3D | 'waiting'; item: LibraryItem; tone: string; shown: () => void; neighbours: [LibraryItem, string][];
+}) {
   const stage = useRef<HTMLDivElement>(null);
   const face = useFace(item, tone);
   useEffect(() => api === 'waiting' ? undefined : api.mount(stage.current!, shown), [api]);
-  useEffect(() => { if (face && api !== 'waiting') api.show(face); }, [api, face?.key]);
+  useEffect(() => {
+    if (!face || api === 'waiting') return;
+    api.show(face);
+    api.prefetch(neighbours.flatMap(([game, gameTone]) => { const color = knownIconColor(game.icon); return color ? [cartFace(game, gameTone, color)] : []; }));
+  }, [api, face?.key]);
   return <div class="stage3d" ref={stage} aria-hidden="true" />;
 }
 // Stills already rendered this session show at once when a tile remounts (filter or search changes).

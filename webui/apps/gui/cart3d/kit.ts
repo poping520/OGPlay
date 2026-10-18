@@ -567,8 +567,9 @@ vec3 ogpPerturb(vec3 p, vec3 n, vec2 dh, float faceDir) {
       m.dispose();
     }
   }
-  // Prints are ~10 MB of textures per entry, so only the last few looks stay alive; the rail keeps PNG stills.
-  const looks = new Map<string, Promise<Look>>(), keep = 4;
+  // Prints are ~10 MB of textures per entry, so only the last few looks stay alive (the shown one, its rail
+  // neighbours and recent ones); the rail keeps PNG stills.
+  const looks = new Map<string, Promise<Look>>(), keep = 6;
   function lookFor(face: CartFace, pinned: () => string | null) {
     let look = looks.get(face.key);
     if (look) looks.delete(face.key);
@@ -581,6 +582,10 @@ vec3 ogpPerturb(vec3 p, vec3 n, vec2 dh, float faceDir) {
     }
     return look;
   }
+  const texturesOf = (look: Look) => dressed.flatMap(name => {
+    const m = look[name];
+    return [m.map, m.emissiveMap, m.map?.userData.foilMask as THREE.Texture | undefined];
+  }).filter((texture): texture is THREE.Texture => !!texture);
   function wear(look: Look) {
     for (const name of dressed) for (const m of parts[name]) m.material = look[name];
     for (const m of parts.Holo) m.visible = look.holo;
@@ -625,5 +630,5 @@ vec3 ogpPerturb(vec3 p, vec3 n, vec2 dh, float faceDir) {
     const fill = new THREE.HemisphereLight(0xbcd4ff, 0x1a1020, 0.6);
     return [key, rimBlue, rimWarm, fill];
   }
-  return { model, modelSize, lookFor, wear, makeRenderer, stageLights };
+  return { model, modelSize, lookFor, wear, texturesOf, makeRenderer, stageLights };
 }

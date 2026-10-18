@@ -272,6 +272,7 @@ headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Androi
 进程 owner 可通过 `GuestFinalizationPolicy::forbidden` 传入上层已发布的 Java 进程退出事实，
 禁止再次执行 guest DSO fini；默认 permitted 仍受原生退出、故障隔离及清理预算约束。
 两种策略都完成宿主线程/资源回收，重复 Stop 不重跑 finalization。
+AndroidGuestProcess::NativeTerminationSignal 只读查询根线程的信号终止事实，不改变 NativeExitCode、退出准入或停止协议。
 
 DexVM bridge 通过 token→guest TID 显式准备 NDK Looper，Java 主线程在 Activity/JNI 启动前
 已关联，HandlerThread.prepare 复用该 registry。线程退出释放内部引用，进程 teardown

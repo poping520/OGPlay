@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "ogplay/gles/angle_frame.h"
+#include "ogplay/core/capability_ledger.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "ogplay/memory/address_space.h"
 
@@ -467,8 +468,22 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             !context_.native_window_is_current(context_.native_window_owner, memory::GuestAddress{args[2]}))) {
             SetError(tid, kEglBadNativeWindow); return 0U;
         }
-        if (args[3] != 0U && calls_.address_space.Read32(memory::GuestAddress{args[3]}, tid) != kEglNone) {
-            SetError(tid, kEglBadAttribute); return 0U;
+        if (args[3] != 0U) {
+            const auto reject = [&] {
+                if (context_.ledger) context_.ledger->RecordUnimplemented("gles.egl_lifecycle", call.LinkRegister());
+                SetError(tid, kEglBadAttribute);
+                return 0U;
+            };
+            auto cursor = memory::GuestAddress{args[3]};
+            bool terminated{};
+            for (std::size_t word = 0; word < kMaximumAttributeWords; word += 2U) {
+                const auto attribute = calls_.address_space.Read32(cursor, tid);
+                if (attribute == kEglNone) { terminated = true; break; }
+                const auto value = calls_.address_space.Read32(cursor.Add(4U), tid);
+                if (attribute != kEglRenderBuffer || value != kEglBackBuffer) return reject();
+                cursor = cursor.Add(8U);
+            }
+            if (!terminated) return reject();
         }
         std::scoped_lock lock(mutex_);
         if (!initialized_) { threads_[tid].error = kEglNotInitialized; return 0U; }

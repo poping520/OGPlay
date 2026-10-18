@@ -83,3 +83,24 @@ MediaPlayer 纹理生产者和前端后端设置留到下一阶段，不顺带�
   survey 不覆盖上述 native/EGL 错误，未据此修复其他缺口。两次日志/退出元数据分别见
   `aps14-activity-tml-{run,survey}.log/json`，机器断言见 `aps14-activity-tml-proof.json`。
   本次只提供 reached-fault 证据，不是 title gate；剩余 native/EGL、无呈现及真实消费路径待查。
+- EGL/退出提示局部修复：window 属性最多读取 64 words，接受 RENDER_BUFFER=BACK_BUFFER，
+  保留 NULL/空表；single buffer、其他属性/值与未终止表 BAD_ATTRIBUTE 并记现有能力账本，
+  未改 native window 校验、尺寸及后续创建。前端停止前保存 Java/native/信号退出事实：
+  exit(n) 返回 n，信号返回 128+n，finish 正常返回 0；首帧前自行结束写结构化 error，
+  非零 guest 码保留，否则返回具名启动失败码 1；宿主关闭/帧上限/MCP shutdown 返回 0。
+  NativeExitCode 仍只报告 exit/exit_group；另加只读信号查询，处理 native 调用包装后的退出异常，
+  未改变停止顺序、SessionExitRequested 或 MCP/Scenario 控制。runtime_failure 仍传播原错。
+  GUI 既有非零退出事件已带 ReadLogTail，WebUI 将 log_tail 放入“操作提示”；仅补日志尾部回归。
+  Release 构建 ogplay-cli、ogplay_tests 及受影响的 ogplay_app_tests/ogplay；定向
+  `APS-14 EGL* / APS-14 native termination* / DVM-218 native process exit* / run-apk exit status* /
+  Android EGL query strings* / Android EGL owns distinct*` 为 **6 cases / 162 assertions**，
+  GUI tracker/log tail 为 **2 cases / 16 assertions**，全部通过。原生 SIGABRT 用例同时确认
+  NativeExitCode 未改变；首次测试暴露异常包装后已修正并复验。证据
+  `.local/aps14-egl-exit-{build,rebuild,tests,gui-tests}.log`。
+  实跑一次原 APK `run-apk .local/games/tml/TML_v1.0.apk --ephemeral-sandbox --exit-after-frames 600`，
+  5.762 秒、退出 **1**；机器断言原 `[EGL] Failed to create surface` 与 EGL_BAD_ATTRIBUTE 消失，
+  Unity context=3 已建立。下一停止首错为逻辑帧 **1225** 的 UnityMain（guest thread 2）
+  `UnityPlayer.nativeRender()Z` → `guest memory is unmapped`；runtime_failure 路径未输出最终
+  呈现计数，不据此声称已呈现或达到 600 呈现帧。零呈现自行退出非零码由定向回归验证。
+  `.local/aps14-egl-exit-tml.log/json` 与 `aps14-egl-exit-proof.json` 为 reached-fault 证据，
+  不是 title gate；Mono mini-posix.c:382 sigaction 断言仍在，未处理原生内存/调度等下一缺口。

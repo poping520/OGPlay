@@ -1267,6 +1267,24 @@ TEST_CASE("DVM-218 native process exit skips a second fini and keeps its code") 
     CHECK_NOTHROW(session->Stop());
 }
 
+TEST_CASE("APS-14 native termination signal query preserves native exit admission") {
+    using namespace ogplay;
+    auto libc = LibdlDefaultLibcElf();
+    Put32(libc, 0x1000, 0xe3a00001U); // tkill(root tid=1, SIGABRT=6)
+    Put32(libc, 0x1004, 0xe3a01006U);
+    Put32(libc, 0x1008, 0xe3a070eeU);
+    Put32(libc, 0x100c, 0xef000000U);
+    const loader::Elf32ModuleInput module{"libc.so", libc, memory::GuestAddress{0x10000000U}};
+    runtime::VirtualFileSystem filesystem;
+    auto session = runtime::AndroidGuestCallSession::Start(
+        {19, "libc.so", std::span{&module, 1}, {}, 64, 36, 100, 1, &filesystem, {}});
+    CHECK_FALSE(session->Process().NativeTerminationSignal().has_value());
+    CHECK_THROWS_AS(static_cast<void>(session->Invoke({memory::GuestAddress{0x10011000U}})), runtime::AndroidGuestCallSessionError);
+    CHECK(session->Process().NativeTerminationSignal() == 6);
+    CHECK_FALSE(session->NativeExitCode().has_value());
+    CHECK_NOTHROW(session->Stop());
+}
+
 TEST_CASE("DVM-218 native worker quiescence preserves root cleanup and closes clone admission") {
     using namespace ogplay;
     auto libc = LibdlDefaultLibcElf();

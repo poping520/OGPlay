@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <thread>
 
 namespace ogplay::core {
@@ -8,6 +9,20 @@ class Logger;
 }
 
 namespace ogplay::frontend {
+
+inline constexpr int kRunApkStartupFailureExitCode = 1;
+
+struct RunApkExitState final {
+    bool guest_exit{};
+    bool host_requested{};
+    std::uint64_t frame{};
+    std::uint64_t presented{};
+    std::optional<std::int32_t> java_exit_code;
+    std::optional<std::int32_t> native_exit_code;
+    std::optional<std::uint32_t> termination_signal;
+};
+
+[[nodiscard]] int ReportRunApkExit(core::Logger& logger, const RunApkExitState& state);
 
 inline constexpr std::uint64_t kLongGuestCallLogTicks = UINT64_C(1000000000);
 

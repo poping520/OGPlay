@@ -18,6 +18,8 @@
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
 #include "runtime/boundary/services/graphics_boundary_context.h"
 
+namespace ogplay::core { class CapabilityLedger; }
+
 namespace ogplay::runtime {
 
 struct EglBoundaryContext final {
@@ -30,6 +32,7 @@ struct EglBoundaryContext final {
     detail::AndroidBoundaryGles1LegacyState& gles1_legacy;
     void* native_window_owner{};
     bool (*native_window_is_current)(void*, memory::GuestAddress){};
+    core::CapabilityLedger* ledger{};
 };
 
 class EglModule final {

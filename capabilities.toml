@@ -660,8 +660,8 @@ note = "M4 已在三平台完成真实 pbuffer 生命周期、guest 边界、SDL
 
 [gles.egl_lifecycle]
 status = "partial"
-test = "tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND49; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND53; tests/gles/angle_frame_tests.cpp#BND53"
-note = "BND-34/36/49/53：guest Context 对应唯一 native Context，Surface 独占 pbuffer，Display 引用计数；terminate 后可重新 initialize。按 ANGLE 能力发布 KHR image/sync 与 texture pbuffer；RGB888/RGB565/D24S8 仅在真实 backing 与位数探测通过时发布（Metal 经 IOSurface）。限 GLES1/GLES2、MSAA0；不支持 texture binding/mipmap、fallback GLES3 与完整 Android 窗口系统。"
+test = "tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp#APS-14; tests/gles/egl_lifecycle_tests.cpp; tests/gles/angle_frame_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND49; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp#BND53; tests/gles/angle_frame_tests.cpp#BND53"
+note = "BND-34/36/49/53：Context/Surface 独立所有权，Display 引用计数，terminate 后可重新 initialize；KHR image/sync、texture pbuffer 与 RGB888/RGB565/D24S8 按真实 ANGLE backing 探测发布（Metal 用 IOSurface）。window 属性仅支持 RENDER_BUFFER=BACK_BUFFER，其他记账失败。限 GLES1/GLES2、MSAA0；texture binding/mipmap、fallback GLES3 与完整 Android 窗口系统未支持。"
 
 [runtime.egl_api19_base_boundary]
 status = "complete"
@@ -760,8 +760,8 @@ note = "M4 已在真实 API 19 Bionic 上启动最小 APK 并完成 2x 超采样
 
 [frontend.minimal_apk_run]
 status = "partial"
-test = "frontend.run_apk_options; tests/frontend/run_apk_progress_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "APS-7 将 CLI 切到 Manifest→rootless AndroidAppProcess→Application→launcher Activity 的 generic path；exact Profile 仅在命中时覆盖 surface/预算/data/quirk/entry，无 Profile 使用 API19 与受控默认 surface 继续。frontend 不再选择 app root `.so`、组织应用 ELF 闭包或显式 JNI_OnLoad；SDL/frame/input/MCP 行为保持，真实标题可玩性仍逐项验证"
+test = "frontend.run_apk_options; tests/frontend/run_apk_progress_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp#APS-14; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "APS-7：Manifest→rootless AndroidAppProcess→Application→launcher Activity 的 generic path；精确 Profile 只覆盖 surface/预算/data/quirk/entry，无 Profile 使用 API19 默认 surface；前端不组织 ELF/JNI_OnLoad。Java/native exit(n) 返回 n，信号为 128+n；零呈现自行退出记 error，成功码提升为 1；宿主关闭/帧上限/MCP shutdown 为 0，runtime_failure 仍传播。真实标题可玩性逐项验证。"
 
 [loader.hle_boundary_namespace]
 status = "complete"

@@ -13,6 +13,10 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 - `run-apk`：选择 compatibility Profile，挂载数据，创建 SDL3/ANGLE surface，装配 Android
   guest、DexVM 与 Activity lifecycle；VFS 使用 `/` 作为默认 guest cwd，Profile 显式
   working directory 可覆盖它。
+  guest 自行结束返回 Java/native exit(n) 的 n、信号的 128+n 或 Activity.finish 的 0；
+  首次呈现前自行结束写结构化 error，保留非零 guest 码，否则返回具名启动失败码
+  kRunApkStartupFailureExitCode=1（沿用 CLI 失败码，参数错误为 2）。宿主关闭、帧上限及
+  MCP shutdown 返回 0；runtime_failure 仍传播原错，不改停止顺序或 MCP/Scenario 控制流程。
   文件系统容量只由 guest VFS 的配额卷统计发布，前端不再将 external-dir 的宿主
   剩余空间写为无路径 StatFs 标量。
 - `ogplay`：桌面主入口，默认 GUI；ready 条目只启动当前 EXE 的 `--run-game` 子进程，

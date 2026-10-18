@@ -177,7 +177,8 @@ void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
 
 }  // namespace
 
-int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr) {
+static int RunGameSession(GameRunOptions options, core::Logger& logger, bool status_to_stderr,
+                          RunApkExitState& exit_state) {
     const auto Write = [stream = status_to_stderr ? stderr : stdout](std::string_view text) {
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
@@ -376,7 +377,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
          {"cpu_max_mticks_per_second", static_cast<std::uint64_t>(cpu_config.execution.max_mticks_per_second)}},
         kUnrestrictedLog);
     bool quit{};
-    std::uint64_t presented{};
+    auto& presented = exit_state.presented;
     std::uint32_t guest_width = profile.runtime.surface.width;
     std::uint32_t guest_height = profile.runtime.surface.height;
     hal::RealtimeClock frame_rate_clock;
@@ -701,6 +702,14 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
             announce_editor();
         }
         auto* guest = &app_process->NativeProcess();
+        const auto capture_exit = [&] {
+            exit_state.java_exit_code = app_process->DexVm().Vm().ExitCode();
+            exit_state.native_exit_code = guest->NativeExitCode();
+            exit_state.termination_signal = guest->NativeTerminationSignal();
+            exit_state.guest_exit = guest->ExitRequested() ||
+                runtime::SessionExitRequested(*dex_context) || exit_state.java_exit_code.has_value() ||
+                exit_state.native_exit_code.has_value() || exit_state.termination_signal.has_value();
+        };
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
         dex_lifecycle->SetRealtimeVideoClock(!mcp_manual_step);
         {
@@ -720,7 +729,12 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "starting Profile lifecycle", {}, {},
                      kUnrestrictedLog);
-        static_cast<void>(driver.start());
+        try {
+            static_cast<void>(driver.start());
+        } catch (...) {
+            capture_exit();
+            throw;
+        }
         std::unique_ptr<session::AudioOutputPump> audio_pump;
         if (audio_output) {
             audio_pump = std::make_unique<session::AudioOutputPump>(
@@ -822,6 +836,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                 if (exit_after_frames.has_value() &&
                     presented >= *exit_after_frames) {
                     quit = true;
+                    exit_state.host_requested = true;
                 }
             }
             return did_present;
@@ -833,6 +848,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                 using Type = hal::InputEventType;
                 if (event.type == Type::quit) {
                     quit = true;
+                    exit_state.host_requested = true;
                 } else if (event.type == Type::input_reset || event.type == Type::app_background) {
                     host_keys.Reset();
                     control_mapper.Reset();
@@ -912,6 +928,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                         using Command = agent::McpSessionCommand;
                         if (command->type == Command::Type::shutdown) {
                             quit = true;
+                            exit_state.host_requested = true;
                         } else if (!failure && command->type == Command::Type::step) {
                             permitted_steps += command->frames;
                         } else if (!failure && command->type == Command::Type::suspend) {
@@ -951,6 +968,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                     if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
                 }
                 active_frame = driver.state().frame + 1U;
+                exit_state.frame = active_frame;
                 static_cast<void>(driver.step());
                 const auto stepped = driver.state();
                 if (mcp_manual_step && audio_pump) {
@@ -989,6 +1007,7 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                 publish_session();
             } catch (const std::exception& error) {
                 if (!failure) {
+                    capture_exit();
                     failure = std::current_exception();
                     try {
                         logger.Write(core::LogLevel::error, "frontend.run_apk.fault",
@@ -1005,6 +1024,9 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
+        // Snapshot guest facts before Stop can add a host teardown request.
+        exit_state.frame = driver.state().frame;
+        if (!failure) capture_exit();
         control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         if (audio_pump) audio_pump->Stop();
@@ -1042,6 +1064,18 @@ int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr)
                  "APK session stopped", {}, {{"presented", presented}},
                  kUnrestrictedLog);
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");
-    return 0;
+    return ReportRunApkExit(logger, exit_state);
+}
+
+int RunGame(GameRunOptions options, core::Logger& logger, bool status_to_stderr) {
+    RunApkExitState exit_state;
+    try {
+        return RunGameSession(std::move(options), logger, status_to_stderr, exit_state);
+    } catch (...) {
+        // Native invocation may wrap its exit exception. Use the original
+        // process facts captured before teardown, never parse error text.
+        if (!exit_state.termination_signal && !exit_state.native_exit_code) throw;
+        return ReportRunApkExit(logger, exit_state);
+    }
 }
 }  // namespace ogplay::frontend

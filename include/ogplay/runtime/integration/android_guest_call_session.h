@@ -338,6 +338,8 @@ public:
     // Join native workers before a callback may enter libc exit destructors.
     void QuiesceNativeWorkers();
     [[nodiscard]] std::optional<std::int32_t> NativeExitCode() const;
+    // Read-only process termination signal; does not change native exit admission.
+    [[nodiscard]] std::optional<std::uint32_t> NativeTerminationSignal() const;
     void Stop(GuestFinalizationPolicy policy = GuestFinalizationPolicy::permitted);
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;

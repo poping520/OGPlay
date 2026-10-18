@@ -22,3 +22,4 @@ Surface 图像导入探测可为 D24S8（否则 D0/S0），GLES1 compatibility/G
 
 每个 native/managed Context 创建时继承进程已冻结的压缩纹理策略；share 参数不覆盖策略。
 首次合法绑定可生成并记录能力快照，切换线程、Surface 或重建 Context 不改变策略。
+窗口表面属性最多读取 64 words，仅支持 EGL_RENDER_BUFFER=EGL_BACK_BUFFER；NULL/空表沿用默认双缓冲，single buffer、其他属性/值或未终止表返回 EGL_BAD_ATTRIBUTE 并记账。

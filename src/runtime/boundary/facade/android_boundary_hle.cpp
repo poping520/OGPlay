@@ -106,7 +106,7 @@ public:
                        gles1_state_, gles1_draw_state_, gles1_legacy_state_, this,
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
-                       }},
+                       }, options.ledger},
           android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger),
           bitmap_module_(call_services_),
           egl_module_(call_services_, egl_context_),

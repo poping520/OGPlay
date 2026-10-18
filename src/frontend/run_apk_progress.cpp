@@ -10,6 +10,23 @@ constexpr core::RateLimitPolicy kUnrestrictedLog{
 
 }  // namespace
 
+int ReportRunApkExit(core::Logger& logger, const RunApkExitState& state) {
+    if (state.host_requested || !state.guest_exit) return 0;
+    const auto source = state.termination_signal ? "signal" :
+        state.native_exit_code ? "native_exit" : state.java_exit_code ? "java_exit" : "activity_finish";
+    const int guest_code = state.termination_signal ? 128 + static_cast<int>(*state.termination_signal) :
+        state.native_exit_code.value_or(state.java_exit_code.value_or(0));
+    if (state.presented != 0) return guest_code;
+    const auto code = guest_code != 0 ? guest_code : kRunApkStartupFailureExitCode;
+    logger.Write(core::LogLevel::error, "frontend.run_apk",
+                 "guest exited before the first presented frame", {.frame = state.frame},
+                 {{"reason", std::string("guest_exit_before_first_present")},
+                  {"presented", state.presented}, {"exit_source", std::string(source)},
+                  {"guest_exit_code", static_cast<std::int64_t>(guest_code)},
+                  {"exit_code", static_cast<std::int64_t>(code)}}, kUnrestrictedLog);
+    return code;
+}
+
 HostEventThreadGate::HostEventThreadGate() noexcept
     : owner_(std::this_thread::get_id()) {}
 

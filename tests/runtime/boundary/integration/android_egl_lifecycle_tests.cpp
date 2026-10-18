@@ -43,6 +43,50 @@
 
 using namespace ogplay::test::android_boundary;
 
+TEST_CASE("APS-14 EGL window surface accepts bounded back-buffer attributes") {
+    BoundaryFixture f;
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    const auto attributes = f.output;
+    const auto create = [&](std::uint32_t pointer) {
+        return f.Call("libEGL.so", "eglCreateWindowSurface", {1U, 2U, 1U, pointer});
+    };
+    const auto check_surface = [&](std::uint32_t surface) {
+        REQUIRE(surface != 0U);
+        REQUIRE(f.Call("libEGL.so", "eglQuerySurface", {1U, surface, 0x3086U, f.output.Add(512U).Value()}) == 1U);
+        CHECK(f.bus.Read32(f.output.Add(512U), 1U) == 0x3084U);
+        CHECK(f.Call("libEGL.so", "eglDestroySurface", {1U, surface}) == 1U);
+    };
+    check_surface(create(0U));
+    f.bus.Write32(attributes, 0x3038U, 1U);
+    check_surface(create(attributes.Value()));
+    f.bus.Write32(attributes, 0x3086U, 1U);
+    f.bus.Write32(attributes.Add(4U), 0x3084U, 1U);
+    f.bus.Write32(attributes.Add(8U), 0x3038U, 1U);
+    check_surface(create(attributes.Value()));
+    CHECK(f.ledger.Unimplemented().empty());
+    for (const auto& [name, value] : std::array{
+        std::pair{0x3086U, 0x3085U}, std::pair{0x3086U, 0U}, std::pair{0x3057U, 4U}}) {
+        f.bus.Write32(attributes, name, 1U);
+        f.bus.Write32(attributes.Add(4U), value, 1U);
+        CHECK(create(attributes.Value()) == 0U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x3004U);
+    }
+    // All 64 words form valid pairs; a terminator beyond the bound is ignored.
+    for (std::size_t word = 0; word < 64; word += 2) {
+        f.bus.Write32(attributes.Add(word * 4U), 0x3086U, 1U);
+        f.bus.Write32(attributes.Add((word + 1) * 4U), 0x3084U, 1U);
+    }
+    f.bus.Write32(attributes.Add(256U), 0x3038U, 1U);
+    CHECK(create(attributes.Value()) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3004U);
+    const auto hits = f.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().id == "gles.egl_lifecycle");
+    CHECK(hits.front().count == 4);
+    f.bus.Write32(attributes.Add(248U), 0x3038U, 1U);
+    check_surface(create(attributes.Value()));
+}
+
 TEST_CASE("Android EGL publishes and implements API 19 base query surface") {
     BoundaryFixture fixture;
     static constexpr std::array<std::string_view, 13> added{

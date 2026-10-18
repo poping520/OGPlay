@@ -291,6 +291,11 @@ TEST_CASE("GUI launch log tail is bounded by lines and bytes") {
     Write(log, "prefix\n中文\n");
     CHECK(ogplay::frontend::ReadLogTail(log, 20, 5) == "文\n");
     CHECK(ogplay::frontend::ReadLogTail(temporary.path / "missing") == "");
+    Write(log, "info boot\nfatal guest.liblog mono assertion\nerror guest.liblog Unity [EGL] Failed to create surface\n"
+               "info APK session stopped presented=0\nerror guest exited before the first presented frame\n");
+    const auto tail = ogplay::frontend::ReadLogTail(log);
+    CHECK(tail.find("fatal guest.liblog mono assertion") != std::string::npos);
+    CHECK(tail.find("Unity [EGL] Failed to create surface") != std::string::npos);
 }
 
 TEST_CASE("GUI Dashboard probe rejects foreign process and malformed protocol") {

@@ -2197,6 +2197,14 @@ public:
         return std::nullopt;
     }
 
+    std::optional<std::uint32_t> NativeTerminationSignal() const {
+        const auto root = lifecycle_.State(kRootThreadId);
+        if (root.status != GuestThreadStatus::running &&
+            root.exit_request.origin == GuestThreadExitOrigin::signal_termination)
+            return root.exit_request.signal_number;
+        return std::nullopt;
+    }
+
     bool Running() const noexcept { return running_; }
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
     std::size_t ApplicationModuleCount() const noexcept {
@@ -2650,6 +2658,7 @@ void AndroidGuestProcess::RunTeardownCleanup(const std::function<void()>& cleanu
 void AndroidGuestProcess::RunGracefulCleanup(const std::function<void()>& cleanup) { impl_->RunGracefulCleanup(cleanup); }
 std::uint64_t AndroidGuestProcess::CleanupDeadlineNs() const noexcept { return impl_->CleanupDeadlineNs(); }
 std::optional<std::int32_t> AndroidGuestProcess::NativeExitCode() const { return impl_->NativeExitCode(); }
+std::optional<std::uint32_t> AndroidGuestProcess::NativeTerminationSignal() const { return impl_->NativeTerminationSignal(); }
 void AndroidGuestProcess::RethrowAsyncFailure() { impl_->RethrowAsyncFailure(); }
 memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
 void AndroidGuestProcess::ReleaseDexVmThread(

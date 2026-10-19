@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "ogplay/runtime/integration/surface_stream.h"
+#include <ostream>
 #include <thread>
 
 using namespace ogplay::runtime;

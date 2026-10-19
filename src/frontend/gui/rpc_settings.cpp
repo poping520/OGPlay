@@ -94,7 +94,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
     writer.AddUnsignedInteger(result, "schema", 1);
     writer.AddString(result, "installation_id", entry.key);
     writer.AddString(result, "display_name", entry.metadata->display_name);
-    writer.AddString(result, "profile_id", entry.metadata->profile_id.value_or("未匹配"));
+    if (entry.metadata->profile_id) writer.AddString(result, "profile_id", *entry.metadata->profile_id); else writer.AddNull(result, "profile_id");
     writer.AddString(result, "revision", revision());
     for (const auto& [key, value] : settings.values) writer.Add(overrides, key, Json(writer, value));
     for (const auto& field : GameSettingDefinitions())

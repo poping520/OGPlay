@@ -6,7 +6,6 @@ export const filters: readonly (readonly [Filter, string])[] = [['all', '全部'
 export const statuses: Record<string, { label: string; tone: string }> = {
   damaged: { label: '条目损坏', tone: 'danger' },
   profile_catalog_unavailable: { label: 'Profile 不可用', tone: 'danger' },
-  missing_profile: { label: '无 Profile', tone: 'warning' },
   missing_external: { label: '缺数据包', tone: 'warning' },
   running: { label: '运行中', tone: 'running' },
   ready: { label: '就绪', tone: 'ready' },

@@ -167,7 +167,6 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                 const auto directory = config.profiles_dir.value_or(bundled.profiles_directory);
                 facts["有效 Profile 目录"] = PathUtf8(directory);
                 const auto profiles = app::ProfileCatalog::Load(directory);
-                facts["Profile 状态"] = "无导入匹配记录；启动时由运行服务重新匹配";
                 if (entry.metadata && entry.metadata->profile_id) {
                     const auto summary = profiles.Find(*entry.metadata->profile_id);
                     if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");

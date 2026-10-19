@@ -72,7 +72,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
         <button class="mini" disabled={busy} onClick={() => open('external')}>打开数据包目录</button>, <button class="mini" disabled>导出 / 导入存档<em>预留</em></button>,
         <button class="mini" disabled>重置沙盒<em>暂未开放</em></button>)}</Note>,
     network: <Note icon="network" title="仅保存意向" warn><p>不改变运行时网络策略；“允许网络”是预留配置。</p></Note>,
-    compatibility: <Note icon="compatibility" title={`导入记录的 Profile · ${saved.profile_id || '无（通用启动）'}`}>
+    compatibility: <Note icon="compatibility" title={saved.profile_id ? `精确 Profile · ${saved.profile_id}` : '兼容性目录'}>
       {Object.keys(saved.facts).length > 0 && <Paths rows={Object.entries(saved.facts)} />}</Note>,
   } : {};
   return <SettingsFrame skin={skin} art={item?.icon} tint={item ? color : undefined}

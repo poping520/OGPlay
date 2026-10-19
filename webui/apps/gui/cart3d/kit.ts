@@ -182,7 +182,7 @@ export async function loadKit() {
     fit(x, face.name, 900, H * 0.085, FONT, room); x.fillText(face.name, 56, hh + 44 + H * 0.08);
     x.fillStyle = '#5d6680'; fit(x, face.package, 800, H * 0.04, FONT, room); x.fillText(face.package, 58, hh + 44 + H * 0.135);
     x.fillStyle = '#2a3142';
-    const rows = [face.id, `版本 ${face.version}`, `Profile ${face.profile || '—'}${face.imported ? `  ·  导入 ${face.imported}` : ''}`];
+    const rows = [face.id, `版本 ${face.version}`, face.imported ? `导入 ${face.imported}` : ''].filter(Boolean);
     rows.forEach((row, i) => { fit(x, row, 500, H * 0.036, i ? FONT : MONO, room); x.fillText(row, 58, hh + 44 + H * (0.215 + i * 0.06)); });
     x.fillStyle = '#141a2c';
     const code = barcode(x, face.id || face.name, 56, H * 0.74, W * 0.5, H * 0.13);

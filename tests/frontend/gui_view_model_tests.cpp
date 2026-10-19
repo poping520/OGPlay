@@ -109,8 +109,7 @@ TEST_CASE("library tile status follows the documented strict priority") {
         return ogplay::frontend::LibraryTileStatus::ready;
     };
     CHECK(status(damaged.key) == ogplay::frontend::LibraryTileStatus::damaged);
-    CHECK(status(no_profile.key) ==
-          ogplay::frontend::LibraryTileStatus::missing_profile);
+    CHECK(status(no_profile.key) == ogplay::frontend::LibraryTileStatus::running);
     CHECK(status(no_external.key) ==
           ogplay::frontend::LibraryTileStatus::missing_external);
     CHECK(status(running.key) == ogplay::frontend::LibraryTileStatus::running);
@@ -121,7 +120,6 @@ TEST_CASE("library tile status follows the documented strict priority") {
         }
         return {};
     };
-    CHECK(detail(no_profile.key).find("通用启动路径") != std::string::npos);
     CHECK(detail(no_external.key).find("数据包") != std::string::npos);
     CHECK(detail(running.key).find("先退出游戏") != std::string::npos);
     const auto no_profile_tile = std::find_if(
@@ -135,9 +133,12 @@ TEST_CASE("library tile status follows the documented strict priority") {
     const auto generic_tiles = ogplay::frontend::BuildLibraryTiles(
         std::span<const ogplay::app::LibraryEntry>(&idle_generic, 1), {});
     REQUIRE(generic_tiles.size() == 1);
-    CHECK(generic_tiles.front().status ==
-          ogplay::frontend::LibraryTileStatus::missing_profile);
+    CHECK(generic_tiles.front().status == ogplay::frontend::LibraryTileStatus::ready);
+    CHECK(generic_tiles.front().detail.empty());
     CHECK(generic_tiles.front().can_launch);
+    // The generic path is the default, so no Profile condition is reported for it.
+    CHECK_FALSE(ogplay::frontend::BuildLibraryDetail(idle_generic, generic_tiles.front(), {})
+                    .profile.has_value());
 }
 
 TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
@@ -212,9 +213,10 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
         ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context);
     CHECK(detail.package == entry.key);
     CHECK(detail.version == "versionCode 42");
-    CHECK(detail.profile.status ==
+    REQUIRE(detail.profile.has_value());
+    CHECK(detail.profile->status ==
           ogplay::frontend::LibraryConditionStatus::ready);
-    CHECK(detail.profile.value == "exact.profile");
+    CHECK(detail.profile->value == "exact.profile");
     CHECK(detail.external.status ==
           ogplay::frontend::LibraryConditionStatus::ready);
     CHECK(detail.external.value == "已就绪");

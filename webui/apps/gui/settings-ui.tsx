@@ -41,6 +41,8 @@ export function GroupIcon({ name, tone = name }: { name: string; tone?: string }
     <svg viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICON[name] ?? ICON.info }} />
   </span>;
 }
+// Launcher wordmark shared by the library and settings top bars; OG takes the splash yellow.
+export function Brand() { return <div class="brand"><img src={logo} alt="" /><b><span>OG</span>Play</b></div>; }
 export function Key({ children }: { children: ComponentChildren }) { return <span class="key" aria-hidden="true">{children}</span>; }
 export function Note({ icon, title, warn = false, children }: { icon: string; title?: string; warn?: boolean; children?: ComponentChildren }) {
   return <div class={`note ${warn ? 'warn' : ''}`}><GroupIcon name={icon} tone={warn ? 'warn' : icon} /><div>{title && <b>{title}</b>}{children}</div></div>;
@@ -230,7 +232,7 @@ export function SettingsFrame(props: FrameProps) {
   return <div class={`cfg skin-${skin}`} style={palette ? { '--t1': palette.light, '--t2': palette.shell } : {}}>
     <div class="cfg-bg" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
     <header class="cfg-top">
-      <div class="brand"><img src={logo} alt="" />OGPlay</div>
+      <Brand />
       <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>游戏库</button>
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />

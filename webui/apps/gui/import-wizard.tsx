@@ -24,7 +24,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       if (disposed.current) throw new Error('向导已关闭');
       result = await rpc<ImportJob>('library.job.poll', { job: result.job });
     }
-    if (result.state === 'failed') throw new Error(`${result.message ?? '导入失败'}\n请检查安装包、Profile 配置和库目录后重新选择。`);
+    if (result.state === 'failed') throw new Error(`${result.message ?? '导入失败'}\n请检查安装包和库目录后重新选择。`);
     return result;
   }
   async function run(action: () => Promise<void>) {
@@ -72,7 +72,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <div class="import-hero">{summary.icon && <img src={summary.icon} alt="" />}<div><h3>{summary.display_name}</h3><p class="mono">{summary.package}</p><p>{summary.version_name || '版本'} ({summary.version_code})</p></div></div>
       <dl><dt>API</dt><dd>最低 {summary.min_sdk ?? '未声明'} / 目标 {summary.target_sdk ?? '未声明'}</dd>
         <dt>原生 ABI</dt><dd>{summary.abis.join(' / ') || '无原生库'}</dd>
-        <dt>Profile</dt><dd>{summary.profile ?? '无精确匹配，将按通用 APK 入库；兼容性尚未确认。'}</dd>
+        {summary.profile && <><dt>Profile</dt><dd>{summary.profile}</dd></>}
         <dt>数据包</dt><dd>可按需选择外部数据目录。</dd></dl>
       <div class="external-selection"><p class="selected-file">{external || '未选择数据包目录'}</p>
         <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) { setExternal(path); } })}>选择数据包目录</button>

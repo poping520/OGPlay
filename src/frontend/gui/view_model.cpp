@@ -72,9 +72,6 @@ std::vector<LibraryTile> BuildLibraryTiles(
             tile.detail = "Profile 目录不可用：" +
                           *profile_error +
                           "。请在设置中选择有效目录或恢复内置数据。";
-        } else if (!entry.metadata->profile_id.has_value()) {
-            tile.status = LibraryTileStatus::missing_profile;
-            tile.detail = "暂无精确 Profile；将尝试通用启动路径，兼容性尚未确认。";
         } else if (entry.metadata->external_dir.has_value()) {
             std::error_code error;
             const auto external = entry.metadata->external_dir;
@@ -94,9 +91,7 @@ std::vector<LibraryTile> BuildLibraryTiles(
         } else {
             tile.status = LibraryTileStatus::ready;
         }
-        tile.can_launch = !tile.running &&
-                          (tile.status == LibraryTileStatus::ready ||
-                           tile.status == LibraryTileStatus::missing_profile);
+        tile.can_launch = !tile.running && tile.status == LibraryTileStatus::ready;
         tiles.push_back(std::move(tile));
     }
     std::sort(tiles.begin(), tiles.end(), [](const LibraryTile& left,
@@ -127,8 +122,6 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
     const auto profile_error = context.profile_errors.contains(entry.key) ?
         std::optional<std::string>(context.profile_errors.at(entry.key)) : context.profile_catalog_error;
     if (!entry.metadata.has_value() || entry.Damaged()) {
-        result.profile = {LibraryConditionStatus::unavailable, "无法判断",
-                          "库条目元数据不可用。"};
         result.external = {LibraryConditionStatus::unavailable, "无法判断",
                            "库条目元数据不可用。"};
     } else {
@@ -139,14 +132,11 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
                                    std::to_string(metadata.version_code)
                              : metadata.version_name;
         if (profile_error.has_value()) {
-            result.profile = {LibraryConditionStatus::unavailable, "无法判断",
-                              "Profile 目录不可用：" + *profile_error};
-        } else if (!metadata.profile_id.has_value()) {
-            result.profile = {LibraryConditionStatus::missing, "未匹配",
-                              "暂无精确 Profile；将使用通用启动路径。"};
-        } else {
-            result.profile = {LibraryConditionStatus::ready,
-                              *metadata.profile_id, "精确 Profile 已匹配。"};
+            result.profile = LibraryCondition{LibraryConditionStatus::unavailable, "无法判断",
+                                              "Profile 目录不可用：" + *profile_error};
+        } else if (metadata.profile_id.has_value()) {
+            result.profile = LibraryCondition{LibraryConditionStatus::ready,
+                                              *metadata.profile_id, "精确 Profile 已匹配。"};
         }
         if (!metadata.external_dir.has_value()) {
             result.external = {LibraryConditionStatus::not_required, "未指定",

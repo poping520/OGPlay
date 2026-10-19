@@ -6,7 +6,7 @@
   --ready: #3ddc84; --warning: #ffb020; --danger: #ff5a52; --running: #4aa3ff; --panel: #121828;
   --font: ui-rounded, 'SF Pro Rounded', -apple-system, 'PingFang SC', 'Segoe UI Variable Display', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
   --code: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
-  position: relative; height: 100dvh; min-width: 900px; overflow: hidden; display: grid; grid-template-columns: 292px minmax(0, 1fr); grid-template-rows: 72px minmax(0, 1fr) 44px;
+  position: relative; height: 100dvh; min-width: 900px; overflow: hidden; display: grid; grid-template-columns: 292px minmax(0, 1fr); grid-template-rows: 68px minmax(0, 1fr) 44px;
   font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); color-scheme: dark; -webkit-font-smoothing: antialiased; user-select: none; isolation: isolate;
 }
 .cfg button { font: inherit; color: inherit; background: none; border: 0; padding: 0; border-radius: 0; cursor: pointer; transition: none; }
@@ -28,8 +28,7 @@
 
 /* top bar */
 .cfg-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 32px; }
-.cfg .brand { display: flex; gap: 10px; align-items: center; width: 228px; flex: none; padding: 0; font-weight: 900; font-size: 19px; letter-spacing: -.01em; }
-.cfg .brand img { width: 34px; height: 34px; }
+.cfg .brand { width: 228px; }
 .cfg .back { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px 0 7px; border-radius: 999px; background: var(--glass); font-weight: 800; color: var(--soft); flex: none; }
 .cfg .back:hover:not(:disabled) { background: var(--glass2); color: var(--ink); }
 .crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-weight: 800; }

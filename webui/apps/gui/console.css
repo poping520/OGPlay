@@ -58,6 +58,8 @@
 .top { display: flex; align-items: center; gap: 20px; padding: 0 32px; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 900; letter-spacing: -.01em; flex: none; }
 .brand img { width: 34px; height: 34px; }
+.brand b { font: inherit; }
+.brand b span { color: var(--yellow); }
 .tabs { display: flex; align-items: center; gap: 6px; margin: 0 auto; }
 .tabs button { padding: 7px 16px; border-radius: 999px; font-weight: 800; color: var(--muted); white-space: nowrap; transition: color .15s, background .15s; }
 .console .tabs button:hover:not([aria-pressed=true]) { color: var(--ink); background: var(--glass); }
@@ -233,7 +235,7 @@
 .tile[aria-pressed=true]::before { content: ''; position: absolute; inset: -9px; border-radius: 26px 26px 22px 22px; border: 3px solid var(--yellow);
   box-shadow: 0 0 30px rgba(255,194,26,.35); animation: ring 1.6s ease-in-out infinite; }
 .console .tile.add { display: grid; place-content: center; gap: 2px; text-align: center; border: 2.5px dashed rgba(255,255,255,.25); border-radius: 18px 18px 14px 14px; color: var(--muted);
-  font-size: 12px; font-weight: 800; width: calc(27 * var(--tile-em)); height: calc(40 * var(--tile-em)); }
+  font-size: 12px; font-weight: 800; width: calc(27 * var(--tile-em)); height: calc(40 * var(--tile-em)); margin-left: 14px; }
 .tile.add b { color: var(--yellow); font-size: 34px; line-height: 1; }
 .console .tile.add small { color: var(--dim); font-size: 11px; }
 .console .tile.add:hover:not(:disabled) { border-color: var(--yellow); color: var(--ink); }

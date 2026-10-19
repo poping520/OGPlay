@@ -41,7 +41,7 @@ export function cartFace(item: LibraryItem, tone: string, color: [number, number
   if (!iconIds.has(item.icon)) iconIds.set(item.icon, iconIds.size);
   const face = {
     id: item.installation_id, name: item.display_name, package: item.package || item.installation_id, version: versionLabel(item),
-    imported: item.imported_at?.slice(0, 10) ?? '', profile: item.profile.value, color, tone, status: item.status,
+    imported: item.imported_at?.slice(0, 10) ?? '', color, tone, status: item.status,
   };
   return { ...face, icon: item.icon, key: JSON.stringify([face, iconIds.get(item.icon)]) };
 }

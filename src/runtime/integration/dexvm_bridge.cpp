@@ -413,7 +413,7 @@ public:
             if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;") return memory::GuestAddress{};
             if (!android_context->stream_surface_owners.contains(object.Value())) return memory::GuestAddress{};
             if (ResolveAndroidSurfaceStream(*vm, *android_context, object)) {
-                if (auto* ledger = vm->Ledger()) ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
+                if (auto* vm_ledger = vm->Ledger()) vm_ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "stream ANativeWindow producer is not connected"};
             }
             for (const auto& [holder, surface] : android_context->holder_surfaces) {

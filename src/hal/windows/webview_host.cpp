@@ -43,6 +43,170 @@ void SetApplicationIcon(webview_t view) {
     SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
 }
 
+// The host owns the top-level HWND; webview owns only its child widget/controller.
+class WebViewWindow final {
+public:
+    explicit WebViewWindow(bool main_window) : main_window_(main_window) {
+        static const auto window_class = [] {
+            WNDCLASSEXW descriptor{};
+            descriptor.cbSize = sizeof(descriptor);
+            descriptor.hInstance = GetModuleHandleW(nullptr);
+            descriptor.lpfnWndProc = &WebViewWindow::WindowProc;
+            descriptor.lpszClassName = L"OGPlayWebViewHost";
+            descriptor.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+            descriptor.hbrBackground = CreateSolidBrush(RGB(9, 12, 22)); // splash #090c16
+            if (!descriptor.hbrBackground) throw std::runtime_error("Cannot create GUI background brush");
+            const auto atom = RegisterClassExW(&descriptor);
+            if (!atom) {
+                DeleteObject(descriptor.hbrBackground);
+                throw std::runtime_error("Cannot register GUI window class");
+            }
+            // The registered class and its brush live for the process lifetime.
+            return atom;
+        }();
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        MONITORINFO monitor{};
+        monitor.cbSize = sizeof(monitor);
+        if (!GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST), &monitor))
+            throw std::runtime_error("Cannot query GUI monitor");
+        const auto bounds = FrameSize(1280, 800, GetDpiForSystem());
+        window_ = CreateWindowExW(0, MAKEINTRESOURCEW(window_class), L"OGPlay",
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, monitor.rcWork.left, monitor.rcWork.top,
+            bounds.cx, bounds.cy, nullptr, nullptr, GetModuleHandleW(nullptr), this);
+        if (!window_) throw std::runtime_error("Cannot create GUI window");
+        const auto actual = FrameSize(1280, 800, GetDpiForWindow(window_));
+        SetWindowPos(window_, nullptr,
+            monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left - actual.cx) / 2,
+            monitor.rcWork.top + (monitor.rcWork.bottom - monitor.rcWork.top - actual.cy) / 2,
+            actual.cx, actual.cy, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    ~WebViewWindow() {
+        if (window_) KillTimer(window_, kShowTimer);
+        const auto view = std::exchange(view_, nullptr);
+        if (view) webview_destroy(view);
+        if (window_) DestroyWindow(window_);
+    }
+    WebViewWindow(const WebViewWindow&) = delete;
+    WebViewWindow& operator=(const WebViewWindow&) = delete;
+
+    void Initialize() {
+        view_ = webview_create(0, &window_);
+        if (!view_) throw std::runtime_error("Cannot create WebView2; install Microsoft Edge WebView2 Runtime");
+        SetApplicationIcon(view_);
+        auto* controller = static_cast<ICoreWebView2Controller*>(
+            webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+        if (!controller) throw std::runtime_error("WebView2 controller is unavailable");
+        Microsoft::WRL::ComPtr<ICoreWebView2Controller2> controller2;
+        Check(controller->QueryInterface(IID_PPV_ARGS(&controller2)));
+        Check(controller2->put_DefaultBackgroundColor(COREWEBVIEW2_COLOR{255, 9, 12, 22}));
+        ResizeWidget();
+    }
+    void Navigate(const std::string& url) {
+        auto* controller = static_cast<ICoreWebView2Controller*>(
+            webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+        Microsoft::WRL::ComPtr<ICoreWebView2> browser;
+        Check(controller->get_CoreWebView2(&browser));
+        EventRegistrationToken token{};
+        Check(browser->add_NavigationCompleted(Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+            [window = window_](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+                // Completion includes navigation failures; both must reveal the window.
+                PostMessageW(window, kNavigationReady, 0, 0);
+                return S_OK;
+            }).Get(), &token));
+        if (!SetTimer(window_, kShowTimer, 2000, nullptr))
+            throw std::runtime_error("Cannot create GUI visibility timer");
+        CheckWeb(webview_navigate(view_, url.c_str()));
+    }
+    webview_t View() const { return view_; }
+    void Restore() {
+        if (!shown_) return; // A repeated open must still wait for navigation/the timeout.
+        ShowWindow(window_, SW_RESTORE);
+        SetForegroundWindow(window_);
+    }
+    bool IsOpen() const { return window_ && IsWindow(window_); }
+private:
+    static constexpr UINT_PTR kShowTimer = 1;
+    static constexpr UINT kNavigationReady = WM_APP + 1;
+    static SIZE FrameSize(int width, int height, UINT dpi) {
+        RECT bounds{0, 0, MulDiv(width, static_cast<int>(dpi), 96), MulDiv(height, static_cast<int>(dpi), 96)};
+        if (!AdjustWindowRectExForDpi(&bounds, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, FALSE, 0, dpi))
+            throw std::runtime_error("Cannot calculate GUI window size");
+        return {bounds.right - bounds.left, bounds.bottom - bounds.top};
+    }
+    void ResizeWidget() const {
+        if (!view_ || !window_) return;
+        const auto widget = static_cast<HWND>(webview_get_native_handle(view_, WEBVIEW_NATIVE_HANDLE_KIND_UI_WIDGET));
+        RECT bounds{};
+        if (widget && GetClientRect(window_, &bounds))
+            MoveWindow(widget, 0, 0, bounds.right, bounds.bottom, TRUE);
+    }
+    void Show() {
+        if (shown_ || !view_) return;
+        shown_ = true;
+        KillTimer(window_, kShowTimer);
+        ShowWindow(window_, SW_SHOW);
+        SetForegroundWindow(window_);
+    }
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wp, LPARAM lp) noexcept {
+        auto* self = reinterpret_cast<WebViewWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            self = static_cast<WebViewWindow*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
+            self->window_ = window;
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        if (!self) return DefWindowProcW(window, message, wp, lp);
+        switch (message) {
+        case WM_SIZE:
+            self->ResizeWidget();
+            return 0;
+        case WM_ACTIVATE:
+            if (LOWORD(wp) != WA_INACTIVE && self->view_) {
+                auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(
+                    self->view_, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+                if (controller) static_cast<void>(controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC));
+            }
+            return 0;
+        case WM_GETMINMAXINFO: {
+            // Minimum client size follows the same DPI/frame conversion as the initial size.
+            RECT bounds{0, 0, MulDiv(960, static_cast<int>(GetDpiForWindow(window)), 96),
+                MulDiv(640, static_cast<int>(GetDpiForWindow(window)), 96)};
+            if (AdjustWindowRectExForDpi(&bounds, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, FALSE, 0, GetDpiForWindow(window)))
+                reinterpret_cast<MINMAXINFO*>(lp)->ptMinTrackSize = {bounds.right - bounds.left, bounds.bottom - bounds.top};
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            const auto* bounds = reinterpret_cast<RECT*>(lp);
+            SetWindowPos(window, nullptr, bounds->left, bounds->top, bounds->right - bounds->left,
+                bounds->bottom - bounds->top, SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
+        case kNavigationReady:
+            self->Show();
+            return 0;
+        case WM_TIMER:
+            if (wp == kShowTimer) { self->Show(); return 0; }
+            break;
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY:
+            KillTimer(window, kShowTimer);
+            if (self->main_window_ && self->view_) static_cast<void>(webview_terminate(self->view_));
+            return 0;
+        case WM_NCDESTROY:
+            self->window_ = nullptr;
+            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            break;
+        }
+        return DefWindowProcW(window, message, wp, lp);
+    }
+    HWND window_{};
+    webview_t view_{};
+    bool main_window_{};
+    bool shown_{};
+};
+
 class NativeWebView final : public WebViewHost {
 public:
     NativeWebView(WebViewHostOptions options, WebViewHostCallbacks callbacks, app::Logger& logger)
@@ -53,7 +217,8 @@ public:
         if (timer_) KillTimer(nullptr, timer_);
         dashboards_.clear();
         key_editors_.clear();
-        if (view_) webview_destroy(view_);
+        main_window_.reset();
+        if (com_initialized_) CoUninitialize();
     }
 
     int Run() override {
@@ -61,12 +226,14 @@ public:
         if (!std::filesystem::is_regular_file(gui_root / "manifest.json") ||
             !std::filesystem::is_regular_file(gui_root / "index.html"))
             throw std::runtime_error("GUI Web UI is missing; build webui and stage data/webui/gui");
-        view_ = webview_create(0, nullptr);
-        if (!view_) throw std::runtime_error("Cannot create WebView2; install Microsoft Edge WebView2 Runtime");
-        SetApplicationIcon(view_);
+        Check(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
+        com_initialized_ = true;
+        // External-window webview creation leaves DPI awareness and COM to the host.
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        main_window_ = std::make_unique<WebViewWindow>(true);
+        main_window_->Initialize();
+        view_ = main_window_->View();
         CheckWeb(webview_set_title(view_, "OGPlay"));
-        CheckWeb(webview_set_size(view_, 960, 640, WEBVIEW_HINT_MIN));
-        CheckWeb(webview_set_size(view_, 1280, 800, WEBVIEW_HINT_NONE));
         wchar_t uri[32768]{};
         DWORD length = static_cast<DWORD>(std::size(uri));
         Check(UrlCreateFromPathW((gui_root / "index.html").c_str(), uri, &length, 0));
@@ -96,7 +263,7 @@ public:
         timer_ = SetTimer(nullptr, 0, 100, &NativeWebView::Tick);
         if (!timer_) throw std::runtime_error("Cannot create GUI process polling timer");
         const auto url = PathUtf8(std::filesystem::path(allowed));
-        CheckWeb(webview_navigate(view_, url.c_str()));
+        main_window_->Navigate(url);
         CheckWeb(webview_run(view_));
         active_ = nullptr;
         if (options_.smoke_responses && (lists_ < *options_.smoke_responses || !smoke_capture_complete_))
@@ -214,8 +381,7 @@ private:
                     return S_OK;
                 }).Get()));
     }
-    struct DashboardDeleter { void operator()(void* window) const { if (window) webview_destroy(window); } };
-    using DashboardWindow = std::unique_ptr<void, DashboardDeleter>;
+    using DashboardWindow = std::unique_ptr<WebViewWindow>;
     using LoopbackWindows = std::map<std::string, DashboardWindow>;
     // Independent runtime windows on a game's loopback service; never bound to the launcher rpc.
     void OpenLoopbackWindow(LoopbackWindows& windows, std::string_view instance, const std::string& url,
@@ -225,17 +391,13 @@ private:
         struct Reset { bool& flag; bool previous; ~Reset() { flag = previous; } } reset{window_operation_, previous};
         auto found = windows.find(std::string(instance));
         if (found != windows.end()) {
-            const auto window = static_cast<HWND>(webview_get_native_handle(found->second.get(), WEBVIEW_NATIVE_HANDLE_KIND_UI_WINDOW));
-            if (window && IsWindow(window)) { ShowWindow(window, SW_RESTORE); SetForegroundWindow(window); return; }
+            if (found->second->IsOpen()) { found->second->Restore(); return; }
             windows.erase(found);
         }
-        DashboardWindow child(webview_create(0, nullptr));
-        if (!child) throw std::runtime_error("Cannot create runtime WebView2 window");
-        SetApplicationIcon(child.get());
-        CheckWeb(webview_set_title(child.get(), title.c_str()));
-        CheckWeb(webview_set_size(child.get(), 960, 640, WEBVIEW_HINT_MIN));
-        CheckWeb(webview_set_size(child.get(), 1280, 800, WEBVIEW_HINT_NONE));
-        auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(child.get(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+        auto child = std::make_unique<WebViewWindow>(false);
+        child->Initialize();
+        CheckWeb(webview_set_title(child->View(), title.c_str()));
+        auto* controller = static_cast<ICoreWebView2Controller*>(webview_get_native_handle(child->View(), WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
         if (!controller) throw std::runtime_error("Runtime WebView2 controller unavailable");
         Microsoft::WRL::ComPtr<ICoreWebView2> browser; Check(controller->get_CoreWebView2(&browser));
         const std::wstring allowed(url.begin(), url.end());
@@ -248,9 +410,9 @@ private:
             }).Get(), &token));
         Check(browser->add_NewWindowRequested(Microsoft::WRL::Callback<ICoreWebView2NewWindowRequestedEventHandler>(
             [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT { return args->put_Handled(TRUE); }).Get(), &token));
-        if (!init_script.empty()) CheckWeb(webview_init(child.get(), init_script.c_str()));
+        if (!init_script.empty()) CheckWeb(webview_init(child->View(), init_script.c_str()));
         // No webview_bind: runtime content cannot invoke launcher operations.
-        CheckWeb(webview_navigate(child.get(), url.c_str()));
+        child->Navigate(url);
         windows.emplace(instance, std::move(child));
     }
     void CloseLoopbackWindow(LoopbackWindows& windows, std::string_view instance) {
@@ -264,6 +426,8 @@ private:
     WebViewHostOptions options_;
     WebViewHostCallbacks callbacks_;
     app::Logger& logger_;
+    std::unique_ptr<WebViewWindow> main_window_;
+    bool com_initialized_{};
     webview_t view_{};
     UINT_PTR timer_{};
     std::uint64_t lists_{};

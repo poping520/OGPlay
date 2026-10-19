@@ -165,7 +165,6 @@ endif()
 ogplay_add_module(ogplay_input Input
     src/input/mouse_touch_mapper.cpp
     src/input/touch_mapper.cpp
-    src/input/template_catalog.cpp
     src/input/control_mapper.cpp
 )
 target_link_libraries(ogplay_input PUBLIC OGPlay::Hal OGPlay::Core)

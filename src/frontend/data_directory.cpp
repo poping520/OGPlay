@@ -74,8 +74,7 @@ BundledDataPaths ResolveBundledDataPaths(
         if (CompletePayload(root)) {
             return {.root = root,
                     .profiles_directory = root / "profiles",
-                    .quirk_registry = root / "quirks.toml",
-                    .input_templates_directory = root / "input" / "templates"};
+                    .quirk_registry = root / "quirks.toml"};
         }
     }
     throw std::runtime_error(

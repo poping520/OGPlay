@@ -32,12 +32,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧的 UI
   overlay 在自有 RGBA8 buffer 上合成；经 renderer 认证的全透明 overlay 省略扫描，
   仍先校验尺寸，混色算法与视频叠放顺序保持一致。
-- `LoadTitleProfileText` / `LoadTitleProfile`：仅接受 v4 的 identity、quirks、input，
-  旧 schema 和未知字段明确失败；Profile 是“仅 quirk + 输入模板的精确身份覆盖层”。
+- `LoadTitleProfileText` / `LoadTitleProfile`：仅接受 v4 的 identity、quirks，
+  旧 schema 和未知字段明确失败；Profile 是“仅 identity + quirks 的精确身份覆盖层”。
 - `SelectApkCompatibilityProfile`：按 package 与可选 version/hash 约束选择覆盖；
   无匹配或纯 Java APK 可走 generic startup，ABI 只由 APK inventory resolver 决定。
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
-  单根库 exact adapter，前端只投影 profile id、quirk 与输入模板。
+  单根库 exact adapter，前端只投影 profile id 与 quirk。
 - `StartDexApplication` / `DexActivityLifecycle`：先按
   resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
@@ -156,17 +156,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - ScrollView 仅在可滚动且累计位移超过 `8dp` slop 后接管；接管向原 listener/deep target
   发送 `ACTION_CANCEL` 并撤销 click/capture。纯 View 软件基帧发布前确认不存在 renderer、
   active SurfaceHolder、VideoView 或 holder Canvas producer。
-- `BuildControlConfig` / `LoadControlTemplate` / `LoadControlOverride`（ADR-0133）：Profile
-  `[input]`（template、zone、binding）、`data/input/templates/<id>.toml` 类型模板与用户覆盖
-  文件共用一套解码；按“内置默认 → 模板 → Profile → 用户覆盖”合并为
-  `input::ControlConfig`，用户覆盖的 template 取代 Profile 的选择。后层绑定替换同模式
-  （或 `*`）中共享输入源的前层绑定，`action = "none"` 只解除；区域按名称替换。
-  模板只声明区域名称，引用了未放置区域的绑定明确失败。模板与覆盖文件 schema 为 1、
-  不超过 200 行；用户覆盖文件独立于 GUI 的 `settings.toml`。
-  `FormatControlLayer`/`SaveControlLayer` 把用户层写回 TOML（坐标保留 0.01，写前校验可读回，
-  经同目录临时文件替换）；`DecodeControlLayerJson`/`WriteControlLayerJson` 以与 TOML 同形的
-  JSON 与编辑器交换，解码复用同一校验；`LoadControlOverrideIfPresent` 视缺失文件为空层；
-  `ListControlTemplates` 按 id 列出模板。
+- `BuildControlConfig` / `LoadControlOverride`（ADR-0142）：只合并“内置默认 → 用户
+  input.toml”。内置仅鼠标/触摸直通与 Esc→Back，不提供官方区域或游戏键位。
+  用户层只允许 zone/binding；schema 1、UTF-8、不超过 200 行，旧 template 字段明确失败。
+  后层绑定替换同模式（或 `*`）共享输入源的默认绑定，none 解绑，区域按名称替换；
+  未放置区域明确失败。`FormatControlLayer`/`SaveControlLayer` 保留 TOML 往返与原子替换，
+  `DecodeControlLayerJson`/`WriteControlLayerJson` 共用同一 zone/binding 校验。
+  `LoadControlOverrideIfPresent` 把缺失文件视为空用户层，不读取 Profile 或 bundled 模板。
 - `QuirkRegistry::Load/LoadPackaged/Validate`：严格加载 `data/quirks.toml` 并交叉验证
   Profile 引用；源码模式额外验证测试文件/用例存在，发行模式保留测试引用形状验证。
 - `Session::OpenEmpty/Close/State/Step/UntilFrame/Pause/Resume`：确定性会话原语。
@@ -182,10 +178,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 
 ## 不变量
 
-- Title Profile 仅接受 schema 4，root 只允许 schema/identity/quirks/input；identity
+- Title Profile 仅接受 schema 4，root 只允许 schema/identity/quirks；identity
   只允许 package/version_code/so_sha256。文件 UTF-8、纯数据、不超过 200 行。
-- Profile 只能覆盖注册 quirk 与输入配置，不拥有运行时、资源、入口或音频策略。
-  API 19、800×480 与 VM/guest call 默认值由通用实现决定；Manifest 和 APK inventory
+- Profile 只能覆盖注册 quirk，不拥有运行时、资源、入口或音频策略。
+  API 19 与 VM/guest call 默认值由通用实现决定；逻辑表面尺寸由用户设置提供；Manifest 和 APK inventory
   提供入口与 ABI，前端按标准 Android 路径装配 OBB 和外部目录。
 - exact-key table 校验共用 TOML 私有入口，各 table 声明允许键集合与上下文。
 - 身份必须精确匹配声明条件；`src/` 不出现标题、厂商或包名分支。

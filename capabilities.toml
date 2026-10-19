@@ -191,12 +191,12 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "ADR-0141：只接受 v4 identity/quirks/input；Python/C++ 同步拒绝旧 schema、runtime/data/audio、ABI/name 与未知字段，保留 UTF-8 和 200 行限制。"
+note = "ADR-0142：v4 只含 identity/quirks；Python/C++ 拒绝 input、旧 schema、runtime/data/audio、ABI/name 与未知字段，保留 UTF-8 和 200 行限制。"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "ADR-0141：纯数据 v4 身份覆盖层，package 精确匹配，versionCode/so_sha256 为可选约束；只解析 quirk 与输入配置，无运行时/资源/Java 预置。"
+note = "ADR-0142：纯数据 v4 身份覆盖层，package 精确匹配，versionCode/SO SHA-256 为可选约束；只解析 quirk，不包含输入、显示、资源或 Java 预置。"
 
 [session.title_profile_catalog]
 status = "complete"
@@ -218,11 +218,6 @@ status = "complete"
 test = "tests/session/lifecycle_tests.cpp"
 note = "通用 dex_activity 固定回调路由，唯一状态机执行输入、生命周期、渲染、present、音频、调度和统一 Clock；Profile 不选择生命周期。"
 
-[input.template_catalog]
-status = "complete"
-test = "tests/input/template_catalog_tests.cpp"
-note = "M5 WU-0209 提供不可变 code-defined 通用 mapper 目录，以 id 精确选择，未知/重复/非法模板明确失败。Profile 已改用 [input] 操控配置（ADR-0133，见 session.input_control_config），不再按 id 选择本目录。"
-
 [input.control_mapper]
 status = "partial"
 test = "tests/input/control_mapper_tests.cpp; tests/frontend/mcp_input_dispatch_tests.cpp; frontend.run_apk_options"
@@ -231,7 +226,7 @@ note = "INP-1/3、ADR-0133：run-apk 全部窗口输入与 MCP 手势经 Control
 [session.input_control_config]
 status = "partial"
 test = "tests/session/control_config_tests.cpp; tests/frontend/gui_launch_tests.cpp#INP-5; tools.title_profiles_current; tools.title_profile_validator_self_test"
-note = "INP-2/ADR-0133：Profile [input]、data/input/templates 类型模板与用户覆盖文件共用解码，按内置默认、模板、Profile、用户覆盖合并为 ControlConfig；源冲突替换、none 解绑、未放置区域与非法字段明确失败。run-apk 以 --input-config 装载用户覆盖并在启动前校验区域，GUI 传入实例 input.toml。"
+note = "ADR-0142：仅内置直通/Esc 默认与用户 input.toml 两层，用户区域/绑定覆盖默认、none 解绑；缺文件为空层、未放置区域失败。删除 Profile 输入、类型模板与模板 RPC，TOML/JSON 旧 template 字段明确失败；文件位置保持原规则。"
 
 [frontend.key_hints]
 status = "partial"
@@ -241,7 +236,7 @@ note = "INP-4/ADR-0134：F1 在呈现副本上绘制当前模式有效区域与�
 [frontend.key_editor_session]
 status = "partial"
 test = "tests/frontend/control_requests_tests.cpp; tests/agent/control_editor_tests.cpp; tests/frontend/mcp_http_server_tests.cpp#INP-5; tests/frontend/mcp_http_server_tests.cpp#INP-6; tests/frontend/mcp_http_server_tests.cpp#INP-7; tests/frontend/gui_launch_tests.cpp#INP-7; tests/frontend/gui_rpc_tests.cpp#INP-7; tests/session/control_config_tests.cpp#INP-5; webui/apps/controls/controls.test.ts; frontend.key_editor_manifest; frontend.run_apk_options"
-note = "INP-5..7/ADR-0134：/controls/ Web 编辑器与 control.* 接口随 MCP 端口、--key-editor-port 或首次 F2 懒启动；Bearer 令牌经环境变量或 URL 片段/sessionStorage 交给页面。冻结编辑、拖放缩放、物理键绑定、冲突标红、热应用并原子写回；编辑器心跳中断 8 秒自动恢复。GUI 每局生成令牌与端口，按钮或 F2 打开窗口；无 GUI 时 F2 用浏览器。Windows 已验证 GUI 打开编辑器；编辑/热应用与 F2 联动待验。"
+note = "ADR-0134/0142：F2/GUI 打开游戏提供的 Web 编辑器，令牌校验、冻结/恢复、热应用与原子保存沿用；无官方区域与类型模板，用户手动创建布局并在 input.toml 持久化。"
 
 [input.mouse_touch_mapper]
 status = "complete"
@@ -781,7 +776,7 @@ note = "ADR-0141：package 与可选 versionCode/SO SHA-256 精确约束决定�
 [profiles.optional_compatibility_v4]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
-note = "ADR-0141：v4 仅 identity/quirks/input；package 必填，version/hash guard 可选；runtime/data/audio 与旧 schema 均拒绝。no profile、hash 未命中及纯 Java APK 继续 generic startup。"
+note = "ADR-0142：v4 只含 identity/quirks；package 必填，version/hash 约束可选；input/runtime/data/audio 与旧 schema 均拒绝。无匹配或纯 Java APK 继续 generic startup。"
 
 [runtime.bionic_guest_dependency_closure]
 status = "complete"
@@ -1090,8 +1085,8 @@ note = "BND-33/36/38/49、DVM-168：Java EGL10 与 API19 EGL14 复用 Native EGL
 
 [frontend.profile_gl_surface_run]
 status = "complete"
-test = "frontend.run_apk_options"
-note = "ADR-0141：run-apk 以标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk 和输入覆盖，长 A32 call 的 slice 边界泵非消费式窗口消息。"
+test = "frontend.run_apk_options; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_launch_tests.cpp"
+note = "ADR-0142：标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk。surface 与 supersample 为用户设置，经游戏 > 全局 > 默认解析；CLI 接受 --surface-width/--surface-height（1..4096）与 --supersample（1..4）。"
 
 [gles.gles1_core_catalog]
 status = "complete"

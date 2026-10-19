@@ -206,14 +206,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     return result;
 }
 
-[[nodiscard]] ProfileInput DecodeInput(const detail::TomlValue& value) {
-    try {
-        return detail::DecodeControlLayer(AsTable(value, "input"), "input");
-    } catch (const input::ControlConfigError& error) {
-        throw TitleProfileError(error.what());
-    }
-}
-
 [[nodiscard]] std::size_t LineCount(const std::string_view text) {
     if (text.empty()) return 0;
     return static_cast<std::size_t>(
@@ -257,7 +249,7 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
         throw TitleProfileError("expected package is invalid");
     }
     const auto root = detail::ParseDataToml(text);
-    ExactKeys(root, "profile", {"schema", "identity", "quirks", "input"},
+    ExactKeys(root, "profile", {"schema", "identity", "quirks"},
               {"schema", "identity"});
     TitleProfile result;
     result.schema = static_cast<std::uint32_t>(
@@ -266,7 +258,6 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
     if (const auto* quirks = Optional(root, "quirks")) {
         result.quirks = DecodeQuirks(*quirks);
     }
-    if (const auto* input = Optional(root, "input")) result.input = DecodeInput(*input);
     return result;
 }
 

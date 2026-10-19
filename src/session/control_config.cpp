@@ -232,14 +232,6 @@ constexpr std::array kAndroidKeyNames{
     return bindings;
 }
 
-[[nodiscard]] std::optional<std::string> DecodeTemplateId(const Table& table,
-                                                          const std::string_view field) {
-    auto id = OptionalString(table, "template", field);
-    if (id && !core::IsValidLowercaseIdentifier(*id))
-        throw ControlConfigError(Field(field, "template") + " must be a lowercase identifier");
-    return id;
-}
-
 [[nodiscard]] Table ParseControlFile(const std::string_view text) {
     if (!core::IsValidUtf8(text)) throw ControlConfigError("input configuration is not valid UTF-8");
     if (std::count(text.begin(), text.end(), '\n') >= static_cast<std::ptrdiff_t>(kMaxControlFileLines))
@@ -291,54 +283,15 @@ void ApplyZones(std::vector<input::ZoneSpec>& zones, const std::vector<input::Zo
 }  // namespace
 
 ControlLayer DecodeControlLayer(const Table& table, const std::string_view field) {
-    ExactKeys(table, field, {"template", "zone", "binding"});
-    return {DecodeTemplateId(table, field), DecodeZones(table, field), DecodeBindings(table, field)};
+    ExactKeys(table, field, {"zone", "binding"});
+    return {DecodeZones(table, field), DecodeBindings(table, field)};
 }
 
 }  // namespace detail
 
-ControlTemplate LoadControlTemplateText(const std::string_view text,
-                                        const std::string_view expected_id) {
-    const auto root = detail::ParseControlFile(text);
-    detail::ExactKeys(root, "template", {"schema", "id", "summary", "zones", "binding"});
-    detail::RequireSchema(root);
-    ControlTemplate result;
-    result.id = detail::String(root, "id", "template");
-    if (result.id != expected_id || !core::IsValidLowercaseIdentifier(result.id))
-        throw input::ControlConfigError("template id must match its file name: " + result.id);
-    result.summary = detail::String(root, "summary", "template");
-    const auto* zones = detail::Find(root, "zones");
-    const auto* names = zones == nullptr ? nullptr : std::get_if<detail::Array>(&zones->value);
-    if (names == nullptr || names->empty())
-        throw input::ControlConfigError("template.zones must list the zones a game places");
-    for (const auto& name : *names) {
-        const auto* text_name = std::get_if<std::string>(&name.value);
-        if (text_name == nullptr || !core::IsValidLowercaseIdentifier(*text_name) ||
-            std::ranges::find(result.zones, *text_name) != result.zones.end())
-            throw input::ControlConfigError("template.zones must hold unique lowercase identifiers");
-        result.zones.push_back(*text_name);
-    }
-    result.bindings = detail::DecodeBindings(root, "template");
-    for (const auto& entry : result.bindings) {
-        const auto& zone = entry.binding.zone;
-        if (!zone.empty() && std::ranges::find(result.zones, zone) == result.zones.end())
-            throw input::ControlConfigError("template binding uses undeclared zone " + zone);
-    }
-    return result;
-}
-
-ControlTemplate LoadControlTemplate(const std::filesystem::path& path) {
-    const auto id = path.stem().string();
-    try {
-        return LoadControlTemplateText(detail::ReadFile(path), id);
-    } catch (const input::ControlConfigError& error) {
-        throw input::ControlConfigError(path.filename().string() + ": " + error.what());
-    }
-}
-
 ControlLayer LoadControlOverrideText(const std::string_view text) {
     auto root = detail::ParseControlFile(text);
-    detail::ExactKeys(root, "override", {"schema", "template", "zone", "binding"});
+    detail::ExactKeys(root, "override", {"schema", "zone", "binding"});
     detail::RequireSchema(root);
     root.erase("schema");
     return detail::DecodeControlLayer(root, "override");
@@ -352,31 +305,15 @@ ControlLayer LoadControlOverride(const std::filesystem::path& path) {
     }
 }
 
-input::ControlConfig BuildControlConfig(const ControlLayer* profile, const ControlLayer* user,
-                                        const std::filesystem::path& templates_directory) {
+input::ControlConfig BuildControlConfig(const ControlLayer& user) {
     auto config = input::DefaultControlConfig();
-    std::optional<std::string> template_id;
-    if (profile != nullptr) template_id = profile->template_id;
-    if (user != nullptr && user->template_id) template_id = user->template_id;
-    std::vector<std::string> template_zones;
-    if (template_id) {
-        const auto chosen = LoadControlTemplate(templates_directory / (*template_id + ".toml"));
-        detail::ApplyBindings(config.bindings, chosen.bindings);
-        template_zones = chosen.zones;
-    }
-    for (const auto* layer : {profile, user}) {
-        if (layer == nullptr) continue;
-        detail::ApplyZones(config.zones, layer->zones);
-        detail::ApplyBindings(config.bindings, layer->bindings);
-    }
+    detail::ApplyZones(config.zones, user.zones);
+    detail::ApplyBindings(config.bindings, user.bindings);
     for (const auto& binding : config.bindings) {
-        if (binding.zone.empty() ||
-            std::ranges::any_of(config.zones, [&](const auto& z) { return z.name == binding.zone; }))
-            continue;
-        if (std::ranges::find(template_zones, binding.zone) != template_zones.end())
-            throw input::ControlConfigError("template " + *template_id + " needs zone " + binding.zone +
-                                            "; place it in [[input.zone]] or unbind its key");
-        throw input::ControlConfigError("binding uses unplaced zone " + binding.zone);
+        if (!binding.zone.empty() && !std::ranges::any_of(config.zones,
+                [&](const auto& zone) { return zone.name == binding.zone; })) {
+            throw input::ControlConfigError("binding uses unplaced zone " + binding.zone);
+        }
     }
     return config;
 }
@@ -536,23 +473,8 @@ ControlLayer LoadControlOverrideIfPresent(const std::filesystem::path& path) {
     return LoadControlOverride(path);
 }
 
-std::vector<ControlTemplate> ListControlTemplates(const std::filesystem::path& templates_directory) {
-    std::vector<std::filesystem::path> paths;
-    std::error_code error;
-    if (!std::filesystem::is_directory(templates_directory, error)) return {};
-    for (const auto& entry : std::filesystem::directory_iterator(templates_directory, error)) {
-        if (entry.path().extension() == ".toml") paths.push_back(entry.path());
-    }
-    if (error) throw input::ControlConfigError("cannot list input templates: " + templates_directory.string());
-    std::sort(paths.begin(), paths.end());
-    std::vector<ControlTemplate> templates;
-    for (const auto& path : paths) templates.push_back(LoadControlTemplate(path));
-    return templates;
-}
-
 std::string FormatControlLayer(const ControlLayer& layer) {
     std::string text = "# OGPlay key layout, maintained by the key editor (ADR-0134).\nschema = 1\n";
-    if (layer.template_id) text += "template = " + Quoted(*layer.template_id) + "\n";
     for (const auto& zone : layer.zones) AppendTomlTable(text, "zone", ZoneFields(zone));
     for (const auto& entry : layer.bindings) AppendTomlTable(text, "binding", BindingFields(entry));
     return text;
@@ -585,25 +507,11 @@ ControlLayer DecodeControlLayerJson(const core::JsonValue value) {
 
 core::JsonWriter::Value WriteControlLayerJson(core::JsonWriter& writer, const ControlLayer& layer) {
     const auto object = writer.Object();
-    if (layer.template_id) writer.AddString(object, "template", *layer.template_id);
     const auto zones = writer.Array();
     for (const auto& zone : layer.zones) writer.Append(zones, FieldsJson(writer, ZoneFields(zone)));
     writer.Add(object, "zone", zones);
     const auto bindings = writer.Array();
     for (const auto& entry : layer.bindings) writer.Append(bindings, FieldsJson(writer, BindingFields(entry)));
-    writer.Add(object, "binding", bindings);
-    return object;
-}
-
-core::JsonWriter::Value WriteControlTemplateJson(core::JsonWriter& writer, const ControlTemplate& item) {
-    const auto object = writer.Object();
-    writer.AddString(object, "id", item.id);
-    writer.AddString(object, "summary", item.summary);
-    const auto zones = writer.Array();
-    for (const auto& zone : item.zones) writer.Append(zones, writer.String(zone));
-    writer.Add(object, "zones", zones);
-    const auto bindings = writer.Array();
-    for (const auto& entry : item.bindings) writer.Append(bindings, FieldsJson(writer, BindingFields(entry)));
     writer.Add(object, "binding", bindings);
     return object;
 }

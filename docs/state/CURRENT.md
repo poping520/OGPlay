@@ -36,7 +36,7 @@
 
 ## 支持边界与未验收项
 
-- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity/quirks/input；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 呈现 120 帧、退出码 0；定向测试中的 6 项旧 Android 断言失败已由 HEAD 基线复现，未扩大修复。
+- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity/quirks；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 呈现 120 帧、退出码 0；定向测试中的 6 项旧 Android 断言失败已由 HEAD 基线复现，未扩大修复。
 
 - VFS：语义根删除返回 EBUSY、缺失自动重建并记 warn；37 定向用例/436 断言通过，TML 现有 `-3` 持久沙盒自动恢复 obb，连续两次启动越过打开阶段、根保留且既有文件哈希不变，同达 Mono sigaction / Unity EGL 首错（证据 `.local/sandbox-roots-{tests.log,proof.json}`）。多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
 - GUI/Dashboard（[GUI-10](../tasks/gui/GUI-10.md)）：core 改为 C++ 外观与共享游戏库，桌面/CLI
@@ -49,8 +49,7 @@
 - 音视频（[DVM-189](../tasks/dexvm/DVM-189.md)）：视频改为链接裁剪版 ogplay_ffmpeg
   （[VID-1](../tasks/video/VID-1.md)），macOS arm64 真实 CG 实测正常；预编译包已含 macOS arm64 与 Windows x64，Windows CG 未验；
   raw-resource 完整链、手动音频写入、媒体主时钟与影音同步未验收。
-- PC 操控映射（[Input 设计](../design/input/README.md)）：P0 的 ControlMapper、配置合并与 run-apk/MCP/GUI
-  接线已完成（[INP-1..3](../tasks/input/README.md)）；键位由用户在 Web 按键编辑器中配置（ADR-0134）；INP-4..7 已实现：F1 提示、F2/GUI“按键设置”打开 Web 编辑器（macOS 浏览器路径实测）；Windows 已编译并实跑 GUI 编辑器窗口；编辑/热应用与游戏内 F2 联动仍待验收。
+- 输入/显示（[INP-8](../tasks/input/INP-8.md)、ADR-0142）：仅内置直通/Esc + 用户 input.toml，删除 Profile 输入与类型模板。显示宽高（默认 800×480、1..4096）和超采样经游戏 > 全局 > 默认解析；Angry Birds 1024×600 启动、F2 创建 J 键保存、重启加载及 F1 提示已实测，两次退出 0。旧 template/input_template 明确失败、不迁移；Windows/Linux 未实跑。
 - WebView 仅基础配置与回调（[DVM-187](../tasks/dexvm/DVM-187.md)/[188](../tasks/dexvm/DVM-188.md)），
   页面、JavaScript、TextToSpeech 未实现。
 - 不支持 NDK Looper callback 与非 pipe fd；TLS-03、完整 mmap/lock、系统 CA 未验收。

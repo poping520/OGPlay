@@ -8,8 +8,8 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
         std::vector<SettingDefinition> result;
         for (const auto& [key, group] : std::vector<std::pair<std::string, std::string>>{
             {"interpreter", "performance"}, {"clock_mode", "performance"}, {"device_preset", "device"},
-            {"supersample", "display"}, {"window_mode", "display"}, {"scaling", "display"},
-            {"volume", "audio"}, {"mute", "audio"}, {"input_template", "input"}, {"keymap", "input"},
+            {"surface_width", "display"}, {"surface_height", "display"}, {"supersample", "display"}, {"window_mode", "display"}, {"scaling", "display"},
+            {"volume", "audio"}, {"mute", "audio"}, {"keymap", "input"},
             {"gamepad_deadzone", "input"}, {"network_policy", "network"}, {"profiles_dir", "compatibility"},
             {"mcp_enabled", "advanced"}, {"mcp_port", "advanced"}}) {
             auto field = FindSetting(key); field.group = group;

@@ -175,7 +175,6 @@ int RunGuiCommand(int argc, const char* const argv[], app::Logger& logger) {
                     std::string names;
                     for (const auto& name : summary->quirks) { if (!names.empty()) names += ", "; names += name; }
                     facts["Profile quirk 列表"] = names.empty() ? "无" : names;
-                    facts["Profile 输入模板"] = summary->input_template.value_or("未指定");
                 }
                 return facts;
             },

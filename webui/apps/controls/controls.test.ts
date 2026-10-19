@@ -1,25 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import { captureKey, captureMouse, joinStickSources, keyName, sourceLabel, splitSources } from './keys';
 import {
-  addControl, applyTemplate, baseBindings, buildLayer, chooseAnchor, clampBox, conflicts, loadDraft, placeZone,
-  removeControl, resolveZone, toGuest, type Binding, type Session, type Template,
+  addControl, baseBindings, buildLayer, chooseAnchor, clampBox, conflicts, loadDraft, placeZone,
+  removeControl, resolveZone, toGuest, type Binding, type Session,
 } from './model';
 import { createRpc, takeToken, RpcError, Unauthorized } from './rpc';
 
 const surface = { width: 1024, height: 600 };
-const template: Template = {
-  id: 'stick_action', summary: 'stick', zones: ['move', 'primary'],
-  binding: [{ source: 'keys:w,a,s,d', action: 'stick', zone: 'move', radius: 0.7, settle_frames: 2, ramp_frames: 4 },
-            { source: 'key:j', action: 'button', zone: 'primary', press: 'hold' },
-            { source: 'key:k', action: 'button', zone: 'primary', press: 'tap', mode: 'menu' }],
-};
+const userBindings: Binding[] = [
+  { source: 'keys:w,a,s,d', action: 'stick', zone: 'move', radius: 0.7, settle_frames: 2, ramp_frames: 4 },
+  { source: 'key:j', action: 'button', zone: 'primary', press: 'hold' },
+  { source: 'key:k', action: 'button', zone: 'primary', press: 'tap', mode: 'menu' },
+];
 const escape: Binding = { source: 'key:escape', action: 'key', mode: '*', key: 'back' };
 function session(): Session {
   const zones = [{ name: 'move', anchor: 'bottom_left' as const, x: 30, y: -115, r: 85 },
                  { name: 'primary', anchor: 'bottom_right' as const, x: -40, y: -40, r: 50 }];
-  return { surface, frozen: true, mode: 'default', config_path: '/tmp/input.toml', persistent: true, templates: [template],
-           user: { template: 'stick_action', zone: zones, binding: [] },
-           effective: { zone: zones, binding: [escape, ...template.binding] } };
+  return { surface, frozen: true, mode: 'default', config_path: '/tmp/input.toml', persistent: true,
+           user: { zone: zones, binding: [] },
+           effective: { zone: zones, binding: [escape, ...userBindings] } };
 }
 
 describe('key editor geometry', () => {
@@ -107,7 +106,6 @@ describe('key editor drafts', () => {
     draft = { ...draft, bindings: draft.bindings.map(binding => binding.source === 'key:j' ? { ...binding, source: 'key:space' } : binding) };
     draft = removeControl(draft, 'move');
     const layer = buildLayer(draft, baseBindings(current));
-    expect(layer.template).toBe('stick_action');
     expect(layer.zone.map(zone => zone.name)).toEqual(['primary']);
     const unbinds = layer.binding.filter(binding => binding.action === 'none');
     expect(unbinds).toEqual([{ source: 'key:w', action: 'none' }, { source: 'key:a', action: 'none' }, { source: 'key:s', action: 'none' },
@@ -115,23 +113,17 @@ describe('key editor drafts', () => {
     expect(layer.binding.slice(unbinds.length)).toEqual(draft.bindings);
     expect(conflicts(layer.binding).size).toBe(0);
   });
-  it('places new controls and template zones on the surface', () => {
-    const current = session();
-    const empty = { zones: [], bindings: [escape] };
+  it('starts without official zones and places only user-created controls', () => {
+    const fresh = { ...session(), user: { zone: [], binding: [] }, effective: { zone: [], binding: [escape] } };
+    const empty = loadDraft(fresh);
+    expect(empty.zones).toEqual([]);
+    expect(empty.bindings).toEqual([escape]);
     const added = addControl(empty, 'button', surface);
     expect(added.zone).toBe('button_1');
     expect(addControl(added.draft, 'button', surface).zone).toBe('button_2');
-    const templated = applyTemplate({ ...empty, zones: [current.user.zone[1]] }, template, surface);
-    expect(templated.template).toBe('stick_action');
-    expect(templated.zones.map(zone => zone.name)).toEqual(['move', 'primary']);
-    expect(templated.zones[1]).toEqual(current.user.zone[1]);
-    expect(resolveZone(templated.zones[0], surface).cx).toBeLessThan(surface.width / 3);
-    expect(templated.bindings[0]).toEqual(escape);
-    for (const zone of templated.zones) {
-      const box = resolveZone(zone, surface);
-      expect(box.cx - box.hw).toBeGreaterThanOrEqual(0);
-      expect(box.cy + box.hh).toBeLessThanOrEqual(surface.height);
-    }
+    const box = resolveZone(added.draft.zones[0], surface);
+    expect(box.cx - box.hw).toBeGreaterThanOrEqual(0);
+    expect(box.cy + box.hh).toBeLessThanOrEqual(surface.height);
   });
 });
 

@@ -1,7 +1,7 @@
 # Included from the project root; source/binary paths use that directory scope.
 # Data directories are replaced wholesale so files removed from the source tree
 # do not linger in the staged or installed runtime.
-set(OGPLAY_DATA_DIRECTORIES profiles input android)
+set(OGPLAY_DATA_DIRECTORIES profiles android)
 set(_ogplay_stage_data_commands)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     list(APPEND _ogplay_stage_data_commands
@@ -20,6 +20,7 @@ add_custom_target(ogplay_stage_data ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/capabilities.toml"
         "$<TARGET_FILE_DIR:ogplaycore>/data/capabilities.toml"
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:ogplaycore>/data/input"
     ${_ogplay_stage_data_commands}
     COMMENT "Staging OGPlay runtime data"
     VERBATIM)

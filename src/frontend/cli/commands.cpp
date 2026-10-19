@@ -70,6 +70,8 @@ constexpr std::string_view kDetails =
     "  Execution\n"
     "    --preflight                 Check APK and dependencies, then exit\n"
     "    --exit-after-frames <count> Exit after <count> frames\n"
+    "    --surface-width <1..4096>  Logical width (default 800)\n"
+    "    --surface-height <1..4096> Logical height (default 480)\n"
     "    --supersample <1..4>        Render scale factor (default 1)\n"
     "    --dexvm-interpreter <switch|threaded>\n"
     "                                DexVM interpreter override\n"

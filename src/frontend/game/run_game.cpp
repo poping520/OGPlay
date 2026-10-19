@@ -184,7 +184,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     auto [apk_path, external_directory, external_guest_directory, obb_path,
           profiles_directory, exit_after_frames, mcp_port, key_editor_port,
           dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
-          diagnostics_enabled, supersample_factor, cpu_config, mcp_manual_step,
+          diagnostics_enabled, supersample_factor, surface_width, surface_height, cpu_config, mcp_manual_step,
           preflight, survey_gaps_output, sandbox_directory, installation_id,
           ephemeral_sandbox, input_config_path, library_root] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
@@ -206,7 +206,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     generic_profile.schema = 4;
     generic_profile.identity.package = manifest.package;
     constexpr std::uint32_t api_level = 19;
-    constexpr std::uint32_t surface_width = 800, surface_height = 480;
     const auto* selected_profile = compatibility.profile;
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
@@ -242,11 +241,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     auto user_controls = input_config_path.has_value()
                              ? session::LoadControlOverrideIfPresent(*input_config_path)
                              : session::ControlLayer{};
-    // Input configuration errors (unknown template, unplaced or oversized zones) stop the
+    // Input configuration errors (unknown fields, unplaced or oversized zones) stop the
     // launch before the guest starts.
-    const auto control_config = session::BuildControlConfig(
-        profile.input.has_value() ? &*profile.input : nullptr, &user_controls,
-        bundled_data.input_templates_directory);
+    const auto control_config = session::BuildControlConfig(user_controls);
     if (surface_width != 0 && surface_height != 0) {
         input::ControlMapper probe(control_config);
         probe.SetSurface(surface_width, surface_height);
@@ -837,8 +834,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     .mapper = control_mapper,
                     .frozen = control_frozen,
                     .user = user_controls,
-                    .profile_input = profile.input.has_value() ? &*profile.input : nullptr,
-                    .templates_directory = bundled_data.input_templates_directory,
                     .config_path = input_config_path,
                     .frames = mcp_frames.get(),
                     .surface_width = guest_width,

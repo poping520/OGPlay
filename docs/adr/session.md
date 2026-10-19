@@ -10,6 +10,8 @@
 - [ADR-0086 · 跨宿主输入与 Android guest 快照](#adr-0086)
 - [ADR-0133 · 通用操控原语与分级操控配置](#adr-0133)
 - [ADR-0134 · 按键编辑器由游戏进程提供、GUI 打开，键位由用户配置](#adr-0134)
+- [ADR-0141 · Title Profile 仅保留 quirk 与输入模板的精确身份覆盖](#adr-0141)
+- [ADR-0142 · 输入与显示归用户数据，Profile 只含 identity 与 quirks](#adr-0142)
 
 <a id="adr-0020"></a>
 
@@ -330,3 +332,37 @@ SoundPool（以及既有标准底层音频 API），删除 Profile 封面音乐�
 独立注册 quirk，并有“关闭即失败”的测试，禁止用资源预检或 Java 字段预置模拟安装状态。
 前端只显示身份覆盖、quirk 与输入模板，不再声称 Profile 指定了必需数据包。
 删除能力路径同步删除专用测试、CMake 源项和账本条目，标准能力回归继续保留。
+
+<a id="adr-0142"></a>
+
+## ADR-0142 · 输入与显示归用户数据，Profile 只含 identity 与 quirks
+
+- 状态：Accepted
+- 日期：2026-10-19
+- 关联：[INP-8](../tasks/input/INP-8.md)
+- Supersedes：ADR-0133 的类型模板/Profile 输入层与 ADR-0141 保留 input 的条款；
+  ADR-0134 的用户键位与编辑器归属继续适用。
+
+### 决定
+
+Profile v4 只允许 identity + quirks，`[input]` 明确失败。输入与显示属于用户数据，
+存放于库条目或用户设置中；应用不内置官方键位。删除类型模板、模板目录和目录路径、
+ControlTemplate API、编辑器模板列表/选择/重置，不保留兼容分支。
+
+输入仅“内置默认 + 用户 input.toml”两层。内置只含鼠标/触摸直通及 Esc→Back，
+没有官方区域。编辑器从空布局开始，由用户添加并摆放区域、绑定按键；已有用户文件
+重新加载。用户 schema 1 只允许 zone/binding，旧 template 字段在 TOML/JSON 中都报错。
+库条目/input.toml、显式 --input-config、sandbox 旁 <installation_id>.input.toml 的
+位置和优先级不变，保存及热应用沿用现有机制。
+
+显示设置 surface_width/surface_height 默认 800×480，每边 1..4096；supersample 为
+1..4。三项均由 EffectiveGameSetting 按“游戏 > 全局 > 默认”解析，经 GameRunOptions
+和 CLI 对应参数传入同一运行服务。GUI 全局/游戏设置页编辑同一字段定义；零值、越界
+和非整数明确失败。不新增窗口缩放、宽高比或其他偏好。
+
+### 后果
+
+Profile 只表达偏离 AOSP 的注册 quirk；输入/显示不随游戏身份覆盖或 bundled data 发布。
+旧带 template 的用户文件须由用户自行修改，不静默忽略或迁移。旧 input_template 用户
+设置同样按未知键明确失败；用户数据不由任务自动改写。删除专用模板代码和测试，保留
+用户文件往返、RPC 保存/重载、设置继承及实际 F2 路径验证。

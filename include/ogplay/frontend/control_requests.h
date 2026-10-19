@@ -23,8 +23,6 @@ struct ControlRequestContext final {
     input::ControlMapper& mapper;
     bool& frozen;
     session::ControlLayer& user;
-    const session::ControlLayer* profile_input{};
-    const std::filesystem::path& templates_directory;
     const std::optional<std::filesystem::path>& config_path;
     const agent::FrameSnapshotStore* frames{};
     std::uint32_t surface_width{}, surface_height{};

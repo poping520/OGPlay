@@ -62,8 +62,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   库依赖闭包不得由 CLI 手写。API 19 缺 `bootdex.jar` 与缺 ELF 同样在装配前失败。
   run-apk 读取固定 payload 的 `zoneinfo/tzdata` 并注入 session，缺失明确失败；来源、
   格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
-- Profile 仅接受 v4 identity/quirks/input，旧 schema 与 runtime/data/audio 明确拒绝。
-  表面默认 800×480，VM/guest call 使用默认配置；无资源清单预检，`--external-dir` 最多一个。
+- Profile 仅接受 v4 identity/quirks，旧 schema 与 runtime/data/audio 明确拒绝。
+  用户表面默认 800×480，每边 1..4096，VM/guest call 使用默认配置；无资源清单预检，`--external-dir` 最多一个。
   quirk 必须在 `data/quirks.toml` 注册并有测试引用。
 - `--preflight`/`library run --mode preflight` 在所选 ABI 下逐个将 APK `.so` 作为静态根，
   复用 native 来源与 NEEDED/SONAME 闭包、Bionic boundary catalog 及 ELF 查找/版本规则；
@@ -78,8 +78,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   MCP 手势阶段作为外部触点交给 `ControlMapper`，与窗口鼠标、原生触摸和绑定按键触点并存。
   输入重置时取消 session 中的按住状态，静默清空 `ControlMapper` 并清空 MCP 当前和待处理
   手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
-- 操控映射（ADR-0133/0134）：`run-apk` 在启动前用 Profile `[input]`、用户键位文件与 payload
-  `input/templates` 构建 `ControlConfig`，并按通用逻辑表面校验区域；配置错误在 guest
+- 操控映射（ADR-0142）：`run-apk` 在启动前仅用内置默认与用户 input.toml 构建
+  `ControlConfig`，按用户逻辑表面校验区域；配置错误在 guest
   启动前明确失败。用户键位文件为 `--input-config <file>`，否则为持久沙盒根下的
   `<installation_id>.input.toml`，临时沙盒不落盘；文件不存在视为空布局。窗口事件全部交给
   `ControlMapper`，每个 guest step 前 `Flush` 并经 `session::MapControlOutput` 入队；呈现
@@ -133,3 +133,8 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 
 CLI 参数、MCP transport 和会话控制由 CTest 覆盖；真实 APK 按 playbook 使用
 `tools/run_scenario.py` 产出机器可判定证据。
+
+显示的 surface_width/surface_height/supersample 由 EffectiveGameSetting 按游戏、全局、默认
+解析，再经 GameRunOptions 与 --surface-width/--surface-height/--supersample 传入。
+宽高默认 800×480、每边 1..4096；超采样 1..4。GUI 字段使用同一设置定义。
+无新窗口缩放/宽高比偏好；bundled payload 不携带 input 目录。

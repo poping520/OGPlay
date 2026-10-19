@@ -51,7 +51,7 @@ std::string RequestDiagnosticSnapshot(std::uint64_t pid, const std::filesystem::
 }
 DataPaths BundledDataPaths() {
     auto paths = frontend::HostBundledDataPaths();
-    return {paths.root, paths.profiles_directory, paths.quirk_registry, paths.input_templates_directory};
+    return {paths.root, paths.profiles_directory, paths.quirk_registry};
 }
 std::filesystem::path ExecutablePath() { return hal::HostExecutablePath(); }
 std::filesystem::path DefaultLibraryRoot() {

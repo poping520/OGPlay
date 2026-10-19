@@ -11,3 +11,6 @@ JSON 值为所属文档的借用视图，回调结束/文档销毁后失效；�
 不拥有 CLI usage/stdio 循环、桌面模式分派、WebView、GUI 视图或子进程管理；加载共享库时不创建应用资源。
 SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library run 可选 stderr 以保持 JSON 输出。
 验证：ogplay_app_tests、frontend.app_entrypoints（含导出/导入审计）、frontend.run_apk_options 和真实 APK 有界复跑。
+
+GameRunOptions 显式携带 surface_width/surface_height（默认 800×480，每边 1..4096），
+解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。

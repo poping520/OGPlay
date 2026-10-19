@@ -39,7 +39,9 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     if (!std::filesystem::is_regular_file(o.apk_path)) throw LibraryError(LibraryErrorCode::not_found, "library APK copy is missing", o.apk_path);
     o.profiles_directory = config.profiles_dir;
     o.external_directory = entry.metadata->external_dir;
-    o.supersample_factor = std::get<std::uint32_t>(Setting(config, "supersample"));
+    o.surface_width = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "surface_width"));
+    o.surface_height = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "surface_height"));
+    o.supersample_factor = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "supersample"));
     o.cpu_config.cores = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_cores"));
     o.cpu_config.frequency_mhz = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_frequency_mhz"));
     o.cpu_config.execution.limit_parallelism = std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism"));

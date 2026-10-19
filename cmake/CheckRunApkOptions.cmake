@@ -23,17 +23,17 @@ endfunction()
 
 function(expect_usage expected)
     execute_process(
-        COMMAND "${OGPLAY_CLI}"
+        COMMAND "${OGPLAY_CLI}" --help
         RESULT_VARIABLE result
+        OUTPUT_VARIABLE output
         ERROR_VARIABLE error
-        TIMEOUT 5
-    )
-    if(NOT result EQUAL 2)
-        message(FATAL_ERROR "usage: expected exit 2, got ${result}; stderr=${error}")
+        TIMEOUT 5)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "help: expected exit 0, got ${result}; stderr=${error}")
     endif()
-    string(FIND "${error}" "${expected}" found)
+    string(FIND "${output}" "${expected}" found)
     if(found EQUAL -1)
-        message(FATAL_ERROR "usage: missing '${expected}' in stderr: ${error}")
+        message(FATAL_ERROR "help: missing '${expected}' in stdout: ${output}")
     endif()
 endfunction()
 
@@ -42,9 +42,11 @@ if(NOT DEFINED OGPLAY_RUN_COMMAND)
 endif()
 set(_base ${OGPLAY_RUN_COMMAND} "${_missing_apk}")
 if(NOT OGPLAY_GAME_MODE)
-    expect_usage("[--mcp | --mcp-port <1..65535>]")
-    expect_usage("[--mcp-manual-step]")
-    expect_usage("[--key-editor-port <1..65535>]")
+    expect_usage("--mcp")
+    expect_usage("--mcp-manual-step")
+    expect_usage("--key-editor-port <1..65535>")
+    expect_usage("--surface-width <1..4096>")
+    expect_usage("--surface-height <1..4096>")
 endif()
 expect_failure(removed_system_dir
     "unknown or incomplete run-apk option: --system-dir"

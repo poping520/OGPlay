@@ -10,7 +10,6 @@ namespace ogplay::app {
 struct ProfileSummary final {
     std::string profile_id;
     std::vector<std::string> quirks{};
-    std::optional<std::string> input_template{};
 };
 class OGPLAYCORE_API ProfileCatalog final {
 public:

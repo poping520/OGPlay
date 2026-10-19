@@ -60,7 +60,6 @@ set(OGPLAY_TEST_SOURCES
     tests/hal/thread_tests.cpp
     tests/hal/window_input_tests.cpp
     tests/hal/virtual_memory_tests.cpp
-    tests/input/template_catalog_tests.cpp
     tests/input/mouse_touch_mapper_tests.cpp
     tests/input/touch_mapper_tests.cpp
     tests/input/control_mapper_tests.cpp

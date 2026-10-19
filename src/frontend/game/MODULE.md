@@ -8,6 +8,9 @@ VFS 装配、持久实例选择、MCP/诊断、Clock、输入与退出不变量�
 未实现能力明确失败；不拥有启动器窗口，不包含平台 API 或游戏专属分支。
 参数由 frontend.run_apk_options 和运行选项定向测试验证；真实 APK 按 playbook 验证。
 
-Profile v4 只提供身份匹配后的 quirk 与输入模板；启动固定 API 19、800×480，
+Profile v4 只提供身份匹配后的 quirk；启动固定 API 19，surface 使用 GameRunOptions 用户值，
 ABI/入口来自 APK，VM/guest call 使用默认值。OBB 原文件挂到标准包目录，cwd 为 `/`；
 外部目录由显式选项指定，不做 Profile 挂载、清单预检或音频替代。
+
+输入仅内置默认 + 用户文件；用户文件位置沿用 --input-config、库条目/input.toml 或
+sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 template 字段拒绝。

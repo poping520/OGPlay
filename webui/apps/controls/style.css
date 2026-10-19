@@ -21,7 +21,6 @@ small { color: var(--muted); font-size: 11px; }
 .editor { display: flex; flex-direction: column; height: 100dvh; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .spacer { flex: 1; }
-.template { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .chip { border-radius: 10px; padding: 1px 9px; font-size: 11px; }
 .chip.frozen { background: #3a2f12; color: #ffd27a; }
 .chip.running { background: #12331f; color: var(--good); }

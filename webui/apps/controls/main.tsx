@@ -4,7 +4,7 @@ import './style.css';
 import { captureKey, captureMouse, joinStickSources, sourceLabel, splitSources } from './keys';
 import {
   addControl, baseBindings, buildLayer, clampBox, conflicts, loadDraft, placeZone, removeControl, resolveZone,
-  setZoneBinding, toGuest, applyTemplate, type Binding, type Box, type Draft, type Session, type Zone,
+  setZoneBinding, toGuest, type Binding, type Box, type Draft, type Session, type Zone,
 } from './model';
 import { createRpc, rememberToken, resumeOnUnload, RpcError, takeToken, Unauthorized, type Rpc } from './rpc';
 
@@ -278,7 +278,6 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
   if (!session.surface.width || !session.surface.height) {
     return <div class="loading"><p>游戏画面尚未就绪，请在游戏出现画面后重试。</p><button onClick={() => void freeze()} disabled={busy}>重试</button></div>;
   }
-  const template = session.templates.find(item => item.id === draft.template);
   const apply = () => run(async () => {
     if (conflictedBindings.size) throw new Error('存在按键冲突（红色标出），请先修改。');
     const result = await rpc<{ saved: boolean; config_path: string | null }>('control.apply', { layer: buildLayer(draft, base) });
@@ -294,20 +293,10 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
     <header>
       <h1>按键设置</h1>
       <span class={`chip ${session.frozen ? 'frozen' : 'running'}`}>{session.frozen ? '已暂停' : '运行中'}</span>
-      <label class="template">模板
-        <select value={draft.template ?? ''} onChange={event => {
-          const chosen = session.templates.find(item => item.id === (event.target as HTMLSelectElement).value);
-          if (chosen) { update(applyTemplate(draft, chosen, session.surface)); setStatus({ kind: 'info', text: chosen.summary }); }
-        }}>
-          <option value="" disabled>选择类型模板</option>
-          {session.templates.map(item => <option value={item.id} title={item.summary}>{item.id}</option>)}
-        </select>
-      </label>
       <button onClick={() => { const added = addControl(draft, 'button', session.surface); update(added.draft); startCapture(added.zone, 'button'); }}>添加按钮</button>
       <button onClick={() => { const added = addControl(draft, 'stick', session.surface); update(added.draft); startCapture(added.zone, 'stick'); }}>添加摇杆</button>
       <span class="spacer" />
       <button disabled={busy || !session.frozen} onClick={() => void run(refreshFrame)}>刷新画面</button>
-      <button disabled={busy || !template} title="回到所选模板的按键" onClick={() => { if (template) update(applyTemplate(draft, template, session.surface)); }}>重置</button>
       <button disabled={busy || !dirty} title="回到上次应用的配置" onClick={() => void run(async () => { await load(); setStatus({ kind: 'info', text: '已放弃未应用的修改。' }); })}>放弃</button>
       {session.frozen ? <button disabled={busy} onClick={() => void resume()}>继续游戏</button>
                       : <button disabled={busy} onClick={() => void freeze()}>暂停并编辑</button>}
@@ -323,8 +312,7 @@ function Editor({ rpc, onUnauthorized }: { rpc: Rpc; onUnauthorized: () => void 
         {selectedZone ? <Inspector session={session} draft={draft} zone={selectedZone} conflictedBindings={conflictedBindings}
             onZone={onZone} onBinding={onBinding} onCapture={startCapture}
             onRemove={zone => { update(removeControl(draft, zone)); setSelected(null); }} />
-          : <section class="inspector"><p>点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。</p>
-              {template && <p><small>模板：{template.summary}</small></p>}</section>}
+          : <section class="inspector"><p>点击画面上的控件进行编辑，拖动移动，拖动圆点缩放。新控件放在画面中央。</p></section>}
         <OtherBindings draft={draft} conflictedBindings={conflictedBindings}
           onRemove={index => update({ ...draft, bindings: draft.bindings.filter((_, i) => i !== index) })} />
         <p class="path"><small>{session.config_path ? `保存位置：${session.config_path}` : '临时沙盒：修改不写入文件'}</small></p>

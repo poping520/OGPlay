@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/common/guest_call_limits.h"
 
 #include "ogplay/runtime/common/guest_cpu_config.h"
 #include "ogplay/runtime/common/guest_memory_facts.h"
@@ -182,7 +183,7 @@ struct AndroidGuestCallSessionRequest final {
     gles::AngleBackend backend;
     std::uint32_t width{};
     std::uint32_t height{};
-    std::uint64_t maximum_ticks_per_call{UINT64_C(10000000000)};
+    std::uint64_t maximum_ticks_per_call{kDefaultMaximumTicksPerCall};
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;
@@ -208,7 +209,7 @@ struct AndroidGuestProcessRequest final {
     gles::AngleBackend backend;
     std::uint32_t width{};
     std::uint32_t height{};
-    std::uint64_t maximum_ticks_per_call{UINT64_C(10000000000)};
+    std::uint64_t maximum_ticks_per_call{kDefaultMaximumTicksPerCall};
     std::uint32_t supersample_factor{1};
     VirtualFileSystem* filesystem{};
     std::function<void(std::string_view)> progress;

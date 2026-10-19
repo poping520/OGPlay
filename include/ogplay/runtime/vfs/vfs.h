@@ -240,6 +240,7 @@ public:
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);
     void SetWorkingDirectory(std::string_view path);
+    void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     // Returns the normalized node identity used internally by all VFS file
     // operations, including path aliases.

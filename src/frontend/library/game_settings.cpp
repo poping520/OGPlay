@@ -33,6 +33,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
             {"orientation", "display", "强制方向", std::string("automatic"), {"automatic", "portrait", "landscape"}, 0, 0, pending},
             {"fps_overlay", "display", "FPS 叠层", false, {}, 0, 0, pending},
             {"mute_unfocused", "audio", "失焦静音", false, {}, 0, 0, pending},
+            {"external_guest_dir", "data", "数据包 guest 挂载目录", std::string("/sdcard")},
             {"external_dir", "data", "数据包目录（留空明确禁用）", std::string(), {}, 0, 0, "", true},
             {"mcp_manual_step", "advanced", "MCP 手动步进", false},
             {"ephemeral_sandbox", "advanced", "临时沙盒（退出不保留本次存档）", false},
@@ -72,6 +73,7 @@ SettingValue EffectiveGameSetting(const GameSettings& settings, const LibraryCon
         const auto text = entry.metadata->external_dir->generic_u8string();
         return std::string(reinterpret_cast<const char*>(text.data()), text.size());
     }
+    if (key == "external_guest_dir" && entry.metadata) return entry.metadata->external_guest_dir;
     const auto& globals = SettingDefinitions();
     if (std::any_of(globals.begin(), globals.end(), [&](const auto& value) { return value.key == key; }))
         return Setting(global, key);
@@ -92,6 +94,8 @@ LibraryEntry EffectiveGameEntry(const LibraryEntry& entry, const GameSettings& s
         if (text.empty()) result.metadata->external_dir.reset();
         else result.metadata->external_dir = std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
     }
+    if (result.metadata) if (const auto it = settings.values.find("external_guest_dir"); it != settings.values.end())
+        result.metadata->external_guest_dir = std::get<std::string>(it->second);
     return result;
 }
 }

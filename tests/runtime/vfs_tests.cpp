@@ -197,13 +197,14 @@ TEST_CASE("VFS resolves relative paths from an explicit working directory") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array contents{std::byte{0x31}, std::byte{0x32}};
     vfs.PutFile("/sdcard/game/data/config.bin", contents, false);
-    CHECK_FALSE(vfs.WorkingDirectory().has_value());
+    CHECK(vfs.WorkingDirectory() == "/");
     CHECK_THROWS_AS(
         static_cast<void>(vfs.Open("./data/config.bin", {.read = true})),
         ogplay::runtime::VfsError);
 
     vfs.SetWorkingDirectory("/SDCARD/game/./");
-    CHECK(vfs.WorkingDirectory() == "/sdcard/game");
+    CHECK(vfs.WorkingDirectory() == "/SDCARD/game");
+    CHECK(vfs.CanonicalPath(".") == "/sdcard/game");
     const auto descriptor = vfs.Open("./data/CONFIG.bin", {.read = true});
     std::array<std::byte, 2> output{};
     CHECK(vfs.Read(descriptor, output) == output.size());

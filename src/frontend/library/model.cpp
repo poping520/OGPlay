@@ -190,6 +190,7 @@ void ExactKeys(const FlatToml& values,
 }
 
 void ValidateMetadata(const LibraryMetadata& metadata) {
+    ValidateExternalGuestDirectory(metadata.external_guest_dir);
     if (!core::IsValidPackageName(metadata.package)) {
         throw LibraryError(LibraryErrorCode::invalid_argument,
                             "library package name is invalid");
@@ -226,13 +227,17 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
             .append(EscapeToml(PathUtf8(*metadata.external_dir)))
             .push_back('\n');
     }
+    // The default stays implicit so entries remain readable by builds that
+    // predate the key; only a real override needs the newer reader.
+    if (metadata.external_guest_dir != "/sdcard")
+        text.append("external_guest_dir = ").append(EscapeToml(metadata.external_guest_dir)).push_back('\n');
     return text;
 }
 
 [[nodiscard]] LibraryMetadata DecodeMetadata(const std::string_view text) {
     const auto values = ParseFlatToml(text);
     ExactKeys(values, {"schema", "package", "display_name", "version_code",
-                       "version_name", "imported_at", "profile_id", "external_dir"});
+                       "version_name", "imported_at", "profile_id", "external_dir", "external_guest_dir"});
     if (ParseUint32(Require(values, "schema"), "schema") != kSchema) {
         throw std::runtime_error("library metadata schema is not supported");
     }
@@ -247,6 +252,9 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     }
     if (const auto item = values.find("external_dir"); item != values.end()) {
         metadata.external_dir = Utf8Path(ParseTomlString(item->second));
+    }
+    if (const auto item = values.find("external_guest_dir"); item != values.end()) {
+        metadata.external_guest_dir = ParseTomlString(item->second);
     }
     ValidateMetadata(metadata);
     return metadata;

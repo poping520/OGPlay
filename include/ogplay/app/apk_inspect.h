@@ -33,13 +33,12 @@ struct ApkImportAnalysis final {
     const std::filesystem::path& source_apk,
     const ProfileCatalog& profiles);
 
-// external_dir may be omitted even when required; the entry is imported with
-// the documented missing-data badge. A selected path must be an existing
+// external_dir is optional. A selected path must be an existing
 // absolute directory. imported_at is injected so tests never read wall time.
 [[nodiscard]] OGPLAYCORE_API LibraryImport BuildLibraryImport(
     const ApkImportAnalysis& analysis,
     std::optional<std::filesystem::path> external_dir,
-    std::string imported_at);
+    std::string imported_at, std::string external_guest_dir = "/sdcard");
 
 }  // namespace ogplay::app
 

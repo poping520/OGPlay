@@ -131,22 +131,48 @@ std::string NormalizePath(const std::string_view path) {
     return NormalizeAbsolutePath(path, false);
 }
 
+std::string PreserveSpelling(const std::string_view canonical,
+                             const std::string_view spelled) {
+    std::string result;
+    std::size_t cursor = 1;
+    while (cursor <= spelled.size()) {
+        const auto end = spelled.find('/', cursor);
+        const auto component = spelled.substr(
+            cursor, (end == std::string_view::npos ? spelled.size() : end) - cursor);
+        if (!component.empty() && component != ".") {
+            result.push_back('/');
+            result.append(component);
+        }
+        if (end == std::string_view::npos) break;
+        cursor = end + 1;
+    }
+    if (result.empty()) result = "/";
+    // Aliases or anything else that changed the node name fall back to the
+    // canonical spelling; only ASCII case differences are kept.
+    if (result.size() != canonical.size()) return std::string(canonical);
+    for (std::size_t index = 0; index < result.size(); ++index) {
+        if (FoldAscii(result[index]) != canonical[index]) return std::string(canonical);
+    }
+    return result;
+}
+
 std::string ResolvePath(
     const std::string_view path,
     const std::optional<std::string>& working_directory,
     const std::map<std::string, std::string, std::less<>>& aliases) {
     std::string normalized;
     if (!path.empty() && path.front() == '/') {
-        normalized = NormalizePath(path);
+        normalized = NormalizeAbsolutePath(path, true);
     } else {
         if (!working_directory.has_value()) {
-            throw VfsError(kEnotdir,
-                           "relative VFS path requires a working directory");
+            throw VfsError(kEnoent,
+                           "VFS working directory was removed");
         }
         auto absolute = *working_directory;
         if (absolute != "/") absolute.push_back('/');
         absolute.append(path);
-        normalized = NormalizePath(absolute);
+        if (path.empty()) throw VfsError(kEnoent, "VFS path is empty");
+        normalized = NormalizeAbsolutePath(absolute, true);
     }
     for (const auto& [alias, target] : aliases) {
         if (normalized == alias) return target;
@@ -447,12 +473,48 @@ void VirtualFileSystem::Impl::MountHostFile(
 }
 
 void VirtualFileSystem::Impl::SetWorkingDirectory(const std::string_view path) {
-        std::scoped_lock lock(mutex_);
-        const auto normalized = path == "/"
-                                    ? std::string("/")
-                                    : ResolvePath(path, std::nullopt, aliases_);
-        working_directory_ = normalized;
+    std::scoped_lock lock(mutex_);
+    if (path.empty()) throw VfsError(kEnoent, "VFS working directory path is empty");
+    if (path.front() != '/' && working_directory_unlinked_)
+        throw VfsError(kEnoent, "VFS working directory was removed");
+    auto resolved = path.front() == '/' ? std::string("/") : *working_directory_;
+    // Same length as resolved, differing only in ASCII case: getcwd reports
+    // the spelling the guest used, lookups keep the folded identity.
+    auto spelled = path.front() == '/' ? std::string("/") : working_directory_spelling_;
+    // Walk directories before consuming '..': missing/../ or file/../ must
+    // fail, rather than being reduced lexically to a successful path.
+    std::size_t cursor = path.front() == '/' ? 1 : 0;
+    while (cursor <= path.size()) {
+        const auto end = path.find('/', cursor);
+        const auto part = path.substr(cursor, (end == std::string_view::npos ? path.size() : end) - cursor);
+        if (part == "..") {
+            const auto slash = resolved.rfind('/');
+            resolved = slash == 0 ? "/" : resolved.substr(0, slash);
+            spelled = slash == 0 ? "/" : spelled.substr(0, slash);
+        } else if (!part.empty() && part != ".") {
+            resolved = ResolvePath((resolved == "/" ? resolved : resolved + "/") + std::string(part),
+                                   std::nullopt, aliases_);
+            spelled = PreserveSpelling(
+                resolved, (spelled == "/" ? spelled : spelled + "/") + std::string(part));
+        }
+        const auto info = StatLocked(resolved);
+        if (!info.is_directory) throw VfsError(kEnotdir, "VFS working directory is not a directory");
+        if (end == std::string_view::npos) break;
+        cursor = end + 1;
     }
+    working_directory_ = std::move(resolved);
+    working_directory_spelling_ = std::move(spelled);
+    working_directory_unlinked_ = false;
+}
+
+void VirtualFileSystem::Impl::SetWorkingDirectory(const std::int32_t descriptor) {
+    std::scoped_lock lock(mutex_);
+    const auto open = FindDescriptor(descriptor);
+    if (!open->directory) throw VfsError(kEnotdir, "VFS descriptor is not a directory");
+    working_directory_ = open->directory->unlinked ? std::nullopt : std::optional(open->directory->path);
+    working_directory_spelling_ = open->directory->spelling;
+    working_directory_unlinked_ = open->directory->unlinked;
+}
 
 void VirtualFileSystem::Impl::AddPathAlias(
         const std::string_view alias, const std::string_view target) {
@@ -470,7 +532,9 @@ void VirtualFileSystem::Impl::AddPathAlias(
 
 std::optional<std::string> VirtualFileSystem::Impl::WorkingDirectory() const {
         std::scoped_lock lock(mutex_);
-        return working_directory_;
+        if (working_directory_unlinked_) throw VfsError(kEnoent, "VFS working directory was removed");
+        if (!working_directory_) return std::nullopt;
+        return working_directory_spelling_;
     }
 
 std::string VirtualFileSystem::Impl::CanonicalPath(
@@ -493,6 +557,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         }
         std::unique_lock lock(mutex_);
         const auto normalized = ResolvePath(path, working_directory_, aliases_);
+        if (normalized == "/") throw VfsError(kEisdir, "VFS root is not a file");
         auto found = files_.find(normalized);
         if (found == files_.end()) {
             if (options.non_blocking) throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
@@ -1078,6 +1143,9 @@ void VirtualFileSystem::AddPathAlias(
 }
 void VirtualFileSystem::SetWorkingDirectory(const std::string_view path) {
     impl_->SetWorkingDirectory(path);
+}
+void VirtualFileSystem::SetWorkingDirectory(const std::int32_t descriptor) {
+    impl_->SetWorkingDirectory(descriptor);
 }
 std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
     return impl_->WorkingDirectory();

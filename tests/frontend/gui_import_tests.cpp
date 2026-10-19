@@ -92,9 +92,12 @@ TEST_CASE("GUI import accepts optional external data only as a real directory") 
         analysis, std::nullopt, "2026-08-13T00:00:00Z");
     CHECK(skipped.metadata.profile_id == "org.example.game");
     CHECK_FALSE(skipped.metadata.external_dir.has_value());
+    CHECK(skipped.metadata.external_guest_dir == "/sdcard");
 
     const auto selected = ogplay::app::BuildLibraryImport(
-        analysis, external, "2026-08-13T00:00:00Z");
+        analysis, external, "2026-08-13T00:00:00Z", "/sdcard/Games/Example");
+    CHECK(selected.metadata.external_guest_dir == "/sdcard/Games/Example");
+    CHECK_THROWS(static_cast<void>(ogplay::app::BuildLibraryImport(analysis, external, "now", "/data")));
     CHECK(selected.metadata.external_dir ==
           std::filesystem::absolute(external).lexically_normal());
     CHECK_THROWS_AS(static_cast<void>(ogplay::app::BuildLibraryImport(
@@ -145,12 +148,13 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     const auto ready = poll();
     CHECK(ready.Root().Member("result")->Member("state")->String() == "ready");
     CHECK(ready.Root().Member("result")->Member("summary")->Member("version_code")->UnsignedInteger() == 9);
-    call("library.import", R"({"job":"1","new_instance":true})");
+    call("library.import", R"({"job":"1","new_instance":true,"external_guest_dir":"/sdcard/Games/Example"})");
     CHECK(poll().Root().Member("result")->Member("state")->String() == "imported");
     const auto entries = store.LoadEntries();
     REQUIRE(entries.size() == 1);
     CHECK(entries[0].metadata->package == "org.example.game");
     CHECK(entries[0].metadata->version_code == 9);
+    CHECK(entries[0].metadata->external_guest_dir == "/sdcard/Games/Example");
     const auto analyzed = ogplay::app::AnalyzeApkImportFile(entries[0].directory / "game.apk", app::ProfileCatalog{});
     CHECK(analyzed.manifest.version_code == 9);
     CHECK_FALSE(std::filesystem::exists(temporary.path / ".gui-import-1"));

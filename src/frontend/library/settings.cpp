@@ -4,6 +4,21 @@
 #include <stdexcept>
 
 namespace ogplay::app {
+void ValidateExternalGuestDirectory(const std::string_view path) {
+    if (!core::IsValidUtf8(path) || path.size() > 4095 || (path != "/sdcard" && !path.starts_with("/sdcard/")))
+        throw std::invalid_argument("external_guest_dir must be /sdcard or a directory below it");
+    std::size_t start = 1;
+    while (start < path.size()) {
+        const auto end = path.find('/', start);
+        const auto part = path.substr(start, end == std::string_view::npos ? path.size() - start : end - start);
+        if (part.empty() || part == "." || part == ".." || part.find('\\') != std::string_view::npos ||
+            std::any_of(part.begin(), part.end(), [](unsigned char c) { return c < 0x20; }))
+            throw std::invalid_argument("external_guest_dir contains an invalid component");
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+}
+
 const std::vector<SettingDefinition>& SettingDefinitions() {
     // One schema drives persistence, RPC validation and the rendered controls.
     static const std::vector<SettingDefinition> fields{
@@ -66,6 +81,7 @@ void ValidateSettingValue(const SettingDefinition& field, const SettingValue& va
         if (*number < field.minimum || *number > field.maximum) throw std::invalid_argument(field.key + ": outside allowed range");
     }
     if (const auto text = std::get_if<std::string>(&value)) {
+        if (field.key == "external_guest_dir") ValidateExternalGuestDirectory(*text);
         if (text->size() > 32768 || !core::IsValidUtf8(*text) || std::any_of(text->begin(), text->end(), [](unsigned char c) { return c < 0x20; }))
             throw std::invalid_argument(field.key + ": invalid text");
         if (!field.choices.empty() && std::find(field.choices.begin(), field.choices.end(), *text) == field.choices.end())

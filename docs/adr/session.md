@@ -12,6 +12,7 @@
 - [ADR-0134 · 按键编辑器由游戏进程提供、GUI 打开，键位由用户配置](#adr-0134)
 - [ADR-0141 · Title Profile 仅保留 quirk 与输入模板的精确身份覆盖](#adr-0141)
 - [ADR-0142 · 输入与显示归用户数据，Profile 只含 identity 与 quirks](#adr-0142)
+- [ADR-0143 · 外部数据挂载归安装实例，cwd 与看门狗归通用实现](#adr-0143)
 
 <a id="adr-0020"></a>
 
@@ -366,3 +367,30 @@ Profile 只表达偏离 AOSP 的注册 quirk；输入/显示不随游戏身份�
 旧带 template 的用户文件须由用户自行修改，不静默忽略或迁移。旧 input_template 用户
 设置同样按未知键明确失败；用户数据不由任务自动改写。删除专用模板代码和测试，保留
 用户文件往返、RPC 保存/重载、设置继承及实际 F2 路径验证。
+
+<a id="adr-0143"></a>
+
+## ADR-0143 · 外部数据挂载归安装实例，cwd 与看门狗归通用实现
+
+- 日期：2026-10-19
+- 关联：[VFS-09](../tasks/vfs/VFS-09.md)，延续 ADR-0142/0074；Profile 仍只含 identity + quirks。
+
+### 决定
+
+external_guest_dir 是每个安装实例的用户数据，导入记录默认 /sdcard，游戏设置可覆盖；
+GUI 导入与设置、ResolveLaunch 和 CLI 共用校验，仅允许 /sdcard 或其子树。
+它只选择外部目录的 guest 挂载位置，不隐式改变 cwd，不扫描资源清单或修改宿主布局。
+VFS 初始 cwd 固定 /，guest 的 chdir/fchdir/getcwd 操作同一进程状态；错误经 ARM syscall
+返回真实 errno。沿用 VFS 的 ASCII case-fold 索引；宿主是否区分大小写不影响 guest 查找。
+
+原生单次调用的 watchdog 默认值由底层常量统一为 100 亿 tick，session 不再缩减为
+2 亿；它是有限的防挂死额度，不是 Android 设备事实，也不进入 Profile 或用户游戏设置。
+已有 observable-progress 续期机制保持。改为仅按“进展”停机需要先定义可被信任的进展：
+反复查询或无意义 IO 可能让死循环无限续期；墙钟还受宿主负载影响。此次保留已有机制和
+有限计算额度，避免同时改变调度/取消协议；显式小预算继续供失败边界测试使用。
+
+### 后果与边界
+
+用户可以适配不同外部数据包布局，无需官方 Profile。目录 cwd 支持点段与父目录逐段
+校验；非 cwd 的旧 traversal 限制不在此次扩张，任意 dirfd 的 *at 查找仍明确 ENOTSUP。
+不恢复 Profile runtime/data/audio，不把表面尺寸或标题身份当作文件系统兼容条件。

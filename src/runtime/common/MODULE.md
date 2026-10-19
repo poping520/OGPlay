@@ -24,3 +24,6 @@
 ## 禁止
 
 - 不把便利 helper、业务状态或可变全局状态堆入 common。
+
+Guest call 默认看门狗额度由 guest_call_limits.h 唯一定义为 100 亿 tick；上层可用
+显式请求做机器测试，不把它解释为 guest 设备参数或每游戏设置。

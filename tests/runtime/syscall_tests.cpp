@@ -1325,14 +1325,92 @@ TEST_CASE("Android large file IO exceeds sixteen MiB with bounded transfers") {
     CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 131072);
 }
 
-TEST_CASE("Android *at syscalls refuse relative paths instead of guessing") {
+TEST_CASE("VFS-09 Android cwd syscalls share directory state and validate errors") {
     MetadataSyscallFixture fixture;
-    fixture.WriteString(0x20000, "relative/path");
-    // No per-process cwd exists, so resolving these would pick a directory
-    // at random; -ENOTSUP says so.
-    CHECK(fixture.Call(323, {0xffffff9c, 0x20000, 0755, 0, 0, 0}) == -95);
-    CHECK(fixture.Call(328, {0xffffff9c, 0x20000, 0, 0, 0, 0}) == -95);
-    CHECK(fixture.Call(327, {0xffffff9c, 0x20000, 0x20200, 0, 0, 0}) == -95);
+    CHECK(fixture.Call(183, {0x20200, 2}) == 2);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20200}) == '/');
+    CHECK(fixture.memory.Read8(GuestAddress{0x20201}) == 0);
+    CHECK(fixture.Call(183, {0x20200, 1}) == -34);
+    CHECK(fixture.Call(183, {0x20200, 0}) == -34);
+    CHECK(fixture.Call(183, {0, 128}) == -14);
+    const std::array contents{std::byte{0x42}};
+    fixture.vfs.PutFile("/sdcard/Games/Example/data/file.bin", contents, false);
+    fixture.WriteString(0x20000, "/SDCARD/games/EXAMPLE");
+    CHECK(fixture.Call(12, {0x20000}) == 0);
+    fixture.WriteString(0x20000, "data/file.bin");
+    const auto fd = fixture.Call(5, {0x20000, 0});
+    REQUIRE(fd >= 3);
+    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(fd), 0x20200, 1}) == 1);
+    CHECK(fixture.memory.Read8(GuestAddress{0x20200}) == 0x42);
+    CHECK(fixture.Call(133, {static_cast<std::uint32_t>(fd)}) == -20);
+    CHECK(fixture.Call(133, {999}) == -9);
+    CHECK(fixture.Call(12, {0}) == -14);
+    for (const auto& [path, error] : std::vector<std::pair<std::string, int>>{
+             {"", -2}, {"missing", -2}, {"missing/..", -2},
+             {"data/file.bin", -20}, {"data/file.bin/..", -20}}) {
+        fixture.WriteString(0x20000, path);
+        CHECK(fixture.Call(12, {0x20000}) == error);
+        CHECK(fixture.vfs.WorkingDirectory() == "/SDCARD/games/EXAMPLE");
+    }
+    fixture.WriteString(0x20000, "data/..");
+    CHECK(fixture.Call(12, {0x20000}) == 0);
+    const auto dir = fixture.vfs.OpenDirectory("data");
+    fixture.WriteString(0x20000, "/");
+    CHECK(fixture.Call(12, {0x20000}) == 0);
+    CHECK(fixture.Call(133, {static_cast<std::uint32_t>(dir)}) == 0);
+    // getcwd keeps the guest spelling; lookups stay case-insensitive.
+    const std::string cwd = "/SDCARD/games/EXAMPLE/data";
+    CHECK(fixture.Call(183, {0x20200, static_cast<std::uint32_t>(cwd.size())}) == -34);
+    CHECK(fixture.Call(183, {0x20200, static_cast<std::uint32_t>(cwd.size() + 1)}) == cwd.size() + 1);
+    for (std::size_t i = 0; i <= cwd.size(); ++i)
+        CHECK(fixture.memory.Read8(GuestAddress{0x20200}.Add(i)) == (i == cwd.size() ? 0 : cwd[i]));
+    fixture.WriteString(0x20000, "/../../");
+    CHECK(fixture.Call(12, {0x20000}) == 0);
+    CHECK(fixture.vfs.WorkingDirectory() == "/");
+    fixture.vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
+    fixture.WriteString(0x20000, "/storage/emulated/0/GAMES/example");
+    CHECK(fixture.Call(12, {0x20000}) == 0);
+    // An alias renames the node, so its prefix takes the canonical spelling.
+    CHECK(fixture.vfs.WorkingDirectory() == "/sdcard/GAMES/example");
+    fixture.vfs.Close(dir);
+    CHECK(fixture.Call(133, {static_cast<std::uint32_t>(dir)}) == -9);
+}
+
+TEST_CASE("VFS-09 removed cwd does not rebind when the pathname is recreated") {
+    MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/empty");
+    const auto dir = fixture.vfs.OpenDirectory("/empty");
+    fixture.vfs.SetWorkingDirectory("/empty");
+    fixture.vfs.RemoveDirectory("/empty");
+    fixture.vfs.CreateDirectory("/empty");
+    CHECK(fixture.Call(183, {0x20200, 128}) == -2);
+    fixture.WriteString(0x20000, "relative");
+    CHECK(fixture.Call(5, {0x20000, 0}) == -2);
+    fixture.vfs.SetWorkingDirectory("/");
+    CHECK(fixture.Call(133, {static_cast<std::uint32_t>(dir)}) == 0);
+    CHECK(fixture.Call(183, {0x20200, 128}) == -2);
+}
+
+TEST_CASE("VFS-09 root directory reports Linux errors for file operations") {
+    MetadataSyscallFixture fixture;
+    fixture.WriteString(0x20000, "/");
+    CHECK(fixture.Call(5, {0x20000, 0}) == -21);
+    CHECK(fixture.Call(40, {0x20000}) == -16);
+    fixture.WriteString(0x20100, "/moved");
+    CHECK(fixture.Call(38, {0x20000, 0x20100}) == -16);
+    CHECK(fixture.vfs.Stat("/").is_directory);
+}
+
+TEST_CASE("VFS-09 Android AT_FDCWD uses the shared cwd") {
+    MetadataSyscallFixture fixture;
+    fixture.vfs.CreateDirectory("/parent");
+    fixture.vfs.SetWorkingDirectory("/parent");
+    fixture.WriteString(0x20000, "child");
+    CHECK(fixture.Call(323, {0xffffff9c, 0x20000, 0755}) == 0);
+    CHECK(fixture.vfs.Stat("/parent/child").is_directory);
+    CHECK(fixture.Call(327, {0xffffff9c, 0x20000, 0x20200}) == 0);
+    CHECK(fixture.Call(328, {0xffffff9c, 0x20000, 0x200}) == 0);
+    CHECK(fixture.Call(323, {7, 0x20000, 0755}) == -95);
 }
 
 TEST_CASE("VFS-05 generated proc files share ARM access open and read semantics") {

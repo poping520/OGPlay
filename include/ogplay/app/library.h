@@ -63,6 +63,7 @@ struct LibraryMetadata final {
     std::string imported_at;
     std::optional<std::string> profile_id;
     std::optional<std::filesystem::path> external_dir;
+    std::string external_guest_dir{"/sdcard"};
 
     bool operator==(const LibraryMetadata&) const = default;
 };

@@ -85,7 +85,8 @@ ApkImportAnalysis AnalyzeApkImportFile(
 LibraryImport BuildLibraryImport(
     const ApkImportAnalysis& analysis,
     std::optional<std::filesystem::path> external_dir,
-    std::string imported_at) {
+    std::string imported_at, std::string external_guest_dir) {
+    ValidateExternalGuestDirectory(external_guest_dir);
     if (imported_at.empty()) {
         throw LibraryError(LibraryErrorCode::invalid_argument,
                             "import timestamp must not be empty");
@@ -109,6 +110,7 @@ LibraryImport BuildLibraryImport(
                           ? std::optional<std::string>(analysis.profile->profile_id)
                           : std::nullopt,
         .external_dir = std::move(external_dir),
+        .external_guest_dir = std::move(external_guest_dir),
     };
     return {analysis.source_apk, std::move(metadata), analysis.icon_png};
 }

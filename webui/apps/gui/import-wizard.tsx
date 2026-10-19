@@ -14,6 +14,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [external, setExternal] = useState('');
+  const [externalGuest, setExternalGuest] = useState('/sdcard');
   const [confirmed, setConfirmed] = useState(false);
   const [source, setSource] = useState(file?.name ?? '');
   const summary = job?.summary;
@@ -36,7 +37,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal);
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalGuest('/sdcard');
       let initial: ImportJob;
       if (dropped) {
         setStage('正在读取拖入的 APK…');
@@ -78,6 +79,9 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
         <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) { setExternal(path); } })}>选择数据包目录</button>
         {external && <button disabled={busy} onClick={() => setExternal('')}>清除</button>}
       </div>
+      <label>数据包 guest 挂载目录<input aria-label="数据包 guest 挂载目录" value={externalGuest} disabled={busy}
+        onInput={event => setExternalGuest(event.currentTarget.value)} /></label>
+      <p>默认 /sdcard；可指定其下的目录。</p>
       {summary.existing_instances > 0 && <label class="import-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />已有 {summary.existing_instances} 个同包实例；新建实例，保留现有游戏及存档。</label>}
     </>}
     {error && <pre role="alert">{error}</pre>}
@@ -85,7 +89,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <button disabled={busy} onClick={() => void analyze(null)}>重新选择 APK</button>
       <button class="primary" disabled={busy || !canImport} onClick={() => void run(async () => {
         setStage('正在入库，请勿关闭…');
-        const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, ...(external ? { external_dir: external } : {}) });
+        const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, external_guest_dir: externalGuest, ...(external ? { external_dir: external } : {}) });
         const result = await poll(initial); setJob(result);
         if (result.state !== 'imported' || !result.installation_id) throw new Error('宿主未返回入库结果。');
         setStage('入库成功'); activeJob.current = '';

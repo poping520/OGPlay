@@ -369,6 +369,12 @@ ApplicationProcess::ApplicationProcess(
     const std::string& dex_fixture,
     const ogplay::runtime::dexvm::JavaObjectModelConfig heap) {
     if (working_directory.has_value()) {
+        std::string directory;
+        for (const auto& component : std::filesystem::path(*working_directory)) {
+            if (component == "/") continue;
+            directory += "/" + component.generic_string();
+            filesystem.CreateDirectory(directory);
+        }
         filesystem.SetWorkingDirectory(*working_directory);
     }
     const std::array inputs{

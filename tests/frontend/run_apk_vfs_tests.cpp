@@ -135,6 +135,14 @@ TEST_CASE("run-apk mounts an external directory without a Profile") {
         "/sdcard/Android/data/org.example.game/files/data.bin")));
     CHECK_NOTHROW(static_cast<void>(explicit_vfs.Stat(
         "/mnt/sdcard/Android/data/org.example.game/files/data.bin")));
+    CHECK_NOTHROW(static_cast<void>(explicit_vfs.Stat(
+        "/SDCARD/android/DATA/org.example.GAME/files/DATA.BIN")));
+    const auto mixed = explicit_vfs.Open(
+        "/SDCARD/android/DATA/org.example.GAME/files/DATA.BIN", {.read = true});
+    std::array<std::byte, 13> mixed_bytes{};
+    CHECK(explicit_vfs.Read(mixed, mixed_bytes) == mixed_bytes.size());
+    CHECK(std::string(reinterpret_cast<const char*>(mixed_bytes.data()), mixed_bytes.size()) == "external-data");
+    explicit_vfs.Close(mixed);
     CHECK_THROWS(static_cast<void>(explicit_vfs.Stat("/mnt/sdcard-other/data.bin")));
     CHECK_THROWS(static_cast<void>(explicit_vfs.Stat("/sdcard/data.bin")));
     ogplay::runtime::VirtualFileSystem invalid_vfs;

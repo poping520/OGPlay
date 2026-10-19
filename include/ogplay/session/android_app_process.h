@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/common/guest_call_limits.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -49,7 +50,7 @@ struct AndroidAppProcessRequest final {
     std::uint32_t api_level{19};
     std::uint32_t surface_width{800};
     std::uint32_t surface_height{480};
-    std::uint64_t maximum_ticks_per_call{UINT64_C(200000000)};
+    std::uint64_t maximum_ticks_per_call{runtime::kDefaultMaximumTicksPerCall};
     std::uint32_t supersample_factor{1};
     gles::AngleBackend backend;
     runtime::VirtualFileSystem* filesystem{};

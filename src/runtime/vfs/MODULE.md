@@ -132,3 +132,14 @@ mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄�
 PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/无效位，普通文件或目录返回
 不支持。可读性来自当前 offset 与 backing size，另一端关闭从真实 descriptor 表推导；
 不以任意文件写入作为 pipe 事件。调用侧负责等待和重新查询，VFS 不依赖 Looper。
+
+## 进程工作目录（VFS-09）
+
+初始 cwd 为 /，由同一 VFS 的 guest 线程共享；路径或目录 FD 的 SetWorkingDirectory
+原子校验并更新，失败不改变 cwd。路径形式逐目录检查，支持绝对/相对路径、点段与 ..，
+根的 .. 保持根；缺目录 ENOENT，文件充当目录 ENOTDIR，坏 FD EBADF。
+目录 FD 保留打开路径与删除事实，dup 共享；删除后同名重建不重绑旧 cwd/FD，
+WorkingDirectory 报 ENOENT。cwd 以折叠路径解析，getcwd 返回 guest 所用拼写（仅 ASCII 大小写
+可不同；经别名的前缀取规范拼写）。根目录作为文件打开 EISDIR，rmdir/rename 根 EBUSY。
+普通数据路径仍保持既有 traversal 拒绝，不对宿主文件系统执行 chdir 或路径探测；
+无 symlink/目录子树 rename。别名祖先参与目录存在性判断，挂载点与内容同样折叠大小写。

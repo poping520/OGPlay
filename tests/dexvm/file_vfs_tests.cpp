@@ -746,14 +746,12 @@ TEST_CASE("File APIs fail explicitly when the guest filesystem is unavailable") 
           "Ljava/lang/UnsupportedOperationException;");
 }
 
-TEST_CASE("File relative absolute path fails without a guest working directory") {
+TEST_CASE("File relative absolute path uses the initial guest root directory") {
     FileVm vm;
     const auto file = vm.NewFile("relative.dat");
-    const auto outcome = vm.CallOnOutcome(
-        file, "getAbsolutePath", "()Ljava/lang/String;");
-    REQUIRE(outcome.exception.IsValid());
-    CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
+    const auto outcome = vm.CallOnOutcome(file, "getAbsolutePath", "()Ljava/lang/String;");
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    CHECK(vm.interpreter.StringUtf8(outcome.value.ref) == "/relative.dat");
 }
 
 TEST_CASE("File.mkdirs creates real directories and reports the truth") {

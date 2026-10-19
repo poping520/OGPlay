@@ -6,8 +6,6 @@
 
 ## 公共 API
 
-- `MusicPlayer::Play`：接收已解析的编码音乐字节和循环事实；具体解码与输出由后续通用
-  实现提供。
 - `JavaSoundPoolState`：保存 Java SoundPool 的可用/已销毁生命周期；initialize/destroy
   只在真实状态迁移时递增计数，重复调用幂等；voice 按普通 pool / big 分类并以
   resource + instance 标识，stop-all 可按类别清理且可保留一个 resource；已加载资源按
@@ -44,6 +42,9 @@
 - M3/M6 定义对象表、PCM 队列、回调与媒体状态机。
 
 ## 不变量
+
+- 音乐与音效来源由标准 MediaPlayer/SoundPool 等 guest 音频 API 提供；不支持 Profile
+  封面音乐或 resource 编号到路径的替代映射（ADR-0141）。
 
 - guest buffer 所有权和回调线程明确。
 - 音频时钟接入统一 Clock；对象状态可快照。

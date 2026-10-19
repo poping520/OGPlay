@@ -297,3 +297,36 @@ OGPlay 的目标游戏几乎都为手机触屏设计。现有输入链路只能�
 - 编辑需要游戏运行；离线编辑（保存参考截图）留待后续。
 - loopback 服务新增写接口，需令牌鉴权并继续拒绝非 loopback Origin。
 - 需要把 `ControlLayer` 写回 TOML、`ControlMapper` 运行中重载，以及宿主快捷键过滤。
+
+<a id="adr-0141"></a>
+
+## ADR-0141 · Title Profile 仅保留 quirk 与输入模板的精确身份覆盖
+
+- 状态：Accepted
+- 日期：2026-10-19
+- 关联：[APS-15](../tasks/apk-startup/APS-15.md)
+- Supersedes：ADR-0022 的 runtime/data/audio/entry/presets 与旧 schema 条款，
+  ADR-0074 的 Profile 挂载与清单条款；输入合并及 ADR-0134 发布策略继续适用。
+
+### 决定
+
+Title Profile 重新定位为“仅 quirk + 输入模板的精确身份覆盖层”。v4 只包含
+identity（package、可选 versionCode/SO SHA-256 约束）、quirks（enabled 与 parameters）、
+input。移除 name、ABI 与全部 runtime/data/audio。只接受 v4，旧版本直接失败，
+不迁移、不留兼容分支；身份未命中继续通用启动，交叠范围失败。
+
+运行固定 API 19，ABI 交给 APK inventory resolver，入口由 Manifest MAIN/LAUNCHER
+（含 alias）推导。逻辑表面默认 800×480，VM 与 guest call 使用各自默认值；
+宿主显式运行选项继续表达用户控制，不从 Profile 注入预算或静态 Java 字段。
+
+`--obb` 给出时按 Android 标准目录 `/sdcard/Android/obb/<package>/` 挂载原文件，
+游戏自行解析；不再展开归档到 Profile 自定义路径。外部目录保留显式运行选项，
+guest cwd 为 `/`；无资源清单预检或工作目录覆盖。音频只经标准 MediaPlayer /
+SoundPool（以及既有标准底层音频 API），删除 Profile 封面音乐与资源编号映射。
+
+### 后果
+
+普通 APK 的名称、启动、ABI、资源与媒体行为回到标准能力。需要偏离 AOSP 的差异须作为
+独立注册 quirk，并有“关闭即失败”的测试，禁止用资源预检或 Java 字段预置模拟安装状态。
+前端只显示身份覆盖、quirk 与输入模板，不再声称 Profile 指定了必需数据包。
+删除能力路径同步删除专用测试、CMake 源项和账本条目，标准能力回归继续保留。

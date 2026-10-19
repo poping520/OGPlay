@@ -464,11 +464,7 @@ ogplay_add_module(ogplay_session Session
     src/session/dex_activity_lifecycle.cpp
     src/session/ui_compositor.cpp
     src/session/lifecycle.cpp
-    src/session/profile_entry_scope.cpp
-    src/session/profile_asset_bundle.cpp
     src/session/profile_apk.cpp
-    src/session/profile_audio.cpp
-    src/session/profile_vfs.cpp
     src/session/quirk_registry.cpp
     src/session/session.cpp
     src/session/title_profile.cpp

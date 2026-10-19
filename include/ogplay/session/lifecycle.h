@@ -5,7 +5,6 @@
 #include <string_view>
 
 #include "ogplay/hal/clock.h"
-#include "ogplay/session/title_profile.h"
 
 namespace ogplay::session {
 
@@ -15,7 +14,6 @@ enum class LifecycleCallbackRoute : std::uint8_t {
 };
 
 struct LifecycleTemplateDescription final {
-    ProfileLifecycle lifecycle{ProfileLifecycle::dex_activity};
     LifecycleCallbackRoute startup{LifecycleCallbackRoute::framework_activity};
     LifecycleCallbackRoute frame_lifecycle{
         LifecycleCallbackRoute::framework_activity};
@@ -60,7 +58,7 @@ public:
 
 class LifecycleFrameRunner final {
 public:
-    LifecycleFrameRunner(ProfileLifecycle lifecycle, hal::Clock& clock,
+    LifecycleFrameRunner(hal::Clock& clock,
                          LifecycleFrameHost& host);
 
     [[nodiscard]] LifecycleFrameState Start();
@@ -80,8 +78,7 @@ private:
     std::uint64_t frame_{};
 };
 
-[[nodiscard]] LifecycleTemplateDescription DescribeLifecycle(
-    ProfileLifecycle lifecycle);
+[[nodiscard]] LifecycleTemplateDescription DescribeLifecycle();
 [[nodiscard]] std::string_view ToString(LifecycleCallbackRoute route) noexcept;
 [[nodiscard]] std::string_view ToString(LifecycleRunState state) noexcept;
 

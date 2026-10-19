@@ -100,3 +100,4 @@ APS-10.md
 | [APS-12](APS-12.md) | SurfaceTexture 端点契约与 ANGLE 外部纹理后端验证 |
 | [APS-13](APS-13.md) | 有界 Surface 队列与 ANGLE 图像交付 |
 | [APS-14](APS-14.md) | SurfaceTexture 原版 Java 与 Surface 端点闭环 |
+| [APS-15](APS-15.md) | Title Profile v4 最小身份覆盖层 |

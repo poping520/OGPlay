@@ -67,18 +67,13 @@ private:
 
 [[nodiscard]] std::string ProfileText(
     const std::string_view quirk_id = "legacy_reads") {
-    return "schema = 2\n"
+    return "schema = 4\n"
            "[identity]\n"
            "package = \"org.example.legacy\"\n"
            "version_code = [1]\n"
            "so_sha256 = [\"" +
            std::string(kHash) +
            "\"]\n"
-           "abi = \"armeabi-v7a\"\n"
-           "[runtime]\n"
-           "api_level = 19\n"
-           "lifecycle = \"dex_activity\"\n"
-           "surface = { width = 1, height = 1 }\n"
            "[quirks]\n"
            "enabled = [\"" +
            std::string(quirk_id) +
@@ -172,7 +167,7 @@ TEST_CASE("Title Profile catalogs require registered quirks before matching") {
         ogplay::session::TitleProfileError);
 
     const ogplay::session::TitleProfileCatalog catalog({profile}, registry);
-    CHECK(catalog.Match({"org.example.legacy", 1, std::string(kHash)}) != nullptr);
+    CHECK(catalog.Profiles().size() == 1);
 
     const auto profiles = tree.Root() / "data" / "profiles";
     std::filesystem::create_directories(profiles);

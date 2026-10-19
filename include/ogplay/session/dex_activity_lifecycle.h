@@ -58,8 +58,8 @@ struct DeepTouchDispatchResult final {
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
 // render loop calls the captured Renderer's onDrawFrame; input dispatches
-// through interpreted onTouchEvent/onKeyDown overrides. Profile entry scope
-// may select the Activity and initialize real static fields before Start().
+// through interpreted onTouchEvent/onKeyDown overrides. Manifest MAIN/LAUNCHER
+// selects the initial Activity.
 
 struct DexActivityLifecycleBindings final {
     runtime::DexVmGuestBridge* bridge{};

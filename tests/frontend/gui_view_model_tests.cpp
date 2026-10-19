@@ -92,6 +92,7 @@ TEST_CASE("library tile status follows the documented strict priority") {
     damaged.damage_reason = "bad metadata";
     auto no_profile = Entry("org.example.unsupported", "Unsupported", std::nullopt);
     auto no_external = Entry("org.example.no_data", "No data");
+    no_external.metadata->external_dir = temporary.path / "missing";
     auto running = Entry("org.example.running", "Running");
     running.metadata->external_dir = available;
     auto ready = Entry("org.example.ready", "Ready");
@@ -99,7 +100,6 @@ TEST_CASE("library tile status follows the documented strict priority") {
         damaged, no_profile, no_external, running, ready};
     const ogplay::frontend::LibraryViewContext context{
         .running_packages = {damaged.key, no_profile.key, no_external.key, running.key},
-        .external_required_packages = {no_external.key, running.key},
     };
     const auto tiles = ogplay::frontend::BuildLibraryTiles(entries, context);
     const auto status = [&tiles](const std::string& key) {
@@ -148,7 +148,6 @@ TEST_CASE("unavailable Profile catalog fails closed before launch readiness") {
     const std::vector<ogplay::app::LibraryEntry> entries{damaged, ready};
     const auto tiles = ogplay::frontend::BuildLibraryTiles(
         entries, {.running_packages = {ready.key},
-                  .external_required_packages = {},
                   .profile_catalog_error = "catalog fixture unavailable"});
     REQUIRE(tiles.size() == 2);
     const auto find = [&tiles](const std::string& key)
@@ -205,7 +204,6 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
     entry.metadata->profile_id = "exact.profile";
     entry.metadata->external_dir = external;
     const ogplay::frontend::LibraryViewContext context{
-        .external_required_packages = {entry.key},
     };
     const auto tiles = ogplay::frontend::BuildLibraryTiles(
         std::span<const ogplay::app::LibraryEntry>(&entry, 1), context);
@@ -229,13 +227,13 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
 TEST_CASE("library detail distinguishes external and damaged states") {
     auto optional = Entry("org.example.optional", "Optional");
     auto missing = Entry("org.example.missing", "Missing");
+    missing.metadata->external_dir = "/ogplay-nonexistent-external";
     auto unknown = Entry("org.example.unknown", "Unknown", std::nullopt);
     auto damaged = Entry("org.example.damaged", "Damaged");
     damaged.metadata.reset();
     damaged.damage_reason = "broken fixture";
 
     const ogplay::frontend::LibraryViewContext context{
-        .external_required_packages = {missing.key},
     };
     const std::vector<ogplay::app::LibraryEntry> entries{
         optional, missing, unknown, damaged};
@@ -258,7 +256,7 @@ TEST_CASE("library detail distinguishes external and damaged states") {
     CHECK(detail(missing.key).external.status ==
           ogplay::frontend::LibraryConditionStatus::missing);
     CHECK(detail(unknown.key).external.status ==
-          ogplay::frontend::LibraryConditionStatus::unavailable);
+          ogplay::frontend::LibraryConditionStatus::not_required);
     const auto damaged_detail = detail(damaged.key);
     CHECK(damaged_detail.external.status ==
           ogplay::frontend::LibraryConditionStatus::unavailable);

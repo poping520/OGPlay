@@ -738,7 +738,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--watch", action="store_true",
                         help="incremental authoring mode (see module doc)")
     parser.add_argument("--dexvm-interpreter", choices=("switch", "threaded"),
-                        help="override the selected profile's DexVM backend")
+                        help="select the DexVM interpreter backend")
     return parser.parse_args(argv)
 
 

@@ -205,10 +205,9 @@ TEST_CASE("GUI library facts use instance external directory and isolate broken 
     Fixture fixture;
     const auto directory = fixture.root / "library/org.example.game";
     std::ofstream(directory / "meta.toml", std::ios::app) << "profile_id = \"org.example.game\"\n";
-    fixture.context.external_required_packages = {"org.example.game"};
     const auto list = [&] { return Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})")); };
     auto before = list();
-    CHECK(before.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "missing_external");
+    CHECK(before.Root().Member("result")->Member("items")->Element(0)->Member("status")->String() == "ready");
     const auto external = fixture.root / "external"; std::filesystem::create_directories(external);
     ogplay::app::SaveGameSettings(directory, {{{"external_dir", external.generic_string()}}});
     auto after = list();
@@ -314,7 +313,7 @@ TEST_CASE("GUI import snapshot creates a distinct instance and rejects repeated 
     REQUIRE(summary);
     CHECK(summary->Member("existing_instances")->UnsignedInteger() == 1);
     CHECK(summary->Member("version_code")->UnsignedInteger() == 0);
-    CHECK(summary->Member("requires_external")->IsNull());
+    CHECK_FALSE(summary->Member("requires_external").has_value());
     CHECK_FALSE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":false})")).Root().Member("result"));
     REQUIRE(Decode(ImportCall(fixture, "library.import", R"({"job":"1","new_instance":true})")).Root().Member("result"));
     const auto completed = Decode(PollImport(fixture));

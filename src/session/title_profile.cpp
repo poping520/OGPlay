@@ -15,10 +15,6 @@
 #include "title_profile_toml.h"
 
 namespace ogplay::session {
-namespace detail {
-[[nodiscard]] ProfileRuntime DecodeProfileRuntime(const TomlValue::Table& root,
-                                                  std::uint32_t schema);
-}
 namespace {
 
 using Table = detail::TomlValue::Table;
@@ -82,11 +78,6 @@ template <typename Value>
     return result;
 }
 
-[[nodiscard]] bool AsBoolean(const detail::TomlValue& value,
-                             const std::string_view field) {
-    return As<bool>(value, field, "boolean");
-}
-
 void ExactKeys(const Table& table, const std::string_view field,
                const std::initializer_list<std::string_view> allowed,
                const std::initializer_list<std::string_view> required = {}) {
@@ -101,69 +92,6 @@ void ExactKeys(const Table& table, const std::string_view field,
            });
 }
 
-void ValidateAbsoluteGuestPath(const std::string_view path,
-                               const std::string_view field) {
-    if (path.empty() || path.front() != '/' || path.find("//") != std::string_view::npos) {
-        throw TitleProfileError(std::string(field) +
-                                " must be a normalized absolute guest path");
-    }
-    std::size_t begin = 1;
-    while (begin <= path.size()) {
-        const auto end = path.find('/', begin);
-        const auto component = path.substr(
-            begin, end == std::string_view::npos ? path.size() - begin : end - begin);
-        if (component == "." || component == ".." ||
-            (component.empty() && path.size() != 1)) {
-            throw TitleProfileError(std::string(field) +
-                                    " must be a normalized absolute guest path");
-        }
-        if (end == std::string_view::npos) break;
-        begin = end + 1;
-    }
-}
-
-void ValidateRelativePath(const std::string_view path, const std::string_view field) {
-    if (path.empty() || path.front() == '/' || path.back() == '/' ||
-        path.find('\\') != std::string_view::npos ||
-        path.find("//") != std::string_view::npos) {
-        throw TitleProfileError(std::string(field) +
-                                " must be a normalized relative path");
-    }
-    std::size_t begin = 0;
-    while (begin <= path.size()) {
-        const auto end = path.find('/', begin);
-        const auto component = path.substr(
-            begin, end == std::string_view::npos ? path.size() - begin : end - begin);
-        if (component == "." || component == "..") {
-            throw TitleProfileError(std::string(field) +
-                                    " must be a normalized relative path");
-        }
-        if (end == std::string_view::npos) break;
-        begin = end + 1;
-    }
-}
-
-void ValidateSoundPoolPathPattern(const std::string_view pattern) {
-    const auto begin = pattern.find("{resource");
-    const auto end = begin == std::string_view::npos
-                         ? std::string_view::npos
-                         : pattern.find('}', begin);
-    if (begin == std::string_view::npos || end == std::string_view::npos ||
-        pattern.find('{', begin + 1U) != std::string_view::npos ||
-        pattern.find('}', end + 1U) != std::string_view::npos) {
-        throw TitleProfileError(
-            "audio.sound_pool.path_pattern must contain one resource placeholder");
-    }
-    const auto placeholder = pattern.substr(begin, end - begin + 1U);
-    if (placeholder == "{resource}") return;
-    if (placeholder.size() != 13U ||
-        !placeholder.starts_with("{resource:0") ||
-        placeholder[11] < '1' || placeholder[11] > '9') {
-        throw TitleProfileError(
-            "audio.sound_pool.path_pattern resource placeholder is invalid");
-    }
-}
-
 template <typename Value>
 void RequireUnique(const std::vector<Value>& values, const std::string_view field) {
     std::set<Value> unique(values.begin(), values.end());
@@ -172,37 +100,10 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     }
 }
 
-[[nodiscard]] ProfileSource DecodeSource(const std::string_view value,
-                                         const std::string_view field) {
-    if (value == "apk") return ProfileSource::apk;
-    if (value == "obb") return ProfileSource::obb;
-    if (value == "external") return ProfileSource::external;
-    throw TitleProfileError(std::string(field) + " is unsupported");
-}
-
-[[nodiscard]] ProfileAbi DecodeAbi(const std::string_view value) {
-    if (value == "armeabi") return ProfileAbi::armeabi;
-    if (value == "armeabi-v7a") return ProfileAbi::armeabi_v7a;
-    throw TitleProfileError("identity.abi must be armeabi or armeabi-v7a");
-}
-
-[[nodiscard]] bool ValidAbi(const ProfileAbi abi) noexcept {
-    return abi == ProfileAbi::armeabi || abi == ProfileAbi::armeabi_v7a;
-}
-
 [[nodiscard]] ProfileIdentity DecodeIdentity(const Table& root,
-                                             const std::string_view expected_package,
-                                             const std::uint32_t schema) {
+                                             const std::string_view expected_package) {
     const auto& table = AsTable(Require(root, "identity", "identity"), "identity");
-    if (schema == 3U) {
-        ExactKeys(table, "identity",
-                  {"package", "name", "version_code", "so_sha256"},
-                  {"package"});
-    } else {
-        ExactKeys(table, "identity",
-                  {"package", "name", "version_code", "so_sha256", "abi"},
-                  {"package", "version_code", "so_sha256", "abi"});
-    }
+    ExactKeys(table, "identity", {"package", "version_code", "so_sha256"}, {"package"});
     ProfileIdentity result;
     result.package = AsString(Require(table, "package", "identity.package"),
                               "identity.package");
@@ -211,9 +112,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
     }
     if (result.package != expected_package) {
         throw TitleProfileError("identity.package does not match the profile filename");
-    }
-    if (const auto* name = Optional(table, "name")) {
-        result.name = AsString(*name, "identity.name");
     }
     if (const auto* version_value = Optional(table, "version_code")) {
         const auto& versions = AsArray(*version_value, "identity.version_code");
@@ -241,102 +139,6 @@ void RequireUnique(const std::vector<Value>& values, const std::string_view fiel
             result.so_sha256.push_back(std::move(digest));
         }
         RequireUnique(result.so_sha256, "identity.so_sha256");
-    }
-    if (schema != 3U) {
-        result.abi = DecodeAbi(
-            AsString(Require(table, "abi", "identity.abi"), "identity.abi"));
-        result.has_abi_guard = true;
-    } else {
-        result.has_abi_guard = false;
-    }
-    return result;
-}
-
-[[nodiscard]] ProfileData DecodeData(const detail::TomlValue& value) {
-    const auto& table = AsTable(value, "data");
-    ExactKeys(table, "data", {"mounts", "working_directory", "manifest"});
-    ProfileData result;
-    if (const auto* mounts = Optional(table, "mounts")) {
-        const auto& values = AsArray(*mounts, "data.mounts");
-        for (const auto& item : values) {
-            const auto& mount = AsTable(item, "data.mounts[]");
-            ExactKeys(mount, "data.mounts[]", {"guest", "source", "required"},
-                      {"guest", "source", "required"});
-            ProfileMount decoded;
-            decoded.guest =
-                AsString(Require(mount, "guest", "data.mounts[].guest"),
-                         "data.mounts[].guest");
-            ValidateAbsoluteGuestPath(decoded.guest, "data.mounts[].guest");
-            decoded.source = DecodeSource(
-                AsString(Require(mount, "source", "data.mounts[].source"),
-                         "data.mounts[].source"),
-                "data.mounts[].source");
-            decoded.required =
-                AsBoolean(Require(mount, "required", "data.mounts[].required"),
-                          "data.mounts[].required");
-            result.mounts.push_back(std::move(decoded));
-        }
-    }
-    if (const auto* directory = Optional(table, "working_directory")) {
-        result.working_directory = AsString(*directory, "data.working_directory");
-        ValidateAbsoluteGuestPath(*result.working_directory, "data.working_directory");
-    }
-    if (const auto* manifest = Optional(table, "manifest")) {
-        const auto& values = AsArray(*manifest, "data.manifest");
-        for (const auto& item : values) {
-            const auto& entry = AsTable(item, "data.manifest[]");
-            ExactKeys(entry, "data.manifest[]", {"path", "required"},
-                      {"path", "required"});
-            ProfileManifestEntry decoded;
-            decoded.path =
-                AsString(Require(entry, "path", "data.manifest[].path"),
-                         "data.manifest[].path");
-            ValidateRelativePath(decoded.path, "data.manifest[].path");
-            decoded.required =
-                AsBoolean(Require(entry, "required", "data.manifest[].required"),
-                          "data.manifest[].required");
-            result.manifest.push_back(std::move(decoded));
-        }
-    }
-    return result;
-}
-
-[[nodiscard]] ProfileAudio DecodeAudio(const detail::TomlValue& value) {
-    const auto& table = AsTable(value, "audio");
-    ExactKeys(table, "audio", {"cover_music", "sound_pool"});
-    ProfileAudio result;
-    if (const auto* music = Optional(table, "cover_music")) {
-        const auto& cover = AsTable(*music, "audio.cover_music");
-        ExactKeys(cover, "audio.cover_music", {"source", "path", "loop"},
-                  {"source", "path", "loop"});
-        ProfileCoverMusic decoded;
-        decoded.source = DecodeSource(
-            AsString(Require(cover, "source", "audio.cover_music.source"),
-                     "audio.cover_music.source"),
-            "audio.cover_music.source");
-        decoded.path = AsString(Require(cover, "path", "audio.cover_music.path"),
-                                "audio.cover_music.path");
-        ValidateRelativePath(decoded.path, "audio.cover_music.path");
-        decoded.loop = AsBoolean(Require(cover, "loop", "audio.cover_music.loop"),
-                                 "audio.cover_music.loop");
-        result.cover_music = std::move(decoded);
-    }
-    if (const auto* sound_pool = Optional(table, "sound_pool")) {
-        const auto& bank = AsTable(*sound_pool, "audio.sound_pool");
-        ExactKeys(bank, "audio.sound_pool", {"source", "path_pattern"},
-                  {"source", "path_pattern"});
-        ProfileSoundPool decoded;
-        decoded.source = DecodeSource(
-            AsString(Require(bank, "source", "audio.sound_pool.source"),
-                     "audio.sound_pool.source"),
-            "audio.sound_pool.source");
-        decoded.path_pattern = AsString(
-            Require(bank, "path_pattern", "audio.sound_pool.path_pattern"),
-            "audio.sound_pool.path_pattern");
-        ValidateRelativePath(decoded.path_pattern,
-                             "audio.sound_pool.path_pattern");
-        ValidateSoundPoolPathPattern(decoded.path_pattern);
-        result.sound_pool = std::move(decoded);
     }
     return result;
 }
@@ -455,29 +257,12 @@ TitleProfile LoadTitleProfileText(const std::string_view text,
         throw TitleProfileError("expected package is invalid");
     }
     const auto root = detail::ParseDataToml(text);
-    ExactKeys(root, "profile",
-              {"schema", "identity", "runtime", "data", "audio", "java",
-               "quirks", "input"},
-              {"schema", "identity", "runtime"});
+    ExactKeys(root, "profile", {"schema", "identity", "quirks", "input"},
+              {"schema", "identity"});
     TitleProfile result;
     result.schema = static_cast<std::uint32_t>(
-        AsInteger(Require(root, "schema", "schema"), "schema", 1, 3));
-    result.identity = DecodeIdentity(root, expected_package, result.schema);
-    result.runtime = detail::DecodeProfileRuntime(root, result.schema);
-    if (result.schema != 1U && Optional(root, "java") != nullptr) {
-        throw TitleProfileError("schema 2/3 forbids legacy java replay glue");
-    }
-    if (const auto* data = Optional(root, "data")) result.data = DecodeData(*data);
-    if (const auto* audio = Optional(root, "audio")) result.audio = DecodeAudio(*audio);
-    if ((result.runtime.entry.has_value() || !result.runtime.presets.empty()) &&
-        (!result.data.has_value() ||
-         std::none_of(result.data->manifest.begin(), result.data->manifest.end(),
-                      [](const ProfileManifestEntry& entry) {
-                          return entry.required;
-                      }))) {
-        throw TitleProfileError(
-            "runtime entry scope requires a required data manifest fact");
-    }
+        AsInteger(Require(root, "schema", "schema"), "schema", 4, 4));
+    result.identity = DecodeIdentity(root, expected_package);
     if (const auto* quirks = Optional(root, "quirks")) {
         result.quirks = DecodeQuirks(*quirks);
     }
@@ -533,13 +318,8 @@ TitleProfileCatalog::TitleProfileCatalog(std::vector<TitleProfile> profiles,
 void TitleProfileCatalog::Validate(const QuirkRegistry* registry) const {
     for (const auto& profile : profiles_) {
         const auto& identity = profile.identity;
-        const bool legacy = profile.schema == 1U || profile.schema == 2U;
-        if ((profile.schema < 1U || profile.schema > 3U) ||
+        if (profile.schema != 4U ||
             !core::IsValidPackageName(identity.package) ||
-            (legacy && (identity.version_codes.empty() ||
-                        identity.so_sha256.empty() ||
-                        !identity.has_abi_guard || !ValidAbi(identity.abi))) ||
-            (!legacy && identity.has_abi_guard) ||
             std::any_of(identity.version_codes.begin(), identity.version_codes.end(),
                         [](const std::uint32_t version) { return version == 0; }) ||
             std::any_of(identity.so_sha256.begin(), identity.so_sha256.end(),
@@ -584,58 +364,8 @@ TitleProfileCatalog TitleProfileCatalog::LoadDirectory(
     return TitleProfileCatalog(LoadProfileDirectory(directory), registry);
 }
 
-const TitleProfile* TitleProfileCatalog::Match(const TitleIdentity& identity) const {
-    if (!core::IsValidPackageName(identity.package) || identity.version_code == 0 ||
-        !ValidHash(identity.so_sha256)) {
-        throw TitleProfileError(
-            "Title Profile match requires package, positive versionCode and SHA-256");
-    }
-    const TitleProfile* match = nullptr;
-    for (const auto& profile : profiles_) {
-        // This exact-fingerprint API is retained for legacy v1/v2 callers.
-        // Schema v3 applicability is resolved by SelectApkCompatibilityProfile.
-        if (profile.schema == 3U) continue;
-        const auto& candidate = profile.identity;
-        if (candidate.package == identity.package &&
-            std::find(candidate.version_codes.begin(), candidate.version_codes.end(),
-                      identity.version_code) != candidate.version_codes.end() &&
-            std::find(candidate.so_sha256.begin(), candidate.so_sha256.end(),
-                      identity.so_sha256) != candidate.so_sha256.end()) {
-            if (match != nullptr) {
-                throw TitleProfileError("Title Profile identity is ambiguous");
-            }
-            match = &profile;
-        }
-    }
-    return match;
-}
-
 const std::vector<TitleProfile>& TitleProfileCatalog::Profiles() const noexcept {
     return profiles_;
-}
-
-std::string_view ToString(const ProfileLifecycle lifecycle) noexcept {
-    switch (lifecycle) {
-    case ProfileLifecycle::dex_activity: return "dex_activity";
-    }
-    return "unknown";
-}
-
-std::string_view ToString(const ProfileSource source) noexcept {
-    switch (source) {
-    case ProfileSource::apk: return "apk";
-    case ProfileSource::obb: return "obb";
-    case ProfileSource::external: return "external";
-    }
-    return "unknown";
-}
-
-std::string_view ToString(const ProfileAbi abi) noexcept {
-    switch (abi) {
-    case ProfileAbi::armeabi: return "armeabi";
-    case ProfileAbi::armeabi_v7a: return "armeabi-v7a";
-    }
-    return "unknown";
 }
 
 }  // namespace ogplay::session

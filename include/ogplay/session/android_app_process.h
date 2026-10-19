@@ -46,7 +46,6 @@ struct AndroidAppProcessRequest final {
     std::vector<std::uint8_t> dex_bytes;
     std::vector<std::byte> icu_data;
     std::shared_ptr<runtime::DexVmAndroidContext> context;
-    std::optional<std::string> launcher_override;
     std::uint32_t api_level{19};
     std::uint32_t surface_width{800};
     std::uint32_t surface_height{480};

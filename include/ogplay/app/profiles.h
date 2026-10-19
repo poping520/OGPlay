@@ -8,8 +8,7 @@
 #include <vector>
 namespace ogplay::app {
 struct ProfileSummary final {
-    std::string profile_id, display_name;
-    bool requires_external_data{};
+    std::string profile_id;
     std::vector<std::string> quirks{};
     std::optional<std::string> input_template{};
 };

@@ -33,7 +33,6 @@ enum class LibraryConditionStatus : std::uint8_t {
 
 struct LibraryViewContext final {
     std::vector<std::string> running_packages;
-    std::vector<std::string> external_required_packages;
     std::optional<std::string> profile_catalog_error;
     std::map<std::string, std::string> profile_errors;
 };

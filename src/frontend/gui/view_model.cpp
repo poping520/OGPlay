@@ -75,17 +75,13 @@ std::vector<LibraryTile> BuildLibraryTiles(
         } else if (!entry.metadata->profile_id.has_value()) {
             tile.status = LibraryTileStatus::missing_profile;
             tile.detail = "暂无精确 Profile；将尝试通用启动路径，兼容性尚未确认。";
-        } else if (Contains(context.external_required_packages, entry.key)) {
+        } else if (entry.metadata->external_dir.has_value()) {
             std::error_code error;
             const auto external = entry.metadata->external_dir;
-            if (!external.has_value() ||
-                !std::filesystem::is_directory(*external, error) || error) {
+            if (!std::filesystem::is_directory(*external, error) || error) {
                 tile.status = LibraryTileStatus::missing_external;
-                tile.detail = external.has_value()
-                                  ? "记录的数据包目录不可用：" +
-                                        PathUtf8(*external) +
-                                        "。请重新导入并指认目录。"
-                                  : "未指认必需数据包目录；请重新导入并指认目录。";
+                tile.detail = "记录的数据包目录不可用：" + PathUtf8(*external) +
+                              "。请重新选择目录。";
             } else if (tile.running) {
                 tile.status = LibraryTileStatus::running;
                 tile.detail = "游戏正在运行；请先退出游戏。";
@@ -143,41 +139,26 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
                                    std::to_string(metadata.version_code)
                              : metadata.version_name;
         if (profile_error.has_value()) {
-            result.profile = {
-                LibraryConditionStatus::unavailable, "无法判断",
-                "Profile 目录不可用：" + *profile_error};
-            result.external = {
-                LibraryConditionStatus::unavailable, "无法判断",
-                "Profile 不可用，无法判断是否需要外部数据。"};
+            result.profile = {LibraryConditionStatus::unavailable, "无法判断",
+                              "Profile 目录不可用：" + *profile_error};
         } else if (!metadata.profile_id.has_value()) {
             result.profile = {LibraryConditionStatus::missing, "未匹配",
                               "暂无精确 Profile；将使用通用启动路径。"};
-            result.external = {
-                LibraryConditionStatus::unavailable, "无法判断",
-                "缺少精确 Profile，无法判断是否需要外部数据。"};
         } else {
             result.profile = {LibraryConditionStatus::ready,
                               *metadata.profile_id, "精确 Profile 已匹配。"};
-            if (!Contains(context.external_required_packages, entry.key)) {
-                result.external = {LibraryConditionStatus::not_required,
-                                   "不需要", "Profile 未声明必需外部数据。"};
+        }
+        if (!metadata.external_dir.has_value()) {
+            result.external = {LibraryConditionStatus::not_required, "未指定",
+                               "可按需选择外部数据目录。"};
+        } else {
+            std::error_code error;
+            if (!std::filesystem::is_directory(*metadata.external_dir, error) || error) {
+                result.external = {LibraryConditionStatus::missing, "缺失",
+                                   "记录的数据包目录不可用：" + PathUtf8(*metadata.external_dir)};
             } else {
-                std::error_code error;
-                if (!metadata.external_dir.has_value() ||
-                    !std::filesystem::is_directory(*metadata.external_dir,
-                                                   error) ||
-                    error) {
-                    result.external = {
-                        LibraryConditionStatus::missing, "缺失",
-                        metadata.external_dir.has_value()
-                            ? "记录的数据包目录不可用：" +
-                                  PathUtf8(*metadata.external_dir)
-                            : "未指认必需数据包目录。"};
-                } else {
-                    result.external = {
-                        LibraryConditionStatus::ready, "已就绪",
-                        "原地引用：" + PathUtf8(*metadata.external_dir)};
-                }
+                result.external = {LibraryConditionStatus::ready, "已就绪",
+                                   "原地引用：" + PathUtf8(*metadata.external_dir)};
             }
         }
     }

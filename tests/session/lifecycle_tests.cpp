@@ -51,26 +51,20 @@ public:
 
 TEST_CASE("dex activity lifecycle has stable generic callback routes") {
     using CallbackRoute = ogplay::session::LifecycleCallbackRoute;
-    using ProfileLifecycle = ogplay::session::ProfileLifecycle;
 
-    const auto surface = ogplay::session::DescribeLifecycle(
-        ProfileLifecycle::dex_activity);
+    const auto surface = ogplay::session::DescribeLifecycle();
     CHECK(surface.startup == CallbackRoute::framework_activity);
     CHECK(surface.frame_lifecycle == CallbackRoute::framework_activity);
     CHECK(surface.render == CallbackRoute::gl_surface_view_renderer);
     CHECK(surface.shutdown == CallbackRoute::framework_activity);
 
-    CHECK_THROWS_AS(
-        static_cast<void>(ogplay::session::DescribeLifecycle(
-            static_cast<ProfileLifecycle>(255))),
-        ogplay::session::LifecycleSequenceError);
+
 }
 
 TEST_CASE("dex activity uses the single ordered frame sequence") {
-    const auto lifecycle = ogplay::session::ProfileLifecycle::dex_activity;
     ogplay::hal::FixedStepClock clock(1'000, 60'000);
     RecordingHost host;
-    ogplay::session::LifecycleFrameRunner runner(lifecycle, clock, host);
+    ogplay::session::LifecycleFrameRunner runner(clock, host);
     const auto description = runner.Description();
 
     CHECK(runner.Start().state ==
@@ -96,8 +90,7 @@ TEST_CASE("dex activity uses the single ordered frame sequence") {
 TEST_CASE("lifecycle sequence rejects misuse and makes frame failure sticky") {
     ogplay::hal::FixedStepClock clock(1, 60);
     RecordingHost host;
-    ogplay::session::LifecycleFrameRunner runner(
-        ogplay::session::ProfileLifecycle::dex_activity, clock, host);
+    ogplay::session::LifecycleFrameRunner runner(clock, host);
 
     CHECK_THROWS_AS(static_cast<void>(runner.StepFrame()),
                     ogplay::session::LifecycleSequenceError);

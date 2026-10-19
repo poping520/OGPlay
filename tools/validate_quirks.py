@@ -130,16 +130,11 @@ owner = "{owner}"
 
 
 def _profile_text(quirk_id: str = "legacy_reads") -> str:
-    return f'''schema = 1
+    return f'''schema = 4
 [identity]
 package = "org.example.legacy"
 version_code = [1]
 so_sha256 = ["{'0' * 64}"]
-abi = "armeabi-v7a"
-[runtime]
-api_level = 19
-lifecycle = "native_activity"
-surface = {{ width = 1, height = 1 }}
 [quirks]
 enabled = ["{quirk_id}"]
 [quirks.{quirk_id}]

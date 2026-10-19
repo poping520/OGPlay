@@ -139,25 +139,24 @@ def _boolean(value: Any, field: str) -> bool:
     return value
 
 
-def _profile_identities(profile_directory: Path) -> set[tuple[str, int, str, str]]:
+def _profile_identities(profile_directory: Path) -> set[tuple[str, int, str]]:
     if not profile_directory.is_dir():
         raise ScenarioError(
             f"profile directory does not exist: {profile_directory}"
         )
-    identities: set[tuple[str, int, str, str]] = set()
+    identities: set[tuple[str, int, str]] = set()
     for path in sorted(profile_directory.glob("*.profile.toml")):
         try:
             document = load_profile(path)
         except ProfileError as error:
             raise ScenarioError(f"invalid Title Profile {path}: {error}") from error
         identity = document["identity"]
-        for version_code in identity["version_code"]:
-            for digest in identity["so_sha256"]:
+        for version_code in identity.get("version_code", [0]):
+            for digest in identity.get("so_sha256", [""]):
                 key = (
                     identity["package"],
                     version_code,
                     digest,
-                    identity["abi"],
                 )
                 if key in identities:
                     raise ScenarioError(
@@ -168,7 +167,7 @@ def _profile_identities(profile_directory: Path) -> set[tuple[str, int, str, str
 
 
 def _validate_profile(value: Any,
-                      profile_identities: set[tuple[str, int, str, str]]) -> None:
+                      profile_identities: set[tuple[str, int, str]]) -> None:
     profile = _table(value, "profile")
     _keys(profile, "profile", PROFILE_FIELDS, PROFILE_FIELDS)
     package = _string(profile["package"], "profile.package")
@@ -188,8 +187,10 @@ def _validate_profile(value: Any,
     # Title Profiles are optional: a package without one runs generically, but a
     # package that has one must hit an exact identity so the run is not silently generic.
     profiled_packages = {identity[0] for identity in profile_identities}
-    if (package in profiled_packages and
-            (package, version_code, digest, abi) not in profile_identities):
+    if (package in profiled_packages and not any(
+            owner == package and (version == 0 or version == version_code) and
+            (not sha256 or sha256 == digest)
+            for owner, version, sha256 in profile_identities)):
         raise ScenarioError("profile does not match an exact Title Profile identity")
 
 
@@ -371,7 +372,7 @@ def _validate_checkpoints(value: Any, limits: dict[str, int]) -> None:
 def validate_scenario(
     document: Any,
     expected_id: str,
-    profile_identities: set[tuple[str, int, str, str]],
+    profile_identities: set[tuple[str, int, str]],
 ) -> dict[str, Any]:
     scenario = _table(document, "scenario")
     _keys(scenario, "scenario", ROOT_FIELDS, ROOT_FIELDS)
@@ -498,7 +499,7 @@ def validate_schema(path: Path) -> dict[str, Any]:
 
 def load_scenario(
     path: Path,
-    profile_identities: set[tuple[str, int, str, str]],
+    profile_identities: set[tuple[str, int, str]],
 ) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -534,22 +535,11 @@ def validate_directory(scenario_directory: Path, profile_directory: Path) -> int
 
 
 def _profile_text() -> str:
-    return f'''schema = 2
-
+    return f'''schema = 4
 [identity]
 package = "org.example.legacy"
-name = "Scenario Fixture"
 version_code = [7]
 so_sha256 = ["{'a' * 64}"]
-abi = "armeabi-v7a"
-
-[runtime]
-api_level = 19
-lifecycle = "dex_activity"
-
-[runtime.surface]
-width = 800
-height = 480
 '''
 
 
@@ -633,6 +623,12 @@ def self_test(schema_path: Path) -> int:
         empty_profiles = root / "empty_profiles"
         empty_profiles.mkdir()
         assert validate_directory(scenarios, empty_profiles) == 1
+
+        package_only = {("org.example.legacy", 0, "")}
+        _validate_profile(tomllib.loads(_scenario_text())["profile"], package_only)
+        other_abi = tomllib.loads(_scenario_text())["profile"]
+        other_abi["abi"] = "armeabi"
+        _validate_profile(other_abi, _profile_identities(profiles))
 
         invalid_cases = {
             "filename mismatch": _scenario_text().replace(

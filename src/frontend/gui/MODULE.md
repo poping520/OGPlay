@@ -50,8 +50,9 @@
   前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
 - Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺 Profile >
   缺数据包 > 运行中 > ready。缺 Profile 为可启动通用 APK 提示，不是兼容性等级。
-- Profile/required-external 事实来自 app::ProfileCatalog 摘要；catalog 失效必须显示 unavailable。
-  不得把空 required-external 集合当成 ready；默认 Profile 与 quirk 来自同一 bundled payload。
+- Profile 摘要只提供身份、quirk 与输入模板；catalog 失效显示 unavailable。
+  外部数据只检查用户已选择的目录是否有效，不从 Profile 推断 required；默认 Profile
+  与 quirk 来自同一 bundled payload。
 - 启动器主窗口只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
   静态 CSP 禁止网络、框架、对象、表单和 base 重定向；只绑定 `rpc(string)`，不启用 HTTP 服务。
   Dashboard 独立窗口只允许宿主选择的 loopback `/dash/`，无启动器 RPC，禁止弹窗。按键设置窗口
@@ -77,13 +78,13 @@
   本阶段不直接修改沙盒 meta、身份或存档；身份再生成/重置/导入导出入口禁用。
 - APK/manifest 损坏失败；资源图标/名称失败记录 fallback，空 PNG 为明确占位；versionCode
   接受完整 uint32。禁止把含控制字符的 label 直接持久化。
-- 导入未知 Profile 或跳过 required external 可以入库；无效目录、损坏 APK 和未解决的实例
+- 导入未知 Profile 或未选外部目录 可以入库；无效目录、损坏 APK 和未解决的实例
   占位冲突必须阻止发布。重复 package 要求明确新实例确认，不覆盖旧条目。
 - 删除只移除 `library/<installation-id>`；external 与持久存档不删除，运行中不删除。
 
 - 本启动器入库期间枚举/启动/目录 RPC 返回忙；跨进程库锁有界等待超时映射 -32002，库列表整体返回忙而不把条目标为损坏，List 不删除活动 `.importing`；
   作业轮询始终可用。分析与入库线程在服务销毁时 join，再移除本服务持有的快照。
-- 导入摘要的版本/API/ABI/Profile 来自解析；无 Profile 时 required external 为未知。
+- 导入摘要的版本/API/ABI/Profile 来自解析；外部数据目录为可选用户输入。
   前端同包重复导入须确认新实例，需要数据时允许明确跳过；从不覆盖已有游戏。
 - 原生选择器与后台操作期间向导保留并禁用重复操作；选择器取消不丢弃当前摘要。
   当前仅支持单体 APK，不实现 XAPK/APKM/APKS 拆包，也不从目录猜选 APK。

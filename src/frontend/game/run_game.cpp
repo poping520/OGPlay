@@ -51,8 +51,6 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
-#include "ogplay/session/profile_entry_scope.h"
-#include "ogplay/session/profile_vfs.h"
 #include "ogplay/video/ffmpeg_video_player.h"
 #include "ogplay/video/buffered_video_player.h"
 #include "ogplay/session/quirk_registry.h"
@@ -205,26 +203,14 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     const auto compatibility =
         session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
     session::TitleProfile generic_profile;
-    generic_profile.schema = 2;
+    generic_profile.schema = 4;
     generic_profile.identity.package = manifest.package;
-    generic_profile.runtime.api_level = 19;
-    generic_profile.runtime.surface = {800, 480};
+    constexpr std::uint32_t api_level = 19;
+    constexpr std::uint32_t surface_width = 800, surface_height = 480;
     const auto* selected_profile = compatibility.profile;
     const auto& profile = selected_profile != nullptr
                               ? *selected_profile
                               : generic_profile;
-    bool has_obb_mount{};
-    bool requires_obb{};
-    if (profile.data.has_value()) {
-        for (const auto& mount : profile.data->mounts) {
-            if (mount.source != session::ProfileSource::obb) continue;
-            has_obb_mount = true;
-            requires_obb |= mount.required;
-        }
-    }
-    if (!obb_path.has_value() && requires_obb) {
-        throw std::runtime_error("Profile requires --obb for its OBB mount");
-    }
     if (obb_path.has_value()) {
         const auto filename = PathUtf8(obb_path->filename());
         const auto suffix = "." + manifest.package + ".obb";
@@ -244,13 +230,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             throw std::invalid_argument("--obb filename has an invalid version");
         }
     }
-    std::shared_ptr<const std::vector<std::byte>> obb_bytes;
-    std::optional<loader::ApkArchive> obb_archive;
-    if (obb_path.has_value() && has_obb_mount) {
-        obb_bytes = std::make_shared<const std::vector<std::byte>>(
-            ReadBytes(*obb_path));
-        obb_archive = loader::ParseApkArchive(*obb_bytes);
-    }
     // Declared before the filesystem so the overlay outlives every node
     // that flushes into it.
     const auto sandbox =
@@ -268,26 +247,21 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     const auto control_config = session::BuildControlConfig(
         profile.input.has_value() ? &*profile.input : nullptr, &user_controls,
         bundled_data.input_templates_directory);
-    if (profile.runtime.surface.width != 0 && profile.runtime.surface.height != 0) {
+    if (surface_width != 0 && surface_height != 0) {
         input::ControlMapper probe(control_config);
-        probe.SetSurface(profile.runtime.surface.width, profile.runtime.surface.height);
+        probe.SetSurface(surface_width, surface_height);
     }
     runtime::VirtualFileSystem filesystem;
-    MountApkArchive(profile, apk_bytes, archive, filesystem);
     if (obb_path.has_value()) {
         filesystem.MountHostFile(
             runtime::VfsSource::obb,
             "/sdcard/Android/obb/" + manifest.package, *obb_path);
     }
-    if (obb_bytes) {
-        MountObbArchive(profile, obb_bytes, *obb_archive, filesystem);
-    }
-    MountExternalDirectory(profile, external_directory, filesystem,
+    MountExternalDirectory(external_directory, filesystem,
                            external_guest_directory);
-    AttachSandbox(sandbox, profile, filesystem, logger);
-    filesystem.SetWorkingDirectory(
-        session::ResolveProfileWorkingDirectory(profile));
-    const auto& bionic = runtime::SelectBionicProfile(profile.runtime.api_level);
+    AttachSandbox(sandbox, manifest.package, filesystem, logger);
+    filesystem.SetWorkingDirectory("/");
+    const auto& bionic = runtime::SelectBionicProfile(api_level);
     const auto system_directory =
         bundled_data.root / bionic.data_directory / "lib";
     const auto owned_system = ReadSystemLibraries(system_directory, bionic);
@@ -306,11 +280,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
          {"profile", selected_profile != nullptr
                          ? profile.identity.package
                          : "none"},
-         {"api_level", static_cast<std::uint64_t>(profile.runtime.api_level)},
-         {"lifecycle", std::string(session::ToString(profile.runtime.lifecycle))},
-         {"surface_width", static_cast<std::uint64_t>(profile.runtime.surface.width)},
-         {"surface_height", static_cast<std::uint64_t>(profile.runtime.surface.height)},
-         {"maximum_ticks_per_call", profile.runtime.maximum_ticks_per_call},
+         {"api_level", static_cast<std::uint64_t>(api_level)},
+         {"lifecycle", std::string("dex_activity")},
+         {"surface_width", static_cast<std::uint64_t>(surface_width)},
+         {"surface_height", static_cast<std::uint64_t>(surface_height)},
          {"native_libraries", static_cast<std::uint64_t>(
                                   native_inventory.Libraries().size())}},
         kUnrestrictedLog);
@@ -337,12 +310,12 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
               (process_abi.has_value()
                    ? std::string(loader::ToString(*process_abi))
                    : std::string("none")) +
-              " api=" + std::to_string(profile.runtime.api_level) +
-              " lifecycle=" + std::string(session::ToString(profile.runtime.lifecycle)) +
+              " api=" + std::to_string(api_level) +
+              " lifecycle=" + std::string("dex_activity") +
               " native=" + std::to_string(native_inventory.Libraries().size()) +
               " surface=" +
-              std::to_string(profile.runtime.surface.width) + "x" +
-              std::to_string(profile.runtime.surface.height) + " profile=" +
+              std::to_string(surface_width) + "x" +
+              std::to_string(surface_height) + " profile=" +
               (selected_profile != nullptr ? profile.identity.package
                                            : "none") +
               " sandbox=" +
@@ -364,8 +337,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     auto window = hal::CreateSdlWindowInput();
     const auto base_title = "OGPlay · " + PathUtf8(apk_path.filename());
     window->Open({.title = base_title + " · FPS --",
-                  .width = profile.runtime.surface.width,
-                  .height = profile.runtime.surface.height,
+                  .width = surface_width,
+                  .height = surface_height,
                   .hidden = mcp_manual_step, .resizable = true});
     logger.Write(
         core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
@@ -378,8 +351,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         kUnrestrictedLog);
     bool quit{};
     auto& presented = exit_state.presented;
-    std::uint32_t guest_width = profile.runtime.surface.width;
-    std::uint32_t guest_height = profile.runtime.surface.height;
+    std::uint32_t guest_width = surface_width;
+    std::uint32_t guest_height = surface_height;
     hal::RealtimeClock frame_rate_clock;
     hal::FrameRateSampler frame_rate{
         frame_rate_clock.TicksPerSecond(),
@@ -408,10 +381,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()),
                 arsc_bytes.size()));
             dex_context->package_name = manifest.package;
-            dex_context->surface_width = profile.runtime.surface.width;
-            dex_context->surface_height = profile.runtime.surface.height;
+            dex_context->surface_width = surface_width;
+            dex_context->surface_height = surface_height;
             dex_context->api_level =
-                static_cast<std::int32_t>(profile.runtime.api_level);
+                static_cast<std::int32_t>(api_level);
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
@@ -498,25 +471,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         dex_context->boot_classpath_archive = boot_archive;
         dex_context->boot_classpath_bytes = std::move(boot_archive_bytes);
         runtime::DexVmBridgeConfig bridge_config;
-        if (profile.runtime.dexvm.has_value()) {
-            const auto& heap = profile.runtime.dexvm->heap;
-            bridge_config.heap.initial_heap_target_bytes = heap.initial_target_bytes;
-            bridge_config.heap.heap_growth_limit_bytes = heap.growth_limit_bytes;
-            bridge_config.heap.maximum_heap_bytes = heap.maximum_bytes;
-            bridge_config.heap.target_utilization_percent =
-                heap.target_utilization_percent;
-            bridge_config.heap.min_free_bytes = heap.min_free_bytes;
-            bridge_config.heap.max_free_bytes = heap.max_free_bytes;
-            bridge_config.interpreter.max_frames =
-                profile.runtime.dexvm->max_frames;
-            bridge_config.interpreter.tick_budget =
-                profile.runtime.dexvm->ticks_per_call;
-            bridge_config.interpreter.backend =
-                profile.runtime.dexvm->interpreter ==
-                        session::ProfileRuntime::DexVm::Interpreter::threaded
-                    ? runtime::dexvm::InterpreterBackend::threaded
-                    : runtime::dexvm::InterpreterBackend::switch_dispatch;
-        }
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter == app::InterpreterBackend::threaded
                 ? runtime::dexvm::InterpreterBackend::threaded : runtime::dexvm::InterpreterBackend::switch_dispatch;
@@ -527,8 +481,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         }
         const std::string backend_source = dexvm_interpreter.has_value()
                                                ? "command_line"
-                                           : profile.runtime.dexvm.has_value()
-                                               ? "profile"
                                                : "default";
         logger.Write(
             core::LogLevel::info, "frontend.run_apk",
@@ -555,15 +507,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
         app_request.ui_fallback_font = ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
-        if (profile.runtime.entry.has_value()) {
-            app_request.launcher_override =
-                profile.runtime.entry->launch_activity;
-        }
-        app_request.api_level = profile.runtime.api_level;
-        app_request.surface_width = profile.runtime.surface.width;
-        app_request.surface_height = profile.runtime.surface.height;
-        app_request.maximum_ticks_per_call =
-            profile.runtime.maximum_ticks_per_call;
+        app_request.api_level = api_level;
+        app_request.surface_width = surface_width;
+        app_request.surface_height = surface_height;
         app_request.supersample_factor = supersample_factor;
         app_request.backend = NativeBackend();
         app_request.filesystem = &filesystem;
@@ -596,10 +542,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                                  "gap survey enabled; run is diagnostic only",
                                  {}, {}, kUnrestrictedLog);
                 }
-                session::ApplyProfileStaticPresets(profile, vm, &logger);
             };
         app_request.host.flush_persistent_state = [&filesystem] {
-            session::FlushProfileVfsAtLifecycleBoundary(filesystem);
+            filesystem.FlushAll();
         };
         app_request.host.pump_host_events = pump_host_events;
         app_request.host.before_process_stop = [&] {
@@ -669,7 +614,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             agent::DashboardSources sources;
             sources.metadata = {{"package", manifest.package}, {"installation_id", sandbox.installation_id},
                 {"profile", selected_profile ? profile.identity.package : "generic"},
-                {"api_level", std::to_string(profile.runtime.api_level)}, {"supersample", std::to_string(supersample_factor)},
+                {"api_level", std::to_string(api_level)}, {"supersample", std::to_string(supersample_factor)},
                 {"mode", mcp_manual_step ? "manual-step" : "free-running"},
                 {"ffmpeg_available", video::FfmpegAvailable() ? "true" : "false"},
                 {"ffmpeg_reason", video::FfmpegUnavailableReason()}};
@@ -727,7 +672,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                       }, [&] { dex_lifecycle->CancelInput(); }};
         }
         logger.Write(core::LogLevel::info, "frontend.run_apk",
-                     "starting Profile lifecycle", {}, {},
+                     "starting Activity lifecycle", {}, {},
                      kUnrestrictedLog);
         try {
             static_cast<void>(driver.start());
@@ -1031,7 +976,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         if (audio_pump) audio_pump->Stop();
         logger.Write(core::LogLevel::info, "frontend.run_apk",
-                     "stopping Profile lifecycle",
+                     "stopping Activity lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
         try {
             static_cast<void>(driver.stop(failure ? session::DexProcessStopReason::runtime_failure

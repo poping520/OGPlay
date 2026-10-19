@@ -1,14 +1,10 @@
-// Guest filesystem assembly for run-apk (ADR-0020): the Profile's read-only
-// base layers first, then the per-title save sandbox on top.
+// Guest filesystem assembly: Android standard paths and per-installation saves.
 
 #include "run_game_vfs.h"
 
 #include <algorithm>
 #include <array>
 #include <charconv>
-#include <list>
-#include <map>
-#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -16,7 +12,6 @@
 #include "ogplay/core/encoding.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/host_environment.h"
-#include "ogplay/session/profile_vfs.h"
 
 namespace ogplay::frontend {
 namespace {
@@ -28,69 +23,6 @@ std::string PathUtf8(const std::filesystem::path& path) {
 
 constexpr core::RateLimitPolicy kUnrestrictedLog{
     .mode = core::RateLimitMode::none};
-constexpr std::size_t kArchiveBlockBytes = 64U * 1024U;
-
-class ArchiveBlockCache final {
-public:
-    explicit ArchiveBlockCache(runtime::VirtualFileSystem& filesystem)
-        : filesystem_(filesystem) {}
-
-    struct Block final {
-        std::vector<std::byte> bytes;
-        std::shared_ptr<const runtime::VfsResourceReservation> reservation;
-    };
-
-    [[nodiscard]] std::shared_ptr<const Block> Get(
-        const std::string& name, const std::uint64_t block,
-        const std::size_t size,
-        const std::function<void(std::span<std::byte>)>& load) {
-        const Key key{name, block};
-        std::shared_ptr<const runtime::VfsResourceReservation> reservation;
-        {
-            std::scoped_lock lock(mutex_);
-            const auto found = entries_.find(key);
-            if (found != entries_.end()) {
-                lru_.splice(lru_.begin(), lru_, found->second.lru);
-                return found->second.block;
-            }
-            for (;;) {
-                try {
-                    reservation = filesystem_.ReserveResourceMemory(size);
-                    break;
-                } catch (const runtime::VfsError& error) {
-                    if (error.ErrorNumber() != 28 || lru_.empty()) throw;
-                    const auto victim = std::prev(lru_.end());
-                    entries_.erase(*victim);
-                    lru_.erase(victim);
-                }
-            }
-        }
-        auto loaded = std::make_shared<Block>();
-        loaded->reservation = std::move(reservation);
-        loaded->bytes.resize(size);
-        load(loaded->bytes);
-        std::scoped_lock lock(mutex_);
-        if (const auto found = entries_.find(key); found != entries_.end()) {
-            lru_.splice(lru_.begin(), lru_, found->second.lru);
-            return found->second.block;
-        }
-        lru_.push_front(key);
-        entries_.emplace(key, Entry{loaded, lru_.begin()});
-        return loaded;
-    }
-
-private:
-    using Key = std::pair<std::string, std::uint64_t>;
-    struct Entry final {
-        std::shared_ptr<const Block> block;
-        std::list<Key>::iterator lru;
-    };
-    runtime::VirtualFileSystem& filesystem_;
-    std::mutex mutex_;
-    std::list<Key> lru_;
-    std::map<Key, Entry> entries_;
-};
-
 [[nodiscard]] std::array<std::byte, 8> AndroidIdEntropy() {
     std::array<std::byte, 8> entropy{};
     hal::FillSecureRandom(entropy);
@@ -139,29 +71,6 @@ private:
         std::string(package) + "; pass --installation-id <id>");
 }
 
-[[nodiscard]] const session::ProfileMount* ExternalMount(
-    const session::TitleProfile& profile) {
-    if (!profile.data.has_value()) return nullptr;
-    const session::ProfileMount* result = nullptr;
-    for (const auto& mount : profile.data->mounts) {
-        if (mount.source != session::ProfileSource::external) continue;
-        if (result != nullptr) {
-            throw std::runtime_error(
-                "run-apk supports one external Profile mount per session");
-        }
-        result = &mount;
-    }
-    return result;
-}
-
-[[nodiscard]] std::string JoinGuestPath(const std::string_view root,
-                                        const std::string_view relative) {
-    auto result = std::string(root);
-    if (result != "/") result.push_back('/');
-    result.append(relative);
-    return result;
-}
-
 }  // namespace
 
 std::string SandboxSession::Describe() const {
@@ -171,7 +80,6 @@ std::string SandboxSession::Describe() const {
 }
 
 void MountExternalDirectory(
-    const session::TitleProfile& profile,
     const std::optional<std::filesystem::path>& directory,
     runtime::VirtualFileSystem& filesystem,
     const std::optional<std::string>& guest_directory) {
@@ -179,150 +87,12 @@ void MountExternalDirectory(
     // Canonicalizing the storage path preserves shared file and save state.
     filesystem.AddPathAlias("/storage/emulated/0", "/sdcard");
     filesystem.AddPathAlias("/mnt/sdcard", "/sdcard");
-    const auto* mount = ExternalMount(profile);
-    if (mount == nullptr) {
-        if (directory.has_value()) {
-            const auto& guest = guest_directory.value_or("/sdcard");
-            if (guest != "/sdcard" && !guest.starts_with("/sdcard/")) {
-                throw std::invalid_argument(
-                    "--external-guest-dir must be within /sdcard");
-            }
-            filesystem.MountHostDirectory(guest, *directory);
-        }
-        return;
+    if (!directory.has_value()) return;
+    const auto guest = guest_directory.value_or("/sdcard");
+    if (guest != "/sdcard" && !guest.starts_with("/sdcard/")) {
+        throw std::invalid_argument("--external-guest-dir must be within /sdcard");
     }
-    if (guest_directory.has_value()) {
-        throw std::invalid_argument(
-            "--external-guest-dir cannot override a Profile external mount");
-    }
-    if (!directory.has_value()) {
-        if (mount->required) {
-            throw std::runtime_error(
-                "Profile requires --external-dir for guest mount " +
-                mount->guest);
-        }
-        return;
-    }
-    filesystem.MountHostDirectory(mount->guest, *directory);
-    for (const auto& entry : profile.data->manifest) {
-        if (!entry.required) continue;
-        try {
-            static_cast<void>(filesystem.Stat(
-                JoinGuestPath(mount->guest, entry.path)));
-        } catch (const runtime::VfsError& error) {
-            if (error.ErrorNumber() != 2) throw;
-            throw std::runtime_error(
-                "required Profile manifest file is missing: " + entry.path);
-        }
-    }
-}
-
-static void MountArchive(const session::TitleProfile& profile,
-                  const session::ProfileSource profile_source,
-                  const runtime::VfsSource vfs_source,
-                  std::shared_ptr<const std::vector<std::byte>> apk_bytes,
-                  const loader::ApkArchive& archive,
-                  runtime::VirtualFileSystem& filesystem) {
-    if (!profile.data.has_value()) return;
-    const auto cache = std::make_shared<ArchiveBlockCache>(filesystem);
-    const auto archive_owner = std::make_shared<const loader::ApkArchive>(archive);
-    for (const auto& mount : profile.data->mounts) {
-        if (mount.source != profile_source) continue;
-        std::vector<runtime::VfsLazyMountEntry> entries;
-        entries.reserve(archive.entries.size());
-        for (const auto& entry : archive.entries) {
-            struct StoredState final {
-                std::mutex mutex;
-                bool verified{};
-                std::uint64_t data_offset{};
-            };
-            const auto name = entry.name;
-            const auto state = std::make_shared<StoredState>();
-            entries.push_back({
-                name, entry.uncompressed_size,
-                [apk_bytes, archive_owner, name] {
-                    return loader::ReadApkEntry(*apk_bytes, *archive_owner, name);
-                },
-                [apk_bytes, archive_owner, name, entry, state, cache](
-                    const std::uint64_t offset,
-                    const std::span<std::byte> destination,
-                    const std::stop_token stop) {
-                    if (stop.stop_requested()) return std::size_t{};
-                    if (entry.compression_method != 0U) {
-                        if (offset >= entry.uncompressed_size || destination.empty())
-                            return std::size_t{};
-                        const auto total = static_cast<std::size_t>(
-                            std::min<std::uint64_t>(destination.size(),
-                                entry.uncompressed_size - offset));
-                        std::size_t copied{};
-                        while (copied < total) {
-                            if (stop.stop_requested()) return copied;
-                            const auto absolute = offset + copied;
-                            const auto block = absolute / kArchiveBlockBytes;
-                            const auto within = static_cast<std::size_t>(
-                                absolute % kArchiveBlockBytes);
-                            const auto block_offset = block * kArchiveBlockBytes;
-                            const auto block_size = static_cast<std::size_t>(
-                                std::min<std::uint64_t>(kArchiveBlockBytes,
-                                    entry.uncompressed_size - block_offset));
-                            const auto bytes = cache->Get(
-                                name, block, block_size,
-                                [&](const std::span<std::byte> output) {
-                                    const auto got = loader::ReadApkEntryRange(
-                                        *apk_bytes, *archive_owner, name,
-                                        block_offset, output, stop);
-                                    if (got != output.size())
-                                        throw std::runtime_error("APK block read was short");
-                                });
-                            const auto count = std::min(total - copied,
-                                                       block_size - within);
-                            std::copy_n(bytes->bytes.begin() +
-                                            static_cast<std::ptrdiff_t>(within),
-                                        count, destination.begin() +
-                                            static_cast<std::ptrdiff_t>(copied));
-                            copied += count;
-                        }
-                        return copied;
-                    }
-                    std::scoped_lock lock(state->mutex);
-                    if (!state->verified) {
-                        const auto count = loader::ReadApkEntryRange(
-                            *apk_bytes, *archive_owner, name, offset, destination,
-                            stop);
-                        state->data_offset = loader::StoredApkEntryDataOffset(
-                            *apk_bytes, *archive_owner, name);
-                        state->verified = true;
-                        return count;
-                    }
-                    const auto available = entry.uncompressed_size - offset;
-                    const auto count = static_cast<std::size_t>(
-                        std::min<std::uint64_t>(destination.size(), available));
-                    const auto begin = state->data_offset + offset;
-                    std::copy_n(apk_bytes->begin() +
-                                    static_cast<std::ptrdiff_t>(begin),
-                                count, destination.begin());
-                    return count;
-                },
-            });
-        }
-        filesystem.MountLazyReadOnly(vfs_source, mount.guest, entries);
-    }
-}
-
-void MountApkArchive(const session::TitleProfile& profile,
-                     std::shared_ptr<const std::vector<std::byte>> apk_bytes,
-                     const loader::ApkArchive& archive,
-                     runtime::VirtualFileSystem& filesystem) {
-    MountArchive(profile, session::ProfileSource::apk, runtime::VfsSource::apk,
-                 std::move(apk_bytes), archive, filesystem);
-}
-
-void MountObbArchive(const session::TitleProfile& profile,
-                     std::shared_ptr<const std::vector<std::byte>> obb_bytes,
-                     const loader::ApkArchive& archive,
-                     runtime::VirtualFileSystem& filesystem) {
-    MountArchive(profile, session::ProfileSource::obb, runtime::VfsSource::obb,
-                 std::move(obb_bytes), archive, filesystem);
+    filesystem.MountHostDirectory(guest, *directory);
 }
 
 SandboxSession OpenSandbox(const SandboxOptions& options,
@@ -381,10 +151,10 @@ SandboxSession OpenSandbox(const SandboxOptions& options,
 }
 
 void AttachSandbox(const SandboxSession& sandbox,
-                   const session::TitleProfile& profile,
+                   const std::string& package,
                    runtime::VirtualFileSystem& filesystem,
                    core::Logger& logger) {
-    const auto writable_roots = session::ProfileWritableRoots(profile);
+    const auto writable_roots = std::vector<std::string>{"/data/data/" + package, "/sdcard"};
     if (!sandbox.store) {
         // The writable roots are directories on the platform whether or not
         // saves persist, so an ephemeral run behaves the same up to the

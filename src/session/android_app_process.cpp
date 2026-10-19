@@ -135,9 +135,9 @@ public:
         }
         const auto launcher = loader::ResolveLauncherComponent(manifest);
         launcher_descriptor = Descriptor(
-            request.launcher_override.value_or(launcher.activity_class));
+            launcher.activity_class);
         launcher_component_name =
-            request.launcher_override.value_or(launcher.component_name);
+            launcher.component_name;
         application_descriptor = Descriptor(manifest.application_class);
 
         auto system = BuildSystemModules(request.api_level,

@@ -5,24 +5,13 @@
 
 namespace ogplay::session {
 
-LifecycleTemplateDescription DescribeLifecycle(
-    const ProfileLifecycle lifecycle) {
-    switch (lifecycle) {
-    case ProfileLifecycle::dex_activity:
-        // The interpreted lifecycle routes through the framework activity
-        // shape; DexActivityLifecycle drives the callbacks directly.
-        return {lifecycle, LifecycleCallbackRoute::framework_activity,
-                LifecycleCallbackRoute::framework_activity,
-                LifecycleCallbackRoute::gl_surface_view_renderer,
-                LifecycleCallbackRoute::framework_activity};
-    }
-    throw LifecycleSequenceError("unsupported profile lifecycle");
+LifecycleTemplateDescription DescribeLifecycle() {
+    return {};
 }
 
-LifecycleFrameRunner::LifecycleFrameRunner(const ProfileLifecycle lifecycle,
-                                           hal::Clock& clock,
-                                           LifecycleFrameHost& host)
-    : description_(DescribeLifecycle(lifecycle)), clock_(clock), host_(host) {}
+LifecycleFrameRunner::LifecycleFrameRunner(hal::Clock& clock,
+                                         LifecycleFrameHost& host)
+    : clock_(clock), host_(host) {}
 
 LifecycleFrameState LifecycleFrameRunner::Start() {
     RequireState(LifecycleRunState::ready, "start");

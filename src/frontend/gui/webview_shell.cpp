@@ -110,7 +110,6 @@ LibraryViewContext BuildContext(const LibraryStore& store_, const GuiProcessMana
                     if (!entry.metadata->profile_id) continue;
                     const auto summary = profiles.Find(*entry.metadata->profile_id);
                     if (!summary) throw std::runtime_error("记录的 Profile 在所选目录中不存在。");
-                    if (summary->requires_external_data) context.external_required_packages.push_back(entry.key);
                 } catch (const LibraryError& error) {
                     if (error.Code() == LibraryErrorCode::busy) throw;
                     context.profile_errors[entry.key] = error.what();

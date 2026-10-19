@@ -80,13 +80,13 @@ TEST_CASE("GUI import analyzes a valid unmatched APK without native libraries") 
     CHECK(analysis.visual_fallbacks.size() == 2);
 }
 
-TEST_CASE("GUI import accepts optional required external data only as a real directory") {
+TEST_CASE("GUI import accepts optional external data only as a real directory") {
     TemporaryDirectory temporary;
     const auto external = temporary.path / "external";
     std::filesystem::create_directories(external);
     auto analysis = Analysis();
     analysis.profile = ogplay::app::ProfileSummary{
-        "org.example.game", "Example", true};
+        "org.example.game"};
 
     const auto skipped = ogplay::app::BuildLibraryImport(
         analysis, std::nullopt, "2026-08-13T00:00:00Z");

@@ -20,7 +20,6 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
-#include "ogplay/session/profile_entry_scope.h"
 
 namespace {
 
@@ -35,46 +34,6 @@ std::vector<std::uint8_t> ReadInterpreterFixture() {
     return {std::istreambuf_iterator<char>(stream),
             std::istreambuf_iterator<char>()};
 }
-
-struct Vm final {
-    JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
-    ogplay::core::CapabilityLedger ledger;
-    Interpreter interpreter;
-
-    Vm()
-        : interpreter(
-              [this]() -> DexClassLinker& {
-                  auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
-                  auto catalog = CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context));
-                  const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
-                  catalog.insert(catalog.end(), android.begin(), android.end());
-                  IntrinsicClassDecl presets;
-                  presets.descriptor = "LFixturePresets;";
-                  presets.superclass = "Ljava/lang/Object;";
-                  presets.fields = {
-                      {"z", "Z", true, false, 0, {}},
-                      {"b", "B", true, false, 0, {}},
-                      {"c", "C", true, false, 0, {}},
-                      {"s", "S", true, false, 0, {}},
-                      {"i", "I", true, false, 0, {}},
-                      {"j", "J", true, false, 0, {}},
-                      {"f", "F", true, false, 0, {}},
-                      {"d", "D", true, false, 0, {}},
-                      {"text", "Ljava/lang/String;", true, false, 0, {}},
-                      {"instance", "I", false, false, 0, {}},
-                  };
-                  catalog.push_back(std::move(presets));
-                  linker.RegisterIntrinsics(catalog);
-                  ogplay::test::RegisterBootDex(linker);
-                  linker.RegisterDex(ReadInterpreterFixture());
-                  linker.Link();
-                  return linker;
-              }(),
-              model, nullptr, ledger) {}
-};
 
 struct AndroidVm final {
   JniStringStore strings;
@@ -974,136 +933,7 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
       get_configuration, std::vector{VmValue::Ref(resources)})));
 }
 
-ogplay::session::TitleProfile PresetProfile() {
-    ogplay::session::TitleProfile profile;
-    profile.schema = 2;
-    profile.runtime.presets.push_back({
-        .class_name = "Counter",
-        .field = "seed",
-        .type = "I",
-        .value = std::int64_t{42},
-        .reason = "fixture data is provisioned",
-    });
-    return profile;
-}
-
 }  // namespace
-
-TEST_CASE("Profile entry resolves override before manifest launcher") {
-    ogplay::session::TitleProfile profile;
-    profile.runtime.entry =
-        ogplay::session::ProfileEntry{"org.example.EngineActivity"};
-    CHECK(ogplay::session::ResolveProfileLaunchDescriptor(
-              profile, std::string{"org.example.StoreActivity"}) ==
-          "Lorg/example/EngineActivity;");
-    profile.runtime.entry.reset();
-    CHECK(ogplay::session::ResolveProfileLaunchDescriptor(
-              profile, std::string{"org.example.StoreActivity"}) ==
-          "Lorg/example/StoreActivity;");
-    CHECK_THROWS_AS(
-        static_cast<void>(ogplay::session::ResolveProfileLaunchDescriptor(
-            profile, std::nullopt)),
-        ogplay::session::ProfileEntryScopeError);
-}
-
-TEST_CASE("Profile static preset applies only after guest clinit") {
-    Vm without_preset;
-    const auto counter = without_preset.linker.FindClass("LCounter;");
-    REQUIRE(counter.has_value());
-    const auto initialized =
-        without_preset.interpreter.EnsureClassInitialized(*counter);
-    REQUIRE_FALSE(initialized.exception.IsValid());
-    CHECK(without_preset.linker.Class(*counter).static_storage[0] == 7U);
-
-    Vm with_preset;
-    ogplay::core::Logger logger;
-  ogplay::session::ApplyProfileStaticPresets(PresetProfile(),
-                                             with_preset.interpreter, &logger);
-    const auto applied = with_preset.linker.FindClass("LCounter;");
-    REQUIRE(applied.has_value());
-    CHECK(with_preset.linker.Class(*applied).clinit_state ==
-          ClinitState::initialized);
-    CHECK(with_preset.linker.Class(*applied).static_storage[0] == 42U);
-  const auto records =
-      logger.Snapshot(ogplay::core::LogLevel::info, "session.profile_entry");
-    REQUIRE(records.size() == 1U);
-    CHECK(records.front().message == "applied static field preset");
-}
-
-TEST_CASE("Profile static preset rejects missing guest facts") {
-    Vm vm;
-    auto missing_class = PresetProfile();
-    missing_class.runtime.presets.front().class_name = "Missing";
-    CHECK_THROWS_WITH_AS(
-      ogplay::session::ApplyProfileStaticPresets(missing_class, vm.interpreter),
-        "Profile preset class is not in the dex: LMissing;",
-        ogplay::session::ProfileEntryScopeError);
-
-    auto wrong_field = PresetProfile();
-    wrong_field.runtime.presets.front().field = "absent";
-    CHECK_THROWS_AS(
-      ogplay::session::ApplyProfileStaticPresets(wrong_field, vm.interpreter),
-        ogplay::session::ProfileEntryScopeError);
-}
-
-TEST_CASE("Profile static presets preserve every supported field type") {
-    Vm vm;
-    ogplay::session::TitleProfile profile;
-    profile.schema = 2;
-    const auto add = [&](const char* field, const char* type,
-                         ogplay::session::ProfileStaticPresetValue value) {
-        profile.runtime.presets.push_back({
-            .class_name = "FixturePresets",
-            .field = field,
-            .type = type,
-            .value = std::move(value),
-            .reason = "fixture fact",
-        });
-    };
-    add("z", "Z", true);
-    add("b", "B", std::int64_t{-12});
-    add("c", "C", std::int64_t{0x4E2D});
-    add("s", "S", std::int64_t{-1234});
-    add("i", "I", std::int64_t{-123456});
-    add("j", "J", std::int64_t{0x123456789LL});
-    add("f", "F", 1.25);
-    add("d", "D", -2.5);
-    add("text", "Ljava/lang/String;", std::string{"ready"});
-    ogplay::session::ApplyProfileStaticPresets(profile, vm.interpreter);
-
-    const auto owner = vm.linker.FindClass("LFixturePresets;");
-    REQUIRE(owner.has_value());
-    const auto bits = [&](const char* field, const char* type) {
-        const auto id = vm.linker.FindFieldRecursive(*owner, field, type);
-        REQUIRE(id.has_value());
-        const auto& linked = vm.linker.Field(*id);
-        const auto& storage = vm.linker.Class(*owner).static_storage;
-        std::uint64_t result = storage[linked.slot];
-        if (linked.is_wide) {
-      result |= static_cast<std::uint64_t>(storage[linked.slot + 1U]) << 32U;
-        }
-        return result;
-    };
-    CHECK(bits("z", "Z") == 1U);
-    CHECK(static_cast<std::int8_t>(bits("b", "B")) == -12);
-    CHECK(bits("c", "C") == 0x4E2DU);
-    CHECK(static_cast<std::int16_t>(bits("s", "S")) == -1234);
-    CHECK(static_cast<std::int32_t>(bits("i", "I")) == -123456);
-    CHECK(static_cast<std::int64_t>(bits("j", "J")) == 0x123456789LL);
-    CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(bits("f", "F"))) ==
-          doctest::Approx(1.25F));
-    CHECK(std::bit_cast<double>(bits("d", "D")) == doctest::Approx(-2.5));
-  CHECK(vm.interpreter.StringUtf8(VmObjectRef(static_cast<std::uint32_t>(
-                  bits("text", "Ljava/lang/String;")))) == "ready");
-
-    auto instance = profile;
-    instance.runtime.presets.front().field = "instance";
-    instance.runtime.presets.front().type = "I";
-    instance.runtime.presets.front().value = std::int64_t{1};
-    CHECK_THROWS_AS(
-        ogplay::session::ApplyProfileStaticPresets(instance, vm.interpreter),
-        ogplay::session::ProfileEntryScopeError);
-}
 
 TEST_CASE("AudioManager reports the deterministic external music fact") {
     JniStringStore strings;

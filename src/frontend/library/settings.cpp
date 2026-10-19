@@ -28,7 +28,7 @@ const std::vector<SettingDefinition>& SettingDefinitions() {
         {"input_template", "input", "默认输入模板 ID", std::string(), {}, 0, 0, "预留 · 全局模板覆盖尚未接入"},
         {"keymap", "input", "全局键位映射", std::string(), {}, 0, 0, "预留 · 运行时未实现"},
         {"gamepad_deadzone", "input", "手柄死区（%）", std::uint32_t(15), {}, 0, 100, "预留 · 运行时未实现"},
-        {"interpreter", "vm", "默认解释器", std::string("profile"), {"profile", "switch", "threaded"}},
+        {"interpreter", "vm", "默认解释器", std::string("default"), {"default", "switch", "threaded"}},
         {"clock_mode", "vm", "默认 Clock 模式", std::string("realtime"), {"realtime", "fixed"}, 0, 0, "预留 · 启动参数尚未接入"},
         {"device_preset", "vm", "默认虚拟设备预设", std::string(), {}, 0, 0, "预留 · 运行时未实现"},
         {"network_policy", "network", "默认网络策略", std::string("disabled"), {"disabled", "loopback", "allow"}, 0, 0, "预留 · 不改变运行时网络策略"},

@@ -196,11 +196,8 @@ set(OGPLAY_TEST_SOURCES
     tests/session/android_input_mapping_tests.cpp
     tests/session/lifecycle_tests.cpp
     tests/session/ui_compositor_tests.cpp
-    tests/session/profile_asset_bundle_tests.cpp
     tests/session/profile_apk_tests.cpp
     tests/session/profile_entry_scope_tests.cpp
-    tests/session/profile_audio_tests.cpp
-    tests/session/profile_vfs_tests.cpp
     tests/session/session_tests.cpp
     tests/session/title_profile_tests.cpp
     tests/dexvm/class_loader_tests.cpp
@@ -597,7 +594,7 @@ add_test(
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
         --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v4.schema.json
         --self-test
 )
 set_tests_properties(tools.title_profile_validator_self_test
@@ -608,7 +605,7 @@ add_test(
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/validate_title_profiles.py
         --schema
-            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v2.schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles/title-profile-v4.schema.json
         --profiles ${CMAKE_CURRENT_SOURCE_DIR}/data/profiles
 )
 set_tests_properties(tools.title_profiles_current PROPERTIES LABELS "tools;profiles")

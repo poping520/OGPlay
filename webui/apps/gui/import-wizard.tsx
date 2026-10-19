@@ -15,7 +15,6 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [error, setError] = useState('');
   const [external, setExternal] = useState('');
   const [confirmed, setConfirmed] = useState(false);
-  const [skip, setSkip] = useState(false);
   const [source, setSource] = useState(file?.name ?? '');
   const summary = job?.summary;
   const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
@@ -37,7 +36,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setSkip(false);
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal);
       let initial: ImportJob;
       if (dropped) {
         setStage('正在读取拖入的 APK…');
@@ -66,8 +65,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     void analyze(file);
     return () => { disposed.current = true; dialog.current?.close(); };
   }, []);
-  const canImport = summary && job?.state === 'ready' && (!summary.existing_instances || confirmed) &&
-    (!summary.requires_external || external || skip);
+  const canImport = summary && job?.state === 'ready' && (!summary.existing_instances || confirmed);
   return <dialog ref={dialog} class="import-wizard" aria-label="导入游戏" onCancel={event => { event.preventDefault(); void close(); }}>
     <h2>导入游戏</h2><p role="status">{stage}</p><p class="selected-file">{source}</p>
     {summary && <>
@@ -75,11 +73,10 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <dl><dt>API</dt><dd>最低 {summary.min_sdk ?? '未声明'} / 目标 {summary.target_sdk ?? '未声明'}</dd>
         <dt>原生 ABI</dt><dd>{summary.abis.join(' / ') || '无原生库'}</dd>
         <dt>Profile</dt><dd>{summary.profile ?? '无精确匹配，将按通用 APK 入库；兼容性尚未确认。'}</dd>
-        <dt>数据包</dt><dd>{summary.requires_external === null ? '无 Profile，无法判断是否需要。' : summary.requires_external ? '此游戏需要外部数据包。' : 'Profile 未要求外部数据包。'}</dd></dl>
+        <dt>数据包</dt><dd>可按需选择外部数据目录。</dd></dl>
       <div class="external-selection"><p class="selected-file">{external || '未选择数据包目录'}</p>
-        <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) { setExternal(path); setSkip(false); } })}>选择数据包目录</button>
+        <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) { setExternal(path); } })}>选择数据包目录</button>
         {external && <button disabled={busy} onClick={() => setExternal('')}>清除</button>}
-        {summary.requires_external && !external && <label><input type="checkbox" checked={skip} disabled={busy} onChange={event => setSkip(event.currentTarget.checked)} />暂时跳过，入库后显示“缺数据包”</label>}
       </div>
       {summary.existing_instances > 0 && <label class="import-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />已有 {summary.existing_instances} 个同包实例；新建实例，保留现有游戏及存档。</label>}
     </>}

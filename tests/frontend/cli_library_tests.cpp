@@ -79,7 +79,6 @@ TEST_CASE("CLI library inspect import duplicates and remove retain saves") {
     const auto inspect = f.Run({"inspect", f.Text("sample.apk")});
     JsonSuccess(inspect); CHECK(inspect.out.find("org.example.game") != std::string::npos);
     CHECK(inspect.out.find("\"profile_id\":null") != std::string::npos);
-    CHECK(inspect.out.find("\"requires_external_data\":null") != std::string::npos);
     JsonSuccess(f.Run({"import", f.Text("sample.apk")}));
     auto duplicate = f.Run({"import", f.Text("sample.apk")});
     CHECK(duplicate.code == 1); CHECK(duplicate.out.empty());

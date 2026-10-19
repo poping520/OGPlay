@@ -200,7 +200,6 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             writer.Add(summary, "abis", abis);
             writer.AddString(summary, "icon", analysis.icon_png.empty() ? "" : "data:image/png;base64," + app::EncodeBase64(analysis.icon_png));
             if (analysis.profile) writer.AddString(summary, "profile", analysis.profile->profile_id); else writer.AddNull(summary, "profile");
-            if (analysis.profile) writer.AddBool(summary, "requires_external", analysis.profile->requires_external_data); else writer.AddNull(summary, "requires_external");
             const auto entries = store_.LoadEntries();
             writer.AddUnsignedInteger(summary, "existing_instances", static_cast<std::uint64_t>(std::count_if(entries.begin(), entries.end(), [&](const auto& entry) { return entry.metadata && entry.metadata->package == analysis.manifest.package; })));
             writer.Add(result, "summary", summary);

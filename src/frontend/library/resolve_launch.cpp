@@ -45,7 +45,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.cpu_config.execution.limit_parallelism = std::get<bool>(EffectiveGameSetting(settings, global, entry, "cpu_limit_parallelism"));
     o.cpu_config.execution.max_mticks_per_second = std::get<std::uint32_t>(EffectiveGameSetting(settings, global, entry, "cpu_max_mticks_per_second"));
     const auto interpreter = std::get<std::string>(Setting(config, "interpreter"));
-    if (interpreter != "profile") o.dexvm_interpreter = interpreter == "threaded" ? InterpreterBackend::threaded : InterpreterBackend::switch_dispatch;
+    if (interpreter != "default") o.dexvm_interpreter = interpreter == "threaded" ? InterpreterBackend::threaded : InterpreterBackend::switch_dispatch;
     const bool mcp = std::get<bool>(Setting(config, "mcp_enabled"));
     const bool manual = std::get<bool>(EffectiveGameSetting(settings, global, entry, "mcp_manual_step"));
     if (mode != LaunchMode::preflight) {

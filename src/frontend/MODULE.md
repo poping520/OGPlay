@@ -11,8 +11,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
 - 实时 run-apk 启用能力受检的异步窗口读回；手动步进不启用。实时暂停/空闲时仍
   可呈现已完成末帧，不执行 guest step 或推进 Clock，FPS 只累积实际成功 present。
 - `run-apk`：选择 compatibility Profile，挂载数据，创建 SDL3/ANGLE surface，装配 Android
-  guest、DexVM 与 Activity lifecycle；VFS 使用 `/` 作为默认 guest cwd，Profile 显式
-  working directory 可覆盖它。
+  guest、DexVM 与 Activity lifecycle；VFS 的 guest cwd 固定为 `/`。
   guest 自行结束返回 Java/native exit(n) 的 n、信号的 128+n 或 Activity.finish 的 0；
   首次呈现前自行结束写结构化 error，保留非零 guest 码，否则返回具名启动失败码
   kRunApkStartupFailureExitCode=1（沿用 CLI 失败码，参数错误为 2）。宿主关闭、帧上限及
@@ -26,11 +25,11 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   EXE 不静态链接内核；SDL 为共享动态库，WebView 仅桌面链接，不在加载 DLL 时初始化应用资源。
 - `HostBundledDataPaths`：优先读取可执行文件同目录（macOS bundle Resources）的
   `profiles/`、`quirks.toml` 与 `framework/bootdex.jar`，源码树仅作开发回退。
-- `--external-dir` 有 Profile external 声明时挂到其唯一 guest 根，否则挂到 `/sdcard`；
-  无声明时可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
+- `--external-dir` 默认挂到 `/sdcard`；
+  可用 `--external-guest-dir` 指定 `/sdcard` 内的 guest 根。
   `/mnt/sdcard`、`/storage/emulated/0` 与 `/sdcard` 共用节点。`--obb` 将原文件只读挂到
-  `/sdcard/Android/obb/<package>/<filename>`；Profile OBB 声明可额外挂载归档条目。
-  `--supersample` 选择 1..4×；`--dexvm-interpreter` 覆盖 Profile，
+  `/sdcard/Android/obb/<package>/<filename>`，不按 Profile 解包。
+  `--supersample` 选择 1..4×；`--dexvm-interpreter` 显式选择解释器，
   默认 `switch`。
 - `--mcp`/`--mcp-port` 同时提供 `/dash/` 页面与 `/dash/rpc` 只读 Dashboard，复用端口。
   静态产物来自 bundled `data/webui/dashboard`；启动前只加载固定文件白名单，每文件最多
@@ -59,12 +58,13 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   两项独立、默认关闭；GUI 对应速率值 0 表示省略限速参数。启动日志记录查询和执行配置。
   不限制 Java 解释/HLE、宿主 CPU 占用或物理频率，也不改变游戏 Clock。
 
-- CLI/GUI 共用 session、Profile、quirk 与 bundled payload。Profile 决定 API 和入口；系统
+- CLI/GUI 共用 session、Profile、quirk 与 bundled payload。API 固定 19，入口来自 Manifest MAIN/LAUNCHER，ABI 来自 APK inventory；系统
   库依赖闭包不得由 CLI 手写。API 19 缺 `bootdex.jar` 与缺 ELF 同样在装配前失败。
   run-apk 读取固定 payload 的 `zoneinfo/tzdata` 并注入 session，缺失明确失败；来源、
   格式与哈希由 Android payload 校验入口维护，不使用宿主时区数据。
-- 仅接受规范化的 `dex_activity` Profile。entry/presets 在生命周期前应用，required 数据先
-  验证；`--external-dir` 最多一个。quirk 必须在 `data/quirks.toml` 注册并有测试引用。
+- Profile 仅接受 v4 identity/quirks/input，旧 schema 与 runtime/data/audio 明确拒绝。
+  表面默认 800×480，VM/guest call 使用默认配置；无资源清单预检，`--external-dir` 最多一个。
+  quirk 必须在 `data/quirks.toml` 注册并有测试引用。
 - `--preflight`/`library run --mode preflight` 在所选 ABI 下逐个将 APK `.so` 作为静态根，
   复用 native 来源与 NEEDED/SONAME 闭包、Bionic boundary catalog 及 ELF 查找/版本规则；
   无关 APK 导出不能跨 scope 消除缺口。逐库输出 `preflight import`（binding=strong/weak）及
@@ -79,7 +79,7 @@ ogplay 拥有桌面模式分派、GUI/RPC 和自身子进程管理，ogplay-cli 
   输入重置时取消 session 中的按住状态，静默清空 `ControlMapper` 并清空 MCP 当前和待处理
   手势；后台暂停仅在对应前台通知后自动恢复，不覆盖手动暂停。
 - 操控映射（ADR-0133/0134）：`run-apk` 在启动前用 Profile `[input]`、用户键位文件与 payload
-  `input/templates` 构建 `ControlConfig`，并按 Profile surface 校验区域；配置错误在 guest
+  `input/templates` 构建 `ControlConfig`，并按通用逻辑表面校验区域；配置错误在 guest
   启动前明确失败。用户键位文件为 `--input-config <file>`，否则为持久沙盒根下的
   `<installation_id>.input.toml`，临时沙盒不落盘；文件不存在视为空布局。窗口事件全部交给
   `ControlMapper`，每个 guest step 前 `Flush` 并经 `session::MapControlOutput` 入队；呈现

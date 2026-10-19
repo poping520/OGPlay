@@ -2,7 +2,7 @@ import { rpc } from './rpc';
 export interface ImportSummary {
   display_name: string; package: string; version_name: string; version_code: number;
   min_sdk: number | null; target_sdk: number | null; abis: string[]; icon: string;
-  profile: string | null; requires_external: boolean | null; existing_instances: number;
+  profile: string | null; existing_instances: number;
 }
 export interface ImportJob {
   job: string; state: 'uploading' | 'analyzing' | 'ready' | 'importing' | 'imported' | 'cancelled' | 'failed';

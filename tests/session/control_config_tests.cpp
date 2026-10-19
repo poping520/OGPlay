@@ -13,13 +13,11 @@ using namespace ogplay;
 const std::filesystem::path kTemplates =
     std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "input" / "templates";
 
-constexpr std::string_view kProfileHead = R"(schema = 3
+constexpr std::string_view kProfileHead = R"(schema = 4
 
 [identity]
 package = "org.example.game"
 
-[runtime]
-api_level = 19
 )";
 
 session::TitleProfile Profile(const std::string& input) {

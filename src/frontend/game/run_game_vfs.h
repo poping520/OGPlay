@@ -1,7 +1,6 @@
 #pragma once
 
-// Guest filesystem assembly for run-apk: the read-only base layers a
-// Profile declares plus the per-title save sandbox on top (ADR-0020).
+// Guest filesystem assembly for Android standard storage paths.
 // Kept apart from the session loop so both stay readable.
 
 #include <cstddef>
@@ -16,7 +15,6 @@
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "ogplay/runtime/vfs/vfs.h"
-#include "ogplay/session/title_profile.h"
 
 namespace ogplay::frontend {
 
@@ -43,22 +41,11 @@ struct SandboxSession final {
     [[nodiscard]] std::string Describe() const;
 };
 
-// Mounts external data at the Profile root or a generic /sdcard root, and
-// checks required Profile manifest entries.
+// Mounts external data at /sdcard or an explicitly supplied storage subdirectory.
 void MountExternalDirectory(
-    const session::TitleProfile& profile,
     const std::optional<std::filesystem::path>& directory,
     runtime::VirtualFileSystem& filesystem,
     const std::optional<std::string>& guest_directory = std::nullopt);
-void MountApkArchive(const session::TitleProfile& profile,
-                     std::shared_ptr<const std::vector<std::byte>> apk_bytes,
-                     const loader::ApkArchive& archive,
-                     runtime::VirtualFileSystem& filesystem);
-void MountObbArchive(const session::TitleProfile& profile,
-                     std::shared_ptr<const std::vector<std::byte>> obb_bytes,
-                     const loader::ApkArchive& archive,
-                     runtime::VirtualFileSystem& filesystem);
-
 // Opens the save sandbox for this package. Persistence never degrades
 // silently: either it opens or the launch fails with a fixable message.
 [[nodiscard]] SandboxSession OpenSandbox(const SandboxOptions& options,
@@ -68,7 +55,7 @@ void MountObbArchive(const session::TitleProfile& profile,
 // Attaches the overlay after every read-only layer is mounted and reports
 // the sandbox facts.
 void AttachSandbox(const SandboxSession& sandbox,
-                   const session::TitleProfile& profile,
+                   const std::string& package,
                    runtime::VirtualFileSystem& filesystem,
                    core::Logger& logger);
 

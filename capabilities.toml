@@ -191,17 +191,17 @@ note = "M0 空会话支持 open/close/state；M1 装配 guest"
 [session.title_profile_schema]
 status = "complete"
 test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "ADR-0022/DVM-22/25 收敛为 Title Profile v2 单一 schema；Python/C++ 同步覆盖 identity/runtime entry+presets/data/audio/quirks/input、UTF-8、200 行上限并拒绝 schema 1"
+note = "ADR-0141：只接受 v4 identity/quirks/input；Python/C++ 同步拒绝旧 schema、runtime/data/audio、ABI/name 与未知字段，保留 UTF-8 和 200 行限制。"
 
 [session.title_profile_loader]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "DVM-22/25 的 v2-only loader 完成受限纯数据 TOML、强类型 identity/runtime entry+presets 与预算、规范 VFS/audio、quirk/input；未知字段和旧 schema 明确失败"
+note = "ADR-0141：纯数据 v4 身份覆盖层，package 精确匹配，versionCode/so_sha256 为可选约束；只解析 quirk 与输入配置，无运行时/资源/Java 预置。"
 
 [session.title_profile_catalog]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp"
-note = "M5 WU-0203 稳定加载 *.profile.toml，并只按 package + versionCode + 小写 SHA-256 精确匹配；非法和交叠身份失败，无匹配不猜测"
+note = "ADR-0141：稳定加载 *.profile.toml，按 package 与声明的 versionCode/SHA-256 精确约束匹配，非法及交叠身份失败；未命中走通用启动，不选择 ABI 或根库。"
 
 [session.quirk_registry]
 status = "complete"
@@ -216,12 +216,7 @@ note = "M5 WU-0265..0267 登记并注入精确 Profile quirk；默认严格拒�
 [session.lifecycle_templates]
 status = "complete"
 test = "tests/session/lifecycle_tests.cpp"
-note = "M5 WU-0206 将 native_activity、gl_surface_view、custom_jni 映射到强类型通用回调路由，并以唯一状态机执行输入、生命周期、渲染、present、音频、调度与统一 Clock 计时"
-
-[session.profile_vfs]
-status = "complete"
-test = "tests/session/profile_vfs_tests.cpp"
-note = "M5 WU-0207 以 guest 根 + source 精确配对已导入文件并装配全新通用 VFS，required mount/manifest、working directory、额外重复输入与来源错配均受检"
+note = "通用 dex_activity 固定回调路由，唯一状态机执行输入、生命周期、渲染、present、音频、调度和统一 Clock；Profile 不选择生命周期。"
 
 [input.template_catalog]
 status = "complete"
@@ -253,11 +248,6 @@ status = "complete"
 test = "tests/input/mouse_touch_mapper_tests.cpp"
 note = "M5 WU-0298 将 backend-independent 鼠标主键映射为捕获设备的固定 id 单点触摸；悬停、非主键、黑边起始与跨设备事件不注入，窗口外 release 夹紧闭合"
 
-[session.profile_audio]
-status = "complete"
-test = "tests/session/profile_audio_tests.cpp"
-note = "M5 WU-0210 以 source + path 精确解析 Profile 封面音乐编码资源并保留 loop 事实；WU-0293 将非负 SoundPool resource 按唯一受检占位符确定性映射为 source + 规范路径；两者均不把资源路径解析伪装成解码或设备播放"
-
 [audio.ogg_vorbis_decoder]
 status = "complete"
 test = "tests/audio/ogg_vorbis_tests.cpp"
@@ -278,15 +268,10 @@ status = "partial"
 test = "tests/audio/encoded_music_tests.cpp; tests/dexvm/audio_track_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
 note = "DVM-189 音乐 OGG/MP3/WAV 增量 bitstream 解码、独立 seek/loop/volume、有限实例/输入预算和可取消准备任务；显式 MediaPlayer transport 阶段和按 stream 输出增益。MP3 后退 seek 线性重解码；仍未做真实游戏听测，不宣称完整 MediaPlayer/CTS。"
 
-[session.profile_asset_bundle]
-status = "complete"
-test = "tests/session/profile_asset_bundle_tests.cpp"
-note = "M5 WU-0215 以不可变所有权 bundle 汇总已导入 VFS/audio 字节，在 Profile 装配前拒绝非规范路径、大小写歧义、重复输入和空资产"
-
 [frontend.run_apk_external]
 status = "complete"
 test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp"
-note = "ADR-0074/VFS-04：显式 external 目录有 Profile 声明时沿用其唯一 guest 根，无声明时默认挂到 /sdcard，可用 --external-guest-dir 指定 /sdcard 内路径；required 输入与 manifest 仍在窗口创建前校验。Android 4.4 /mnt/sdcard、/storage/emulated/0 与 /sdcard 共用 VFS 节点和保存 overlay"
+note = "ADR-0074/0141：显式 external 目录默认挂到 /sdcard，可用 --external-guest-dir 指定子路径；Android storage 别名共享节点。--obb 原文件挂到 /sdcard/Android/obb/<package>，不依赖 Profile，不做资源清单预检。"
 
 [frontend.gui_shell]
 status = "complete"
@@ -438,11 +423,6 @@ status = "complete"
 test = "tests/hal/audio_output_tests.cpp"
 note = "M5 WU-0296 以 SDL3 默认播放设备实现受检 AudioOutput config、幂等 start/stop、完整 frame 提交和 queued-frame 计量；dummy driver 无设备契约与 SDL-disabled 明确失败均有机器测试"
 
-[frontend.profile_sound_pool_output]
-status = "complete"
-test = "tests/hal/audio_output_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp"
-note = "M5 WU-0296 让声明 audio.sound_pool 的 GLSurfaceView Profile 按纯数据 source/path 从 APK 读取资源，并以每帧最多四个 1024-frame chunk、4096-frame 水位泵送 stereo PCM16 到 SDL3；Debug exact APK 11264 帧后正常退出并由用户验收后要求提交"
-
 [memory.direct_address_space]
 status = "complete"
 test = "tests/memory/address_space_tests.cpp"
@@ -531,11 +511,11 @@ note = "Android ARM 120 项分组 syscall 目录及样本所需调用，未实�
 [runtime.bionic]
 status = "complete"
 test = "tests/runtime/bionic_profile_tests.cpp; tools.android_payload_current; tests/frontend/data_directory_tests.cpp"
-note = "真实 Bionic 装载自检与样本执行，mem 热点拦截有生产 handler。发行数据内置 android-4.4.4_r2.0.1 构建的 API 19 五库与 curated BootDex（DVM-99），逐文件哈希、ELF/DEX 身份与 NOTICE 受检；run-apk 按 Profile API 选用内置库，不接受外部 system 目录。API 22/23 发行集未纳入。"
+note = "真实 Bionic 装载自检与样本执行，mem 热点拦截有生产 handler。发行数据内置 android-4.4.4_r2.0.1 构建的 API 19 五库与 curated BootDex（DVM-99），逐文件哈希、ELF/DEX 身份与 NOTICE 受检；run-apk 固定 API 19 选用内置库，不接受外部 system 目录。API 22/23 发行集未纳入。"
 
 [frontend.save_sandbox]
 status = "partial"
-test = "frontend.run_apk_options; tests/session/profile_vfs_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp"
+test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp; tests/runtime/vfs_sandbox_tests.cpp"
 note = "ADR-0020/SBX-4..10：run-apk 默认按 package 打开持久沙盒，--sandbox-dir 指定根，--ephemeral-sandbox 关闭持久（二者互斥）；native、DexVM 与 prefs 全部经 VFS，onPause 与正常退出 FlushAll。装载失败明确终止，scenario runner 默认一次性沙盒。用户级真实游戏存档闭环未演示。"
 
 [dexvm.file_io_vfs]
@@ -793,20 +773,15 @@ status = "complete"
 test = "tests/loader/apk_native_tests.cpp"
 note = "APS-2/4：按 ABI、entry soname 与逻辑名组织不可变 APK native 清单；进程 ABI 取运行时支持顺序与 APK ABI 交集（默认 armeabi-v7a 优先），不读 Profile。动态装载以 entry basename 为规范身份，不同 DT_SONAME 记为别名。空清单时 ABI 解析明确失败，无 native 的 Java 进程不调用它。"
 
-[profiles.legacy_arm_abi_identity]
-status = "complete"
-test = "tests/session/title_profile_tests.cpp"
-note = "M5 WU-0220 的 Title Profile v1、Python 校验器与 C++ loader 以同一强类型集合接受 armeabi/armeabi-v7a，并拒绝其他 ABI"
-
 [profiles.apk_exact_identity_match]
 status = "complete"
 test = "tests/session/profile_apk_tests.cpp"
-note = "M5 WU-0221 的 package/version/hash/ABI exact match 由 APS-8 保留为 v1/v2 legacy applicability adapter；旧 hash 不命中只是不应用 override，不再阻断 generic startup，也不参与 root library 或 process ABI 选择"
+note = "ADR-0141：package 与可选 versionCode/SO SHA-256 精确约束决定覆盖是否适用；hash 匹配任意 inventory 条目，不参与根库或 process ABI 选择，无匹配继续 generic startup。"
 
-[profiles.optional_compatibility_v3]
+[profiles.optional_compatibility_v4]
 status = "complete"
 test = "tests/session/title_profile_tests.cpp; tests/session/profile_apk_tests.cpp; tools.title_profile_validator_self_test; tools.title_profiles_current"
-note = "APS-8 新增 schema v3 optional compatibility config：package/api_level 必填，version/hash guard 可选，ABI/lifecycle/root library 禁止；no profile/no hash/纯 Java均继续 generic startup，旧 v1 声明仅适配有效数据且不恢复 native-call/Java replay"
+note = "ADR-0141：v4 仅 identity/quirks/input；package 必填，version/hash guard 可选；runtime/data/audio 与旧 schema 均拒绝。no profile、hash 未命中及纯 Java APK 继续 generic startup。"
 
 [runtime.bionic_guest_dependency_closure]
 status = "complete"
@@ -832,16 +807,6 @@ note = "APS-6 在 launcher Activity 前完成 default/custom Application 的 res
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/session/audio_output_pump_tests.cpp"
 note = "APS-7：以 DexVmReady/ApplicationStarted/ActivityResumed/Stopped 状态拥有 package、ABI、进程、NativeLibraryLoader、DexVM、Application 与 Activity 生命周期；默认 Manifest launcher，可覆盖入口；纯 Java 应用可无 ABI 启动，native 库按 Java 请求追加；Stop 先停 Java 线程再 finalization。音频解码窗口与 AudioOutputPump 由进程注入（DVM-189）。"
-
-[profiles.apk_launch_preflight]
-status = "complete"
-test = "tests/session/profile_apk_tests.cpp"
-note = "M5 WU-0223 的 legacy exact-root preflight API 为兼容保留；APS-7/8 的 CLI 已改为 rootless generic startup 与 optional compatibility selection，不再由 Profile 获取根库、生命周期或 ABI"
-
-[profiles.first_exact_legacy_title]
-status = "complete"
-test = "tools.title_profiles_current; tests/session/profile_apk_tests.cpp"
-note = "精确 APK 身份能力保留并已迁移至 v2 dex_activity；旧生命周期声明已由 ADR-0022/DVM-25 退役"
 
 [runtime.jni_native_export_names]
 status = "complete"
@@ -1123,25 +1088,10 @@ status = "complete"
 test = "tests/dexvm/egl_facade_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp; tools.scenarios_current"
 note = "BND-33/36/38/49、DVM-168：Java EGL10 与 API19 EGL14 复用 Native EGL registry，共享 thread current、延迟销毁、pbuffer、shared context 与配置事实；destroy 立即退役 wrapper，terminate 后可重新 initialize；参数错误锁存 per-thread native error。pixmap、client-buffer 与 texture-pbuffer 按 native 能力明确拒绝。"
 
-[profiles.java_method_dispatch]
-status = "complete"
-test = "tests/session/title_profile_tests.cpp; tools.title_profiles_current"
-note = "M5 WU-0245 要求 Profile Java method 显式声明 instance/static kind，并按该种类注册到统一 JNI class registry"
-
-[profiles.legacy_audio_java_declarations]
-status = "complete"
-test = "tests/session/title_profile_tests.cpp; tools.title_profiles_current"
-note = "M5 WU-0248/0312 以纯 Profile 数据声明两个目标 audio native init 经 JADX 与 ELF 共同确认的完整 static Java lookup"
-
-[profiles.legacy_activity_java_declarations]
-status = "complete"
-test = "tests/session/title_profile_tests.cpp; tools.title_profiles_current"
-note = "M5 WU-0249/0311 以纯 Profile 数据声明两个目标 activity native init 经 JADX 与 ELF 共同确认的 static Java lookup"
-
 [frontend.profile_gl_surface_run]
 status = "complete"
 test = "frontend.run_apk_options"
-note = "M5 WU-0244/0318/0324 让 run-apk 组合 gl_surface_view guest session、lifecycle、SDL input 与 ANGLE，并在长 A32 call 的 slice 边界泵非消费式窗口消息"
+note = "ADR-0141：run-apk 以标准 Manifest Activity、SDL input、ANGLE 与通用 session 编排；Profile 只提供 quirk 和输入覆盖，长 A32 call 的 slice 边界泵非消费式窗口消息。"
 
 [gles.gles1_core_catalog]
 status = "complete"
@@ -1742,16 +1692,6 @@ note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)�
 status = "complete"
 test = "tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
 note = "DVM-18/125/218/219/234/236、ADR-0115：launcher 实例化→clinit→onCreate/Start/Resume→尺寸→焦点→Surface→逐帧绘制→输入→suspend/resume；窗口焦点为唯一事实；退出分阶段执行并保留首错，健康关闭有界交付 pause/Surface 退役/stop，不合成全栈 onDestroy，进程 Stop 不做卸载式 DSO fini；killProcess 立即停止 Java。返回栈见 dexvm.activity_result；不提供完整 task/multi-window。"
-
-[session.title_profile_v2]
-status = "complete"
-test = "tools.title_profile_validator_self_test; tools.title_profiles_current; tests/session/title_profile_tests.cpp"
-note = "DVM-17/22/25 冻结的 schema v2 exact 契约继续支持 dex_activity、受检 dexvm、entry 和 static presets；APS-8 将其作为 legacy applicability adapter，并增加只读取 compatibility 数据的 v1 adapter 与 optional v3，不恢复历史执行路径"
-
-[session.profile_entry_scope]
-status = "complete"
-test = "tests/session/profile_entry_scope_tests.cpp; tools.title_profiles_current"
-note = "DVM-22..24：Profile v2 可在 required data manifest 已验证时覆盖 launch Activity，并在真实 class 初始化后按 Z/B/C/S/I/J/F/D/String 类型写 static field；缺类/字段/类型/前提明确失败且日志保留 reason"
 
 [runtime.android_link_preflight]
 status = "complete"

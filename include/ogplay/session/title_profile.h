@@ -11,7 +11,6 @@
 #include <variant>
 #include <vector>
 
-#include "ogplay/session/control_config.h"
 
 namespace ogplay::session {
 
@@ -36,14 +35,10 @@ struct ProfileQuirks final {
     std::map<std::string, ProfileValue::Table, std::less<>> parameters;
 };
 
-// [input]: template id, zones and bindings; merged by BuildControlConfig.
-using ProfileInput = ControlLayer;
-
 struct TitleProfile final {
     std::uint32_t schema{};
     ProfileIdentity identity;
     std::optional<ProfileQuirks> quirks;
-    std::optional<ProfileInput> input;
 };
 
 class TitleProfileError final : public std::runtime_error {

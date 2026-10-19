@@ -19,6 +19,7 @@ TEST_CASE("Game run args round trip every value and optional field") {
     o.dexvm_interpreter = InterpreterBackend::threaded;
     o.diagnostics_enabled = true; o.diagnostic_directory = "/diag";
     o.diagnostic_teardown_timeout = std::chrono::seconds(7);
+    o.surface_width = 1024; o.surface_height = 600;
     o.supersample_factor = 4; o.cpu_config = {8, 2400, {true, 123}};
     o.survey_gaps_output = "/survey.json"; o.sandbox_directory = "/sandbox";
     o.installation_id = "org.example.app-1"; o.input_config_path = "/input.toml";
@@ -89,4 +90,20 @@ TEST_CASE("game run options reject incompatible execution modes before loading d
     const std::array<std::string_view, 5> sandbox{
         "game.apk", "--ephemeral-sandbox", "--sandbox-dir", "sandbox", "--preflight"};
     CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(sandbox)), std::invalid_argument);
+}
+
+TEST_CASE("surface dimensions validate CLI and facade boundaries") {
+    for (const auto flag : {"--surface-width", "--surface-height"}) {
+        for (const auto value : {"0", "4097", "-1", "2x", "99999999999999999999999999"}) {
+            const std::vector<std::string_view> args{"game.apk", flag, value};
+            CHECK_THROWS_AS(static_cast<void>(ParseGameRunArgs(args)), std::invalid_argument);
+        }
+        const std::vector<std::string_view> args{"game.apk", flag, "4096"};
+        CHECK_NOTHROW(static_cast<void>(ParseGameRunArgs(args)));
+    }
+    GameRunOptions options; options.apk_path = "game.apk";
+    options.surface_width = 0;
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
+    options.surface_width = 1024; options.surface_height = 4097;
+    CHECK_THROWS_AS(ValidateGameRunOptions(options), std::invalid_argument);
 }

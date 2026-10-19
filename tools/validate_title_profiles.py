@@ -14,7 +14,7 @@ from typing import Any, Sequence
 
 
 MAX_PROFILE_LINES = 200
-ROOT_FIELDS = {"schema", "identity", "quirks", "input"}
+ROOT_FIELDS = {"schema", "identity", "quirks"}
 PACKAGE_PATTERN = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+\Z"
 )
@@ -137,63 +137,12 @@ def _validate_quirks(value: Any) -> None:
                             f"quirks.{quirk}")
 
 
-INPUT_ANCHORS = {"top_left", "top", "top_right", "left", "center", "right",
-                 "bottom_left", "bottom", "bottom_right"}
-INPUT_BINDING_FIELDS = {
-    "none": set(),
-    "button": {"zone", "press", "repeat_frames"},
-    "stick": {"zone", "radius", "settle_frames", "ramp_frames"},
-    "key": {"key"},
-    "mode": {"target", "switch"},
-}
-
-
-def _number(value: Any, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ProfileError(f"{field} must be a number")
-    return float(value)
-
-
-def _validate_input(value: Any) -> None:
-    # Structure only; source names, key codes and merging are checked by the C++ loader.
-    table = _table(value, "input")
-    _keys(table, "input", {"template", "zone", "binding"}, set())
-    if "template" in table and ID_PATTERN.fullmatch(
-            _string(table["template"], "input.template")) is None:
-        raise ProfileError("input.template must be a template id")
-    names: set[str] = set()
-    for index, item in enumerate(_array(table.get("zone", []), "input.zone")):
-        field = f"input.zone[{index}]"
-        zone = _table(item, field)
-        _keys(zone, field, {"name", "anchor", "x", "y", "w", "h", "r"}, {"name", "anchor"})
-        name = _string(zone["name"], f"{field}.name")
-        if ID_PATTERN.fullmatch(name) is None or name in names:
-            raise ProfileError(f"{field}.name must be a unique zone id")
-        names.add(name)
-        if _string(zone["anchor"], f"{field}.anchor") not in INPUT_ANCHORS:
-            raise ProfileError(f"{field}.anchor is not a known anchor")
-        for key in ("x", "y", "w", "h", "r"):
-            if key in zone:
-                _number(zone[key], f"{field}.{key}")
-        if ("r" in zone) == ("w" in zone or "h" in zone) or ("w" in zone) != ("h" in zone):
-            raise ProfileError(f"{field} needs either r or both w and h")
-    for index, item in enumerate(_array(table.get("binding", []), "input.binding")):
-        field = f"input.binding[{index}]"
-        binding = _table(item, field)
-        action = _string(binding.get("action"), f"{field}.action")
-        if action not in INPUT_BINDING_FIELDS:
-            raise ProfileError(f"{field}.action is not a known action")
-        _keys(binding, field, {"source", "action", "mode"} | INPUT_BINDING_FIELDS[action],
-              {"source", "action"})
-        _string(binding["source"], f"{field}.source")
-
-
 def validate_profile(document: Any, expected_package: str) -> dict[str, Any]:
     root = _table(document, "profile")
     _keys(root, "profile", ROOT_FIELDS, {"schema", "identity"})
     _integer(root["schema"], "schema", 4, 4)
     _validate_identity(root["identity"], expected_package)
-    for field, validator in {"quirks": _validate_quirks, "input": _validate_input}.items():
+    for field, validator in {"quirks": _validate_quirks}.items():
         if field in root:
             validator(root[field])
     return root
@@ -259,10 +208,6 @@ so_sha256 = ["{'0' * 64}"]
 enabled = ["legacy_reads"]
 [quirks.legacy_reads]
 range = ["0x1000", "0x2000"]
-[input]
-template = "stick_action"
-zone = [{{ name = "move", anchor = "bottom_left", x = 20, y = -20, r = 80 }}]
-binding = [{{ source = "key:p", action = "none" }}]
 '''
 
 
@@ -278,7 +223,7 @@ def self_test(schema_path: Path) -> int:
              _valid_profile().replace("0" * 64, "G" * 64),
              _valid_profile().replace('enabled = ["legacy_reads"]', 'enabled = []')]
     cases += [_valid_profile().replace("schema = 4", f"schema = {v}") for v in (1, 2, 3, 5)]
-    cases += [_valid_profile() + f"\n[{field}]\n" for field in ("runtime", "data", "audio", "java")]
+    cases += [_valid_profile() + f"\n[{field}]\n" for field in ("runtime", "data", "audio", "java", "input")]
     cases += [_valid_profile().replace("[identity]", f'[identity]\n{field} = "x"')
               for field in ("name", "abi", "root_library")]
     with tempfile.TemporaryDirectory() as directory:

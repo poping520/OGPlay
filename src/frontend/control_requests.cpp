@@ -52,10 +52,6 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
         writer.Append(layout, item);
     }
     writer.Add(root, "layout", layout);
-    const auto templates = writer.Array();
-    for (const auto& item : session::ListControlTemplates(context.templates_directory))
-        writer.Append(templates, session::WriteControlTemplateJson(writer, item));
-    writer.Add(root, "templates", templates);
     return agent::ControlResult(writer.Serialize(root));
 }
 
@@ -87,7 +83,7 @@ void RequireParams(const core::JsonValue params, const std::initializer_list<std
         save = *flag->Bool();
     }
     auto layer = session::DecodeControlLayerJson(*layer_json);
-    auto config = session::BuildControlConfig(context.profile_input, &layer, context.templates_directory);
+    auto config = session::BuildControlConfig(layer);
     context.deliver(context.mapper.Reconfigure(std::move(config)));
     context.user = layer;
     const bool saved = save && context.config_path.has_value();

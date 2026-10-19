@@ -338,3 +338,41 @@ TEST_CASE("INP-7 GUI LaunchPlan gives every game a key editor port and a token o
     CHECK(preflight.control_token.empty());
     CHECK(std::find(preflight.argv.begin(), preflight.argv.end(), "--key-editor-port") == preflight.argv.end());
 }
+
+TEST_CASE("display user settings resolve game over global over defaults") {
+    using namespace ogplay::frontend;
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    const auto executable = tree.path / "ogplay";
+    const auto directory = tree.path / "library/org.example.game";
+    Write(executable, "exe"); Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, {}); entry.metadata->external_dir.reset();
+    LibraryConfig global;
+    auto launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_width == 800);
+    CHECK(launch.options.surface_height == 480);
+    CHECK(launch.options.supersample_factor == 1);
+    SetSetting(global, "surface_width", std::uint32_t{1280});
+    SetSetting(global, "surface_height", std::uint32_t{720});
+    SetSetting(global, "supersample", std::uint32_t{2});
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_width == 1280);
+    CHECK(launch.options.surface_height == 720);
+    CHECK(launch.options.supersample_factor == 2);
+    SaveGameSettings(directory, {{{"surface_width", std::uint32_t{1024}},
+                                  {"surface_height", std::uint32_t{600}},
+                                  {"supersample", std::uint32_t{3}}}});
+    launch = ResolveLaunch(LibraryStore(tree.path), entry, global);
+    CHECK(launch.options.surface_width == 1024);
+    CHECK(launch.options.surface_height == 600);
+    CHECK(launch.options.supersample_factor == 3);
+    const auto argv = FormatGameRunArgs(launch.options);
+    CHECK(std::find(argv.begin(), argv.end(), "--surface-width") != argv.end());
+    CHECK(std::find(argv.begin(), argv.end(), "600") != argv.end());
+    SaveGameSettings(directory, {});
+    CHECK(ResolveLaunch(LibraryStore(tree.path), entry, global).options.surface_width == 1280);
+    CHECK_THROWS(SetSetting(global, "surface_width", std::uint32_t{0}));
+    CHECK_THROWS(SetSetting(global, "surface_height", std::uint32_t{4097}));
+    CHECK_THROWS(ValidateGameSettings({{{"surface_width", std::uint32_t{0}}}}));
+    CHECK_THROWS(ValidateGameSettings({{{"surface_height", std::uint32_t{4097}}}}));
+}

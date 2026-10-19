@@ -8,7 +8,6 @@ struct ProfileAccess {
     static ProfileSummary Summary(const session::TitleProfile& profile) {
         ProfileSummary result{profile.identity.package};
         if (profile.quirks) result.quirks = profile.quirks->enabled;
-        if (profile.input) result.input_template = profile.input->template_id;
         return result;
     }
 };

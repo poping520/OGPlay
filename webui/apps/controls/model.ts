@@ -9,12 +9,11 @@ export interface Binding {
   radius?: number; settle_frames?: number; ramp_frames?: number;
   key?: string | number; target?: string; switch?: 'toggle' | 'hold';
 }
-export interface Layer { template?: string; zone: Zone[]; binding: Binding[] }
-export interface Template { id: string; summary: string; zones: string[]; binding: Binding[] }
+export interface Layer { zone: Zone[]; binding: Binding[] }
 export interface Surface { width: number; height: number }
 export interface Session {
   surface: Surface; frozen: boolean; mode: string; config_path: string | null; persistent: boolean;
-  user: Layer; effective: Layer; templates: Template[];
+  user: Layer; effective: Layer;
 }
 
 // Guest-pixel box: center and half extents.
@@ -92,23 +91,20 @@ export function conflicts(bindings: Binding[]): Set<number> {
 }
 
 // The editor works on the whole effective layout; Draft is what the user sees.
-export interface Draft { template?: string; zones: Zone[]; bindings: Binding[] }
+export interface Draft { zones: Zone[]; bindings: Binding[] }
 
 export function loadDraft(session: Session): Draft {
-  return { template: session.user.template, zones: structuredClone(session.effective.zone),
+  return { zones: structuredClone(session.effective.zone),
            bindings: structuredClone(session.effective.binding.filter(binding => binding.action !== 'none')) };
 }
 
-// Bindings the lower layers may still contribute: everything effective at load, everything the
-// saved user layer mentions, and the templates involved.
-export function baseBindings(session: Session, template?: string): Binding[] {
-  const ids = new Set([session.user.template, template].filter(Boolean));
-  return [...session.effective.binding, ...session.user.binding,
-          ...session.templates.filter(item => ids.has(item.id)).flatMap(item => item.binding)];
+// Track loaded bindings so deleting a built-in binding writes an explicit unbind.
+export function baseBindings(session: Session): Binding[] {
+  return [...session.effective.binding, ...session.user.binding];
 }
 
 // The saved layer re-lists the full draft after unbinding every lower-layer source the draft no
-// longer covers, so removed template keys stay removed.
+// longer covers, so removed built-in keys stay removed.
 export function buildLayer(draft: Draft, base: Binding[]): Layer {
   const unbinds: Binding[] = [];
   const seen = new Set<string>();
@@ -120,7 +116,7 @@ export function buildLayer(draft: Draft, base: Binding[]): Layer {
       seen.add(key); unbinds.push(single);
     }
   }
-  return { ...(draft.template ? { template: draft.template } : {}), zone: draft.zones, binding: [...unbinds, ...draft.bindings] };
+  return { zone: draft.zones, binding: [...unbinds, ...draft.bindings] };
 }
 
 export function uniqueName(prefix: string, zones: Zone[]): string {
@@ -151,12 +147,4 @@ export function setZoneBinding(draft: Draft, zone: string, binding: Binding): Dr
   const bindings = [...draft.bindings];
   if (index >= 0) bindings[index] = binding; else bindings.push(binding);
   return { ...draft, bindings };
-}
-
-// Template zones keep the positions already placed; missing ones get a default spot. Bindings
-// on zones are replaced by the template's; key and mode bindings stay.
-export function applyTemplate(draft: Draft, template: Template, surface: Surface): Draft {
-  const zones = template.zones.map((name, index) => draft.zones.find(zone => zone.name === name) ?? placeZone(name,
-    template.binding.some(binding => binding.zone === name && binding.action === 'stick') ? defaultBox('stick', surface) : defaultBox('button', surface, index), surface));
-  return { template: template.id, zones, bindings: [...draft.bindings.filter(binding => !binding.zone), ...structuredClone(template.binding)] };
 }

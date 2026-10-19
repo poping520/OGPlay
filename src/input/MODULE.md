@@ -6,8 +6,6 @@
 
 ## 公共 API
 
-- `InputTemplateCatalog`：M5 注册不可变的通用 mapper，以稳定 id 精确选择并转换 HAL
-  输入事件；构造时必须指定已注册的默认模板。
 - `MouseTouchMapper`：把宿主鼠标主键的 down/drag/up 转为固定 pointer id 0 的单点触摸；
   只在有效内容区开始手势，拖出内容区后仍以夹紧坐标闭合 release。
 - `TouchMapper`：复用鼠标映射，并接收 HAL 原生 finger 事件，生成平台无关 TouchSnapshot。
@@ -31,9 +29,10 @@
 ## 不变量
 
 - 坐标换算只有一处实现。
+- 输入配置只由内置直通/Esc 默认与用户层组成；区域及游戏按键均由用户创建，不加载
+  Profile、类型模板或应用内置游戏布局（ADR-0142）。
 - 触摸 down/up 成对且保留帧时序；中断用 cancel 闭合。传感器扩充不属于本阶段。
 - 鼠标悬停、非主键及其他设备的事件不得进入已捕获的单点触摸序列。
-- 模板 id 唯一且只接受规范小写标识；未知模板明确失败，不猜测相似名称。
 - `ControlMapper` 的合成触点按下与抬起至少相隔一帧；`stick` 在原点按下并停留
   `stick_settle_frames`（默认 2）帧，之后每帧最多移动 `travel / stick_ramp_frames`（默认 4）
   滑向当前方向，换向同样渐进，不以单次 MOVE 跳到目标。区域按“区域自身锚点 = surface 锚点 + 偏移”解析，越界、未知区域、

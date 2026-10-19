@@ -15,7 +15,7 @@ so_sha256 = ["0000000000000000000000000000000000000000000000000000000000000000"]
 }
 }
 
-TEST_CASE("Title Profile v4 accepts only identity quirks and input") {
+TEST_CASE("Title Profile v4 accepts only identity and quirks") {
     using namespace ogplay::session;
     const auto profile = LoadTitleProfileText(Profile(), "org.example.game");
     CHECK(profile.schema == 4U);
@@ -27,7 +27,7 @@ TEST_CASE("Title Profile v4 accepts only identity quirks and input") {
         text.replace(9, 1, std::to_string(schema));
         CHECK_THROWS_AS(static_cast<void>(LoadTitleProfileText(text, "org.example.game")), TitleProfileError);
     }
-    for (const auto removed : {"runtime", "data", "audio", "java"}) {
+    for (const auto removed : {"runtime", "data", "audio", "java", "input"}) {
         CHECK_THROWS_AS(static_cast<void>(LoadTitleProfileText(Profile() + "[" + removed + "]\n",
                                             "org.example.game")), TitleProfileError);
     }

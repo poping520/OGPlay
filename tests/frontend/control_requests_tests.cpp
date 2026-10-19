@@ -13,9 +13,6 @@ namespace {
 
 using namespace ogplay;
 
-const std::filesystem::path kTemplates =
-    std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" / "input" / "templates";
-
 struct Harness final {
     input::ControlMapper mapper;
     bool frozen{};
@@ -37,8 +34,7 @@ struct Harness final {
             value = document->Root();
         }
         return frontend::HandleControlRequest(method, value, {
-            .mapper = mapper, .frozen = frozen, .user = user, .profile_input = nullptr,
-            .templates_directory = kTemplates, .config_path = path, .frames = &frames,
+            .mapper = mapper, .frozen = frozen, .user = user, .config_path = path, .frames = &frames,
             .surface_width = 800, .surface_height = 480,
             .freeze = [this] { ++freezes; },
             .deliver = [this](const std::vector<input::ControlOutput>& outputs) { delivered += outputs.size(); },
@@ -48,7 +44,7 @@ struct Harness final {
     }
 };
 
-constexpr std::string_view kLayer = R"({"layer":{"template":"stick_action","zone":[
+constexpr std::string_view kLayer = R"({"layer":{"zone":[
   {"name":"move","anchor":"bottom_left","x":20,"y":-20,"r":80},
   {"name":"primary","anchor":"bottom_right","x":-40.5,"y":-40,"r":50},
   {"name":"skill_1","anchor":"right","x":-40,"r":30},
@@ -75,7 +71,6 @@ TEST_CASE("INP-5 control.apply hot-applies, saves and round-trips through contro
     CHECK(response.json.find(R"("saved":true)") != std::string::npos);
     CHECK(harness.mapper.Layout().size() == 5);
     const auto saved = session::LoadControlOverride(*harness.path);
-    CHECK(saved.template_id == "stick_action");
     CHECK(saved.zones[1].x == doctest::Approx(-40.5));
     CHECK(saved.bindings.size() == 1);
 
@@ -83,7 +78,7 @@ TEST_CASE("INP-5 control.apply hot-applies, saves and round-trips through contro
     REQUIRE(response.ok);
     CHECK(response.json.find(R"("frozen":true)") != std::string::npos);
     CHECK(response.json.find(R"("persistent":true)") != std::string::npos);
-    CHECK(response.json.find(R"("id":"stick_action")") != std::string::npos);
+    CHECK(response.json.find("templates") == std::string::npos);
     CHECK(response.json.find(R"("source":"key:space")") != std::string::npos);
     CHECK(response.json.find(R"("name":"primary","center_x":709.5)") != std::string::npos);
 
@@ -102,10 +97,10 @@ TEST_CASE("INP-5 rejected layouts leave the running layout unchanged") {
     CHECK_FALSE(oversized.ok);
     CHECK(oversized.json.find("-32010") != std::string::npos);
     const auto unplaced = harness.Call("control.apply", R"({"layer":{"template":"stick_action"}})");
-    CHECK(unplaced.json.find("needs zone") != std::string::npos);
+    CHECK(unplaced.json.find("unknown field template") != std::string::npos);
     CHECK(harness.Call("control.apply", R"({"layer":{},"extra":1})").json.find("-32602") != std::string::npos);
     CHECK(harness.mapper.Layout().size() == 5);
-    CHECK(harness.user.template_id == "stick_action");
+    CHECK(harness.user.bindings.size() == 1);
     CHECK(harness.Call("control.get", R"({"x":1})").json.find("unknown parameter") != std::string::npos);
     CHECK(harness.Call("control.nope").json.find("-32601") != std::string::npos);
 }

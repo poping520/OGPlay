@@ -50,7 +50,7 @@
   前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
 - Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺 Profile >
   缺数据包 > 运行中 > ready。缺 Profile 为可启动通用 APK 提示，不是兼容性等级。
-- Profile 摘要只提供身份、quirk 与输入模板；catalog 失效显示 unavailable。
+- Profile 摘要只提供身份与 quirk；catalog 失效显示 unavailable。
   外部数据只检查用户已选择的目录是否有效，不从 Profile 推断 required；默认 Profile
   与 quirk 来自同一 bundled payload。
 - 启动器主窗口只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。
@@ -71,7 +71,7 @@
   `--sandbox-dir <library-root>/sandbox`、`--library-root` 与 `--installation-id`；单实例/移除由 OS 运行锁判定，进程表仅补充。
 - 全局设置仅将超采样、解释器和 MCP 端口转为已支持的 CLI 参数；预留选项只保存，
   不改变运行时行为。启动成功后通过宿主回调最小化；GUI 配置不覆盖正在运行的进程。
-- ResolveLaunch 在共享库内从实例配置合并全局值，支持 Profile/数据目录、超采样、解释器、MCP
+- ResolveLaunch 在共享库内从实例配置合并全局值，支持 Profile/数据目录、逻辑宽高、超采样、解释器、MCP
   开关/端口/手动步进、临时沙盒。预检移除全部 MCP 参数；临时沙盒不传 `--sandbox-dir`。
   `library.launch` 的 mode 仅允许 normal/preflight/diagnostic，预览和启动使用同一路径。
   库视图和目录打开消费实例数据目录，Profile 覆盖目录的错误按实例隔离。

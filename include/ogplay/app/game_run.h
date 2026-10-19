@@ -25,6 +25,8 @@ struct CpuConfig final {
     bool operator==(const CpuConfig&) const = default;
 };
 
+inline constexpr std::uint32_t kMaximumSurfaceDimension = 4096;
+
 struct GameRunOptions final {
     std::filesystem::path apk_path;
     std::optional<std::filesystem::path> external_directory;
@@ -39,6 +41,8 @@ struct GameRunOptions final {
     std::optional<std::chrono::milliseconds> diagnostic_teardown_timeout;
     bool diagnostics_enabled{};
     std::uint32_t supersample_factor{1};
+    std::uint32_t surface_width{800};
+    std::uint32_t surface_height{480};
     CpuConfig cpu_config;
     bool mcp_manual_step{};
     bool preflight{};

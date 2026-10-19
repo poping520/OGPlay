@@ -7,6 +7,10 @@
 删除条目保留 sandbox 和外部数据。settings 校验、未知键和预留字段规则为两个 EXE 的唯一来源；ResolveLaunch 产出值，参数格式仅由 FormatGameRunArgs 维护。
 验证：ogplay_app_tests 的库、锁与参数主题；真实 APK 有界复跑。
 
-Profile 摘要只含 id、quirk 与输入模板，不提供显示名或 required external。显示名称来自
+Profile 摘要只含 id 与 quirk，不提供显示名或 required external。显示名称来自
 APK；数据目录由实例设置/导入选项提供，目录有效性独立于 Profile。
 解释器设置用 `default` 选择通用默认值，`switch/threaded` 为用户显式覆盖。
+
+surface_width/surface_height 默认 800/480，范围 1..4096；supersample 范围 1..4。
+三者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
+类型模板及 input_template 设置已删除，未知旧设置明确失败。

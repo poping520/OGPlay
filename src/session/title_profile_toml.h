@@ -8,7 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include "ogplay/session/control_config.h"
 
 namespace ogplay::session::detail {
 
@@ -21,8 +20,6 @@ struct TomlValue final {
 };
 
 [[nodiscard]] TomlValue::Table ParseDataToml(std::string_view text);
-// Decodes an [input]-shaped table (template, zone, binding); throws input::ControlConfigError.
-[[nodiscard]] ControlLayer DecodeControlLayer(const TomlValue::Table& table, std::string_view field);
 
 void ValidateExactTableKeys(
     const TomlValue::Table& table, std::string_view field,

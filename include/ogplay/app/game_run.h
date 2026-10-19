@@ -60,6 +60,9 @@ struct GameRunOptions final {
     bool operator==(const GameRunOptions&) const = default;
 };
 
+// Validates the user-selected mount destination inside the external storage namespace.
+OGPLAYCORE_API void ValidateExternalGuestDirectory(std::string_view path);
+
 // Arguments start at the APK path, independently of the host entry mode.
 [[nodiscard]] OGPLAYCORE_API GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args);
 [[nodiscard]] OGPLAYCORE_API std::vector<std::string> FormatGameRunArgs(const GameRunOptions& options);

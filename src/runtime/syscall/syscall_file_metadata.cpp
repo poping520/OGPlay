@@ -29,6 +29,7 @@ constexpr std::int32_t kEinval = 22;
 constexpr std::int32_t kEnotsup = 95;
 constexpr std::int32_t kEacces = 13;
 constexpr std::int32_t kEnoent = 2;
+constexpr std::int32_t kErange = 34;
 constexpr std::uint32_t kAtFdCwd = std::bit_cast<std::uint32_t>(-100);
 constexpr std::uint32_t kAtRemoveDir = 0x200;
 constexpr std::uint32_t kMaxIoSize = 16U * 1024U * 1024U;
@@ -112,21 +113,32 @@ void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
         };
     };
 
-    // Relative paths would need a real per-process cwd for *at() calls;
-    // saying so beats resolving them against the wrong directory.
+    // AT_FDCWD shares the same process cwd as ordinary file operations.
+    // Arbitrary directory-fd relative lookup remains explicitly unsupported.
     const auto absolute_at = [read_path](const std::uint32_t directory_fd,
                                          const std::uint32_t raw_path) {
         auto path = read_path(raw_path);
-        if (path.empty() || path.front() != '/') {
-            if (directory_fd != kAtFdCwd) {
-                throw VfsError(kEnotsup,
-                               "relative *at() paths are not implemented");
-            }
-            throw VfsError(kEnotsup,
-                           "relative *at() paths are not implemented");
-        }
+        if ((path.empty() || path.front() != '/') && directory_fd != kAtFdCwd)
+            throw VfsError(kEnotsup, "directory-relative *at() paths are not implemented");
         return path;
     };
+
+    dispatcher.Implement(12, guarded([&vfs, read_path](const A32SyscallFrame& frame) {
+        vfs.SetWorkingDirectory(read_path(frame.arguments[0]));
+        return 0;
+    }));
+    dispatcher.Implement(133, guarded([&vfs](const A32SyscallFrame& frame) {
+        vfs.SetWorkingDirectory(std::bit_cast<std::int32_t>(frame.arguments[0]));
+        return 0;
+    }));
+    dispatcher.Implement(183, guarded([&vfs, &address_space](const A32SyscallFrame& frame) {
+        auto path = *vfs.WorkingDirectory();
+        path.push_back('\0');
+        if (path.size() > frame.arguments[1]) return -kErange;  // Includes NUL.
+        const memory::GuestAddress destination{frame.arguments[0]};
+        address_space.Write(destination, std::as_bytes(std::span{path.data(), path.size()}), frame.thread_id);
+        return static_cast<std::int32_t>(path.size());  // raw Linux syscall ABI
+    }));
 
     const auto write_stat = [&vfs, &address_space](
                                 const VfsFileInfo& info,

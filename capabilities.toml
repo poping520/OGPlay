@@ -265,8 +265,8 @@ note = "DVM-189 音乐 OGG/MP3/WAV 增量 bitstream 解码、独立 seek/loop/vo
 
 [frontend.run_apk_external]
 status = "complete"
-test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp"
-note = "ADR-0074/0141：显式 external 目录默认挂到 /sdcard，可用 --external-guest-dir 指定子路径；Android storage 别名共享节点。--obb 原文件挂到 /sdcard/Android/obb/<package>，不依赖 Profile，不做资源清单预检。"
+test = "frontend.run_apk_options; tests/frontend/run_apk_vfs_tests.cpp; tests/frontend/gui_launch_tests.cpp#VFS-09; tests/frontend/gui_import_tests.cpp"
+note = "ADR-0074/0143：external 默认挂到 /sdcard；安装实例 meta/settings 的 external_guest_dir 由 GUI 导入/设置编辑并传 CLI，仅允许 /sdcard 子树。storage 别名和挂载/内容均 ASCII case-fold，实际视频出帧已验。--obb 原文件挂到 /sdcard/Android/obb/<package>，不依赖 Profile，不做资源清单预检。"
 
 [frontend.gui_shell]
 status = "complete"
@@ -536,7 +536,7 @@ note = "SBX-13 read/write/pread64/pwrite64 共用 64 KiB 临时缓冲，移除 1
 [runtime.syscall_file_metadata]
 status = "partial"
 test = "tests/runtime/syscall_tests.cpp"
-note = "SBX-4/9：mkdir/unlink/rename/stat64/getdents64/access/ftruncate/fsync/pread64/pwrite64 等接同一 VFS，ABI 布局受测；open flags 按 ARM EABI 解码，支持 O_DIRECTORY 目录 fd 与真分页 getdents64。*at 相对路径因无 per-process cwd 返回 -ENOTSUP，flock/xattr/inotify 返回 -ENOSYS。"
+note = "SBX-4/9、VFS-09：文件元数据、目录分页与 ARM open flags 接同一 VFS；chdir/fchdir/getcwd 共用初始 / 的进程 cwd，ENOENT/ENOTDIR/EBADF/ERANGE/EFAULT 受测。AT_FDCWD 相对路径已接入；其他 dirfd 相对查找 ENOTSUP，flock/xattr/inotify ENOSYS。"
 
 [runtime.vfs_directory_ops]
 status = "complete"
@@ -550,8 +550,8 @@ note = "ADR-0071/VFS-01：沙盒按安装层显式 installation id 隔离，sche
 
 [runtime.vfs]
 status = "complete"
-test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
-note = "ADR-0071/0074/0110/0129、VFS-01..08：节点/打开状态/backing 分离，ReadAt/WriteAt、读 lease、128 MiB 统一资源预算；APK/OBB stored/Deflate 严格 range 挂载；/dev/urandom 与 /dev/random 接 HAL CSPRNG；宿主目录惰性绑定、128 句柄 LRU 预算（满则 EMFILE）；支持 O_APPEND 原子 EOF 写。fcntl 状态改写与跨进程追加未实现；VFS-07 macOS 待原生验证。"
+test = "tests/runtime/vfs_tests.cpp; tests/runtime/syscall_tests.cpp#VFS-06; tests/runtime/syscall_tests.cpp#VFS-08; tests/runtime/syscall_tests.cpp#VFS-09; tests/runtime/guest_cpu_environment_tests.cpp#VFS-06; tests/frontend/run_apk_vfs_tests.cpp; tests/loader/apk_tests.cpp; tests/dexvm/network_sqlite_tests.cpp"
+note = "ADR-0071/0074/0110/0129、VFS-01..09：节点/打开状态/backing 分离，ReadAt/WriteAt、读 lease、128 MiB 统一资源预算；初始 / 的共享 cwd 支持 chdir/fchdir/getcwd；APK/OBB stored/Deflate 严格 range 挂载；/dev/urandom 与 /dev/random 接 HAL CSPRNG；宿主目录惰性绑定、128 句柄 LRU 预算（满则 EMFILE）；支持 O_APPEND 原子 EOF 写。fcntl 状态改写与跨进程追加未实现；VFS-07 macOS 待原生验证。"
 
 [runtime.vfs_filesystem_stats]
 status = "partial"

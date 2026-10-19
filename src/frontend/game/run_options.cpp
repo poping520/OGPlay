@@ -260,7 +260,7 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
     if (o.dexvm_interpreter && *o.dexvm_interpreter != InterpreterBackend::switch_dispatch && *o.dexvm_interpreter != InterpreterBackend::threaded) throw std::invalid_argument("invalid interpreter");
     for (const auto* path : {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory, &o.input_config_path, &o.library_root})
         if (*path && (*path)->empty()) throw std::invalid_argument("option requires a non-empty path");
-    if (o.external_guest_directory && o.external_guest_directory->empty()) throw std::invalid_argument("external guest directory is empty");
+    if (o.external_guest_directory) ValidateExternalGuestDirectory(*o.external_guest_directory);
     if (o.installation_id && o.installation_id->empty()) throw std::invalid_argument("installation id is empty");
     if (o.library_root && !o.installation_id) throw std::invalid_argument("--library-root requires --installation-id");
 }

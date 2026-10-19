@@ -14,3 +14,8 @@ APK；数据目录由实例设置/导入选项提供，目录有效性独立于 
 surface_width/surface_height 默认 800/480，范围 1..4096；supersample 范围 1..4。
 三者均经 EffectiveGameSetting 解析游戏 > 全局 > 默认，GUI 编辑同一 schema；不读取 Profile。
 类型模板及 input_template 设置已删除，未知旧设置明确失败。
+
+external_guest_dir 属于安装实例用户数据：导入 meta.toml 默认 /sdcard，settings.toml
+同名项优先于导入值；不提供全局选项。只接受 /sdcard 或其子目录，拒绝越界、点段、
+反斜线与控制字符。ResolveLaunch 仅在启用 external_dir 时转为 --external-guest-dir。
+旧 meta 缺字段读取默认值；不依赖 Profile，也不移动宿主数据。

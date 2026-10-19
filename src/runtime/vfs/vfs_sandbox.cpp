@@ -137,6 +137,10 @@ bool VirtualFileSystem::Impl::IsDirectoryLocked(const std::string& path) const {
         if ((!file->second->generated || file->second->generated->active) &&
             (!file->second->character_device || file->second->character_device->active)) return true;
     }
+    for (const auto& [alias, target] : aliases_) {
+        static_cast<void>(target);
+        if (alias == path || alias.starts_with(prefix)) return true;
+    }
     const auto directory = directories_.lower_bound(prefix);
     return directory != directories_.end() && directory->starts_with(prefix);
 }
@@ -259,6 +263,13 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(
     auto directory = std::make_shared<OpenDirectoryState>();
     directory->entries = std::move(entries);
     directory->info = DirectoryInfoLocked(normalized);
+    directory->path = normalized;
+    directory->spelling = PreserveSpelling(
+        normalized, !path.empty() && path.front() == '/'
+                        ? std::string(path)
+                        : (working_directory_spelling_ == "/" ? std::string("/")
+                                                              : working_directory_spelling_ + "/") +
+                              std::string(path));
     descriptors_.emplace(descriptor, std::make_shared<OpenFile>(
         nullptr, 0, true, false, std::move(directory)));
     return descriptor;
@@ -343,6 +354,7 @@ void VirtualFileSystem::Impl::RemoveFile(const std::string_view path) {
 void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_, aliases_);
+    if (normalized == "/") throw VfsError(kEbusy, "VFS root cannot be removed");
     if (sandbox_ != nullptr && std::ranges::find(sandbox_->SemanticRoots(), normalized) !=
         sandbox_->SemanticRoots().end()) {
         throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
@@ -371,6 +383,14 @@ void VirtualFileSystem::Impl::RemoveDirectory(const std::string_view path) {
     }
     PersistRemovalLocked(normalized);
     directories_.erase(normalized);
+    if (working_directory_ == normalized) {
+        working_directory_unlinked_ = true;
+        working_directory_.reset();
+    }
+    for (const auto& [fd, open] : descriptors_) {
+        static_cast<void>(fd);
+        if (open->directory && open->directory->path == normalized) open->directory->unlinked = true;
+    }
 }
 
 void VirtualFileSystem::Impl::Rename(const std::string_view from,
@@ -378,6 +398,7 @@ void VirtualFileSystem::Impl::Rename(const std::string_view from,
     std::unique_lock lock(mutex_);
     const auto source = ResolvePath(from, working_directory_, aliases_);
     const auto target = ResolvePath(to, working_directory_, aliases_);
+    if (source == "/") throw VfsError(kEbusy, "VFS root cannot be renamed");
     auto found = files_.find(source);
     const auto target_file = files_.find(target);
     if ((found != files_.end() && (found->second->generated || found->second->character_device)) ||

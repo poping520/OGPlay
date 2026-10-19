@@ -18,7 +18,7 @@
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单、角色教学，CG 完成/跳过均返回 | CG 首图约 4 秒待用户复测；用户报告的点击崩溃未复现 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
 | Dead Trigger 1.1.0 | Windows | 第一关持续出帧，存档重载 | **隔离沙盒 f=4740 string 构造 receiver 错**；默认存档缺 `Dialog(Context)`；macOS 退出卡在 FMOD 等待 AudioTrack | [DVM-204](../tasks/dexvm/DVM-204.md) |
-| Dungeon Hunter（P1000） | macOS | 安装器→主游戏→开场视频 | 游戏 Profile 已删除，通用路径未复测 | [DVM-250](../tasks/dexvm/DVM-250.md) |
+| Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；CLI 1024×600 呈现 900 帧退出 0，GUI 视频实帧后正常退出 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 游戏 Profile 与场景已删除，通用路径未复测 | [DVM-19](../tasks/dexvm/DVM-19.md) |
 | PVZ | macOS | TermsActivity 首帧 | 后续帧与交互未验收 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | — | 5000 帧，背景音乐正常 | 绘制未验收 | [DVM-186](../tasks/dexvm/DVM-186.md) |

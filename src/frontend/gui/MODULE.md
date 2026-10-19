@@ -17,7 +17,7 @@
 - `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
-  `library.import {job, new_instance:true, external_dir?}` 只消费 ready 快照，异步原子发布；
+  `library.import {job, new_instance:true, external_dir?, external_guest_dir?}` 只消费 ready 快照，异步原子发布；
   重复提交拒绝，结果返回真实 installation id。取消不发布；提交期间不能取消。
 - `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
@@ -106,3 +106,6 @@ library_lock/cli_library/game_run_args 按主题验证；
 - `library.remove {installation_id, confirmed:true}` 只作用于当前枚举的安装实例；请求字段严格校验，
   入库忙碌或实例运行中（包括损坏条目）拒绝移除。复用 LibraryStore::Remove，删除库内 APK、
   设置与日志，保留 sandbox/external 和原始 APK。重新导入分配新实例，不自动挂接旧存档。
+
+导入向导与实例设置均可编辑 external_guest_dir，校验和启动预览复用 library 契约；
+挂载目录默认为 /sdcard，属于用户数据，与 Profile 无关。

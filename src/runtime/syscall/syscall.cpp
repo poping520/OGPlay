@@ -33,6 +33,7 @@ constexpr std::array kAndroidArmBaseline{
     Declaration{5, "open", SyscallGroup::file},
     Declaration{6, "close", SyscallGroup::file},
     Declaration{10, "unlink", SyscallGroup::file},
+    Declaration{12, "chdir", SyscallGroup::file},
     Declaration{19, "lseek", SyscallGroup::file},
     Declaration{20, "getpid", SyscallGroup::process},
     Declaration{33, "access", SyscallGroup::file},

@@ -175,7 +175,7 @@ TEST_CASE("GUI instance settings RPC isolates instances and uses the same previe
     REQUIRE(initial.Root().Member("result"));
     const auto revision = std::string(*initial.Root().Member("result")->Member("revision")->String());
     for (const auto values : {R"({"supersample":5})", R"({"unknown":true})", R"({"supersample":"2"})",
-                              R"({"mcp_manual_step":true})", R"({"mute":null})", R"({"external_dir":"relative"})"})
+                              R"({"mcp_manual_step":true})", R"({"mute":null})", R"({"external_dir":"relative"})", R"({"external_guest_dir":"/sdcard/../data"})", R"({"external_guest_dir":"/system"})"})
         CHECK(set(revision, values).Root().Member("error").has_value());
     CHECK_FALSE(std::filesystem::exists(first / "settings.toml"));
     auto changed = set(revision, R"({"supersample":3,"mcp_enabled":true,"mcp_manual_step":true,"ephemeral_sandbox":true})");

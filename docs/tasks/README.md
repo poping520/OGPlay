@@ -14,7 +14,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | --- | --- | --- | --- |
 | [`apk-startup/`](apk-startup/) | APS-1..15 | 15 | [APK Startup WU 任务书归档](apk-startup/README.md) |
 | [`boundary/`](boundary/) | BND-1..54 | 54 | — |
-| [`dexvm/`](dexvm/) | DVM-1..250 | 244 | [DexVM · 有界 DEX 解释执行](dexvm/README.md) |
+| [`dexvm/`](dexvm/) | DVM-1..251 | 245 | [DexVM · 有界 DEX 解释执行](dexvm/README.md) |
 | [`diagnostics/`](diagnostics/) | DIAG-1..3 | 3 | — |
 | [`gui/`](gui/) | DASH-01..05、GUI-1..9 | 14 | [GUI · WebView 启动器](gui/README.md) |
 | [`input/`](input/) | INP-1..8 | 8 | [Input · 通用 PC 操控映射](input/README.md) |
@@ -31,7 +31,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |
 | [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..15 | 24 | — |
 | [`sandbox/`](sandbox/) | SBX-1..15 | 15 | [沙盒 · 每游戏持久沙盒（ADR-0020）](sandbox/README.md) |
-| [`vfs/`](vfs/) | VFS-04..08 | 5 | — |
+| [`vfs/`](vfs/) | VFS-04..09 | 6 | — |
 | [`video/`](video/) | VID-1 | 1 | — |
 
 ## 规则

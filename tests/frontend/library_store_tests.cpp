@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <exception>
 #include <fstream>
+#include <iterator>
+#include <algorithm>
 #include <string>
 #include <thread>
 #include <vector>
@@ -204,6 +206,28 @@ TEST_CASE("library import atomically copies APK metadata and optional icon") {
     CHECK(std::filesystem::is_regular_file(external / "keep.dat"));
     CHECK_FALSE(std::filesystem::exists(
         store.EntriesRoot() / ".org.example.game.importing"));
+}
+
+TEST_CASE("library writes external_guest_dir only when it overrides /sdcard") {
+    TemporaryDirectory tree;
+    const auto source = tree.path / "source.apk";
+    Write(source, "apk");
+    ogplay::app::LibraryStore store(tree.path / "root");
+    store.Import({.source_apk = source, .metadata = Metadata()}, true);
+    auto metadata = Metadata();
+    metadata.external_guest_dir = "/sdcard/Games/Example";
+    store.Import({.source_apk = source, .metadata = metadata}, true);
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 2);
+    for (const auto& entry : entries) {
+        REQUIRE(entry.metadata.has_value());
+        std::ifstream input(entry.directory / "meta.toml", std::ios::binary);
+        const std::string text{std::istreambuf_iterator<char>(input), {}};
+        const bool overridden = entry.metadata->external_guest_dir != "/sdcard";
+        CHECK(overridden == (text.find("external_guest_dir") != std::string::npos));
+    }
+    CHECK(std::ranges::count(entries, std::string("/sdcard/Games/Example"),
+                             [](const auto& entry) { return entry.metadata->external_guest_dir; }) == 1);
 }
 
 TEST_CASE("library preserves Android version code zero") {

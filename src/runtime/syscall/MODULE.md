@@ -91,5 +91,7 @@ ARM EABI 布局解码（`arch/arm` 的 `O_DIRECTORY=040000`、`O_NOFOLLOW=010000
 `O_LARGEFILE=0400000`，不是 asm-generic 值），bionic `opendir()` 的真实组合由
 机器测试锁定。记录装不下时回退 cursor 并返回当前页，下一次继续。`fstat64` 直接查询 descriptor 元数据，
 不改变文件 offset，目录 fd 的 fsync/fstat 也有明确语义。`st_mode` 的权限位来自 VFS 真实 writable 事实，时间戳
-保持 0（唯一时间源是统一 Clock）。`*at` 的相对路径没有真实 per-process cwd，
-明确 `-ENOTSUP`。`flock`、`*xattr`、`inotify*` 等维持 `-ENOSYS` 记账。
+保持 0（唯一时间源是统一 Clock）。`chdir(12)`/`fchdir(133)` 共用 VFS cwd，
+`getcwd(183)` 写入含 NUL 路径并返回字节数；缓冲不足 ERANGE，非法 guest 地址 EFAULT，
+已删除 cwd ENOENT。`*at` 的 AT_FDCWD 相对路径使用同一 cwd；其他 dirfd 相对路径
+仍明确 `-ENOTSUP`。`flock`、`*xattr`、`inotify*` 等维持 `-ENOSYS` 记账。

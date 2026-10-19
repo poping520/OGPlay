@@ -147,25 +147,27 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 21);
+    REQUIRE(plan.argv.size() == 23);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
-    CHECK(plan.argv[7] == "--cpu-cores");
-    CHECK(plan.argv[8] == "1");
-    CHECK(plan.argv[9] == "--cpu-frequency-mhz");
-    CHECK(plan.argv[10] == "1000");
-    CHECK(plan.argv[11] == "--key-editor-port");
-    CHECK(plan.argv[12] == std::to_string(*plan.key_editor_port));
-    CHECK(plan.argv[13] == "--sandbox-dir");
-    CHECK(plan.argv[14] ==
+    CHECK(plan.argv[7] == "--external-guest-dir");
+    CHECK(plan.argv[8] == "/sdcard");
+    CHECK(plan.argv[9] == "--cpu-cores");
+    CHECK(plan.argv[10] == "1");
+    CHECK(plan.argv[11] == "--cpu-frequency-mhz");
+    CHECK(plan.argv[12] == "1000");
+    CHECK(plan.argv[13] == "--key-editor-port");
+    CHECK(plan.argv[14] == std::to_string(*plan.key_editor_port));
+    CHECK(plan.argv[15] == "--sandbox-dir");
+    CHECK(plan.argv[16] ==
           ogplay::app::LauncherSandboxRoot(temporary.path)
               .generic_string());
-    CHECK(plan.argv[15] == "--library-root");
-    CHECK(plan.argv[16] == std::filesystem::absolute(temporary.path).generic_string());
-    CHECK(plan.argv[17] == "--installation-id");
-    CHECK(plan.argv[18] == "org.example.game");
-    CHECK(plan.argv[19] == "--input-config");
+    CHECK(plan.argv[17] == "--library-root");
+    CHECK(plan.argv[18] == std::filesystem::absolute(temporary.path).generic_string());
+    CHECK(plan.argv[19] == "--installation-id");
+    CHECK(plan.argv[20] == "org.example.game");
+    CHECK(plan.argv[21] == "--input-config");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }
@@ -375,4 +377,32 @@ TEST_CASE("display user settings resolve game over global over defaults") {
     CHECK_THROWS(SetSetting(global, "surface_height", std::uint32_t{4097}));
     CHECK_THROWS(ValidateGameSettings({{{"surface_width", std::uint32_t{0}}}}));
     CHECK_THROWS(ValidateGameSettings({{{"surface_height", std::uint32_t{4097}}}}));
+}
+
+TEST_CASE("VFS-09 external guest mount is per installation and resolves user overrides") {
+    using namespace ogplay::app;
+    TemporaryDirectory tree;
+    LibraryStore store(tree.path);
+    const auto directory = store.EntriesRoot() / "org.example.game";
+    const auto external = tree.path / "external";
+    std::filesystem::create_directories(external);
+    Write(directory / "game.apk", "apk");
+    auto entry = Entry(directory, external);
+    CHECK(ResolveLaunch(store, entry, {}).options.external_guest_directory == "/sdcard");
+    entry.metadata->external_guest_dir = "/sdcard/Games/Example";
+    CHECK(ResolveLaunch(store, entry, {}).options.external_guest_directory == "/sdcard/Games/Example");
+    GameSettings settings{{{"external_guest_dir", std::string("/sdcard/Other")}}};
+    SaveGameSettings(directory, settings);
+    const auto resolved = ResolveLaunch(store, entry, {});
+    CHECK(resolved.options.external_guest_directory == "/sdcard/Other");
+    const auto args = FormatGameRunArgs(resolved.options);
+    const std::vector<std::string_view> views(args.begin(), args.end());
+    CHECK(ParseGameRunArgs(views) == resolved.options);
+    for (const auto invalid : {"/", "/data/other", "/sdcard2/game", "/sdcard/../data", "/sdcard/a/./b", "/sdcard//a", "relative", "/sdcard/a\\b"}) {
+        settings.values["external_guest_dir"] = std::string(invalid);
+        CHECK_THROWS(ValidateGameSettings(settings));
+    }
+    settings.values = {{"external_dir", std::string()}};
+    SaveGameSettings(directory, settings);
+    CHECK_FALSE(ResolveLaunch(store, entry, {}).options.external_guest_directory);
 }

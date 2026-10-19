@@ -41,6 +41,9 @@ inline constexpr std::int32_t kEcanceled = 125;
 [[nodiscard]] std::string NormalizeAbsolutePath(std::string_view path,
                                                 bool allow_root);
 [[nodiscard]] std::string NormalizePath(std::string_view path);
+// Returns the absolute spelled path when it names canonical up to ASCII case.
+[[nodiscard]] std::string PreserveSpelling(std::string_view canonical,
+                                           std::string_view spelled);
 [[nodiscard]] std::string ResolvePath(
     std::string_view path,
     const std::optional<std::string>& working_directory,
@@ -107,6 +110,9 @@ struct OpenDirectoryState final {
     std::vector<VfsDirectoryEntry> entries;
     std::size_t cursor{};
     VfsFileInfo info;
+    std::string path;
+    std::string spelling;  // Guest spelling of path, for fchdir/getcwd.
+    bool unlinked{};  // Guarded by the VFS namespace mutex.
 };
 
 struct OpenFile final {
@@ -162,6 +168,7 @@ public:
                        const std::filesystem::path& file);
     void AddPathAlias(std::string_view alias, std::string_view target);
     void SetWorkingDirectory(std::string_view path);
+    void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
@@ -236,7 +243,9 @@ public:
         std::int32_t descriptor) const;
 
     mutable std::mutex mutex_;
-    std::optional<std::string> working_directory_;
+    std::optional<std::string> working_directory_{"/"};
+    std::string working_directory_spelling_{"/"};
+    bool working_directory_unlinked_{};
     std::map<std::string, std::string, std::less<>> aliases_;
     std::map<std::string, std::shared_ptr<File>, std::less<>> files_;
     // Directories created explicitly; implicit ones come from files_.

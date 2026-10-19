@@ -103,7 +103,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     else if (method == "library.analyze") Fields(params, {"path"});
     else if (method == "library.upload.begin") Fields(params, {"name", "size"});
     else if (method == "library.upload.chunk") Fields(params, {"job", "offset", "data"});
-    else if (method == "library.import") Fields(params, {"job", "external_dir", "new_instance"});
+    else if (method == "library.import") Fields(params, {"job", "external_dir", "external_guest_dir", "new_instance"});
     else if (method == "library.job.poll" || method == "library.job.cancel" || method == "library.upload.finish") Fields(params, {"job"});
     else throw std::invalid_argument("unknown import method");
     app::JsonWriter writer;
@@ -174,7 +174,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
                 if (!confirmation || confirmation->Bool() != true) throw std::invalid_argument("请确认新建安装实例，不覆盖现有游戏。");
                 std::optional<std::filesystem::path> external;
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
-                const auto request = BuildLibraryImport(*job.analysis, external, host_.timestamp());
+                const auto request = BuildLibraryImport(*job.analysis, external, host_.timestamp(),
+                    params.Member("external_guest_dir") ? String(params, "external_guest_dir") : "/sdcard");
                 auto store = store_;
                 job.committing = std::async(std::launch::async, [store, request]() mutable { return store.Import(request, true); });
                 job.state = "importing";

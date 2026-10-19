@@ -14,3 +14,6 @@ ABI/入口来自 APK，VM/guest call 使用默认值。OBB 原文件挂到标准
 
 输入仅内置默认 + 用户文件；用户文件位置沿用 --input-config、库条目/input.toml 或
 sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 template 字段拒绝。
+
+ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdcard 子树约束；
+初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。

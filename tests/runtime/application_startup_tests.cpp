@@ -388,3 +388,12 @@ TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profi
     fixture.context->session->CloseManagedSurface();
     static_cast<void>(fixture.app->Stop());
 }
+
+TEST_CASE("VFS-09 session and native process share the finite guest call watchdog default") {
+    const ogplay::session::AndroidAppProcessRequest app;
+    const ogplay::runtime::AndroidGuestProcessRequest process;
+    const ogplay::runtime::AndroidGuestCallSessionRequest call;
+    CHECK(app.maximum_ticks_per_call == process.maximum_ticks_per_call);
+    CHECK(call.maximum_ticks_per_call == process.maximum_ticks_per_call);
+    CHECK(app.maximum_ticks_per_call == UINT64_C(10000000000));
+}

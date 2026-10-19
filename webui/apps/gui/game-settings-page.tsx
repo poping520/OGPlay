@@ -88,7 +88,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
       const overridden = Object.hasOwn(draft, field.key);
       return {
         value: overridden ? draft[field.key] : saved!.inherited[field.key], changed: changed.includes(field.key), disabled: busy,
-        inherit: { overridden, saved: Object.hasOwn(saved!.values, field.key), source: field.key === 'external_dir' ? '导入记录' : '全局',
+        inherit: { overridden, saved: Object.hasOwn(saved!.values, field.key), source: ['external_dir', 'external_guest_dir'].includes(field.key) ? '导入记录' : '全局',
           shown: displayValue(field, saved!.inherited[field.key]) },
       };
     }}

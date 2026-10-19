@@ -7,7 +7,6 @@ export interface CartFace {
   package: string;
   version: string;
   imported: string;
-  profile: string;
   icon: string;           // host data URL, may be empty
   color: [number, number, number];
   tone: string;           // ready / running / warning / danger

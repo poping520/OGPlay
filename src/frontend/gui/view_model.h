@@ -18,7 +18,6 @@ using namespace ogplay::app;
 enum class LibraryTileStatus : std::uint8_t {
     damaged,
     profile_catalog_unavailable,
-    missing_profile,
     missing_external,
     running,
     ready,
@@ -61,7 +60,9 @@ struct LibraryDetail final {
     LibraryTileStatus status{LibraryTileStatus::damaged};
     std::vector<std::byte> icon_png;
     std::string detail;
-    LibraryCondition profile;
+    // Present only for a recorded exact Profile or an unreadable catalog; the generic
+    // path is the default and needs no Profile row.
+    std::optional<LibraryCondition> profile;
     LibraryCondition external;
     bool can_launch{};
     bool can_delete{};

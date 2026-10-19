@@ -5,8 +5,8 @@ import type { LibraryItem } from './rpc';
 const item = (id: string, values: Partial<LibraryItem> = {}): LibraryItem => ({
   installation_id: id, display_name: id, package: 'org.example.game', version: '1.0',
   version_code: 1, version_name: '1.0', imported_at: null, sandbox_path: '/sandbox', log_directory: '/log',
-  status: 'missing_profile', detail: '', running: false, can_launch: true, icon: '',
-  profile: { status: 'missing', value: '', detail: '' }, external: { status: 'unavailable', value: '', detail: '' }, ...values,
+  status: 'ready', detail: '', running: false, can_launch: true, icon: '',
+  profile: null, external: { status: 'unavailable', value: '', detail: '' }, ...values,
 });
 describe('library presentation', () => {
   it('combines search terms and host eligibility without merging installation instances', () => {

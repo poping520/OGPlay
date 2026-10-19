@@ -23,10 +23,6 @@ button.primary:hover:not(:disabled) { background: #6b8afd; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); border: 0; }
 .shell { display: flex; height: 100dvh; min-width: 760px; overflow: hidden; }
 .navigation { width: 196px; flex: none; background: #151920; border-right: 1px solid var(--line); padding: 20px 12px; display: flex; flex-direction: column; }
-.brand { display: flex; gap: 11px; align-items: center; padding: 0 6px 28px; }
-.brand > span { background: linear-gradient(135deg, #7c9cff, #b58cff); color: #0f1115; border-radius: 9px; width: 34px; height: 34px; display: grid; place-items: center; font-size: 20px; font-weight: 800; }
-.brand b { font-size: 17px; }
-.brand small { color: var(--dim); }
 .nav-selected { display: flex; align-items: center; gap: 10px; background: #20262f; padding: 9px 12px; border-radius: 8px; }
 .nav-selected > span:first-child { color: var(--accent); font-size: 18px; }
 .nav-count { margin-left: auto; color: var(--dim); font-size: 11px; }

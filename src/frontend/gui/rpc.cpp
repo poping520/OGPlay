@@ -42,8 +42,8 @@ app::ConsoleResponse Error(int code, std::string_view message, std::string_view 
 }
 
 std::string_view Status(LibraryTileStatus status) {
-    constexpr std::array names{"damaged", "profile_catalog_unavailable", "missing_profile",
-                                "missing_external", "running", "ready"};
+    constexpr std::array names{"damaged", "profile_catalog_unavailable", "missing_external",
+                                "running", "ready"};
     return names.at(static_cast<std::size_t>(status));
 }
 
@@ -197,7 +197,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddBool(item, "can_launch", tile.can_launch);
                 writer.AddString(item, "icon", tile.icon_png.empty() ? std::string{} :
                                  "data:image/png;base64," + app::EncodeBase64(tile.icon_png));
-                writer.Add(item, "profile", Condition(writer, detail.profile));
+                if (detail.profile) writer.Add(item, "profile", Condition(writer, *detail.profile)); else writer.AddNull(item, "profile");
                 writer.Add(item, "external", Condition(writer, detail.external));
                 writer.Append(items, item);
             }

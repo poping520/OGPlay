@@ -233,7 +233,8 @@ TEST_CASE("GUI RPC serializes model facts and enforces launch eligibility") {
     CHECK(list.Root().Member("id")->String() == "list");
     const auto items = list.Root().Member("result")->Member("items");
     REQUIRE(items->Size() == 1);
-    CHECK(items->Element(0)->Member("status")->String() == "missing_profile");
+    CHECK(items->Element(0)->Member("status")->String() == "ready");
+    CHECK(items->Element(0)->Member("profile")->IsNull());
     CHECK(items->Element(0)->Member("display_name")->String() == "游戏 <script>");
     CHECK(items->Element(0)->Member("can_launch")->Bool() == true);
     CHECK(items->Element(0)->Member("version_name")->String() == "1.0");

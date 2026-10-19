@@ -4,6 +4,7 @@ import { rpc, type Library, type LibraryItem } from './rpc';
 import { cycle, filters, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
+import { Brand } from './settings-ui';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
@@ -255,7 +256,7 @@ function App() {
       return <>{dashboard}{controls}{moreMenu(game)}</>;
     }
     return <>
-      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? '启动游戏' : game.detail} onClick={() => void act('library.launch', game)}><Key>A</Key>{game.status === 'missing_profile' ? '尝试启动' : '开始游戏'}</button>
+      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? '启动游戏' : game.detail} onClick={() => void act('library.launch', game)}><Key>A</Key>开始游戏</button>
       <button class="pill" disabled={busy || importing} onClick={() => openGameSettings(game)}><Key>Y</Key>游戏设置</button>
       {moreMenu(game)}
     </>;
@@ -291,11 +292,11 @@ function App() {
         <h1 title={item.display_name}>{item.display_name}</h1>
         <div class="sub"><span class="mono">{item.package || '包名不可用'}</span></div>
         <div class="stats">
-          <div><b>{item.version_name || (item.version_code === null ? item.version : String(item.version_code))}</b><small>{item.version_code === null ? '版本' : `版本 · versionCode ${item.version_code}`}</small></div>
-          <div title={item.profile.detail}><b>{item.profile.value || '—'}</b><small>Profile</small></div>
+          <div title={item.version_code === null ? undefined : `versionCode ${item.version_code}`}><b>{item.version_name || (item.version_code === null ? item.version : String(item.version_code))}</b><small>{item.version_name && item.version_code !== null ? `版本 · ${item.version_code}` : '版本'}</small></div>
+          {item.profile && <div title={item.profile.detail}><b>{item.profile.value}</b><small>Profile</small></div>}
           <div title={item.external.detail}><b>{item.external.value || '—'}</b><small>数据包</small></div>
         </div>
-        <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label} · {item.detail}{runtime}</span>{fix}</div>
+        <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{item.detail ? ` · ${item.detail}` : ''}{runtime}</span>{fix}</div>
         <div class="cta">{actions(item)}</div>
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
@@ -314,7 +315,7 @@ function App() {
     onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (isFileDrag(event)) intake(Array.from(event.dataTransfer?.files ?? [])); }}>
     <Backdrop item={loading ? undefined : item} />
     <header class="top">
-      <div class="brand"><img src={logo} alt="" />OGPlay</div>
+      <Brand />
       <nav class="tabs" aria-label="筛选游戏">
         <span class="shoulder" aria-hidden="true" title="Q">L</span>
         {filters.map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
@@ -348,7 +349,7 @@ function App() {
             <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
           </button>;
         })}
-        <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>制作卡带<small>导入 APK</small></button>
+        <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>导入游戏<small>选择 APK</small></button>
       </div>
     </section>
     <footer class="foot">
@@ -369,7 +370,7 @@ function App() {
     {infoOpen && item && <Modal title="安装信息" onDismiss={() => setInfoOpen(false)}>
       <dl class="info"><dt>游戏</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>
         <dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>包名</dt><dd class="mono">{item.package || '包名不可用'}</dd>
-        <dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd><dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
+        {item.profile && <><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd></>}<dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
         <dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd>
         <dt>Dashboard</dt><dd>{instance?.detail ?? '游戏尚未运行'}</dd>
         <dt>按键设置</dt><dd>{instance?.key_editor_detail ?? '先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。'}</dd></dl>

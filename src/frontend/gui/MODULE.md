@@ -48,9 +48,10 @@
 
 - 请求 envelope 和方法参数采用 closed schema；未知字段、方法、类型与重复 JSON 键明确失败。
   前端不传自由 argv、任意目录打开路径或游戏兼容结论；错误返回 code/message/next_step。
-- Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺 Profile >
-  缺数据包 > 运行中 > ready。缺 Profile 为可启动通用 APK 提示，不是兼容性等级。
-- Profile 摘要只提供身份与 quirk；catalog 失效显示 unavailable。
+- Web UI 只渲染模型事实。状态优先级：损坏 > Profile catalog 不可用 > 缺数据包 > 运行中 >
+  ready。通用启动路径是默认状态，无 Profile 不产生状态、提示或条件。
+- Profile 条件只在记录了精确 Profile（身份与 quirk）或 catalog 失效（unavailable）时下发，
+  否则为 null。
   外部数据只检查用户已选择的目录是否有效，不从 Profile 推断 required；默认 Profile
   与 quirk 来自同一 bundled payload。
 - 启动器主窗口只加载 bundled `webui/gui/index.html`；WebView2 仅允许该入口导航，禁止新窗口。

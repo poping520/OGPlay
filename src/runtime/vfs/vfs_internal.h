@@ -131,6 +131,9 @@ struct OpenFile final {
     bool writable{};
     std::shared_ptr<OpenDirectoryState> directory;
     bool append{};
+    bool non_blocking{};
+    bool large_file{};
+    bool no_follow{};
     bool pipe{};
     std::shared_ptr<const hal::HostReadFile> host_pin;
 };
@@ -173,10 +176,12 @@ public:
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
     [[nodiscard]] std::int32_t Open(std::string_view path,
                                     VfsOpenOptions options);
-    [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
+    [[nodiscard]] std::int32_t OpenDirectory(
+        std::string_view path, bool large_file = false, bool no_follow = false);
     [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
         std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
+    [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
     [[nodiscard]] std::size_t Read(std::int32_t descriptor,

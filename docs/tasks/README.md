@@ -31,7 +31,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`maintenance/`](maintenance/) | UTIL-1..3 | 3 | [基础工具维护工作单](maintenance/README.md) |
 | [`optimization/`](optimization/) | WU-GLCTX-01..05、WU-HLE-01..04、WU-PERF-01..15 | 24 | — |
 | [`sandbox/`](sandbox/) | SBX-1..15 | 15 | [沙盒 · 每游戏持久沙盒（ADR-0020）](sandbox/README.md) |
-| [`vfs/`](vfs/) | VFS-04..09 | 6 | — |
+| [`vfs/`](vfs/) | VFS-04..10 | 7 | — |
 | [`video/`](video/) | VID-1 | 1 | — |
 
 ## 规则

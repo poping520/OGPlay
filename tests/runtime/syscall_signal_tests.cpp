@@ -237,6 +237,47 @@ TEST_CASE("ARM signal action ABI validates inputs and preserves old disposition"
     CHECK(f.Send(0) == -3);
 }
 
+TEST_CASE_TEMPLATE("ARM SIGSEGV retains NOCLDSTOP without changing SIGINFO delivery", Cpu,
+                   cpu::InterpreterCpu, cpu::DynarmicCpu) {
+    SignalFixture<Cpu> f;
+    bool realtime = false;
+    SUBCASE("legacy action") {}
+    SUBCASE("RT action") { realtime = true; }
+    f.Code(0x10100, {0xe12fff1e}); // bx lr
+    if (realtime) {
+        f.memory.Write32(GuestAddress{0x20000}, 0x10100);
+        f.memory.Write32(GuestAddress{0x20004}, 5);
+        f.memory.Write32(GuestAddress{0x20008}, 0);
+        f.memory.Write64(GuestAddress{0x2000c}, 0);
+        REQUIRE(f.Call(174, {11, 0x20000, 0, 8}) == 0);
+    } else {
+        f.Action(11, 0x10100, 5);
+    }
+    REQUIRE(f.Call(67, {11, 0, 0x20040}) == 0);
+    CHECK(f.memory.Read32(GuestAddress{0x20040}) == 0x10100);
+    CHECK(f.memory.Read32(GuestAddress{0x20048}) == 5);
+    REQUIRE(f.Call(174, {11, 0, 0x20060, 8}) == 0);
+    CHECK(f.memory.Read32(GuestAddress{0x20064}) == 5);
+    // A failed replacement must leave the accepted disposition intact.
+    f.memory.Write32(GuestAddress{realtime ? 0x20004U : 0x20008U}, 0x20000005);
+    CHECK(f.Call(realtime ? 174U : 67U, {11, 0x20000, 0, 8}) == -95);
+    REQUIRE(f.Call(67, {11, 0, 0x20040}) == 0);
+    CHECK(f.memory.Read32(GuestAddress{0x20048}) == 5);
+    const auto initial = f.cpu.GetState();
+    REQUIRE(f.Send(11) == 0);
+    f.dispatcher.signal_binding->runtime->Deliver(f.cpu);
+    CHECK(f.cpu.GetState().Register(CoreRegister::pc) == 0x10100);
+    CHECK(f.cpu.GetState().Register(CoreRegister::r0) == 11);
+    const GuestAddress info{f.cpu.GetState().Register(CoreRegister::r1)};
+    CHECK(f.memory.Read32(info) == 11);
+    const auto stopped = f.cpu.Run(30);
+    REQUIRE(stopped.reason == cpu::RunStopReason::supervisor_call);
+    CHECK(f.cpu.GetState().Register(CoreRegister::r7) == 173);
+    REQUIRE(runtime::ConsumeAndroidArmSupervisorCall(f.cpu, stopped, f.dispatcher) != runtime::SupervisorCallProgress::not_handled);
+    CHECK(f.cpu.GetState() == initial);
+    CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
+}
+
 TEST_CASE_TEMPLATE("ARM signal handlers restore core Thumb VFP and mask state", Cpu,
                    cpu::InterpreterCpu, cpu::DynarmicCpu) {
     std::uint32_t send_number = 268;

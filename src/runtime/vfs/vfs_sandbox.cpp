@@ -249,7 +249,7 @@ void VirtualFileSystem::Impl::PersistRemovalLocked(const std::string& path) {
 }
 
 std::int32_t VirtualFileSystem::Impl::OpenDirectory(
-    const std::string_view path) {
+    const std::string_view path, const bool large_file, const bool no_follow) {
     auto entries = ListDirectory(path);
     std::scoped_lock lock(mutex_);
     const auto normalized = ResolvePath(path, working_directory_, aliases_);
@@ -270,8 +270,11 @@ std::int32_t VirtualFileSystem::Impl::OpenDirectory(
                         : (working_directory_spelling_ == "/" ? std::string("/")
                                                               : working_directory_spelling_ + "/") +
                               std::string(path));
-    descriptors_.emplace(descriptor, std::make_shared<OpenFile>(
-        nullptr, 0, true, false, std::move(directory)));
+    auto opened = std::make_shared<OpenFile>(
+        nullptr, 0, true, false, std::move(directory));
+    opened->large_file = large_file;
+    opened->no_follow = no_follow;
+    descriptors_.emplace(descriptor, std::move(opened));
     return descriptor;
 }
 

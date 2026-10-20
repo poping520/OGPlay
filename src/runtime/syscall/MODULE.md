@@ -55,11 +55,14 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   [ADR-0079](../../../docs/adr/runtime.md#adr-0079)。SIGABRT 默认终止继续保留退出来源。
 - signal return 通过 syscall outcome 显式恢复整个 CPU 状态，bridge 不再覆盖其 r0。
   guest frame 保存 ucontext/VFP；坏帧明确失败。clone mask 继承与线程退役由上层通知。
+- action 保留 SA_NOCLDSTOP 供查询；对非 SIGCHLD 无效果，不扩展子进程/作业控制支持面。
 - 信号通知不制造 futex WAKE token；目标 wait 的谓词检查 pending/退出，SA_RESTART 仅
   重启无超时 futex WAIT，有超时等待中断为 EINTR。sigsuspend 退出请求可取消。
-- fd 1/2 与 `/dev/log/*` 是注入式诊断端点：`write`/`writev` 先受检搬运 guest bytes，再交给
+- fd 0/1/2 与 `/dev/log/*` 由进程内诊断端点表保存访问模式和存活状态；stdin 是无宿主输入的
+  EOF 端点，stdout/stderr 的 `write`/`writev` 先受检搬运 guest bytes，再交给
   上层 sink；内核日志使用进程内 synthetic descriptor，不访问宿主设备。单次 payload 上限
-  1 MiB，iovec 上限 64，普通 descriptor 仍走同一 VFS。
+  1 MiB，iovec 上限 64，普通 descriptor 仍走同一 VFS。dup 保留端点身份，close 后查询和
+  新写入返回 EBADF，不因 fd 数字继续截获；不提供这些端点的 fstat/seek/终端 ioctl。
 
 ## 测试
 
@@ -69,7 +72,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
 
 VFS 字符设备使用 ARM stat64 的 S_IFCHR、st_rdev（偏移 32）与 DT_CHR；文件大小为 0
 不限制 read。open 放行 O_NOCTTY（VFS 没有控制终端）及字符设备 O_NONBLOCK，普通文件
-的非阻塞 IO 仍明确 EINVAL。dup(41) 共享 VFS 打开状态，其他复制/fcntl 形式仍按账本失败。
+的非阻塞 IO 仍明确 EINVAL。dup(41) 共享 VFS 打开状态。
+fcntl(55)/fcntl64(221) 共用 F_GETFL：按真实 VFS/诊断端点状态返回 ARM O_ACCMODE、O_APPEND、
+O_NONBLOCK、O_DIRECTORY、O_NOFOLLOW、O_LARGEFILE，不含创建标志与 FD_CLOEXEC。
+未知/已关闭 fd 返回 EBADF；其他 fcntl 命令继续 ENOSYS 并记账。
 open/openat 显式解码 ARM O_APPEND=0x400，传入 VFS 打开状态，不由 syscall seek 模拟。
 writev 完整预检向量/输入，在共享资源预算内合并后只提交一次 Write；向量上限 64，
 每段至多 1 MiB，坏输入/超预算在写入前失败。大于 64 KiB scratch 的 append write/

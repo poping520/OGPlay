@@ -335,7 +335,8 @@ A32SyscallOutcome GuestSignalRuntime::Impl::Action(const A32SyscallFrame& frame)
             requested.flags = memory.Read32(input.Add(rt ? 4 : 8), frame.thread_id);
             requested.restorer = memory::GuestAddress{memory.Read32(input.Add(rt ? 8 : 12), frame.thread_id)};
             requested.mask = ReadMask(memory, input.Add(rt ? 12 : 4), rt ? 8 : 4, frame.thread_id) & ~kUnblockableSignals;
-            constexpr std::uint32_t supported = 0xdc000004U; // INFO, RESTORER, ONSTACK, RESTART, NODEFER, RESETHAND
+            // NOCLDSTOP is retained for queries; it has no effect outside SIGCHLD.
+            constexpr std::uint32_t supported = 0xdc000005U; // NOCLDSTOP, INFO, RESTORER, ONSTACK, RESTART, NODEFER, RESETHAND
             if ((requested.flags & ~supported) != 0) return -95;
         }
         if (!output.IsNull()) memory.Validate({output, size}, memory::AccessType::write, frame.thread_id);

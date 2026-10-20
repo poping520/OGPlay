@@ -1233,10 +1233,10 @@ loader 在每次 ParseDex 内按偏移缓存 annotation item/set，共享不可�
 
 ## ADR-0147 · API19 表面机器生成，行为按需实现
 
-- 状态：Proposed（WU2a 提案；批准后才实施 WU2b 合并机制及 JNI/字段语义）
+- 状态：Accepted（用户于 2026-10-20 批准；分 WU2b-1/2 实施）
 - 日期：2026-10-20
 - 关联：[DVM-252 / WU2a](../tasks/dexvm/DVM-252.md)、[DIAG-4](../tasks/diagnostics/DIAG-4.md)
-- 批准后 Supersedes：ADR-0030 对未选入 BootDex 的平台声明只能逐项手写的边界；
+- Supersedes：ADR-0030 对未选入 BootDex 的平台声明只能逐项手写的边界；
   curated BootDex 的行为准入、own-member 所有权与 OGPlay 非模拟器边界继续有效。
 
 ### 理由

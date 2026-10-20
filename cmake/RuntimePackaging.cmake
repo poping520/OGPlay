@@ -1,7 +1,7 @@
 # Included from the project root; source/binary paths use that directory scope.
 # Data directories are replaced wholesale so files removed from the source tree
 # do not linger in the staged or installed runtime.
-set(OGPLAY_DATA_DIRECTORIES profiles android)
+set(OGPLAY_DATA_DIRECTORIES profiles android dexvm)
 set(_ogplay_stage_data_commands)
 foreach(_data_directory IN LISTS OGPLAY_DATA_DIRECTORIES)
     list(APPEND _ogplay_stage_data_commands

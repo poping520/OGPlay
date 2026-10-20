@@ -292,3 +292,5 @@ async pending 替换不重发事件；acquire 将待上传帧独立持有，comm
 
 诊断与生产共用 BoundCoreIntrinsicCatalog 的 core/platform handler 绑定；metadata-only
 DumpAndroidBoundarySurfaceJson 读取同一 API19 boundary 导出目录，不创建进程/窗口或执行 guest。
+
+bridge 可接收固定 API19 骨架字节，在 BootDex 之后、应用 DEX 之前交给 linker 建索引；不在 integration 合成成员或引入新的 JNI 查找规则。

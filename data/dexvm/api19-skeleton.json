@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "format": "OGSK19-v1: u32 count; sorted (u16 name bytes,u32 offset,u32 size); compact JSON [super,interfaces,flags,own methods,own fields]; offsets relative to payload",
+  "inputs": {
+    "core.jar": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef",
+    "framework.jar": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+    "framework2.jar": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea",
+    "ext.jar": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c"
+  },
+  "classes": 9252,
+  "methods": 86686,
+  "fields": 58700,
+  "constants": 32204,
+  "bytes": 8164184,
+  "sha256": "ef0deec25b25df68f45ad70c3c56e899cd583050dfb4fb8514066d42c0aabb70",
+  "constant_policy": "static final primitive/String encoded values excluding any clinit sput target; numeric raw bits as signed decimal strings"
+}

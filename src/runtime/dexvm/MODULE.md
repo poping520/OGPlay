@@ -4,7 +4,7 @@
 
 有界 Dalvik 解释器（ADR-0017、`docs/design/dexvm/`）：负责类链接、Java 对象模型、
 switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intrinsic。只加载应用 DEX
-与受审 API 19 BootDex；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
+与受审 API 19 BootDex、固定 ROM 骨架元数据；不提供完整 Dalvik/ART、动态 classpath、JIT 或 Android 服务。
 
 ## 核心契约
 
@@ -208,3 +208,24 @@ RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，�
 BootDex 优先来源、父类/接口、encoded/intrinsic 常量和逐类链接错误。implemented 表示有 handler、
 字节码或 abstract 契约；动态 guest JNI 没有静态绑定证据时保守标 unimplemented-ledger，
 并附 guest-jni-unverified，不等价于证明目标后端不存在或全部行为已实现。
+
+### API19 骨架（ADR-0147）
+
+`RegisterSkeletonSurface` 在应用注册/Link 前装配固定索引数据，仅持原始字节与类偏移，
+不创建全表面类/成员。ResolveDescriptor/Java loadClass 首次解析物化 bootstrap 类型；
+findLoadedClass 仍不合成。普通启动禁止全量建类；显式 dump-surface 才枚举全表面。
+现有类首次链接前补 own members，既有类的层次、成员、handler 与字段所有权优先。
+已存在的继承 handler 也不被骨架覆盖；补入父声明不会反向要求原手写声明改为 OverrideMethod。
+新骨架类的父类/接口按同一路径解析，四 ROM 之外的未满足依赖仍明确失败。
+新骨架自身声明的重写方法不能借用父 handler：它保留 own 声明并在调用时失败。
+这种无方法体声明的 override 准入按固定 ROM 父成员标志校验，避免手写 final/可见性近似
+阻断原版结构；不修改手写标志/handler，也不放宽应用字节码的 override 校验。
+
+生成方法（含构造器）为未绑定 intrinsic，调用进入既有能力记账及 UnsatisfiedLinkError；
+生成 clinit 只是未实现声明，不安装初始化 hook。常量独立初始化，非恒定状态不伪造。
+生成的非恒定 static/实例字段带 is_unimplemented，switch/threaded 的 sget/sput/iget/iput
+在访问存储前记 `dexvm.skeleton.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
+常量保留原始数值位与 UTF-16 字符串；不覆盖手写/BootDex 的初始化值。
+Survey 继续绕过未物化骨架类型并使用原中性方法路径；该模式不代表兼容支持。
+JNI/反射成员查找、未实现字段的其他访问通道及 NoSuch 异常路径在 WU2b-2 验收，
+不得把 Java/解释器侧声明可用解释为这些边界均已兼容。

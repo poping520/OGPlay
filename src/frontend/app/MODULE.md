@@ -17,3 +17,5 @@ GameRunOptions 显式携带 surface_width/surface_height（默认 800×480，每
 
 DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Android catalog 装配独立 linker，
 返回 JSON 表面及 API19 native exports；不运行 guest、类初始化、图形或游戏会话。
+
+DumpDexSurface 同时装配 bundled API19 骨架索引；只有该显式诊断枚举会物化完整骨架，字段状态区分常量与未实现访问。

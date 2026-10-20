@@ -180,6 +180,8 @@ public:
 
     // ---- register access with tag enforcement (02 §7) -------------------
 
+    void RequireImplementedField(const LinkedField& field);
+
     [[noreturn]] void FailCode(const std::string& message) const {
         const auto& execution = Execution();
         const auto* frame = execution.frames.empty()

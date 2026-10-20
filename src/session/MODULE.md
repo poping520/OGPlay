@@ -262,3 +262,5 @@ AndroidAppProcess 在 native 创建前由封存 Manifest 的 supports-gl-texture
 AndroidAppProcessRequest 的原生单次调用默认预算引用 runtime/common 的统一看门狗常量
 （100 亿 tick），与 AndroidGuestProcessRequest/AndroidGuestCallSessionRequest 一致；
 Profile 和用户设置均不覆盖。
+
+AndroidAppProcessRequest.skeleton_bytes 与已解包 BootDex 一并显式交给 bridge；session 不解析骨架或读取宿主类路径。

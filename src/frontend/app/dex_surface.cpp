@@ -1,4 +1,5 @@
 #include "ogplay/app/diagnostics.h"
+#include "ogplay/app/host.h"
 #include "ogplay/core/json.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
@@ -25,6 +26,10 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
     linker.RegisterBootDex(std::move(dex));
+    const auto skeleton_path = BundledDataPaths().root / "dexvm/api19-skeleton.bin";
+    std::ifstream skeleton(skeleton_path, std::ios::binary);
+    if (!skeleton) throw std::runtime_error("cannot open skeleton surface");
+    linker.RegisterSkeletonSurface(std::vector<std::uint8_t>{std::istreambuf_iterator<char>(skeleton), {}});
     core::JsonParseError error;
     const auto surface = core::JsonDocument::ParseStrict(linker.DumpSurfaceJson(), error, 64U * 1024U * 1024U);
     if (!surface) throw std::runtime_error("invalid runtime surface JSON: " + error.message);

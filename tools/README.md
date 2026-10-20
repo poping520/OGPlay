@@ -198,3 +198,12 @@ RegisterNatives 指针三元组只证明候选表，owner 保持未知；heurist
 动态拼接的名称或游戏路径可达性，不生成声明/桩。部分 DEX/ABI/ELF 不支持明确标 incomplete，
 失败/不完整扫描返回非零；完整盘点有缺口也可返回 0，不是兼容性门禁。
 旧 dexvm_gap_report 的正则结果仅兼容历史工具，不能替代该权威表面。命令见 NEW-TITLE 步 1。
+
+### API19 骨架生成（WU2b-1）
+
+`python3 tools/api19_skeleton.py` 从 ADR-0147 固定 SHA256 的四个 ROM JAR 生成
+`data/dexvm/api19-skeleton.bin` 与来源/规模 manifest；`--check` 复核确定性，`--self-test`
+验证格式、固定来源拒绝与 clinit 写入识别。包括非公开/@hide own members，不提取行为。
+二进制为有序类偏移索引加逐类紧凑 JSON；常量仅取 static final 基元/String encoded 值，
+排除 clinit sput 的目标，数值按原始位存储。运行时按类解析，普通启动不全量物化。
+JNI/反射成员语义和正式场景回归留 WU2b-2；声明已存在不代表行为已实现。

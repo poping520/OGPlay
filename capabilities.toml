@@ -2067,3 +2067,8 @@ note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRe
 status = "partial"
 test = "tests/frontend/surface_export_tests.cpp; tools/title_preflight.py --self-test; tools/dexvm_api19_surface.py --self-test"
 note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 公开/保护表面，DEX/multidex 与父类型闭包、ARM32 JNI 字符串/候选注册表、ELF 依赖闭包/版本符号和题库频次。只读盘点，不生成桩。JNI 配对启发式、动态 native 实现/注册 owner 未核实；不覆盖 syscall 参数、动态名称、完整调用图/可达性；回测见本地报告。"
+
+[dexvm.api19_skeleton]
+status = "partial"
+test = "tests/dexvm/skeleton_surface_tests.cpp; tools/api19_skeleton.py --self-test; tools/api19_skeleton.py --check"
+note = "DVM-253/ADR-0147：固定四ROM完整own-member索引，Java/解释器首次解析物化，既有intrinsic/BootDex声明与handler优先；真实常量，方法/构造器及非恒定字段访问记账失败；survey保留中性方法路径。JNI/反射成员查找及NoSuch语义、正式游戏场景回归留WU2b-2；既有手写层次不重写，四JAR外依赖仍明确失败。"

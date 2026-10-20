@@ -64,7 +64,7 @@ def classify_reference(ref: dict, actual: dict, expected: dict, rom: dict | None
             if kind=='field' and reference[1].get('has_constant'):
                 result['kind']='constant';result['expected_constant']=reference[1]['constant']
         return result
-    if kind=='method' and member[1].get('status')=='unimplemented-ledger':
+    if member[1].get('status')=='unimplemented-ledger':
         # An admitted dynamic JNI native needs symbol registration at process assembly;
         # the catalog cannot prove either implementation or a deliberate failure.
         result['classification']='declared-unimplemented'
@@ -237,6 +237,8 @@ def self_test() -> int:
     assert classify_reference(ref,missing,reference)['classification']=='api19-present-missing'
     field=dict(kind='field',owner=child['descriptor'],member='ONE',descriptor='I')
     assert classify_reference(field,missing,reference)['kind']=='constant'
+    unimplemented_parent=dict(parent,fields=[dict(parent['fields'][0],status='unimplemented-ledger')])
+    assert classify_reference(field,{**actual,parent['descriptor']:unimplemented_parent},reference)['classification']=='declared-unimplemented'
     assert resolve(actual,child['descriptor'],'<init>','()V','method') is None
     assert classify_reference(dict(kind='hierarchy',owner=parent['descriptor']),missing,reference)['classification']=='api19-present-missing'
     inherited=hierarchy_references([dict(kind='class',owner=child['descriptor'],source='native')],missing,reference)

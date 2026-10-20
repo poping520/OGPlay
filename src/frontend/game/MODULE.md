@@ -21,3 +21,5 @@ sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 templa
 
 ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdcard 子树约束；
 初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。
+
+启动读取 bundled data/dexvm/api19-skeleton.bin 原始索引数据，随 AndroidAppProcessRequest 下传；前端不解析/生成类，不决定平台行为。

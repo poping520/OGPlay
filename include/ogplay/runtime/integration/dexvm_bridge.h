@@ -46,7 +46,8 @@ public:
         const std::shared_ptr<DexVmAndroidContext>& android_context,
         core::CapabilityLedger& ledger, core::Logger* logger,
         DexVmBridgeConfig config = {},
-        std::vector<std::uint8_t> boot_dex_bytes = {});
+        std::vector<std::uint8_t> boot_dex_bytes = {},
+        std::vector<std::uint8_t> skeleton_bytes = {});
     ~DexVmGuestBridge() override;
     DexVmGuestBridge(const DexVmGuestBridge&) = delete;
     DexVmGuestBridge& operator=(const DexVmGuestBridge&) = delete;

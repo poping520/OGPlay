@@ -62,6 +62,7 @@ public:
         std::optional<std::string> missing_super;
         std::vector<std::string> missing_interfaces;
         bool linked{};
+        bool skeleton_merged{};
     };
 
     // Lazy arrays, primitive classes and survey members may be appended while
@@ -79,6 +80,11 @@ public:
     std::optional<DexUnitId> boot_unit;
     std::optional<DexUnitId> application_unit;
 
+    std::vector<std::uint8_t> skeleton_bytes;
+    std::unordered_map<std::string, std::pair<std::size_t, std::size_t>> skeleton_index;
+    void MergeSkeletonMembers(DexClassId id);
+    [[nodiscard]] std::optional<std::uint32_t> SkeletonMethodFlags(const LinkedMethod& method) const;
+    [[nodiscard]] DexClassId MaterializeSkeletonClass(const std::string& descriptor);
     bool link_complete{};
     std::vector<std::string> implicit_intrinsic_overrides;
 
@@ -162,6 +168,7 @@ public:
         auto& linked = ClassAt(id);
         auto& extra = ExtrasAt(id);
         if (extra.linked) return;
+        MergeSkeletonMembers(id);
         if (!visiting.insert(id.Value()).second) {
             Fail(DexVmErrorReason::invalid_hierarchy,
                  "class hierarchy contains a cycle at " + linked.descriptor);
@@ -255,21 +262,28 @@ public:
                              linked.descriptor + "." + method.name);
                 }
                 const auto& overridden = MethodAt(linked.vtable[index]);
-                if (linked.is_intrinsic && !method.must_override &&
+                if (linked.is_intrinsic && !method.is_skeleton && !overridden.is_skeleton && !method.must_override &&
                     ClassAt(overridden.owner).is_intrinsic) {
                     implicit_intrinsic_overrides.push_back(
                         linked.descriptor + "->" + method.name +
                         method.descriptor + " overrides " +
                         ClassAt(overridden.owner).descriptor);
                 }
+                // Generated bodies cannot execute guest code. Validate their
+                // declarations against the pinned ROM parent's flags, while
+                // keeping the actual handwritten parent/handler unchanged.
+                // Application overrides still use the runtime contract.
+                const auto rom_flags = method.is_skeleton && !overridden.is_skeleton
+                    ? SkeletonMethodFlags(overridden) : std::nullopt;
+                const auto inherited_flags = rom_flags.value_or(overridden.access_flags);
                 if (overridden.kind == MethodKind::intrinsic &&
-                    !overridden.overridable && !linked.is_intrinsic) {
+                    !overridden.overridable && !linked.is_intrinsic && !rom_flags) {
                     Fail(DexVmErrorReason::invalid_override,
                          "intrinsic method is not overridable: " +
                              ClassAt(overridden.owner).descriptor + "." +
                              overridden.name);
                 }
-                if ((overridden.access_flags & kAccFinal) != 0) {
+                if ((inherited_flags & kAccFinal) != 0) {
                     Fail(DexVmErrorReason::invalid_override,
                          "final method is overridden: " +
                              ClassAt(overridden.owner).descriptor + "." +
@@ -282,7 +296,7 @@ public:
                     return 1;  // package visibility
                 };
                 if (visibility_rank(method.access_flags) <
-                    visibility_rank(overridden.access_flags)) {
+                    visibility_rank(inherited_flags)) {
                     Fail(DexVmErrorReason::invalid_override,
                          "override narrows visibility: " + linked.descriptor +
                              "." + method.name + method.descriptor);

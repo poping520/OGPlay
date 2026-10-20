@@ -377,6 +377,7 @@
 
     if (opcode >= 0x52U && opcode <= 0x5fU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
+        if (field.is_unimplemented) { OGPLAY_SYNC_EXECUTION(); RequireImplementedField(field); }
         const auto receiver = GetFastRef(regs, instruction.b);
         if (!receiver.IsValid()) {
             ThrowJava("Ljava/lang/NullPointerException;",
@@ -423,6 +424,7 @@
 
     if (opcode >= 0x60U && opcode <= 0x6dU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
+        if (field.is_unimplemented) { OGPLAY_SYNC_EXECUTION(); RequireImplementedField(field); }
         OGPLAY_SYNC_EXECUTION();
         EnsureInitialized(execution, field.owner);
         ticks = execution.ticks;

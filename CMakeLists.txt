@@ -394,6 +394,7 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/dexvm/reflection.cpp
     src/runtime/dexvm/reflection_codec.cpp
     src/runtime/dexvm/annotation_runtime.cpp
+    src/runtime/dexvm/skeleton_surface.cpp
     src/runtime/dexvm/class_linker.cpp
     src/runtime/dexvm/class_linker_resolve.cpp
     src/runtime/dexvm/diagnostics.cpp

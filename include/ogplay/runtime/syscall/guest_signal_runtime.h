@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include "ogplay/cpu/cpu.h"
@@ -22,6 +23,13 @@ public:
     void Inherit(std::uint64_t parent, std::uint64_t child);
     void Retire(std::uint64_t thread_id);
     void InterruptedWait(const A32SyscallFrame&);
+    struct SleepResult final {
+        std::chrono::nanoseconds remaining;
+        bool interrupted;
+        bool waited;
+    };
+    // Wait without consuming a pending signal; delivery stays on the owner CPU.
+    [[nodiscard]] SleepResult Sleep(std::uint64_t thread_id, std::chrono::nanoseconds duration);
     static constexpr std::uint64_t kPollTicks = 50000;
 private:
     class Impl;

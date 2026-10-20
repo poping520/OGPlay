@@ -405,6 +405,36 @@ bool GuestSignalRuntime::Pending(const std::uint64_t id) const {
     }
     return impl_->Ready(id);
 }
+
+GuestSignalRuntime::SleepResult GuestSignalRuntime::Sleep(
+    const std::uint64_t id, const std::chrono::nanoseconds duration) {
+    std::unique_lock lock(impl_->mutex);
+    const auto start = hal::Clock::SteadyTimestampNs();
+    auto remaining = duration;
+    bool waited = false;
+    for (;;) {
+        if (waited) {
+            const auto elapsed = std::min(
+                hal::Clock::SteadyTimestampNs() - start,
+                static_cast<std::uint64_t>(duration.count()));
+            remaining = duration - std::chrono::nanoseconds(elapsed);
+        }
+        bool interrupted = impl_->Ready(id);
+        if (impl_->lifecycle) {
+            try {
+                interrupted |= impl_->lifecycle->State(id).status != GuestThreadStatus::running;
+            } catch (const GuestThreadLifecycleError&) { interrupted = true; }
+        }
+        if (interrupted) return {remaining, true, waited};
+        if (remaining.count() == 0) return {remaining, false, waited};
+        // Signal send and wait share this mutex, so notification cannot be lost.
+        // Lifecycle cancellation has no signal notification: poll it boundedly.
+        waited = true;
+        impl_->changed.wait_for(lock, std::min(remaining,
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(10))));
+    }
+}
+
 void GuestSignalRuntime::Inherit(const std::uint64_t parent, const std::uint64_t child) {
     std::scoped_lock lock(impl_->mutex);
     impl_->masks[child] = impl_->masks[parent];

@@ -173,12 +173,14 @@ template <typename Cpu> struct SignalFixture {
     core::CapabilityLedger ledger;
     runtime::GuestThreadLifecycle lifecycle;
     cpu::FutexTable futex;
+    hal::FixedStepClock clock{1, 1000};
     runtime::A32SyscallDispatcher dispatcher{runtime::CreateAndroidArmSyscallDispatcher(ledger)};
-    SignalFixture() {
+    explicit SignalFixture(std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {}) {
         memory.Map({GuestAddress{0x10000}, 0x1000}, memory::PageProtection::read | memory::PageProtection::write | memory::PageProtection::execute);
         memory.Map({GuestAddress{0x20000}, 0x4000}, memory::PageProtection::read | memory::PageProtection::write);
         lifecycle.Register(1); lifecycle.Register(2);
         runtime::BindAndroidThreadSyscalls(dispatcher, futex, bus);
+        runtime::BindAndroidTimeSyscalls(dispatcher, clock, memory, std::move(admit_sleep));
         runtime::BindAndroidSignalSyscalls(dispatcher, memory, &lifecycle);
         cpu::A32State state;
         state.SetThreadId(2);
@@ -487,4 +489,133 @@ TEST_CASE("ARM tkill validates target and signal without treating arguments as t
     f.lifecycle.RequestExit(2, 0);
     CHECK(f.Call(238, {2, 0}, 1) == -3);
     CHECK(f.Call(238, {2, 30}, 1) == -3);
+}
+
+TEST_CASE("ARM nanosleep pending signals return checked remainder without consuming delivery") {
+    SignalFixture<cpu::InterpreterCpu> f;
+    f.Action(30, 0x10100, 0x10000000); // SA_RESTART does not restart nanosleep.
+    REQUIRE(f.Send(30) == 0);
+    f.memory.Write32(GuestAddress{0x20080}, 2);
+    f.memory.Write32(GuestAddress{0x20084}, 123);
+    f.memory.Write64(GuestAddress{0x20088}, UINT64_MAX);
+    runtime::A32SyscallFrame call;
+    call.number = 162; call.thread_id = 2; call.arguments = {0x20080, 0x20088};
+    auto result = f.dispatcher.DispatchOutcome(call);
+    CHECK(result.return_value == -4);
+    CHECK(result.progress == runtime::SupervisorCallProgress::handled_idle);
+    CHECK(f.memory.Read32(GuestAddress{0x20088}) == 2);
+    CHECK(f.memory.Read32(GuestAddress{0x2008c}) == 123);
+    CHECK(f.dispatcher.signal_binding->runtime->Pending(2));
+    call.arguments[1] = 0;
+    CHECK(f.dispatcher.Dispatch(call) == -4);
+    call.arguments[1] = 0x30000;
+    CHECK(f.dispatcher.Dispatch(call) == -14);
+    call.arguments[1] = 0x20080; // Request/remainder may alias.
+    CHECK(f.dispatcher.Dispatch(call) == -4);
+    CHECK(f.memory.Read32(GuestAddress{0x20080}) == 2);
+    CHECK(f.memory.Read32(GuestAddress{0x20084}) == 123);
+    f.memory.Write32(GuestAddress{0x20084}, 1'000'000'000);
+    CHECK(f.dispatcher.Dispatch(call) == -22);
+    call.arguments[0] = 0x30000;
+    CHECK(f.dispatcher.Dispatch(call) == -14);
+    call.arguments[0] = 0x20080;
+    f.memory.Write64(GuestAddress{0x20080}, 0);
+    f.memory.Write64(GuestAddress{0x20088}, UINT64_MAX);
+    call.arguments[1] = 0x20088;
+    result = f.dispatcher.DispatchOutcome(call);
+    CHECK(result.return_value == 0);
+    CHECK(result.progress == runtime::SupervisorCallProgress::handled_idle);
+    CHECK(f.memory.Read64(GuestAddress{0x20088}) == UINT64_MAX);
+    CHECK(f.dispatcher.signal_binding->runtime->Pending(2));
+}
+
+TEST_CASE_TEMPLATE("ARM nanosleep delivers suspend and resume handlers without SA_RESTART", Cpu,
+                   cpu::InterpreterCpu, cpu::DynarmicCpu) {
+    std::promise<void> admitted;
+    auto entered = admitted.get_future();
+    SignalFixture<Cpu> f{[&](std::uint64_t, std::chrono::nanoseconds) { admitted.set_value(); }};
+    SUBCASE("tkill") { f.send_number = 238; }
+    SUBCASE("tgkill") {}
+    f.Code(0x10000, {0xef000000, 0xef000001});
+    f.Code(0x10100, {
+        0xe59f301c, 0xe3a00001, 0xe5830000, // marker=1
+        0xe3a07048, 0xe59f2010, 0xef000000, // sigsuspend permitting signal 24
+        0xe3a00002, 0xe5830000, 0xe12fff1e,
+        0x20090, 0xff7fffff
+    });
+    f.Code(0x10200, {0xe12fff1e});
+    f.Action(30, 0x10100, 0x10000000, 0xffffffff);
+    f.Action(24, 0x10200);
+    f.memory.Write32(GuestAddress{0x20080}, 2); // Bounded failure even with the old sleep_for.
+    f.memory.Write32(GuestAddress{0x20084}, 0);
+    auto state = f.cpu.GetState(); state.SetRegister(CoreRegister::r7, 162); f.cpu.SetState(state);
+    auto worker = std::async(std::launch::async, [&] {
+        runtime::A32GuestCallFrame call;
+        call.target = GuestAddress{0x10000}; call.registers = {0x20080, 0x20088, 0, 0};
+        return runtime::InvokeA32GuestCall(f.cpu, f.dispatcher, f.lifecycle, f.memory,
+            call, GuestAddress{0x24000}, GuestAddress{0x10004}, 1000000);
+    });
+    CHECK(entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    CHECK(worker.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout);
+    CHECK(f.Send(30) == 0);
+    const auto suspended = Await([&] { return f.memory.Read32(GuestAddress{0x20090}) == 1; });
+    CHECK(suspended);
+    const auto left = static_cast<std::uint64_t>(f.memory.Read32(GuestAddress{0x20088})) * 1'000'000'000 +
+                      f.memory.Read32(GuestAddress{0x2008c});
+    CHECK(left > 0);
+    CHECK(left < 2'000'000'000);
+    CHECK(f.memory.Read32(GuestAddress{0x2008c}) < 1'000'000'000);
+    CHECK(f.Send(24) == 0);
+    const bool finished = worker.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+    if (!suspended || !finished) f.lifecycle.RequestExitGroup(1, 1);
+    REQUIRE(finished);
+    CHECK(worker.get().return_value == 0xfffffffcU);
+    CHECK(f.memory.Read32(GuestAddress{0x20090}) == 2);
+    CHECK_FALSE(f.dispatcher.signal_binding->runtime->Pending(2));
+}
+
+TEST_CASE("ARM nanosleep preserves successful waits for masked and ignored signals") {
+    SignalFixture<cpu::InterpreterCpu> f;
+    SUBCASE("masked") {
+        f.Action(30, 0x10100);
+        f.memory.Write32(GuestAddress{0x20090}, 1U << 29);
+        REQUIRE(f.Call(126, {2, 0x20090}) == 0);
+        REQUIRE(f.Send(30) == 0);
+    }
+    SUBCASE("SIG_IGN") { f.Action(30, 1); REQUIRE(f.Send(30) == 0); }
+    SUBCASE("default ignored") { REQUIRE(f.Send(28) == 0); }
+    f.memory.Write32(GuestAddress{0x20080}, 0);
+    f.memory.Write32(GuestAddress{0x20084}, 20'000'000);
+    f.memory.Write64(GuestAddress{0x20088}, UINT64_MAX);
+    runtime::A32SyscallFrame call;
+    call.number = 162; call.thread_id = 2; call.arguments = {0x20080, 0x20088};
+    const auto start = hal::Clock::SteadyTimestampNs();
+    const auto result = f.dispatcher.DispatchOutcome(call);
+    CHECK(hal::Clock::SteadyTimestampNs() - start >= 20'000'000);
+    CHECK(result.return_value == 0);
+    CHECK(result.progress == runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(f.memory.Read64(GuestAddress{0x20088}) == UINT64_MAX);
+    call.arguments[1] = 0x30000; // Remainder is unused on success.
+    CHECK(f.dispatcher.Dispatch(call) == 0);
+}
+
+TEST_CASE("ARM nanosleep is cancelled promptly by lifecycle exit") {
+    std::promise<void> admitted;
+    auto entered = admitted.get_future();
+    SignalFixture<cpu::InterpreterCpu> f{[&](std::uint64_t, std::chrono::nanoseconds) { admitted.set_value(); }};
+    f.memory.Write32(GuestAddress{0x20080}, 2);
+    f.memory.Write32(GuestAddress{0x20084}, 0);
+    auto worker = std::async(std::launch::async, [&] {
+        runtime::A32SyscallFrame call;
+        call.number = 162; call.thread_id = 2; call.arguments = {0x20080, 0x20088};
+        return f.dispatcher.DispatchOutcome(call);
+    });
+    CHECK(entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    CHECK(worker.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout);
+    f.lifecycle.RequestExit(2, 0);
+    REQUIRE(worker.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready);
+    const auto result = worker.get();
+    CHECK(result.return_value == -4);
+    CHECK(result.progress == runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(f.memory.Read32(GuestAddress{0x20088}) < 2);
 }

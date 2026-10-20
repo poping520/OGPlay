@@ -1956,7 +1956,7 @@ note = "VFS-05/ADR-0078：定向 56 用例/351 断言通过，同路径 APK 越�
 [runtime.guest_signals]
 status = "partial"
 test = "tests/runtime/syscall_signal_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/guest_clone_thread_runtime_tests.cpp; tests/cpu/futex_tests.cpp"
-note = "BND-41/ADR-0079：进程内 ARM legacy/RT 信号 action、mask、pending、suspend 与 return，tkill/tgkill 投递标准信号 handler 及默认忽略/终止；在目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套与 ucontext 修改；SA_RESTART 仅对无超时 futex；保留 SA_NOCLDSTOP，非 SIGCHLD 无效果。实时队列、作业控制、同步 CPU fault 转信号与宿主 IO 中断未实现。"
+note = "BND-41/ADR-0079：进程内 ARM legacy/RT 信号 action、mask、pending、suspend 与 return，tkill/tgkill 投递标准信号 handler 及默认忽略/终止；在目标线程安全点执行，支持 ARM/Thumb/VFP、备用栈、嵌套与 ucontext 修改；SA_RESTART 仅对无超时 futex，nanosleep 支持信号/退出中断及剩余时间。保留 SA_NOCLDSTOP，非 SIGCHLD 无效果。实时队列、作业控制、同步 CPU fault 转信号与其他宿主 IO 中断未实现。"
 
 [runtime.guest_cpu_facts]
 status = "partial"

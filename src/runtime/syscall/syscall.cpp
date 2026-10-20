@@ -396,8 +396,10 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
             }
         });
     dispatcher.Implement(
-        162, [&address_space, read32, admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame)
+        162, [&address_space, read32, signals = dispatcher.signal_binding,
+              admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame)
                  -> A32SyscallOutcome {
+            auto progress = SupervisorCallProgress::handled_idle;
             try {
                 const memory::GuestAddress request{frame.arguments[0]};
                 address_space.Validate({request, 8U}, memory::AccessType::read,
@@ -410,16 +412,36 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                     nanoseconds >= 1'000'000'000) {
                     return -kEinval;
                 }
-                // No signal delivery interrupts this bounded syscall, so the
-                // optional remainder pointer is not written on success.
                 const auto duration = std::chrono::seconds(seconds) +
                                       std::chrono::nanoseconds(nanoseconds);
                 if (duration.count() == 0) return 0;
                 if (admit_sleep) admit_sleep(frame.thread_id, duration);
+                if (signals->runtime) {
+                    const auto result = signals->runtime->Sleep(frame.thread_id, duration);
+                    if (result.waited) progress = SupervisorCallProgress::handled_advanced;
+                    if (result.interrupted) {
+                        if (frame.arguments[1] != 0) {
+                            const auto left = result.remaining.count();
+                            const std::array words{
+                                static_cast<std::uint32_t>(left / 1'000'000'000),
+                                static_cast<std::uint32_t>(left % 1'000'000'000)};
+                            std::array<std::byte, 8> bytes{};
+                            for (std::size_t index = 0; index < bytes.size(); ++index) {
+                                bytes[index] = static_cast<std::byte>(
+                                    (words[index / 4] >> ((index % 4) * 8)) & 0xffU);
+                            }
+                            address_space.Write(memory::GuestAddress{frame.arguments[1]}, bytes,
+                                                frame.thread_id);
+                        }
+                        // nanosleep is never restarted by SA_RESTART.
+                        return {-4, progress};
+                    }
+                    return {0, progress};
+                }
                 std::this_thread::sleep_for(duration);
                 return {0, SupervisorCallProgress::handled_advanced};
             } catch (const memory::MemoryFault&) {
-                return -kEfault;
+                return {-kEfault, progress};
             }
         });
 }

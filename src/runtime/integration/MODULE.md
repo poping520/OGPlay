@@ -289,3 +289,6 @@ async pending 替换不重发事件；acquire 将待上传帧独立持有，comm
 
 原生单次调用的默认看门狗额度与 session 共用 runtime/common 的 100 亿 tick 常量；
 现有 observable-progress 续期规则继续生效，未新增按标题配置或仅按墙钟检测。
+
+诊断与生产共用 BoundCoreIntrinsicCatalog 的 core/platform handler 绑定；metadata-only
+DumpAndroidBoundarySurfaceJson 读取同一 API19 boundary 导出目录，不创建进程/窗口或执行 guest。

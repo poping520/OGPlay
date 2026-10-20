@@ -33,13 +33,25 @@
 ### 步 1 · 静态预检（不跑游戏）
 
 ```bash
-python tools/dexvm_gap_report.py --apk <title>.apk --output .local/<title>_gap.json
+mkdir -p .local/analysis/preflight
+build/release/ogplay-cli dexvm dump-surface > .local/analysis/preflight/surface.json
+python3 tools/dexvm_api19_surface.py \
+  --jar .local/aosp/core.jar --jar .local/aosp/framework.jar \
+  --jar .local/aosp/framework2.jar --jar .local/aosp/ext.jar \
+  --output .local/analysis/preflight/api19.json
+python3 tools/title_preflight.py --apk <title>.apk \
+  --surface .local/analysis/preflight/surface.json \
+  --reference .local/analysis/preflight/api19.json \
+  --output .local/analysis/preflight/title.json
 ```
 
-输出两层：`link_blocking`（潜在层级缺口，含 `role` 字段区分
-superclass/interface）与 `runtime`（潜在成员命中）。两者都是静态优先级清单，
-不再要求启动前盲补；是否真实可达以步骤 3 的 survey 为准。
-APK 派生产物一律留在 `.local/`，不入库。
+运行时表面来自实际 catalog/BootDex/平台绑定，不再使用 C++ 正则推测。
+`gaps` 按 java/native 与缺口类型排序：API19 存在但缺失、非 API19 探测、已声明未绑定；
+ELF 导入另标 `native-import-missing`，强弱与版本分开。JNI 字符串配对带置信度，
+动态 guest JNI 标记 unverified；静态依赖不代表可达，仍须步骤 3/5 确认真实命中。
+题库可用 `--games-dir .local/games --output-dir .local/analysis/preflight/library` 汇总。
+表面、参考及 APK 派生产物一律留 `.local/`；旧 gap report 输出可继续供步骤 2 的旧生成器使用，
+新体检不生成桩，也不直接作为旧生成器输入。完整边界见 [DIAG-4](../tasks/diagnostics/DIAG-4.md)。
 
 ### 步 2 · 生成占位与中性行
 

@@ -31,6 +31,7 @@ constexpr std::string_view kSynopsis =
     "usage: ogplay-cli <command> [arguments]\n"
     "\n"
     "Commands:\n"
+    "  dexvm dump-surface [--bootdex <jar>]  Export linked platform JSON\n"
     "  run-apk <apk> [options]       Run an APK directly\n"
     "  library [--library-root <dir>] <subcommand>\n"
     "                                Manage the game library\n"
@@ -126,6 +127,15 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
     if (argc < 2) return Usage();
 
     try {
+        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" &&
+            std::string_view(argv[2]) == "dump-surface") {
+            std::filesystem::path boot;
+            if (argc == 5 && std::string_view(argv[3]) == "--bootdex") boot = Utf8Path(argv[4]);
+            else if (argc == 3) boot = app::BundledDataPaths().root / "android/19/framework/bootdex.jar";
+            else throw std::invalid_argument("dump-surface accepts only --bootdex <jar>");
+            Write(stdout, app::DumpDexSurface(boot) + "\n");
+            return 0;
+        }
         if (std::string_view(argv[1]) == "library") return RunLibraryCommand(std::span(argv + 2, static_cast<std::size_t>(argc - 2)));
         if (std::string_view(argv[1]) == "run-apk") {
             std::vector<std::string_view> args(argv + 2, argv + argc);

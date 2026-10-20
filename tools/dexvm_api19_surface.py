@@ -4,6 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import math
+import zipfile
+import dex_survey_lib as dexlib
 import json
 import re
 from pathlib import Path
@@ -284,6 +288,49 @@ def inventory(source_root: Path, classes: list[str], package_name: str | None,
             "classes": sorted(parsed, key=lambda item: item["descriptor"])}
 
 
+def jar_inventory(paths: list[Path], source_id: str) -> dict:
+    """Authoritative compiled descriptors, including nested and hidden public API."""
+    classes = {}; sources = []
+    for path in paths:
+        archive_bytes = path.read_bytes()
+        sources.append({"path": str(path), "sha256": hashlib.sha256(archive_bytes).hexdigest()})
+        with zipfile.ZipFile(path) as archive:
+            data = archive.read("classes.dex")
+        dex = dexlib.parse_dex(data)
+        for cls in dex.classes:
+            desc = dex.type_name(cls.type_index)
+            if desc in classes: raise ValueError("duplicate reference class: " + desc)
+            methods = []
+            for method in cls.direct_methods + cls.virtual_methods:
+                if not method.access_flags & 5: continue
+                _, name, signature = dex.method_signature(method.method_index)
+                methods.append({"name": name, "descriptor": signature,
+                                "static": bool(method.access_flags & 8), "access_flags": method.access_flags})
+            fields = []; values = dexlib.static_values(data, dex, cls)
+            for index, field in enumerate(cls.static_fields + cls.instance_fields):
+                if not field.access_flags & 5: continue
+                _, type_index, name_index = dex.field_ids[field.field_index]
+                entry = {"name": dex.strings[name_index], "descriptor": dex.type_name(type_index),
+                         "static": bool(field.access_flags & 8), "access_flags": field.access_flags,
+                         "has_constant": False}
+                if field.access_flags & 0x18 == 0x18 and index < len(values):
+                    value = values[index]
+                    if not isinstance(value, dict):
+                        if isinstance(value, float) and not math.isfinite(value):
+                            entry.update(has_constant=True, constant="NaN" if math.isnan(value) else "+Infinity" if value>0 else "-Infinity", constant_encoding="ieee754-nonfinite")
+                        else:
+                            entry.update(has_constant=True, constant=value)
+                fields.append(entry)
+            classes[desc] = {"descriptor": desc, "kind": "interface" if cls.access_flags & 0x200 else "class",
+                             "access_flags": cls.access_flags,
+                             "superclass": dex.type_name(cls.superclass_index) if cls.superclass_index is not None else None,
+                             "interfaces": [dex.type_name(i) for i in cls.interface_type_indices],
+                             "source": path.name, "methods": sorted(methods, key=lambda m:(m["name"],m["descriptor"])),
+                             "fields": sorted(fields,key=lambda f:(f["name"],f["descriptor"]))}
+    return {"schema": 1, "api": 19, "source": source_id, "visibility": "public-protected-members; all class hierarchy records",
+            "sources": sources, "classes": [classes[d] for d in sorted(classes)]}
+
+
 def self_test() -> int:
     sample = """
 package java.test; import java.io.Closeable;
@@ -310,6 +357,7 @@ public class Sample<T> extends Base implements Closeable, Runnable {
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path)
+    parser.add_argument("--jar", type=Path, action="append", default=[], help="API19 ROM JAR; repeat for core/framework/framework2/ext")
     parser.add_argument("--class", dest="classes", action="append", default=[])
     parser.add_argument("--package")
     parser.add_argument("--source-id", default="android-4.4.4_r2.0.1")
@@ -319,17 +367,17 @@ def main() -> int:
     arguments = parser.parse_args()
     if arguments.self_test:
         return self_test()
-    if arguments.source_root is None or (not arguments.classes and not arguments.package):
+    if not arguments.jar and (arguments.source_root is None or (not arguments.classes and not arguments.package)):
         parser.error("pass --source-root and at least one --class or --package")
-    result = inventory(arguments.source_root, arguments.classes, arguments.package,
-                       arguments.source_id)
+    result = jar_inventory(arguments.jar, arguments.source_id) if arguments.jar else inventory(
+        arguments.source_root, arguments.classes, arguments.package, arguments.source_id)
     rendered = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
     if arguments.check:
         if arguments.check.read_text(encoding="utf-8") != rendered:
             raise SystemExit(f"API-19 surface is stale: {arguments.check}")
         return 0
     if arguments.output:
-        arguments.output.write_text(rendered, encoding="utf-8", newline="\n")
+        arguments.output.write_text(rendered, encoding="utf-8")
     else:
         print(rendered, end="")
     return 0

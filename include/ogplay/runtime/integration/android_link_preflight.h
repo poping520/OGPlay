@@ -13,6 +13,8 @@
 
 namespace ogplay::runtime {
 
+[[nodiscard]] std::string DumpAndroidBoundarySurfaceJson();
+
 struct AndroidLinkPreflightRequest final {
     std::uint32_t api{};
     std::string root_module;

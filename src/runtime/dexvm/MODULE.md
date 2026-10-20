@@ -203,3 +203,8 @@ RealToString 只保留 bigIntDigitGenerator native，字段经绑定 handle，�
 `Interpreter::TrySnapshot` 只尝试 VM 执行锁，复制堆边界、对象/登记类/已链接类与已有调用计数；忙时立即返回 nullopt。method_calls 是解释调用，不是三路总数；GC 暂停使用统一 Clock 累计实际 mark/sweep/资源回收区间，不含等待执行锁的时间。
 
 直接 native 调用将 VmJavaThrow 转为 VmCallOutcome，保留原异常身份和消息。
+
+诊断 `DexClassLinker::DumpSurfaceJson` 对专用装配实例执行链接（不初始化类），导出实际成员、
+BootDex 优先来源、父类/接口、encoded/intrinsic 常量和逐类链接错误。implemented 表示有 handler、
+字节码或 abstract 契约；动态 guest JNI 没有静态绑定证据时保守标 unimplemented-ledger，
+并附 guest-jni-unverified，不等价于证明目标后端不存在或全部行为已实现。

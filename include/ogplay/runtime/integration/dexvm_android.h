@@ -1223,6 +1223,9 @@ void RefreshAndroidImageDrawables(DexVmAndroidContext& context);
     const std::shared_ptr<DexVmAndroidContext> &context);
 
 [[nodiscard]] std::vector<dexvm::IntrinsicClassDecl>
+BoundCoreIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext>& context, std::uint32_t cpu_cores = 1);
+
+[[nodiscard]] std::vector<dexvm::IntrinsicClassDecl>
 AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context);
 
 void SetAndroidKeyEventUnicode(dexvm::Interpreter &vm, dexvm::VmObjectRef event,

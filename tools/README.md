@@ -167,3 +167,21 @@ CMake 会按宿主选择平台/CPU，并逐文件验证清单。普通 Debug 构
 未知/缺失字段、类型、范围、身份和资源预算错误均失败；不读取或修改宿主/guest 配置。
 格式与支持边界见 [data/devices/README.md](../data/devices/README.md)。
 定向测试：`python tests/tools/test_validate_devices.py`；CTest：`tools.device_presets_current` / `tools.device_presets_validator`。
+
+### 静态体检（DIAG-4 / WU1）
+
+`ogplay-cli dexvm dump-surface [--bootdex <jar>]` 导出真实 linked catalog/BootDex 表面，
+保留链接错误、来源、常量和动态 guest JNI 未核实状态。`dexvm_api19_surface.py --jar ...`
+可重复指定 API19 core/framework/framework2/ext ROM JAR，提取全部类层级及 public/protected
+成员、encoded 常量和输入哈希，沿用 schema 1 的 classes 列表；源码模式保持可用。
+`title_preflight.py --surface <json> --reference <json> --apk <apk> --output <json>`
+扫描全部根 DEX（含 multidex）、ARM32 JNI 字符串/候选注册表及 ELF 依赖闭包/版本符号。
+`--games-dir <dir> --output-dir <dir>` 写逐 APK、类/成员/引擎频次及简表；`--self-test` 自测。
+
+Java/JNI 缺口分 api19-present-missing、not-in-api19、declared-unimplemented；
+ELF 使用独立 native-import-missing，不把未知 C 符号伪称 Java API19 成员，weak 不等于强拒载。
+RegisterNatives 指针三元组只证明候选表，owner 保持未知；heuristic 配对不证明实际调用。
+动态 native admission 不证明实现，guest-jni-unverified 单列；工具不分析系统调用参数、
+动态拼接的名称或游戏路径可达性，不生成声明/桩。部分 DEX/ABI/ELF 不支持明确标 incomplete，
+失败/不完整扫描返回非零；完整盘点有缺口也可返回 0，不是兼容性门禁。
+旧 dexvm_gap_report 的正则结果仅兼容历史工具，不能替代该权威表面。命令见 NEW-TITLE 步 1。

@@ -69,6 +69,7 @@ class DexClass:
     access_flags: int
     superclass_index: int | None
     interface_type_indices: list[int]
+    static_values_offset: int = 0
     static_fields: list[DexField] = field(default_factory=list)
     instance_fields: list[DexField] = field(default_factory=list)
     direct_methods: list[DexMethod] = field(default_factory=list)
@@ -226,6 +227,7 @@ def parse_dex(data: bytes) -> DexFile:
             access_flags=access_flags,
             superclass_index=None if superclass == NO_INDEX else superclass,
             interface_type_indices=interfaces,
+            static_values_offset=_u4(data, base + 28),
         )
         if class_data_off:
             _parse_class_data(data, class_data_off, parsed)
@@ -294,3 +296,50 @@ def is_platform_descriptor(descriptor: str) -> bool:
     if descriptor.startswith("Landroid/support/"):
         return False
     return descriptor.startswith(PLATFORM_PREFIXES)
+
+
+def static_values(data: bytes, dex: DexFile, cls: DexClass) -> list[object]:
+    """Encoded scalar initial values, without executing clinit. Non-scalars are tagged."""
+    def value(offset: int) -> tuple[object, int]:
+        _check_range(data, offset, 1, "encoded_value")
+        tag = data[offset]; offset += 1
+        kind, arg = tag & 31, tag >> 5
+        if kind == 0x1e:
+            if arg: raise DexFormatError("invalid null value")
+            return None, offset
+        if kind == 0x1f:
+            if arg > 1: raise DexFormatError("invalid boolean value")
+            return bool(arg), offset
+        if kind == 0x1c:
+            count, offset = read_uleb128(data, offset)
+            for _ in range(count): _, offset = value(offset)
+            return {"encoded": "array"}, offset
+        if kind == 0x1d:
+            _, offset = read_uleb128(data, offset)
+            count, offset = read_uleb128(data, offset)
+            for _ in range(count):
+                _, offset = read_uleb128(data, offset)
+                _, offset = value(offset)
+            return {"encoded": "annotation"}, offset
+        count = arg + 1
+        _check_range(data, offset, count, "encoded scalar")
+        raw = data[offset:offset + count]; offset += count
+        if kind in (0, 2, 4, 6): return int.from_bytes(raw, "little", signed=True), offset
+        if kind == 3: return int.from_bytes(raw, "little"), offset
+        if kind in (0x10, 0x11):
+            size = 4 if kind == 0x10 else 8
+            if count > size: raise DexFormatError("oversized floating value")
+            return struct.unpack("<f" if size == 4 else "<d", b"\0" * (size-count) + raw)[0], offset
+        if kind == 0x17:
+            index = int.from_bytes(raw, "little")
+            if index >= len(dex.strings): raise DexFormatError("encoded string index")
+            return dex.strings[index], offset
+        if kind in (0x18, 0x19, 0x1a, 0x1b): return {"encoded": "reference"}, offset
+        raise DexFormatError("unsupported encoded value kind")
+    if not cls.static_values_offset: return []
+    count, offset = read_uleb128(data, cls.static_values_offset)
+    if count > len(cls.static_fields): raise DexFormatError("too many static values")
+    result = []
+    for _ in range(count):
+        item, offset = value(offset); result.append(item)
+    return result

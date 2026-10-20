@@ -498,7 +498,7 @@ add_library(ogplay_library STATIC
     src/frontend/library/visuals.cpp src/frontend/library/settings.cpp
     src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
     src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp
-    src/frontend/library/external_data.cpp)
+    src/frontend/library/external_data.cpp src/frontend/library/data_hint.cpp)
 target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
@@ -586,7 +586,7 @@ if(OGPLAY_BUILD_GUI OR OGPLAY_BUILD_TESTS)
     add_library(ogplay_desktop_app STATIC
         src/frontend/gui/launch.cpp src/frontend/gui/dashboard.cpp
         src/frontend/gui/rpc.cpp src/frontend/gui/rpc_import.cpp
-        src/frontend/gui/rpc_settings.cpp src/frontend/gui/view_model.cpp)
+        src/frontend/gui/rpc_settings.cpp src/frontend/gui/rpc_data_hint.cpp src/frontend/gui/view_model.cpp)
     target_link_libraries(ogplay_desktop_app PUBLIC ogplaycore PRIVATE ogplay_desktop_webview)
     target_include_directories(ogplay_desktop_app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_include_directories(ogplay_desktop_app SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ext-boost")

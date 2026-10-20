@@ -196,6 +196,10 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
                     "run-apk accepts --survey-gaps only once");
             }
             options.survey_gaps_output = Utf8Path(args[++index]);
+        } else if (option == "--missing-data-report" && index + 1 < args.size()) {
+            if (options.missing_data_report.has_value())
+                throw std::invalid_argument("run-apk accepts --missing-data-report only once");
+            options.missing_data_report = Utf8Path(args[++index]);
         } else {
             throw std::invalid_argument("unknown or incomplete run-apk option: " +
                                         std::string(option));
@@ -258,7 +262,7 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
     if (!o.diagnostics_enabled && o.diagnostic_directory != std::filesystem::path(".local/diagnostics")) throw std::invalid_argument("custom diagnostic directory requires diagnostics");
     if (o.diagnostic_teardown_timeout && !o.diagnostics_enabled) throw std::invalid_argument("diagnostic timeout requires diagnostics");
     if (o.dexvm_interpreter && *o.dexvm_interpreter != InterpreterBackend::switch_dispatch && *o.dexvm_interpreter != InterpreterBackend::threaded) throw std::invalid_argument("invalid interpreter");
-    for (const auto* path : {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory, &o.input_config_path, &o.library_root})
+    for (const auto* path : {&o.external_directory, &o.obb_path, &o.profiles_directory, &o.survey_gaps_output, &o.sandbox_directory, &o.input_config_path, &o.library_root, &o.missing_data_report})
         if (*path && (*path)->empty()) throw std::invalid_argument("option requires a non-empty path");
     if (o.external_guest_directory) ValidateExternalGuestDirectory(*o.external_guest_directory);
     if (o.installation_id && o.installation_id->empty()) throw std::invalid_argument("installation id is empty");
@@ -299,6 +303,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     if (o.preflight) args.emplace_back("--preflight");
     optional_path("--input-config", o.input_config_path);
     optional_path("--survey-gaps", o.survey_gaps_output);
+    optional_path("--missing-data-report", o.missing_data_report);
     return args;
 }
 }  // namespace ogplay::app

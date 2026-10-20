@@ -46,6 +46,7 @@ private:
     [[nodiscard]] app::ConsoleResponse SettingsRequest(std::string_view method, app::JsonValue params);
     [[nodiscard]] app::ConsoleResponse GameSettingsRequest(std::string_view method, app::JsonValue params);
     [[nodiscard]] app::ConsoleResponse ImportRequest(std::string_view method, app::JsonValue params);
+    [[nodiscard]] app::ConsoleResponse DataHintRequest(std::string_view method, app::JsonValue params);
     std::shared_ptr<ImportState> import_;
     LibraryStore& store_;
     std::filesystem::path game_executable_;

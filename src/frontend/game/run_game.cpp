@@ -186,7 +186,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, surface_width, surface_height, cpu_config, mcp_manual_step,
           preflight, survey_gaps_output, sandbox_directory, installation_id,
-          ephemeral_sandbox, input_config_path, library_root] = std::move(options);
+          ephemeral_sandbox, input_config_path, library_root, missing_data_report] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -258,6 +258,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                            external_guest_directory);
     AttachSandbox(sandbox, manifest.package, filesystem, logger);
     filesystem.SetWorkingDirectory("/");
+    std::optional<MissingDataRecorder> missing_data;
+    if (missing_data_report && !preflight)
+        missing_data.emplace(filesystem, logger, *missing_data_report, external_directory,
+                             external_guest_directory.value_or("/sdcard"));
     const auto& bionic = runtime::SelectBionicProfile(api_level);
     const auto system_directory =
         bundled_data.root / bionic.data_directory / "lib";
@@ -986,6 +990,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         }
         if (audio_output) audio_output->Stop();
         publish_session();
+        if (missing_data) missing_data->Write();
         if (survey_gaps_output.has_value()) {
             // Written before rethrowing: a survey run usually ends on the
             // first gap that no stub can paper over, and that harvest is

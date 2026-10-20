@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
-import { describeData, guestPathError, importingStage, normalizeGuestPath, pause, pickPath, upload, type DataDirectory, type ExternalMode, type ImportJob } from './import';
+import { guestPathError, importingStage, normalizeGuestPath, pause, pickPath, upload, type ExternalMode, type ImportJob } from './import';
+import { MountPreview, useDataDirectory } from './mount-preview';
 
 const MODES: { value: ExternalMode; label: string; hint: string }[] = [
   { value: 'copy', label: '复制到游戏库', hint: '导入后原目录可移动或删除；同一磁盘支持克隆时几乎不占额外空间。' },
@@ -19,8 +20,6 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [external, setExternal] = useState('');
-  const [data, setData] = useState<DataDirectory | null>(null);
-  const [dataError, setDataError] = useState('');
   const [externalGuest, setExternalGuest] = useState('/sdcard');
   const [externalMode, setExternalMode] = useState<ExternalMode>('copy');
   const [committing, setCommitting] = useState(false);
@@ -87,20 +86,10 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     return () => { disposed.current = true; dialog.current?.close(); };
   }, []);
   // The host lists the chosen directory so the preview shows real guest paths.
-  useEffect(() => {
-    setData(null); setDataError('');
-    if (!external) return;
-    let current = true;
-    rpc<DataDirectory>('library.external.inspect', { path: external })
-      .then(value => { if (current) setData(value); })
-      .catch(reason => { if (current) setDataError(message(reason)); });
-    return () => { current = false; };
-  }, [external]);
+  const { data, error: dataError } = useDataDirectory(external);
   const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed);
   const led = error || job?.state === 'failed' ? 'danger' : committing || busy ? 'running' : summary ? 'ready' : '';
   const mode = MODES.find(item => item.value === externalMode)!;
-  const shown = data?.entries ?? [];
-  const hidden = data ? data.entry_count - shown.length : 0;
   return <dialog ref={dialog} class="import-wizard" aria-label="导入游戏" onCancel={event => { event.preventDefault(); void close(); }}>
     <header class="iw-head"><h2>导入游戏</h2><span class="iw-stage" role="status"><i class={`led ${led}`} />{stage}</span></header>
     {source && <p class="iw-file" title={source}><bdi>{source}</bdi></p>}
@@ -137,16 +126,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
               onInput={event => setExternalGuest(event.currentTarget.value)} /></label>
           </div>
           <p class={guestError ? 'iw-note bad' : 'iw-note'}>{guestError ?? '目录内容会出现在此 guest 路径下；按游戏实际读取的位置填写，例如 /sdcard/gameloft/games/<游戏名>。'}</p>
-          <figure class="iw-mount" aria-label="挂载预览">
-            <figcaption><span>{externalMode === 'copy' ? '复制到游戏库后挂载' : '直接挂载原目录'}</span>{data && <small>{describeData(data)}</small>}</figcaption>
-            <code class={guestError ? 'iw-root bad' : 'iw-root'}>{guestError ? '挂载位置无效，修正后显示' : `${guest}/`}</code>
-            {dataError ? <p class="iw-note bad">{dataError}</p> : !data ? <p class="iw-note">正在读取目录…</p> :
-              <ul class="iw-tree">
-                {shown.map((entry, index) => <li><i>{index === shown.length - 1 && hidden <= 0 ? '└─' : '├─'}</i><code>{entry.name}{entry.directory ? '/' : ''}</code></li>)}
-                {hidden > 0 && <li class="more"><i>└─</i>另 {hidden} 项</li>}
-                {!data.entry_count && <li class="more"><i>└─</i>空目录</li>}
-              </ul>}
-          </figure>
+          <MountPreview caption={externalMode === 'copy' ? '复制到游戏库后挂载' : '直接挂载原目录'} guest={guest} invalid={!!guestError} data={data} error={dataError} />
         </>}
       </section>
       {summary.existing_instances > 0 && <label class="iw-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />游戏库中已有 {summary.existing_instances} 份该游戏；另外添加一份，现有游戏及存档保留。</label>}

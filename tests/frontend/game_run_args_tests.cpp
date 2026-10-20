@@ -23,7 +23,7 @@ TEST_CASE("Game run args round trip every value and optional field") {
     o.supersample_factor = 4; o.cpu_config = {8, 2400, {true, 123}};
     o.survey_gaps_output = "/survey.json"; o.sandbox_directory = "/sandbox";
     o.installation_id = "org.example.app-1"; o.input_config_path = "/input.toml";
-    o.library_root = "/library";
+    o.library_root = "/library"; o.missing_data_report = "/missing.json";
     CHECK(RoundTrip(o) == o);
     o.mcp_port.reset(); o.mcp_manual_step = false; o.key_editor_port = std::uint16_t{1234};
     o.sandbox_directory.reset(); o.ephemeral_sandbox = true;

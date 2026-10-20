@@ -21,6 +21,12 @@ external_guest_dir 属于安装实例用户数据：导入 meta.toml 默认 /sdc
 反斜线与控制字符。ResolveLaunch 仅在启用 external_dir 时转为 --external-guest-dir。
 旧 meta 缺字段读取默认值；不依赖 Profile，也不移动宿主数据。
 
+数据包挂载提示（ADR-0146）：ResolveLaunch 在非 preflight 时传条目 `last-run-missing.json`。
+InferDataMount 只比对报告缺失路径与数据目录实际文件（ASCII 折叠）：`X/r` 中 r 存在则 X 为候选，
+按解释的不同缺失数、再按 r 深度排序；单条且 r 只有一级的巧合与当前挂载点忽略。无数据目录且
+缺失 ≥3 条时为 needs_data（最深共同目录）。SuggestDataMount 读取报告，`data_mount_hint` 关闭、
+报告缺失/损坏或与当前挂载不符时为 none；用户新选目录单独评估。CLI `library data-hint` 同源。
+
 数据包导入模式（ADR-0144）：copy（默认）把所选目录复制为条目 `data/`，meta 只写
 `external_data = "library"`，加载时 external_dir 解析为该绝对路径并标记 owned；link 只记录
 宿主绝对路径，无该键的旧 meta 均为 link。复制在库锁外进行：库根 `import-staging/data-N`

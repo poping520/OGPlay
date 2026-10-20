@@ -3,6 +3,9 @@
 #include "run_game_vfs.h"
 
 #include <algorithm>
+#include <fstream>
+#include <mutex>
+#include <unordered_set>
 #include <array>
 #include <charconv>
 #include <stdexcept>
@@ -10,6 +13,7 @@
 #include <vector>
 
 #include "ogplay/core/encoding.h"
+#include "ogplay/core/json.h"
 #include "ogplay/frontend/user_data_dir.h"
 #include "ogplay/hal/host_environment.h"
 
@@ -77,6 +81,87 @@ std::string SandboxSession::Describe() const {
     if (!store) return "ephemeral";
     return PathUtf8(root) + " used=" + std::to_string(store->UsedBytes()) +
            "/" + std::to_string(store->QuotaBytes());
+}
+
+struct MissingDataRecorder::State final {
+    static constexpr std::size_t kLimit = 512;
+    std::mutex mutex;
+    std::vector<std::string> paths;  // first-seen order
+    std::unordered_set<std::string> seen;
+    bool truncated{};
+    void Record(const std::string_view path) {
+        if (path != "/sdcard" && !path.starts_with("/sdcard/")) return;
+        std::scoped_lock lock(mutex);
+        if (seen.contains(std::string(path))) return;
+        if (paths.size() == kLimit) { truncated = true; return; }
+        seen.emplace(path);
+        paths.emplace_back(path);
+    }
+};
+
+MissingDataRecorder::MissingDataRecorder(runtime::VirtualFileSystem& filesystem, core::Logger& logger,
+                                         std::filesystem::path report,
+                                         std::optional<std::filesystem::path> external_directory,
+                                         std::string external_guest_directory)
+    : filesystem_(filesystem), logger_(logger), state_(std::make_shared<State>()), report_(std::move(report)),
+      external_directory_(std::move(external_directory)), external_guest_directory_(std::move(external_guest_directory)) {
+    // A stale report from an earlier run must never describe this one.
+    std::error_code error;
+    static_cast<void>(std::filesystem::remove(report_, error));
+    filesystem_.SetMissingPathObserver([state = state_](const std::string_view path) { state->Record(path); });
+}
+
+MissingDataRecorder::~MissingDataRecorder() {
+    Write();
+}
+
+void MissingDataRecorder::Write() noexcept {
+    if (written_) return;
+    written_ = true;
+    try {
+        // Detach first: the existence checks below must not record themselves.
+        filesystem_.SetMissingPathObserver({});
+        std::vector<std::string> missing;
+        bool truncated{};
+        {
+            std::scoped_lock lock(state_->mutex);
+            missing = state_->paths;
+            truncated = state_->truncated;
+        }
+        std::erase_if(missing, [&](const std::string& path) {
+            try { static_cast<void>(filesystem_.Stat(path)); return true; }
+            catch (const runtime::VfsError&) { return false; }
+        });
+        core::JsonWriter writer;
+        const auto root = writer.Object();
+        writer.AddUnsignedInteger(root, "schema", 1);
+        if (external_directory_) writer.AddString(root, "external_dir", PathUtf8(*external_directory_));
+        else writer.AddNull(root, "external_dir");
+        writer.AddString(root, "external_guest_dir", external_guest_directory_);
+        const auto paths = writer.Array();
+        for (const auto& path : missing) writer.Append(paths, writer.String(path));
+        writer.Add(root, "missing", paths);
+        writer.AddBool(root, "truncated", truncated);
+        const auto text = writer.Serialize(root);
+        if (!report_.parent_path().empty()) std::filesystem::create_directories(report_.parent_path());
+        auto temporary = report_;
+        temporary += ".tmp";
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output.write(text.data(), static_cast<std::streamsize>(text.size()));
+            if (!output) throw std::runtime_error("cannot write missing data report");
+        }
+        std::filesystem::rename(temporary, report_);
+        logger_.Write(core::LogLevel::info, "frontend.missing_data", "missing data report written", {},
+                      {{"path", PathUtf8(report_)}, {"missing", static_cast<std::uint64_t>(missing.size())},
+                       {"truncated", truncated}}, kUnrestrictedLog);
+    } catch (const std::exception& error) {
+        // A diagnostic report never changes how the game session ends.
+        try {
+            logger_.Write(core::LogLevel::warn, "frontend.missing_data", error.what(), {},
+                          {{"path", PathUtf8(report_)}}, kUnrestrictedLog);
+        } catch (...) {}
+    }
 }
 
 void MountExternalDirectory(

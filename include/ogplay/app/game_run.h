@@ -57,6 +57,8 @@ struct GameRunOptions final {
     bool ephemeral_sandbox{};
     std::optional<std::filesystem::path> input_config_path;
     std::optional<std::filesystem::path> library_root;
+    // ADR-0146: JSON of /sdcard reads that found nothing, written at exit.
+    std::optional<std::filesystem::path> missing_data_report;
     bool operator==(const GameRunOptions&) const = default;
 };
 

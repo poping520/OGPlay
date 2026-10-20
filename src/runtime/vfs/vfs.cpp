@@ -1153,8 +1153,35 @@ std::optional<std::string> VirtualFileSystem::WorkingDirectory() const {
 std::string VirtualFileSystem::CanonicalPath(const std::string_view path) const {
     return impl_->CanonicalPath(path);
 }
+void VirtualFileSystem::SetMissingPathObserver(VfsMissingPathObserver observer) {
+    std::scoped_lock lock(impl_->missing_observer_mutex_);
+    impl_->missing_observer_ = observer ?
+        std::make_shared<const VfsMissingPathObserver>(std::move(observer)) : nullptr;
+}
+void VirtualFileSystem::Impl::NotifyMissing(const std::string_view path) const noexcept {
+    std::shared_ptr<const VfsMissingPathObserver> observer;
+    {
+        std::scoped_lock lock(missing_observer_mutex_);
+        observer = missing_observer_;
+    }
+    if (!observer) return;
+    // Diagnostics must never replace the ENOENT the guest is about to see.
+    try { (*observer)(CanonicalPath(path)); } catch (...) {}
+}
+namespace {
+// Impl is deduced: the private nested type cannot be named here.
+template<class Impl, class Call>
+auto ObserveMissing(const Impl& impl, const std::string_view path, Call&& call) {
+    try {
+        return call();
+    } catch (const VfsError& error) {
+        if (error.ErrorNumber() == kEnoent) impl.NotifyMissing(path);
+        throw;
+    }
+}
+}  // namespace
 VfsFileInfo VirtualFileSystem::Stat(const std::string_view path) const {
-    return impl_->Stat(path);
+    return ObserveMissing(*impl_, path, [&] { return impl_->Stat(path); });
 }
 GuestFileSystemStats VirtualFileSystem::StatVfs(std::string_view path) const {
     return impl_->StatVfs(path);
@@ -1176,7 +1203,7 @@ std::int32_t VirtualFileSystem::Duplicate(const std::int32_t descriptor) {
 }
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ListDirectory(
     const std::string_view path) const {
-    return impl_->ListDirectory(path);
+    return ObserveMissing(*impl_, path, [&] { return impl_->ListDirectory(path); });
 }
 void VirtualFileSystem::CreateDirectory(const std::string_view path) {
     impl_->CreateDirectory(path);
@@ -1193,10 +1220,11 @@ void VirtualFileSystem::Rename(const std::string_view from,
 }
 std::int32_t VirtualFileSystem::Open(const std::string_view path,
                                      const VfsOpenOptions options) {
-    return impl_->Open(path, options);
+    if (options.create) return impl_->Open(path, options);
+    return ObserveMissing(*impl_, path, [&] { return impl_->Open(path, options); });
 }
 std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
-    return impl_->OpenDirectory(path);
+    return ObserveMissing(*impl_, path, [&] { return impl_->OpenDirectory(path); });
 }
 
 bool VirtualFileSystem::IsAppend(const std::int32_t descriptor) const {

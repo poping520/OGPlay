@@ -295,3 +295,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-248 · 有界 Surface 层序与窗口开孔](DVM-248.md)
 
 - [DVM-249 · 普通 MediaPlayer 本地视频输出](DVM-249.md)
+
+- [DVM-252 · API19 表面决策与纯形状配方（WU2a）](DVM-252.md)

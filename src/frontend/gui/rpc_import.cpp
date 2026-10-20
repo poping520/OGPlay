@@ -38,6 +38,38 @@ void ApkName(std::string name) {
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (!name.ends_with(".apk")) throw std::invalid_argument("当前仅支持单体 APK；请先提取完整 APK，分包安装尚未实现。");
 }
+// Summarizes a candidate data directory for the mount preview: a few top-level
+// names plus bounded totals, so huge trees cannot stall the RPC thread.
+void DescribeDataDirectory(app::JsonWriter& writer, app::JsonWriter::Value result, const std::filesystem::path& path) {
+    constexpr std::size_t shown_entries = 8, scan_limit = 200000;
+    std::error_code error;
+    if (!std::filesystem::is_directory(path, error) || error) throw std::invalid_argument("数据包目录不可用。");
+    std::vector<std::pair<bool, std::string>> top;
+    for (std::filesystem::directory_iterator it(path, error), end; !error && it != end; it.increment(error))
+        top.emplace_back(!it->is_directory(error), Text(it->path().filename()));
+    if (error) throw std::runtime_error("无法读取数据包目录。");
+    std::sort(top.begin(), top.end());
+    std::uint64_t files{}, bytes{}, scanned{};
+    bool truncated{};
+    for (std::filesystem::recursive_directory_iterator it(path, error), end; !error && it != end; it.increment(error)) {
+        if (++scanned > scan_limit) { truncated = true; break; }
+        if (it->is_regular_file(error)) { ++files; bytes += it->file_size(error); }
+    }
+    if (error) throw std::runtime_error("无法统计数据包目录。");
+    writer.AddString(result, "path", Text(std::filesystem::absolute(path).lexically_normal()));
+    const auto entries = writer.Array();
+    for (std::size_t index = 0; index < top.size() && index < shown_entries; ++index) {
+        const auto entry = writer.Object();
+        writer.AddString(entry, "name", top[index].second);
+        writer.AddBool(entry, "directory", !top[index].first);
+        writer.Append(entries, entry);
+    }
+    writer.Add(result, "entries", entries);
+    writer.AddUnsignedInteger(result, "entry_count", top.size());
+    writer.AddUnsignedInteger(result, "files", files);
+    writer.AddUnsignedInteger(result, "bytes", bytes);
+    writer.AddBool(result, "truncated", truncated);
+}
 template<class T> bool Ready(std::future<T>& value) {
     return value.valid() && value.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 }
@@ -108,7 +140,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     // Schema is checked before polling, IO or host interaction.
     if (method == "dialog.pick") Fields(params, {"kind"});
     else if (method == "dialog.poll") Fields(params, {"dialog"});
-    else if (method == "library.analyze") Fields(params, {"path"});
+    else if (method == "library.analyze" || method == "library.external.inspect") Fields(params, {"path"});
     else if (method == "library.upload.begin") Fields(params, {"name", "size"});
     else if (method == "library.upload.chunk") Fields(params, {"job", "offset", "data"});
     else if (method == "library.import") Fields(params, {"job", "external_dir", "external_guest_dir", "external_mode", "new_instance"});
@@ -132,6 +164,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         }
         writer.AddBool(result, "pending", job.dialog_pending);
         if (job.picked) writer.AddString(result, "path", Text(*job.picked)); else writer.AddNull(result, "path");
+    } else if (method == "library.external.inspect") {
+        DescribeDataDirectory(writer, result, Path(String(params, "path")));
     } else {
         if (!host_.analyze || !host_.timestamp) throw std::runtime_error("导入服务不可用。");
         if (method == "library.analyze" || method == "library.upload.begin") {

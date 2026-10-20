@@ -3,6 +3,7 @@
 #include "ogplay/app/game_run.h"
 #include "ogplay/app/host.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -62,8 +63,11 @@ struct LibraryMetadata final {
     std::string version_name;
     std::string imported_at;
     std::optional<std::string> profile_id;
+    // Linked data keeps the host path. Library-owned data lives in the entry's
+    // data/ directory; loaded entries report that absolute path here.
     std::optional<std::filesystem::path> external_dir;
     std::string external_guest_dir{"/sdcard"};
+    bool external_owned{};
 
     bool operator==(const LibraryMetadata&) const = default;
 };
@@ -80,10 +84,21 @@ struct LibraryEntry final {
     }
 };
 
+enum class ExternalDataMode : std::uint8_t { copy, link };
+
+// For an owned import, metadata.external_dir names the source directory that
+// Import copies into the entry's data/ directory.
 struct LibraryImport final {
     std::filesystem::path source_apk;
     LibraryMetadata metadata;
     std::vector<std::byte> icon_png;
+};
+
+// Shared with a polling caller; cancellation is honored until publication.
+struct ImportProgress final {
+    std::atomic_uint64_t total_bytes{};
+    std::atomic_uint64_t copied_bytes{};
+    std::atomic_bool cancel_requested{};
 };
 
 class OGPLAYCORE_API LibraryStore final {
@@ -94,10 +109,15 @@ public:
     [[nodiscard]] std::filesystem::path EntriesRoot() const;
     [[nodiscard]] std::string NextInstallationId(
         std::string_view package) const;
+    // Smallest id whose saves outlived their removed library entry.
+    [[nodiscard]] std::optional<std::string> ReusableInstallationId(
+        std::string_view package) const;
     [[nodiscard]] std::vector<LibraryEntry> LoadEntries() const;
-    std::string Import(const LibraryImport& request, bool new_instance = false);
+    std::string Import(const LibraryImport& request, bool new_instance = false,
+                       ImportProgress* progress = nullptr);
     [[nodiscard]] bool IsRunning(std::string_view key) const;
-    void Remove(std::string_view key);
+    // Saves stay by default and are adopted by the next import of the package.
+    void Remove(std::string_view key, bool delete_saves = false);
 
 private:
     std::filesystem::path root_;

@@ -1,4 +1,5 @@
 #include "ogplay/app/library.h"
+#include "external_data.h"
 #include "locks.h"
 
 #include <algorithm>
@@ -222,7 +223,10 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     if (metadata.profile_id.has_value()) {
         text.append("profile_id = ").append(EscapeToml(*metadata.profile_id)).push_back('\n');
     }
-    if (metadata.external_dir.has_value()) {
+    // Owned data lives beside meta.toml; its path is derived when loading.
+    if (metadata.external_owned) {
+        text.append("external_data = \"library\"\n");
+    } else if (metadata.external_dir.has_value()) {
         text.append("external_dir = ")
             .append(EscapeToml(PathUtf8(*metadata.external_dir)))
             .push_back('\n');
@@ -237,7 +241,8 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
 [[nodiscard]] LibraryMetadata DecodeMetadata(const std::string_view text) {
     const auto values = ParseFlatToml(text);
     ExactKeys(values, {"schema", "package", "display_name", "version_code",
-                       "version_name", "imported_at", "profile_id", "external_dir", "external_guest_dir"});
+                       "version_name", "imported_at", "profile_id", "external_dir", "external_guest_dir",
+                       "external_data"});
     if (ParseUint32(Require(values, "schema"), "schema") != kSchema) {
         throw std::runtime_error("library metadata schema is not supported");
     }
@@ -255,6 +260,11 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
     }
     if (const auto item = values.find("external_guest_dir"); item != values.end()) {
         metadata.external_guest_dir = ParseTomlString(item->second);
+    }
+    if (const auto item = values.find("external_data"); item != values.end()) {
+        if (ParseTomlString(item->second) != "library" || metadata.external_dir.has_value())
+            throw std::runtime_error("external_data must be \"library\" without external_dir");
+        metadata.external_owned = true;
     }
     ValidateMetadata(metadata);
     return metadata;
@@ -291,6 +301,20 @@ void ValidateMetadata(const LibraryMetadata& metadata) {
         else SetSetting(config, key, ParseTomlString(value));
     }
     return config;
+}
+
+// 1 for the bare package, N for package-N (N >= 2); other names are not ids.
+[[nodiscard]] std::optional<std::uint32_t> InstallationNumber(const std::string_view name,
+                                                              const std::string_view package) {
+    if (name == package) return 1U;
+    if (!name.starts_with(package) || name.size() <= package.size() + 1U ||
+        name[package.size()] != '-') return std::nullopt;
+    std::uint32_t number{};
+    const auto suffix = name.substr(package.size() + 1U);
+    const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), number);
+    if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() ||
+        number < 2U || suffix.front() == '0') return std::nullopt;
+    return number;
 }
 
 void RemoveTree(const std::filesystem::path& path) {
@@ -496,20 +520,8 @@ std::string LibraryStore::NextInstallationId(
         for (std::filesystem::directory_iterator it(parent, error), end;
              !error && it != end; it.increment(error)) {
             if (!it->is_directory(error)) continue;
-            const auto name = PathUtf8(it->path().filename());
-            if (name == package) {
-                occupied.insert(1U);
-                continue;
-            }
-            if (!name.starts_with(package) || name.size() <= package.size() + 1U ||
-                name[package.size()] != '-') continue;
-            std::uint32_t number{};
-            const auto suffix = std::string_view(name).substr(package.size() + 1U);
-            const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), number);
-            if (parsed.ec == std::errc{} && parsed.ptr == suffix.data() + suffix.size() &&
-                number >= 2U && suffix.front() != '0') {
-                occupied.insert(number);
-            }
+            if (const auto number = InstallationNumber(PathUtf8(it->path().filename()), package))
+                occupied.insert(*number);
         }
         if (error) {
             throw LibraryError(LibraryErrorCode::io_error,
@@ -522,6 +534,35 @@ std::string LibraryStore::NextInstallationId(
     while (occupied.contains(number)) ++number;
     return number == 1U ? std::string(package)
                         : std::string(package) + "-" + std::to_string(number);
+}
+
+std::optional<std::string> LibraryStore::ReusableInstallationId(
+    const std::string_view package) const {
+    std::map<std::uint32_t, std::string> orphans;
+    std::error_code error;
+    const auto sandbox_root = root_ / "sandbox";
+    if (!std::filesystem::exists(sandbox_root, error)) return std::nullopt;
+    for (std::filesystem::directory_iterator it(sandbox_root, error), end;
+         !error && it != end; it.increment(error)) {
+        if (!it->is_directory(error)) continue;
+        auto name = PathUtf8(it->path().filename());
+        const auto number = InstallationNumber(name, package);
+        if (!number || std::filesystem::exists(EntriesRoot() / it->path().filename())) continue;
+        orphans.emplace(*number, std::move(name));
+    }
+    if (error) {
+        throw LibraryError(LibraryErrorCode::io_error, "cannot inspect saves", sandbox_root);
+    }
+    for (const auto& [number, id] : orphans) {
+        static_cast<void>(number);
+        // Open validates the stored package; foreign or damaged saves stay untouched.
+        try {
+            static_cast<void>(runtime::SandboxStore::Open(sandbox_root, id, package));
+            return id;
+        } catch (const runtime::VfsError&) {
+        }
+    }
+    return std::nullopt;
 }
 
 std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
@@ -573,6 +614,8 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
             if (!std::filesystem::is_regular_file(iterator->path() / "game.apk")) {
                 throw std::runtime_error("library APK copy is missing");
             }
+            if (metadata.external_owned)
+                metadata.external_dir = (iterator->path() / "data").lexically_normal();
             entry.metadata = std::move(metadata);
             entry.icon_png = ReadIcon(iterator->path() / "icon.png");
         } catch (const std::exception& exception) {
@@ -594,9 +637,20 @@ std::vector<LibraryEntry> LibraryStore::LoadEntries() const {
     return entries;
 }
 
-std::string LibraryStore::Import(const LibraryImport& request, bool new_instance) {
-    auto library_lock = RequireLibraryLock(root_);
+std::string LibraryStore::Import(const LibraryImport& request, bool new_instance,
+                                  ImportProgress* progress) {
     ValidateMetadata(request.metadata);
+    if (request.metadata.external_owned && !request.metadata.external_dir.has_value()) {
+        throw LibraryError(LibraryErrorCode::invalid_argument,
+                            "copying external data requires a source directory");
+    }
+    // Copying can take minutes; it runs before the library lock is taken.
+    std::optional<StagedExternalData> staged_data;
+    if (request.metadata.external_owned)
+        staged_data.emplace(root_, *request.metadata.external_dir, progress);
+    auto library_lock = RequireLibraryLock(root_);
+    auto metadata = request.metadata;
+    if (metadata.external_owned) metadata.external_dir.reset();
     std::error_code error;
     if (!std::filesystem::is_regular_file(request.source_apk, error) || error) {
         throw LibraryError(LibraryErrorCode::not_found,
@@ -642,7 +696,8 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     try {
         std::filesystem::copy_file(request.source_apk, temporary / "game.apk",
                                    std::filesystem::copy_options::none);
-        WriteText(temporary / "meta.toml", EncodeMetadata(request.metadata));
+        if (staged_data) staged_data->Publish(temporary / "data");
+        WriteText(temporary / "meta.toml", EncodeMetadata(metadata));
         if (!request.icon_png.empty()) {
             std::ofstream icon(temporary / "icon.png", std::ios::binary | std::ios::trunc);
             if (!icon) throw std::runtime_error("cannot create icon cache");
@@ -650,7 +705,13 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
                        static_cast<std::streamsize>(request.icon_png.size()));
             if (!icon) throw std::runtime_error("cannot write icon cache");
         }
-        for (;;) {
+        // Last point where a cancel request discards the import.
+        ThrowIfImportCancelled(progress);
+        // Saves left by a removed entry are adopted, keeping the id and identity.
+        if (const auto reused = ReusableInstallationId(request.metadata.package)) {
+            target = EntriesRoot() / Utf8Path(*reused);
+            std::filesystem::rename(temporary, target);
+        } else for (;;) {
             const auto installation_id = NextInstallationId(request.metadata.package);
             target = EntriesRoot() / installation_id;
             try {
@@ -695,7 +756,7 @@ std::string LibraryStore::Import(const LibraryImport& request, bool new_instance
     return PathUtf8(target.filename());
 }
 
-void LibraryStore::Remove(const std::string_view key) {
+void LibraryStore::Remove(const std::string_view key, const bool delete_saves) {
     auto library_lock = RequireLibraryLock(root_);
     if (!SafeEntryKey(key)) {
         throw LibraryError(LibraryErrorCode::invalid_argument,
@@ -711,6 +772,16 @@ void LibraryStore::Remove(const std::string_view key) {
     if (!running) throw LibraryError(LibraryErrorCode::running, "instance_running: game is running; stop it before removing this instance", target);
     // The library lock prevents another launch while the directory is removed.
     running.reset();
+    // Saves go first: a failure then leaves the entry to retry, never orphaned partial saves.
+    if (delete_saves) {
+        const auto saves = root_ / "sandbox" / Utf8Path(key);
+        try {
+            RemoveTree(saves);
+        } catch (const std::exception& exception) {
+            throw LibraryError(LibraryErrorCode::io_error,
+                                std::string("cannot remove saves: ") + exception.what(), saves);
+        }
+    }
     try {
         RemoveTree(target);
     } catch (const std::exception& exception) {

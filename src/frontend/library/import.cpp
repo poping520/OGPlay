@@ -85,7 +85,8 @@ ApkImportAnalysis AnalyzeApkImportFile(
 LibraryImport BuildLibraryImport(
     const ApkImportAnalysis& analysis,
     std::optional<std::filesystem::path> external_dir,
-    std::string imported_at, std::string external_guest_dir) {
+    std::string imported_at, std::string external_guest_dir,
+    const ExternalDataMode external_mode) {
     ValidateExternalGuestDirectory(external_guest_dir);
     if (imported_at.empty()) {
         throw LibraryError(LibraryErrorCode::invalid_argument,
@@ -100,6 +101,7 @@ LibraryImport BuildLibraryImport(
                                 *external_dir);
         }
     }
+    const bool owned = external_dir.has_value() && external_mode == ExternalDataMode::copy;
     LibraryMetadata metadata{
         .package = analysis.manifest.package,
         .display_name = analysis.display_name,
@@ -111,6 +113,7 @@ LibraryImport BuildLibraryImport(
                           : std::nullopt,
         .external_dir = std::move(external_dir),
         .external_guest_dir = std::move(external_guest_dir),
+        .external_owned = owned,
     };
     return {analysis.source_apk, std::move(metadata), analysis.icon_png};
 }

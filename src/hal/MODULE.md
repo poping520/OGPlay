@@ -24,6 +24,8 @@
 - `WebViewHost::PickPath`：返回文件/目录选择 future，取消返回空；原生句柄不跨接口。
 - `Clock::SteadyTimestampNs`：宿主诊断采集时刻，steady epoch 纳秒，与 guest ticks 分开。
 - `Clock::UtcTimestamp`：仅宿主元数据使用的 UTC 时间，guest 时间仍为 Clock ticks。
+- `TryCloneFile`：把普通文件克隆为尚不存在的目标；macOS clonefile、Linux FICLONE，Windows
+  暂返回不支持。跨卷/文件系统不支持返回 false 且不留目标，其他错误抛 system_error。
 - `OpenHostDirectory`：打开已由上层验证的宿主目录，失败明确传播。
 - `hal::Clock`：所有 guest 时间源使用的抽象。
 - `hal::ClockRate`：正整数分子/分母表示的精确倍率。

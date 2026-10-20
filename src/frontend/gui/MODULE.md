@@ -17,8 +17,10 @@
 - `library.analyze {path}` / `library.upload.begin/chunk/finish`：原生路径或拖放字节进入独立快照，
   单体 APK 上限 1 GiB；分块 base64 最大 256 KiB，严格顺序/总长度检查。
 - `library.job.poll/cancel {job}`：每服务仅一个活动导入任务；后台只读分析，失败可查询。
-  `library.import {job, new_instance:true, external_dir?, external_guest_dir?}` 只消费 ready 快照，异步原子发布；
-  重复提交拒绝，结果返回真实 installation id。取消不发布；提交期间不能取消。
+  `library.import {job, new_instance:true, external_dir?, external_guest_dir?, external_mode?:copy|link}`
+  只消费 ready 快照，异步原子发布，默认复制数据包入库；重复提交拒绝，结果返回真实 installation id。
+  提交期间 poll 返回 `progress {copied_bytes,total_bytes}`；取消在发布前生效，已发布则结果仍为
+  imported，worker 停止前状态保持 importing。服务析构先请求取消再回收。
 - `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
   frontend/library，只经 app 公开头消费。settings.get/set 保存前复用库内 schema/目录校验，
@@ -103,9 +105,10 @@ library_lock/cli_library/game_run_args 按主题验证；
 `npm run check` 验证前端类型、协议、库筛选和分块上传边界；`frontend.gui_webui_manifest` 校验制品哈希；
 `frontend.gui_smoke` / `frontend.gui_library_smoke` 验证真实 WebView 加载与空库/CJK 非空库 RPC。
 
-- `library.remove {installation_id, confirmed:true}` 只作用于当前枚举的安装实例；请求字段严格校验，
+- `library.remove {installation_id, confirmed:true, delete_saves?}` 只作用于当前枚举的安装实例；请求字段严格校验，
   入库忙碌或实例运行中（包括损坏条目）拒绝移除。复用 LibraryStore::Remove，删除库内 APK、
-  设置与日志，保留 sandbox/external 和原始 APK。重新导入分配新实例，不自动挂接旧存档。
+  库内数据包、设置与日志，保留引用的 external 和原始 APK；sandbox 默认保留，
+  `delete_saves:true` 时先删除。保留的存档由同包下次导入沿用原 id（ADR-0145）。
 
 导入向导与实例设置均可编辑 external_guest_dir，校验和启动预览复用 library 契约；
 挂载目录默认为 /sdcard，属于用户数据，与 Profile 无关。

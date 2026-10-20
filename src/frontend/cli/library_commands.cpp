@@ -126,12 +126,13 @@ int RunLibraryCommand(std::span<const char* const> args) {
     } else if (command == "inspect" || command == "import") {
         const auto source = Path(require());
         std::optional<std::filesystem::path> external;
-        bool new_instance{};
+        bool new_instance{}, link_external{};
         if (command == "inspect") end();
         else while (index < args.size()) {
             const auto option = require();
             if (option == "--external-dir" && !external) external = Path(require());
             else if (option == "--new-instance" && !new_instance) new_instance = true;
+            else if (option == "--link-external" && !link_external) link_external = true;
             else throw std::invalid_argument("unknown or duplicate import option: " + std::string(option));
         }
         const auto config = LoadLibraryConfig(store.Root());
@@ -139,15 +140,19 @@ int RunLibraryCommand(std::span<const char* const> args) {
         const auto inspection = InspectApk(source, profiles);
         if (command == "inspect") result = InspectJson(writer, inspection);
         else {
-            const auto request = BuildLibraryImport(inspection, external, app::UtcTimestamp());
+            if (link_external && !external) throw std::invalid_argument("--link-external requires --external-dir");
+            const auto request = BuildLibraryImport(inspection, external, app::UtcTimestamp(), "/sdcard",
+                link_external ? ExternalDataMode::link : ExternalDataMode::copy);
             const auto id = store.Import(request, new_instance);
             result = writer.Object(); writer.AddString(result, "installation_id", id);
             writer.AddString(result, "package", inspection.manifest.package);
         }
     } else if (command == "remove") {
         const auto id = require();
-        if (require() != "--yes") throw std::invalid_argument("library remove requires --yes; saves and external data are retained");
-        end(); store.Remove(id);
+        if (require() != "--yes") throw std::invalid_argument("library remove requires --yes; deletes library-owned data, keeps saves and linked external data");
+        bool delete_saves{};
+        if (index < args.size() && std::string_view(args[index]) == "--delete-saves") { delete_saves = true; ++index; }
+        end(); store.Remove(id, delete_saves);
         result = writer.Object(); writer.AddString(result, "installation_id", id); writer.AddBool(result, "removed", true);
     } else if (command == "settings") {
         const auto action = require(), id = require();

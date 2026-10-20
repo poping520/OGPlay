@@ -15,6 +15,7 @@
 | [GUI-9](GUI-9.md) | 共享应用库 ogplaycore、桌面/CLI 双入口及自身游戏子进程 | Windows 定向与真实链路通过 |
 | [GUI-10](GUI-10.md) | C++ 外观、共享游戏库/OS 锁与双 EXE 职责重划 | macOS 定向与真实 APK 已验；Windows GUI 待复验 |
 | [GUI-11](GUI-11.md) | macOS WebView 启动器、.app 包与 ad-hoc 签名 | macOS 完成；真实点击流程已验 |
+| [GUI-12](GUI-12.md) | 导入数据包默认复制入库、引用为显式选项 | macOS 定向与真实数据已验；GUI 点击待验 |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

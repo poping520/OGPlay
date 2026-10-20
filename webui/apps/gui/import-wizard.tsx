@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { rpc } from './rpc';
-import { pause, pickPath, upload, type ImportJob } from './import';
+import { importingStage, pause, pickPath, upload, type ExternalMode, type ImportJob } from './import';
 
 export function ImportWizard({ file, defaultExternal = '', onClose, onImported }: {
   file: File | null; defaultExternal?: string; onClose: () => void; onImported: (id: string) => Promise<void>;
@@ -15,12 +15,16 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [error, setError] = useState('');
   const [external, setExternal] = useState('');
   const [externalGuest, setExternalGuest] = useState('/sdcard');
+  const [externalMode, setExternalMode] = useState<ExternalMode>('copy');
+  const [committing, setCommitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [source, setSource] = useState(file?.name ?? '');
   const summary = job?.summary;
   const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason);
-  async function poll(result: ImportJob): Promise<ImportJob> {
+  async function poll(result: ImportJob, onPoll?: (job: ImportJob) => void): Promise<ImportJob> {
     while (result.state === 'analyzing' || result.state === 'importing') {
+      onPoll?.(result);
       await pause();
       if (disposed.current) throw new Error('向导已关闭');
       result = await rpc<ImportJob>('library.job.poll', { job: result.job });
@@ -37,7 +41,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalGuest('/sdcard');
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalGuest('/sdcard'); setExternalMode('copy');
       let initial: ImportJob;
       if (dropped) {
         setStage('正在读取拖入的 APK…');
@@ -61,6 +65,13 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       onClose();
     });
   }
+  // Copying a data pack can take a while; the host stops it before publication.
+  async function cancelImport() {
+    if (!activeJob.current || cancelling) return;
+    setCancelling(true);
+    try { await rpc('library.job.cancel', { job: activeJob.current }); }
+    catch (reason) { if (!disposed.current) setError(message(reason)); }
+  }
   useEffect(() => {
     dialog.current!.showModal();
     void analyze(file);
@@ -74,26 +85,36 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
       <dl><dt>API</dt><dd>最低 {summary.min_sdk ?? '未声明'} / 目标 {summary.target_sdk ?? '未声明'}</dd>
         <dt>原生 ABI</dt><dd>{summary.abis.join(' / ') || '无原生库'}</dd>
         {summary.profile && <><dt>Profile</dt><dd>{summary.profile}</dd></>}
-        <dt>数据包</dt><dd>可按需选择外部数据目录。</dd></dl>
+        <dt>数据包</dt><dd>{external ? (externalMode === 'copy' ? '复制到游戏库' : '引用原目录') : '可按需选择外部数据目录。'}</dd></dl>
       <div class="external-selection"><p class="selected-file">{external || '未选择数据包目录'}</p>
         <button disabled={busy} onClick={() => void run(async () => { const path = await pickPath('directory'); if (path) { setExternal(path); } })}>选择数据包目录</button>
         {external && <button disabled={busy} onClick={() => setExternal('')}>清除</button>}
+        {external && <div class="import-mode" role="radiogroup" aria-label="数据包导入方式">
+          <label><input type="radio" name="external-mode" checked={externalMode === 'copy'} disabled={busy} onChange={() => setExternalMode('copy')} />复制到游戏库（推荐）<small>导入后原目录可移动或删除；同一磁盘支持克隆时几乎不占额外空间。</small></label>
+          <label><input type="radio" name="external-mode" checked={externalMode === 'link'} disabled={busy} onChange={() => setExternalMode('link')} />引用原目录<small>不复制；原目录移动、删除或磁盘断开后游戏无法启动。</small></label>
+        </div>}
       </div>
       <label>数据包 guest 挂载目录<input aria-label="数据包 guest 挂载目录" value={externalGuest} disabled={busy}
         onInput={event => setExternalGuest(event.currentTarget.value)} /></label>
       <p>默认 /sdcard；可指定其下的目录。</p>
-      {summary.existing_instances > 0 && <label class="import-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />已有 {summary.existing_instances} 个同包实例；新建实例，保留现有游戏及存档。</label>}
+      {summary.existing_instances > 0 && <label class="import-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />游戏库中已有 {summary.existing_instances} 份该游戏；另外添加一份，现有游戏及存档保留。</label>}
     </>}
     {error && <pre role="alert">{error}</pre>}
-    <div class="modal-actions"><button disabled={busy} onClick={() => void close()}>取消</button>
+    <div class="modal-actions">{committing
+      ? <button disabled={cancelling} onClick={() => void cancelImport()}>{cancelling ? '正在取消…' : '取消导入'}</button>
+      : <button disabled={busy} onClick={() => void close()}>取消</button>}
       <button disabled={busy} onClick={() => void analyze(null)}>重新选择 APK</button>
       <button class="primary" disabled={busy || !canImport} onClick={() => void run(async () => {
-        setStage('正在入库，请勿关闭…');
-        const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, external_guest_dir: externalGuest, ...(external ? { external_dir: external } : {}) });
-        const result = await poll(initial); setJob(result);
-        if (result.state !== 'imported' || !result.installation_id) throw new Error('宿主未返回入库结果。');
-        setStage('入库成功'); activeJob.current = '';
-        await onImported(result.installation_id);
-      })}>新建实例并入库</button></div>
+        setStage(importingStage({ job: activeJob.current, state: 'importing' })); setCommitting(true); setCancelling(false);
+        try {
+          const initial = await rpc<ImportJob>('library.import', { job: activeJob.current, new_instance: true, external_guest_dir: externalGuest,
+            ...(external ? { external_dir: external, external_mode: externalMode } : {}) });
+          const result = await poll(initial, value => setStage(importingStage(value))); setJob(result);
+          if (result.state === 'cancelled') { activeJob.current = ''; setStage('已取消导入，可重新选择 APK'); return; }
+          if (result.state !== 'imported' || !result.installation_id) throw new Error('宿主未返回导入结果。');
+          setStage('已加入游戏库'); activeJob.current = '';
+          await onImported(result.installation_id);
+        } finally { if (!disposed.current) { setCommitting(false); setCancelling(false); } }
+      })}>导入到游戏库</button></div>
   </dialog>;
 }

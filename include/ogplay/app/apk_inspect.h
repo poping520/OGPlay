@@ -33,12 +33,14 @@ struct ApkImportAnalysis final {
     const std::filesystem::path& source_apk,
     const ProfileCatalog& profiles);
 
-// external_dir is optional. A selected path must be an existing
-// absolute directory. imported_at is injected so tests never read wall time.
+// external_dir is optional. A selected path must be an existing directory;
+// copy mode imports it into the library, link mode records the path.
+// imported_at is injected so tests never read wall time.
 [[nodiscard]] OGPLAYCORE_API LibraryImport BuildLibraryImport(
     const ApkImportAnalysis& analysis,
     std::optional<std::filesystem::path> external_dir,
-    std::string imported_at, std::string external_guest_dir = "/sdcard");
+    std::string imported_at, std::string external_guest_dir = "/sdcard",
+    ExternalDataMode external_mode = ExternalDataMode::copy);
 
 }  // namespace ogplay::app
 

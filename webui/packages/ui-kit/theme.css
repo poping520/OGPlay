@@ -126,7 +126,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow
 .import-wizard dd { margin: 0; overflow-wrap: anywhere; }
 .external-selection { margin: 20px 0; }
 .external-selection label, .import-confirm { display: block; margin: 14px 0; line-height: 1.7; }
-.import-wizard input[type=checkbox] { width: auto; margin-right: 8px; }
+.import-wizard input[type=checkbox], .import-wizard input[type=radio], .import-confirm input[type=checkbox] { width: auto; margin-right: 8px; }
+.import-mode { margin: 14px 0; }
+.import-mode label { display: block; margin: 8px 0; line-height: 1.6; }
+.import-mode small { display: block; margin-left: 24px; opacity: .7; }
 
 .settings-nav { display: grid; gap: 4px; margin-top: 20px; overflow: auto; }
 .settings-nav button { text-align: left; background: transparent; border-color: transparent; }

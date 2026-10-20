@@ -75,6 +75,7 @@ function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
+  const [deleteSaves, setDeleteSaves] = useState(false);
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -159,24 +160,24 @@ function App() {
   useEffect(() => {
     strip.current?.querySelector('.tile[aria-pressed=true]')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
   }, [item?.installation_id, filter]);
-  async function act(method: string, game: LibraryItem, kind?: string) {
+  async function act(method: string, game: LibraryItem, kind?: string, extra: Record<string, unknown> = {}) {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true);
     try {
-      await rpc(method, { installation_id: game.installation_id, ...(kind ? { kind } : {}), ...(method === "library.remove" ? { confirmed: true } : {}) });
+      await rpc(method, { installation_id: game.installation_id, ...(kind ? { kind } : {}), ...(method === "library.remove" ? { confirmed: true } : {}), ...extra });
       await refresh();
       return true;
     } catch (reason) { report(reason); return false; }
     finally { inFlight.current = false; setBusy(false); }
   }
-  const remove = async (game: LibraryItem) => {
-    if (await act('library.remove', game)) { setRemoving(null); setSelected(''); }
+  const remove = async (game: LibraryItem, withSaves = false) => {
+    if (await act('library.remove', game, undefined, withSaves ? { delete_saves: true } : {})) { setRemoving(null); setSelected(''); }
   };
   const requestRemoval = (game: LibraryItem) => {
     setMenuOpen(false);
     if (game.running || busy || importing) return;
     if (settingsRef.current?.values.confirm_delete === false) void remove(game);
-    else setRemoving(game);
+    else { setDeleteSaves(false); setRemoving(game); }
   };
   const intake = (files: File[]) => {
     const error = validatePackageSelection(files);
@@ -246,7 +247,7 @@ function App() {
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>打开日志目录</button>
       <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>安装信息</button>
       <hr />
-      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? '游戏运行中，退出后才能移除。' : undefined} onClick={() => requestRemoval(game)}>移除库中实例<small>保留沙盒存档与外部数据包</small></button>
+      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? '游戏运行中，退出后才能移除。' : undefined} onClick={() => requestRemoval(game)}>移除库中实例<small>默认保留存档，重新导入时恢复</small></button>
     </div>}
   </div>;
   const actions = (game: LibraryItem) => {
@@ -364,8 +365,10 @@ function App() {
     }} />}
     {removing && <Modal title="移除库中实例" onDismiss={() => { if (!busy) setRemoving(null); }}>
       <p>确认移除「{removing.display_name}」？</p><p class="mono">{removing.installation_id}</p>
-      <p>删除该实例的库内 APK、设置和日志。沙盒存档、外部数据包及原始 APK 均保留；重新导入会创建新实例，不会自动恢复旧存档。</p>
-      <button disabled={busy} onClick={() => void remove(removing)}>确认移除</button>
+      <p>删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。</p>
+      <label class="import-confirm"><input type="checkbox" checked={deleteSaves} disabled={busy} onChange={event => setDeleteSaves(event.currentTarget.checked)} />同时删除存档（不可恢复）</label>
+      <p>{deleteSaves ? '存档将被永久删除；重新导入后从头开始。' : '存档保留在沙盒中；重新导入同一游戏时自动恢复。'}</p>
+      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? '移除并删除存档' : '确认移除'}</button>
     </Modal>}
     {infoOpen && item && <Modal title="安装信息" onDismiss={() => setInfoOpen(false)}>
       <dl class="info"><dt>游戏</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>

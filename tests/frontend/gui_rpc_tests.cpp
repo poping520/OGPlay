@@ -381,6 +381,7 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
         R"({"installation_id":"org.example.game","confirmed":false})",
         R"({"installation_id":"org.example.game","confirmed":1})",
         R"({"installation_id":"org.example.game","confirmed":true,"path":"../sandbox"})",
+        R"({"installation_id":"org.example.game","confirmed":true,"delete_saves":"yes"})",
         R"({"installation_id":"../sandbox","confirmed":true})",
         R"({"installation_id":"absent","confirmed":true})"}) {
         const auto response = Decode(fixture.rpc.Handle(std::string(R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":)") + params + "}"));
@@ -409,6 +410,15 @@ TEST_CASE("GUI RPC removes only the confirmed stopped installation") {
     CHECK(std::filesystem::exists(external / "data.obb"));
     CHECK(std::filesystem::exists(fixture.root / "original.apk"));
     CHECK(Decode(fixture.rpc.Handle(request)).Root().Member("error").has_value());
+
+    const auto sibling_saves = ogplay::app::LauncherSandboxRoot(fixture.root) / "org.example.game-2";
+    std::filesystem::create_directories(sibling_saves);
+    std::ofstream(sibling_saves / "save.dat") << "save";
+    const auto with_saves = Decode(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.remove","params":{"installation_id":"org.example.game-2","confirmed":true,"delete_saves":true}})"));
+    REQUIRE(with_saves.Root().Member("result").has_value());
+    CHECK_FALSE(std::filesystem::exists(sibling));
+    CHECK_FALSE(std::filesystem::exists(sibling_saves));
+    CHECK(std::filesystem::exists(sandbox / "save.dat"));
 }
 
 TEST_CASE("INP-7 GUI opens the key editor only for a running instance whose editor is ready") {

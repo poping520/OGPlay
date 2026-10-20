@@ -91,8 +91,11 @@ LibraryEntry EffectiveGameEntry(const LibraryEntry& entry, const GameSettings& s
     ValidateGameSettings(settings);
     if (result.metadata) if (const auto it = settings.values.find("external_dir"); it != settings.values.end()) {
         const auto& text = std::get<std::string>(it->second);
-        if (text.empty()) result.metadata->external_dir.reset();
-        else result.metadata->external_dir = std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+        auto selected = text.empty() ? std::optional<std::filesystem::path>() :
+            std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+        // Any other per-game directory links; library-owned data stays unused on disk.
+        if (selected != result.metadata->external_dir) result.metadata->external_owned = false;
+        result.metadata->external_dir = std::move(selected);
     }
     if (result.metadata) if (const auto it = settings.values.find("external_guest_dir"); it != settings.values.end())
         result.metadata->external_guest_dir = std::get<std::string>(it->second);

@@ -77,8 +77,8 @@ std::vector<LibraryTile> BuildLibraryTiles(
             const auto external = entry.metadata->external_dir;
             if (!std::filesystem::is_directory(*external, error) || error) {
                 tile.status = LibraryTileStatus::missing_external;
-                tile.detail = "记录的数据包目录不可用：" + PathUtf8(*external) +
-                              "。请重新选择目录。";
+                tile.detail = (entry.metadata->external_owned ? "游戏库中的数据包缺失：" : "记录的数据包目录不可用：") +
+                              PathUtf8(*external) + "。请重新选择目录。";
             } else if (tile.running) {
                 tile.status = LibraryTileStatus::running;
                 tile.detail = "游戏正在运行；请先退出游戏。";
@@ -148,7 +148,8 @@ LibraryDetail BuildLibraryDetail(const LibraryEntry& entry,
                                    "记录的数据包目录不可用：" + PathUtf8(*metadata.external_dir)};
             } else {
                 result.external = {LibraryConditionStatus::ready, "已就绪",
-                                   "原地引用：" + PathUtf8(*metadata.external_dir)};
+                                   (metadata.external_owned ? "已复制到游戏库：" : "引用原目录：") +
+                                       PathUtf8(*metadata.external_dir)};
             }
         }
     }

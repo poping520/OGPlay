@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-19。
+更新：2026-10-20。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -43,6 +43,7 @@
   各自拥有交互；库锁/运行锁、CLI library、参数往返及两条真实 APK 有界路径已在 macOS 验证。
   Windows Release/原生 GUI 链路待复验（GUI-9 证据属旧架构）。macOS 交付 ad-hoc 签名 OGPlay.app
   （[GUI-11](../tasks/gui/GUI-11.md)），冒烟/包/游戏模式与真实导入→启动→移除流程已验；Linux GUI 未接入。
+  数据包导入默认复制入库（[GUI-12](../tasks/gui/GUI-12.md)，APFS 克隆），GUI 向导点击未实测。
 - 图形：实际 context-loss、多窗口/透明 Activity 未验收；GLES1 vertex-array 首错未重达。
   SurfaceTexture 公共队列/Java 与 SwiftShader 合成帧外部采样闭环已验；Metal 无 external，
   MediaPlayer/NDK producer 与启动后端选择未接入（[APS-14](../tasks/apk-startup/APS-14.md)）。

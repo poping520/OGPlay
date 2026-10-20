@@ -281,7 +281,7 @@ note = "GUI-7 完成纯数据 schema 1、通用虚拟预设与严格有界校验
 [frontend.gui_library]
 status = "complete"
 test = "tests/frontend/data_directory_tests.cpp; tests/frontend/library_store_tests.cpp; tests/frontend/library_lock_tests.cpp; tests/frontend/library_lock_contention_tests.cpp; tests/hal/file_lock_tests.cpp; tests/frontend/cli_library_tests.cpp; tests/frontend/game_run_args_tests.cpp; tests/frontend/gui_view_model_tests.cpp; tests/frontend/gui_import_tests.cpp; tests/session/profile_apk_tests.cpp; frontend.app_entrypoints"
-note = "GUI-10/ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理使用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除，存档和 external 保留。CLI library 全命令与参数编解码已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
+note = "GUI-10/ADR-0138：LibraryStore/LibraryConfig、检视/图标/设置继承与 ResolveLaunch 下沉 core C++ 外观，GUI/CLI 同根共用。导入/移除/清理使用 OS 库锁，List 冲突跳过清理；运行锁保护单实例/移除；存档默认保留，重新导入沿用原 id，可选删除。导入数据包默认在库锁外暂存复制（macOS/Linux 优先克隆）后随条目发布到 data/，可取消，移除时一并删除；引用原目录为显式选项（ADR-0144）。CLI library 全命令与参数编解码已验；macOS 定向及真实 APK 通过，Windows GUI 待复验。"
 
 [frontend.gui_launch_spawn]
 status = "complete"

@@ -6,6 +6,7 @@
 
 ## 依赖与边界
 
+- 文件克隆暂未实现（ReFS 块克隆未接入），TryCloneFile 恒返回不支持。
 - 宿主只读文件使用可共享删除/替换的原生 HANDLE；每次读取独立 OVERLAPPED/event，
   完成前保持缓冲与操作状态存活。文件 identity 来自卷编号与 file index。
 

@@ -76,6 +76,23 @@ struct PrefsDriver final {
 
 } // namespace
 
+TEST_CASE("Environment MEDIA_MOUNTED Java field matches the external storage state") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, InterpreterConfig{.backend = backend});
+        const auto type = vm.linker.ResolveDescriptor("Landroid/os/Environment;");
+        const auto field = vm.CallOn(vm.model.ClassObject(type), "getDeclaredField",
+            "(Ljava/lang/String;)Ljava/lang/reflect/Field;",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("MEDIA_MOUNTED"))}).ref;
+        const auto mounted = vm.CallOn(field, "get",
+            "(Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(VmObjectRef{})}).ref;
+        REQUIRE(mounted.IsValid());
+        CHECK(vm.interpreter.StringUtf8(mounted) == "mounted");
+        const auto state = vm.CallStatic("Landroid/os/Environment;",
+            "getExternalStorageState", "()Ljava/lang/String;").ref;
+        CHECK(vm.interpreter.StringUtf8(state) == vm.interpreter.StringUtf8(mounted));
+    }
+}
+
 TEST_CASE("Environment data directory is one stable guest File") {
     FileVm vm;
     const auto first = vm.CallStatic(

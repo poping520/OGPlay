@@ -230,6 +230,11 @@ void BindFieldIdLookup(JniGuestCallDispatcher& dispatcher,
             const auto field = classes.GetFieldId(
                 java_class, name, descriptor, is_static);
             if (!field.has_value()) {
+                if (is_static) {
+                    throw JniGuestBindingError(
+                        missing_prefix + "class=" + classes.ClassName(java_class) +
+                        " field=" + name + descriptor);
+                }
                 throw JniGuestBindingError(
                     missing_prefix + name + separator + descriptor);
             }

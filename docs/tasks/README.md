@@ -16,7 +16,7 @@ Work Unit 按所属里程碑或语义化专项存放，创建后不因完成状�
 | [`boundary/`](boundary/) | BND-1..54 | 54 | — |
 | [`dexvm/`](dexvm/) | DVM-1..251 | 245 | [DexVM · 有界 DEX 解释执行](dexvm/README.md) |
 | [`diagnostics/`](diagnostics/) | DIAG-1..3 | 3 | — |
-| [`gui/`](gui/) | DASH-01..05、GUI-1..9 | 14 | [GUI · WebView 启动器](gui/README.md) |
+| [`gui/`](gui/) | DASH-01..05、GUI-1..12 | 17 | [GUI · WebView 启动器](gui/README.md) |
 | [`input/`](input/) | INP-1..8 | 8 | [Input · 通用 PC 操控映射](input/README.md) |
 | [`launcher/`](launcher/) | GUI-1..18 | 18 | [Launcher · 主面板（游戏启动器）](launcher/README.md) |
 | [`layoutui/`](layoutui/) | LUI-1..17 | 17 | [Layout UI · 有界 Android XML UI](layoutui/README.md) |

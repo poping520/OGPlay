@@ -7,6 +7,21 @@ export interface ImportSummary {
 export interface ImportJob {
   job: string; state: 'uploading' | 'analyzing' | 'ready' | 'importing' | 'imported' | 'cancelled' | 'failed';
   summary?: ImportSummary; installation_id?: string; message?: string;
+  progress?: { copied_bytes: number; total_bytes: number };
+}
+export type ExternalMode = 'copy' | 'link';
+const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+export function formatBytes(value: number): string {
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${unit ? value.toFixed(1) : value} ${units[unit]}`;
+}
+/** Stage text while a commit runs; byte counts appear once data copying reports a total. */
+export function importingStage(job: ImportJob): string {
+  const progress = job.progress;
+  if (!progress || !progress.total_bytes) return '正在加入游戏库，请勿关闭…';
+  const percent = Math.min(100, Math.floor(progress.copied_bytes / progress.total_bytes * 100));
+  return `正在复制数据包… ${percent}%（${formatBytes(progress.copied_bytes)} / ${formatBytes(progress.total_bytes)}）`;
 }
 export type Call = <T>(method: string, params?: Record<string, unknown>) => Promise<T>;
 export const pause = () => new Promise<void>(resolve => setTimeout(resolve, 150));

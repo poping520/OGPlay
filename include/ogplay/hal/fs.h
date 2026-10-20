@@ -34,6 +34,12 @@ public:
 [[nodiscard]] std::shared_ptr<const HostReadFile> OpenHostReadFile(
     const std::filesystem::path& path);
 
+// Creates destination as a copy-on-write clone of a regular source file. Returns
+// false, leaving no destination, when the host or volume cannot clone; other
+// failures throw std::system_error. Destination must not exist yet.
+[[nodiscard]] bool TryCloneFile(const std::filesystem::path& source,
+                                const std::filesystem::path& destination);
+
 enum class HostFileType : std::uint8_t { regular, directory, other };
 
 struct HostFileInfo final {

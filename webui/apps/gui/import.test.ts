@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { upload, type Call } from './import';
+import { formatBytes, importingStage, upload, type Call } from './import';
 describe('APK transfer', () => {
   it('rejects unsupported, empty and oversized files before contacting the host', async () => {
     const call: Call = async () => { throw new Error('unexpected RPC'); };
@@ -24,5 +24,14 @@ describe('APK transfer', () => {
     expect(job).toBe('7'); expect(new Uint8Array(received)).toEqual(bytes);
     expect(methods).toEqual(['library.upload.begin', 'library.upload.chunk', 'library.upload.chunk', 'library.upload.finish']);
     expect(progress.at(-1)).toBe(100);
+  });
+});
+describe('import progress', () => {
+  it('shows byte progress only once the host reports a data total', () => {
+    expect(importingStage({ job: '1', state: 'importing' })).toBe('正在加入游戏库，请勿关闭…');
+    expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 0, total_bytes: 0 } })).toBe('正在加入游戏库，请勿关闭…');
+    expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 512 * 1024 ** 2, total_bytes: 1024 ** 3 } }))
+      .toBe('正在复制数据包… 50%（512.0 MiB / 1.0 GiB）');
+    expect(formatBytes(1000)).toBe('1000 B');
   });
 });

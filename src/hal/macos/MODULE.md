@@ -6,6 +6,7 @@
 
 ## 依赖与边界
 
+- 文件克隆用 clonefile(CLONE_NOFOLLOW)，ENOTSUP/EXDEV 视为不支持。
 - 宿主只读文件使用 O_CLOEXEC/O_NOFOLLOW fd 与 pread；身份来自 fstat dev/inode，
   EINTR 重试、取消及错误传播，不使用共享文件偏移。
 

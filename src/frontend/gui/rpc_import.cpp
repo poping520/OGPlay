@@ -51,12 +51,14 @@ struct GuiRpcService::ImportState {
     std::optional<ApkImportAnalysis> analysis;
     std::future<ApkImportAnalysis> analyzing;
     std::future<std::string> committing;
+    std::shared_ptr<ImportProgress> progress;
     std::future<std::optional<std::filesystem::path>> picking;
     std::optional<std::filesystem::path> picked;
     std::string dialog;
     bool dialog_pending{}, cancelled{};
     ~ImportState() {
         // Join before deleting the snapshot or releasing any worker capture.
+        if (progress) progress->cancel_requested = true;
         if (analyzing.valid()) analyzing.wait();
         if (committing.valid()) committing.wait();
         if (picking.valid()) picking.wait();
@@ -69,10 +71,16 @@ struct GuiRpcService::ImportState {
     void Update() {
         try {
             if (Ready(analyzing)) { analysis = analyzing.get(); state = "ready"; }
-            if (Ready(committing)) { installed = committing.get(); state = "imported"; Clean(); }
-            if (cancelled && !analyzing.valid()) { Clean(); state = "cancelled"; }
-        } catch (const LibraryError& error) { failure_code = error.Code(); failure = error.what(); state = "failed"; Clean(); }
-        catch (const std::exception& error) { failure = error.what(); state = "failed"; Clean(); }
+            // A cancel that arrives after publication loses; the import stands.
+            if (Ready(committing)) { installed = committing.get(); state = "imported"; cancelled = false; Clean(); }
+            if (cancelled && !analyzing.valid() && !committing.valid()) { Clean(); state = "cancelled"; }
+        } catch (const LibraryError& error) {
+            if (cancelled) { Clean(); state = "cancelled"; return; }
+            failure_code = error.Code(); failure = error.what(); state = "failed"; Clean();
+        } catch (const std::exception& error) {
+            if (cancelled) { Clean(); state = "cancelled"; return; }
+            failure = error.what(); state = "failed"; Clean();
+        }
     }
     void Reserve(const std::filesystem::path& root) {
         Update();
@@ -103,7 +111,7 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     else if (method == "library.analyze") Fields(params, {"path"});
     else if (method == "library.upload.begin") Fields(params, {"name", "size"});
     else if (method == "library.upload.chunk") Fields(params, {"job", "offset", "data"});
-    else if (method == "library.import") Fields(params, {"job", "external_dir", "external_guest_dir", "new_instance"});
+    else if (method == "library.import") Fields(params, {"job", "external_dir", "external_guest_dir", "external_mode", "new_instance"});
     else if (method == "library.job.poll" || method == "library.job.cancel" || method == "library.upload.finish") Fields(params, {"job"});
     else throw std::invalid_argument("unknown import method");
     app::JsonWriter writer;
@@ -149,7 +157,9 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             if (String(params, "job") != job.job || job.job.empty()) throw std::invalid_argument("unknown or expired job");
             job.Update();
             if (method == "library.job.cancel") {
-                if (job.committing.valid() || job.state == "imported") throw std::runtime_error("入库提交后不能取消。");
+                if (job.state == "imported") throw std::runtime_error("已加入游戏库，不能取消。");
+                // Copying data honors the request; a finished APK-only commit may still win.
+                if (job.committing.valid() && job.progress) job.progress->cancel_requested = true;
                 job.cancelled = true; job.Update();
             } else if (method == "library.upload.chunk") {
                 if (job.state != "uploading") throw std::runtime_error("任务不接受文件分块。");
@@ -171,22 +181,38 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
             } else if (method == "library.import") {
                 if (job.state != "ready" || !job.analysis) throw std::runtime_error("分析尚未完成或任务已提交。");
                 const auto confirmation = params.Member("new_instance");
-                if (!confirmation || confirmation->Bool() != true) throw std::invalid_argument("请确认新建安装实例，不覆盖现有游戏。");
+                if (!confirmation || confirmation->Bool() != true) throw std::invalid_argument("请确认另外添加一份，不覆盖现有游戏。");
                 std::optional<std::filesystem::path> external;
                 if (params.Member("external_dir")) external = Path(String(params, "external_dir"));
+                auto mode = ExternalDataMode::copy;
+                if (params.Member("external_mode")) {
+                    const auto text = String(params, "external_mode");
+                    if (text != "copy" && text != "link") throw std::invalid_argument("external_mode must be copy or link");
+                    mode = text == "link" ? ExternalDataMode::link : ExternalDataMode::copy;
+                }
                 const auto request = BuildLibraryImport(*job.analysis, external, host_.timestamp(),
-                    params.Member("external_guest_dir") ? String(params, "external_guest_dir") : "/sdcard");
+                    params.Member("external_guest_dir") ? String(params, "external_guest_dir") : "/sdcard", mode);
                 auto store = store_;
-                job.committing = std::async(std::launch::async, [store, request]() mutable { return store.Import(request, true); });
+                job.progress = std::make_shared<ImportProgress>();
+                job.committing = std::async(std::launch::async, [store, request, progress = job.progress]() mutable {
+                    return store.Import(request, true, progress.get());
+                });
                 job.state = "importing";
             }
         }
         if (job.state == "failed" && (job.failure_code == LibraryErrorCode::busy || job.failure_code == LibraryErrorCode::running))
             throw LibraryError(*job.failure_code, job.failure);
         writer.AddString(result, "job", job.job);
-        writer.AddString(result, "state", job.cancelled ? "cancelled" : job.state);
+        // A commit stays "importing" until the worker has actually stopped.
+        writer.AddString(result, "state", job.cancelled && !job.committing.valid() ? "cancelled" : job.state);
         if (job.state == "failed") writer.AddString(result, "message", job.failure);
         if (job.state == "imported") writer.AddString(result, "installation_id", job.installed);
+        if (job.state == "importing" && job.progress) {
+            const auto progress = writer.Object();
+            writer.AddUnsignedInteger(progress, "copied_bytes", job.progress->copied_bytes.load(std::memory_order_relaxed));
+            writer.AddUnsignedInteger(progress, "total_bytes", job.progress->total_bytes.load(std::memory_order_relaxed));
+            writer.Add(result, "progress", progress);
+        }
         if (job.state == "ready" && job.analysis && !job.cancelled) {
             const auto& analysis = *job.analysis;
             const auto summary = writer.Object();

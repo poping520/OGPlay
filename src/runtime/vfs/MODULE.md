@@ -102,7 +102,8 @@ package/meta/安装目录保留原始拼写，根内文件名保留既有宿主�
 tombstone、256 MiB/65536 活动项配额继续保留。close/fsync/pause/shutdown 落文件内容；
 mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄不得复活旧路径。
 
-安装层从 library 与 sandbox 目录并集按 package 精确匹配，使用最小空缺编号：首份裸名，
+安装层导入时先沿用无库条目、meta package 一致的残留沙盒中编号最小者（ADR-0145），否则
+从 library 与 sandbox 目录并集按 package 精确匹配，使用最小空缺编号：首份裸名，
 后续 `-2`、`-3`。并发导入先原子创建对应 sandbox 目录占位，再发布同名 library 目录；
 冲突后重扫，失败只清理本次新建内容。GUI 启动传递选中 id；裸 CLI 在零/一个实例时分配或
 复用，多实例要求 `--installation-id` 消歧。SandboxStore 与 guest platform facts 始终传递

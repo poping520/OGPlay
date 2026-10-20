@@ -87,6 +87,7 @@ if(WIN32)
     target_link_libraries(ogplay_hal PRIVATE bcrypt)
     target_sources(ogplay_hal PRIVATE
         src/hal/windows/file_lock.cpp
+        src/hal/windows/file_clone.cpp
         src/hal/windows/diagnostic_trigger.cpp
         src/hal/from_chars.cpp
         src/hal/windows/host_environment.cpp
@@ -100,6 +101,7 @@ elseif(APPLE)
     target_link_libraries(ogplay_hal PRIVATE "-framework IOSurface" "-framework CoreFoundation")
     target_sources(ogplay_hal PRIVATE
         src/hal/macos/file_lock.cpp
+        src/hal/macos/file_clone.cpp
         src/hal/macos/diagnostic_trigger.cpp
         src/hal/macos/from_chars.cpp
         src/hal/macos/host_environment.cpp
@@ -110,6 +112,7 @@ elseif(UNIX)
     target_sources(ogplay_hal PRIVATE src/hal/rgb_surface_storage.cpp)
     target_sources(ogplay_hal PRIVATE
         src/hal/linux/file_lock.cpp
+        src/hal/linux/file_clone.cpp
         src/hal/linux/diagnostic_trigger.cpp
         src/hal/from_chars.cpp
         src/hal/linux/host_environment.cpp
@@ -494,7 +497,8 @@ add_library(ogplay_library STATIC
     src/frontend/library/model.cpp src/frontend/library/import.cpp
     src/frontend/library/visuals.cpp src/frontend/library/settings.cpp
     src/frontend/library/game_settings.cpp src/frontend/library/profiles.cpp
-    src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp)
+    src/frontend/library/resolve_launch.cpp src/frontend/library/locks.cpp
+    src/frontend/library/external_data.cpp)
 target_link_libraries(ogplay_library PRIVATE OGPlay::Runtime OGPlay::Session OGPlay::Agent)
 target_include_directories(ogplay_library PRIVATE "${OGPLAY_GENERATED_DIR}")
 target_include_directories(ogplay_library SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")

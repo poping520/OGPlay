@@ -45,6 +45,11 @@ void Write(const std::filesystem::path& path, const std::string_view text) {
     REQUIRE(output);
 }
 
+std::string Read(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
 ogplay::app::LibraryMetadata Metadata(const std::filesystem::path& external = {}) {
     ogplay::app::LibraryMetadata metadata{
         .package = "org.example.game",
@@ -400,4 +405,142 @@ TEST_CASE("invalid import leaves no temporary library entry") {
                     ogplay::app::LibraryError);
     CHECK_FALSE(std::filesystem::exists(
         store.EntriesRoot() / ".org.example.game.importing"));
+}
+
+TEST_CASE("library copies owned external data and removes it with the entry") {
+    TemporaryDirectory tree;
+    const auto source = tree.path / "source.apk";
+    const auto external = tree.path / "download" / "Pack";
+    const auto sandbox = tree.path / "root" / "sandbox" / "org.example.game";
+    Write(source, "apk");
+    Write(external / "data" / "Level1.bin", "level-one");
+    Write(external / "Readme.txt", "hi");
+    std::filesystem::create_directories(external / "empty");
+    ogplay::app::LibraryStore store(tree.path / "root");
+    auto metadata = Metadata(external);
+    metadata.external_owned = true;
+    ogplay::app::ImportProgress progress;
+    const auto id = store.Import({.source_apk = source, .metadata = metadata}, true, &progress);
+
+    CHECK(progress.total_bytes == 11);
+    CHECK(progress.copied_bytes == 11);
+    const auto entry = store.EntriesRoot() / id;
+    const auto meta = Read(entry / "meta.toml");
+    CHECK(meta.find("external_data = \"library\"") != std::string::npos);
+    CHECK(meta.find("download") == std::string::npos);
+    CHECK(Read(entry / "data" / "data" / "Level1.bin") == "level-one");
+    CHECK(Read(entry / "data" / "Readme.txt") == "hi");
+    CHECK(std::filesystem::is_directory(entry / "data" / "empty"));
+    CHECK_FALSE(std::filesystem::exists(tree.path / "root" / "import-staging" / "data-0"));
+
+    // The library copy no longer depends on the selected download directory.
+    std::filesystem::remove_all(tree.path / "download");
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    REQUIRE(entries[0].metadata.has_value());
+    CHECK(entries[0].metadata->external_owned);
+    CHECK(entries[0].metadata->external_dir == (entry / "data").lexically_normal());
+    const auto launch = ogplay::app::ResolveLaunch(store, id);
+    CHECK(launch.options.external_directory == (entry / "data").lexically_normal());
+    CHECK(launch.options.external_guest_directory == "/sdcard");
+
+    // A different per-game directory links; the owned copy is left unused.
+    const auto other = tree.path / "other";
+    std::filesystem::create_directories(other);
+    const auto linked = ogplay::app::EffectiveGameEntry(
+        entries[0], {{{"external_dir", other.generic_string()}}});
+    CHECK_FALSE(linked.metadata->external_owned);
+    CHECK(linked.metadata->external_dir == other);
+    const auto same = ogplay::app::EffectiveGameEntry(
+        entries[0], {{{"external_dir", entries[0].metadata->external_dir->generic_string()}}});
+    CHECK(same.metadata->external_owned);
+
+    Write(sandbox / "save.bin", "save");
+    store.Remove(id);
+    CHECK_FALSE(std::filesystem::exists(entry));
+    CHECK(std::filesystem::is_regular_file(sandbox / "save.bin"));
+}
+
+TEST_CASE("owned external data import rejects links, overlap and cancellation") {
+    TemporaryDirectory tree;
+    const auto source = tree.path / "source.apk";
+    Write(source, "apk");
+    ogplay::app::LibraryStore store(tree.path / "root");
+    const auto owned = [](const std::filesystem::path& external) {
+        auto metadata = Metadata(external);
+        metadata.external_owned = true;
+        return metadata;
+    };
+    const auto staged_files = [&] {
+        std::size_t count = 0;
+        const auto staging = tree.path / "root" / "import-staging";
+        if (!std::filesystem::exists(staging)) return count;
+        for (const auto& item : std::filesystem::recursive_directory_iterator(staging))
+            if (item.is_regular_file() && item.path().extension() != ".lock") ++count;
+        return count;
+    };
+
+    const auto linked = tree.path / "linked";
+    Write(linked / "real.bin", "data");
+    std::error_code symlink_error;
+    // Windows hosts without symlink privilege skip only this case.
+    std::filesystem::create_symlink(linked / "real.bin", linked / "alias.bin", symlink_error);
+    if (!symlink_error) {
+        CHECK_THROWS_AS(store.Import({.source_apk = source, .metadata = owned(linked)}, true),
+                        ogplay::app::LibraryError);
+    }
+
+    CHECK_THROWS_AS(store.Import({.source_apk = source, .metadata = owned(tree.path)}, true),
+                    ogplay::app::LibraryError);
+
+    const auto plain = tree.path / "plain";
+    Write(plain / "a.bin", "aaaa");
+    ogplay::app::ImportProgress cancelled;
+    cancelled.cancel_requested = true;
+    try {
+        static_cast<void>(store.Import({.source_apk = source, .metadata = owned(plain)}, true, &cancelled));
+        FAIL("cancelled import must not publish");
+    } catch (const ogplay::app::LibraryError& error) {
+        CHECK(std::string(error.what()).find("import_cancelled") != std::string::npos);
+    }
+    CHECK(store.LoadEntries().empty());
+    CHECK(staged_files() == 0);
+
+    // An interrupted import leaves an unlocked staging directory behind.
+    Write(tree.path / "root" / "import-staging" / "data-7" / "partial.bin", "partial");
+    CHECK(staged_files() == 1);
+    static_cast<void>(store.Import({.source_apk = source, .metadata = owned(plain)}, true));
+    CHECK(staged_files() == 0);
+    CHECK(Read(store.EntriesRoot() / "org.example.game" / "data" / "a.bin") == "aaaa");
+}
+
+TEST_CASE("re-import adopts saves left by a removed entry and keeps its id") {
+    TemporaryDirectory tree;
+    const auto source = tree.path / "source.apk";
+    Write(source, "apk");
+    ogplay::app::LibraryStore store(tree.path / "root");
+    const auto saves = tree.path / "root" / "sandbox";
+    CHECK(store.Import({.source_apk = source, .metadata = Metadata()}, true) == "org.example.game");
+    CHECK(store.Import({.source_apk = source, .metadata = Metadata()}, true) == "org.example.game-2");
+    Write(saves / "org.example.game-2" / "internal" / "save.bin", "progress");
+    const auto meta = Read(saves / "org.example.game-2" / "meta.toml");
+
+    store.Remove("org.example.game-2");
+    CHECK_FALSE(store.ReusableInstallationId("org.example.other").has_value());
+    CHECK(store.ReusableInstallationId("org.example.game") == "org.example.game-2");
+    CHECK(store.Import({.source_apk = source, .metadata = Metadata()}, true) == "org.example.game-2");
+    CHECK(Read(saves / "org.example.game-2" / "internal" / "save.bin") == "progress");
+    CHECK(Read(saves / "org.example.game-2" / "meta.toml") == meta);
+
+    // Deleting saves frees the id; the next import starts from a fresh sandbox.
+    store.Remove("org.example.game-2", true);
+    CHECK_FALSE(std::filesystem::exists(saves / "org.example.game-2"));
+    CHECK_FALSE(store.ReusableInstallationId("org.example.game").has_value());
+    CHECK(store.Import({.source_apk = source, .metadata = Metadata()}, true) == "org.example.game-2");
+    CHECK_FALSE(std::filesystem::exists(saves / "org.example.game-2" / "internal" / "save.bin"));
+
+    // Saves whose meta names another package are never adopted.
+    Write(saves / "org.example.game-5" / "meta.toml", "schema = 3\npackage = \"org.example.other\"\n");
+    store.Remove("org.example.game-2", true);
+    CHECK_FALSE(store.ReusableInstallationId("org.example.game").has_value());
 }

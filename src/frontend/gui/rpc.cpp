@@ -137,7 +137,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
         if (method == "library.list") CheckFields(params, {});
         else if (method == "library.launch") CheckFields(params, {"installation_id", "mode"});
-        else if (method == "library.remove") CheckFields(params, {"installation_id", "confirmed"});
+        else if (method == "library.remove") CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
         else CheckFields(params, {"installation_id", "kind"});
 
         // Validate request shape before any library IO or host callback.
@@ -152,10 +152,15 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             else if (value == "diagnostic") mode = LaunchMode::diagnostic;
             else if (value != "normal") throw std::invalid_argument("unknown launch mode");
         }
+        bool delete_saves{};
         if (method == "library.remove") {
             const auto confirmed = params.Member("confirmed");
             if (!confirmed || confirmed->Bool() != std::optional<bool>{true})
                 throw std::invalid_argument("removal requires confirmed=true");
+            if (const auto value = params.Member("delete_saves")) {
+                if (!value->Bool()) throw std::invalid_argument("delete_saves requires a boolean");
+                delete_saves = *value->Bool();
+            }
         }
         if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
         auto entries = store_.LoadEntries();
@@ -209,7 +214,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             if (method == "library.remove") {
                 const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (tile->running) return Error(-32002, "实例正在运行", "退出游戏后再移除。");
-                store_.Remove(key);
+                store_.Remove(key, delete_saves);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "removed", true);
             } else if (method == "library.launch") {

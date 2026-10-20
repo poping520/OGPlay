@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, importingStage, upload, type Call } from './import';
+import { describeData, formatBytes, guestPathError, importingStage, normalizeGuestPath, upload, type Call } from './import';
 describe('APK transfer', () => {
   it('rejects unsupported, empty and oversized files before contacting the host', async () => {
     const call: Call = async () => { throw new Error('unexpected RPC'); };
@@ -33,5 +33,15 @@ describe('import progress', () => {
     expect(importingStage({ job: '1', state: 'importing', progress: { copied_bytes: 512 * 1024 ** 2, total_bytes: 1024 ** 3 } }))
       .toBe('正在复制数据包… 50%（512.0 MiB / 1.0 GiB）');
     expect(formatBytes(1000)).toBe('1000 B');
+  });
+});
+describe('mount preview', () => {
+  it('accepts only /sdcard and clean directories below it, like the host', () => {
+    for (const ok of ['/sdcard', '/sdcard/gameloft/games/DungeonHunter']) expect(guestPathError(ok)).toBeNull();
+    for (const bad of ['/data', '/sdcardx', '/sdcard//a', '/sdcard/./a', '/sdcard/../a', '/sdcard/a\\b', 'sdcard/a'])
+      expect(guestPathError(bad)).not.toBeNull();
+    expect(normalizeGuestPath(' /sdcard/games/ ')).toBe('/sdcard/games');
+    expect(normalizeGuestPath('/')).toBe('/');
+    expect(describeData({ path: '/x', entries: [], entry_count: 0, files: 3, bytes: 2048, truncated: false })).toBe('3 个文件 · 2.0 KiB');
   });
 });

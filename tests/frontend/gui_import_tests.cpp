@@ -173,3 +173,40 @@ TEST_CASE("GUI RPC imports a real minimal APK from the analyzed snapshot") {
     CHECK(store.LoadEntries().size() == 1);
     CHECK_FALSE(std::filesystem::exists(temporary.path / ".gui-import-2"));
 }
+
+TEST_CASE("GUI RPC describes a data directory for the mount preview") {
+    using namespace ogplay;
+    TemporaryDirectory temporary;
+    app::LibraryStore store(temporary.path / "library");
+    frontend::GuiRpcService rpc(store, temporary.path / "ogplay.exe", {
+        [](const auto&) { return frontend::LibraryViewContext{}; }, [](const auto&) {}, [](const auto&) {},
+        [](const auto& source) { return app::AnalyzeApkImportFile(source, app::ProfileCatalog{}); }, {},
+        [] { return std::string("2026-10-20T00:00:00Z"); }});
+    const auto data = temporary.path / "Pack";
+    std::filesystem::create_directories(data / "data" / "levels");
+    std::ofstream(data / "data" / "levels" / "one.bin") << "1234";
+    std::ofstream(data / "Readme.txt") << "hi";
+    for (int index = 0; index < 9; ++index) std::ofstream(data / ("extra" + std::to_string(index) + ".dat")) << "x";
+    const auto handle = [&](const std::filesystem::path& path) {
+        app::JsonParseError error;
+        auto document = app::JsonDocument::ParseStrict(rpc.Handle(
+            R"({"jsonrpc":"2.0","id":1,"method":"library.external.inspect","params":{"path":")" +
+            path.generic_string() + "\"}}"), error);
+        REQUIRE(document);
+        return std::move(*document);
+    };
+    const auto described = handle(data);
+    const auto result = described.Root().Member("result");
+    REQUIRE(result);
+    CHECK(result->Member("entry_count")->UnsignedInteger() == 11);
+    CHECK(result->Member("files")->UnsignedInteger() == 11);
+    CHECK(result->Member("bytes")->UnsignedInteger() == 15);
+    CHECK(result->Member("truncated")->Bool() == false);
+    const auto entries = result->Member("entries");
+    REQUIRE(entries->Size() == 8);
+    // Directories come first so the mount preview shows the layout's shape.
+    CHECK(entries->Element(0)->Member("name")->String() == "data");
+    CHECK(entries->Element(0)->Member("directory")->Bool() == true);
+    CHECK(entries->Element(1)->Member("directory")->Bool() == false);
+    CHECK(handle(data / "missing").Root().Member("error"));
+}

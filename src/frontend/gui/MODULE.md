@@ -22,6 +22,8 @@
   提交期间 poll 返回 `progress {copied_bytes,total_bytes}`；取消在发布前生效，已发布则结果仍为
   imported，worker 停止前状态保持 importing。服务析构先请求取消再回收。
 - `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
+- `library.external.inspect {path}`：同步描述候选数据包目录，供挂载预览：目录优先排序的前 8 个
+  顶层名、顶层总数、文件数与字节；递归统计以 20 万项为上限并标记 truncated，不跟随目录符号链接。
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
   frontend/library，只经 app 公开头消费。settings.get/set 保存前复用库内 schema/目录校验，
   未知键/损坏配置/过期读取版本拒绝覆盖；后台分析或入库尚未回收时禁止保存。

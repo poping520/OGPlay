@@ -47,3 +47,20 @@ export async function upload(file: File, onJob: (job: string) => void, progress:
   }
   return call<ImportJob>('library.upload.finish', { job: result.job });
 }
+export interface DataDirectory {
+  path: string; entries: { name: string; directory: boolean }[];
+  entry_count: number; files: number; bytes: number; truncated: boolean;
+}
+/** Mirrors the host rule: /sdcard or a directory below it, no empty/dot segments or control characters. */
+export function guestPathError(value: string): string | null {
+  if (value !== '/sdcard' && !value.startsWith('/sdcard/')) return '挂载位置必须是 /sdcard 或其下的目录。';
+  const parts = value.slice(1).split('/');
+  if (parts.some(part => !part || part === '.' || part === '..' || part.includes('\\') || /[\u0000-\u001f]/.test(part)))
+    return '路径含空段、. / .. 、反斜杠或控制字符。';
+  return null;
+}
+/** Trailing slashes are a typing habit, not a different directory. */
+export const normalizeGuestPath = (value: string) => value.trim().replace(/(?<=.)\/+$/, '');
+export function describeData(data: DataDirectory): string {
+  return `${data.truncated ? '超过 ' : ''}${data.files} 个文件 · ${formatBytes(data.bytes)}${data.truncated ? '（统计已截断）' : ''}`;
+}

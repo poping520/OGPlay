@@ -165,6 +165,52 @@ TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queri
     }
 }
 
+TEST_CASE("ClassLoader findLibrary JNI method ID dispatches to the application loader") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend);
+        auto& bridge = *fixture.bridge;
+        auto& vm = bridge.Vm();
+        const auto identity = fixture.session->Classes().FindClass("java/lang/ClassLoader");
+        REQUIRE(identity.has_value());
+        const auto method = fixture.session->Classes().GetMethodId(
+            *identity, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;", false);
+        REQUIRE(method.has_value());
+        const auto app = vm.ClassLoaders().ApplicationLoader();
+        const auto boot = vm.ClassLoaders().BootstrapLoader();
+        const auto find = [&](const VmObjectRef loader, const std::string_view name) {
+            const auto argument = vm.NewStringUtf8(name);
+            const auto roots = vm.ProtectReferences(std::array{loader, argument});
+            const std::array<JniValue, 1> args{bridge.PublishLocal(argument)};
+            const auto actual = bridge.RegisteredClassIdentity(bridge.Model().ObjectClass(loader));
+            REQUIRE(actual.has_value());
+            const auto result = std::get<JniReference>(fixture.session->Invocations().InvokeVirtual(
+                1U, bridge.PublishLocal(loader), *actual, *method, args, JniArgumentSource::value_array));
+            CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+            return bridge.FromReference(result);
+        };
+        const auto result = find(app, "a");
+        REQUIRE(result.IsValid());
+        CHECK(vm.StringUtf8(result) == "/data/app-lib/liba.so");
+        CHECK_FALSE(find(boot, "a").IsValid());
+        CHECK_FALSE(find(app, "missing").IsValid());
+        CHECK_FALSE(find(app, "../a").IsValid());
+        CHECK(fixture.libraries->Records().empty());
+
+        fixture.context->native_libraries = nullptr;
+        const auto actual = bridge.Model().ObjectClass(app);
+        const auto index = bridge.Linker().FindVtableIndex(
+            actual, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+        REQUIRE(index.has_value());
+        const std::array args{VmValue::Ref(app), VmValue::Ref(vm.NewStringUtf8("a"))};
+        const auto unavailable = vm.Call(bridge.Linker().Class(actual).vtable[*index], args);
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(bridge.Linker().Class(unavailable.exception_class).descriptor ==
+              "Ljava/lang/UnsatisfiedLinkError;");
+    }
+}
+
 TEST_CASE("ClassLoader parent-first JNI lookup and app calls share bootstrap types") {
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;

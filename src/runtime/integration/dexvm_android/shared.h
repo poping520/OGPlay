@@ -293,6 +293,8 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
     const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
     const Context& context);
+[[nodiscard]] dx::IntrinsicHandler PlatformClassLoaderFindLibraryHandler(
+    const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PlatformSystemNanoTimeHandler(
     const Context& context);
 

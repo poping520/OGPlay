@@ -54,6 +54,54 @@
 
 using namespace ogplay::test::native_library;
 
+TEST_CASE("native library path lookup is side effect free and returns loadable APK and system paths") {
+    using namespace ogplay;
+    FixtureProcess fixture;
+    auto other_abi = Library("liba.so", AppElf({"liba.so", "libwrongabi.so", std::nullopt}));
+    other_abi.abi = loader::AndroidArmAbi::armeabi;
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("liba.so", AppElf({"liba.so", "", std::nullopt})),
+        std::move(other_abi),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(
+        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    auto system_image = AppElf({"liba.so", "", std::nullopt});
+    auto bundled_image = AppElf({"libbundled.so", "", std::nullopt});
+    const runtime::BionicModuleSource system[]{
+        {"liba.so", system_image}, {"libbundled.so", bundled_image}};
+    runtime::NativeLibraryLoader libraries(
+        *fixture.process, selected, runtime::SelectBionicProfile(19), system);
+    const auto count = fixture.process->ApplicationModuleCount();
+    const auto apk_path = libraries.FindLibraryPath("a");
+    const auto system_path = libraries.FindLibraryPath("bundled");
+    REQUIRE(apk_path == "/data/app-lib/liba.so");
+    REQUIRE(system_path == "/system/lib/libbundled.so");
+    CHECK_FALSE(libraries.FindLibraryPath("missing"));
+    for (const auto name : {"", "../a", "a/b", "a\\b", "/system/lib/liba.so"}) {
+        CHECK_FALSE(libraries.FindLibraryPath(name));
+    }
+    CHECK_FALSE(libraries.FindLibraryPath(std::string_view{"a\0suffix", 8}));
+    CHECK(libraries.Records().empty());
+    CHECK(fixture.process->ApplicationModuleCount() == count);
+
+    const auto access = fixture.process->GuestMemoryAccess();
+    const auto symbols = runtime::detail::BuildAndroidBoundarySymbols();
+    const runtime::BionicHleSymbolProvider provider(symbols);
+    for (const auto& path : {*apk_path, *system_path}) {
+        const auto records_before = libraries.Records().size();
+        const auto scratch = access.allocate(static_cast<std::uint32_t>(path.size() + 1U));
+        std::vector<std::byte> bytes(path.size() + 1U);
+        for (std::size_t i = 0; i < path.size(); ++i) bytes[i] = static_cast<std::byte>(path[i]);
+        access.write(scratch, bytes);
+        runtime::A32GuestCallFrame frame{
+            *provider.Lookup("libdl.so", "dlopen"), {scratch.Value(), 1U, 0U, 0U}, {}};
+        CHECK(fixture.process->Invoke(frame).return_value != 0U);
+        access.release(scratch, static_cast<std::uint32_t>(bytes.size()));
+        CHECK(libraries.Records().size() == records_before);
+        CHECK(libraries.LoadPath(path, 7U).canonical_path == path);
+    }
+}
+
 TEST_CASE("native library loader appends dependency constructors and one explicit JNI_OnLoad") {
     using namespace ogplay;
     FixtureProcess fixture;
@@ -241,6 +289,7 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     auto b = AppElf({"libb.so", "", runtime::kJniVersion1_4});
     auto path = AppElf({"libpath.so", "", runtime::kJniVersion1_4});
     auto vfs = AppElf({"libvfs.so", "", runtime::kJniVersion1_6});
+    auto bundled = AppElf({"libbundled.so", "", std::nullopt});
     std::array module_inputs{
         loader::Elf32ModuleInput{"liba.so", a,
                                  memory::GuestAddress{0x20000000U}},
@@ -259,7 +308,9 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     }};
     const auto selected = loader::SelectApkNativeLibraries(
         inventory, loader::AndroidArmAbi::armeabi_v7a);
-    runtime::NativeLibraryLoader libraries(session->Process(), selected);
+    const runtime::BionicModuleSource system[]{{"libbundled.so", bundled}};
+    runtime::NativeLibraryLoader libraries(
+        session->Process(), selected, runtime::SelectBionicProfile(19), system);
     auto context = std::make_shared<runtime::DexVmAndroidContext>();
     context->session = session.get();
     context->native_libraries = &libraries;
@@ -302,9 +353,9 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
             bridge->Vm().NewStringUtf8(value))};
         return bridge->Vm().Call(target, arguments);
     };
-    const auto path_result = call_with_string(
-        load_path, runtime::NativeLibraryLoader::SyntheticGuestPath(
-                       "libpath.so"));
+    const auto resolved_path = libraries.FindLibraryPath("path");
+    REQUIRE(resolved_path.has_value());
+    const auto path_result = call_with_string(load_path, *resolved_path);
     REQUIRE_MESSAGE(!path_result.exception.IsValid(),
                     path_result.exception_message);
 
@@ -333,6 +384,12 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
           "/data/data/fixture/files/libvfs.so");
     CHECK(records[3].soname == "libvfs.so");
     CHECK(records[3].jni_on_load_calls == 1U);
+
+    const auto system_path = libraries.FindLibraryPath("bundled");
+    REQUIRE(system_path.has_value());
+    const auto system_result = call_with_string(load_path, *system_path);
+    REQUIRE_MESSAGE(!system_result.exception.IsValid(), system_result.exception_message);
+    CHECK(session->Process().HasLoadedModule("libbundled.so"));
 
     bridge.reset();
     session->Stop();

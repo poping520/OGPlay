@@ -872,6 +872,19 @@ dx::IntrinsicHandler PlatformSystemLoadLibraryHandler(
         });
 }
 
+dx::IntrinsicHandler PlatformClassLoaderFindLibraryHandler(const Context& context) {
+    return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto name = SystemLoadArgument(call, "libraryName");
+        if (context->native_libraries == nullptr) {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                                  "APK native library loader is unavailable"};
+        }
+        const auto path = context->native_libraries->FindLibraryPath(name);
+        return dx::VmValue::Ref(path ? call.vm.NewStringUtf8(*path)
+                                    : dx::VmObjectRef{});
+    });
+}
+
 dx::IntrinsicHandler PlatformSystemNanoTimeHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext&) {
         return dx::VmValue::Long(context->uptime_millis.load() *

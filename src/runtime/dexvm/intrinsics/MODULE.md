@@ -58,6 +58,9 @@
 
 - ClassLoader/BootClassLoader/PathClassLoader 身份、parent、lookup/initiate 只用
   ClassLoaderFacade；自定义 loader 仍映射唯一 application namespace，动态 classpath 拒绝。
+  PathClassLoader 继承 BaseDexClassLoader，再继承 ClassLoader；ClassLoader 的 protected
+  findLibrary 默认 null，BaseDexClassLoader 的 public 覆盖由 integration 绑定原生库路径查询，
+  core 未绑定时明确失败；BootClassLoader 继承默认 null 行为。
   Class.forName 使用真实 caller；三参 null 映射 API19 system loader。CNFE 保留 cause，
   clinit EIIE 保留原 throwable。Class 相对/绝对资源名与 ClassLoader 根资源名经注入的
   bootstrap/APK sealed archive 查询：URL 保留归档 guest 路径/entry 并按来源读取，

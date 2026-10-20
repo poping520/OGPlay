@@ -14,9 +14,18 @@
 
 namespace ogplay::runtime::dexvm::intrinsics {
 
+IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader() {
+    auto builder = IntrinsicClassBuilder::Class(
+        "Ldalvik/system/BaseDexClassLoader;", "Ljava/lang/ClassLoader;");
+    // The integration layer binds the selected-ABI native library resolver.
+    builder.UnimplementedOverride(
+        "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+    return std::move(builder).Build();
+}
+
 IntrinsicClassDecl Declare_dalvik_system_PathClassLoader() {
     auto builder = IntrinsicClassBuilder::Class(
-        "Ldalvik/system/PathClassLoader;", "Ljava/lang/ClassLoader;");
+        "Ldalvik/system/PathClassLoader;", "Ldalvik/system/BaseDexClassLoader;");
     builder.UnimplementedConstructor(
         "(Ljava/lang/String;Ljava/lang/ClassLoader;)V");
     builder.UnimplementedConstructor(
@@ -276,6 +285,12 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(
         [](IntrinsicContext& context) {
             // API-19 Dalvik ignores resolve for ClassLoader.loadClass.
             return Load(context, ReceiverRole(context));
+        }, kAccProtected);
+    builder.VirtualMethod(
+        "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;",
+        [](IntrinsicContext&) {
+            // AOSP API19 ClassLoader.findLibrary has no native search path.
+            return VmValue::Ref(VmObjectRef{});
         }, kAccProtected);
     builder.VirtualMethod(
         "findClass", "(Ljava/lang/String;)Ljava/lang/Class;",

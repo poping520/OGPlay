@@ -101,6 +101,10 @@ public:
     NativeLibraryLoader(const NativeLibraryLoader&) = delete;
     NativeLibraryLoader& operator=(const NativeLibraryLoader&) = delete;
 
+    // Resolve a logical name without mapping, constructors or JNI execution.
+    // Invalid or unavailable names have no path.
+    [[nodiscard]] std::optional<std::string> FindLibraryPath(
+        std::string_view logical_name) const;
     [[nodiscard]] NativeLibraryLoadResult LoadLibrary(
         std::string_view logical_name, JavaClassLoaderToken class_loader);
     [[nodiscard]] NativeLibraryLoadResult LoadPath(

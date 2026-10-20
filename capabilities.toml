@@ -1315,8 +1315,8 @@ note = "DVM-62 交付受检 ClassNameCodec 与 linker metadata v2；DVM-94 保�
 
 [dexvm.class_loader_facade]
 status = "complete"
-test = "tests/dexvm/class_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#ClassLoader parent-first JNI; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/android_context_services_tests.cpp#Context class loader"
-note = "DVM-63：基于 linker 唯一类目录的稳定 PathClassLoader/BootClassLoader facade，parent-first，defining/initiating loader 分离；APK 自带 android.support.* 由应用 loader 定义，android.* 副本丢弃。支持 findLoadedClass、loadClass 委托、Class.forName 两个重载及 BootDex/APK 资源读取。不支持 URL 枚举、动态 classpath、多 namespace 与自定义 defineClass。"
+test = "tests/dexvm/class_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#ClassLoader; tests/runtime/native_library_loader_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/android_context_services_tests.cpp#Context class loader"
+note = "DVM-63：应用/boot facade 共享类目录，parent-first、定义/发起分离。支持 findLoadedClass、loadClass、Class.forName、封存 BootDex/APK 资源；PathClassLoader 继承 BaseDexClassLoader，findLibrary 查询所选 ABI APK/内置系统库路径，ClassLoader/boot 返回 null。APK android.support.* 归应用，android.* 副本丢弃。不支持 URL 枚举、动态 classpath、多 namespace、自定义 defineClass。"
 
 [dexvm.classloader.resource_url]
 status = "partial"

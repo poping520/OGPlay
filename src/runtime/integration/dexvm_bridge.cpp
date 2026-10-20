@@ -93,6 +93,9 @@ void BindPlatformCoreHandlers(
          android_intrinsics::PlatformSystemLoadHandler(android_context)},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
          android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
+        {"Ldalvik/system/BaseDexClassLoader;", "findLibrary",
+         "(Ljava/lang/String;)Ljava/lang/String;",
+         android_intrinsics::PlatformClassLoaderFindLibraryHandler(android_context)},
         {"Ljava/lang/Runtime;", "nativeExit", "(I)V",
          android_intrinsics::PlatformRuntimeNativeExitHandler(android_context)},
     };

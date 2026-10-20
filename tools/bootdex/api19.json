@@ -1880,6 +1880,7 @@
       "Landroid/view/animation/Animation$AnimationListener;",
       "Landroid/widget/FrameLayout$LayoutParams;",
       "Landroid/widget/LinearLayout$LayoutParams;",
+      "Landroid/widget/MediaController$MediaPlayerControl;",
       "Landroid/widget/RelativeLayout$LayoutParams;",
       "Landroid/widget/TextView$BufferType;"
     ],

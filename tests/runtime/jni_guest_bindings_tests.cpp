@@ -29,6 +29,7 @@
 #include "ogplay/runtime/jni/jni_java_vm.h"
 #include "ogplay/runtime/jni/jni_native_registry.h"
 #include "ogplay/runtime/jni/jni_object.h"
+#include "native_library_fixture.h"
 
 namespace {
 
@@ -268,6 +269,54 @@ constexpr std::string_view kArrayTypes[]{
 }
 
 }  // namespace
+
+TEST_CASE("guest JNI static field slots read Environment MEDIA_MOUNTED") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::test::native_library;
+    ApplicationProcess fixture;
+    auto& process = fixture.session->Process();
+    const auto memory = process.GuestMemoryAccess();
+    const auto scratch = memory.allocate(128U);
+    const auto write = [&](const std::uint32_t offset, const std::string_view text) {
+        std::vector<std::byte> bytes(text.size() + 1U);
+        for (std::size_t i = 0; i < text.size(); ++i) bytes[i] = static_cast<std::byte>(text[i]);
+        memory.write(scratch.Add(offset), bytes);
+    };
+    const auto call = [&](const std::string_view slot, const std::uint32_t r1,
+                          const std::uint32_t r2 = 0U, const std::uint32_t r3 = 0U) {
+        A32GuestCallFrame frame{ogplay::memory::GuestAddress{EnvironmentThunk(slot)},
+            {kJniGuestEnvironment.Value(), r1, r2, r3}, {}};
+        return process.Invoke(frame).return_value;
+    };
+    write(0U, "android/os/Environment");
+    write(48U, "MEDIA_MOUNTED");
+    write(80U, "Ljava/lang/String;");
+    const auto owner = call("FindClass", scratch.Value());
+    REQUIRE(owner != 0U);
+    const auto field = call("GetStaticFieldID", owner, scratch.Add(48U).Value(), scratch.Add(80U).Value());
+    REQUIRE(field != 0U);
+    const auto result = call("GetStaticObjectField", owner, field);
+    REQUIRE(result != 0U);
+    CHECK(fixture.bridge->Vm().StringUtf8(fixture.bridge->FromReference(JniReference{result})) == "mounted");
+    CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
+    memory.release(scratch, 128U);
+}
+
+TEST_CASE("guest JNI missing static field diagnostic identifies its class") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture fixture;
+    const auto owner = fixture.classes.RegisterClass({"fixture/StaticFields", std::nullopt, {}, {}});
+    REQUIRE(fixture.java_vm.AttachCurrentThread(201U, kJniVersion1_6).status == JniStatus::ok);
+    const auto reference = fixture.environment.PublishLocalObject(201U, owner);
+    fixture.WriteString(0U, "missing");
+    fixture.WriteString(48U, "Ljava/lang/String;");
+    fixture.Seal();
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("GetStaticFieldID", 201U, reference.Value(),
+        fixture.output.Value(), fixture.output.Add(48U).Value())),
+        "JNI guest static field is not declared: class=fixture/StaticFields field=missingLjava/lang/String;",
+        JniGuestBindingError);
+    CHECK_FALSE(fixture.environment.ExceptionCheck(201U));
+}
 
 TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     GuestBindingsFixture fixture;

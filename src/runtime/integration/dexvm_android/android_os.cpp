@@ -362,6 +362,19 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Environment(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Environment;", "Ljava/lang/Object;");
+    static constexpr auto kMediaMounted = "mounted";
+    constexpr auto kMediaFlags = dx::kAccPublic | dx::kAccStatic | dx::kAccFinal;
+    // AOSP API19 Environment.java storage states.
+    builder.ConstantString("MEDIA_UNKNOWN", "unknown", kMediaFlags)
+        .ConstantString("MEDIA_REMOVED", "removed", kMediaFlags)
+        .ConstantString("MEDIA_UNMOUNTED", "unmounted", kMediaFlags)
+        .ConstantString("MEDIA_CHECKING", "checking", kMediaFlags)
+        .ConstantString("MEDIA_NOFS", "nofs", kMediaFlags)
+        .ConstantString("MEDIA_MOUNTED", kMediaMounted, kMediaFlags)
+        .ConstantString("MEDIA_MOUNTED_READ_ONLY", "mounted_ro", kMediaFlags)
+        .ConstantString("MEDIA_SHARED", "shared", kMediaFlags)
+        .ConstantString("MEDIA_BAD_REMOVAL", "bad_removal", kMediaFlags)
+        .ConstantString("MEDIA_UNMOUNTABLE", "unmountable", kMediaFlags);
     builder.StaticMethod("getDataDirectory", "()Ljava/io/File;",
         [context](dx::IntrinsicContext& call) {
             constexpr auto key = "environment_data_directory";
@@ -386,10 +399,10 @@ Decl Declare_android_os_Environment(const Context& context) {
             return dx::VmValue::Ref(file);
         });
     builder.StaticMethod("getExternalStorageState", "()Ljava/lang/String;",
-        [context](dx::IntrinsicContext& call) {
+        [](dx::IntrinsicContext& call) {
             // The external mount is required by the profile and read at
             // startup, so MEDIA_MOUNTED is the truthful state.
-            return MakeString(call, "mounted");
+            return MakeString(call, kMediaMounted);
         });
     return std::move(builder).Build();
 }

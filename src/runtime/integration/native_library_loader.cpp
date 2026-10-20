@@ -349,6 +349,7 @@ public:
     ExplicitLibrary ResolveLibrary(
         const std::string_view logical_name) const {
         if (logical_name.empty() ||
+            logical_name.find('\0') != std::string_view::npos ||
             logical_name.find('/') != std::string_view::npos ||
             logical_name.find('\\') != std::string_view::npos) {
             throw NativeLibraryLoadError(
@@ -493,6 +494,17 @@ public:
         : process_(&process), sources_(std::make_shared<NativeLibrarySources>(process, libraries, bionic, system_libraries)),
           logger_(logger) {
         InstallNativeSources();
+    }
+    std::optional<std::string> FindLibraryPath(const std::string_view name) const {
+        try {
+            return sources_->ResolveLibrary(name).canonical_path;
+        } catch (const NativeLibraryLoadError& error) {
+            if (error.Reason() == NativeLibraryLoadErrorReason::invalid_request ||
+                error.Reason() == NativeLibraryLoadErrorReason::library_not_found) {
+                return std::nullopt;
+            }
+            throw;
+        }
     }
     NativeLibraryLoadResult LoadLibrary(const std::string_view name, const JavaClassLoaderToken loader) {
         return LoadResolved(sources_->ResolveLibrary(name), loader);
@@ -706,6 +718,11 @@ NativeLibraryLoader::NativeLibraryLoader(
                                    system_libraries, logger)) {}
 
 NativeLibraryLoader::~NativeLibraryLoader() = default;
+
+std::optional<std::string> NativeLibraryLoader::FindLibraryPath(
+    const std::string_view logical_name) const {
+    return impl_->FindLibraryPath(logical_name);
+}
 
 NativeLibraryLoadResult NativeLibraryLoader::LoadLibrary(
     const std::string_view logical_name,

@@ -14,6 +14,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_reflect_Proxy(),
         Declare_dalvik_system_VMStack(),
         Declare_java_lang_BootClassLoader(),
+        Declare_dalvik_system_BaseDexClassLoader(),
         Declare_dalvik_system_PathClassLoader(),
         Declare_java_lang_Thread(),
         Declare_java_lang_Thread_UncaughtExceptionHandler(),

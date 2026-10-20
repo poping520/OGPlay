@@ -46,6 +46,9 @@ struct LoaderVm final {
         : interpreter([this, &services]() -> DexClassLinker& {
               const auto catalog = CoreIntrinsicCatalog(std::move(services));
               linker.RegisterIntrinsics(catalog);
+              // Bind the real platform natives required by the full BootDex artifact.
+              linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
+                  std::make_shared<DexVmAndroidContext>()));
               linker.RegisterDex(ReadFixture("interp.dex"));
               ogplay::test::RegisterBootDex(linker);
               linker.Link();
@@ -114,6 +117,27 @@ void ExpectClassNotFound(LoaderVm& vm, const VmCallOutcome& outcome) {
 }
 
 }  // namespace
+
+TEST_CASE("ClassLoader findLibrary declares the API19 hierarchy and boot null result") {
+    LoaderVm vm;
+    const auto base = vm.linker.ResolveDescriptor("Ljava/lang/ClassLoader;");
+    const auto dex = vm.linker.ResolveDescriptor("Ldalvik/system/BaseDexClassLoader;");
+    const auto path = vm.linker.ResolveDescriptor("Ldalvik/system/PathClassLoader;");
+    CHECK(vm.linker.Class(dex).super == base);
+    CHECK(vm.linker.Class(path).super == dex);
+    const auto index = vm.linker.FindVtableIndex(
+        base, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+    REQUIRE(index.has_value());
+    CHECK((vm.linker.Method(vm.linker.Class(base).vtable[*index]).access_flags &
+           kAccProtected) != 0U);
+    CHECK((vm.linker.Method(vm.linker.Class(dex).vtable[*index]).access_flags &
+           kAccPublic) != 0U);
+    const auto boot = vm.interpreter.ClassLoaders().BootstrapLoader();
+    for (const auto name : {vm.String("a"), VmObjectRef{}}) {
+        CHECK_FALSE(Ref(vm.Virtual(boot, "findLibrary",
+            "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(name)})).IsValid());
+    }
+}
 
 TEST_CASE("Class and ClassLoader resource streams preserve loader and package semantics") {
     CoreIntrinsicServices services;
@@ -509,6 +533,7 @@ std::vector<IntrinsicClassDecl> ParentFirstCatalog() {
         const auto& name = declaration.descriptor;
         return name != "Ljava/lang/Object;" && name != "Ljava/lang/Class;" &&
                name != "Ljava/lang/ClassLoader;" && name != "Ljava/lang/BootClassLoader;" &&
+               name != "Ldalvik/system/BaseDexClassLoader;" &&
                name != "Ldalvik/system/PathClassLoader;";
     });
     return catalog;

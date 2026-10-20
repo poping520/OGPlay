@@ -123,6 +123,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - System.load/loadLibrary 使用同一个 loader 和 application ClassLoader token。Java 边界
   为 NPE/UnsatisfiedLinkError，宿主保留 typed cause；legacy InitializeJniLibrary 只能在
   运行中、constructors 和类登记完成后调用一次，成功或无 OnLoad 才发布 ready。
+- BaseDexClassLoader.findLibrary 经平台绑定调用 NativeLibraryLoader.FindLibraryPath，
+  与 LoadLibrary 共用 selected-ABI APK 优先、bundled system 回退的逻辑名解析；返回
+  `/data/app-lib/<soname>` 或 `/system/lib/<soname>`，可供 System.load/native dlopen 使用。
+  查询不装载、不运行 constructor/JNI、不登记 registry；非法或缺失名称返回 null，未注入 loader 明确失败。
 
 ## DexVM / JNI 唯一身份与执行
 

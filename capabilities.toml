@@ -2062,3 +2062,8 @@ note = "DVM-224/ADR-0105：Context 缓存 BootDex NotificationManager；cancel/c
 status = "unimplemented"
 test = "tests/dexvm/android_pending_notifications_tests.cpp#DVM-224"
 note = "通知发布禁用：notify(null) NPE，非空请求走 private nativeRejectPost，记账并抛 UnsupportedOperationException，不存储对象或静默丢弃。Notification 有界值对象独立纳入 DVM-227，不包含 Builder/RemoteViews 模板执行、状态栏、系统弹窗、声振、点击/删除 PendingIntent 派发、跨用户或通知持久化。"
+
+[diagnostics.title_preflight]
+status = "partial"
+test = "tests/frontend/surface_export_tests.cpp; tools/title_preflight.py --self-test; tools/dexvm_api19_surface.py --self-test"
+note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 公开/保护表面，DEX/multidex 与父类型闭包、ARM32 JNI 字符串/候选注册表、ELF 依赖闭包/版本符号和题库频次。只读盘点，不生成桩。JNI 配对启发式、动态 native 实现/注册 owner 未核实；不覆盖 syscall 参数、动态名称、完整调用图/可达性；回测见本地报告。"

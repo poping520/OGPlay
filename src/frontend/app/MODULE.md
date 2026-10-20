@@ -14,3 +14,6 @@ SDL 动态库与桌面共享；RunGame 的状态行默认 stdout，CLI library r
 
 GameRunOptions 显式携带 surface_width/surface_height（默认 800×480，每边 1..4096），
 解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
+
+DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Android catalog 装配独立 linker，
+返回 JSON 表面及 API19 native exports；不运行 guest、类初始化、图形或游戏会话。

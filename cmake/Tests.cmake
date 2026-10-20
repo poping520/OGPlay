@@ -297,6 +297,7 @@ ogplay_add_test_executable(ogplay_file_lock_tests tests/hal/file_lock_tests.cpp
     tests/frontend/library_lock_contention_tests.cpp)
 target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogplay_desktop_app)
 ogplay_add_test_executable(ogplay_app_tests
+    tests/frontend/surface_export_tests.cpp
     tests/frontend/game_run_args_tests.cpp
     tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
     tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
@@ -494,6 +495,12 @@ add_test(
         --self-test
 )
 set_tests_properties(tools.dexvm_api19_surface_self_test PROPERTIES LABELS tools)
+
+add_test(
+    NAME tools.title_preflight_self_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/title_preflight.py --self-test
+)
+set_tests_properties(tools.title_preflight_self_test PROPERTIES LABELS tools)
 
 add_test(
     NAME tools.dexvm_gap_report_self_test

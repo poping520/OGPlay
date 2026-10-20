@@ -328,6 +328,8 @@ public:
     DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     void Link();
+    // Diagnostic snapshot; links without initialization and preserves per-class failures.
+    [[nodiscard]] std::string DumpSurfaceJson();
 
     [[nodiscard]] bool IsLinked() const noexcept;
     [[nodiscard]] std::optional<DexClassId> FindClass(

@@ -1,6 +1,7 @@
 #include "ogplay/runtime/integration/android_link_preflight.h"
 
 #include <cstddef>
+#include "ogplay/core/json.h"
 #include <exception>
 #include <span>
 #include <string>
@@ -14,6 +15,18 @@
 #include "runtime/boundary/core/boundary_symbols.h"
 
 namespace ogplay::runtime {
+
+std::string DumpAndroidBoundarySurfaceJson() {
+    core::JsonWriter out;
+    const auto root = out.Array();
+    for (const auto& symbol : detail::BuildAndroidBoundarySymbols(AndroidApi::api19)) {
+        const auto item = out.Object();
+        out.AddString(item, "library", symbol.library);
+        out.AddString(item, "symbol", symbol.symbol);
+        out.Append(root, item);
+    }
+    return out.Serialize(root);
+}
 
 AndroidImportAudit AuditAndroidNativeImports(
     const loader::ApkSelectedNativeLibraries& libraries, const BionicProfile& profile,

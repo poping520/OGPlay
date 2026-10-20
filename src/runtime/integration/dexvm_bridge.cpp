@@ -124,6 +124,15 @@ void BindPlatformCoreHandlers(
 
 }  // namespace
 
+std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(
+    const std::shared_ptr<DexVmAndroidContext>& context, const std::uint32_t cpu_cores) {
+    auto services = AndroidCoreIntrinsicServices(context);
+    services.cpu_cores = cpu_cores;
+    auto catalog = dx::CoreIntrinsicCatalog(std::move(services));
+    BindPlatformCoreHandlers(catalog, context);
+    return catalog;
+}
+
 void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
                               const dx::VmRootVisitor& visit) {
     const auto root = [&](const dx::VmObjectRef ref) {
@@ -1479,11 +1488,8 @@ DexVmGuestBridge::DexVmGuestBridge(
                 {.mode = core::RateLimitMode::none});
         });
 
-    auto core_services = AndroidCoreIntrinsicServices(android_context);
     if (android_context) android_context->memory_snapshot = session.MemorySnapshot();
-    core_services.cpu_cores = session.CpuConfig().cores;
-    auto core_catalog = dx::CoreIntrinsicCatalog(std::move(core_services));
-    BindPlatformCoreHandlers(core_catalog, android_context);
+    auto core_catalog = BoundCoreIntrinsicCatalog(android_context, session.CpuConfig().cores);
     impl_->linker.RegisterIntrinsics(core_catalog);
     if (!platform_catalog.empty()) {
         impl_->linker.RegisterIntrinsics(platform_catalog);

@@ -1,4 +1,8 @@
 #include "class_linker_internal.h"
+#include "ogplay/core/json.h"
+#include <cmath>
+#include <bit>
+#include "ogplay/core/text.h"
 
 namespace ogplay::runtime::dexvm {
 namespace {
@@ -718,6 +722,109 @@ void DexClassLinker::Link() {
         Fail(DexVmErrorReason::invalid_override, std::move(message));
     }
     impl_->link_complete = true;
+}
+
+std::string DexClassLinker::DumpSurfaceJson() {
+    core::JsonWriter out;
+    const auto root = out.Object();
+    out.AddInteger(root, "schema", 1);
+    std::string startup_error;
+    try { Link(); } catch (const DexVmError& error) { startup_error = error.what(); }
+    out.AddString(root, "startup_link_error", startup_error);
+    const auto real_constant = [&](core::JsonWriter::Value item, const double value) {
+        if (std::isfinite(value)) out.AddReal(item, "constant", value);
+        else {
+            out.AddString(item, "constant", std::isnan(value) ? "NaN" : value > 0 ? "+Infinity" : "-Infinity");
+            out.AddString(item, "constant_encoding", "ieee754-nonfinite");
+        }
+    };
+    const auto classes = out.Array();
+    auto ids = AllClasses();
+    std::sort(ids.begin(), ids.end(), [&](auto a, auto b) {
+        return Class(a).descriptor < Class(b).descriptor;
+    });
+    for (const auto id : ids) {
+        std::string link_error;
+        try { EnsureClassLinked(id); }
+        catch (const DexVmError& error) { link_error = error.what(); }
+        const auto& cls = Class(id);
+        const auto& extra = impl_->ExtrasAt(id);
+        const auto entry = out.Object();
+        out.AddString(entry, "descriptor", cls.descriptor);
+        out.AddString(entry, "source", cls.is_boot_dex ? "bootdex" : "intrinsic");
+        out.AddString(entry, "link_error", link_error);
+        out.AddUnsignedInteger(entry, "access_flags", cls.access_flags);
+        if (cls.super) out.AddString(entry, "superclass", Class(*cls.super).descriptor);
+        else if (extra.missing_super) out.AddString(entry, "superclass", *extra.missing_super);
+        else out.AddNull(entry, "superclass");
+        const auto interfaces = out.Array();
+        for (const auto iface : cls.direct_interfaces) out.Append(interfaces, out.String(Class(iface).descriptor));
+        for (const auto& name : extra.missing_interfaces) out.Append(interfaces, out.String(name));
+        out.Add(entry, "interfaces", interfaces);
+        const auto methods = out.Array();
+        for (const auto method_id : MethodsOf(id)) {
+            const auto& method = Method(method_id);
+            const auto item = out.Object();
+            out.AddString(item, "name", method.name);
+            out.AddString(item, "descriptor", method.descriptor);
+            out.AddBool(item, "static", method.is_static);
+            out.AddUnsignedInteger(item, "access_flags", method.access_flags);
+            const bool dynamic = method.kind == MethodKind::native && !method.implementation;
+            const bool implemented = static_cast<bool>(method.implementation) ||
+                method.kind == MethodKind::interpreted || method.kind == MethodKind::abstract;
+            out.AddString(item, "status", implemented ? "implemented" : "unimplemented-ledger");
+            out.AddString(item, "binding", dynamic ? "guest-jni-unverified" :
+                method.kind == MethodKind::abstract ? "abstract-contract" :
+                method.kind == MethodKind::interpreted ? "bytecode" : "intrinsic");
+            // Admission permits resolution; it does not prove an exported JNI target exists.
+            out.AddBool(item, "guest_native_admitted", dynamic && cls.admit_boot_native_methods);
+            out.Append(methods, item);
+        }
+        out.Add(entry, "methods", methods);
+        const auto fields = out.Array();
+        const auto values = cls.is_boot_dex ? StaticValues(cls) : std::vector<loader::DexEncodedValue>{};
+        for (const auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
+            std::size_t index = 0;
+            for (const auto field_id : *list) {
+                const auto& field = Field(field_id);
+                const auto item = out.Object();
+                out.AddString(item, "name", field.name);
+                out.AddString(item, "descriptor", field.descriptor);
+                out.AddBool(item, "static", field.is_static);
+                out.AddUnsignedInteger(item, "access_flags", field.access_flags);
+                bool has_constant = false;
+                for (const auto& constant : cls.intrinsic_constants) {
+                    if (constant.name != field.name || constant.descriptor != field.descriptor) continue;
+                    has_constant = true;
+                    if (field.descriptor == "Ljava/lang/String;") out.AddString(item, "constant", constant.string_value);
+                    else if (field.descriptor == "D") real_constant(item, std::bit_cast<double>(static_cast<std::uint64_t>(constant.integral)));
+                    else if (field.descriptor == "F") real_constant(item, std::bit_cast<float>(static_cast<std::uint32_t>(constant.integral)));
+                    else out.AddInteger(item, "constant", constant.integral);
+                }
+                if (field.is_static && (field.access_flags & kAccFinal) && index < values.size()) {
+                    const auto& value = values[index];
+                    if (value.kind == loader::DexEncodedValueKind::string_index) {
+                        const auto& text = Image(*cls.dex_unit).strings[value.index].value;
+                        out.AddString(item, "constant", core::Utf16ToUtf8(text, core::InvalidUtf16Policy::replace).value());
+                        has_constant = true;
+                    } else if (value.kind == loader::DexEncodedValueKind::float_value ||
+                               value.kind == loader::DexEncodedValueKind::double_value) {
+                        real_constant(item, value.floating); has_constant = true;
+                    } else if (value.kind != loader::DexEncodedValueKind::null_reference &&
+                               value.kind != loader::DexEncodedValueKind::type_index) {
+                        out.AddInteger(item, "constant", value.integral); has_constant = true;
+                    }
+                }
+                out.AddBool(item, "has_constant", has_constant);
+                out.Append(fields, item);
+                ++index;
+            }
+        }
+        out.Add(entry, "fields", fields);
+        out.Append(classes, entry);
+    }
+    out.Add(root, "classes", classes);
+    return out.Serialize(root);
 }
 
 bool DexClassLinker::IsLinked() const noexcept {

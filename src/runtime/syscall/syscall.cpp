@@ -719,11 +719,30 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                               (flags & kTruncate) != 0,
                               (flags & kDirectory) != 0,
                               (flags & kNonBlocking) != 0,
-                              (flags & kAppend) != 0};
+                              (flags & kAppend) != 0,
+                              (flags & kLargeFile) != 0,
+                              (flags & kNoFollow) != 0};
+    };
+    const auto status_flags = [](const VfsOpenStatus& status) {
+        // ARM EABI status flags; creation flags and FD_CLOEXEC are excluded.
+        return (status.write ? (status.read ? 2 : 1) : 0) |
+               (status.append ? 0x400 : 0) |
+               (status.non_blocking ? 0x800 : 0) |
+               (status.directory ? 0x4000 : 0) |
+               (status.no_follow ? 0x8000 : 0) |
+               (status.large_file ? 0x20000 : 0);
+    };
+    struct DiagnosticEndpoint final {
+        std::string path;
+        std::optional<GuestIoStream> stream;
+        VfsOpenStatus status;
     };
     struct DiagnosticDescriptors final {
         std::mutex mutex;
-        std::unordered_map<std::int32_t, std::string> paths;
+        std::unordered_map<std::int32_t, DiagnosticEndpoint> endpoints{
+            {0, {"stdin", std::nullopt, {.read = true}}},
+            {1, {"stdout", GuestIoStream::stdout_stream, {.write = true}}},
+            {2, {"stderr", GuestIoStream::stderr_stream, {.write = true}}}};
         std::int32_t next{0x40000000};
     };
     const auto diagnostic_descriptors =
@@ -737,8 +756,15 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             if (io_sink && guest_path.starts_with("/dev/log/") &&
                 open_options.write) {
                 std::scoped_lock lock(diagnostic_descriptors->mutex);
+                if (diagnostic_descriptors->next == std::numeric_limits<std::int32_t>::max()) return -24;
                 const auto descriptor = diagnostic_descriptors->next++;
-                diagnostic_descriptors->paths.emplace(descriptor, guest_path);
+                diagnostic_descriptors->endpoints.emplace(descriptor,
+                    DiagnosticEndpoint{guest_path, GuestIoStream::android_log,
+                        {.read = open_options.read, .write = true,
+                         .append = open_options.append,
+                         .non_blocking = open_options.non_blocking,
+                         .large_file = open_options.large_file,
+                         .no_follow = open_options.no_follow}});
                 return descriptor;
             }
             return vfs.Open(guest_path, open_options);
@@ -772,16 +798,55 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             }
             return open(frame.arguments[1], frame.arguments[2]);
         });
-    dispatcher.Implement(3, [&vfs, &address_space](const A32SyscallFrame& frame) {
+    dispatcher.Implement(3, [&vfs, &address_space, diagnostic_descriptors](const A32SyscallFrame& frame) {
+        {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->endpoints.find(
+                std::bit_cast<std::int32_t>(frame.arguments[0]));
+            if (found != diagnostic_descriptors->endpoints.end()) {
+                // stdin has no host input. Reads of Android log devices are
+                // still unsupported even if opened with read permission.
+                if (!found->second.status.read) return -9;
+                return !found->second.stream ? 0 : -kLinuxEnosys;
+            }
+        }
         return syscall_detail::TransferFile(vfs, address_space, frame, false);
     });
-    dispatcher.Implement(41, [&vfs](const A32SyscallFrame& frame) {
+    dispatcher.Implement(41, [&vfs, diagnostic_descriptors](const A32SyscallFrame& frame) {
+        {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->endpoints.find(
+                std::bit_cast<std::int32_t>(frame.arguments[0]));
+            if (found != diagnostic_descriptors->endpoints.end()) {
+                if (diagnostic_descriptors->next == std::numeric_limits<std::int32_t>::max()) return -24;
+                const auto duplicate = diagnostic_descriptors->next++;
+                const auto endpoint = found->second;
+                diagnostic_descriptors->endpoints.emplace(duplicate, endpoint);
+                return duplicate;
+            }
+        }
         try {
             return vfs.Duplicate(std::bit_cast<std::int32_t>(frame.arguments[0]));
         } catch (const VfsError& error) {
             return -error.ErrorNumber();
         }
     });
+    const auto get_status = [&vfs, diagnostic_descriptors, status_flags](const A32SyscallFrame& frame) {
+        if (frame.arguments[1] != 3U) return -kLinuxEnosys; // F_GETFL only
+        const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
+        {
+            std::scoped_lock lock(diagnostic_descriptors->mutex);
+            const auto found = diagnostic_descriptors->endpoints.find(descriptor);
+            if (found != diagnostic_descriptors->endpoints.end()) return status_flags(found->second.status);
+        }
+        try {
+            return status_flags(vfs.DescriptorStatus(descriptor));
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+    };
+    dispatcher.Implement(55, get_status);
+    dispatcher.Implement(221, get_status);
     const auto emit = [&address_space, io_sink, diagnostic_descriptors](
                           const A32SyscallFrame& frame,
                           const std::int32_t descriptor,
@@ -789,16 +854,13 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
                           const std::size_t size) -> std::optional<std::int32_t> {
         GuestIoStream stream{};
         std::string endpoint;
-        if (descriptor == 1 || descriptor == 2) {
-            stream = descriptor == 1 ? GuestIoStream::stdout_stream
-                                     : GuestIoStream::stderr_stream;
-            endpoint = descriptor == 1 ? "stdout" : "stderr";
-        } else {
+        {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
-            const auto found = diagnostic_descriptors->paths.find(descriptor);
-            if (found == diagnostic_descriptors->paths.end()) return std::nullopt;
-            stream = GuestIoStream::android_log;
-            endpoint = found->second;
+            const auto found = diagnostic_descriptors->endpoints.find(descriptor);
+            if (found == diagnostic_descriptors->endpoints.end()) return std::nullopt;
+            if (!found->second.status.write || !found->second.stream) return -9;
+            stream = *found->second.stream;
+            endpoint = found->second.path;
         }
         if (!io_sink) return -9;
         constexpr std::size_t kMaximumDiagnosticWrite = 1024U * 1024U;
@@ -833,16 +895,13 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         std::int32_t total{};
         std::optional<GuestIoStream> diagnostic_stream;
         std::string diagnostic_endpoint;
-        if (fd == 1 || fd == 2) {
-            diagnostic_stream = fd == 1 ? GuestIoStream::stdout_stream
-                                        : GuestIoStream::stderr_stream;
-            diagnostic_endpoint = fd == 1 ? "stdout" : "stderr";
-        } else {
+        {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
-            const auto found = diagnostic_descriptors->paths.find(fd);
-            if (found != diagnostic_descriptors->paths.end()) {
-                diagnostic_stream = GuestIoStream::android_log;
-                diagnostic_endpoint = found->second;
+            const auto found = diagnostic_descriptors->endpoints.find(fd);
+            if (found != diagnostic_descriptors->endpoints.end()) {
+                if (!found->second.status.write || !found->second.stream) return -9;
+                diagnostic_stream = found->second.stream;
+                diagnostic_endpoint = found->second.path;
             }
         }
         struct Vector final {
@@ -943,7 +1002,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
-            if (diagnostic_descriptors->paths.erase(descriptor) != 0U) return 0;
+            if (diagnostic_descriptors->endpoints.erase(descriptor) != 0U) return 0;
         }
         try {
             vfs.Close(descriptor);

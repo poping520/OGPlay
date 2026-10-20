@@ -1008,6 +1008,106 @@ struct MetadataSyscallFixture final {
 
 }  // namespace
 
+TEST_CASE("ARM F_GETFL reports the shared VFS open description") {
+    MetadataSyscallFixture f;
+    std::uint32_t syscall = 55;
+    SUBCASE("fcntl") {}
+    SUBCASE("fcntl64") { syscall = 221; }
+    f.vfs.PutFile("/data/status", {}, true);
+    f.WriteString(0x20000, "/data/status");
+    for (const std::uint32_t access : {0U, 1U, 2U}) {
+        // CREAT/CLOEXEC are not status flags. ARM NOFOLLOW/LARGEFILE
+        // and APPEND are retained, independent of the file's writability.
+        const auto raw = access | 0xa8440U;
+        const auto opened = f.Call(5, {0x20000, raw, 0, 0, 0, 0});
+        REQUIRE(opened >= 3);
+        const auto fd = static_cast<std::uint32_t>(opened);
+        CHECK(f.Call(syscall, {fd, 3}) == static_cast<std::int32_t>(access | 0x28400U));
+        const auto dup = f.Call(41, {fd});
+        REQUIRE(dup >= 3);
+        CHECK(f.Call(6, {fd}) == 0);
+        CHECK(f.Call(syscall, {fd, 3}) == -9);
+        CHECK(f.Call(syscall, {static_cast<std::uint32_t>(dup), 3}) == static_cast<std::int32_t>(access | 0x28400U));
+        CHECK(f.Call(6, {static_cast<std::uint32_t>(dup)}) == 0);
+    }
+    const auto read_only = f.vfs.Open("/data/status", {.read = true});
+    const auto fd = static_cast<std::uint32_t>(read_only);
+    CHECK(f.Call(syscall, {fd, 3}) == 0);
+    CHECK(f.Call(syscall, {fd, 4, 0x400}) == -38); // F_SETFL remains unimplemented.
+    REQUIRE(f.ledger.Unimplemented().size() == 1);
+    CHECK(f.ledger.Unimplemented()[0].id == (syscall == 55 ? "syscall.fcntl" : "syscall.fcntl64"));
+    CHECK(f.Call(syscall, {0xffffffffU, 3}) == -9);
+    CHECK(f.Call(syscall, {123456, 3}) == -9);
+    f.vfs.Close(read_only);
+    const auto pipe = f.vfs.CreatePipe();
+    CHECK(f.Call(syscall, {static_cast<std::uint32_t>(pipe.read_descriptor), 3}) == 0);
+    CHECK(f.Call(syscall, {static_cast<std::uint32_t>(pipe.write_descriptor), 3}) == 1);
+    f.vfs.CreateDirectory("/data/dir");
+    f.WriteString(0x20000, "/data/dir");
+    const auto directory = f.Call(5, {0x20000, 0x2c000});
+    REQUIRE(directory >= 3);
+    CHECK(f.Call(syscall, {static_cast<std::uint32_t>(directory), 3}) == 0x2c000);
+    auto device = f.vfs.RegisterReadOnlyCharacterDevice("/dev/status", 0,
+        [](auto) -> std::size_t { return 0; });
+    f.WriteString(0x20000, "/dev/status");
+    const auto nonblocking = f.Call(5, {0x20000, 0x800});
+    REQUIRE(nonblocking >= 3);
+    CHECK(f.Call(syscall, {static_cast<std::uint32_t>(nonblocking), 3}) == 0x800);
+}
+
+TEST_CASE("ARM F_GETFL standard endpoints share write dup and close state") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::memory::AddressSpace memory;
+    memory.Map({GuestAddress{0x10000}, memory.PageSize()},
+        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    std::vector<ogplay::runtime::GuestIoRecord> records;
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory,
+        [&](const auto& record) { records.push_back(record); });
+    const auto call = [&](std::uint32_t number, std::array<std::uint32_t, 7> args) {
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = number; frame.arguments = args; frame.thread_id = 7;
+        return dispatcher.Dispatch(frame);
+    };
+    std::uint32_t query = 55;
+    SUBCASE("fcntl") {}
+    SUBCASE("fcntl64") { query = 221; }
+    memory.Write8(GuestAddress{0x10100}, 'x');
+    memory.Write32(GuestAddress{0x10200}, 0x10100);
+    memory.Write32(GuestAddress{0x10204}, 1);
+    CHECK(call(query, {0, 3}) == 0);
+    CHECK(call(3, {0, 0x10100, 1}) == 0); // EOF, preserving caller bytes.
+    CHECK(memory.Read8(GuestAddress{0x10100}) == 'x');
+    CHECK(call(4, {0, 0x10100, 1}) == -9);
+    CHECK(call(146, {0, 0x10200, 1}) == -9);
+    CHECK(call(6, {0}) == 0);
+    CHECK(call(query, {0, 3}) == -9);
+    CHECK(call(3, {0, 0x10100, 1}) == -9);
+    for (const auto fd : {1U, 2U}) {
+        CHECK(call(query, {fd, 3}) == 1);
+        CHECK(call(3, {fd, 0x10100, 1}) == -9);
+        CHECK(call(4, {fd, 0x10100, 1}) == 1);
+        CHECK(call(146, {fd, 0x10200, 1}) == 1);
+        REQUIRE(records.size() >= 2);
+        CHECK(records.back().stream == (fd == 1 ? ogplay::runtime::GuestIoStream::stdout_stream : ogplay::runtime::GuestIoStream::stderr_stream));
+        const auto duplicate = call(41, {fd});
+        REQUIRE(duplicate > 2);
+        const auto dup = static_cast<std::uint32_t>(duplicate);
+        CHECK(call(6, {fd}) == 0);
+        const auto count = records.size();
+        CHECK(call(query, {fd, 3}) == -9);
+        CHECK(call(4, {fd, 0x10100, 1}) == -9);
+        CHECK(call(146, {fd, 0x10200, 1}) == -9);
+        CHECK(records.size() == count);
+        CHECK(call(query, {dup, 3}) == 1);
+        CHECK(call(146, {dup, 0x10200, 1}) == 1);
+        CHECK(call(6, {dup}) == 0);
+        CHECK(call(query, {dup, 3}) == -9);
+        CHECK(call(6, {fd}) == -9);
+    }
+}
+
 TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     MetadataSyscallFixture fixture;
     // mkdir does not imply -p: the parent has to exist first.
@@ -1095,7 +1195,7 @@ TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file stat
     CHECK(fixture.Call(146, {fd, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(146, {0xffffffffU, 0, 0, 0, 0, 0}) == -9);
     CHECK(fixture.Call(5, {0x20000, 0x1000000U | 0x401U, 0, 0, 0, 0}) == -22);
-    CHECK(fixture.Call(55, {fd, 3, 0, 0, 0, 0}) == -38); // fcntl remains explicitly unbound
+    CHECK(fixture.Call(55, {fd, 3, 0, 0, 0, 0}) == 0x20401); // WRONLY | APPEND | LARGEFILE
     const auto reader = fixture.vfs.Open("/sdcard/log", {.read = true});
     std::array<std::byte, 9> bytes{};
     REQUIRE(fixture.vfs.Read(reader, bytes) == bytes.size());

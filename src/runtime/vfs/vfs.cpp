@@ -553,7 +553,7 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
                 throw VfsError(kEinval,
                                "VFS directory open has file-only options");
             }
-            return OpenDirectory(path);
+            return OpenDirectory(path, options.large_file, options.no_follow);
         }
         std::unique_lock lock(mutex_);
         const auto normalized = ResolvePath(path, working_directory_, aliases_);
@@ -653,6 +653,9 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         auto opened = std::make_shared<OpenFile>(
             std::move(selected_file), 0, options.read, options.write, nullptr);
         opened->append = options.append;
+        opened->non_blocking = options.non_blocking;
+        opened->large_file = options.large_file;
+        opened->no_follow = options.no_follow;
         opened->host_pin = std::move(host_pin);
         descriptors_.emplace(descriptor, std::move(opened));
         return descriptor;
@@ -1230,6 +1233,19 @@ std::int32_t VirtualFileSystem::OpenDirectory(const std::string_view path) {
 bool VirtualFileSystem::IsAppend(const std::int32_t descriptor) const {
     std::scoped_lock lock(impl_->mutex_);
     return impl_->FindDescriptor(descriptor)->append;
+}
+
+VfsOpenStatus VirtualFileSystem::Impl::DescriptorStatus(
+    const std::int32_t descriptor) const {
+    std::scoped_lock lock(mutex_);
+    const auto open = FindDescriptor(descriptor);
+    return {open->readable, open->writable, open->append, open->non_blocking,
+            static_cast<bool>(open->directory), open->large_file, open->no_follow};
+}
+
+VfsOpenStatus VirtualFileSystem::DescriptorStatus(
+    const std::int32_t descriptor) const {
+    return impl_->DescriptorStatus(descriptor);
 }
 std::vector<VfsDirectoryEntry> VirtualFileSystem::ReadDirectory(
     const std::int32_t descriptor, const std::size_t maximum) {

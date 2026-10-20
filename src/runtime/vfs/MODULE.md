@@ -26,6 +26,9 @@
   EOF、写入并提交 offset，先 seek 不解除追加。WriteAt 对 append fd 按 Android/Linux
   pwrite 行为忽略请求位置并追加，但不移动顺序 offset；其他 fd 保持定位写。
   空写不改位置/尺寸/generation，配额失败不推进位置；别名/独立打开共用节点锁与 overlay。
+- `DescriptorStatus` 在 FD 表锁内读取不可变的访问模式、append/nonblocking、directory 及
+  large-file/no-follow 打开标志，供 syscall 编组 F_GETFL；不返回创建/截断/close-on-exec。
+  Duplicate 共享同一打开状态，关闭或非法 FD 返回 EBADF。VFS 不保存 ARM 数值标志。
 - 宿主目录挂载在发布前拒绝 symlink、特殊文件、空目录与大小写歧义；单个 OBB 宿主文件
   可按原文件名只读挂载。挂载只索引元数据，首次 guest Open 绑定打开对象身份。
   所有宿主挂载共用 `host_file_handle_budget`，默认 128；空闲句柄 LRU 回收，独立

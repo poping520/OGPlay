@@ -64,3 +64,11 @@ export const normalizeGuestPath = (value: string) => value.trim().replace(/(?<=.
 export function describeData(data: DataDirectory): string {
   return `${data.truncated ? '超过 ' : ''}${data.files} 个文件 · ${formatBytes(data.bytes)}${data.truncated ? '（统计已截断）' : ''}`;
 }
+export interface DataMountCandidate { guest_dir: string; explained: number; examples: string[] }
+/** ADR-0146: host suggestion computed from what the last run failed to find. */
+export interface DataHint {
+  kind: 'none' | 'remount' | 'needs_data';
+  current_guest_dir?: string; external_dir?: string | null; owned?: boolean;
+  missing?: number; truncated?: boolean; candidates?: DataMountCandidate[];
+  search_root?: string; examples?: string[];
+}

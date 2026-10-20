@@ -67,6 +67,9 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     o.installation_id = entry.key;
     o.library_root = store.Root();
     o.input_config_path = std::filesystem::absolute(entry.directory / "input.toml").lexically_normal();
+    // ADR-0146: what the game failed to find, read by the launcher after exit.
+    if (mode != LaunchMode::preflight)
+        o.missing_data_report = std::filesystem::absolute(entry.directory / "last-run-missing.json").lexically_normal();
     ValidateGameRunOptions(o);
     return result;
 }

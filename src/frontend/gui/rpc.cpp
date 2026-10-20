@@ -128,6 +128,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         }
         if (method == "game_settings.get" || method == "game_settings.set")
             return GameSettingsRequest(method, params);
+        if (method == "library.data_hint" || method == "library.data_mount.apply")
+            return DataHintRequest(method, params);
         if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")
             return SettingsRequest(method, params);
         if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" || method == "library.external.inspect" ||

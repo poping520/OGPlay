@@ -328,6 +328,23 @@
 .import-wizard .iw-spacer { flex: 1; }
 .console .import-wizard button { white-space: nowrap; }
 .console .import-wizard .modal-actions button { height: 40px; padding: 0 18px; }
+.data-hint .dh-lead { margin-top: 16px; color: var(--soft); font-size: 14px; font-weight: 700; line-height: 1.7; }
+.data-hint .dh-lead b { color: var(--yellow); }
+.dh-move { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr); align-items: center; gap: 12px; margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: var(--glass); }
+.dh-move > span { color: var(--yellow); font-size: 20px; font-weight: 900; }
+.dh-move small, .dh-examples small { display: block; color: var(--muted); font-size: 11.5px; font-weight: 800; }
+.dh-move code { display: block; margin-top: 3px; overflow-wrap: anywhere; color: var(--soft); font: 700 13px var(--code); }
+.dh-move code.good { color: var(--yellow); }
+.dh-choices { display: grid; gap: 6px; margin-top: 12px; }
+.console .data-hint .dh-choices button { display: flex; align-items: center; gap: 10px; height: auto; padding: 9px 14px; border: 1px solid transparent; border-radius: 12px; background: rgba(0,0,0,.28); text-align: left; }
+.console .data-hint .dh-choices button.on { border-color: var(--yellow); }
+.dh-choices code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12.5px var(--code); }
+.dh-choices small { color: var(--muted); font-size: 11.5px; font-weight: 800; }
+.dh-examples { margin-top: 14px; }
+.dh-examples ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.dh-examples li { overflow: hidden; color: var(--dim); font: 12px/1.7 var(--code); white-space: nowrap; text-overflow: ellipsis; }
+.import-wizard .dh-foot { margin-left: 0; }
+.dh-foot code { color: var(--soft); font-family: var(--code); }
 .import-wizard .modal-actions { flex-wrap: wrap; }
 
 @keyframes led-pulse { 50% { opacity: .4; } }

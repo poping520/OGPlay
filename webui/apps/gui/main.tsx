@@ -7,6 +7,8 @@ import { GameSettingsPage } from './game-settings-page';
 import { Brand } from './settings-ui';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
+import { DataHintDialog } from './data-hint';
+import type { DataHint } from './import';
 import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
@@ -75,6 +77,7 @@ function App() {
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
+  const [dataHint, setDataHint] = useState<{ id: string; hint: DataHint } | null>(null);
   const [deleteSaves, setDeleteSaves] = useState(false);
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -140,6 +143,10 @@ function App() {
       setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
       if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${detail.installation_id} 退出码 ${detail.exit_code}\n${detail.log_tail}`);
       void refresh().catch(report);
+      // ADR-0146: what the run failed to find may point at a better data mount.
+      void rpc<DataHint>('library.data_hint', { installation_id: detail.installation_id })
+        .then(hint => { if (!disposed && hint.kind !== 'none') setDataHint({ id: detail.installation_id, hint }); })
+        .catch(() => { /* a missing or unreadable report only means there is nothing to suggest */ });
     };
     let polling = false;
     const poll = async () => {
@@ -363,6 +370,13 @@ function App() {
     {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); setSearchOpen(false); await refresh(); setSelected(id); setImporting(false); setPendingFile(null);
     }} />}
+    {dataHint && <DataHintDialog id={dataHint.id} initial={dataHint.hint}
+      name={library.items.find(game => game.installation_id === dataHint.id)?.display_name ?? dataHint.id}
+      onClose={() => setDataHint(null)} onApplied={async relaunch => {
+        const id = dataHint.id;
+        setDataHint(null); await refresh();
+        if (relaunch) await rpc('library.launch', { installation_id: id });
+      }} />}
     {removing && <Modal title="移除库中实例" onDismiss={() => { if (!busy) setRemoving(null); }}>
       <p>确认移除「{removing.display_name}」？</p><p class="mono">{removing.installation_id}</p>
       <p>删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。</p>

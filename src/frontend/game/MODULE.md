@@ -15,5 +15,9 @@ ABI/入口来自 APK，VM/guest call 使用默认值。OBB 原文件挂到标准
 输入仅内置默认 + 用户文件；用户文件位置沿用 --input-config、库条目/input.toml 或
 sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 template 字段拒绝。
 
+`--missing-data-report <file>`（ADR-0146）：MissingDataRecorder 启动时删除旧报告，收集 `/sdcard`
+子树缺失（去重、512 条上限并标记 truncated），会话结束或析构时剔除已存在路径并原子写 JSON
+（schema 1、external_dir、external_guest_dir、missing、truncated）；写失败只记 warn。preflight 不记录。
+
 ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdcard 子树约束；
 初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。

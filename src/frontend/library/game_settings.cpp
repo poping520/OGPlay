@@ -35,6 +35,7 @@ const std::vector<SettingDefinition>& GameSettingDefinitions() {
             {"mute_unfocused", "audio", "失焦静音", false, {}, 0, 0, pending},
             {"external_guest_dir", "data", "数据包 guest 挂载目录", std::string("/sdcard")},
             {"external_dir", "data", "数据包目录（留空明确禁用）", std::string(), {}, 0, 0, "", true},
+            {"data_mount_hint", "data", "退出后检查数据包挂载位置", true, {}, 0, 0, "游戏找不到数据时，退出后提示可能的挂载位置"},
             {"mcp_manual_step", "advanced", "MCP 手动步进", false},
             {"ephemeral_sandbox", "advanced", "临时沙盒（退出不保留本次存档）", false},
         };

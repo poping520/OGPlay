@@ -22,6 +22,9 @@
   提交期间 poll 返回 `progress {copied_bytes,total_bytes}`；取消在发布前生效，已发布则结果仍为
   imported，worker 停止前状态保持 importing。服务析构先请求取消再回收。
 - `dialog.pick {kind:file|directory}` / `dialog.poll {dialog}`：异步原生选择器，取消返回 null。
+- `library.data_hint {installation_id, external_dir?}`：SuggestDataMount 的结果（kind none/remount/
+  needs_data、候选及示例）；`library.data_mount.apply {installation_id, external_guest_dir, external_dir?}`
+  经 PatchGameSettings 写挂载位置，未配置数据包时连同目录（引用方式）。均拒绝未知字段，入库时忙碌。
 - `library.external.inspect {path}`：同步描述候选数据包目录，供挂载预览：目录优先排序的前 8 个
   顶层名、顶层总数、文件数与字节；递归统计以 20 万项为上限并标记 truncated，不跟随目录符号链接。
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归

@@ -41,6 +41,32 @@ struct SandboxSession final {
     [[nodiscard]] std::string Describe() const;
 };
 
+// ADR-0146: collects /sdcard read lookups that found nothing while attached and
+// writes them with the mount facts. Destruction writes too, so startup faults
+// still leave a report; declare it after (destroy it before) the filesystem.
+class MissingDataRecorder final {
+public:
+    MissingDataRecorder(runtime::VirtualFileSystem& filesystem, core::Logger& logger,
+                        std::filesystem::path report,
+                        std::optional<std::filesystem::path> external_directory,
+                        std::string external_guest_directory);
+    ~MissingDataRecorder();
+    MissingDataRecorder(const MissingDataRecorder&) = delete;
+    MissingDataRecorder& operator=(const MissingDataRecorder&) = delete;
+    // Drops paths that exist by now (files the game created itself); idempotent.
+    void Write() noexcept;
+
+private:
+    struct State;
+    runtime::VirtualFileSystem& filesystem_;
+    core::Logger& logger_;
+    std::shared_ptr<State> state_;
+    std::filesystem::path report_;
+    std::optional<std::filesystem::path> external_directory_;
+    std::string external_guest_directory_;
+    bool written_{};
+};
+
 // Mounts external data at /sdcard or an explicitly supplied storage subdirectory.
 void MountExternalDirectory(
     const std::optional<std::filesystem::path>& directory,

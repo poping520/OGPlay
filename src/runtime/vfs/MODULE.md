@@ -134,6 +134,12 @@ PipePollEvents 是不消费数据的快照查询：返回读/写/错误/挂断/�
 不支持。可读性来自当前 offset 与 backing size，另一端关闭从真实 descriptor 表推导；
 不以任意文件写入作为 pipe 事件。调用侧负责等待和重新查询，VFS 不依赖 Looper。
 
+## 缺失路径观察（ADR-0146）
+
+`SetMissingPathObserver` 只为诊断报告只读查找（Stat、非创建 Open、OpenDirectory）因 ENOENT
+失败的规范路径（别名已解析）；在索引锁外、调用线程上通知，观察者异常被吞掉，guest 结果不变。
+ListDirectory 对不存在目录返回空，不触发通知。观察者不得重入 VFS；空函数解除。
+
 ## 进程工作目录（VFS-09）
 
 初始 cwd 为 /，由同一 VFS 的 guest 线程共享；路径或目录 FD 的 SetWorkingDirectory

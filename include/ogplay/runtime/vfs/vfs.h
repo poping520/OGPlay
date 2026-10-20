@@ -211,6 +211,12 @@ private:
     std::int32_t error_number_{};
 };
 
+// Diagnostics only (ADR-0146): receives the canonical guest path of a read
+// lookup (Stat, non-creating Open, OpenDirectory, ListDirectory) that failed
+// with ENOENT. Runs on the calling guest thread outside VFS locks, must not
+// re-enter the VFS, and cannot change the guest-visible result.
+using VfsMissingPathObserver = std::function<void(std::string_view)>;
+
 class VirtualFileSystem final {
 public:
     explicit VirtualFileSystem(VfsConfig config = {});
@@ -239,6 +245,8 @@ public:
     // Canonicalizes a path prefix onto an already mounted namespace. Both
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);
+    // An empty function detaches the observer.
+    void SetMissingPathObserver(VfsMissingPathObserver observer);
     void SetWorkingDirectory(std::string_view path);
     void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;

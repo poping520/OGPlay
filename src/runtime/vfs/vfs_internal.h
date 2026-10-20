@@ -243,6 +243,10 @@ public:
         std::int32_t descriptor) const;
 
     mutable std::mutex mutex_;
+    // Separate from mutex_ so notification never runs under the index lock.
+    mutable std::mutex missing_observer_mutex_;
+    std::shared_ptr<const VfsMissingPathObserver> missing_observer_;
+    void NotifyMissing(std::string_view path) const noexcept;
     std::optional<std::string> working_directory_{"/"};
     std::string working_directory_spelling_{"/"};
     bool working_directory_unlinked_{};

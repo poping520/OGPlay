@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <stop_token>
@@ -177,4 +178,39 @@ TEST_CASE("run-apk mounts the original OBB file with bounded reads") {
     vfs.Close(descriptor);
     CHECK_THROWS(vfs.MountHostFile(ogplay::runtime::VfsSource::obb,
                                   "/sdcard/Android/obb/org.example.game", file));
+}
+
+TEST_CASE("ADR-0146 records /sdcard reads that stay missing and writes them at exit") {
+    TemporaryDirectory tree;
+    std::filesystem::create_directories(tree.path / "pack");
+    std::ofstream(tree.path / "pack" / "present.bin", std::ios::binary) << "x";
+    const auto report = tree.path / "out" / "missing.json";
+    std::filesystem::create_directories(report.parent_path());
+    std::ofstream(report, std::ios::binary) << "stale";
+    ogplay::runtime::VirtualFileSystem vfs;
+    ogplay::frontend::MountExternalDirectory(tree.path / "pack", vfs, "/sdcard/game");
+    ogplay::core::Logger logger;
+    {
+        ogplay::frontend::MissingDataRecorder recorder(vfs, logger, report, tree.path / "pack", "/sdcard/game");
+        CHECK_FALSE(std::filesystem::exists(report));
+        const auto missing = [&](auto&& call) { CHECK_THROWS_AS(call(), ogplay::runtime::VfsError); };
+        missing([&] { return vfs.Stat("/mnt/sdcard/game/data/level.bin"); });
+        missing([&] { return vfs.Stat("/mnt/sdcard/game/data/level.bin"); });
+        missing([&] { return vfs.OpenDirectory("/storage/emulated/0/game/data"); });
+        missing([&] { return vfs.Open("/sdcard/other/readme.txt", {.read = true}); });
+        missing([&] { return vfs.Stat("/data/data/org.example/files/x"); });
+        static_cast<void>(vfs.Stat("/sdcard/game/present.bin"));
+        // A miss the game later fills itself (a save) is not missing data.
+        missing([&] { return vfs.Stat("/sdcard/game/save.dat"); });
+        vfs.Close(vfs.Open("/sdcard/game/save.dat", {.read = true, .write = true, .create = true}));
+        recorder.Write();
+        recorder.Write();
+    }
+    std::ifstream input(report, std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    CHECK(text.find(R"("external_guest_dir":"/sdcard/game")") != std::string::npos);
+    CHECK(text.find(R"("missing":["/sdcard/game/data/level.bin","/sdcard/game/data","/sdcard/other/readme.txt"])") != std::string::npos);
+    CHECK(text.find(R"("truncated":false)") != std::string::npos);
+    // The observer is detached once the recorder is gone.
+    CHECK_THROWS_AS(static_cast<void>(vfs.Stat("/sdcard/after.bin")), ogplay::runtime::VfsError);
 }

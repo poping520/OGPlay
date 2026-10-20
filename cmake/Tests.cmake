@@ -302,7 +302,7 @@ ogplay_add_test_executable(ogplay_app_tests
     tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
     tests/frontend/gui_import_tests.cpp tests/frontend/gui_launch_tests.cpp
     tests/frontend/gui_rpc_tests.cpp tests/frontend/gui_view_model_tests.cpp
-    tests/frontend/library_visuals_tests.cpp)
+    tests/frontend/library_visuals_tests.cpp tests/frontend/data_hint_tests.cpp)
 target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app ogplay_desktop_app)
 target_compile_definitions(ogplay_app_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
     OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

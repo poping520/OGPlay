@@ -1,6 +1,7 @@
 #include "library_commands.h"
 #include "output.h"
 #include "ogplay/app/apk_inspect.h"
+#include "ogplay/app/data_hint.h"
 #include "ogplay/app/game_run.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/json.h"
@@ -97,7 +98,7 @@ int RunLibraryCommand(std::span<const char* const> args) {
         if (++index == args.size()) throw std::invalid_argument("--library-root requires <dir>");
         root = Path(args[index++]);
     }
-    if (index == args.size()) throw std::invalid_argument("library requires list|inspect|import|remove|settings|run");
+    if (index == args.size()) throw std::invalid_argument("library requires list|inspect|import|remove|settings|data-hint|run");
     const std::string_view command = args[index++];
     const auto require = [&]() -> std::string_view {
         if (index == args.size()) throw std::invalid_argument("incomplete library " + std::string(command) + " command; see --help");
@@ -154,6 +155,36 @@ int RunLibraryCommand(std::span<const char* const> args) {
         if (index < args.size() && std::string_view(args[index]) == "--delete-saves") { delete_saves = true; ++index; }
         end(); store.Remove(id, delete_saves);
         result = writer.Object(); writer.AddString(result, "installation_id", id); writer.AddBool(result, "removed", true);
+    } else if (command == "data-hint") {
+        const std::string id(require());
+        std::optional<std::filesystem::path> picked;
+        if (index < args.size() && std::string_view(args[index]) == "--external-dir") { ++index; picked = Path(require()); }
+        end();
+        const auto suggestion = SuggestDataMount(store, id, picked);
+        const auto& hint = suggestion.hint;
+        const auto strings = [&](const std::vector<std::string>& values) {
+            const auto array = writer.Array();
+            for (const auto& value : values) writer.Append(array, writer.String(value));
+            return array;
+        };
+        result = writer.Object();
+        writer.AddString(result, "kind", hint.kind == DataMountHintKind::remount ? "remount" :
+                                          hint.kind == DataMountHintKind::needs_data ? "needs_data" : "none");
+        writer.AddString(result, "current_guest_dir", suggestion.current_guest_dir);
+        if (suggestion.external_dir) writer.AddString(result, "external_dir", Text(*suggestion.external_dir));
+        else writer.AddNull(result, "external_dir");
+        writer.AddUnsignedInteger(result, "missing", hint.missing);
+        const auto candidates = writer.Array();
+        for (const auto& candidate : hint.candidates) {
+            const auto item = writer.Object();
+            writer.AddString(item, "guest_dir", candidate.guest_dir);
+            writer.AddUnsignedInteger(item, "explained", candidate.explained);
+            writer.Add(item, "examples", strings(candidate.examples));
+            writer.Append(candidates, item);
+        }
+        writer.Add(result, "candidates", candidates);
+        writer.AddString(result, "search_root", hint.search_root);
+        writer.Add(result, "examples", strings(hint.examples));
     } else if (command == "settings") {
         const auto action = require(), id = require();
         if (action != "get" && action != "set") throw std::invalid_argument("settings requires get or set");

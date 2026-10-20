@@ -13,7 +13,7 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| TML 1.0 | macOS | 主界面45秒1787帧，原GC长停顿消失；API19骨架已接入Java/JNI/反射 | 点击后首错 `MotionEvent$PointerCoords.<init>()V` 未实现；完整交互未验 | [VFS-10](../tasks/vfs/VFS-10.md)、[APS-14](../tasks/apk-startup/APS-14.md)、[DVM-254](../tasks/dexvm/DVM-254.md) |
+| TML 1.0 | macOS | 主界面45秒1787帧，原GC长停顿消失；API19骨架已接入Java/JNI/反射 | 点击后首错 `MotionEvent.obtain(..PointerCoords..)` intrinsic 未实现；完整交互未验 | [VFS-10](../tasks/vfs/VFS-10.md)、[APS-14](../tasks/apk-startup/APS-14.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单、角色教学，CG 完成/跳过均返回 | CG 首图约 4 秒待用户复测；用户报告的点击崩溃未复现 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |

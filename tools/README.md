@@ -56,6 +56,19 @@ SQLite journal mode 保留 DELETE；读取 WAL 配置不代表支持 WAL。
 提取器支持常量、普通 move 和 invoke/range；分支/标签清除常量事实，无法证明的 ID、
 类型变化、重复 ID、遗漏/新增查询明确失败并指出消费者。它不自动适配厂商新增类或 native。
 
+`bootdex/select_shapes.py` 用四个 ROM JAR 的 class_def/原版 smali 筛选纯形状：
+
+```text
+python3 tools/bootdex/select_shapes.py --self-test
+python3 tools/bootdex/select_shapes.py --surface <dump-surface.json> --scan-dir <preflight目录> --report <本地报告.json>
+# 审阅 candidates/conflicts/依赖后，同参数加 --apply 才修改 api19.json；随后 build/check。
+```
+
+只选题库引用且依赖已在当前运行时可链接的类；跳过已有 intrinsic、BootDex 及策略归属。
+当前保守子集只接受全 abstract 的接口/注解、encoded 基元/String 常量 final 类及空 clinit；
+不接受构造器、枚举、计算式初始化或其他行为代码。依赖包括签名/注解中的类型；
+未引用的依赖不自动纳入。报告/反汇编缓存留 `.local/`，边界见 [DVM-252](../docs/tasks/dexvm/DVM-252.md)。
+
 输入默认位于 `.local/aosp` 和 `.local/tools`；换 ROM 时应使用同一来源配套的输入 JAR。
 JAR 哈希记录于 manifest 供追溯，不作为固定来源准入条件；工具下载仍校验固定 SHA-256。
 新增类时修改 recipe 对应源 jar 的有序列表，运行时仍全量加载生成物中的 class_def。

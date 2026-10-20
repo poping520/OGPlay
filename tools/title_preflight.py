@@ -44,16 +44,18 @@ def resolve(index: dict, owner: str, name: str, desc: str, kind: str):
     return None
 
 
-def classify_reference(ref: dict, actual: dict, expected: dict):
+def classify_reference(ref: dict, actual: dict, expected: dict, rom: dict | None = None):
+    rom = expected if rom is None else rom
     kind=ref['kind'];owner=ref['owner'];name=ref.get('member','');desc=ref.get('descriptor','')
     result=dict(ref)
     if kind in ['class','hierarchy']:
         if owner in actual:return None
-        result['classification']='api19-present-missing' if owner in expected else 'not-in-api19'
-        result['expected_result']=None if owner in expected else 'ClassNotFoundException/NoClassDefFoundError'
+        result['classification']='api19-present-missing' if owner in rom else 'not-in-api19'
+        result['expected_result']=None if owner in rom else 'ClassNotFoundException/NoClassDefFoundError'
         return result
     member=resolve(actual,owner,name,desc,kind)
-    reference=resolve(expected,owner,name,desc,kind)
+    reference=resolve(expected,owner,name,desc,kind) if owner in rom else None
+    if reference and reference[0] not in rom:reference=None
     if not member:
         result['classification']='api19-present-missing' if reference else 'not-in-api19'
         result['expected_result']=None if reference else ('NoSuchMethodError' if kind=='method' else 'NoSuchFieldError')
@@ -98,6 +100,12 @@ def dex_references(archives: list[tuple[str,bytes]], actual: dict, expected: dic
     combined_actual={**app,**actual};combined_expected={**app,**expected}
     for filename,dex in parsed:
         def add(kind,owner,member='',descriptor='',**extra):
+            # Inherited platform members referenced through APK classes retain their
+            # symbolic owner as evidence, but are counted under the ROM declaration.
+            if kind in ['method','field'] and owner in app:
+                inherited=resolve(combined_expected,owner,member,descriptor,kind)
+                if inherited and inherited[0] in expected:
+                    extra['symbolic_owner']=owner;owner=inherited[0]
             refs.append(dict(kind=kind,owner=owner,member=member,descriptor=descriptor,source='java',confidence='high',evidence=filename+': constant-pool/hierarchy (not reachability)',**extra))
         for desc in dex.type_descriptors:
             component=desc.lstrip('[')
@@ -178,7 +186,7 @@ def scan_apk(apk: Path, surface: dict, reference: dict, system: dict) -> dict:
     refs.extend(hierarchy_references(refs,combined_actual,combined_expected))
     gaps=[]
     for ref in refs:
-        gap=classify_reference(ref,combined_actual,combined_expected)
+        gap=classify_reference(ref,combined_actual,combined_expected,expected)
         if gap:gaps.append(gap)
     try:
         for gap in native_import_gaps(libraries,system,surface.get('native_exports',[])):
@@ -242,6 +250,19 @@ def self_test() -> int:
     with patch.object(dexlib,'parse_dex',return_value=sample):
         refs,merged,_=dex_references([('classes.dex',b'fixture')],{}, {appdesc:dict(child,descriptor=appdesc)})
     assert appdesc in merged and not refs
+    # APK support/google classes are never API19 declarations, even in a merged graph.
+    for bundled in ['Landroid/support/v4/Probe;', 'Landroidx/Probe;', 'Lcom/google/Probe;']:
+        library=dict(parent,descriptor=bundled)
+        merged={**reference,bundled:library}
+        for kind,name,desc in [('class','',''),('method','read','()I'),('field','ONE','I')]:
+            gap=classify_reference(dict(kind=kind,owner=bundled,member=name,descriptor=desc),{},merged,reference)
+            assert gap['classification']=='not-in-api19'
+    # Inherited ROM members through an APK subclass are canonicalized, not discarded.
+    appdesc='Landroid/support/v4/Probe;'
+    sample=dexlib.DexFile(['read'], [appdesc,parent['descriptor'],'I'], [(2,2,[])], [], [(0,0,0)], [dexlib.DexClass(0,1,1,[])])
+    with patch.object(dexlib,'parse_dex',return_value=sample):
+        refs,_,_=dex_references([('classes.dex',b'fixture')],{},reference)
+    assert any(r['kind']=='method' and r['owner']==parent['descriptor'] and r.get('symbolic_owner')==appdesc for r in refs)
     from title_native_scan import Elf, jni_references
     data=b'java/test/Base\0read\0()I\0ONE\0I\0'
     fake=Elf(data,'probe.so',loads=[(0,0,len(data))])

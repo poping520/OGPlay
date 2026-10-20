@@ -46,6 +46,7 @@
 - [ADR-0077 · BootDex 自带系统资源 ID 映射](#adr-0077)
 - [ADR-0089 · DEX 注解按唯一数据解析并分层计量](#adr-0089)
 - [ADR-0147 · API19 表面机器生成，行为按需实现](#adr-0147)
+- [ADR-0148 · 纯 Java ROM 类按规则自动纳入 BootDex](#adr-0148)
 
 <a id="adr-0017"></a>
 
@@ -1297,3 +1298,54 @@ JNI/反射存在/缺失/static/异常分支、未实现记账及重复解析的�
 无现成场景的路径明确标未验收。出现探测分支回归时停用对应生成批次并分析通用规则，
 不得按游戏名在 src/ 加例外。WU2a 的纯形状 BootDex 配方扩充沿用 ADR-0030，
 不依赖本提案批准，不实施上述新运行时语义。
+
+<a id="adr-0148"></a>
+
+## ADR-0148 · 纯 Java ROM 类按规则自动纳入 BootDex
+
+- 状态：Accepted（用户于 2026-10-20 预先批准）
+- 日期：2026-10-20
+- 关联：[DVM-255 / WU3](../tasks/dexvm/DVM-255.md)、[ADR-0030](#adr-0030)、[ADR-0147](#adr-0147)
+- Supersedes：ADR-0030 “BootDex 类集合逐个人工精选”的方式；其 native 拒载、overlay、
+  `jar 内每个 class_def 全部注册`及非模拟器边界继续有效。审计对象改为下列规则本身。
+
+### 背景
+
+ADR-0147 的骨架补齐了全部 ROM 类型，但未实现成员只能明确失败；其中相当一部分在 AOSP 中是
+纯 Java 实现（TML 的首错 `MotionEvent$PointerCoords.<init>()V` 即是）。逐类手工精选无法随
+题库摊销，而这些类的原版字节码本身自洽，不需要手写 C++。
+
+### 决定
+
+1. **准入条件**（全部满足才准入，由 `tools/bootdex/select_rom_java.py` 机器判定）：
+   - 类在固定 ROM 四个 jar（core/framework/framework2/ext）中，且当前运行时来源为 skeleton；
+   - 自身没有 native 方法；未被 intrinsic/overlay 占用，不在现有 BootDex，也不在 DVM-102
+     日期审计冻结的非 boot_dex 分类中；
+   - 父类链为 Object、其他准入类，或不含 overlay 的现有 BootDex 类；继承 intrinsic 类的类
+     （含 Enum、Throwable、Handler、View 等）本批不准入，由级联拒绝；
+   - `<clinit>` 的传递调用闭包（含 new-instance/静态字段/invoke-static 触发的类初始化与
+     BootDex 字节码）全部已实现，不得触及骨架中未实现的方法、构造器或非常量字段；
+   - 普通方法可以引用未实现成员，执行到时沿 ADR-0147 明确失败。
+2. **保守的闭包分析**：invoke-virtual/interface 的目标不能唯一确定时，按“可能触达未实现”
+   拒绝。唯一性来自：接收者在同方法内由 new-instance 得到的精确类型，或在全部 ROM 类层次中
+   该方法只有一个具体实现。反射/类加载/线程启动入口（Class.forName、Method.invoke、
+   Constructor.newInstance、Thread.start 等）同样拒绝。宁可拒绝，不可误收。
+3. **排除项**：`<clinit>` 闭包触达 Binder、IBinder、IInterface、ServiceManager、Parcel 的类
+   及其子类型；与 intrinsic 有双向对象交互的类——已实现的 intrinsic 方法/字段签名会产出或
+   消费它，或 C++ 源码按名字引用它——列入单独清单，不自动准入（其子类因父类规则级联拒绝）。
+4. **容量**：BootDex 为单一 `classes.dex`，字段/方法索引受 64K 限制；全部准入类无法同批装入。
+   批次范围为“被样本库引用的准入类 + 其父类链与 `<clinit>` 必需类闭包”（`--scope referenced`），
+   其余准入类在样本库上不产生转化；纳入它们需要多 dex BootDex，另行评估。
+5. **机制**：选择器默认只写报告，`--apply` 才修改配方；`--only` 要求指定类必须被规则准入，
+   否则报告原因并失败，不得绕过规则。不得按游戏名或类名硬编码豁免；出现回归时先定位类，
+   再判断是规则缺陷（修规则后重新选择）还是应加入规则化排除条件的个别类问题。
+6. **不变的承诺**：不当模拟器、不伪造成功、手写优先；不实现 intrinsic 行为，不准入继承
+   intrinsic 类的类（另行评估）。
+
+### 后果
+
+- 新增 ROM 纯 Java 类不再需要逐类审批，审计焦点转为规则及其自测（含经虚调用链间接触达
+  未实现方法的拒绝用例）。
+- 类被纳入后其原版构造器/方法真实执行，探测分支行为可能变化：准入前后必须对已适配游戏做
+  前后对照冒烟；BootDex 体积、首帧耗时与内存变化需测量，退化超过 10% 停止并汇报。
+- 宿主侧仍有大量未实现的 intrinsic 成员；本规则只消除其中“原版即纯 Java”的部分。

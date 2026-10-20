@@ -29,8 +29,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   不再因请求超过 16 MiB 返回 `-EINVAL`；单次请求截到 `0x7ffff000`。
   短传输即停止，后续块的内存/VFS 错误返回已完成字节，首块错误返回 errno。
   定位 IO 沿用 seek/restore（不承诺并发原子性），错误路径同样恢复原 offset。
-- API 19 `nanosleep` 受检读取 32-bit timespec；只有非零请求实际 host sleep 后报告 advanced，
-  零时长与错误为 idle。
+- API 19 `nanosleep` 受检读取 32-bit timespec；绑定 signal runtime 时，未屏蔽信号或线程退出
+  可中断 host 等待，返回 EINTR，按需写回剩余 timespec；信号留给目标 CPU 安全边界投递，
+  SA_RESTART 不重启睡眠。成功时不访问 remainder。只有实际等待后报告 advanced，
+  零时长、等待前中断及参数错误为 idle；宿主等待计时使用统一 Clock，不推进 guest ticks。
   可由进程 owner 注入非零睡眠准入回调，在实际 sleep 前拒绝超出退出预算的请求；
   控制失败原样展开，不伪造睡眠成功，默认无回调时语义保持。
 - API 19 futex wait 的 timeout 是 guest 32-bit 相对 timespec；超时返回 `-ETIMEDOUT`，

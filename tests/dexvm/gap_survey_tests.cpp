@@ -5,6 +5,7 @@
 
 #include <doctest/doctest.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "ogplay/runtime/dexvm/gap_survey.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
 
 namespace {
 
@@ -32,6 +34,8 @@ struct Linked final {
           interpreter(
               [this]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
+                      std::make_shared<DexVmAndroidContext>()));
                   ogplay::test::RegisterBootDex(linker);
                   linker.Link();
                   return linker;

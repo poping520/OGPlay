@@ -756,11 +756,21 @@ public:
     }
   }
 
+  void RequireJniField(const dx::VmFieldId field, const std::uint64_t thread) {
+    try { vm->RequireImplementedField(field); }
+    catch (const dx::VmJavaThrow& error) {
+      const auto error_class = linker.ResolveDescriptor(error.descriptor);
+      session->Environment().ThrowNew(thread, RegisterClassForNative(error_class), error.message);
+      throw JniFieldAccessPending{};
+    }
+  }
+
   [[nodiscard]] std::optional<JniValue> GetJniInstanceField(
       const JniObjectIdentity object, const JniResolvedField& resolved,
       const std::uint64_t thread) {
     const auto field_id = DexField(resolved);
     if (!field_id.has_value()) return std::nullopt;
+    RequireJniField(*field_id, thread);
     const auto& field = linker.Field(*field_id);
     const auto instance = model->FromIdentity(object);
     return ReadFieldSlots(field, model->InstanceSlots(instance), thread);
@@ -771,6 +781,7 @@ public:
       const JniValue& value, const std::uint64_t thread) {
     const auto field_id = DexField(resolved);
     if (!field_id.has_value()) return false;
+    RequireJniField(*field_id, thread);
     const auto& field = linker.Field(*field_id);
     const auto instance = model->FromIdentity(object);
     WriteFieldSlots(field, model->InstanceSlots(instance), value, thread);
@@ -781,6 +792,7 @@ public:
       const JniResolvedField& resolved, const std::uint64_t thread) {
     const auto field_id = DexField(resolved);
     if (!field_id.has_value()) return std::nullopt;
+    RequireJniField(*field_id, thread);
     const auto& field = linker.Field(*field_id);
     auto& storage = linker.MutableClass(field.owner).static_storage;
     std::vector<dx::Slot> slots;
@@ -794,6 +806,7 @@ public:
       const std::uint64_t thread) {
     const auto field_id = DexField(resolved);
     if (!field_id.has_value()) return false;
+    RequireJniField(*field_id, thread);
     const auto& field = linker.Field(*field_id);
     auto& storage = linker.MutableClass(field.owner).static_storage;
     std::vector<dx::Slot> slots;
@@ -1872,6 +1885,28 @@ DexVmGuestBridge::DexVmGuestBridge(
         };
     }
 
+    session.Environment().SetThrowableFactory([bridge_state](std::uint64_t thread,
+        JniObjectIdentity type, const std::string& message) {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        const std::vector<std::uint8_t> encoded(message.begin(), message.end());
+        const auto utf8 = core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value();
+        const auto object = bridge_state->vm->MakeThrowable(
+            bridge_state->linker.Class(bridge_state->DexClassIdentity(type)).descriptor, utf8);
+        return bridge_state->PublishLocal(object, thread);
+    });
+    session.Classes().SetClassResolver([bridge_state](const std::string& name)
+        -> std::optional<JniObjectIdentity> {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        if (!IsValidJniObjectClassName(name)) return std::nullopt;
+        try {
+            const auto java_class = bridge_state->linker.ResolveDescriptor("L" + name + ";");
+            bridge_state->linker.EnsureClassLinked(java_class);
+            return bridge_state->RegisterClassForNative(java_class);
+        } catch (const dx::DexVmError& error) {
+            if (error.Reason() == dx::DexVmErrorReason::unknown_class) return std::nullopt;
+            throw;
+        }
+    });
     session.Environment().SetObjectAllocationHook(
         [bridge_state](std::uint64_t thread, JniReference java_class) {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -1967,6 +2002,8 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Environment().SetObjectAllocationHook({});
+        impl_->session->Classes().SetClassResolver({});
+        impl_->session->Environment().SetThrowableFactory({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});
         impl_->session->Objects().SetRuntimeClassResolver({});
         impl_->session->Fields().SetAccessHooks({});

@@ -53,7 +53,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - `NewDirectByteBuffer`（DVM-82）先验证 capacity 与完整 guest read/write range，再登记
   `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，non-direct 分别
   返回 null/-1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
-- `GetStaticMethodID` 只精确查询统一 class registry;`NewStringUTF` 使用受检 guest C
+- `GetMethodID`/`GetStaticMethodID` 共用精确 registry 查找与 owner 类初始化；`NewStringUTF` 使用受检 guest C
   string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference；遵循 API 19
   Dalvik，null C 指针直接返回 null `jstring`。非空输入读取失败必须按层级排版保留 slot、
   guest thread、LR/SP、r0-r3 与原始 cause，使动态注册 native 的外层 Java/JNI 上下文仍能
@@ -78,8 +78,12 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   ABI,64 位 setter 第 4 参数从对齐 guest 栈读取;错误 class/reference/field/kind/type/
   栈地址均明确失败。
   static/instance FieldID binding 只共享校验→查类→查字段骨架，storage kind 与错误上下文仍分开。
-- JNI guest class/object/instance family 只解析 class registry 已声明的精确名称与
-  class 引用；AllocObject 只搬运强类型引用与调用线程，由 JniEnvironment owner 回调
+- JNI guest FindClass 经 registry 的显式 owner resolver 按需发布真实链接类，不预载全部骨架。
+  成员 ID 精确匹配描述符与 static；缺失返回 NULL，并挂起 NoSuchMethodError/NoSuchFieldError，
+  缺类挂起 NoClassDefFoundError。无效引用/参数仍沿宿主绑定错误，pending 门禁不放宽。
+  骨架非常量字段访问记账并挂起 UnsatisfiedLinkError；ABI 零值仅为带异常的返回哨兵，
+  不表示读取成功，也不回落侧表。常量经共享 VM 存储返回真实值。
+  JNI guest class/object/instance family 解析 class 引用；AllocObject 只搬运强类型引用与调用线程，由 JniEnvironment owner 回调
   初始化类、创建零值 VM 对象并发布 local ref，不复用 NewObject 的构造调用。
   未配置分配后端不能返回假对象；Java 分配错误返回 null、保留 pending exception。
   该 family 的
@@ -88,9 +92,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   预注册的 host object 共享精确 class identity；`FindClass` 返回的 `jclass` 同时是
   `java.lang.Class` 的合法 instance receiver。GetObjectClass/IsInstanceOf 与 30 个
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的
-  assignability、argument/return 校验;未声明 class/method、伪 receiver 或返回类型
-  不匹配必须明确失败。`GetMethodID`/`GetStaticMethodID` 的未声明诊断必须同时包含
-  registry 中的 class name、method name 与 descriptor，不得只打印无法定位 owner 的签名。
+  assignability、argument/return 校验；伪 receiver 或返回类型
+  不匹配必须明确失败。成员查找异常消息保留 class name、member name 与 descriptor。
   DVM-158 按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
   调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
   错配继续明确失败。

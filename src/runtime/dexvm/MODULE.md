@@ -227,5 +227,8 @@ findLoadedClass 仍不合成。普通启动禁止全量建类；显式 dump-surf
 在访问存储前记 `dexvm.skeleton.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
 常量保留原始数值位与 UTF-16 字符串；不覆盖手写/BootDex 的初始化值。
 Survey 继续绕过未物化骨架类型并使用原中性方法路径；该模式不代表兼容支持。
-JNI/反射成员查找、未实现字段的其他访问通道及 NoSuch 异常路径在 WU2b-2 验收，
-不得把 Java/解释器侧声明可用解释为这些边界均已兼容。
+JNI/反射查询与枚举复用真实 own-member 表面和修饰符；存在但未实现的成员查找成功。
+解释器、反射和 JNI owner 共用 `RequireImplementedField`，禁止非常量字段回落零值存储。
+JNI 缺成员挂起 NoSuchMethodError/NoSuchFieldError，反射查询抛对应 NoSuch*Exception；
+Method.invoke/Constructor.newInstance 将未实现目标的 UnsatisfiedLinkError 包为 InvocationTargetException。
+这些语义不代表骨架行为已支持；Unsafe/序列化等其余字段访问通道不在此项验收范围。

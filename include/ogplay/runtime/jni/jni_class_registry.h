@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -94,6 +95,10 @@ public:
                 const JniFieldDeclaration& declaration);
   [[nodiscard]] std::optional<JniObjectIdentity>
   FindClass(const std::string &name) const;
+  // Explicit VM lookup: passive FindClass remains safe during publication.
+  using ClassResolver = std::function<std::optional<JniObjectIdentity>(const std::string&)>;
+  void SetClassResolver(ClassResolver resolver);
+  [[nodiscard]] std::optional<JniObjectIdentity> ResolveClass(const std::string& name) const;
   // Reverse lookup used by boundary diagnostics. Returns the JNI binary
   // class name (for example java/lang/String) for a stable class identity.
   [[nodiscard]] std::string ClassName(JniObjectIdentity java_class) const;

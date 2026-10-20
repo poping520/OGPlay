@@ -367,7 +367,8 @@ ApplicationProcess::ApplicationProcess(
     ogplay::runtime::dexvm::InterpreterBackend backend,
     const std::optional<std::string_view> working_directory,
     const std::string& dex_fixture,
-    const ogplay::runtime::dexvm::JavaObjectModelConfig heap) {
+    const ogplay::runtime::dexvm::JavaObjectModelConfig heap,
+    std::vector<std::uint8_t> skeleton) {
     if (working_directory.has_value()) {
         std::string directory;
         for (const auto& component : std::filesystem::path(*working_directory)) {
@@ -409,7 +410,7 @@ ApplicationProcess::ApplicationProcess(
     bridge = std::make_unique<ogplay::runtime::DexVmGuestBridge>(
         *session, ReadDexFixture(dex_fixture), catalog, context,
         ledger, &logger, ogplay::runtime::DexVmBridgeConfig{
-            .interpreter = {.backend = backend}, .heap = heap}, ogplay::test::ReadBootDex());
+            .interpreter = {.backend = backend}, .heap = heap}, ogplay::test::ReadBootDex(), std::move(skeleton));
     context->threads = &bridge->Threads();
 }
 

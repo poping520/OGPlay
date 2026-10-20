@@ -359,6 +359,11 @@ void JniEnvironment::Throw(const std::uint64_t thread_id,
     exceptions_.Throw(thread_id, object.value_or(JniObjectIdentity{}));
 }
 
+void JniEnvironment::SetThrowableFactory(ThrowableFactory factory) {
+    std::scoped_lock lock(throwable_mutex_);
+    throwable_factory_ = std::move(factory);
+}
+
 void JniEnvironment::ThrowNew(
     const std::uint64_t thread_id,
     const JniObjectIdentity exception_class,
@@ -369,7 +374,11 @@ void JniEnvironment::ThrowNew(
             JniExceptionErrorReason::invalid_throwable,
             "JNI exception class identity cannot be zero");
     }
-    const auto throwable = AllocateJniHostObjectIdentity();
+    ThrowableFactory factory;
+    { std::scoped_lock lock(throwable_mutex_); factory = throwable_factory_; }
+    const auto throwable = factory
+        ? references_.Resolve(thread_id, factory(thread_id, exception_class, modified_utf8_message)).value_or(JniObjectIdentity{})
+        : AllocateJniHostObjectIdentity();
     {
         std::scoped_lock lock(throwable_mutex_);
         throwables_.emplace(

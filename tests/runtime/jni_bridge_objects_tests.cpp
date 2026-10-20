@@ -753,3 +753,124 @@ TEST_CASE("DVM-242 JNI allocation translates exhausted VM heap to a pending Java
         env.DeleteLocalRef(1, error); env.DeleteLocalRef(1, klass);
     }
 }
+
+TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported fields") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const bool enabled : {false, true}) {
+        std::vector<std::uint8_t> skeleton;
+        if (enabled) {
+            std::ifstream input(std::string(OGPLAY_SOURCE_DIR) + "/data/dexvm/api19-skeleton.bin", std::ios::binary);
+            REQUIRE(input.good());
+            skeleton.assign(std::istreambuf_iterator<char>(input), {});
+        }
+        ApplicationProcess f(InterpreterBackend::switch_dispatch, std::nullopt,
+                             "application.dex", {}, std::move(skeleton));
+        auto& session = *f.session;
+        auto& env = session.Environment();
+        auto& classes = session.Classes();
+        auto& linker = f.bridge->Linker();
+        memory::AddressSpace memory;
+        memory::CheckedMemoryBus bus(memory);
+        cpu::InterpreterCpu cpu(bus);
+        GuestJniAbi abi(memory);
+        const memory::GuestAddress data{0x70000000};
+        memory.Map({data, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
+        JniGuestCallDispatcher dispatcher(f.ledger);
+        JniJavaVm java_vm(env);
+        JniGuestBindingContext context{env, classes, session.Invocations(), session.Fields(),
+            session.Strings(), session.Arrays(), java_vm, session.Objects(), memory};
+        BindJniGuestSlots(dispatcher, context);
+        dispatcher.Seal();
+        const auto text = [&](std::uint32_t offset, const std::string& value) {
+            std::vector<std::byte> bytes;
+            for (const auto c : value) bytes.push_back(static_cast<std::byte>(c));
+            bytes.push_back(std::byte{});
+            memory.Write(data.Add(offset), bytes);
+            return data.Add(offset).Value();
+        };
+        const auto call = [&](const char* name, std::uint32_t a = 0, std::uint32_t b = 0, std::uint32_t c = 0) {
+            const auto slot = FindJniSlot(name);
+            REQUIRE(slot);
+            const auto target = bus.Read32(kJniGuestEnvironmentTable.Add(slot->Value() * 4U));
+            cpu::A32State state;
+            state.SetThreadId(1); state.SetState(cpu::ExecutionState::thumb);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, a); state.SetRegister(cpu::CoreRegister::r2, b);
+            state.SetRegister(cpu::CoreRegister::r3, c);
+            state.SetRegister(cpu::CoreRegister::sp, data.Add(0x800).Value());
+            cpu.SetState(state);
+            const auto handled = dispatcher.Handle(cpu, cpu.Run(1));
+            REQUIRE(handled);
+            return cpu.GetState().Register(cpu::CoreRegister::r0);
+        };
+        const auto lookup = [&](const char* slot, std::uint32_t owner, const char* name, const char* descriptor) {
+            return call(slot, owner, text(0x100, name), text(0x200, descriptor));
+        };
+        const auto pending = [&](const char* expected) {
+            REQUIRE(env.ExceptionCheck(1));
+            const auto meta = env.PendingExceptionMetadata(1);
+            if (meta && meta->exception_class.value != 0U) CHECK(classes.ClassName(meta->exception_class) == expected);
+            else {
+                const auto ref = env.ExceptionOccurred(1);
+                env.ExceptionClear(1);
+                const auto object = f.bridge->FromReference(ref);
+                CHECK(linker.Class(f.bridge->Model().ObjectClass(object)).descriptor == "L" + std::string(expected) + ";");
+            }
+            env.ExceptionClear(1);
+        };
+        CHECK_FALSE(linker.FindClass("Landroid/view/MotionEvent$PointerCoords;"));
+        const auto owner = call("FindClass", text(0, "android/view/MotionEvent$PointerCoords"));
+        if (!enabled) { CHECK(owner == 0U); pending("java/lang/NoClassDefFoundError"); continue; }
+        REQUIRE(owner != 0U);
+        CHECK(call("FindClass", text(0, "android/view/MotionEvent$PointerCoords")) != 0U);
+        const auto type = linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;");
+        const auto object = f.bridge->Model().NewInstance(type, linker.Class(type).instance_slots);
+        const auto object_ref = f.bridge->PublishLocal(object);
+        for (const auto* name : {"<init>", "clear"}) {
+            const auto method = lookup("GetMethodID", owner, name, "()V");
+            REQUIRE(method != 0U);
+            static_cast<void>(call("CallVoidMethod", object_ref.Value(), method));
+            pending("java/lang/UnsatisfiedLinkError");
+        }
+        CHECK(lookup("GetStaticMethodID", owner, "createArray", "(I)[Landroid/view/MotionEvent$PointerCoords;") != 0U);
+        const auto constant = lookup("GetStaticFieldID", owner, "INITIAL_PACKED_AXIS_VALUES", "I");
+        REQUIRE(constant != 0U);
+        CHECK(call("GetStaticIntField", owner, constant) == 8U);
+        const auto field = lookup("GetFieldID", owner, "x", "F");
+        REQUIRE(field != 0U);
+        for (const auto* slot : {"GetFloatField", "SetFloatField"}) {
+            static_cast<void>(call(slot, object_ref.Value(), field));
+            pending("java/lang/UnsatisfiedLinkError");
+        }
+        const auto point = call("FindClass", text(0, "android/graphics/PointF"));
+        const auto creator = lookup("GetStaticFieldID", point, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(creator != 0U);
+        for (const auto* slot : {"GetStaticObjectField", "SetStaticObjectField"}) {
+            static_cast<void>(call(slot, point, creator));
+            pending("java/lang/UnsatisfiedLinkError");
+        }
+        CHECK(lookup("GetMethodID", owner, "absent", "()V") == 0U);
+        const auto missing = JniReference{call("ExceptionOccurred")};
+        CHECK_THROWS_AS(static_cast<void>(call("GetObjectClass", missing.Value())), JniExceptionError);
+        env.ExceptionClear(1);
+        const auto error_type = JniReference{call("GetObjectClass", missing.Value())};
+        CHECK(linker.Class(f.bridge->Model().ClassOfClassObject(f.bridge->FromReference(error_type))).descriptor ==
+            "Ljava/lang/NoSuchMethodError;");
+        const auto wide = lookup("GetFieldID", owner, "mPackedAxisBits", "J");
+        REQUIRE(wide != 0U);
+        for (const auto* slot : {"GetLongField", "SetLongField"}) {
+            static_cast<void>(call(slot, object_ref.Value(), wide));
+            pending("java/lang/UnsatisfiedLinkError");
+        }
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.skeleton.field.Landroid/view/MotionEvent$PointerCoords;->x:F" && hit.count == 2;
+        }));
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.skeleton.field.Landroid/graphics/PointF;->CREATOR:Landroid/os/Parcelable$Creator;" && hit.count == 2;
+        }));
+    }
+}

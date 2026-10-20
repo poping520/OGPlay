@@ -371,6 +371,8 @@ public:
     void DetachNativeThread(std::uint64_t guest_thread_id,
                             std::uint64_t execution_token) noexcept;
     [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
+    // Shared field boundary for interpreter, reflection and JNI owner hooks.
+    void RequireImplementedField(VmFieldId field);
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java
     // exception outcome if initialization fails.

@@ -1008,6 +1008,7 @@ VmValue ReflectionRuntime::GetField(
                               "field receiver has incompatible type"};
         }
     }
+    impl_->interpreter->RequireImplementedField(meta.field);
     const auto raw = impl_->ReadFieldValue(field, receiver);
     if (!requested_type.has_value()) {
         return VmValue::Ref(impl_->codec->BoxReturn(meta.type, raw));
@@ -1057,6 +1058,7 @@ void ReflectionRuntime::SetField(
                               "field receiver has incompatible type"};
         }
     }
+    impl_->interpreter->RequireImplementedField(meta.field);
     VmValue converted;
     if (source_type.has_value()) {
         const auto boxed = impl_->codec->BoxReturn(*source_type, value);

@@ -16,6 +16,12 @@ Bionic、syscall、execution 或 integration。
 
 ## 不变量
 
+- `JniClassRegistry::FindClass` 为被动查询；`ResolveClass` 可经 owner 的显式 resolver
+  按需链接/发布类。回调在注册表锁外执行，owner 停止调用后撤销，不启动全量物化。
+- `ThrowNew` 可由 owner 的 ThrowableFactory 发布真实 local Throwable，保留异常类/消息
+  元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，pending gate 不变。
+- 字段 owner 用 `JniFieldAccessPending` 表示已挂起 Java 异常；禁止据此回落零值侧表。
+
 - AllocObject 通过 owner 安装的分配回调进入共享对象模型；引用、线程与 pending gate
   在本层校验。回调在独立锁外执行、发布当前线程 local reference；无后端明确失败，
   owner 在调用静止后撤销。本层不复制类布局或执行构造器。

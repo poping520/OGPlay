@@ -222,14 +222,11 @@ TEST_CASE("guest JNI class object and instance call family dispatches exact meth
     CHECK(fixture.Call(
               "IsInstanceOf", object.Value(), class_reference.Value()) == 1U);
     CHECK(fixture.classes.FindClass("fixture/Counter") == java_class);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.Call(
-            "GetMethodID", class_reference.Value(),
-            fixture.output.Add(0x1c0U).Value(),
-            fixture.output.Add(0x1e0U).Value())),
-        "JNI guest instance method is not declared: class=fixture/Counter "
-        "method=missing()V",
-        JniGuestBindingError);
+    CHECK(fixture.Call("GetMethodID", class_reference.Value(),
+        fixture.output.Add(0x1c0U).Value(), fixture.output.Add(0x1e0U).Value()) == 0U);
+    CHECK(fixture.environment.ExceptionCheck(InstanceFixture::thread_id));
+    CHECK(fixture.classes.ClassName(fixture.environment.PendingExceptionMetadata(
+        InstanceFixture::thread_id)->exception_class) == "java/lang/NoSuchMethodError");
 }
 
 TEST_CASE("guest JNI jclass is a java.lang.Class instance receiver") {
@@ -992,4 +989,59 @@ TEST_CASE("guest JNI monitor bindings expose real recursion state") {
     CHECK_THROWS_AS(
         static_cast<void>(fixture.Call("MonitorExit", reference.Value())),
         JniMonitorError);
+}
+
+TEST_CASE("DVM-254 JNI lookup misses pend Java errors and preserve strict gates") {
+    using namespace ogplay::runtime;
+    InstanceFixture f;
+    f.environment.AttachThread(InstanceFixture::thread_id);
+    const auto owner = f.classes.RegisterClass({"fixture/Surface", {},
+        {{"method", "()V", "instance", false}, {"staticMethod", "()V", "static", true},
+         {"<init>", "()V", "ctor", false}},
+        {{"field", "I", "instance.field", false}, {"staticField", "I", "static.field", true}}});
+    bool resolved = false;
+    f.classes.SetClassResolver([&resolved](const std::string&) -> std::optional<JniObjectIdentity> {
+        resolved = true;
+        return std::nullopt;
+    });
+    const auto ref = f.environment.PublishLocalObject(InstanceFixture::thread_id, owner);
+    f.dispatcher.Seal();
+    const auto lookup = [&](const char* slot, const char* name, const char* desc) {
+        f.WriteString(0x100, name); f.WriteString(0x180, desc);
+        return f.Call(slot, ref.Value(), f.output.Add(0x100).Value(), f.output.Add(0x180).Value());
+    };
+    for (const auto* slot : {"GetMethodID", "GetStaticMethodID", "GetFieldID", "GetStaticFieldID"}) {
+        const bool field = std::string_view(slot).find("Field") != std::string_view::npos;
+        const bool stat = std::string_view(slot).find("Static") != std::string_view::npos;
+        const char* good = field ? (stat ? "staticField" : "field") : (stat ? "staticMethod" : "method");
+        CHECK(lookup(slot, good, field ? "I" : "()V") != 0U);
+        for (const auto* bad : {"absent", field ? (stat ? "field" : "staticField") : (stat ? "method" : "staticMethod")}) {
+            CHECK(lookup(slot, bad, field ? "I" : "()V") == 0U);
+            const auto pending = f.environment.PendingExceptionMetadata(InstanceFixture::thread_id);
+            REQUIRE(pending);
+            CHECK(f.classes.ClassName(pending->exception_class) ==
+                (field ? "java/lang/NoSuchFieldError" : "java/lang/NoSuchMethodError"));
+            resolved = false;
+            f.WriteString(0x200, "fixture/NotLoaded");
+            CHECK_THROWS_AS(static_cast<void>(f.Call("FindClass", f.output.Add(0x200).Value())), JniExceptionError);
+            CHECK_FALSE(resolved);
+            const auto throwable = f.Call("ExceptionOccurred");
+            CHECK(throwable != 0U);
+            CHECK_THROWS_AS(lookup(slot, good, field ? "I" : "()V"), JniExceptionError);
+            CHECK(f.Call("ExceptionOccurred") != 0U);
+            static_cast<void>(f.Call("ExceptionClear"));
+            CHECK(lookup(slot, good, field ? "I" : "()V") != 0U);
+        }
+        CHECK(lookup(slot, good, field ? "J" : "()I") == 0U);
+        static_cast<void>(f.Call("ExceptionClear"));
+    }
+    CHECK(lookup("GetMethodID", "<init>", "()V") != 0U);
+    CHECK(lookup("GetStaticMethodID", "<init>", "()V") == 0U);
+    static_cast<void>(f.Call("ExceptionClear"));
+    f.WriteString(0x100, "fixture/Absent");
+    CHECK(f.Call("FindClass", f.output.Add(0x100).Value()) == 0U);
+    CHECK(f.classes.ClassName(f.environment.PendingExceptionMetadata(
+        InstanceFixture::thread_id)->exception_class) == "java/lang/NoClassDefFoundError");
+    static_cast<void>(f.Call("ExceptionClear"));
+    CHECK_THROWS_AS(static_cast<void>(f.Call("GetMethodID", 0U)), JniGuestBindingError);
 }

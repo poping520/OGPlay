@@ -28,6 +28,13 @@ private:
     JniFieldStoreErrorReason reason_;
 };
 
+// An owner has installed a pending Java exception. Guest ABI bindings return
+// only the exceptional sentinel; this must never fall back to side-table data.
+class JniFieldAccessPending final : public std::exception {
+public:
+    const char* what() const noexcept override { return "JNI field access raised a Java exception"; }
+};
+
 // Optional owner bridge for fields whose storage lives outside JniFieldStore.
 // A nullopt/false result means "not owned" and preserves the platform HLE
 // side-table path. The thread id is required for JNI local-reference semantics.

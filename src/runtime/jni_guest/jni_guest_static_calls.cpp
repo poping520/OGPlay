@@ -1,3 +1,4 @@
+#include "jni_guest_lookup.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 
 #include <array>
@@ -619,7 +620,7 @@ void BindJniGuestStaticCallSlots(JniGuestCallDispatcher& dispatcher,
 void BindJniGuestClassAndInstanceSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniInvocationEngine& invocations,
-    memory::AddressSpace& address_space, JniGuestObjectRegistry* objects) {
+    memory::AddressSpace& address_space, JniGuestObjectRegistry* objects, JniFieldStore* fields) {
     const auto object_registry = objects == nullptr
                                      ? std::make_shared<JniGuestObjectRegistry>(
                                            classes)
@@ -636,13 +637,15 @@ void BindJniGuestClassAndInstanceSlots(
         EnvironmentSlot("FindClass"),
         [&environment, &classes,
          &address_space](const JniGuestCallFrame& frame) {
+            environment.RequireAllowed(frame.thread_id, "FindClass");
             const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[1]},
                 frame.thread_id, "class name");
-            const auto java_class = classes.FindClass(name);
+            const auto java_class = classes.ResolveClass(name);
             if (!java_class.has_value()) {
-                throw JniGuestBindingError(
-                    "JNI guest class is not declared: " + name);
+                jni_guest_detail::ThrowLookupError(environment, classes, frame.thread_id,
+                    "java/lang/NoClassDefFoundError", name);
+                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             }
             return EncodeResult(
                 JniValue{environment.PublishLocalObject(
@@ -651,31 +654,9 @@ void BindJniGuestClassAndInstanceSlots(
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetMethodID"),
-        [&environment, &classes,
+        [&environment, &classes, fields,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto java_class = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
-            if (!java_class.has_value()) {
-                throw JniGuestBindingError(
-                    "GetMethodID requires a valid class reference");
-            }
-            const auto name = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[2]},
-                frame.thread_id, "method name");
-            const auto descriptor = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[3]},
-                frame.thread_id, "method descriptor");
-            const auto method = classes.GetMethodId(
-                *java_class, name, descriptor, false);
-            if (!method.has_value()) {
-                throw JniGuestBindingError(
-                    "JNI guest instance method is not declared: class=" +
-                    classes.ClassName(*java_class) + " method=" + name +
-                    descriptor);
-            }
-            return EncodeResult(JniValue{JniInt{
-                                    static_cast<JniInt>(method->Value())}},
-                                JniTypeKind::integer);
+            return jni_guest_detail::LookupMethod(environment, classes, address_space, frame, false, fields);
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetObjectClass"),

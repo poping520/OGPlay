@@ -92,7 +92,13 @@ bool ClassLoaderFacade::BootstrapCanLoad(
     std::string_view descriptor) const {
     while (descriptor.starts_with("[")) descriptor.remove_prefix(1);
     if (ClassNameCodec::IsPrimitive(descriptor)) return descriptor != "V";
-    const auto component = linker_->FindClass(descriptor);
+    auto component = linker_->FindClass(descriptor);
+    if (!component && !linker_->GapSurveyEnabled()) {
+        try { component = linker_->ResolveDescriptor(descriptor); }
+        catch (const DexVmError& error) {
+            if (error.Reason()!=DexVmErrorReason::unknown_class) throw;
+        }
+    }
     return component.has_value() &&
            linker_->Class(*component).defining_loader == kBootstrapLoader;
 }
@@ -111,11 +117,9 @@ DexClassId ClassLoaderFacade::LoadClass(const VmClassLoaderId loader,
         java_class = linker_->ResolveDescriptor(descriptor);
     } else {
         const auto known = linker_->FindClass(descriptor);
-        if (!known.has_value()) {
-            throw DexVmError(DexVmErrorReason::unknown_class,
-                             "class is not available: " + descriptor);
-        }
-        java_class = *known;
+        if (known) java_class = *known;
+        else if (!linker_->GapSurveyEnabled()) java_class = linker_->ResolveDescriptor(descriptor);
+        else throw DexVmError(DexVmErrorReason::unknown_class, "class is not available: " + descriptor);
     }
     try {
         linker_->EnsureClassLinked(java_class);

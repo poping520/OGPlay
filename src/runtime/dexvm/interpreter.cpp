@@ -17,6 +17,13 @@
 
 namespace ogplay::runtime::dexvm {
 
+void Interpreter::Impl::RequireImplementedField(const LinkedField& field) {
+    if (!field.is_unimplemented) return;
+    const auto diagnostic = linker->Class(field.owner).descriptor + "->" + field.name + ":" + field.descriptor;
+    if (ledger) ledger->RecordUnimplemented("dexvm.skeleton.field." + diagnostic, 0);
+    throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "skeleton field is not implemented: " + diagnostic};
+}
+
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {
@@ -391,8 +398,8 @@ void Interpreter::Impl::EnsureInitialized(
         const auto slot = field.slot;
         const auto is_wide = field.is_wide;
         if (constant.descriptor == "Ljava/lang/String;") {
-            std::u16string value(constant.string_value.begin(),
-                                 constant.string_value.end());
+            std::u16string value = constant.constant_utf16.value_or(
+                std::u16string(constant.string_value.begin(), constant.string_value.end()));
             linker->MutableClass(java_class).static_storage[slot] =
                 model->InternString(value).Value();
         } else if (is_wide) {

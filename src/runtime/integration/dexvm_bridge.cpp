@@ -1456,7 +1456,8 @@ DexVmGuestBridge::DexVmGuestBridge(
     const std::shared_ptr<DexVmAndroidContext>& android_context,
     core::CapabilityLedger& ledger, core::Logger* logger,
     const DexVmBridgeConfig config,
-    std::vector<std::uint8_t> boot_dex_bytes)
+    std::vector<std::uint8_t> boot_dex_bytes,
+    std::vector<std::uint8_t> skeleton_bytes)
     : impl_(std::make_unique<Impl>()) {
     impl_->session = &session;
     impl_->ledger = &ledger;
@@ -1497,6 +1498,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     if (!boot_dex_bytes.empty()) {
         impl_->linker.RegisterBootDex(std::move(boot_dex_bytes));
     }
+    if (!skeleton_bytes.empty()) impl_->linker.RegisterSkeletonSurface(std::move(skeleton_bytes));
     impl_->linker.RegisterDex(std::move(dex_bytes));
     impl_->linker.Link();
 

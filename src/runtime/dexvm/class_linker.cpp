@@ -418,7 +418,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
             // ParseDex has already rejected duplicates within this DEX unit.
             continue;
         }
-        if (!boot && IsPlatformDescriptor(descriptor)) {
+        if (!boot && (IsPlatformDescriptor(descriptor) || impl_->skeleton_index.contains(descriptor))) {
             // 临时规则判定为平台所有的 APK 类不参与解释（03 §1），由 intrinsic
             // catalog 胜出；android.support.* 已在上方作为应用类排除。
             continue;
@@ -739,6 +739,11 @@ std::string DexClassLinker::DumpSurfaceJson() {
         }
     };
     const auto classes = out.Array();
+    // Explicit diagnostic enumeration may materialize the full surface; normal startup never does.
+    std::vector<std::string> names;
+    for (const auto& [name, range] : impl_->skeleton_index) { (void)range; names.push_back(name); }
+    std::sort(names.begin(), names.end());
+    for (const auto& name : names) { try { (void)ResolveDescriptor(name); } catch (const DexVmError&) {} }
     auto ids = AllClasses();
     std::sort(ids.begin(), ids.end(), [&](auto a, auto b) {
         return Class(a).descriptor < Class(b).descriptor;
@@ -751,7 +756,7 @@ std::string DexClassLinker::DumpSurfaceJson() {
         const auto& extra = impl_->ExtrasAt(id);
         const auto entry = out.Object();
         out.AddString(entry, "descriptor", cls.descriptor);
-        out.AddString(entry, "source", cls.is_boot_dex ? "bootdex" : "intrinsic");
+        out.AddString(entry, "source", cls.is_skeleton ? "skeleton" : cls.is_boot_dex ? "bootdex" : "intrinsic");
         out.AddString(entry, "link_error", link_error);
         out.AddUnsignedInteger(entry, "access_flags", cls.access_flags);
         if (cls.super) out.AddString(entry, "superclass", Class(*cls.super).descriptor);
@@ -791,6 +796,7 @@ std::string DexClassLinker::DumpSurfaceJson() {
                 out.AddString(item, "name", field.name);
                 out.AddString(item, "descriptor", field.descriptor);
                 out.AddBool(item, "static", field.is_static);
+                out.AddString(item, "status", field.is_unimplemented ? "unimplemented-ledger" : "implemented");
                 out.AddUnsignedInteger(item, "access_flags", field.access_flags);
                 bool has_constant = false;
                 for (const auto& constant : cls.intrinsic_constants) {
@@ -801,7 +807,7 @@ std::string DexClassLinker::DumpSurfaceJson() {
                     else if (field.descriptor == "F") real_constant(item, std::bit_cast<float>(static_cast<std::uint32_t>(constant.integral)));
                     else out.AddInteger(item, "constant", constant.integral);
                 }
-                if (field.is_static && (field.access_flags & kAccFinal) && index < values.size()) {
+                if (!field.is_skeleton && field.is_static && (field.access_flags & kAccFinal) && index < values.size()) {
                     const auto& value = values[index];
                     if (value.kind == loader::DexEncodedValueKind::string_index) {
                         const auto& text = Image(*cls.dex_unit).strings[value.index].value;
@@ -860,8 +866,8 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
         const auto required_by = impl_->ClassAt(current).descriptor;
 
         if (missing_super.has_value()) {
-            if (!impl_->gap_survey ||
-                !IsPlatformDescriptor(*missing_super)) {
+            if ((!impl_->gap_survey || !IsPlatformDescriptor(*missing_super)) &&
+                !impl_->skeleton_index.contains(*missing_super) && !FindClass(*missing_super)) {
                 Fail(DexVmErrorReason::unknown_class,
                      "class hierarchy is not available: " + *missing_super +
                          " (required by " + required_by + ")");
@@ -872,13 +878,14 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
         }
         if (!missing_interfaces.empty()) {
             for (const auto& name : missing_interfaces) {
-                if (!impl_->gap_survey || !IsPlatformDescriptor(name)) {
+                if ((!impl_->gap_survey || !IsPlatformDescriptor(name)) &&
+                    !impl_->skeleton_index.contains(name) && !FindClass(name)) {
                     Fail(DexVmErrorReason::unknown_class,
                          "class hierarchy is not available: " + name +
                              " (required by " + required_by + ")");
                 }
                 const auto interface_id = ResolveDescriptor(name);
-                impl_->ClassAt(interface_id).is_interface = true;
+                if (impl_->gap_survey) impl_->ClassAt(interface_id).is_interface = true;
                 impl_->ClassAt(current).direct_interfaces.push_back(interface_id);
             }
             impl_->ExtrasAt(current).missing_interfaces.clear();
@@ -903,6 +910,11 @@ DexClassId DexClassLinker::ResolveDescriptor(
     if (const auto existing = FindClass(descriptor); existing.has_value()) {
         if (impl_->link_complete) EnsureClassLinked(*existing);
         return *existing;
+    }
+    if (!impl_->gap_survey && impl_->skeleton_index.contains(std::string(descriptor))) {
+        const auto id = impl_->MaterializeSkeletonClass(std::string(descriptor));
+        if (impl_->link_complete) EnsureClassLinked(id);
+        return id;
     }
     if (descriptor.starts_with("[")) {
         // Synthesize the array class; element ref classes must resolve.

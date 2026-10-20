@@ -500,6 +500,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.native_libraries = libraries;
         app_request.system_libraries = system_sources;
         app_request.boot_dex_bytes = std::move(boot_dex_bytes);
+        const auto skeleton = ReadBytes(bundled_data.root / "dexvm/api19-skeleton.bin");
+        app_request.skeleton_bytes.resize(skeleton.size());
+        std::memcpy(app_request.skeleton_bytes.data(), skeleton.data(), skeleton.size());
         app_request.dex_bytes = std::move(dex_bytes);
         app_request.icu_data = ReadBytes(
             bundled_data.root / bionic.data_directory / "icu" /

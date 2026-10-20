@@ -27,3 +27,4 @@ crash-*/
 bootdex.jar
 /data/webui/
 /webui/node_modules/
+/data/dexvm/api19-skeleton.bin

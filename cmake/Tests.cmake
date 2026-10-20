@@ -230,6 +230,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/android_input_values_tests.cpp
     tests/dexvm/android_wifi_locks_tests.cpp
     tests/dexvm/android_value_fixture.cpp
+    tests/dexvm/skeleton_surface_tests.cpp
     tests/dexvm/gap_survey_tests.cpp
     tests/dexvm/gc_tests.cpp
     tests/dexvm/dex_code_tests.cpp
@@ -495,6 +496,12 @@ add_test(
         --self-test
 )
 set_tests_properties(tools.dexvm_api19_surface_self_test PROPERTIES LABELS tools)
+
+add_test(
+    NAME tools.api19_skeleton_self_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/api19_skeleton.py --self-test
+)
+set_tests_properties(tools.api19_skeleton_self_test PROPERTIES LABELS tools)
 
 add_test(
     NAME tools.title_preflight_self_test

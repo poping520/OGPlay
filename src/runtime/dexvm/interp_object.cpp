@@ -136,6 +136,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
         const auto resolved =
             linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], false);
         const auto& field = linker->Field(resolved.field);
+        RequireImplementedField(field);
         const auto receiver = GetRef(frame, vB4);
         if (!receiver.IsValid()) {
             ThrowJava("Ljava/lang/NullPointerException;",
@@ -187,6 +188,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
         const auto resolved =
             linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], true);
         const auto& field = linker->Field(resolved.field);
+        RequireImplementedField(field);
         EnsureInitialized(execution, field.owner);
         if (pending_exception.IsValid()) return;
         auto& storage = linker->MutableClass(field.owner).static_storage;

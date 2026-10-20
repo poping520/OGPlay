@@ -28,8 +28,8 @@ public:
     // linking, initialization, or initiating-state mutation.
     [[nodiscard]] std::optional<DexClassId> FindLoadedClass(
         VmClassLoaderId loader, std::string_view binary_name) const;
-    // loadClass searches only the existing linker namespace. Array classes
-    // may be synthesized through the normal linker path; no dex/jar is read.
+    // loadClass searches the sealed linker namespace, including indexed API19
+    // shapes. Arrays/shapes materialize lazily; no dynamic dex/jar is read.
     [[nodiscard]] DexClassId LoadClass(VmClassLoaderId loader,
                                        std::string_view binary_name);
 

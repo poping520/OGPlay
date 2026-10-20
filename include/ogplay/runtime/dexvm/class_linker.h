@@ -153,6 +153,7 @@ struct IntrinsicFieldDecl final {
     // The linker publishes the final VmFieldId into its per-VM binding table;
     // handlers retain only this stable declaration token.
     std::uint64_t binding_token{};
+    std::optional<std::u16string> constant_utf16;
 };
 
 struct IntrinsicClassDecl final {
@@ -212,6 +213,8 @@ struct LinkedField final {
     std::string descriptor;
     std::uint32_t access_flags{};
     bool is_static{};
+    bool is_skeleton{};
+    bool is_unimplemented{};
     bool is_wide{};
     bool is_ref{};
     std::uint16_t slot{};
@@ -225,6 +228,7 @@ struct LinkedMethod final {
     std::string descriptor;
     std::uint32_t access_flags{};
     MethodKind kind{MethodKind::interpreted};
+    bool is_skeleton{};
     bool is_static{};
     bool overridable{};
     DeclaredInvokeKind declared_invoke_kind{DeclaredInvokeKind::direct};
@@ -268,6 +272,7 @@ struct LinkedClass final {
     std::uint32_t access_flags{};
     bool is_intrinsic{};
     bool is_boot_dex{};
+    bool is_skeleton{};
     bool is_interface{};
     bool is_array{};
     bool admit_boot_native_methods{};
@@ -327,6 +332,8 @@ public:
     void RegisterIntrinsics(std::span<const IntrinsicClassDecl> catalog);
     DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
+    // Install indexed data before application registration/Link; no classes are built.
+    void RegisterSkeletonSurface(std::vector<std::uint8_t> bytes);
     void Link();
     // Diagnostic snapshot; links without initialization and preserves per-class failures.
     [[nodiscard]] std::string DumpSurfaceJson();

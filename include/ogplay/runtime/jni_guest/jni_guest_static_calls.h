@@ -14,6 +14,7 @@ namespace ogplay::runtime {
 
 class JniClassRegistry;
 class JniEnvironment;
+class JniFieldStore;
 class JniInvocationEngine;
 class JniObjectArrayStore;
 
@@ -56,6 +57,7 @@ void BindJniGuestClassAndInstanceSlots(
     JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
     JniClassRegistry& classes, JniInvocationEngine& invocations,
     memory::AddressSpace& address_space,
-    JniGuestObjectRegistry* objects = nullptr);
+    JniGuestObjectRegistry* objects = nullptr,
+    JniFieldStore* fields = nullptr);
 
 }  // namespace ogplay::runtime

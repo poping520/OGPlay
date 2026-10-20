@@ -2070,5 +2070,5 @@ note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 
 
 [dexvm.api19_skeleton]
 status = "partial"
-test = "tests/dexvm/skeleton_surface_tests.cpp; tools/api19_skeleton.py --self-test; tools/api19_skeleton.py --check"
-note = "DVM-253/ADR-0147：固定四ROM完整own-member索引，Java/解释器首次解析物化，既有intrinsic/BootDex声明与handler优先；真实常量，方法/构造器及非恒定字段访问记账失败；survey保留中性方法路径。JNI/反射成员查找及NoSuch语义、正式游戏场景回归留WU2b-2；既有手写层次不重写，四JAR外依赖仍明确失败。"
+test = "tests/dexvm/skeleton_surface_tests.cpp; tests/dexvm/reflection_tests.cpp#DVM-254; tests/runtime/jni_bridge_objects_tests.cpp#DVM-254; tests/runtime/jni_guest_instance_calls_tests.cpp#DVM-254; tools/api19_skeleton.py --self-test; tools/api19_skeleton.py --check"
+note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既有声明/handler优先；JNI/反射可查骨架，缺失挂起/抛NoSuch错误；真实常量，未实现方法/构造器及非常量字段访问记账失败，反射调用包装目标异常。pending门禁不放宽；survey不变。骨架行为、Unsafe等其他字段通道与正式title gate未验；既有手写层次不重写，ROM外依赖仍失败。"

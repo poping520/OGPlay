@@ -24,6 +24,10 @@ void Interpreter::Impl::RequireImplementedField(const LinkedField& field) {
     throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "skeleton field is not implemented: " + diagnostic};
 }
 
+void Interpreter::RequireImplementedField(const VmFieldId field) {
+    impl_->RequireImplementedField(impl_->linker->Field(field));
+}
+
 // ---- Impl helpers ----------------------------------------------------------
 
 namespace {

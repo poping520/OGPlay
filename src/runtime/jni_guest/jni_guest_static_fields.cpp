@@ -1,3 +1,4 @@
+#include "jni_guest_lookup.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_fields.h"
 
 #include <array>
@@ -112,12 +113,30 @@ constexpr std::array kFieldTypes{
     throw JniGuestBindingError("JNI guest field type is invalid");
 }
 
+void BindFieldAccess(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
+                     const JniSlot slot, JniGuestCallHandler handler) {
+    dispatcher.BindEnvironment(slot, [&environment, slot, handler = std::move(handler)](
+        const JniGuestCallFrame& frame) {
+        try { return handler(frame); }
+        catch (const JniFieldAccessPending&) {
+            if (!environment.ExceptionCheck(frame.thread_id))
+                throw std::logic_error("field owner did not install a pending exception");
+            const auto name = JniSlotName(slot);
+            const bool wide = name.starts_with("Get") &&
+                (name.find("Long") != std::string_view::npos ||
+                 name.find("Double") != std::string_view::npos);
+            return JniGuestCallResult{wide ? JniGuestReturnWidth::double_word :
+                                            JniGuestReturnWidth::word, {0U, 0U}};
+        }
+    });
+}
+
 void BindGetter(JniGuestCallDispatcher& dispatcher,
                 JniEnvironment& environment, JniClassRegistry& classes,
                 JniFieldStore& fields, const FieldType type) {
     const auto name = std::string("GetStatic") + std::string(type.suffix) +
                       "Field";
-    dispatcher.BindEnvironment(
+    BindFieldAccess(dispatcher, environment,
         EnvironmentSlot(name),
         [&environment, &classes, &fields, type,
          name](const JniGuestCallFrame& frame) {
@@ -135,7 +154,7 @@ void BindSetter(JniGuestCallDispatcher& dispatcher,
                 const FieldType type) {
     const auto name = std::string("SetStatic") + std::string(type.suffix) +
                       "Field";
-    dispatcher.BindEnvironment(
+    BindFieldAccess(dispatcher, environment,
         EnvironmentSlot(name),
         [&environment, &classes, &fields, &address_space, type,
          name](const JniGuestCallFrame& frame) {
@@ -167,7 +186,7 @@ void BindInstanceGetter(
     JniGuestObjectRegistry& objects, const FieldType type) {
     const auto name =
         std::string("Get") + std::string(type.suffix) + "Field";
-    dispatcher.BindEnvironment(
+    BindFieldAccess(dispatcher, environment,
         EnvironmentSlot(name),
         [&environment, &classes, &fields, &objects, type,
          name](const JniGuestCallFrame& frame) {
@@ -188,7 +207,7 @@ void BindInstanceSetter(
     const FieldType type) {
     const auto name =
         std::string("Set") + std::string(type.suffix) + "Field";
-    dispatcher.BindEnvironment(
+    BindFieldAccess(dispatcher, environment,
         EnvironmentSlot(name),
         [&environment, &classes, &fields, &objects, &address_space, type,
          name](const JniGuestCallFrame& frame) {
@@ -207,15 +226,11 @@ void BindFieldIdLookup(JniGuestCallDispatcher& dispatcher,
                        JniEnvironment& environment,
                        JniClassRegistry& classes, JniFieldStore& fields,
                        memory::AddressSpace& address_space,
-                       const std::string_view slot, const bool is_static,
-                       const std::string_view missing_prefix,
-                       const std::string_view name_descriptor_separator) {
+                       const std::string_view slot, const bool is_static) {
     dispatcher.BindEnvironment(
         EnvironmentSlot(slot),
         [&environment, &classes, &fields, &address_space,
-         slot = std::string(slot), is_static,
-         missing_prefix = std::string(missing_prefix),
-         separator = std::string(name_descriptor_separator)](
+         slot = std::string(slot), is_static](
             const JniGuestCallFrame& frame) {
             const auto java_class = ResolveClass(environment, frame, slot);
             if (!fields.EnsureClassInitialized(java_class, frame.thread_id)) {
@@ -230,13 +245,9 @@ void BindFieldIdLookup(JniGuestCallDispatcher& dispatcher,
             const auto field = classes.GetFieldId(
                 java_class, name, descriptor, is_static);
             if (!field.has_value()) {
-                if (is_static) {
-                    throw JniGuestBindingError(
-                        missing_prefix + "class=" + classes.ClassName(java_class) +
-                        " field=" + name + descriptor);
-                }
-                throw JniGuestBindingError(
-                    missing_prefix + name + separator + descriptor);
+                jni_guest_detail::ThrowLookupError(environment, classes, frame.thread_id,
+                    "java/lang/NoSuchFieldError", classes.ClassName(java_class) + "." + name + ":" + descriptor);
+                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             }
             return JniGuestCallResult{
                 JniGuestReturnWidth::word, {field->Value(), 0U}};
@@ -251,8 +262,7 @@ void BindJniGuestStaticFieldSlots(JniGuestCallDispatcher& dispatcher,
                                   JniFieldStore& fields,
                                   memory::AddressSpace& address_space) {
     BindFieldIdLookup(dispatcher, environment, classes, fields, address_space,
-                      "GetStaticFieldID", true,
-                      "JNI guest static field is not declared: ", "");
+                      "GetStaticFieldID", true);
     for (const auto type : kFieldTypes) {
         BindGetter(dispatcher, environment, classes, fields, type);
         BindSetter(dispatcher, environment, classes, fields, address_space,
@@ -265,8 +275,7 @@ void BindJniGuestInstanceFieldSlots(
     JniClassRegistry& classes, JniFieldStore& fields,
     JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
     BindFieldIdLookup(dispatcher, environment, classes, fields, address_space,
-                      "GetFieldID", false,
-                      "JNI guest instance field is not declared: ", ":");
+                      "GetFieldID", false);
     for (const auto type : kFieldTypes) {
         BindInstanceGetter(
             dispatcher, environment, classes, fields, objects, type);

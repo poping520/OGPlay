@@ -86,7 +86,8 @@ struct ApplicationProcess final {
             ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
         const std::optional<std::string_view> working_directory = std::nullopt,
         const std::string& dex_fixture = "application.dex",
-        const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {});
+        const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {},
+        std::vector<std::uint8_t> skeleton = {});
 
     ~ApplicationProcess();
 

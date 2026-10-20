@@ -133,6 +133,10 @@ public:
     void ClearWeakReferencesTo(JniObjectIdentity object);
 
     void Throw(std::uint64_t thread_id, JniReference throwable);
+    // VM owner materializes/publishes a real local Throwable; standalone JNI
+    // retains its metadata-only representation. Called outside internal locks.
+    using ThrowableFactory = std::function<JniReference(std::uint64_t, JniObjectIdentity, const std::string&)>;
+    void SetThrowableFactory(ThrowableFactory factory);
     void ThrowNew(std::uint64_t thread_id,
                   JniObjectIdentity exception_class,
                   std::string modified_utf8_message);
@@ -161,9 +165,10 @@ public:
     [[nodiscard]] JniReference ToReflectedField(std::uint64_t thread, JniReference owner,
                                                JniFieldId id, bool is_static);
 
-private:
+    // ABI owners check before resolution can materialize metadata or run code.
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
+private:
     mutable std::mutex reflection_hooks_mutex_;
     JniReflectionHooks reflection_hooks_;
     mutable std::mutex object_allocation_mutex_;
@@ -173,6 +178,7 @@ private:
     JniMonitorTable monitors_;
     mutable std::mutex monitor_hooks_mutex_;
     JniMonitorHooks monitor_hooks_;
+    ThrowableFactory throwable_factory_;
     mutable std::mutex throwable_mutex_;
     std::map<std::uint64_t, JniThrowableMetadata> throwables_;
     core::Logger exception_logger_;

@@ -39,10 +39,18 @@ struct ReflectionVm final {
 
     explicit ReflectionVm(
         const std::string& fixture = "interp.dex",
-        const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
-        : interpreter([this, &fixture]() -> DexClassLinker& {
+        const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+        const bool skeleton = false, const bool platform = false)
+        : interpreter([this, &fixture, skeleton, platform]() -> DexClassLinker& {
               const auto catalog = CoreIntrinsicCatalog();
               linker.RegisterIntrinsics(catalog);
+              if (platform) linker.RegisterIntrinsics(ogplay::runtime::AndroidIntrinsicCatalog(
+                  std::make_shared<ogplay::runtime::DexVmAndroidContext>()));
+              if (skeleton) {
+                  std::ifstream surface(std::string(OGPLAY_SOURCE_DIR) + "/data/dexvm/api19-skeleton.bin", std::ios::binary);
+                  REQUIRE(surface.good());
+                  linker.RegisterSkeletonSurface({std::istreambuf_iterator<char>(surface), {}});
+              }
               linker.RegisterDex(ReadFixture(fixture));
               ogplay::test::RegisterBootDex(linker);
               linker.Link();
@@ -1565,4 +1573,98 @@ TEST_CASE("DVM-182 Class getEnumConstants clones shared enum identity") {
             ClassOf(vm, "Ljava/lang/Object;"), "getEnumConstants",
             "()[Ljava/lang/Object;")).IsValid());
     }
+}
+
+TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented targets") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm f("interp.dex", backend, true, true);
+        auto& vm = f.interpreter;
+        auto& reflect = vm.Reflection();
+        const auto type = f.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;");
+        const auto clazz = f.model.ClassObject(type);
+        const auto object = f.model.NewInstance(type, f.linker.Class(type).instance_slots);
+        const auto name = [&](const char* value) { return VmValue::Ref(vm.NewStringUtf8(value)); };
+        const auto empty = VmValue::Ref(VmObjectRef{});
+        for (const auto* lookup : {"getMethod", "getDeclaredMethod"}) {
+            const auto good = f.Virtual(clazz, lookup,
+                "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", {name("clear"), empty});
+            REQUIRE_FALSE(good.exception.IsValid());
+            const auto& meta = reflect.MethodMetadata(good.value.ref);
+            CHECK(meta.access_flags == 1U);
+            const auto invoke = f.Virtual(good.value.ref, "invoke",
+                "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(object), empty});
+            REQUIRE(invoke.exception.IsValid());
+            CHECK(f.linker.Class(invoke.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
+            CHECK(f.linker.Class(f.model.ObjectClass(Ref(f.Virtual(invoke.exception, "getTargetException", "()Ljava/lang/Throwable;")))).descriptor ==
+                "Ljava/lang/UnsatisfiedLinkError;");
+            const auto bad = f.Virtual(clazz, lookup,
+                "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", {name("absent"), empty});
+            CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/NoSuchMethodException;");
+        }
+        for (const auto* lookup : {"getField", "getDeclaredField"}) {
+            const auto good = f.Virtual(clazz, lookup, "(Ljava/lang/String;)Ljava/lang/reflect/Field;", {name("x")});
+            REQUIRE_FALSE(good.exception.IsValid());
+            CHECK(reflect.FieldMetadata(good.value.ref).access_flags == 1U);
+            const auto get = f.Virtual(good.value.ref, "getFloat", "(Ljava/lang/Object;)F", {VmValue::Ref(object)});
+            CHECK(f.linker.Class(get.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+            const auto set = f.Virtual(good.value.ref, "setFloat", "(Ljava/lang/Object;F)V",
+                {VmValue::Ref(object), VmValue::Float(1.0F)});
+            CHECK(f.linker.Class(set.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+            const auto bad = f.Virtual(clazz, lookup, "(Ljava/lang/String;)Ljava/lang/reflect/Field;", {name("absent")});
+            CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/NoSuchFieldException;");
+        }
+        const auto parameters = VmValue::Ref(f.ClassArray({"I"}));
+        const auto static_method = f.Virtual(clazz, "getMethod",
+            "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", {name("createArray"), parameters});
+        REQUIRE_FALSE(static_method.exception.IsValid());
+        CHECK(reflect.MethodMetadata(static_method.value.ref).access_flags == 9U);
+        const auto boxed = reflect.Codec().BoxReturn(f.linker.ResolveDescriptor("I"), VmValue::Int(1));
+        const auto static_call = f.Virtual(static_method.value.ref, "invoke",
+            "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
+            {empty, VmValue::Ref(f.ObjectArray({boxed}))});
+        CHECK(f.linker.Class(static_call.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
+        for (const auto* lookup : {"getConstructor", "getDeclaredConstructor"}) {
+            const auto missing = f.Virtual(clazz, lookup,
+                "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", {parameters});
+            CHECK(f.linker.Class(missing.exception_class).descriptor == "Ljava/lang/NoSuchMethodException;");
+        }
+        const auto constructor = f.Virtual(clazz, "getConstructor", "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", {empty});
+        REQUIRE_FALSE(constructor.exception.IsValid());
+        const auto constructed = f.Virtual(constructor.value.ref, "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;", {empty});
+        CHECK(f.linker.Class(constructed.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
+        CHECK(f.linker.Class(f.model.ObjectClass(Ref(f.Virtual(constructed.exception, "getCause", "()Ljava/lang/Throwable;")))).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        const auto methods = f.Virtual(clazz, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
+        REQUIRE_FALSE(methods.exception.IsValid());
+        CHECK(f.model.ArrayLength(methods.value.ref) == 5);
+        const auto fields = f.Virtual(clazz, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
+        REQUIRE_FALSE(fields.exception.IsValid());
+        CHECK(f.model.ArrayLength(fields.value.ref) == 12);
+        const auto constant = reflect.FindDeclaredField(type, "INITIAL_PACKED_AXIS_VALUES");
+        REQUIRE(constant);
+        const auto wrapper = reflect.MaterializeField(*constant);
+        reflect.SetAccessible(wrapper, true);
+        CHECK(reflect.GetField(wrapper, VmObjectRef{}, f.linker.ResolveDescriptor("I"), std::nullopt).AsInt() == 8);
+        const auto point = f.linker.ResolveDescriptor("Landroid/graphics/PointF;");
+        const auto creator = reflect.FindDeclaredField(point, "CREATOR");
+        REQUIRE(creator);
+        const auto unsupported = reflect.MaterializeField(*creator);
+        reflect.SetAccessible(unsupported, true);
+        CHECK_THROWS_AS(static_cast<void>(reflect.GetField(unsupported, VmObjectRef{}, std::nullopt, std::nullopt)), VmJavaThrow);
+        CHECK_THROWS_AS(reflect.SetField(unsupported, VmObjectRef{}, VmValue::Ref(VmObjectRef{}), std::nullopt, std::nullopt), VmJavaThrow);
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.clear()V" && hit.count == 2;
+        }));
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.<init>()V" && hit.count == 1;
+        }));
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.createArray(I)[Landroid/view/MotionEvent$PointerCoords;" && hit.count == 1;
+        }));
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "dexvm.skeleton.field.Landroid/view/MotionEvent$PointerCoords;->x:F" && hit.count == 4;
+        }));
+    }
+    ReflectionVm off("interp.dex", InterpreterBackend::switch_dispatch, false, true);
+    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;")), DexVmError);
 }

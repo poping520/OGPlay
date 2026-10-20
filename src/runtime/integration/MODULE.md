@@ -13,6 +13,10 @@ DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRunt
 取得已有 registry ID；ToReflected 根据声明成员还原真实 Method/Constructor/Field wrapper。
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
 拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
+JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own 成员，保留平台注册表
+既有实现；被动 FindClass 不递归调用 resolver。异常 factory 发布真实 local Throwable。
+JNI 字段访问经解释器共享守卫：骨架非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
+这些 owner hooks 在调用静止后统一撤销，不使下层反向依赖 DexVM。
 
 `GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与
 sysfs 拓扑/标称频率。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector

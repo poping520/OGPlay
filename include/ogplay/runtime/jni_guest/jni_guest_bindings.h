@@ -62,7 +62,8 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniPrimitiveArrayStore& arrays,
                            memory::AddressSpace& address_space,
                            JniGuestStringLimits limits = {},
-                           JniGuestStringObserver observer = {});
+                           JniGuestStringObserver observer = {},
+                           JniFieldStore* fields = nullptr);
 
 void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
                              JniJavaVm& java_vm,

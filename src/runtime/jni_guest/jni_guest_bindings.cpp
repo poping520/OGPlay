@@ -1,3 +1,4 @@
+#include "jni_guest_lookup.h"
 #include "ogplay/runtime/jni_guest/jni_guest_bindings.h"
 
 #include <array>
@@ -256,7 +257,7 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            JniPrimitiveArrayStore&,
                            memory::AddressSpace& address_space,
                            const JniGuestStringLimits limits,
-                           JniGuestStringObserver observer) {
+                           JniGuestStringObserver observer, JniFieldStore* fields) {
     ValidateJniGuestStringLimits(limits);
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetVersion"),
@@ -423,29 +424,9 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetStaticMethodID"),
-        [&environment, &classes,
+        [&environment, &classes, fields,
          &address_space](const JniGuestCallFrame& frame) {
-            const auto identity = environment.ResolveObjectForHle(
-                frame.thread_id, JniReference{frame.registers[1]});
-            if (!identity.has_value()) {
-                throw JniGuestBindingError(
-                    "GetStaticMethodID requires a valid class reference");
-            }
-            const auto name = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[2]},
-                frame.thread_id, "method name");
-            const auto descriptor = ReadGuestCString(
-                address_space, memory::GuestAddress{frame.registers[3]},
-                frame.thread_id, "method descriptor");
-            const auto method =
-                classes.GetMethodId(*identity, name, descriptor, true);
-            if (!method.has_value()) {
-                throw JniGuestBindingError(
-                    "JNI guest static method is not declared: class=" +
-                    classes.ClassName(*identity) + " method=" + name +
-                    descriptor);
-            }
-            return Word(method->Value());
+            return jni_guest_detail::LookupMethod(environment, classes, address_space, frame, true, fields);
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewStringUTF"),
@@ -703,10 +684,10 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
         });
     BindJniGuestCoreSlots(dispatcher, context.environment, context.classes,
                          context.strings, context.arrays,
-                         context.address_space, context.string_limits, context.string_observer);
+                         context.address_space, context.string_limits, context.string_observer, &context.fields);
     BindJniGuestClassAndInstanceSlots(
         dispatcher, context.environment, context.classes,
-        context.invocations, context.address_space, &context.objects);
+        context.invocations, context.address_space, &context.objects, &context.fields);
     BindJniGuestStaticCallSlots(
         dispatcher, context.environment, context.classes,
         context.invocations, context.address_space);

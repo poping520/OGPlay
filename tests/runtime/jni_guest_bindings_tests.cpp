@@ -311,11 +311,9 @@ TEST_CASE("guest JNI missing static field diagnostic identifies its class") {
     fixture.WriteString(0U, "missing");
     fixture.WriteString(48U, "Ljava/lang/String;");
     fixture.Seal();
-    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("GetStaticFieldID", 201U, reference.Value(),
-        fixture.output.Value(), fixture.output.Add(48U).Value())),
-        "JNI guest static field is not declared: class=fixture/StaticFields field=missingLjava/lang/String;",
-        JniGuestBindingError);
-    CHECK_FALSE(fixture.environment.ExceptionCheck(201U));
+    CHECK(fixture.CallEnvironment("GetStaticFieldID", 201U, reference.Value(),
+        fixture.output.Value(), fixture.output.Add(48U).Value()) == 0U);
+    CHECK(fixture.environment.ExceptionCheck(201U));
 }
 
 TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
@@ -1076,14 +1074,9 @@ TEST_CASE("guest JNI static method lookup uses declared class identity") {
     CHECK(method == fixture.classes.GetMethodId(
                         identity, "load", "(I)[B", true)
                         ->Value());
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.CallEnvironment(
-            "GetStaticMethodID", 401U, java_class.Value(),
-            fixture.output.Add(0x140U).Value(),
-            fixture.output.Add(0x160U).Value())),
-        "JNI guest static method is not declared: class=fixture/Resource "
-        "method=reset()V",
-        ogplay::runtime::JniGuestBindingError);
+    CHECK(fixture.CallEnvironment("GetStaticMethodID", 401U, java_class.Value(),
+        fixture.output.Add(0x140U).Value(), fixture.output.Add(0x160U).Value()) == 0U);
+    CHECK(fixture.environment.ExceptionCheck(401U));
 }
 
 TEST_CASE("guest JNI core bindings execute references exceptions and VM export") {

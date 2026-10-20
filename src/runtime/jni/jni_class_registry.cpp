@@ -430,6 +430,19 @@ private:
              "JNI class contains a duplicate member signature");
     }
 
+public:
+    void SetResolver(ClassResolver resolver) {
+        std::scoped_lock lock(mutex_);
+        resolver_ = std::move(resolver);
+    }
+    std::optional<JniObjectIdentity> Resolve(const std::string& name) const {
+        if (auto found = Find(name)) return found;
+        ClassResolver resolver;
+        { std::scoped_lock lock(mutex_); resolver = resolver_; }
+        return resolver ? resolver(name) : std::nullopt;
+    }
+private:
+    ClassResolver resolver_;
     mutable std::mutex mutex_;
     std::map<std::string, JniObjectIdentity> classes_by_name_;
     std::map<std::uint64_t, ClassEntry> classes_;
@@ -462,6 +475,12 @@ JniClassRegistry::RegisterField(const JniObjectIdentity java_class,
 std::optional<JniObjectIdentity>
 JniClassRegistry::FindClass(const std::string &name) const {
     return impl_->Find(name);
+}
+void JniClassRegistry::SetClassResolver(ClassResolver resolver) {
+    impl_->SetResolver(std::move(resolver));
+}
+std::optional<JniObjectIdentity> JniClassRegistry::ResolveClass(const std::string& name) const {
+    return impl_->Resolve(name);
 }
 std::string JniClassRegistry::ClassName(
     const JniObjectIdentity java_class) const {

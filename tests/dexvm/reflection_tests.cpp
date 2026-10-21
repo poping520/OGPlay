@@ -1593,10 +1593,7 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
             CHECK(meta.access_flags == 1U);
             const auto invoke = f.Virtual(good.value.ref, "invoke",
                 "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(object), empty});
-            REQUIRE(invoke.exception.IsValid());
-            CHECK(f.linker.Class(invoke.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
-            CHECK(f.linker.Class(f.model.ObjectClass(Ref(f.Virtual(invoke.exception, "getTargetException", "()Ljava/lang/Throwable;")))).descriptor ==
-                "Ljava/lang/UnsatisfiedLinkError;");
+            REQUIRE_FALSE(invoke.exception.IsValid());
             const auto bad = f.Virtual(clazz, lookup,
                 "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;", {name("absent"), empty});
             CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/NoSuchMethodException;");
@@ -1606,10 +1603,13 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
             REQUIRE_FALSE(good.exception.IsValid());
             CHECK(reflect.FieldMetadata(good.value.ref).access_flags == 1U);
             const auto get = f.Virtual(good.value.ref, "getFloat", "(Ljava/lang/Object;)F", {VmValue::Ref(object)});
-            CHECK(f.linker.Class(get.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+            REQUIRE_FALSE(get.exception.IsValid());
+            CHECK(get.value.AsFloat() == 0.0F);
             const auto set = f.Virtual(good.value.ref, "setFloat", "(Ljava/lang/Object;F)V",
                 {VmValue::Ref(object), VmValue::Float(1.0F)});
-            CHECK(f.linker.Class(set.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+            REQUIRE_FALSE(set.exception.IsValid());
+            CHECK(reflect.GetField(reflect.MaterializeField(*reflect.FindDeclaredField(type, "x")), object, f.linker.ResolveDescriptor("F"), std::nullopt).AsFloat() == 1.0F);
+            REQUIRE_FALSE(f.Virtual(good.value.ref, "setFloat", "(Ljava/lang/Object;F)V", {VmValue::Ref(object), VmValue::Float(0.0F)}).exception.IsValid());
             const auto bad = f.Virtual(clazz, lookup, "(Ljava/lang/String;)Ljava/lang/reflect/Field;", {name("absent")});
             CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/NoSuchFieldException;");
         }
@@ -1622,7 +1622,8 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
         const auto static_call = f.Virtual(static_method.value.ref, "invoke",
             "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;",
             {empty, VmValue::Ref(f.ObjectArray({boxed}))});
-        CHECK(f.linker.Class(static_call.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
+        REQUIRE_FALSE(static_call.exception.IsValid());
+        CHECK(f.model.ArrayLength(static_call.value.ref) == 1);
         for (const auto* lookup : {"getConstructor", "getDeclaredConstructor"}) {
             const auto missing = f.Virtual(clazz, lookup,
                 "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", {parameters});
@@ -1631,14 +1632,18 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
         const auto constructor = f.Virtual(clazz, "getConstructor", "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", {empty});
         REQUIRE_FALSE(constructor.exception.IsValid());
         const auto constructed = f.Virtual(constructor.value.ref, "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;", {empty});
-        CHECK(f.linker.Class(constructed.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
-        CHECK(f.linker.Class(f.model.ObjectClass(Ref(f.Virtual(constructed.exception, "getCause", "()Ljava/lang/Throwable;")))).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        REQUIRE_FALSE(constructed.exception.IsValid());
+        CHECK(f.model.ObjectClass(constructed.value.ref) == type);
         const auto methods = f.Virtual(clazz, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
         REQUIRE_FALSE(methods.exception.IsValid());
-        CHECK(f.model.ArrayLength(methods.value.ref) == 5);
+        const auto& linked = f.linker.Class(type);
+        std::size_t method_count = linked.own_virtual_methods.size();
+        for (const auto id : linked.own_direct_methods)
+            if (!f.linker.Method(id).name.starts_with("<")) ++method_count;
+        CHECK(f.model.ArrayLength(methods.value.ref) == method_count);
         const auto fields = f.Virtual(clazz, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
         REQUIRE_FALSE(fields.exception.IsValid());
-        CHECK(f.model.ArrayLength(fields.value.ref) == 12);
+        CHECK(f.model.ArrayLength(fields.value.ref) == linked.own_static_fields.size() + linked.own_instance_fields.size());
         const auto constant = reflect.FindDeclaredField(type, "INITIAL_PACKED_AXIS_VALUES");
         REQUIRE(constant);
         const auto wrapper = reflect.MaterializeField(*constant);
@@ -1652,19 +1657,23 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
         CHECK_THROWS_AS(static_cast<void>(reflect.GetField(unsupported, VmObjectRef{}, std::nullopt, std::nullopt)), VmJavaThrow);
         CHECK_THROWS_AS(reflect.SetField(unsupported, VmObjectRef{}, VmValue::Ref(VmObjectRef{}), std::nullopt, std::nullopt), VmJavaThrow);
         const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.clear()V" && hit.count == 2;
+        CHECK(std::none_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id.find("MotionEvent$PointerCoords;") != std::string::npos;
         }));
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.<init>()V" && hit.count == 1;
-        }));
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id == "dexvm.intrinsic.Landroid/view/MotionEvent$PointerCoords;.createArray(I)[Landroid/view/MotionEvent$PointerCoords;" && hit.count == 1;
-        }));
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id == "dexvm.skeleton.field.Landroid/view/MotionEvent$PointerCoords;->x:F" && hit.count == 4;
-        }));
+        // A skeleton-only constructor still wraps its actual ULE target.
+        const auto vibrator = f.linker.ResolveDescriptor("Landroid/os/NullVibrator;");
+        const auto ctor = f.Virtual(f.model.ClassObject(vibrator), "getDeclaredConstructor",
+            "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;", {empty});
+        REQUIRE_FALSE(ctor.exception.IsValid());
+        reflect.SetAccessible(ctor.value.ref, true);
+        const auto failure = f.Virtual(ctor.value.ref, "newInstance",
+            "([Ljava/lang/Object;)Ljava/lang/Object;", {empty});
+        REQUIRE(failure.exception.IsValid());
+        CHECK(f.linker.Class(failure.exception_class).descriptor == "Ljava/lang/reflect/InvocationTargetException;");
+        CHECK(f.linker.Class(f.model.ObjectClass(Ref(f.Virtual(failure.exception, "getCause", "()Ljava/lang/Throwable;")))).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+
     }
     ReflectionVm off("interp.dex", InterpreterBackend::switch_dispatch, false, true);
-    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;")), DexVmError);
+    CHECK(off.linker.Class(off.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;")).is_boot_dex);
+    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/os/NullVibrator;")), DexVmError);
 }

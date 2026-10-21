@@ -74,6 +74,7 @@ Dvm87Vm::Dvm87Vm(
           linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
           ogplay::test::BindBootDexPlatformNatives(linker);
           linker.RegisterBootDex(Dvm102BootDex());
+          ogplay::test::RegisterBootDexSkeleton(linker);
           auto callable = IntrinsicClassBuilder::Class(
               "Ltest/Dvm87Callable;", "Ljava/lang/Object;",
               {"Ljava/util/concurrent/Callable;"});
@@ -127,7 +128,9 @@ void Dvm87Vm::Construct(const VmObjectRef object, const std::string_view owner,
 }
 
 void Dvm87Vm::RequireOk(const VmCallOutcome& outcome) {
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    std::string stack;
+    for (const auto& frame : outcome.exception_stack) stack += frame.class_descriptor + "." + frame.method_name + "\n";
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message, "\n", stack);
 }
 
 } // namespace ogplay::test::bootdex_library

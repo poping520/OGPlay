@@ -250,6 +250,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/bootdex_collections_io_tests.cpp
     tests/dexvm/bootdex_shutdown_tests.cpp
     tests/dexvm/bootdex_library_fixture.cpp
+    tests/dexvm/boot_dex.cpp
     tests/dexvm/observable_tests.cpp
     tests/dexvm/network_sqlite_tests.cpp
     tests/dexvm/session_exit_tests.cpp

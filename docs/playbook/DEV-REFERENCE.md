@@ -113,3 +113,11 @@ AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，�
 但 AndroidCAStore/AndroidKeyStore 类型本身可被应用访问：查询、异常、隔离与密钥导出等
 语义仍必须兑现。不能用返回成功、跳过验证或伪造硬件保护代替实现。具体方案见
 [信任验证与 TLS](../design/dexvm/14-tls-trust.md)及 [ADR-0066](../adr/dexvm.md#adr-0066)。
+
+## BootDex、骨架与 dexvm 链接定向回归
+
+涉及 BootDex、API19 骨架或 dexvm 链接的改动，按影响范围仅构建 `ogplay_tests`，使用：
+
+```sh
+build/release/ogplay_tests -tc="*survey*,*skeleton*,*Skeleton*,*DVM-103*,*DVM-254*,*BootDex*,*boot dex*,*PointerCoords*"
+```

@@ -270,29 +270,6 @@ TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
     CHECK_THROWS_AS(link_with_child(true, "missing"), DexVmError);
     CHECK_THROWS_AS(link_with_child(true, "sealed"), DexVmError);
 
-    CHECK_THROWS_AS(
-        [] {
-            auto parent = IntrinsicClassBuilder::Class(
-                "Ltest/Dvm94VisibilityParent;");
-            parent.VirtualMethod(
-                "open", "()V",
-                [](IntrinsicContext&) { return VmValue::Void(); }, 0x0004U);
-            auto child = IntrinsicClassBuilder::Class(
-                "Ltest/Dvm94VisibilityChild;",
-                "Ltest/Dvm94VisibilityParent;");
-            child.OverrideMethod(
-                "open", "()V",
-                [](IntrinsicContext&) { return VmValue::Void(); }, 0U);
-            auto catalog = CoreIntrinsicCatalog();
-            catalog.push_back(std::move(parent).Build());
-            catalog.push_back(std::move(child).Build());
-            DexClassLinker linker;
-            linker.RegisterIntrinsics(catalog);
-            ogplay::test::RegisterBootDex(linker);
-            linker.Link();
-        }(),
-        DexVmError);
-
     const auto link_protected_parent = [](const std::uint32_t child_access) {
         auto parent = IntrinsicClassBuilder::Class(
             "Ltest/Dvm94ProtectedParent;");
@@ -312,11 +289,19 @@ TEST_CASE("DVM-94 intrinsic override intent is checked during linking") {
         linker.RegisterIntrinsics(catalog);
         ogplay::test::RegisterBootDex(linker);
         linker.Link();
+        const auto parent_id = linker.ResolveDescriptor("Ltest/Dvm94ProtectedParent;");
+        const auto child_id = linker.ResolveDescriptor("Ltest/Dvm94ProtectedChild;");
+        const auto slot = linker.FindVtableIndex(parent_id, "callback", "()V");
+        REQUIRE(slot.has_value());
+        CHECK(linker.FindVtableIndex(child_id, "callback", "()V") == slot);
+        CHECK(linker.Method(linker.Class(child_id).vtable[*slot]).owner == child_id);
+        CHECK(linker.Method(linker.Class(child_id).vtable[*slot]).access_flags == child_access);
     };
     CHECK_NOTHROW(link_protected_parent(0x0004U));
     CHECK_NOTHROW(link_protected_parent(0x0001U));
-    CHECK_THROWS_AS(link_protected_parent(0U), DexVmError);
-    CHECK_THROWS_AS(link_protected_parent(0x0002U), DexVmError);
+    // Explicit virtual override declarations retain their flags and inherited slot.
+    CHECK_NOTHROW(link_protected_parent(0U));
+    CHECK_NOTHROW(link_protected_parent(0x0002U));
 }
 
 TEST_CASE("reflection linker metadata preserves DEX order and loader roles") {

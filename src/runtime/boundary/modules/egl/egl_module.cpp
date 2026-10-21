@@ -523,6 +523,7 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         state.share_group = args[2] == 0U ? handle : contexts_.at(args[2]).share_group;
         state.guest_state = GuestGlContext{handle};
         state.guest_state.SetShareGroup(state.share_group);
+        state.guest_state.Shared().SetCapability(0x0BD0U, true); // GL_DITHER default.
         state.gles1_state = std::make_unique<detail::AndroidBoundaryGles1State>();
         state.gles1_state->CopyValuesFrom(context_.gles1_state);
         state.gles1_state->Reset();

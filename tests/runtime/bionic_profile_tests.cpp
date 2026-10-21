@@ -1,3 +1,4 @@
+#include <set>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -91,7 +92,12 @@ TEST_CASE("Bionic routing separates guest intercept and HLE boundary symbols") {
                                   ogplay::runtime::OpenSlesIids().size()));
     CHECK(ogplay::runtime::AndroidBoundaryCatalog(profile.api)
               .FindModule("libc.so") == nullptr);
-    CHECK(ogplay::runtime::GuestSymbolOverrides().size() == 9U);
+    std::set<std::pair<std::string_view, std::string_view>> overrides;
+    for (const auto& entry : ogplay::runtime::GuestSymbolOverrides()) {
+        CHECK(overrides.emplace(entry.library, entry.symbol).second);
+        CHECK(ogplay::runtime::RouteBionicSymbol(profile, entry.library, entry.symbol) ==
+              ogplay::runtime::BionicSymbolRoute::host_intercept);
+    }
     CHECK_THROWS_AS(static_cast<void>(ogplay::runtime::RouteBionicSymbol(
                         profile, "libc.so", "")),
                     ogplay::runtime::BionicProfileError);

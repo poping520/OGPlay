@@ -110,7 +110,7 @@ TEST_CASE("DVM-118 Resources metrics share display facts and BootDex value seman
 TEST_CASE("DVM-137 Configuration uses API19 Java shape and managed device facts") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
+        AndroidValueVm f(backend, {}, false, nullptr, true);
         f.context->surface_width = 960;
         f.context->surface_height = 540;
         f.context->ui_density = 1.5F;

@@ -33,10 +33,12 @@ def handle(conn: ssl.SSLSocket) -> None:
         return
     finally:
         try:
-            conn.shutdown(socket.SHUT_RDWR)
+            # Complete close_notify before releasing the server SSL object.
+            # A raw socket shutdown discards its resumable session on LibreSSL.
+            raw = conn.unwrap()
+            raw.close()
         except OSError:
-            pass
-        conn.close()
+            conn.close()
 
 
 def main() -> int:

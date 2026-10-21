@@ -38,27 +38,22 @@ using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
-TEST_CASE("DVM-87 Calendar uses injected clock and fixed-offset zones") {
-    Dvm87Vm fixture;
-    const auto calendar_outcome = fixture.Static(
-        "Ljava/util/Calendar;", "getInstance", "()Ljava/util/Calendar;");
-    Dvm87Vm::RequireOk(calendar_outcome);
-    const auto calendar = calendar_outcome.value.ref;
-    CHECK(fixture.Virtual(calendar, "getTimeInMillis", "()J").value.AsLong() ==
-          1704067200000LL);
-    CHECK(fixture.Virtual(
-        calendar, "get", "(I)I", {VmValue::Int(1)}).value.AsInt() == 2024);
-    CHECK(fixture.Virtual(
-        calendar, "get", "(I)I", {VmValue::Int(2)}).value.AsInt() == 0);
-
-    const auto zone_outcome = fixture.Static(
-        "Ljava/util/TimeZone;", "getTimeZone",
-        "(Ljava/lang/String;)Ljava/util/TimeZone;",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("GMT+08:00"))});
-    Dvm87Vm::RequireOk(zone_outcome);
-    const auto zone = zone_outcome.value.ref;
-    CHECK(fixture.Virtual(zone, "getRawOffset", "()I").value.AsInt() ==
-          8 * 60 * 60 * 1000);
+TEST_CASE("DVM-87 injected clock works and Calendar requires the guest ICU bridge") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm fixture(backend);
+        const auto clock = fixture.Static("Ljava/lang/System;", "currentTimeMillis", "()J");
+        Dvm87Vm::RequireOk(clock);
+        CHECK(clock.value.AsLong() == 1704067200000LL);
+        try {
+            (void)fixture.Static("Ljava/util/Calendar;", "getInstance",
+            "()Ljava/util/Calendar;");
+            FAIL("missing guest ICU bridge must fail explicitly");
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::native_bridge_unavailable);
+            CHECK(std::string_view(error.what()).starts_with(
+                "native method requires the JNI bridge: Llibcore/icu/ICU;.initLocaleDataNative"));
+        }
+    }
 }
 
 TEST_CASE("DVM-113 Locale ISO catalogs use pinned ICU and independent Java clones" *
@@ -631,9 +626,10 @@ TEST_CASE("DVM-102 date formatting covers constructors factories and zones" *
 TEST_CASE("DVM-102 regression default timezone respects Java setDefault") {
  for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
   Dvm87Vm f(backend);
-  auto zone=f.Static("Ljava/util/TimeZone;", "getTimeZone", "(Ljava/lang/String;)Ljava/util/TimeZone;", {VmValue::Ref(f.vm.NewStringUtf8("GMT+08:00"))});
-  Dvm87Vm::RequireOk(zone);
-  Dvm87Vm::RequireOk(f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {zone.value}));
+  const auto zone = f.vm.NewIntrinsicInstance("Ljava/util/SimpleTimeZone;");
+  f.Construct(zone, "Ljava/util/SimpleTimeZone;", "(ILjava/lang/String;)V",
+      {VmValue::Int(28800000), VmValue::Ref(f.vm.NewStringUtf8("GMT+08:00"))});
+  Dvm87Vm::RequireOk(f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {VmValue::Ref(zone)}));
   auto actual=f.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;");
   Dvm87Vm::RequireOk(actual);
   CHECK(f.Virtual(actual.value.ref, "getRawOffset", "()I").value.AsInt()==28800000);
@@ -731,16 +727,25 @@ TEST_CASE("DVM-102 regression native parse preserves API19 position semantics" *
   }
 }
 
-TEST_CASE("DVM-102 regression configured timezone is restored after Java reset") {
+TEST_CASE("DVM-102 regression configured timezone reset preserves required native boundary") {
   for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
     Dvm87Vm f(backend, "en", "eng", "USA", "GMT-03:30");
-    for (int iteration = 0; iteration < 2; ++iteration) {
-      const auto zone = f.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;");
-      Dvm87Vm::RequireOk(zone);
-      CHECK(f.Virtual(zone.value.ref, "getRawOffset", "()I").value.AsInt() == -12600000);
-      Dvm87Vm::RequireOk(f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V",
-          {VmValue::Ref(VmObjectRef{})}));
-    }
+    const auto zone = f.vm.NewIntrinsicInstance("Ljava/util/SimpleTimeZone;");
+    f.Construct(zone, "Ljava/util/SimpleTimeZone;", "(ILjava/lang/String;)V",
+        {VmValue::Int(-12600000), VmValue::Ref(f.vm.NewStringUtf8("GMT-03:30"))});
+    Dvm87Vm::RequireOk(f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {VmValue::Ref(zone)}));
+    const auto cached = f.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;");
+    Dvm87Vm::RequireOk(cached);
+    CHECK(f.Virtual(cached.value.ref, "getRawOffset", "()I").value.AsInt() == -12600000);
+    Dvm87Vm::RequireOk(f.Static("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {VmValue::Ref(VmObjectRef{})}));
+    try {
+            (void)f.Static("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;");
+            FAIL("missing guest ICU bridge must fail explicitly");
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::native_bridge_unavailable);
+            CHECK(std::string_view(error.what()).starts_with(
+                "native method requires the JNI bridge: Llibcore/icu/ICU;.initLocaleDataNative"));
+        }
   }
 }
 

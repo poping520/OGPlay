@@ -347,6 +347,14 @@ TEST_CASE("BND34 EGL separates context state surface content and read surface") 
     AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
     AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, texture, 0});
     CHECK(AuditPixel(f) == 0xFF0000FFU);
+    AuditGl(f, "glBindFramebuffer", {0x8D40, 0});
+    f.bus.Write32(f.output.Add(256), 0xFF000000U, 1);
+    AuditGl(f, "glTexSubImage2D", {0x0DE1, 0, 0, 0, 1, 1, 0x1908, 0x1401, f.output.Add(256).Value()});
+    AuditGl(f, "glCopyTexSubImage2D", {0x0DE1, 0, 0, 0, 0, 0, 1, 1});
+    CHECK(f.Call("libEGL.so", "eglGetCurrentSurface", {0x3059}) == y);
+    CHECK(f.Call("libEGL.so", "eglGetCurrentSurface", {0x305A}) == x);
+    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+    CHECK(AuditPixel(f) == 0xFF0000FFU);
 }
 
 TEST_CASE("BND34 EGL share group survives reverse bind order and source deletion") {
@@ -403,20 +411,28 @@ TEST_CASE("BND34 EGL fences images and texture pbuffers use real ANGLE objects")
     AuditGl(f, "glBindTexture", {0x0DE1, texture});
     f.bus.Write32(f.output.Add(256), 0xFF112233U, 1);
     AuditGl(f, "glTexImage2D", {0x0DE1, 0, 0x1908, 1, 1, 0, 0x1908, 0x1401, f.output.Add(256).Value()});
+    // An EGL texture image requires a complete source texture.
+    AuditGl(f, "glTexParameteri", {0x0DE1, 0x2801, 0x2600});
+    AuditGl(f, "glTexParameteri", {0x0DE1, 0x2800, 0x2600});
     f.bus.Write32(f.output, 0x30D2, 1); f.bus.Write32(f.output.Add(4), 1, 1);
     f.bus.Write32(f.output.Add(8), 0x3038, 1);
     const auto image = egl("eglCreateImageKHR", {1, context, 0x30B1, texture, f.output.Value()});
-    REQUIRE(image != 0U);
-    const auto sibling = AuditName(f, "glGenTextures");
-    AuditGl(f, "glBindTexture", {0x0DE1, sibling});
-    AuditGl(f, "glEGLImageTargetTexture2DOES", {0x0DE1, image});
-    REQUIRE(AuditGl(f, "glGetError") == 0U);
-    CHECK(egl("eglDestroyImageKHR", {1, image}) == 1U);
     const auto framebuffer = AuditName(f, "glGenFramebuffers");
-    AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
-    AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, sibling, 0});
-    CHECK(AuditPixel(f) == 0xFF112233U);
-    AuditGl(f, "glBindFramebuffer", {0x8D40, 0});
+    if (extensions.find("EGL_KHR_gl_texture_2D_image") != std::string::npos) {
+        REQUIRE(image != 0U);
+        const auto sibling = AuditName(f, "glGenTextures");
+        AuditGl(f, "glBindTexture", {0x0DE1, sibling});
+        AuditGl(f, "glEGLImageTargetTexture2DOES", {0x0DE1, image});
+        REQUIRE(AuditGl(f, "glGetError") == 0U);
+        CHECK(egl("eglDestroyImageKHR", {1, image}) == 1U);
+        AuditGl(f, "glBindFramebuffer", {0x8D40, framebuffer});
+        AuditGl(f, "glFramebufferTexture2D", {0x8D40, 0x8CE0, 0x0DE1, sibling, 0});
+        CHECK(AuditPixel(f) == 0xFF112233U);
+        AuditGl(f, "glBindFramebuffer", {0x8D40, 0});
+    } else {
+        CHECK(image == 0U);
+        CHECK(egl("eglGetError", {}) == 0x300CU);
+    }
     const std::array<std::uint32_t, 11> attributes{0x3057, 4, 0x3056, 4, 0x3080, 0x305E,
                                                 0x3081, 0x305F, 0x3082, 0, 0x3038};
     for (std::size_t i = 0; i < attributes.size(); ++i) f.bus.Write32(f.output.Add(i * 4), attributes[i], 1);

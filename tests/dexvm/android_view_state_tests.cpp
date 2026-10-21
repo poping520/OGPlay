@@ -270,7 +270,12 @@ TEST_CASE("DVM-174 AnimationListener type compatibility links and dispatches") {
         CHECK(listener_class.is_interface);
         CHECK(listener_class.access_flags ==
               (kAccPublic | kAccInterface | kAccAbstract));
-        CHECK_FALSE(fixture.linker.FindClass(kAnimation).has_value());
+        const auto animation_type = fixture.linker.FindClass(kAnimation);
+        REQUIRE(animation_type.has_value());
+        CHECK(fixture.linker.Class(*animation_type).is_boot_dex);
+        CHECK((fixture.linker.Class(*animation_type).access_flags & kAccAbstract) != 0);
+        CHECK(fixture.linker.IsAssignable(
+            fixture.linker.ResolveDescriptor("Ljava/lang/Object;"), *animation_type));
 
         std::vector<std::string> declared;
         for (const auto method : listener_class.own_virtual_methods) {

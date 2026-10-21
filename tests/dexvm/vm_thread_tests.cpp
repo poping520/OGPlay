@@ -66,8 +66,8 @@ struct ThreadedVm final {
               [this, platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   if (platform) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
-                  linker.RegisterDex(ReadFixture("interp.dex"));
                   ogplay::test::RegisterBootDex(linker);
+                  linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
                   return linker;
               }(),

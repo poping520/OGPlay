@@ -171,52 +171,72 @@ TEST_CASE("dexvm notifyAll releases a waiter parked on another host thread") {
 }
 
 TEST_CASE("conditional swap pacing releases two swaps while driver waits") {
-    MonitorVm vm;
-    vm.UseTestClock();
-    DexVmAndroidContext context;
-    AttachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        MonitorVm vm(false, backend);
+        vm.interpreter.BindDefaultExecutionHost();
+        const auto worker_context = vm.interpreter.CreateExecutionContext();
+        vm.UseTestClock();
+        DexVmAndroidContext context;
+        AttachEglSwapPacer(context, vm.interpreter.ExecutionLock());
 
-    std::vector<std::int32_t> sequence;
-    std::atomic<bool> record_failed{};
-    std::atomic<bool> finished{};
-    std::atomic<bool> watchdog_fired{};
-    const auto record_swap =
-        vm.Static("LSwapHandshake;", "recordSwap", "()V");
-    std::thread worker([&] {
-        for (std::int32_t swap = 1; swap <= 2; ++swap) {
-            VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
-            PaceEglSwap(context, vm.interpreter.ExecutionLock());
-            const auto recorded = vm.interpreter.Call(record_swap, {});
-            if (recorded.exception.IsValid()) record_failed = true;
-            sequence.push_back(swap);
-        }
-    });
-    std::thread watchdog([&] {
-        for (int attempt = 0; attempt < 5000 && !finished.load(); ++attempt) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        if (!finished.load()) {
-            watchdog_fired = true;
-            ShutdownEglSwapPacer(context);
-        }
-    });
+        std::vector<std::int32_t> sequence;
+        std::atomic<bool> record_failed{};
+        std::atomic<bool> finished{};
+        std::atomic<bool> watchdog_fired{};
+        const auto record_swap =
+            vm.Static("LSwapHandshake;", "recordSwap", "()V");
+        std::exception_ptr worker_failure;
+        std::atomic<bool> root_rejected{};
+        std::thread worker([&] {
+            try {
+                // A blocked lifecycle thread retains ownership of its context.
+                try { (void)vm.interpreter.Call(record_swap, {}); }
+                catch (const DexVmError& error) {
+                    root_rejected = error.Reason() == DexVmErrorReason::internal_invariant &&
+                        (std::string(error.what()).find("bound to another host thread") != std::string::npos ||
+                         std::string(error.what()).find("active on another host thread") != std::string::npos);
+                }
+                vm.interpreter.RunInExecutionContext(worker_context, [&] {
+                    for (std::int32_t swap = 1; swap <= 2; ++swap) {
+                        VmExecutionLockScope execution(vm.interpreter.ExecutionLock());
+                        PaceEglSwap(context, vm.interpreter.ExecutionLock());
+                        const auto recorded = vm.interpreter.Call(record_swap, {});
+                        if (recorded.exception.IsValid()) record_failed = true;
+                        sequence.push_back(swap);
+                    }
+                });
+            } catch (...) { worker_failure = std::current_exception(); }
+        });
+        std::thread watchdog([&] {
+            for (int attempt = 0; attempt < 5000 && !finished.load(); ++attempt) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if (!finished.load()) {
+                watchdog_fired = true;
+                ShutdownEglSwapPacer(context);
+            }
+        });
 
-    const auto awaited =
-        vm.CallStatic("LSwapHandshake;", "awaitTwo", "()V");
-    const bool await_failed = awaited.exception.IsValid();
-    worker.join();
-    finished = true;
-    watchdog.join();
-    CHECK_FALSE(watchdog_fired.load());
-    CHECK_FALSE(await_failed);
-    CHECK_FALSE(record_failed.load());
-    const auto observed =
-        vm.CallStatic("LSwapHandshake;", "observed", "()I");
-    REQUIRE_FALSE(observed.exception.IsValid());
-    CHECK(observed.value.AsInt() == 2);
-    CHECK(sequence == std::vector<std::int32_t>{1, 2});
+        const auto awaited =
+            vm.CallStatic("LSwapHandshake;", "awaitTwo", "()V");
+        const bool await_failed = awaited.exception.IsValid();
+        worker.join();
+        finished = true;
+        watchdog.join();
+        if (worker_failure) std::rethrow_exception(worker_failure);
+        CHECK(root_rejected.load());
+        CHECK_FALSE(watchdog_fired.load());
+        CHECK_FALSE(await_failed);
+        CHECK_FALSE(record_failed.load());
+        const auto observed =
+            vm.CallStatic("LSwapHandshake;", "observed", "()I");
+        REQUIRE_FALSE(observed.exception.IsValid());
+        CHECK(observed.value.AsInt() == 2);
+        CHECK(sequence == std::vector<std::int32_t>{1, 2});
 
-    DetachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+        DetachEglSwapPacer(context, vm.interpreter.ExecutionLock());
+        vm.interpreter.DiscardExecutionContext(worker_context);
+    }
 }
 
 TEST_CASE("conditional swap pacing waits for frame when driver is runnable") {

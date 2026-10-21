@@ -59,7 +59,7 @@ public:
                          std::span<const std::byte> bytes) = 0;
   [[nodiscard]] virtual std::int32_t OpenHandle(
       std::string_view path, bool read, bool write, bool create,
-      bool truncate) = 0;
+      bool truncate, bool exclusive = false) = 0;
   [[nodiscard]] virtual IoFileInfo HandleInfo(std::int32_t handle) const = 0;
   [[nodiscard]] virtual std::size_t ReadHandle(
       std::int32_t handle, std::span<std::byte> destination) = 0;
@@ -146,7 +146,7 @@ public:
 
   [[nodiscard]] std::shared_ptr<OpenFileDescription>
   OpenFile(std::string path, bool readable, bool writable, bool append,
-           bool truncate, bool create);
+           bool truncate, bool create, bool exclusive = false);
   void BindFileStream(VmObjectRef owner,
                       std::shared_ptr<OpenFileDescription> file,
                       bool close_underlying);

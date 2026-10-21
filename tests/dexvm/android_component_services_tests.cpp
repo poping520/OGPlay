@@ -424,8 +424,9 @@ TEST_CASE("duplicate Activity filters resolve once and launches use the register
         }
         CHECK_FALSE(launch("fixture.OPEN", true).exception.IsValid());
 
-        // Keeping two declarations must not hide unsupported task reuse.
+        // The last declaration owns launch configuration, including unsupported affinity matching.
         f.context->activity_components.back().launch_mode = 2;
+        f.context->activity_components.back().task_affinity = "another.task";
         for (const bool explicit_component : {false, true}) {
             const auto blocked = launch("fixture.FIRST", explicit_component);
             REQUIRE(blocked.exception.IsValid());
@@ -433,6 +434,7 @@ TEST_CASE("duplicate Activity filters resolve once and launches use the register
             CHECK_FALSE(f.context->activity_switch_pending);
         }
         f.context->activity_components.back().launch_mode = 0;
+        f.context->activity_components.back().task_affinity.reset();
         f.context->activity_components.back().enabled = false;
         for (const bool explicit_component : {false, true}) {
             const auto blocked = launch("fixture.OPEN", explicit_component);
@@ -479,8 +481,7 @@ TEST_CASE("DVM-202 explicit local service bindings share instances and cancel qu
     });
     connection_type.VirtualMethod("onServiceDisconnected", "(Landroid/content/ComponentName;)V", [](IntrinsicContext&) { FAIL("normal unbind is not disconnection"); return VmValue::Void(); });
     AndroidValueVm f(backend, {std::move(service).Build(), std::move(connection_type).Build()});
-    VmThreadRuntime threads(f.vm);
-    f.context->threads = &threads;
+    f.context->threads = &f.threads;
     f.vm.SetGcIntegration({{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
     f.context->package_name = "example";
     f.context->service_inventory_known = true;

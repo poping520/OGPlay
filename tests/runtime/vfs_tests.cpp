@@ -193,6 +193,33 @@ TEST_CASE("VFS creates writes truncates and rejects unsafe paths") {
     CHECK_THROWS_AS(vfs.Close(99), ogplay::runtime::VfsError);
 }
 
+TEST_CASE("VFS exclusive creation chooses one winner without truncating existing bytes") {
+    using namespace ogplay::runtime;
+    VirtualFileSystem vfs;
+    std::atomic<unsigned> created{}, exists{}, unexpected{};
+    std::vector<std::jthread> workers;
+    for (unsigned i = 0; i < 8; ++i) workers.emplace_back([&] {
+        try {
+            const auto fd = vfs.Open("/once", {.write = true, .create = true, .exclusive = true});
+            vfs.Close(fd);
+            ++created;
+        } catch (const VfsError& error) {
+            if (error.ErrorNumber() == 17) ++exists;
+            else ++unexpected;
+        }
+    });
+    workers.clear();
+    CHECK(created == 1);
+    CHECK(exists == 7);
+    CHECK(unexpected == 0);
+    const auto fd = vfs.Open("/once", {.write = true});
+    const std::array bytes{std::byte{42}};
+    CHECK(vfs.Write(fd, bytes) == 1);
+    vfs.Close(fd);
+    ExpectHostErrno([&] { (void)vfs.Open("/once", {.write = true, .create = true, .truncate = true, .exclusive = true}); }, 17);
+    CHECK(vfs.Stat("/once").size == 1);
+}
+
 TEST_CASE("VFS resolves relative paths from an explicit working directory") {
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array contents{std::byte{0x31}, std::byte{0x32}};

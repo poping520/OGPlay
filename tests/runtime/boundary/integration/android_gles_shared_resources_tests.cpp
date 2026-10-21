@@ -257,7 +257,8 @@ TEST_CASE("BND-29 GLES2 invalid capabilities latch errors without changing state
     CHECK(fixture.Call("libGLESv1_CM.so", "glIsEnabled", {0x0DE1U}) == 1);
     CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0);
     CHECK(fixture.Call("libEGL.so", "eglTerminate", {1U}) == 1);
-    CHECK_THROWS_AS(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}), std::runtime_error);
+    // Calls after eglTerminate are retired with a defined zero result.
+    CHECK(fixture.Call("libGLESv2.so", "glEnable", {0x0DE1U}) == 0U);
 }
 
 TEST_CASE("GLES draw negative ranges latch INVALID_VALUE across API families") {

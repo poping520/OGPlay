@@ -941,11 +941,12 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     const bool readable = access == 0 || access == 2;
                     const bool writable = access == 1 || access == 2;
                     const bool create = (flags & 64) != 0;
+                    const bool exclusive = (flags & 128) != 0;
                     const bool truncate = (flags & 512) != 0;
                     const bool append = (flags & 1024) != 0;
                     try {
                         auto file = call.vm.IO().OpenFile(path, readable, writable,
-                                                          append, truncate, create);
+                                                          append, truncate, create, exclusive);
                         const auto descriptor = call.vm.NewIntrinsicInstance(
                             "Ljava/io/FileDescriptor;");
                         call.vm.IO().SetDescriptor(descriptor, {
@@ -1079,6 +1080,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 posix.VirtualMethod(name,
                     "(Ljava/lang/String;)Llibcore/io/StructStat;",
                     [name](IntrinsicContext& call) {
+                        if (!call.vm.IO().HasFileSystem()) ThrowErrno(call.vm, name, 38);
                         const auto path = call.vm.StringUtf8(call.arguments[0].ref);
                         const auto info = call.vm.IO().Stat(path);
                         if (!info) ThrowErrno(call.vm, name, 2, "path not found");
@@ -1116,8 +1118,13 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("access", "(Ljava/lang/String;I)Z",
                 [](IntrinsicContext& call) {
-                    return VmValue::Int(call.vm.IO().Stat(
-                        call.vm.StringUtf8(call.arguments[0].ref)).has_value());
+                    if (!call.vm.IO().HasFileSystem()) ThrowErrno(call.vm, "access", 38);
+                    const auto mode = call.arguments[1].AsInt();
+                    if ((mode & ~7) != 0) ThrowErrno(call.vm, "access", 22);
+                    const auto info = call.vm.IO().Stat(call.vm.StringUtf8(call.arguments[0].ref));
+                    return VmValue::Int(info.has_value() &&
+                        ((mode & 2) == 0 || info->writable) &&
+                        ((mode & 1) == 0 || info->is_directory));
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("mkdir", "(Ljava/lang/String;I)V",
                 [](IntrinsicContext& call) {

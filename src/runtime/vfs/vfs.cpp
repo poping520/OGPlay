@@ -559,6 +559,10 @@ std::int32_t VirtualFileSystem::Impl::Open(const std::string_view path,
         const auto normalized = ResolvePath(path, working_directory_, aliases_);
         if (normalized == "/") throw VfsError(kEisdir, "VFS root is not a file");
         auto found = files_.find(normalized);
+        if (options.create && options.exclusive &&
+            (found != files_.end() || IsDirectoryLocked(normalized))) {
+            throw VfsError(kEexist, "VFS exclusive create path already exists");
+        }
         if (found == files_.end()) {
             if (options.non_blocking) throw VfsError(kEinval, "VFS nonblocking IO requires a character device");
             if (!options.create) throw VfsError(kEnoent, "VFS file not found");

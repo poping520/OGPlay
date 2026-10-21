@@ -26,6 +26,8 @@
   受检 RGBA8
   全帧 readback 输出左上原点的确定帧；每个原生 GLES 调用都检查错误。
   `IsCurrentOnCallingThread` 查询实际 ANGLE current Context identity，不绑定 Context 或改变所有权。
+  ANGLE Metal 的独立 EGL_READ drawable 由默认 framebuffer 的 ReadPixels/CopyTexImage2D/
+  CopyTexSubImage2D 调用局部绑定读 Surface，成功或异常后恢复 draw/read；用户 read FBO 不切换。
 - `DecodeEtc1Rgba8`：按 Khronos ETC1 64-bit block 规范解码 individual/differential、flip、
   modifier selector 与边缘部分块，输出受检 RGBA8；尺寸、压缩长度和非法 differential
   color 明确失败。

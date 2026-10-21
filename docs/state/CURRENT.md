@@ -28,8 +28,8 @@
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   MCP shutdown 路径的 `unknown guest thread id` 曾复现，未修复。
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
-  （[DVM-190](../tasks/dexvm/DVM-190.md)）；network_sqlite 7 例（`Invalid path: /data`）、
-  reflection 1 例、vm_monitor 1 例失败未修。
+  （[DVM-190](../tasks/dexvm/DVM-190.md)）。[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
+  测试失败：ogplay_tests 1903/1903、ogplay_app_tests 89/89 通过，0 失败，保留既有 7 skip。
 - 一致性：dalvik/tests switch/threaded 72/92（78.3%）；链接错误可 catch，异常栈/线程语义已对齐，见 [DVM-256](../tasks/dexvm/DVM-256.md)、[WU7-3](../tasks/diagnostics/DIAG-7.md)。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。

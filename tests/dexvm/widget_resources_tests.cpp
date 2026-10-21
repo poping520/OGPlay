@@ -156,8 +156,12 @@ TEST_CASE("TextView Java state controls deterministic measure and draw state") {
     vm.CallOn(text, "setTextColor", "(I)V",
               {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
     vm.CallOn(text, "setTextSize", "(F)V", {VmValue::Float(8.0F)});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(text)});
+    // setContentView(View) uses MATCH_PARENT; request intrinsic measurement explicitly.
+    const auto params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout$LayoutParams;");
+    vm.CallDirect(params, "Landroid/widget/FrameLayout$LayoutParams;", "<init>", "(II)V",
+                  {VmValue::Int(-2), VmValue::Int(-2)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(text), VmValue::Ref(params)});
     const auto returned =
         vm.CallOn(text, "getText", "()Ljava/lang/CharSequence;").ref;
     CHECK(vm.model.StringValue(returned) == u"Hi");
@@ -645,8 +649,12 @@ TEST_CASE("compound drawables resolve resources and drive measure") {
     const auto* state = vm.context->ui_tree.Get(*node);
     CHECK(state->compound_drawables[0] ==
           ui::CompoundDrawable{101, 1, 1});
-    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V",
-              {VmValue::Ref(button)});
+    // setContentView(View) uses MATCH_PARENT; request intrinsic measurement explicitly.
+    const auto params = vm.interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout$LayoutParams;");
+    vm.CallDirect(params, "Landroid/widget/FrameLayout$LayoutParams;", "<init>", "(II)V",
+                  {VmValue::Int(-2), VmValue::Int(-2)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+              {VmValue::Ref(button), VmValue::Ref(params)});
     // "Hi" measures 11 px at the 8 px fixed font; with the 1x1 left drawable
     // and the button's default 6/4 padding the wrap-content width is 24.
     CHECK(vm.CallOn(button, "getWidth", "()I").AsInt() == 24);

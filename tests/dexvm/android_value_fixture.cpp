@@ -43,13 +43,15 @@ namespace ogplay::test::android_value {
 AndroidValueVm::AndroidValueVm(InterpreterBackend backend,
                const std::vector<IntrinsicClassDecl>& extras,
                bool force_all_bridge,
-               const char* dex_fixture)
+               const char* dex_fixture,
+               bool include_skeleton)
     : vm(
-          [this, &extras, dex_fixture]() -> DexClassLinker& {
+          [this, &extras, dex_fixture, include_skeleton]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(
                   AndroidCoreIntrinsicServices(context)));
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
               ogplay::test::RegisterBootDex(linker);
+              if (include_skeleton) ogplay::test::RegisterBootDexSkeleton(linker);
               linker.RegisterIntrinsics(extras);
               if (dex_fixture != nullptr) {
                   const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + dex_fixture;
@@ -61,7 +63,9 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend,
               linker.Link();
               return linker;
           }(),
-          model, nullptr, ledger, {.backend = backend, .force_all_bridge = force_all_bridge}) {
+          model, nullptr, ledger, {.backend = backend, .force_all_bridge = force_all_bridge}),
+      threads(vm) {
+    context->threads = &threads;
     vm.SetLogger(&logger);
     RegisterAndroidValueStateTables(vm, context);
 }

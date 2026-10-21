@@ -32,6 +32,8 @@
 #include "ogplay/runtime/integration/dexvm_android.h"
 #include "ogplay/runtime/integration/dexvm_io_vfs.h"
 #include "ogplay/runtime/vfs/vfs.h"
+#include "ogplay/runtime/vfs/sandbox_store.h"
+#include "ogplay/hal/clock.h"
 
 namespace {
 using namespace ogplay::runtime;
@@ -145,6 +147,15 @@ std::vector<std::byte> MakeStoredZip(const std::string_view name,
     return bytes;
 }
 
+// The production SQLiteGlobal reads StatFs("/data") before opening a database.
+// A bare in-memory VFS has no quota volume; mount a real test-owned sandbox.
+struct SqliteSandboxRoot final {
+  std::filesystem::path path = std::filesystem::temp_directory_path() /
+      ("ogplay-sqlite-" + std::to_string(ogplay::hal::Clock::SteadyTimestampNs()));
+  SqliteSandboxRoot() { std::filesystem::create_directories(path); }
+  ~SqliteSandboxRoot() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }
+};
+
 struct NetworkSqliteVm final {
   JniStringStore strings;
   JniPrimitiveArrayStore arrays;
@@ -152,6 +163,8 @@ struct NetworkSqliteVm final {
   DexClassLinker linker;
   ogplay::core::CapabilityLedger ledger;
   ogplay::core::Logger logger;
+  SqliteSandboxRoot sandbox_root;
+  std::unique_ptr<SandboxStore> sandbox;
   VirtualFileSystem vfs;
   DexVmIoVfsAdapter io_file_system{vfs};
   std::shared_ptr<DexVmAndroidContext> context{
@@ -238,9 +251,10 @@ struct NetworkSqliteVm final {
     vm.IO().SetFileSystem(&io_file_system);
     vm.SetLogger(&logger);
     vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
-    vfs.CreateDirectory("/data");
-    vfs.CreateDirectory("/data/data");
-    vfs.CreateDirectory("/data/data/" + context->package_name);
+    sandbox = SandboxStore::Open(sandbox_root.path, context->package_name, context->package_name);
+    const std::vector<std::string> roots{"/data/data/" + context->package_name, "/sdcard"};
+    vfs.AttachSandbox(*sandbox, roots);
+    REQUIRE(vfs.StatVfs("/data").values[0] > 0);
     vfs.CreateDirectory("/data/data/" + context->package_name + "/databases");
   }
 

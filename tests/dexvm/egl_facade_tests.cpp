@@ -695,13 +695,17 @@ TEST_CASE("BND37 GLSurfaceView publishes API19 context config and GL queue entry
     CHECK(vm.context->gl_surface_config_specs.at(view.Value()) ==
           std::vector<std::int32_t>{5, 6, 5, 0, 24, 8});
 
+    const auto renderer = vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
+    static_cast<void>(vm.CallOn(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V",
+                                {VmValue::Ref(renderer)}));
     const auto runnable = vm.interpreter.NewIntrinsicInstance(
         "Ljava/lang/Object;");
     static_cast<void>(vm.CallOn(
         view, "queueEvent", "(Ljava/lang/Runnable;)V",
         {VmValue::Ref(runnable)}));
-    REQUIRE(vm.context->gl_surface_events.size() == 1U);
-    CHECK(vm.context->gl_surface_events.front() == runnable);
+    const auto runtime = vm.context->gl_surface_runtimes.at(view.Value());
+    REQUIRE(runtime->events.size() == 1U);
+    CHECK(runtime->events.front() == runnable);
     static_cast<void>(vm.CallOn(view, "setRenderMode", "(I)V",
                                 {VmValue::Int(0)}));
     static_cast<void>(vm.CallOn(view, "requestRender", "()V"));

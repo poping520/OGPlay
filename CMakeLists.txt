@@ -533,7 +533,7 @@ endif()
 # Application facade aggregates runtime and shared library domain only.
 add_library(ogplaycore SHARED
     src/frontend/app/json.cpp src/frontend/app/logging.cpp src/frontend/app/encoding.cpp
-    src/frontend/app/dex_surface.cpp src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
+    src/frontend/app/dex_surface.cpp src/frontend/app/dex_run.cpp src/frontend/app/game_run.cpp src/frontend/app/services.cpp src/frontend/game/run_options.cpp
     src/frontend/game/run_game.cpp)
 target_link_libraries(ogplaycore PRIVATE
     OGPlay::Frontend "$<LINK_LIBRARY:WHOLE_ARCHIVE,ogplay_library>" OGPlay::Hal OGPlay::Loader OGPlay::Runtime)

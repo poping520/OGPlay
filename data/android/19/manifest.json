@@ -82,17 +82,17 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "cc33fee207037d40b7d5a7f6d982c34568048557070a66c0b55c0a2d5efca56e",
+        "source_sha256": "a1cdb104385de7635b49d03dfc458bc88d675f4e21a1d3615a268473fe8cf518",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 4108400,
-    "sha256": "f2e4cf21814ef635e3c1dc296b06af8fcfd7c82e3cb466a343bace48e3d3bfe7",
+    "size": 4108416,
+    "sha256": "92fa07c91e8ba87e547d0dded7b342f7071305057dad386b93bdd6c0fc6f69ec",
     "dex_entry": "classes.dex",
-    "dex_size": 4103780,
-    "dex_sha256": "ef8ff913a94132ec132fa2187b4781eb89c448c895f582fd6a6a3f8d588b6e75",
+    "dex_size": 4103796,
+    "dex_sha256": "70e3893a2d6b355f5b89221d275ca5f38958a79f09bb66511a970cc45a79ba34",
     "class_count": 2566,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",

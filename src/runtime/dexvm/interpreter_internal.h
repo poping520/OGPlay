@@ -156,6 +156,7 @@ public:
     std::unique_ptr<AnnotationRuntime> annotations;
     std::vector<IntrinsicStateTableHooks> intrinsic_state_tables;
     core::Logger* logger{};
+    Interpreter::ConsoleSink console;
     Interpreter* owner{};
     VmExecutionLock execution_lock;
     std::mutex clinit_wait_mutex;

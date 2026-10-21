@@ -117,9 +117,14 @@ namespace ogplay::runtime::dexvm::intrinsics {
 namespace ogplay::runtime::dexvm::intrinsics {
     IntrinsicClassDecl Declare_org_ogplay_io_LogOutputStream() {
         auto builder = IntrinsicClassBuilder::Class("Lorg/ogplay/io/LogOutputStream;");
-        builder.StaticMethod("emit", "(Ljava/lang/String;)V", [](IntrinsicContext& c) {
-            const auto text = IntrinsicCall(c).NonNullRef(0, "text");
-            detail::GuestLine(c, c.vm.StringUtf8(text));
+        builder.StaticMethod("emit", "(Ljava/lang/String;Z)V", [](IntrinsicContext& c) {
+            const auto text = c.vm.StringUtf8(IntrinsicCall(c).NonNullRef(0, "text"));
+            const bool line_end = c.arguments[1].AsInt() != 0;
+            if (const auto& console = c.vm.Console()) {
+                console(line_end ? text + "\n" : text);
+            } else if (!text.empty()) {
+                detail::GuestLine(c, text);
+            }
             return VmValue::Void();
         }, kAccPrivate | kAccNative);
         return std::move(builder).Build();

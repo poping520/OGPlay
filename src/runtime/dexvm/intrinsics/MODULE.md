@@ -49,7 +49,7 @@
   记账抛 UnsupportedOperationException，false 保持未启用。见 [DVM-150](../../../../docs/tasks/dexvm/DVM-150.md)。
 - System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
   注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
-  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false。
+  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）。
 - 平台 enum 用 IntrinsicEnumBuilder 在链接前生成字段、$VALUES、clinit、values/valueOf；
   BootDex enum 复用 Enum.getSharedConstants，禁止 EnumSet 的 C++ 副本。顶层接口只声明
   已登记 shape，Thread.UncaughtExceptionHandler 归 Thread family。

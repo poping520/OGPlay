@@ -1,0 +1,33 @@
+.class public Lrundex/Main;
+.super Ljava/lang/Object;
+.method public static main([Ljava/lang/String;)V
+.registers 5
+    sget-object v0, Ljava/lang/System;->out:Ljava/io/PrintStream;
+    const-string v1, "partial "
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->print(Ljava/lang/String;)V
+    const-string v1, "line"
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+    invoke-virtual {v0}, Ljava/io/PrintStream;->println()V
+    sget-object v0, Ljava/lang/System;->err:Ljava/io/PrintStream;
+    const-string v1, "err"
+    invoke-virtual {v0, v1}, Ljava/io/PrintStream;->println(Ljava/lang/String;)V
+    array-length v1, v4
+    if-eqz v1, :done
+    const/4 v2, 0
+    aget-object v1, v4, v2
+    invoke-static {v1}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I
+    move-result v1
+    invoke-static {v1}, Ljava/lang/System;->exit(I)V
+:done
+    return-void
+.end method
+
+.class public Lrundex/Thrower;
+.super Ljava/lang/Object;
+.method public static main([Ljava/lang/String;)V
+.registers 3
+    new-instance v0, Ljava/lang/IllegalStateException;
+    const-string v1, "boom"
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method

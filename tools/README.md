@@ -37,6 +37,21 @@ python3 tools/capabilities.py verify runtime.ui_inflater --build-dir build/dev
 `verify` 按条目的 test 入口运行 doctest 过滤、ctest、tools 命令或 vitest；`--dry-run` 只打印命令，
 多配置生成器用 `--config`。`check` 由 ctest `tools.capabilities_current` 执行。
 
+## dalvik/tests 一致性探针
+
+`conformance/dalvik_tests.py` 把 `.local/aosp/dalvik/tests` 复制到工作目录，用 javac
+（1.7，API 19 android.jar）与 dx `--debug`（与 etc/default-build 一致；d8 1.5 会删除 javac
+断言代码）编译，经 `ogplay-cli dexvm run-dex --enable-assertions` 在两个解释器后端运行，
+与 expected.txt 逐字节比较并分类（pass/fail:*/excluded:*）。dx.jar 取自已下载的
+build-tools 29.0.2 包（与 d8.jar 同目录，`OGPLAY_DX_JAR` 可覆盖）。排除表固定并写明理由。
+
+```text
+python3 tools/conformance/dalvik_tests.py --self-test
+python3 tools/conformance/dalvik_tests.py [--only <test>] [--backend switch] [--jobs 4] [--timeout 60]
+```
+
+产物默认写 `.local/analysis/wu6/`（summary.md/json、逐用例 stdout/stderr/ledger），不进仓库。
+
 ## API 19 BootDex
 
 `bootdex/build_bootdex.py` 根据 [`bootdex/api19.json`](bootdex/api19.json) 从 API 19 ROM/AOSP jar

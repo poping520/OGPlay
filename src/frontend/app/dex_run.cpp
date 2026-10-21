@@ -1,0 +1,266 @@
+#include "ogplay/app/dex_run.h"
+#include "ogplay/app/host.h"
+#include "ogplay/core/capability_ledger.h"
+#include "ogplay/core/json.h"
+#include "ogplay/core/logger.h"
+#include "ogplay/hal/clock.h"
+#include "ogplay/loader/apk.h"
+#include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/integration/dexvm_android.h"
+#include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "ogplay/runtime/vfs/vfs.h"
+#include <array>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <stdexcept>
+#include <thread>
+
+namespace ogplay::app {
+namespace {
+namespace dx = runtime::dexvm;
+
+void WriteStderr(const std::string& text) {
+    static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stderr));
+    static_cast<void>(std::fflush(stderr));
+}
+
+std::vector<std::uint8_t> ReadFile(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("cannot open " + path.string());
+    return {std::istreambuf_iterator<char>(input), {}};
+}
+
+// A file is either a bare dex or a zip whose single dex is classes.dex.
+std::vector<std::uint8_t> ReadDex(const std::filesystem::path& path) {
+    auto raw = ReadFile(path);
+    if (raw.size() >= 4 && std::memcmp(raw.data(), "dex\n", 4) == 0) return raw;
+    std::vector<std::byte> archive(raw.size());
+    std::memcpy(archive.data(), raw.data(), raw.size());
+    const auto parsed = loader::ParseApkArchive(archive);
+    for (const auto& entry : parsed.entries) {
+        if (entry.name == "classes2.dex")
+            throw std::runtime_error("multidex input is not supported: " + path.string());
+    }
+    const auto dex = loader::ReadApkEntry(archive, parsed, "classes.dex");
+    std::vector<std::uint8_t> bytes(dex.size());
+    std::memcpy(bytes.data(), dex.data(), dex.size());
+    return bytes;
+}
+
+std::string ClassDescriptor(std::string name) {
+    for (auto& c : name) if (c == '.') c = '/';
+    return "L" + name + ";";
+}
+
+dx::VmCallOutcome CallVirtual(dx::Interpreter& vm, const dx::VmObjectRef receiver,
+                              const std::string& name, const std::string& descriptor,
+                              std::vector<dx::VmValue> arguments = {}) {
+    auto& linker = vm.Linker();
+    const auto owner = vm.Model().ObjectClass(receiver);
+    const auto index = linker.FindVtableIndex(owner, name, descriptor);
+    if (!index) throw std::runtime_error("run-dex: missing virtual " + name + descriptor);
+    arguments.insert(arguments.begin(), dx::VmValue::Ref(receiver));
+    return vm.Call(linker.Class(owner).vtable[*index], arguments);
+}
+
+// dvmDetachCurrentThread with a pending exception: the thread's handler, or
+// its ThreadGroup, receives uncaughtException(thread, throwable).
+void DispatchUncaught(dx::Interpreter& vm, const dx::VmObjectRef throwable) {
+    auto& linker = vm.Linker();
+    const auto thread_class = linker.ResolveDescriptor("Ljava/lang/Thread;");
+    const auto current = linker.FindDirectMethod(thread_class, "currentThread", "()Ljava/lang/Thread;");
+    if (!current) throw std::runtime_error("run-dex: Thread.currentThread is unavailable");
+    const auto thread = vm.Call(*current, std::span<const dx::VmValue>{});
+    if (thread.exception.IsValid()) throw std::runtime_error("run-dex: Thread.currentThread threw");
+    const auto roots = vm.ProtectReferences(std::array{thread.value.ref});
+    auto handler = CallVirtual(vm, thread.value.ref, "getUncaughtExceptionHandler",
+                               "()Ljava/lang/Thread$UncaughtExceptionHandler;");
+    if (handler.exception.IsValid()) throw std::runtime_error("run-dex: getUncaughtExceptionHandler threw");
+    if (!handler.value.ref.IsValid()) {
+        handler = CallVirtual(vm, thread.value.ref, "getThreadGroup", "()Ljava/lang/ThreadGroup;");
+        if (handler.exception.IsValid() || !handler.value.ref.IsValid())
+            throw std::runtime_error("run-dex: main thread has no ThreadGroup");
+    }
+    // AOSP ignores failures raised by the handler itself; keep them visible
+    // on stderr so an unimplemented handler is not mistaken for silence.
+    const auto dispatched = CallVirtual(vm, handler.value.ref, "uncaughtException",
+        "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+        {dx::VmValue::Ref(thread.value.ref), dx::VmValue::Ref(throwable)});
+    if (dispatched.exception.IsValid()) {
+        WriteStderr("ogplay-run-dex: uncaught handler failed: " +
+                    linker.Class(dispatched.exception_class).descriptor + ": " +
+                    dispatched.exception_message + "\n");
+    }
+}
+
+// DestroyJavaVM: wait until every non-daemon thread other than main finishes.
+void WaitForNonDaemonThreads(dx::Interpreter& vm, dx::VmThreadRuntime& threads) {
+    for (;;) {
+        if (vm.ExitCode()) return;
+        bool waiting = false;
+        for (const auto& thread : threads.Snapshot()) {
+            if (thread.id == 1U || thread.status != dx::VmThreadStatus::running) continue;
+            const auto daemon = CallVirtual(vm, dx::VmObjectRef{thread.object}, "isDaemon", "()Z");
+            if (!daemon.exception.IsValid() && daemon.value.AsInt() == 0) waiting = true;
+        }
+        if (!waiting) return;
+        static_cast<void>(threads.WaitForHostProgress(std::chrono::milliseconds(50)));
+    }
+}
+
+void WriteLedger(const std::filesystem::path& path, const core::CapabilityLedger& ledger) {
+    core::JsonWriter writer;
+    const auto root = writer.Object();
+    writer.AddInteger(root, "schema", 1);
+    const auto hits = writer.Array();
+    for (const auto& hit : ledger.Unimplemented()) {
+        const auto item = writer.Object();
+        writer.AddString(item, "id", hit.id);
+        writer.AddInteger(item, "count", static_cast<std::int64_t>(hit.count));
+        writer.Append(hits, item);
+    }
+    writer.Add(root, "unimplemented", hits);
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) throw std::runtime_error("cannot write " + path.string());
+    output << writer.Serialize(root) << '\n';
+}
+}  // namespace
+
+DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
+    DexRunOptions options;
+    std::size_t index = 0;
+    for (; index < args.size(); ++index) {
+        const auto arg = args[index];
+        const auto value = [&]() -> std::string {
+            if (index + 1 >= args.size())
+                throw std::invalid_argument("run-dex option needs a value: " + std::string(arg));
+            return std::string(args[++index]);
+        };
+        if (arg == "--") { ++index; break; }
+        if (arg == "--class") options.main_class = value();
+        else if (arg == "--backend") {
+            options.backend = value();
+            if (options.backend != "switch" && options.backend != "threaded")
+                throw std::invalid_argument("--backend must be switch or threaded");
+        } else if (arg == "--ledger-json") options.ledger_json = std::filesystem::path(value());
+        else if (arg == "--enable-assertions" || arg == "-ea") options.enable_assertions = true;
+        else if (arg.starts_with("--")) throw std::invalid_argument("unknown run-dex option: " + std::string(arg));
+        else if (options.input.empty()) options.input = std::filesystem::path(std::string(arg));
+        else { break; }
+    }
+    for (; index < args.size(); ++index) options.arguments.emplace_back(args[index]);
+    if (options.input.empty()) throw std::invalid_argument("run-dex requires <dex-or-jar>");
+    if (options.main_class.empty()) throw std::invalid_argument("--class must not be empty");
+    return options;
+}
+
+int RunDex(const DexRunOptions& options, const DexConsole& console) {
+    auto app_dex = ReadDex(options.input);
+    const auto data = BundledDataPaths().root;
+    auto boot_dex = ReadDex(data / "android/19/framework/bootdex.jar");
+    auto skeleton = ReadFile(data / "dexvm/api19-skeleton.bin");
+
+    runtime::JniStringStore strings;
+    runtime::JniPrimitiveArrayStore arrays;
+    dx::JavaObjectModel model{strings, arrays};
+    dx::DexClassLinker linker;
+    core::CapabilityLedger ledger;
+    const auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
+    linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
+    linker.RegisterBootDex(std::move(boot_dex));
+    linker.RegisterSkeletonSurface(std::move(skeleton));
+    linker.RegisterDex(std::move(app_dex));
+    linker.Link();
+
+    dx::InterpreterConfig config;
+    config.enable_assertions = options.enable_assertions;
+    config.backend = options.backend == "threaded" ? dx::InterpreterBackend::threaded
+                                                   : dx::InterpreterBackend::switch_dispatch;
+    dx::Interpreter vm(linker, model, nullptr, ledger, config);
+    vm.BindDefaultExecutionHost();
+    core::Logger logger;
+    logger.AddSink(std::make_shared<core::ConsoleSink>(stderr), core::LogLevel::warn);
+    vm.SetLogger(&logger);
+    vm.SetConsoleSink(console ? console : DexConsole([](const std::string_view bytes) {
+        static_cast<void>(std::fwrite(bytes.data(), sizeof(char), bytes.size(), stdout));
+        static_cast<void>(std::fflush(stdout));
+    }));
+    runtime::RegisterAndroidAudioTrackStateTable(vm, context);
+    runtime::RegisterAndroidSurfaceStreamStateTable(vm, context);
+    runtime::RegisterAndroidSchedulerStateTable(vm, context);
+    runtime::RegisterAndroidValueStateTables(vm, context);
+    runtime::RegisterAndroidDatabaseStateTables(vm, context);
+    runtime::RegisterAndroidOwnerAttachedStateTable(vm, context);
+    runtime::VirtualFileSystem vfs;
+    runtime::DexVmIoVfsAdapter io_file_system{vfs};
+    vm.IO().SetFileSystem(&io_file_system);
+    dx::VmThreadRuntime threads(vm);
+    // A standalone run has no frame pump: a realtime unified Clock drives the
+    // single Android monotonic clock that Thread.sleep/wait and System time read.
+    vm.Monitors().SetTimeSource([context] { return context->uptime_millis.load(); });
+    std::jthread clock_driver([context](const std::stop_token stop) {
+        hal::RealtimeClock clock(1000);
+        auto last = clock.Ticks();
+        while (!stop.stop_requested()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            const auto now = clock.Ticks();
+            runtime::AdvanceAndroidClock(*context, static_cast<std::int64_t>(now - last));
+            last = now;
+        }
+    });
+
+    int status = 0;
+    try {
+        const auto main_class = linker.FindClass(ClassDescriptor(options.main_class));
+        if (!main_class) throw std::runtime_error("main class not found: " + options.main_class);
+        const auto main = linker.FindDirectMethod(*main_class, "main", "([Ljava/lang/String;)V");
+        if (!main) throw std::runtime_error("static main(String[]) not found in " + options.main_class);
+        dx::VmObjectRef argv;
+        {
+            const dx::VmExecutionLockScope lock(vm.ExecutionLock());
+            argv = model.NewObjectArray(linker.ResolveDescriptor("[Ljava/lang/String;"),
+                                        linker.ResolveDescriptor("Ljava/lang/String;"),
+                                        static_cast<runtime::JniSize>(options.arguments.size()));
+        }
+        const auto argv_root = vm.ProtectReferences(std::array{argv});
+        for (std::size_t i = 0; i < options.arguments.size(); ++i) {
+            const dx::VmExecutionLockScope lock(vm.ExecutionLock());
+            model.SetObjectElement(argv, static_cast<runtime::JniSize>(i),
+                                   vm.NewStringUtf8(options.arguments[i]));
+        }
+        try {
+            const std::array main_arguments{dx::VmValue::Ref(argv)};
+            const auto outcome = vm.Call(*main, main_arguments);
+            if (outcome.exception.IsValid()) {
+                status = 1;
+                const auto thrown_root = vm.ProtectReferences(std::array{outcome.exception});
+                DispatchUncaught(vm, outcome.exception);
+            }
+            threads.FinishRootThread();
+            WaitForNonDaemonThreads(vm, threads);
+        } catch (const dx::DexVmError&) {
+            if (!vm.ExitCode()) throw;
+        }
+        while (const auto failure = threads.TakeFailure())
+            WriteStderr("ogplay-run-dex: worker failure: " + *failure + "\n");
+    } catch (...) {
+        threads.Shutdown();
+        if (!options.ledger_json.empty()) WriteLedger(options.ledger_json, ledger);
+        throw;
+    }
+    threads.Shutdown();
+    if (!options.ledger_json.empty()) WriteLedger(options.ledger_json, ledger);
+    if (const auto code = vm.ExitCode()) return *code;
+    return status;
+}
+
+}  // namespace ogplay::app

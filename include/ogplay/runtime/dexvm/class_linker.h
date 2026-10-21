@@ -19,6 +19,8 @@
 #include "ogplay/runtime/dexvm/dexvm_types.h"
 #include "ogplay/runtime/dexvm/fast_code.h"
 
+namespace ogplay::core { class Logger; }
+
 namespace ogplay::runtime::dexvm {
 
 struct IntrinsicContext;
@@ -370,6 +372,8 @@ public:
     // Install indexed data before application registration/Link; no classes are built.
     void RegisterSkeletonSurface(std::vector<std::uint8_t> bytes);
     void Link();
+    // Replay early link warnings when the session logger becomes available.
+    void SetLogger(core::Logger* logger);
     // Diagnostic snapshot; links without initialization and preserves per-class failures.
     [[nodiscard]] std::string DumpSurfaceJson();
 

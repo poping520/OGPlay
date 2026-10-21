@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/class_name_codec.h"
@@ -66,6 +67,25 @@ public:
         bool linked{};
         bool skeleton_merged{};
     };
+
+    struct OverrideWarning final {
+        std::string parent, child, name, descriptor;
+    };
+    core::Logger* logger{};
+    std::vector<OverrideWarning> pending_override_warnings;
+
+    void WarnInaccessibleOverride(OverrideWarning warning) {
+        if (logger == nullptr) {
+            pending_override_warnings.push_back(std::move(warning));
+            return;
+        }
+        logger->Write(core::LogLevel::warn, "runtime.dexvm.override",
+            warning.child + "->" + warning.name + warning.descriptor +
+                " overrides inaccessible method in " + warning.parent,
+            {}, {{"parent_class", warning.parent}, {"child_class", warning.child},
+                 {"method", warning.name}, {"descriptor", warning.descriptor}},
+            {.mode = core::RateLimitMode::first_and_count});
+    }
 
     // Lazy arrays, primitive classes and survey members may be appended while
     // frames are active.  deque keeps all previously published references
@@ -253,32 +273,14 @@ public:
         }
         linked.static_storage.assign(static_cursor, 0U);
 
-        // Keep inaccessible same-signature methods in distinct inherited slots.
-        // A name lookup alone loses the original package-private declaration.
-        const auto inherited_count = linked.vtable.size();
+        // Dalvik 4.4 createVtable: match names/prototypes even when the
+        // inherited method is inaccessible (b/7301030). Private methods are direct.
         for (auto& method_id : OwnVirtualMethods(linked)) {
             auto& method = MethodAt(method_id);
             const auto key = MemberKey(method.name, method.descriptor);
-            std::optional<std::uint16_t> override_slot;
-            for (std::size_t slot = 0; slot < inherited_count; ++slot) {
-                const auto& candidate = MethodAt(linked.vtable[slot]);
-                if (candidate.name != method.name || candidate.descriptor != method.descriptor) continue;
-                const auto rom_flags = method.is_skeleton && !candidate.is_skeleton
-                    ? SkeletonMethodFlags(candidate) : std::nullopt;
-                const auto flags = rom_flags.value_or(candidate.access_flags);
-                if ((flags & kAccPrivate) != 0U) continue;
-                if ((flags & (kAccPublic | kAccProtected)) == 0U) {
-                    const auto& owner = ClassAt(candidate.owner);
-                    const auto package = [](const std::string_view descriptor) {
-                        const auto slash = descriptor.rfind('/');
-                        return slash == std::string_view::npos ? std::string_view{} : descriptor.substr(0, slash);
-                    };
-                    if (owner.defining_loader != linked.defining_loader ||
-                        package(owner.descriptor) != package(linked.descriptor)) continue;
-                }
-                override_slot = static_cast<std::uint16_t>(slot);
-                break;
-            }
+            const auto existing = extra.virtual_lookup.find(key);
+            const auto override_slot = existing == extra.virtual_lookup.end()
+                ? std::optional<std::uint16_t>{} : std::optional{existing->second};
             if (override_slot.has_value()) {
                 const auto index = *override_slot;
                 if (index >= linked.vtable.size() ||
@@ -314,6 +316,18 @@ public:
                          "final method is overridden: " +
                              ClassAt(overridden.owner).descriptor + "." +
                              overridden.name + " by " + linked.descriptor);
+                }
+                if ((inherited_flags & (kAccPublic | kAccProtected)) == 0U) {
+                    const auto& parent = ClassAt(overridden.owner);
+                    const auto package = [](std::string_view descriptor) {
+                        const auto slash = descriptor.rfind('/');
+                        return slash == std::string_view::npos ? std::string_view{} : descriptor.substr(0, slash);
+                    };
+                    if (parent.defining_loader != linked.defining_loader ||
+                        package(parent.descriptor) != package(linked.descriptor)) {
+                        WarnInaccessibleOverride({parent.descriptor, linked.descriptor,
+                                                  method.name, method.descriptor});
+                    }
                 }
                 method.vtable_index = static_cast<std::int32_t>(index);
                 linked.vtable[index] = method_id;

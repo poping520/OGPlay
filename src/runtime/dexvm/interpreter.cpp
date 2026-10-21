@@ -1495,8 +1495,9 @@ VmObjectRef Interpreter::MaterializeThrowableStack(const VmObjectRef snapshot) {
     return array;
 }
 
-void Interpreter::SetLogger(core::Logger* logger) noexcept {
+void Interpreter::SetLogger(core::Logger* logger) {
     impl_->logger = logger;
+    impl_->linker->SetLogger(logger);
 }
 core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
 const InterpreterConfig& Interpreter::Config() const noexcept { return impl_->config; }

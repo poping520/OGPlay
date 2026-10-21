@@ -384,8 +384,8 @@
     "threaded": "fail:unimplemented"
   },
   "300-package-override": {
-    "switch": "pass",
-    "threaded": "pass"
+    "switch": "excluded:oracle",
+    "threaded": "excluded:oracle"
   },
   "301-abstract-protected": {
     "switch": "pass",

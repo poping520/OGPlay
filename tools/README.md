@@ -52,6 +52,9 @@ python3 tools/conformance/dalvik_tests.py --check-baseline # pass 退步退出 1
 python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新仓库基线，子集合并保留其余项
 ```
 
+固定 `ORACLE_DIVERGENCE` 表记录与 Dalvik 4.4 不符的 expected 判据（含源码位置），归类
+`excluded:oracle`；仅表内用例允许 pass → excluded:oracle，基线比较单列显式迁移。
+
 产物默认写 `.local/analysis/wu6/`（summary.md/json、逐用例 stdout/stderr/ledger），不进仓库。
 
 ## API 19 BootDex

@@ -51,6 +51,8 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 ## WU7-1a · vtable override 判定（2026-10-21）
 
+以下为 `8b2c7b53` 的历史实施与验证；包隔离规则因原任务判据有误，已由本节末的修正取代。
+
 - 局部行为修复，依赖 WU7-0：取消缩小可见性的拒绝；扫描继承槽，private 不覆盖，
   包私有只在同 defining loader、同包名时覆盖，否则追加槽并保留父槽。intrinsic 父类同规则，
   final 与 intrinsic 显式覆盖准入仍保留；无调用方或游戏特化。
@@ -88,6 +90,40 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   `shutdown.clean=true`、退出 0；本路径未出现下一处失败，不宣称视觉验收。
 - Scenario validator（9 文件）、`capabilities.py check`、`git diff --check` 通过；
   CURRENT 更新 Angry Birds 到达点及探针通过率。
+
+### WU7-1a 修正 · 对齐 Dalvik 4.4 真机
+
+- 原任务的包隔离要求有误。本次按 `vm/oo/Class.cpp:2867-2960` 的 createVtable 恢复
+  b/7301030 兼容行为：同名同原型即覆盖，不以包名/loader 拒绝或另开槽；private 是 direct，
+  不进入 vtable。允许缩小可见性、拒绝 final 与既有 intrinsic 准入保持不变。
+- 包/loader 比较仅用于访问诊断：不可访问的覆盖发 `runtime.dexvm.override` 结构化 warn，
+  含 parent_class、child_class、method、descriptor；message 含完整双方身份，
+  RateLimitPolicy first_and_count 去重。Logger 显式注入 linker，Interpreter.SetLogger 同步转发；
+  注入前的链接警告暂存，注入后发布，重新设置 logger 不重放。
+- 原包隔离回归改为双后端检查同包、跨包、跨 loader 复用父槽并实际分派到子方法；
+  private 不参与，跨包 final 覆盖链接失败，同时验证早期 warn 发布及重复警告的抑制计数。
+  继承/intrinsic/skeleton 主题 50/50、1455 断言通过；只构建 ogplay-cli、ogplay_tests。
+- 探针新增固定 ORACLE_DIVERGENCE，与 EXCLUDED 并列，300 记 excluded:oracle：
+  expected.txt 对应 4.4 之后修复；4.4 createVtable 因 b/7301030 故意允许覆盖，源码位置 2919。
+  只有表内 pass → excluded:oracle 可显式迁移，比较输出单列 oracle migrations；
+  表外伪迁移、其他退步和缺失结果仍判回归，有回归仍拒绝写文件。
+- --self-test 覆盖分类、合法迁移、非法退步、合法迁移与真实回归混合时拒写及原文件不变。
+  目标 077/301/040 双后端 pass，300 双后端 excluded:oracle。
+- 全量 --check-baseline 退出 0：0 回归、0 新增、0 其他变化，仅 300 两个后端的 oracle 迁移。
+  随后 --update-baseline 成功，只改这两个分类；各 57/92（62.0%），分子/分母变化来自
+  oracle 排除，非支持语义退步。日志 `.local/analysis/wu7-1a-correction-{self-test,tests,target,full,update}.log`。
+- 九个基础场景正常模式、新沙盒各一次，复用 WU5 精确 fixture/显示参数；9/9 到达全部
+  checkpoint，5/9 整体 passed（Lili、Wild Blood、Dungeon Hunter、Asphalt5、Angry Birds）。
+  DT/Tales/PVZ 保持既有退出失败；TML 两次均达 1800 呈现帧后退出报 unknown guest thread id，
+  与 CURRENT 的既有阻塞相同，但未达到原 6/9 计数要求，不能宣称九场景结果无变化。
+  首跑与独立复跑均保留：`.local/analysis/wu7-1a-correction/scenarios-summary.json`、
+  `scenarios/<id>/`、`tml-standalone/`；未修改预算、清理判据或线程退出实现。
+- 回退五份链接/执行源码及声明到提交前 HEAD `cbefa2eb`，核对每份 git blob 哈希后只构建 CLI，
+  TML 同路径新沙盒对照也在 1800 呈现帧后退出报 unknown guest thread id，确认本次修改前
+  同错已存在。证据 `tml-control/`、`control-source-proof.json`；修正源码随后按保存字节恢复并重建。
+  因此没有证据表明该退出错误由本次 override 修正引入，但本轮 6/9 的计数验收仍未达到。
+- Scenario validator（9 文件）、capabilities check、diff check 通过；当前通过率与契约按
+  4.4 实际语义更新。未扩大到线程退出修复，保留上述场景验证缺口。
 
 ## WU7-2 · 数组存储与 core 字符串语义（2026-10-21）
 

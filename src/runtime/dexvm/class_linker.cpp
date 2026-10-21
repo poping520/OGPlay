@@ -228,6 +228,15 @@ LinkedAnnotationValue ConvertAnnotationValue(
     return name + ":" + descriptor;
 }
 
+void DexClassLinker::SetLogger(core::Logger* logger) {
+    impl_->logger = logger;
+    if (logger == nullptr) return;
+    for (auto& warning : impl_->pending_override_warnings) {
+        impl_->WarnInaccessibleOverride(std::move(warning));
+    }
+    impl_->pending_override_warnings.clear();
+}
+
 DexClassLinker::DexClassLinker() : impl_(std::make_unique<Impl>()) {}
 DexClassLinker::~DexClassLinker() = default;
 

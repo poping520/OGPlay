@@ -4,6 +4,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <bit>
 #include <algorithm>
 #include <iterator>
 #include <filesystem>
@@ -426,4 +427,53 @@ TEST_CASE("unconfigured dialog and strict WebView presentation fail explicitly")
     REQUIRE(web_result.exception.IsValid());
     CHECK(vm.linker.Class(web_result.exception_class).descriptor ==
           "Ljava/lang/UnsupportedOperationException;");
+}
+
+TEST_CASE("LUI18 Window attributes copy API19 values with stable per-window identity") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto first = vm.CallOn(vm.activity, "getWindow", "()Landroid/view/Window;").ref;
+        const auto second = vm.interpreter.NewIntrinsicInstance("Landroid/view/Window;");
+        const auto source = vm.interpreter.NewIntrinsicInstance("Landroid/view/WindowManager$LayoutParams;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{first, second, source});
+        vm.CallDirect(source, "Landroid/view/WindowManager$LayoutParams;", "<init>", "()V");
+        const auto attributes = [&](VmObjectRef window) {
+            return vm.CallOn(window, "getAttributes", "()Landroid/view/WindowManager$LayoutParams;").ref;
+        };
+        const auto a = attributes(first), b = attributes(second);
+        REQUIRE(a != b);
+        const auto slot = [&](VmObjectRef object, const char* name, const char* type) -> Slot& {
+            const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(object), name, type);
+            REQUIRE(field.has_value());
+            return vm.model.InstanceSlots(object)[vm.linker.Field(*field).slot];
+        };
+        CHECK(slot(a, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(-1.0F));
+        CHECK(static_cast<std::int32_t>(slot(a, "width", "I").bits) == -1);
+        CHECK(slot(a, "alpha", "F").bits == std::bit_cast<std::uint32_t>(1.0F));
+        const auto retained = vm.interpreter.NewStringUtf8("original");
+        const auto replacement = vm.interpreter.NewStringUtf8("replacement");
+        const auto string_roots = vm.interpreter.ProtectReferences(std::array{retained, replacement});
+        slot(a, "packageName", "Ljava/lang/String;") = {retained.Value(), SlotTag::ref};
+        slot(source, "packageName", "Ljava/lang/String;") = {replacement.Value(), SlotTag::ref};
+        const auto token = vm.interpreter.NewIntrinsicInstance("Landroid/os/Binder;");
+        const auto token_root = vm.interpreter.ProtectReferences(std::array{token});
+        slot(source, "token", "Landroid/os/IBinder;") = {token.Value(), SlotTag::ref};
+        slot(source, "screenBrightness", "F") = {std::bit_cast<std::uint32_t>(0.25F), SlotTag::cat1};
+        slot(source, "buttonBrightness", "F") = {std::bit_cast<std::uint32_t>(0.5F), SlotTag::cat1};
+        slot(source, "width", "I") = {321, SlotTag::cat1};
+        slot(source, "flags", "I") = {0x400, SlotTag::cat1};
+        slot(source, "memoryType", "I") = {9, SlotTag::cat1};
+        vm.CallOn(first, "setAttributes", "(Landroid/view/WindowManager$LayoutParams;)V", {VmValue::Ref(source)});
+        CHECK(attributes(first) == a);
+        CHECK(slot(a, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(0.25F));
+        CHECK(slot(a, "buttonBrightness", "F").bits == std::bit_cast<std::uint32_t>(0.5F));
+        CHECK(slot(a, "width", "I").bits == 321);
+        CHECK(slot(a, "flags", "I").bits == 0x400);
+        CHECK(slot(a, "packageName", "Ljava/lang/String;").bits == retained.Value());
+        CHECK(slot(a, "token", "Landroid/os/IBinder;").bits == token.Value());
+        CHECK(slot(a, "memoryType", "I").bits == 0); // AOSP copyFrom excludes this deprecated field.
+        CHECK(slot(b, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(-1.0F));
+        slot(source, "screenBrightness", "F") = {0, SlotTag::cat1};
+        CHECK(slot(a, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(0.25F));
+    }
 }

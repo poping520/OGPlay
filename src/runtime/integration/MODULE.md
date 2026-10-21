@@ -34,6 +34,9 @@ headless/NativeActivity runner 与出口报告。可依赖 jni_guest/boundary/fr
 syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直接持有窗口、消费输入或
 实现游戏专属逻辑；executor、Clock、VFS、Profile 必须显式注入或由确定性 fixture 建立。
 
+内容树触摸分发、reverse-Z hit-test、intercept/CANCEL 与非 split 捕获归 integration，
+session 宿主输入和 guest Window 入口共用相同状态与算法；integration 不消费宿主设备。
+
 Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 [DexVM](../dexvm/MODULE.md)拥有解释/GC/线程，[session](../../session/MODULE.md)编排生命周期，
 [capabilities](../../../capabilities.toml)登记支持范围。普通 Java 算法不得在 integration 重建。

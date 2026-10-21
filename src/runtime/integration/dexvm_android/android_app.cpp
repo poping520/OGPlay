@@ -404,6 +404,17 @@ Decl Declare_android_app_Activity(const Context& context) {
         on_key_false);
     builder.VirtualMethod("onKeyUp", "(ILandroid/view/KeyEvent;)Z",
         on_key_false);
+    builder.VirtualMethod("onUserInteraction", "()V", lifecycle_noop);
+    builder.VirtualMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [](dx::IntrinsicContext& call) {
+            const auto event = call.arguments[0];
+            if (CallAndroidMethod(call.vm, event.ref, "getAction", "()I").AsInt() == 0)
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "onUserInteraction", "()V"));
+            const auto window = CallAndroidMethod(call.vm, call.receiver, "getWindow", "()Landroid/view/Window;").ref;
+            if (CallAndroidMethod(call.vm, window, "superDispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {event}).AsInt())
+                return dx::VmValue::Int(1);
+            return CallAndroidMethod(call.vm, call.receiver, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", {event});
+        });
     builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.DirectMethod("nativeStartActivityForResult",

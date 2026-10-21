@@ -142,6 +142,9 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
 }
 
 void ResetViewUiState(DexVmAndroidContext& context) {
+    context.ui_touch_capture = 0;
+    context.ui_touch_activity = dexvm::VmObjectRef{};
+    context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();
     if (!context.activity_stack.empty()) {
         const auto children = context.ui_tree.Get(ActivityContentRoot(context))->children;
         for (const auto child : children) RetireViewUiSubtree(context, child);
@@ -220,6 +223,12 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 context.active_surface_holders.erase(key);
                 context.surface_callback_sizes.erase(key);
                 context.surface_holders.erase(holder);
+            }
+            context.ui_touch_clicks.erase(object);
+            context.ui_touch_targets.erase(object);
+            if (context.ui_touch_capture == object) {
+                context.ui_touch_capture = 0;
+                context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();
             }
             context.object_to_ui_node.erase(object);
             context.ui_view_layout_params.erase(object);
@@ -1606,6 +1615,170 @@ std::vector<std::uint64_t> FindTouchReceiversAt(
     android_intrinsics::CollectTouchReceivers(
         context, context.ui_tree.Root(), x, y, receivers);
     return receivers;
+}
+
+namespace {
+using dexvm::VmObjectRef;
+using dexvm::VmValue;
+constexpr auto kTouchSignature = "(Landroid/view/MotionEvent;)Z";
+
+int TouchAction(dexvm::Interpreter& vm, VmObjectRef event) {
+    if (!event.IsValid()) throw dexvm::VmJavaThrow{"Ljava/lang/NullPointerException;", "event == null"};
+    const auto action = android_intrinsics::CallAndroidMethod(vm, event, "getAction", "()I").AsInt() & 255;
+    if (action != 0 && action != 1 && action != 2 && action != 3 && action != 5 && action != 6) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("runtime.ui_pointer_dispatch", 0);
+        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "touch action outside non-split gesture support"};
+    }
+    return action;
+}
+bool TouchCall(dexvm::Interpreter& vm, VmObjectRef view, VmObjectRef event, const char* method) {
+    return android_intrinsics::CallAndroidMethod(vm, view, method, kTouchSignature, {VmValue::Ref(event)}).AsInt() != 0;
+}
+bool TouchLive(DexVmAndroidContext& context, VmObjectRef view) {
+    const auto node = FindViewUiNode(context, view.Value());
+    return node && context.ui_tree.IsAttached(*node) && context.ui_tree.IsVisible(*node);
+}
+void ClearTouch(DexVmAndroidContext& context) {
+    context.ui_touch_capture = 0;
+    context.ui_touch_targets.clear();
+    context.ui_touch_clicks.clear();
+}
+void CancelTouch(dexvm::Interpreter& vm, VmObjectRef view, VmObjectRef event) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(event), "mOgplaySnapshot", "[J");
+    if (!field) throw std::logic_error("MotionEvent snapshot field missing");
+    const auto data = VmObjectRef{vm.Model().InstanceSlots(event)[vm.Linker().Field(*field).slot].bits};
+    const auto previous = vm.Model().GetPrimitiveElement(data, 0);
+    vm.Model().SetPrimitiveElement(data, 0, 3);
+    try { static_cast<void>(TouchCall(vm, view, event, "dispatchTouchEvent")); }
+    catch (...) { vm.Model().SetPrimitiveElement(data, 0, previous); throw; }
+    vm.Model().SetPrimitiveElement(data, 0, previous);
+}
+}
+
+bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    VmObjectRef view, VmObjectRef event, const bool group) {
+    const auto action = TouchAction(vm, event);
+    const auto roots = vm.ProtectReferences(std::array{view, event});
+    android_intrinsics::EnsureLayout(context);
+    const auto node = FindViewUiNode(context, view.Value());
+    if (!node) return false;
+    const auto key = view.Value();
+    if (action == 0) {
+        context.ui_touch_targets.erase(key);
+        context.ui_touch_clicks.erase(key);
+    }
+    if (group) {
+        auto target = context.ui_touch_targets.contains(key) ? context.ui_touch_targets.at(key) : VmObjectRef{};
+        if (target.IsValid() && !TouchLive(context, target)) {
+            context.ui_touch_targets.erase(key);
+            target = VmObjectRef{};
+        }
+        const bool intercepted = (action == 0 || target.IsValid()) &&
+            TouchCall(vm, view, event, "onInterceptTouchEvent");
+        if (target.IsValid()) {
+            if (intercepted || action == 3) {
+                CancelTouch(vm, target, event);
+                context.ui_touch_targets.erase(key);
+                context.ui_touch_capture = 0;
+                // API19 interception cancels the child on this event; the
+                // parent starts its own onTouchEvent with the next event.
+                return true;
+            }
+            const bool handled = TouchCall(vm, target, event, "dispatchTouchEvent");
+            if (action == 1) context.ui_touch_targets.erase(key);
+            return handled;
+        }
+        if (!intercepted && action == 0) {
+            const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
+            const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
+            const auto children = context.ui_tree.Get(*node)->children;
+            for (auto child = children.rbegin(); child != children.rend(); ++child) {
+                const auto receiver = ViewObjectForUiNode(context, *child);
+                if (!receiver.IsValid() || !ViewContainsPoint(context, receiver.Value(), x, y)) continue;
+                if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
+                    if (TouchLive(context, receiver)) context.ui_touch_targets[key] = receiver;
+                    if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
+                    return true;
+                }
+            }
+        }
+    }
+    // API19 View dispatch: an enabled OnTouchListener gets first refusal.
+    const auto state = *context.ui_tree.Get(*node);
+    bool listener_handled = false;
+    const auto listener = context.ui_touch_listeners.find(*node);
+    if (state.enabled && listener != context.ui_touch_listeners.end() && listener->second.IsValid()) {
+        listener_handled = android_intrinsics::CallAndroidMethod(vm, listener->second, "onTouch",
+            "(Landroid/view/View;Landroid/view/MotionEvent;)Z", {VmValue::Ref(view), VmValue::Ref(event)}).AsInt() != 0;
+    }
+    const bool handled = listener_handled || TouchCall(vm, view, event, "onTouchEvent");
+    auto click = context.ui_touch_clicks[key];
+    if (action == 0) click.eligible = state.enabled && state.clickable;
+    click.consumed |= listener_handled;
+    if (action == 1 && click.eligible && !click.consumed &&
+        context.ui_click_listeners.contains(*node)) {
+        const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
+        const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
+        if (ViewContainsPoint(context, key, x, y)) {
+            if (const auto error = InvokeViewOnClick(vm, context, key))
+                throw dexvm::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
+        }
+    }
+    if (action == 1 || action == 3) context.ui_touch_clicks.erase(key);
+    else context.ui_touch_clicks[key] = click;
+    if (action == 0 && handled) context.ui_touch_capture = key;
+    return handled;
+}
+
+bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+    VmObjectRef event) {
+    const auto action = TouchAction(vm, event);
+    const auto roots = vm.ProtectReferences(std::array{event});
+    if (action == 0 || context.ui_touch_activity != context.activity) {
+        ClearTouch(context);
+        context.ui_touch_activity = context.activity;
+    }
+    if (action != 0 && context.ui_touch_capture) {
+        if (!TouchLive(context, VmObjectRef{static_cast<std::uint32_t>(context.ui_touch_capture)})) ClearTouch(context);
+    }
+    bool handled = false;
+    if (action == 0) {
+        android_intrinsics::EnsureLayout(context);
+        const auto root = ActivityContentRoot(context, context.activity);
+        const auto children = context.ui_tree.Get(root)->children;
+        const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
+        const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
+        for (auto child = children.rbegin(); child != children.rend(); ++child) {
+            const auto receiver = ViewObjectForUiNode(context, *child);
+            if (!receiver.IsValid() || !ViewContainsPoint(context, receiver.Value(), x, y)) continue;
+            if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
+                if (TouchLive(context, receiver)) context.ui_touch_targets[0] = receiver;
+                if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
+                handled = true;
+                break;
+            }
+        }
+    } else if (context.ui_touch_targets.contains(0)) {
+        handled = TouchCall(vm, context.ui_touch_targets.at(0), event, "dispatchTouchEvent");
+    }
+    if (action == 1 || action == 3) ClearTouch(context);
+    return handled;
+}
+
+DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
+    DexVmAndroidContext& context, const std::int32_t action, const float x, const float y,
+    const std::uint64_t captured_view, const AndroidBoundaryInput* snapshot) {
+    // Capture belongs to the context; the legacy argument is only a projection.
+    static_cast<void>(captured_view);
+    auto adjusted = snapshot ? *snapshot : AndroidBoundaryInput{};
+    if (snapshot && action == 3) adjusted.action = 3;
+    const auto event = snapshot ? MakeMotionEvent(vm, adjusted) : MakeMotionEvent(vm, action, x, y, 0);
+    try {
+        const auto handled = DispatchContentTouchEvent(vm, context, event);
+        return {.handled = handled, .captured_view = context.ui_touch_capture};
+    } catch (const dexvm::VmJavaThrow& error) {
+        return {.error = "View dispatchTouchEvent failed: " + error.message};
+    }
 }
 
 bool ViewContainsPoint(DexVmAndroidContext& context,

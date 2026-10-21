@@ -29,18 +29,8 @@ enum class DexProcessStopReason : std::uint8_t {
     const std::shared_ptr<runtime::DexVmAndroidContext>& context,
     const std::string& application_descriptor);
 
-struct DeepTouchDispatchResult final {
-    bool handled{};
-    std::uint64_t captured_view{};
-    std::optional<std::string> error;
-};
-// Dispatches listener-free touch input to the deepest View override under
-// DOWN. A handled receiver owns subsequent MOVE/UP while it remains attached.
-[[nodiscard]] DeepTouchDispatchResult DispatchDeepTouchEvent(
-    runtime::dexvm::Interpreter& vm,
-    runtime::DexVmAndroidContext& context, std::int32_t action, float x,
-    float y, std::uint64_t captured_view,
-    const runtime::AndroidBoundaryInput* snapshot = nullptr);
+using runtime::DeepTouchDispatchResult;
+using runtime::DispatchDeepTouchEvent;
 
 [[nodiscard]] bool ShouldInterceptScrollGesture(
     std::int32_t scroll_range, float down_y, float current_y,
@@ -189,10 +179,6 @@ private:
     bool scroll_dragging_{};
     // View that owns the current gesture. Click eligibility is captured
     // separately from cumulative OnTouchListener consumption.
-    std::uint64_t gesture_candidate_{};
-    bool gesture_click_eligible_{};
-    bool gesture_touch_consumed_{};
-    std::uint64_t deep_touch_handle_{};
     bool guest_finalized_{};
     bool stop_completed_{};
     struct WindowHandoff final {

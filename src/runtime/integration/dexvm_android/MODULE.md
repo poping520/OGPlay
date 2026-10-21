@@ -151,6 +151,13 @@ Window 在每实例 synthetic root 下持有稳定真实 FrameLayout，android.R
 不跨窗口；Activity 委托 Window，setContentView 替换、addContentView 追加，null 参数用默认值。
 content_view 仅首个 View 投影、window root 是遍历边界；移除保留 View/参数/几何，实例退役才清理。
 onContentChanged 虚派、异常保持身份，重入换代中止旧操作，不回滚已执行回调；无主题 Decor/ActionBar。
+每 Window 独立 LayoutParams；API19 公开实例字段走 intrinsic 真实字段，setAttributes 按
+copyFrom 复制，已赋 token/packageName 保留；亮度等只保存，不作用于宿主屏幕。
+Decor.dispatchTouchEvent 虚派 owner Activity；DOWN onUserInteraction，随后 Window 内容树
+分发，未消费回退 Activity.onTouchEvent。View enabled listener 优先再 onTouchEvent；
+ViewGroup 先 intercept 再 reverse-Z 子树，接管以 CANCEL 取消子目标。宿主与 guest 共用
+捕获 owner，DOWN 捕获目标接收 MOVE/UP/POINTER_DOWN/UP，不 split，其他 action 记账失败；
+detach/隐藏或 Activity 切换清捕获（ADR-0149）。
 
 LayoutInflater Context/from/clone/重载归 Java，基础 Context 用 guest 字段缓存服务，wrapper 缓存克隆，
 Window/Activity 查同一 owner 服务。registry 独立构建并生成父类型 Java LayoutParams，再 addView：

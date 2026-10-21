@@ -55,6 +55,7 @@
 - [ADR-0131 · 进程级 APK Asset 身份与资源区间](#adr-0131)
 - [ADR-0132 · 同包有界 task 与 Activity 复用](#adr-0132)
 - [ADR-0135 · 共享 native 按需装载与独立 JNI 初始化](#adr-0135)
+- [ADR-0149 · 宿主与 guest 共用内容树触摸捕获](#adr-0149)
 
 <a id="adr-0001"></a>
 
@@ -1329,3 +1330,28 @@ Bionic linker 的 do_dlopen/CallConstructors 与 Dalvik dvmLoadNativeCode，库�
 
 用真实 ARM ctor/native 调用验证依赖顺序、递归、引用及 JNI 分层；运行到下一首错只证明
 原装载缺口消失，不代表后续引擎或 title 兼容验收。
+
+<a id="adr-0149"></a>
+
+## ADR-0149 · 宿主与 guest 共用内容树触摸捕获
+
+- 状态：Accepted
+- 日期：2026-10-21
+- 关联：[LUI-18](../tasks/layoutui/LUI-18.md)
+
+### 背景
+
+guest Decor 输入与宿主输入必须共享内容树命中、捕获和取消，避免同一手势有两个 owner。
+
+### 决定
+
+分发核心下沉 runtime/integration；session 只映射输入并调用共享入口。Decor 虚派 owner
+Activity，基类在 DOWN 通知 onUserInteraction，再交 Window 内容树；未消费回退 Activity。
+View listener 优先，ViewGroup intercept 先于子分发；按 DOWN 固定目标，不 split 多指。
+超出支持 action 记账失败。窗口属性保留为每 Window 独立数据，copyFrom 不替换已有 token/
+packageName，不将亮度等属性应用到宿主。无完整系统窗口服务或游戏专属分支。
+
+### 后果
+
+host/guest 使用同一 resolved UiTree 与 capture 状态，detach/实例切换统一清理；guest
+覆写与异常按 VM 虚调用保留，运行新缺口独立记账，不由本能力扩展解决。

@@ -1521,6 +1521,14 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
     const auto decor_owner = builder.BoundInstanceField("mOgplayWindowOwner", "Landroid/app/Activity;", dx::kAccPrivate);
+    builder.VirtualMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [context, decor_owner](dx::IntrinsicContext& call) {
+            const auto owner = dx::IntrinsicCall(call).GetRef(decor_owner);
+            if (owner.IsValid()) return CallAndroidMethod(call.vm, owner,
+                "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {call.arguments[0]});
+            return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context,
+                call.receiver, call.arguments[0].ref, false));
+        });
     builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
                      dx::kAccPublic)
@@ -2374,6 +2382,13 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/view/ViewGroup;", "Landroid/view/View;",
         {"Landroid/view/ViewParent;"});
+    builder.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context,
+                call.receiver, call.arguments[0].ref, true));
+        });
+    builder.VirtualMethod("onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.VirtualMethod(
         "generateDefaultLayoutParams",
         "()Landroid/view/ViewGroup$LayoutParams;",
@@ -2593,6 +2608,42 @@ Decl Declare_android_view_ViewTreeObserver(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 
+// API19 WindowManager.LayoutParams fields (including copyFrom's hidden state).
+constexpr std::pair<const char*, const char*> kWindowFields[] = {
+    {"x", "I"}, {"y", "I"}, {"horizontalWeight", "F"}, {"verticalWeight", "F"},
+    {"type", "I"}, {"memoryType", "I"}, {"flags", "I"}, {"privateFlags", "I"},
+    {"softInputMode", "I"}, {"gravity", "I"}, {"horizontalMargin", "F"}, {"verticalMargin", "F"},
+    {"format", "I"}, {"windowAnimations", "I"}, {"alpha", "F"}, {"dimAmount", "F"},
+    {"screenBrightness", "F"}, {"buttonBrightness", "F"}, {"rotationAnimation", "I"},
+    {"token", "Landroid/os/IBinder;"}, {"packageName", "Ljava/lang/String;"},
+    {"screenOrientation", "I"}, {"systemUiVisibility", "I"}, {"subtreeSystemUiVisibility", "I"},
+    {"hasSystemUiListeners", "Z"}, {"inputFeatures", "I"}, {"userActivityTimeout", "J"},
+    {"mTitle", "Ljava/lang/CharSequence;"}
+};
+auto& WindowSlot(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+    if (!field) throw std::logic_error(std::string("Window attribute field missing: ") + name);
+    return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
+}
+void InitializeWindowAttributes(dx::Interpreter& vm, dx::VmObjectRef object) {
+    const auto integer = [&](const char* name, int value) {
+        WindowSlot(vm, object, name, "I") = {static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+    };
+    integer("width", -1); integer("height", -1); integer("type", 2); integer("format", -1);
+    integer("screenOrientation", -1);
+    for (const auto name : {"alpha", "dimAmount", "screenBrightness", "buttonBrightness"}) {
+        const float value = (std::string_view(name) == "alpha" || std::string_view(name) == "dimAmount") ? 1.0F : -1.0F;
+        WindowSlot(vm, object, name, "F") = {std::bit_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+    }
+    // Dalvik wide values occupy two adjacent slots.
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), "userActivityTimeout", "J");
+    const auto slot = vm.Linker().Field(*field).slot;
+    vm.Model().InstanceSlots(object)[slot] = {0xffffffffU, dx::SlotTag::wide_lo};
+    vm.Model().InstanceSlots(object)[slot + 1] = {0xffffffffU, dx::SlotTag::wide_hi};
+    const auto title = vm.NewStringUtf8("");
+    WindowSlot(vm, object, "mTitle", "Ljava/lang/CharSequence;") = {title.Value(), dx::SlotTag::ref};
+}
+
 [[nodiscard]] dx::VmObjectRef Attributes(dx::IntrinsicContext& call,
                                          const Context& context) {
     static_cast<void>(context);
@@ -2603,6 +2654,8 @@ namespace {
     auto value = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[slot].bits);
     if (!value.IsValid()) {
         value = call.vm.NewIntrinsicInstance("Landroid/view/WindowManager$LayoutParams;");
+        const auto root = call.vm.ProtectReferences(std::array{value});
+        InitializeWindowAttributes(call.vm, value);
         call.vm.Model().InstanceSlots(call.receiver)[slot] = {value.Value(), dx::SlotTag::ref};
     }
     return value;
@@ -2700,6 +2753,29 @@ Decl Declare_android_view_Window(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(Attributes(call, context));
         });
+    builder.VirtualMethod("setAttributes", "(Landroid/view/WindowManager$LayoutParams;)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto source = call.arguments[0].ref;
+            if (!source.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "attributes == null"};
+            const auto target = Attributes(call, context);
+            const auto copy = [&](const char* name, const char* type) {
+                auto& to = WindowSlot(call.vm, target, name, type);
+                // AOSP copyFrom keeps an already assigned token/package name.
+                if ((std::string_view(name) == "token" || std::string_view(name) == "packageName") && to.bits) return;
+                to = WindowSlot(call.vm, source, name, type);
+                if (std::string_view(type) == "J") {
+                    const auto source_field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(source), name, type);
+                    const auto target_field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(target), name, type);
+                    call.vm.Model().InstanceSlots(target)[call.vm.Linker().Field(*target_field).slot + 1] =
+                        call.vm.Model().InstanceSlots(source)[call.vm.Linker().Field(*source_field).slot + 1];
+                }
+            };
+            copy("width", "I"); copy("height", "I");
+            for (const auto& [name, type] : kWindowFields) {
+                if (std::string_view(name) != "memoryType") copy(name, type);
+            }
+            return dx::VmValue::Void();
+        });
     const auto owner = builder.BoundInstanceField("mOgplayOwner", "Landroid/app/Activity;", dx::kAccPrivate);
     builder.VirtualMethod("getLayoutInflater", "()Landroid/view/LayoutInflater;",
         [owner](dx::IntrinsicContext& call) {
@@ -2710,6 +2786,14 @@ Decl Declare_android_view_Window(const Context& context) {
             const auto roots = call.vm.ProtectReferences(std::array{activity, service});
             return CallAndroidMethod(call.vm, activity, "getSystemService",
                 "(Ljava/lang/String;)Ljava/lang/Object;", {dx::VmValue::Ref(service)});
+        });
+    builder.VirtualMethod("superDispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+        [context, owner](dx::IntrinsicContext& call) {
+            if (dx::IntrinsicCall(call).GetRef(owner) != context->activity) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui_pointer_dispatch", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Window touch dispatch"};
+            }
+            return dx::VmValue::Int(DispatchContentTouchEvent(call.vm, *context, call.arguments[0].ref));
         });
     const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
     const auto content_parent = builder.BoundInstanceField(
@@ -2842,11 +2926,25 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManager$LayoutParams;", "Ljava/lang/Object;");
-    builder.InstanceField("flags", "I");
-    builder.InstanceField("windowAnimations", "I");
-    builder.InstanceField("softInputMode", "I");
-    builder.InstanceField("type", "I");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManager$LayoutParams;", "Landroid/view/ViewGroup$LayoutParams;");
+    for (const auto& [name, type] : kWindowFields)
+        builder.InstanceField(name, type, std::string_view(name) == "mTitle" ? dx::kAccPrivate : dx::kAccPublic);
+    for (const auto signature : {"()V", "(I)V", "(II)V", "(III)V", "(IIIII)V", "(IIIIIII)V"}) {
+        builder.Constructor(signature, [](dx::IntrinsicContext& call) {
+            InitializeWindowAttributes(call.vm, call.receiver);
+            const auto count = call.arguments.size();
+            const auto set = [&](const char* name, std::size_t argument) {
+                WindowSlot(call.vm, call.receiver, name, "I") = {
+                    static_cast<std::uint32_t>(call.arguments[argument].AsInt()), dx::SlotTag::cat1};
+            };
+            if (count >= 5) { set("width", 0); set("height", 1); }
+            if (count == 7) { set("x", 2); set("y", 3); }
+            if (count) set("type", count >= 5 ? count - 3 : 0);
+            if (count >= 2) set("flags", count >= 5 ? count - 2 : 1);
+            if (count >= 3) set("format", count - 1);
+            return dx::VmValue::Void();
+        });
+    }
     return std::move(builder).Build();
 }
 

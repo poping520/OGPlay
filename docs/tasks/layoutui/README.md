@@ -23,5 +23,6 @@
 | [LUI-15](LUI-15.md) | 完成 | 多 title 收敛与遗留清理 |
 | [LUI-16](LUI-16.md) | 完成 | dirty/cache 与 pointer dispatch 验收收口 |
 | [LUI-17](LUI-17.md) | 完成 | Content View 触摸分发与手势捕获 |
+| [LUI-18](LUI-18.md) | 完成 | Guest 触摸分发与窗口属性 |
 
 每个 WU 单独提交，完成时同步任务单、模块契约、能力账本与当前状态。

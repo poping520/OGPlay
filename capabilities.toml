@@ -65,8 +65,8 @@ note = "LUI-4/DVM-247/ADR-0126：固定注册控件、typed AXML、include/merge
 
 [dexvm.window_content]
 status = "partial"
-test = "tests/dexvm/widget_window_dialog_tests.cpp#DVM-245; tests/dexvm/widget_inflater_tests.cpp#DVM-245; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
-note = "DVM-245/ADR-0124：每 Window 稳定的 FrameLayout 内容容器与 android.R.id.content；setContentView 各重载与 addContentView 共用替换/追加链，XML 可指定父容器，onContentChanged 虚派及内容子树 Surface/焦点往返受检。后台内容修改记账拒绝；完整 Decor、主题、ActionBar、透明窗口与跨平台未验收。"
+test = "tests/dexvm/widget_window_dialog_tests.cpp#DVM-245; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/dexvm/widget_inflater_tests.cpp#DVM-245; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
+note = "DVM-245/LUI-18：每 Window 稳定内容容器、android.R.id.content 与独立 LayoutParams；内容替换/追加、onContentChanged 虚派及 Surface/焦点往返。API19 公开属性真实读写，setAttributes 按 copyFrom 复制且保留已赋 token/packageName；亮度等仅保存，不影响宿主屏幕。后台修改拒绝；完整 Decor、主题、ActionBar、透明窗口与跨平台未验收。"
 
 [runtime.ui_frame_layout]
 status = "complete"
@@ -91,7 +91,7 @@ note = "LUI-8 在 frontend 唯一 frame handoff 调 session ComposePresentedFram
 [runtime.ui_pointer_dispatch]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp"
-note = "LUI-9/16：基于 resolved UiTree 做裁剪的 reverse-Z hit-test；listener 手势归属与 click 资格分离；无 listener 时按 reverse-Z、deepest-first 调用 guest onTouchEvent，消费 DOWN 者捕获 MOVE/UP，否则回退 Activity；detach 或 Activity 切换取消捕获。"
+note = "LUI-18：host/guest 共用 integration 内容树分发与捕获；Decor 虚派 Activity，DOWN onUserInteraction，Window.superDispatchTouchEvent 未消费回退 Activity.onTouchEvent；enabled listener 优先，ViewGroup intercept 取消子目标。DOWN 捕获 MOVE/UP/POINTER_DOWN/UP，不 split；其他 action 记账失败，detach/Activity 切换清捕获。"
 
 [runtime.ui_general_linear_layout]
 status = "complete"

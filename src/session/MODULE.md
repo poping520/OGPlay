@@ -144,15 +144,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，
   video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
   裁剪与命中使用同一次布局产生的 frame。
-- touch DOWN 的 gesture ownership 与 click eligibility 独立：touch-only false 立即回退
-  Activity，touch-only true 保持 capture；clickable 且带 click listener 时未消费的
-  UP-inside 才 onClick，touch 消费则禁止 click。`setClickable(false)` 阻止触摸点击但
-  保留监听器。隐藏/删除/UP-outside 取消 click，hit-test 仍只读 UiTree frame。
-  无 listener target 时按 reverse-Z、deepest-first 遍历命中点下的 guest View；基础
-  `View.onTouchEvent` 在 clickable 时消费 DOWN，未覆盖的非 clickable View 返回 false。
-  只有消费 DOWN 的实际 receiver 才建立 MOVE/UP capture，未消费事件再回退
-  `Activity.onTouchEvent`。receiver detach 或 Activity switch 清空 capture，禁止旧 View
-  跨 generation 收事件。
+- 内容树触摸由 integration 的共享分发器负责；session 仅映射输入、处理滚动与 Activity
+  fallback，不保存独立 listener/deep capture。guest Decor→Activity→Window 入口使用同一
+  reverse-Z、intercept/CANCEL 与捕获 owner；非 split 多指沿 DOWN 目标派发。
 - ScrollView 仅在可滚动且累计位移超过 `8dp` slop 后接管；接管向原 listener/deep target
   发送 `ACTION_CANCEL` 并撤销 click/capture。纯 View 软件基帧发布前确认不存在 renderer、
   active SurfaceHolder、VideoView 或 holder Canvas producer。

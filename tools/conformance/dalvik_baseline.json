@@ -296,8 +296,8 @@
     "threaded": "pass"
   },
   "077-method-override": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "078-polymorphic-virtual": {
     "switch": "pass",
@@ -384,8 +384,8 @@
     "threaded": "fail:unimplemented"
   },
   "300-package-override": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "301-abstract-protected": {
     "switch": "pass",

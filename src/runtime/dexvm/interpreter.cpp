@@ -763,7 +763,9 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
                       "host allocation failed inside DexVM heap");
             model->SetEmergencyReserve(false);
         } catch (const DexVmError& error) {
-            if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
+            if (error.Reason() == DexVmErrorReason::incompatible_class_change) {
+                ThrowJava("Ljava/lang/IncompatibleClassChangeError;", error.what());
+            } else if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;
                 // a bounded emergency reserve keeps this honest instead of
                 // crashing while reporting the exhaustion.

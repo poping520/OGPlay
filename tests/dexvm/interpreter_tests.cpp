@@ -219,6 +219,55 @@ TEST_CASE("dexvm virtual and super dispatch through subclass") {
     });
 }
 
+TEST_CASE("dexvm vtable permits narrower visibility and separates runtime packages") {
+    WithEachBackend([](InterpreterConfig config) {
+        const auto body = [](IntrinsicContext&) { return VmValue::Int(1); };
+        auto base = IntrinsicClassBuilder::Class("Loverride/p/Base;");
+        base.VirtualMethod("narrow", "()I", body);
+        base.VirtualMethod("packageMethod", "()I", body, 0U);
+        auto same = IntrinsicClassBuilder::Class("Loverride/p/Same;", "Loverride/p/Base;");
+        same.OverrideMethod("narrow", "()I", body, kAccProtected);
+        same.OverrideMethod("packageMethod", "()I", body, 0U);
+        auto cross = IntrinsicClassBuilder::Class("Loverride/q/Cross;", "Loverride/p/Base;");
+        cross.OverrideMethod("narrow", "()I", body, 0U);
+        cross.VirtualMethod("packageMethod", "()I", body, 0U);
+        auto returned = IntrinsicClassBuilder::Class("Loverride/p/Returned;", "Loverride/q/Cross;");
+        returned.OverrideMethod("packageMethod", "()I", body, 0U);
+        Vm vm(config, {}, {std::move(base).Build(), std::move(same).Build(),
+                          std::move(cross).Build(), std::move(returned).Build()});
+        const auto parent = vm.linker.ResolveDescriptor("Loverride/p/Base;");
+        const auto same_class = vm.linker.ResolveDescriptor("Loverride/p/Same;");
+        const auto cross_class = vm.linker.ResolveDescriptor("Loverride/q/Cross;");
+        const auto returned_class = vm.linker.ResolveDescriptor("Loverride/p/Returned;");
+        const auto app_class = vm.linker.ResolveDescriptor("Loverride/p/AppChild;");
+        const auto slot = [&](DexClassId type, const char* name) {
+            const auto found = vm.linker.FindVtableIndex(type, name, "()I");
+            REQUIRE(found.has_value());
+            return *found;
+        };
+        const auto narrow = slot(parent, "narrow");
+        const auto package = slot(parent, "packageMethod");
+        for (const auto child : {same_class, cross_class, app_class}) {
+            CHECK(slot(child, "narrow") == narrow);
+            CHECK(vm.linker.Method(vm.linker.Class(child).vtable[narrow]).owner == child);
+        }
+        CHECK(slot(same_class, "packageMethod") == package);
+        CHECK(vm.linker.Method(vm.linker.Class(same_class).vtable[package]).owner == same_class);
+        for (const auto child : {cross_class, app_class}) {
+            CHECK(slot(child, "packageMethod") != package);
+            CHECK(vm.linker.Class(child).vtable[package] == vm.linker.Class(parent).vtable[package]);
+            CHECK(vm.linker.Method(vm.linker.Class(child).vtable[slot(child, "packageMethod")]).owner == child);
+        }
+        CHECK(vm.linker.Class(parent).defining_loader != vm.linker.Class(app_class).defining_loader);
+        // Returning to the ancestor's package must find its older slot, even
+        // though the intermediate class has another same-signature slot.
+        CHECK(slot(returned_class, "packageMethod") == package);
+        CHECK(vm.linker.Method(vm.linker.Class(returned_class).vtable[package]).owner == returned_class);
+        CHECK(vm.linker.Class(returned_class).vtable[slot(cross_class, "packageMethod")] ==
+              vm.linker.Class(cross_class).vtable[slot(cross_class, "packageMethod")]);
+    });
+}
+
 TEST_CASE("dexvm clinit runs once before static access") {
     WithEachBackend([](InterpreterConfig config) {
     Vm vm(config);

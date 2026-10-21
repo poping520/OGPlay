@@ -105,6 +105,25 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
             resolved = impl_->ClassAt(owner).vtable[*vtable_slot];
         }
     }
+    // A same-signature method of the wrong static kind is an ICCE, not a
+    // missing implementation or a host failure (dalvik/tests/077).
+    if (!resolved.has_value() && kind == InvokeKind::static_call &&
+        FindVtableIndex(owner, name, descriptor).has_value()) {
+        Fail(DexVmErrorReason::incompatible_class_change,
+             "invoke-static resolves to virtual method: " + owner_descriptor + "->" + name + descriptor);
+    }
+    if (!resolved.has_value() &&
+        (kind == InvokeKind::virtual_call || kind == InvokeKind::super_call)) {
+        auto current = std::optional<DexClassId>(owner);
+        while (current.has_value()) {
+            const auto candidate = declared_direct(*current);
+            if (candidate.has_value() && impl_->MethodAt(*candidate).is_static) {
+                Fail(DexVmErrorReason::incompatible_class_change,
+                     "virtual invoke resolves to static method: " + owner_descriptor + "->" + name + descriptor);
+            }
+            current = impl_->ClassAt(*current).super;
+        }
+    }
     if (!resolved.has_value() &&
         kind == InvokeKind::interface_call &&
         impl_->ClassAt(owner).is_interface) {

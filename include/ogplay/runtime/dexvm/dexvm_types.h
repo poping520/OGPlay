@@ -41,6 +41,7 @@ using VmFieldId = DexVmHandle<VmFieldIdTag>;
 using VmObjectRef = DexVmHandle<VmObjectRefTag>;
 
 enum class DexVmErrorReason : std::uint8_t {
+    incompatible_class_change,
     invalid_image,
     duplicate_class,
     unknown_class,

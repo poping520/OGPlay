@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7：ogplay-cli dexvm run-dex 以生产平台类来源运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节比较并分类。--check-baseline 防止 pass 回退、无回归才 --update-baseline；未接 CTest 全量门禁。libcore/JUnit、src-ex 二级 dex、多 dex 未支持。通过率 switch/threaded 各 52/93（55.9%）。"
+note = "DIAG-7：ogplay-cli dexvm run-dex 以生产平台类来源运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节比较并分类。--check-baseline 防止 pass 回退、无回归才 --update-baseline；未接 CTest 全量门禁。libcore/JUnit、src-ex 二级 dex、多 dex 未支持。通过率 switch/threaded 各 54/93（58.1%）。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1251,7 +1251,7 @@ note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有�
 [dexvm.class_linker]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-7/94/99/103、ADR-0028/0030：注册/层级/布局/vtable/iftable 四步链接与懒预检；地址稳定存储，按 InvokeKind 隔离调用点缓存；Boot/Application 独立 DexUnit。BootDex 类全量登记，intrinsic 只能对同签名方法 overlay，未绑定 native 失败；非法覆盖链接失败，可见性矩阵受测；intrinsic 父类延迟解析。"
+note = "DVM-7/94/99/103、ADR-0028/0030：注册/层级/布局/vtable/iftable 四步链接与懒预检；地址稳定存储，按 InvokeKind 隔离调用点缓存；Boot/Application 独立 DexUnit。BootDex 类全量登记，intrinsic 只能对同签名方法 overlay，未绑定 native 失败；允许缩小可见性，包私有仅同 loader/包重写，intrinsic 同规则；final/未准入覆盖失败，static/virtual 错配抛 ICCE；intrinsic 父类延迟解析。"
 
 [dexvm.boot_dex]
 status = "complete"

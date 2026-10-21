@@ -20,6 +20,11 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   未触达可选类不阻断启动；触达后
   缺失层级、循环继承、非法覆盖明确失败。应用自带 `android.support.*` 归 app loader，真正平台
   前缀类忽略。数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。
+- vtable 按名称和完整签名匹配继承槽，允许重写缩小可见性；父方法 private 不构成重写，
+  包私有方法只在 defining loader 与包名均相同时构成重写，否则保留父槽并追加子槽。
+  intrinsic 父类遵循相同规则；构成重写时仍拒绝 final 方法及未准入的 intrinsic 覆盖。
+  调用解析仅找到相反 static/virtual 类别的方法时，经两后端统一转为 guest
+  `IncompatibleClassChangeError`，供 Java catch 处理。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
 - 每 VM 只有稳定 application `PathClassLoader` 与 boot loader；application→boot→null。
@@ -226,7 +231,7 @@ findLoadedClass 仍不合成。普通启动禁止全量建类；显式 dump-surf
 已存在的继承 handler 也不被骨架覆盖；补入父声明不会反向要求原手写声明改为 OverrideMethod。
 新骨架类的父类/接口按同一路径解析，四 ROM 之外的未满足依赖仍明确失败。
 新骨架自身声明的重写方法不能借用父 handler：它保留 own 声明并在调用时失败。
-这种无方法体声明的 override 准入按固定 ROM 父成员标志校验，避免手写 final/可见性近似
+这种无方法体声明的 override 准入按固定 ROM 父成员标志校验，避免手写 final/访问标志近似
 阻断原版结构；不修改手写标志/handler，也不放宽应用字节码的 override 校验。
 
 生成方法（含构造器）为未绑定 intrinsic，调用进入既有能力记账及 UnsatisfiedLinkError；

@@ -1557,3 +1557,19 @@
     move-result v0
     return v0
 .end method
+
+# App loader differs from the intrinsic parent's loader despite equal package names.
+.class public Loverride/p/AppChild;
+.super Loverride/p/Base;
+
+.method protected narrow()I
+.registers 2
+    const/4 v0, 2
+    return v0
+.end method
+
+.method packageMethod()I
+.registers 2
+    const/4 v0, 3
+    return v0
+.end method

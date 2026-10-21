@@ -253,13 +253,34 @@ public:
         }
         linked.static_storage.assign(static_cursor, 0U);
 
-        // vtable: override by name+descriptor or append.
+        // Keep inaccessible same-signature methods in distinct inherited slots.
+        // A name lookup alone loses the original package-private declaration.
+        const auto inherited_count = linked.vtable.size();
         for (auto& method_id : OwnVirtualMethods(linked)) {
             auto& method = MethodAt(method_id);
             const auto key = MemberKey(method.name, method.descriptor);
-            const auto existing = extra.virtual_lookup.find(key);
-            if (existing != extra.virtual_lookup.end()) {
-                const auto index = existing->second;
+            std::optional<std::uint16_t> override_slot;
+            for (std::size_t slot = 0; slot < inherited_count; ++slot) {
+                const auto& candidate = MethodAt(linked.vtable[slot]);
+                if (candidate.name != method.name || candidate.descriptor != method.descriptor) continue;
+                const auto rom_flags = method.is_skeleton && !candidate.is_skeleton
+                    ? SkeletonMethodFlags(candidate) : std::nullopt;
+                const auto flags = rom_flags.value_or(candidate.access_flags);
+                if ((flags & kAccPrivate) != 0U) continue;
+                if ((flags & (kAccPublic | kAccProtected)) == 0U) {
+                    const auto& owner = ClassAt(candidate.owner);
+                    const auto package = [](const std::string_view descriptor) {
+                        const auto slash = descriptor.rfind('/');
+                        return slash == std::string_view::npos ? std::string_view{} : descriptor.substr(0, slash);
+                    };
+                    if (owner.defining_loader != linked.defining_loader ||
+                        package(owner.descriptor) != package(linked.descriptor)) continue;
+                }
+                override_slot = static_cast<std::uint16_t>(slot);
+                break;
+            }
+            if (override_slot.has_value()) {
+                const auto index = *override_slot;
                 if (index >= linked.vtable.size() ||
                     !linked.vtable[index].IsValid()) {
                     Fail(DexVmErrorReason::invalid_hierarchy,
@@ -294,20 +315,9 @@ public:
                              ClassAt(overridden.owner).descriptor + "." +
                              overridden.name + " by " + linked.descriptor);
                 }
-                const auto visibility_rank = [](const std::uint32_t flags) {
-                    if ((flags & kAccPublic) != 0U) return 3;
-                    if ((flags & kAccProtected) != 0U) return 2;
-                    if ((flags & kAccPrivate) != 0U) return 0;
-                    return 1;  // package visibility
-                };
-                if (visibility_rank(method.access_flags) <
-                    visibility_rank(inherited_flags)) {
-                    Fail(DexVmErrorReason::invalid_override,
-                         "override narrows visibility: " + linked.descriptor +
-                             "." + method.name + method.descriptor);
-                }
                 method.vtable_index = static_cast<std::int32_t>(index);
                 linked.vtable[index] = method_id;
+                extra.virtual_lookup.insert_or_assign(key, index);
             } else {
                 if (linked.is_intrinsic && method.must_override) {
                     Fail(DexVmErrorReason::invalid_override,
@@ -317,7 +327,7 @@ public:
                 }
                 method.vtable_index =
                     static_cast<std::int32_t>(linked.vtable.size());
-                extra.virtual_lookup.emplace(
+                extra.virtual_lookup.insert_or_assign(
                     key, static_cast<std::uint16_t>(linked.vtable.size()));
                 linked.vtable.push_back(method_id);
             }

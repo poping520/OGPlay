@@ -49,6 +49,46 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   双后端均 pass，0 回归、0 新增；日志 `.local/analysis/wu7-0-subset.log`。
 - `capabilities.py check`、`git diff --check` 通过；用法与语义改动后的全量回归要求已补入工具说明和开发参考。
 
+## WU7-1a · vtable override 判定（2026-10-21）
+
+- 局部行为修复，依赖 WU7-0：取消缩小可见性的拒绝；扫描继承槽，private 不覆盖，
+  包私有只在同 defining loader、同包名时覆盖，否则追加槽并保留父槽。intrinsic 父类同规则，
+  final 与 intrinsic 显式覆盖准入仍保留；无调用方或游戏特化。
+- 来源差异：本地 AOSP `vm/oo/Class.cpp:createVtable` 因 b/7301030 刻意允许跨包包私有覆盖，
+  与本地 300 的 `expected.txt` 及本任务明确要求冲突。本次采用任务指定的隔离规则；
+  loader/包名判定对照 `AccessCheck.cpp:dvmInSamePackage`，不声称逐项复刻该源码的历史 bug。
+- 去掉可见性拒绝后，077 另暴露 static/virtual 错配被报为宿主解析错误；这是目标用例
+  转 pass 的必要依赖。本次仅补反向类别命中的 ICCE 原因，并在两后端共用执行出口转为
+  Java `IncompatibleClassChangeError`，不扩大缺失方法、字段或访问检查的修复范围。
+- miranda/abstract 审阅：abstract 槽按同一访问规则参与覆盖，040/301 双后端 pass。
+  当前 miranda 按签名判槽，缺少 AOSP `createIftable` 的“非 abstract 接口实现必须 public”
+  链接检查；此差异只记录，未扩修。
+- 只构建 `ogplay-cli`、`ogplay_tests`；继承主题新增双后端回归，覆盖缩小可见性、
+  intrinsic 同包/跨包、同包不同 loader，以及跨包后返回祖先包时复用较早槽。
+  `ogplay_tests -sf='*interpreter_tests.cpp,*intrinsic_contract_tests.cpp,*skeleton_surface_tests.cpp'`：
+  49/49、1261 断言通过；证据 `.local/analysis/wu7-1a-linker-tests.log`。
+- 五个目标用例双后端：077/300 新转 pass，040/301 保持 pass；037 保持 fail:output
+  （`64.000000` 与 `64.0` 差异）。日志 `.local/analysis/wu7-1a-target.log`。
+- 全量 `--check-baseline`：退出 0，0 回归、4 个后端结果新增 pass、0 其他变化，
+  switch/threaded 各 54/93（58.1%）；日志 `.local/analysis/wu7-1a-full.log`。
+  随后以 `--only 077-method-override --only 300-package-override --update-baseline`
+  合并提升基线，退出 0，仅这两个用例的双后端分类改变；日志 `.local/analysis/wu7-1a-update.log`。
+- 九个 `.basic` 正常场景各一次，复用 WU5 `fixtures.json` 的 exact APK/资源及显示参数，
+  每场景独立新沙盒；未改场景、预算或断言。TML、Lili、Wild Blood、Dungeon Hunter、
+  Asphalt5、Angry Birds 整体 passed；Dead Trigger 退出 cleanup 超时、Tales 退出读
+  `0x315f0001`、PVZ 退出 `ContextWrapper.stopService` 未实现，整体 failed。
+  九款的目标帧与 no_guest_fault checkpoint 均通过；6/9 整体通过不等于 title gate 验收。
+- 对照 DIAG-6 初始记录：TML/Wild Blood/Angry Birds 从 failed 变为 passed，Dead Trigger
+  仍退出失败；PVZ 的退出失败已由 DIAG-6 后续音频停滞修复记录确认。Tales 相比旧记录
+  确有 passed→failed，但 CURRENT 已记该原生退出故障；临时恢复 HEAD 的三份链接/执行
+  源文件并仅构建 CLI，同路径对照也失败于 `0x315f0001`，排除本次修改引入。当前实现已恢复。
+  对照源码哈希与证据：`.local/analysis/wu7-1a/control-source-proof.json`、`tales-control/`；
+  九款结果/命令：`.local/analysis/wu7-1a/scenarios-summary.json`、`scenarios/<id>/`。
+- Angry Birds：5000 呈现帧 checkpoint 通过，onDestroy 不再被可见性校验拒绝，
+  `shutdown.clean=true`、退出 0；本路径未出现下一处失败，不宣称视觉验收。
+- Scenario validator（9 文件）、`capabilities.py check`、`git diff --check` 通过；
+  CURRENT 更新 Angry Birds 到达点及探针通过率。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

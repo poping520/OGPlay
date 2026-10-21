@@ -21,7 +21,7 @@
 | Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；1024×600 呈现 900 帧，CLI/GUI 退出 0 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
-| Angry Birds 2.3.0 | macOS | 5000 帧，背景音乐正常 | 退出 onDestroy 被“缩小可见性重写”拒绝（同 dalvik 077）；画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md) |
+| Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 
 ## 未闭合问题
 
@@ -30,7 +30,7 @@
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）；network_sqlite 7 例（`Invalid path: /data`）、
   reflection 1 例、vm_monitor 1 例失败未修。
-- 一致性：dalvik/tests 通过率 switch/threaded 52/93（55.9%），见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)。
+- 一致性：dalvik/tests 通过率 switch/threaded 54/93（58.1%），见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

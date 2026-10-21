@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 // Main dispatch loop: moves, consts, control flow, objects, arrays, fields
 // and invokes. Arithmetic/compare families live in interp_arith.cpp.
 // Per-opcode semantics follow AOSP vm/mterp/c/OP_*.cpp at the pinned
@@ -287,10 +288,10 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                     !linker->IsAssignable(target, source)) {
                     ThrowJava("Ljava/lang/ClassCastException;",
                               (source.IsValid()
-                                   ? linker->Class(source).descriptor
+                                   ? ClassNameCodec::HumanReadableDescriptor(linker->Class(source).descriptor)
                                    : std::string("<external>")) +
                                   " cannot be cast to " +
-                                  linker->Class(target).descriptor);
+                                  ClassNameCodec::HumanReadableDescriptor(linker->Class(target).descriptor));
                     return;
                 }
             }

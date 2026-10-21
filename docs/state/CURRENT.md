@@ -30,7 +30,7 @@
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）；network_sqlite 7 例（`Invalid path: /data`）、
   reflection 1 例、vm_monitor 1 例失败未修。
-- 一致性：dalvik/tests switch/threaded 66/92（71.7%）；链接错误可 catch，见 [DVM-256](../tasks/dexvm/DVM-256.md)。
+- 一致性：dalvik/tests switch/threaded 72/92（78.3%）；链接错误可 catch，异常栈/线程语义已对齐，见 [DVM-256](../tasks/dexvm/DVM-256.md)、[WU7-3](../tasks/diagnostics/DIAG-7.md)。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

@@ -213,6 +213,14 @@ std::string ClassNameCodec::ClassGetName(
     return name;
 }
 
+std::string ClassNameCodec::HumanReadableDescriptor(const std::string_view descriptor) {
+    (void)ParseWholeType(descriptor, true);
+    const auto dimensions = descriptor.find_first_not_of('[');
+    auto name = ClassGetName(descriptor.substr(dimensions));
+    for (std::size_t i = 0; i < dimensions; ++i) name += "[]";
+    return name;
+}
+
 std::string ClassNameCodec::BinaryNameToDescriptor(
     const std::string_view name) {
     if (name.empty()) Fail(0, "binary class name is empty");

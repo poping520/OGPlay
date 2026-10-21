@@ -66,10 +66,10 @@
                     ThrowJava(
                         "Ljava/lang/ClassCastException;",
                         (source.IsValid()
-                             ? linker->Class(source).descriptor
+                             ? ClassNameCodec::HumanReadableDescriptor(linker->Class(source).descriptor)
                              : std::string("<external>")) +
                             " cannot be cast to " +
-                            linker->Class(java_class()).descriptor);
+                            ClassNameCodec::HumanReadableDescriptor(linker->Class(java_class()).descriptor));
                     goto yield;
                 }
             }

@@ -95,8 +95,8 @@ struct ThreadVm final {
                       });
                   catalog.push_back(std::move(throwing_handler).Build());
                   linker.RegisterIntrinsics(std::move(catalog));
-                  linker.RegisterDex(ReadFixture("interp.dex"));
                   ogplay::test::RegisterBootDex(linker);
+                  linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
                   return linker;
               }(),
@@ -1087,4 +1087,76 @@ TEST_CASE("dexvm worker Thread.sleep advances only while clock driver is blocked
     CHECK(vm.Observed("LThreadSleeper;") == 1);
     CHECK(advances.load() == 1);
     CHECK(vm.clock_millis.load() == 100);
+}
+
+TEST_CASE("WU7-3 ThreadGroup delegates through parent to default and prints unhandled exceptions") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto thread = vm.Static("Ljava/lang/Thread;", "currentThread", "()Ljava/lang/Thread;").value.ref;
+        const auto group = vm.Virtual(thread, "getThreadGroup", "()Ljava/lang/ThreadGroup;").value.ref;
+        const auto exception = vm.interpreter.MakeThrowable("Ljava/lang/RuntimeException;", "group failure");
+        const auto root = vm.interpreter.ProtectReferences(std::array{exception});
+        const auto handler = vm.New("LThreadDefaultUncaughtHandler;");
+        RequireOk(vm.Static("Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(handler)}));
+        RequireOk(vm.Virtual(group, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+            {VmValue::Ref(thread), VmValue::Ref(exception)}));
+        CHECK(vm.default_uncaught_calls == 1);
+        // Delegation preserves arguments; a custom handler can accept null.
+        RequireOk(vm.Virtual(group, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})}));
+        CHECK(vm.default_uncaught_calls == 2);
+        RequireOk(vm.Static("Ljava/lang/Thread;", "setDefaultUncaughtExceptionHandler",
+            "(Ljava/lang/Thread$UncaughtExceptionHandler;)V", {VmValue::Ref(VmObjectRef{})}));
+        std::string output;
+        vm.interpreter.SetConsoleSink([&](std::string_view bytes) { output += bytes; });
+        RequireOk(vm.Virtual(group, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+            {VmValue::Ref(thread), VmValue::Ref(exception)}));
+        CHECK(output == "Exception in thread \"main\" java.lang.RuntimeException: group failure\n");
+        output.clear();
+        const auto death = vm.interpreter.MakeThrowable("Ljava/lang/ThreadDeath;", "");
+        RequireOk(vm.Virtual(group, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+            {VmValue::Ref(thread), VmValue::Ref(death)}));
+        CHECK(output.empty());
+    }
+}
+
+TEST_CASE("WU7-3 interrupt wakes a parked sleeper in both backends and clears its flag") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto thread = vm.New("LThreadSleeper;");
+        RequireOk(vm.Construct(thread, "LThreadSleeper;", "()V"));
+        RequireOk(vm.Virtual(thread, "start", "()V"));
+        REQUIRE(WaitFor([&] {
+            const auto snapshots = vm.threads.Snapshot();
+            return std::ranges::any_of(snapshots, [&](const auto& state) {
+                return state.object == thread.Value() && state.wait_state == VmThreadWaitState::sleeping;
+            });
+        }));
+        CHECK(vm.threads.IsAlive(thread));
+        RequireOk(vm.Virtual(thread, "interrupt", "()V"));
+        RequireOk(vm.Virtual(thread, "join", "()V"));
+        CHECK(vm.Observed("LThreadSleeper;") == 2);
+        CHECK_FALSE(vm.threads.IsInterrupted(thread));
+    }
+}
+
+TEST_CASE("WU7-3 APK-style worker without a handler retains process-fatal failure") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ThreadVm vm(backend);
+        const auto runnable = vm.Runnable("LThreadThrower;");
+        const auto thread = vm.New("Ljava/lang/Thread;");
+        RequireOk(vm.Construct(thread, "Ljava/lang/Thread;", "(Ljava/lang/Runnable;)V", {VmValue::Ref(runnable)}));
+        RequireOk(vm.Virtual(thread, "start", "()V"));
+        REQUIRE(WaitFor([&] {
+            const auto states = vm.threads.Snapshot();
+            return std::ranges::any_of(states, [&](const auto& state) {
+                return state.object == thread.Value() && state.status == VmThreadStatus::failed;
+            });
+        }));
+        const auto failure = vm.threads.TakeFailure();
+        REQUIRE(failure.has_value());
+        CHECK(failure->find("uncaught exception on Java thread") != std::string::npos);
+        CHECK(failure->find("LMyError;") != std::string::npos);
+    }
 }

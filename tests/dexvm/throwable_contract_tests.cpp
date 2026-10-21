@@ -449,3 +449,72 @@ TEST_CASE("DVM-105 Throwable cause retains identity across GC and rejects overwr
     vm.InitThrowableCause(self, VmObjectRef{});
     CHECK_THROWS_AS(vm.InitThrowableCause(self, inner), VmJavaThrow);
 }
+
+TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the saved PC") {
+    WithEachBackend([](InterpreterConfig config) {
+        auto bytes = ReadFixture("interp.dex");
+        const auto image = ogplay::loader::ParseDex(bytes);
+        const auto classes = ogplay::loader::ReadDexClassData(bytes, image);
+        const auto put32 = [&](std::size_t at, std::uint32_t value) {
+            for (unsigned i = 0; i < 4; ++i) bytes.at(at + i) = static_cast<std::uint8_t>(value >> (i * 8));
+        };
+        const auto file = std::find_if(image.strings.begin(), image.strings.end(),
+            [](const auto& text) { return text.value == u"hello"; });
+        REQUIRE(file != image.strings.end());
+        bool patched = false;
+        for (const auto& data : classes) {
+            const auto& def = image.classes.at(data.class_def_index);
+            if (image.types.at(def.class_type_index).descriptor != "LThrowableMessageProbe;") continue;
+            put32(image.header.class_defs_offset + data.class_def_index * 32 + 16,
+                  static_cast<std::uint32_t>(file - image.strings.begin()));
+            for (const auto& method : data.direct_methods) {
+                if (image.strings.at(image.methods.at(method.method_index).name_string_index).value != u"create") continue;
+                REQUIRE(method.code.has_value());
+                put32(method.code->offset + 8, static_cast<std::uint32_t>(bytes.size()));
+                // line_start=100, no parameters, emit (0,100), advance to
+                // (3,95) with a changed file, emit, then END_SEQUENCE.
+                // A later file state must not leak into an earlier saved PC.
+                bytes.insert(bytes.end(), {100, 0, 14, 1, 3, 9, 1, 2, 0x7b, 14, 0});
+                patched = true;
+            }
+        }
+        REQUIRE(patched);
+        put32(32, static_cast<std::uint32_t>(bytes.size()));
+        put32(104, static_cast<std::uint32_t>(bytes.size()) - image.header.data_offset);
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+        ogplay::test::RegisterBootDex(linker);
+        linker.RegisterDex(std::move(bytes));
+        linker.Link();
+        JniStringStore strings;
+        JniPrimitiveArrayStore arrays;
+        JavaObjectModel model(strings, arrays);
+        ogplay::core::CapabilityLedger ledger;
+        Interpreter vm(linker, model, nullptr, ledger, config);
+        const auto type = linker.ResolveDescriptor("LThrowableMessageProbe;");
+        const auto method = linker.FindDirectMethod(type, "create", "(Ljava/lang/String;)Ljava/lang/Throwable;");
+        REQUIRE(method.has_value());
+        const auto snapshot = model.NewPrimitiveArray(linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 6);
+        const auto root = vm.ProtectReferences(std::array{snapshot});
+        const std::array pcs{0, 2, 3};
+        for (int i = 0; i < 3; ++i) {
+            model.SetPrimitiveElement(snapshot, i * 2, method->Value());
+            model.SetPrimitiveElement(snapshot, i * 2 + 1, static_cast<std::uint64_t>(pcs.at(static_cast<std::size_t>(i))));
+        }
+        const auto trace = vm.MaterializeThrowableStack(snapshot);
+        const auto trace_root = vm.ProtectReferences(std::array{trace});
+        const auto element_type = linker.ResolveDescriptor("Ljava/lang/StackTraceElement;");
+        const auto line = linker.FindVtableIndex(element_type, "getLineNumber", "()I");
+        const auto file_name = linker.FindVtableIndex(element_type, "getFileName", "()Ljava/lang/String;");
+        REQUIRE(line.has_value());
+        REQUIRE(file_name.has_value());
+        for (int i = 0; i < 3; ++i) {
+            const auto element = model.GetObjectElement(trace, i);
+            const std::array args{VmValue::Ref(element)};
+            CHECK(vm.Call(linker.Class(element_type).vtable[*line], args).value.AsInt() == (i == 2 ? 95 : 100));
+            const auto expected_file = i == 2 ? *ogplay::core::Utf16ToUtf8(
+                image.strings.front().value, ogplay::core::InvalidUtf16Policy::replace) : "hello";
+            CHECK(vm.StringUtf8(vm.Call(linker.Class(element_type).vtable[*file_name], args).value.ref) == expected_file);
+        }
+    });
+}

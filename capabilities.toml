@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7：run-dex 运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节分类。--check-baseline 拒绝 pass 回退，--update-baseline 仅允许无回归及固定 oracle 迁移；300 为 excluded:oracle。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。switch/threaded 各 57/92（62.0%）。"
+note = "DIAG-7：run-dex 运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节分类。--check-baseline 拒绝 pass 回退，--update-baseline 仅允许无回归及固定 oracle 迁移；300 为 excluded:oracle。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。switch/threaded 各 72/92（78.3%）。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1376,7 +1376,7 @@ note = "DVM-8/49/61/71/74：统一 VmObjectRef 句柄空间；session 拥有的 
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
-note = "DVM-42..49/95/103、ADR-0029/0060：精确非移动 STW 标记清除；OwnedStateTable 强制唯一名称、trace 与 sweep 策略；三层堆（initial/growth/maximum），分配失败依次 GC、增长、OOM 前 GC。WeakReference 支持清空、入队与唤醒；Soft/Phantom 不在范围。长时运行 gate 未重跑。"
+note = "DVM-42..49/95/103、ADR-0029/0060：精确非移动 STW 标记清除；OwnedStateTable 强制唯一名称、trace 与 sweep 策略；三层堆（initial/growth/maximum），分配失败依次 GC、增长、OOM 前 GC。System.gc 请求普通 STW 回收；WeakReference 清空不依赖队列元数据，支持入队与唤醒；Soft/Phantom 不在范围。长时运行 gate 未重跑。"
 
 [dexvm.interpreter_core]
 status = "complete"
@@ -1406,7 +1406,7 @@ note = "DVM-52/76/131：在 VmExecutionLock 安全点给出全部 execution cont
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "DVM-28/48/50/89/234、ADR-0024：1:1 宿主线程与独立 execution context；API19 Thread core 含 context ClassLoader、未捕获异常 handler、有界 ThreadGroup/State、park/interrupt；每个子线程有独立 A32 CPU/栈、TLS、JNI attach。解释执行由 VmExecutionLock 串行（设计边界），FIFO 准入与 1024 tick 安全点轮转；根上下文的 sleep/join/park 可随 Clock 快进。"
+note = "DVM-28/48/50/89/234：guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 context loader、handler、bounded group/State、park/interrupt；ThreadGroup 按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root sleep/join/park 可随统一 Clock 快进。"
 
 [dexvm.monitors]
 status = "complete"
@@ -1416,7 +1416,7 @@ note = "DVM-29/48/50/234：session monitor 表管理 owner、重入与 wait-set�
 [dexvm.exceptions]
 status = "complete"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp"
-note = "DVM-12 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySize/ArrayStore/StackOverflow/OOM）共用展开路径，catch 按声明顺序 instanceof 匹配 + catch-all，跨帧弹栈，未捕获出口携带类/消息/完整解释器栈"
+note = "DVM-12 throw 与隐式异常（NPE/AIOOBE/CCE/Arithmetic/NegativeArraySize/ArrayStore/StackOverflow/OOM）共用展开路径，catch 按声明顺序 instanceof 匹配 + catch-all，跨帧弹栈，未捕获出口携带类/消息/完整解释器栈；Throwable 栈按 DEX source/debug_info 物化文件与行号，check-cast 消息使用可读类型名"
 
 [dexvm.clinit]
 status = "complete"
@@ -1426,7 +1426,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105"
-note = "Object/String/Class、primitive wrapper、Enum、Thread 保留 intrinsic；StringBuilder、Throwable、日期与集合归 BootDex。浮点输出统一原版 RealToString；regionMatches 两重载按 UTF-16 比较并以 ICU51 简单映射折叠；Object valueOf 虚派 toString；引用 arraycopy 逐元素检查且保留成功前缀。IO/NIO 与六种标准 Charset 保持既有范围；ThreadGroup、日期大数与网络长尾未实现。"
+note = "Object/String/Class、primitive wrapper、Enum、Thread 保留 intrinsic；StringBuilder、Throwable、日期与集合归 BootDex。浮点输出统一原版 RealToString；regionMatches 两重载按 UTF-16 比较并以 ICU51 简单映射折叠；Object valueOf 虚派 toString；引用 arraycopy 逐元素检查且保留成功前缀。IO/NIO 与六种标准 Charset 保持既有范围；完整 ThreadGroup、日期大数与网络长尾未实现。"
 
 [dexvm.system_line_separator]
 status = "complete"

@@ -64,3 +64,15 @@ TEST_CASE("run-dex exit status follows dalvikvm for System.exit and uncaught exc
                                                           [](std::string_view) {})),
                     std::runtime_error);
 }
+
+TEST_CASE("WU7-3 run-dex retains main and the actual native entry in uncaught stacks") {
+    for (const auto* backend : {"switch", "threaded"}) {
+        auto options = Options("rundex.Thrower");
+        options.backend = backend;
+        std::string output;
+        CHECK(ogplay::app::RunDex(options, [&](std::string_view bytes) { output += bytes; }) == 1);
+        CHECK(output == "Exception in thread \"main\" java.lang.IllegalStateException: boom\n"
+                        "\tat rundex.Thrower.main(Unknown Source)\n"
+                        "\tat dalvik.system.NativeStart.main(Native Method)\n");
+    }
+}

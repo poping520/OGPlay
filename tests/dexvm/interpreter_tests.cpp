@@ -167,8 +167,10 @@ TEST_CASE("dexvm objects, fields and dispatch") {
     // Instance fields via <init>/iget/iput and virtual dispatch.
     ExpectInt(vm.CallStatic("LTask;", "exercise", "()I"), 77);
     ExpectInt(vm.CallStatic("LTypes;", "isRunnable", "()I"), 1);
-    ExpectException(vm, vm.CallStatic("LTypes;", "badCast", "()V"),
-                    "Ljava/lang/ClassCastException;");
+    const auto cast = vm.CallStatic("LTypes;", "badCast", "()V");
+    ExpectException(vm, cast, "Ljava/lang/ClassCastException;");
+    CHECK(vm.interpreter.StringUtf8(vm.interpreter.ThrowableMessage(cast.exception)) ==
+          "Task cannot be cast to Counter");
     ExpectInt(vm.CallStatic("LTypes;", "strings", "()I"), 6);
     });
 }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <limits>
 #include <new>
 #include <optional>
 #include <string_view>
@@ -1152,6 +1153,17 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             return outcome;
         }
         case MethodKind::intrinsic: {
+            struct NativeFrameScope {
+                decltype(frames)& stack;
+                bool pushed;
+                ~NativeFrameScope() { if (pushed) stack.pop_back(); }
+            } native_frame{frames, false};
+            if ((impl_->linker->Method(method_id).access_flags & kAccNative) != 0) {
+                Frame frame;
+                frame.method = &impl_->linker->Method(method_id);
+                frames.push_back(std::move(frame));
+                native_frame.pushed = true;
+            }
             const auto is_static = impl_->linker->Method(method_id).is_static;
             VmCallOutcome outcome;
             const auto receiver = is_static || arguments.empty()
@@ -1474,6 +1486,87 @@ VmObjectRef Interpreter::CaptureThrowableStack() {
     return array;
 }
 
+namespace {
+struct StackSource final {
+    std::optional<std::uint32_t> file;
+    std::int32_t line{-1};
+};
+
+// Decode the DEX debug state machine at the saved invoke/throw PC. Like
+// dvmLineNumFromPC, retain the last emitted position at or before that PC.
+StackSource ReadStackSource(const DexClassLinker& linker, const LinkedMethod& method,
+                           const std::uint32_t pc) {
+    StackSource result;
+    if ((method.access_flags & kAccNative) != 0) result.line = -2;
+    if (!method.dex_unit) return result;
+    const auto& image = linker.Image(*method.dex_unit);
+    for (const auto& def : image.classes) {
+        if (image.types.at(def.class_type_index).descriptor == linker.Class(method.owner).descriptor) {
+            result.file = def.source_file_string_index;
+            break;
+        }
+    }
+    if (!method.code || method.code->info.debug_info_offset == 0) return result;
+    const auto bytes = linker.DexBytes(*method.dex_unit);
+    std::size_t offset = method.code->info.debug_info_offset;
+    const auto fail = []() -> void {
+        throw DexVmError(DexVmErrorReason::invalid_image, "invalid DEX stack debug info");
+    };
+    const auto byte = [&]() {
+        if (offset >= bytes.size()) fail();
+        return bytes[offset++];
+    };
+    const auto leb = [&](const bool sign) -> std::int64_t {
+        std::uint64_t value = 0;
+        unsigned shift = 0;
+        std::uint8_t part = 0;
+        do {
+            if (shift >= 35) fail();
+            part = byte();
+            value |= static_cast<std::uint64_t>(part & 0x7fU) << shift;
+            shift += 7;
+        } while ((part & 0x80U) != 0);
+        if (sign && (part & 0x40U) != 0) return static_cast<std::int64_t>(value) - (1LL << shift);
+        return static_cast<std::int64_t>(value);
+    };
+    auto line = leb(false);
+    const auto parameters = leb(false);
+    for (std::int64_t i = 0; i < parameters; ++i) (void)leb(false);
+    std::uint64_t address = 0;
+    auto current_file = result.file;
+    while (true) {
+        const auto op = byte();
+        switch (op) {
+        case 0: return result; // END_SEQUENCE
+        case 1: address += static_cast<std::uint64_t>(leb(false)); break;
+        case 2: line += leb(true); break;
+        case 3: // START_LOCAL
+        case 4: // START_LOCAL_EXTENDED
+            (void)leb(false); (void)leb(false); (void)leb(false);
+            if (op == 4) (void)leb(false);
+            break;
+        case 5: case 6: (void)leb(false); break;
+        case 7: case 8: break;
+        case 9: { // SET_FILE uses uleb128p1
+            const auto file = leb(false);
+            if (file > static_cast<std::int64_t>(image.strings.size())) fail();
+            current_file = file == 0 ? std::nullopt :
+                std::optional<std::uint32_t>(static_cast<std::uint32_t>(file - 1));
+            break;
+        }
+        default:
+            address += (op - 10U) / 15U;
+            line += -4 + static_cast<int>((op - 10U) % 15U);
+            if (address > pc) return result;
+            if (line < std::numeric_limits<std::int32_t>::min() ||
+                line > std::numeric_limits<std::int32_t>::max()) fail();
+            result.line = static_cast<std::int32_t>(line);
+            result.file = current_file;
+        }
+    }
+}
+} // namespace
+
 VmObjectRef Interpreter::MaterializeThrowableStack(const VmObjectRef snapshot) {
     if (!snapshot.IsValid()) return VmObjectRef{}; // AOSP nativeGetStackTrace(null).
     if (impl_->model->ObjectClass(snapshot) != impl_->linker->ResolveDescriptor("[I") ||
@@ -1505,8 +1598,15 @@ VmObjectRef Interpreter::MaterializeThrowableStack(const VmObjectRef snapshot) {
         std::replace(declaring_class.begin(), declaring_class.end(), '/', '.');
         set("declaringClass", "Ljava/lang/String;", {NewStringUtf8(declaring_class).Value(), SlotTag::ref});
         set("methodName", "Ljava/lang/String;", {NewStringUtf8(method.name).Value(), SlotTag::ref});
-        set("fileName", "Ljava/lang/String;", {0, SlotTag::ref});
-        set("lineNumber", "I", {static_cast<std::uint32_t>(method.kind == MethodKind::native ? -2 : -1), SlotTag::cat1});
+        const auto source = ReadStackSource(*impl_->linker, method,
+            static_cast<std::uint32_t>(impl_->model->GetPrimitiveElement(snapshot, i * 2 + 1)));
+        VmObjectRef file;
+        if (source.file) {
+            const auto& text = impl_->linker->Image(*method.dex_unit).strings.at(*source.file).value;
+            file = impl_->model->NewString(text);
+        }
+        set("fileName", "Ljava/lang/String;", {file.Value(), SlotTag::ref});
+        set("lineNumber", "I", {static_cast<std::uint32_t>(source.line), SlotTag::cat1});
     }
     return array;
 }

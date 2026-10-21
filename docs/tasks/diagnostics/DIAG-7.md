@@ -163,6 +163,76 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   合并写入，保留其余项；日志 `.local/analysis/wu7-2-{target,full,update}.log`。
 - capabilities check、diff check 通过；更新受影响 MODULE 的语义边界与 CURRENT 通过率。
 
+
+## WU7-3 · 异常、栈轨迹与线程（2026-10-21）
+
+- 独立 worktree 开发；局部行为修复，未改链接器。Throwable snapshot 保留方法身份和
+  DEX PC；物化时从该方法的 DEX unit 读取 source_file 与 debug_info 状态机，采用不超过
+  saved PC 的最后一条位置，缺失调试信息保留未知位置，native 行号为 -2。
+- 对照 `vm/Exception.cpp:dvmFillInStackTraceInternal/dvmGetStackTraceRaw` 和
+  `vm/interp/Stack.cpp:dvmLineNumFromPC` 保留原有 Throwable 顶层裁剪与完整调用帧。
+  run-dex 现在实际经 `NativeStart.main → 应用 main` 调用；不是打印时补造帧。
+  007 的原因链公共尾帧折叠和 054 的线程/默认 handler 输出均与 expected.txt 一致。
+- check-cast 双后端按 `Exception.cpp:1242/throwTypeError` 使用可读点分隔类型名，
+  数组显示 `[]`；消息为 `X cannot be cast to Y`。独立 cast probe 双后端输出
+  `Classes cannot be cast to MoreClasses` 和 `true`，003 已越过原 CCE 断言。
+- ThreadGroup.uncaughtException 依次虚派 parent、默认 handler；没有 handler 时向
+  System.err 打印线程名前缀和原版 Throwable 栈；ThreadDeath 不输出。
+  **来源差异**：本地 libdvm `ThreadGroup.java:688` 默认分支仅调用 printStackTrace，
+  不带线程名前缀；本次按任务明确要求保留 `Exception in thread "..." ` 前缀。
+- 生产路径审计：`Thread.start` 的 dispatcher 只选实例/default handler，无 handler 返回
+  false，随后 VmThreadRuntime 将线程标为 failed、保存原异常、关闭等待并由
+  `PumpJavaThreads` 在帧边界报告进程致命失败；不进入 ThreadGroup 默认 stderr 分支。
+  保持该 Android RuntimeInit 等价的既有致命出口，不安装系统 RuntimeInit/Binder。
+  新增双后端回归锁住此行为；APK 自动 uncaught 分派保持不变。后续为 003 接通显式 GC 后，
+  另跑 TML/Lili 场景检查生产路径。
+- 050 根因是 run-dex 的 DestroyJavaVM 等待只算 running，漏掉已 start、还在 created 的
+  worker，main 返回后提前 teardown。现等待这两种存活状态的非 daemon 线程。
+  对照 `dvmThreadInterrupt`（本地实现位于 Sync.cpp）、waitMonitor、Thread sleep，现有
+  interrupt flag、唤醒与重新获取 monitor 后清标记逻辑已正确，无需改写；补双后端 parked
+  sleep 与 wait 回归，验证 isAlive、InterruptedException、清标记和 monitor 重获。
+- 恢复 ThreadGroup 输出后，全量首轮暴露 029 旧假 pass：setDefaultAssertionStatus 未实现，
+  原异常打印缺失掩盖了它。按 libdvm `ClassLoader.java:692` 明确空方法补齐此必要依赖，
+  不实现逐 loader 断言策略；双后端验证 setter 不改变 desiredAssertionStatus。
+- A 线 `a57f1d86` 合入后，003 越过 UnresStuff 解析错误，暴露
+  InternedString.testDeadInternedString 的弱引用断言：System.gc 原为空操作；既有 sweep
+  又将 referent 清空错误地依赖于 ReferenceQueue.head 已链接。为目标验收的必要依赖，
+  System.gc 现复用现有 STW 普通收集（对照 Runtime.cpp native gc），无队列的弱引用亦清空；
+  入队仍只在队列与字段存在时执行，未改 finalizer/PhantomReference。
+  双后端新增回归验证动态 intern 经显式 GC 消亡、字面量仍存活、无队列弱引用 get 为 null。
+  007/054/050/003 双后端均 pass；未改链接器或源码测试判据。
+- A 线恢复 bootstrap 按实际身份优先后，Thread/Monitor 测试夹具按生产契约先登记 BootDex
+  再登记含平台重名类的 interp.dex；仅修正测试装配顺序。
+- 仅记录后续失败：070 在 Main.java:29 抛 UOE `direct buffer allocator is unavailable`；
+  094 在 Main.<clinit>(Main.java:72) 抛 PatternSyntaxException（invalid escaped character），
+  外层 EIIE；079 在 PhantomWrapper.<init>(Bitmap.java:115) 暴露 PhantomReference 构造
+  未实现的 UnsatisfiedLinkError，随后仍 wall timeout 60s。三个用例未扩修。
+- 只构建 ogplay-cli、ogplay_tests、ogplay_app_tests（独立 worktree 首次补齐依赖构建）；
+  Throwable/Thread/interpreter 主题 61 例、2578 断言通过（含 WU7-1a 修正）；新增 WU7-3 回归 6 例、179 断言
+  通过；monitor interrupt 2 例、37 断言与 run-dex 4 例、19 断言通过。
+  初次扩大到 class_name_codec 全文件时，既有 DVM-94 可见性拒绝旧断言失败，未扩修。
+- 独立版本全量 `--check-baseline` 退出 0：0 回归，双后端各 62/93；007/050/054 新 pass，
+  096 本轮也 pass，但上一轮曾 timeout，因此不提升该非目标的基线。只将 007/050/054
+  的双后端新 pass 用 `--update-baseline` 合并。集成 A 线后的最终结果另见下项。
+  证据 `.local/analysis/wu7-3/`，日志 `.local/analysis/wu7-3-{full-final,update,tests-refined,regressions-refined,monitor-tests,app-tests-refined}.log`。
+
+
+- 最终集成验证：Throwable/Thread/interpreter/GC 行为筛选 73/73、3110 断言通过；
+  新增 WU7-3 回归 7/7、199 断言通过；monitor interrupt 2/2、37 断言，run-dex 4/4、19 断言
+  通过。GC 主题全文件初跑 75 例中仅两条未修改的侧表计数断言失败（预期 9/10，实际 8/9）；
+  行为筛选显式排除这两项，未修改清单或侧表机制。日志 `wu7-3-final-{tests,behavior-tests,regressions,monitor,app}.log`。
+- TML、Lili 正常 basic 场景各一次，复用 WU5 fixtures/显示参数、新沙盒；两者均达到
+  1800 呈现帧且 no_guest_fault 通过，shutdown.clean=true、退出 0、整体 passed。
+  证据 `.local/analysis/wu7-3/scenarios/{tml,lili}/`、`scenarios-summary.json`；不等于正式 title gate。
+
+- 最终集成全量 `--check-baseline` 退出 0：0 回归、6 个新增后端 pass（003/072/096），
+  0 其他变化、0 oracle 迁移；switch/threaded 各 72/92（78.3%）。007/050/054 在独立分支
+  前阶段已提升；072/096 是显式 GC 接通后的直接改善，未单独扩修其算法。
+  本轮对 003/007/050/054/072/096 再执行 `--update-baseline`；证据
+  `.local/analysis/wu7-3/{integrated-full,final-update}/`，日志 `wu7-3-{integrated-full,final-update}.log`。
+  CURRENT/能力通过率据本轮更新；capabilities check、场景校验、diff check 通过。
+
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

@@ -648,3 +648,20 @@ TEST_CASE("ClassLoader parent-first registration still rejects malformed duplica
         }
     }
 }
+
+TEST_CASE("WU7-3 ClassLoader default assertion setter is an API19 no-op") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        LoaderVm vm(backend);
+        const auto loader = Ref(vm.Static("Ljava/lang/ClassLoader;", "getSystemClassLoader",
+                                          "()Ljava/lang/ClassLoader;"));
+        const auto type = Ref(vm.Static("Ljava/lang/Class;", "forName",
+            "(Ljava/lang/String;)Ljava/lang/Class;", {VmValue::Ref(vm.String("java.lang.String"))}));
+        for (const auto enabled : {1, 0}) {
+            const auto result = vm.Virtual(loader, "setDefaultAssertionStatus", "(Z)V", {VmValue::Int(enabled)});
+            REQUIRE_FALSE(result.exception.IsValid());
+            const auto status = vm.Virtual(type, "desiredAssertionStatus", "()Z");
+            REQUIRE_FALSE(status.exception.IsValid());
+            CHECK(status.value.AsInt() == 0);
+        }
+    }
+}

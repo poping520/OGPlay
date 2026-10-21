@@ -2988,9 +2988,10 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                                   "arraycopy element types are incompatible"};
             });
     builder.StaticMethod("gc", "()V",
-        [](IntrinsicContext&) {
-                // GC-B remains allocation-flow driven (09 §7). Explicit
-                // System.gc() is legal but intentionally does not force a cycle.
+        [](IntrinsicContext& context) {
+                // Dalvik Runtime.gc requests an ordinary collection, preserving
+                // soft references; reuse the VM's existing STW collector.
+                static_cast<void>(context.vm.CollectGarbage("System.gc"));
                 return VmValue::Void();
             });
     builder.StaticMethod("identityHashCode", "(Ljava/lang/Object;)I",
@@ -4102,10 +4103,52 @@ IntrinsicClassDecl Declare_java_lang_ThreadGroup() {
         });
     builder.VirtualMethod(
         "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
-        [](IntrinsicContext&) -> VmValue {
-            throw VmJavaThrow{
-                "Ljava/lang/UnsupportedOperationException;",
-                "bounded ThreadGroup has no stderr uncaught handler"};
+        [parent](IntrinsicContext& context) {
+            IntrinsicCall call(context);
+            auto& vm = context.vm;
+            const auto thread = call.Ref(0);
+            const auto throwable = call.Ref(1);
+            const auto invoke = [&](VmObjectRef receiver, const char* method,
+                                    const char* signature, std::vector<VmValue> args) {
+                if (!receiver.IsValid()) {
+                    throw VmJavaThrow{"Ljava/lang/NullPointerException;", "null uncaught receiver"};
+                }
+                const auto type = vm.Model().ObjectClass(receiver);
+                const auto slot = vm.Linker().FindVtableIndex(type, method, signature);
+                args.insert(args.begin(), VmValue::Ref(receiver));
+                const auto result = vm.Call(vm.Linker().Class(type).vtable.at(*slot), args);
+                PropagateOutcome(vm, result);
+                return result.value;
+            };
+            auto handler = call.GetRef(parent);
+            if (!handler.IsValid()) {
+                const auto type = vm.Linker().ResolveDescriptor("Ljava/lang/Thread;");
+                const auto getter = vm.Linker().FindDirectMethod(type,
+                    "getDefaultUncaughtExceptionHandler",
+                    "()Ljava/lang/Thread$UncaughtExceptionHandler;");
+                const auto result = vm.Call(*getter, {});
+                PropagateOutcome(vm, result);
+                handler = result.value.ref;
+            }
+            if (handler.IsValid()) {
+                invoke(handler, "uncaughtException", "(Ljava/lang/Thread;Ljava/lang/Throwable;)V",
+                       {VmValue::Ref(thread), VmValue::Ref(throwable)});
+            } else if (!throwable.IsValid() || !vm.Linker().IsAssignable(
+                           vm.Linker().ResolveDescriptor("Ljava/lang/ThreadDeath;"),
+                           vm.Model().ObjectClass(throwable))) {
+                const auto system_type = vm.Linker().ResolveDescriptor("Ljava/lang/System;");
+                PropagateOutcome(vm, vm.EnsureClassInitialized(system_type));
+                const auto err_field = vm.Linker().FindFieldRecursive(
+                    system_type, "err", "Ljava/io/PrintStream;");
+                const auto& field = vm.Linker().Field(*err_field);
+                const auto err = VmObjectRef(vm.Linker().Class(field.owner).static_storage.at(field.slot));
+                const auto name = invoke(thread, "getName", "()Ljava/lang/String;", {}).ref;
+                const auto prefix = vm.NewStringUtf8("Exception in thread \"" + vm.StringUtf8(name) + "\" ");
+                const auto roots = vm.ProtectReferences(std::array{err, prefix});
+                invoke(err, "print", "(Ljava/lang/String;)V", {VmValue::Ref(prefix)});
+                invoke(throwable, "printStackTrace", "(Ljava/io/PrintStream;)V", {VmValue::Ref(err)});
+            }
+            return VmValue::Void();
         });
     return std::move(builder).Build();
 }

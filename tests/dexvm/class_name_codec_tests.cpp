@@ -354,3 +354,9 @@ TEST_CASE("reflection linker metadata preserves DEX order and loader roles") {
     CHECK(linker.Class(linker.ResolveDescriptor("V")).defining_loader ==
           kBootstrapLoader);
 }
+
+TEST_CASE("WU7-3 Dalvik type error names use readable array and class names") {
+    CHECK(ClassNameCodec::HumanReadableDescriptor("Lsome/pkg/Outer$Inner;") == "some.pkg.Outer$Inner");
+    CHECK(ClassNameCodec::HumanReadableDescriptor("[[Ljava/lang/String;") == "java.lang.String[][]");
+    CHECK(ClassNameCodec::HumanReadableDescriptor("[[I") == "int[][]");
+}

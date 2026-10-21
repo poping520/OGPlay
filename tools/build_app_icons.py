@@ -46,6 +46,13 @@ def save_macos_icon(image: Image.Image, path: Path) -> None:
     image.save(path)
 
 
+def save_readme_icon(image: Image.Image, path: Path) -> None:
+    # Docs only: 256 px (sharp at 128 px on HiDPI), 256-colour palette with
+    # alpha keeps the README image around 10 KB instead of the 700 KB master.
+    frame = image.resize((256, 256), Image.Resampling.LANCZOS)
+    frame.quantize(colors=256, method=Image.Quantize.FASTOCTREE).save(path, optimize=True)
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[1] / "assets" / "icons"
     with Image.open(root / "ogplay.png") as source:
@@ -53,6 +60,7 @@ def main() -> None:
             raise ValueError("Application icon must be square")
         image = source.convert("RGBA")
     save_windows_icon(image, root / "ogplay.ico")
+    save_readme_icon(image, root / "ogplay-256.png")
     with Image.open(root / "ogplay-macos.png") as source:
         if source.width != source.height:
             raise ValueError("macOS application icon must be square")

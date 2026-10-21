@@ -13,15 +13,15 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| TML 1.0 | macOS | 三点击 survey 零命中，触摸/窗口属性三缺口修复；33 定向用例通过 | 无新运行首错；退出 onPause/FMOD 报 `IllegalThreadStateException: the VM is shutting down` | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
+| TML 1.0 | macOS | 三点击 survey 零命中；正常场景 1800 呈现帧，onPause 线程准入已修 | shutdown.clean=false：native worker 回收报 `unknown guest thread id`；原 VM shutting down 消失 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 新沙盒 f=0 死锁已修复，600 帧退出 0；定向 9 例/125 断言通过 | GAThread `NativeDecimalFormat.formatDouble` ULE；CG 首图/点击、Win 待复验 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
-| Dead Trigger 1.1.0 | Windows | 第一关持续出帧，存档重载 | **隔离沙盒 f=4740 string 构造 receiver 错**；默认存档缺 `Dialog(Context)`；macOS 退出卡在 FMOD 等待 AudioTrack | [DVM-204](../tasks/dexvm/DVM-204.md) |
+| Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 正常场景 1200 呈现帧，onPause 线程准入已修 | shutdown.clean=false：Surface/input queue native futex 耗尽 2 秒清理预算，音频消费仍推进；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` 未修 | [DVM-204](../tasks/dexvm/DVM-204.md) |
 | Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；CLI 1024×600 呈现 900 帧退出 0，GUI 视频实帧后正常退出 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
-| PVZ | macOS | TermsActivity 首帧 | 后续帧与交互未验收 | [DVM-205](../tasks/dexvm/DVM-205.md) |
-| Angry Birds 2.3.0 | — | 5000 帧，背景音乐正常 | 绘制未验收 | [DVM-186](../tasks/dexvm/DVM-186.md) |
+| PVZ | macOS | TermsActivity 首帧；正常场景 baseline 通过 | 退出 onDestroy 调用 `ContextWrapper.stopService` 未实现；整体 failed，后续交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
+| Angry Birds 2.3.0 | macOS | 手动场景恢复至 sequence=5000、无 guest fault；普通启动 1000 呈现帧退出 0 | 场景退出 onDestroy 拒绝 APK 缩小可见性的重写；整体 failed，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[DIAG-6](../tasks/diagnostics/DIAG-6.md) |
 
 ## 未闭合问题
 

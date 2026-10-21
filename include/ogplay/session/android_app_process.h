@@ -37,6 +37,8 @@ struct AndroidAppProcessHost final {
     std::function<void()> flush_persistent_state;
     std::function<void()> before_process_stop;
     std::function<void()> pump_host_events;
+    // After cooperative lifecycle callbacks, before native/VM thread retirement.
+    std::function<void()> before_guest_shutdown;
 };
 
 struct AndroidAppProcessRequest final {

@@ -78,6 +78,8 @@ struct DexActivityLifecycleBindings final {
     // Owner-thread OS message pump only; must not reenter the guest lifecycle.
     std::function<void()> pump_host_events;
     core::Logger* logger{};
+    // Host consumers stop after cooperative callbacks, before guest thread retirement.
+    std::function<void()> before_guest_shutdown;
 };
 
 class DexActivityLifecycleError final : public std::runtime_error {

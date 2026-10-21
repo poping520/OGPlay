@@ -125,7 +125,8 @@ TEST_CASE("DVM-218 lifecycle preserves onPause failure and attempts later cleanu
             CHECK(message.find("pause-primary") != std::string::npos);
             CHECK(message.find("destroy-secondary") == std::string::npos);
         }
-        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 2);
+        // Healthy Stop still attempts the foreground onDestroy; its secondary failure stays hidden.
+        CHECK(fixture.CallStaticInt("Lfixture/TeardownFailureActivity;", "getStage") == 3);
         CHECK_FALSE(fixture.app->NativeProcess().Running());
         CHECK_FALSE(fixture.app->NativeProcess().Environment().IsThreadAttached(1));
         CHECK_NOTHROW(static_cast<void>(fixture.app->Stop()));

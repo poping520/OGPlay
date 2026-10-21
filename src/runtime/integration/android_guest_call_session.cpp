@@ -2166,7 +2166,9 @@ public:
             throw AndroidGuestProcessError("teardown cleanup admission rejected");
         if (native_state_faulted_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("guest cleanup unavailable after a CPU fault");
-        cleanup_requested_.store(true, std::memory_order_release);
+        // Cooperative Activity callbacks still run in a live process and may
+        // create Java/native workers. Only irreversible teardown closes admission.
+        if (retired) cleanup_requested_.store(true, std::memory_order_release);
         if (!cleanup_deadline_ns_)
             cleanup_deadline_ns_ = hal::Clock::SteadyTimestampNs() + kCleanupWallBudgetNs;
         ++cleanup_depth_;

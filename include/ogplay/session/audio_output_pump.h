@@ -27,6 +27,9 @@ public:
     AudioOutputPump& operator=(const AudioOutputPump&) = delete;
 
     void StartRealtime();
+    // Consume only to release PCM backpressure during an active manual step.
+    void StartManual(std::function<bool()> needs_progress);
+    void SetManualStepActive(bool active);
     void Stop() noexcept;
     void SetSuspended(bool suspended) noexcept;
     [[nodiscard]] bool DeviceFailed() const noexcept;
@@ -37,6 +40,7 @@ public:
 
 private:
     void PumpRealtimeOnce();
+    void RecordWorkerFailure(std::exception_ptr failure) noexcept;
 
     Mix mix_;
     FailureInterrupt failure_interrupt_;
@@ -49,6 +53,8 @@ private:
     std::exception_ptr worker_failure_;
     std::jthread worker_;
     std::atomic<bool> suspended_{};
+    bool manual_step_active_{}; // guarded by mutex_
+    std::uint64_t manual_frames_advanced_{}; // deducted from later Clock allowance
     std::atomic<bool> device_failed_{};
     std::uint64_t frame_remainder_{};
 };

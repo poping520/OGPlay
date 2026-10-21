@@ -165,7 +165,70 @@ TEST_CASE("DVM-202 teardown isolates pending JNI errors and still stops after cl
     }
 }
 
-TEST_CASE("DVM-236 process close never synthesizes instance destruction but finish still does") {
+TEST_CASE("cooperative onPause can start Java workers before VM shutdown and join is bounded") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+      for (const bool timeout : {false, true}) {
+        INFO("timeout=" << timeout << " backend=" << static_cast<int>(backend));
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto worker_type = linker.ResolveDescriptor("Lfixture/NeverParkWorker;");
+        const auto ctor = linker.FindDirectMethod(worker_type, "<init>", "()V");
+        REQUIRE(ctor);
+        const auto run = linker.FindVtableIndex(worker_type, "run", "()V");
+        REQUIRE(run);
+        std::atomic<int> completed{};
+        if (!timeout) {
+            auto& method = linker.MutableMethod(linker.Class(worker_type).vtable[*run]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [&](IntrinsicContext&) {
+                ++completed;
+                return VmValue::Void();
+            };
+        }
+        const auto activity_type = vm.Model().ObjectClass(f.context->activity);
+        for (const auto callback : {"onPause", "onStop", "onDestroy"}) {
+            const auto pause = linker.FindVtableIndex(activity_type, callback, "()V");
+            REQUIRE(pause);
+            auto& method = linker.MutableMethod(linker.Class(activity_type).vtable[*pause]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [&](IntrinsicContext&) {
+                CHECK_FALSE(f.app->DexVm().Threads().ShuttingDown());
+                // The first worker needs native TLS/JNI preparation. With early
+                // admission closure it fails and the second start sees VM shutdown.
+                for (int i = 0; i < 2; ++i) {
+                    const auto worker = vm.NewIntrinsicInstance("Lfixture/NeverParkWorker;");
+                    const auto roots = vm.ProtectReferences(std::array{worker});
+                    REQUIRE_FALSE(vm.Call(*ctor, std::array{VmValue::Ref(worker)}).exception.IsValid());
+                    static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, worker, "start", "()V", {}));
+                    static_cast<void>(runtime::android_intrinsics::CallAndroidMethod(vm, worker, "join", "()V", {}));
+                }
+                return VmValue::Void();
+            };
+        }
+        if (timeout) {
+            CHECK_THROWS_WITH(static_cast<void>(f.app->Stop()),
+                doctest::Contains("lifecycle execution wall-time budget exhausted"));
+            const auto hits = f.ledger.Unimplemented();
+            CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+                return hit.id == "session.lifecycle.cleanup_timeout";
+            }));
+        } else {
+            CHECK(f.app->Stop().state == session::LifecycleRunState::stopped);
+            CHECK(completed == 6);
+        }
+        CHECK(f.app->DexVm().Threads().ShuttingDown());
+        CHECK_FALSE(f.app->NativeProcess().Running());
+        CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+      }
+    }
+}
+
+TEST_CASE("process close destroys the foreground before shutdown and finish stays per instance") {
     using namespace ogplay;
     using namespace runtime::dexvm;
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -185,7 +248,7 @@ TEST_CASE("DVM-236 process close never synthesizes instance destruction but fini
         method.kind = MethodKind::intrinsic;
         method.implementation = [&](IntrinsicContext&) {
             ++destroyed;
-            if (mode == 2 || destroyed > 1)
+            if (mode == 2)
                 throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "shared owner already destroyed"};
             return VmValue::Void();
         };
@@ -221,7 +284,7 @@ TEST_CASE("DVM-236 process close never synthesizes instance destruction but fini
         f.context->audio_tracks[999].player = player;
         REQUIRE(f.context->pcm_playback->HasPlayer(player));
         CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-        CHECK(destroyed == (mode == 0 ? 0 : 1));
+        CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
         CHECK(f.context->video_views.empty());
         CHECK(f.context->encoded_audio_leases.empty());
         CHECK_FALSE(f.context->pcm_playback->HasPlayer(player));
@@ -230,7 +293,7 @@ TEST_CASE("DVM-236 process close never synthesizes instance destruction but fini
         CHECK_FALSE(f.app->NativeProcess().Running());
         CHECK(f.app->NativeProcess().AttachedJniThreadCount() == 0);
         CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
-        CHECK(destroyed == (mode == 0 ? 0 : 1));
+        CHECK(destroyed == (mode == 0 ? 1 : mode == 1 ? 2 : 1));
       }
     }
 }

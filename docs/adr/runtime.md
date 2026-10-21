@@ -1038,6 +1038,11 @@ API19 ActivityThread.performDestroyActivity 按 token 销毁单个记录；Activ
 普通 finish 仍执行该实例 onDestroy 并传播其异常，进程级 Stop 不合成 Activity.onDestroy。
 Java 与原生退出共用显式终止事实和 finalization 准入，重复 Stop 幂等，预算不续期。
 
+2026-10-21 修订：健康宿主关闭在有界协作阶段执行前台 onDestroy，替代上文“不合成
+Activity.onDestroy”的前台条款；后台实例不作全栈 finish。失焦/pause/stop/destroy 回调期间
+保持 Java/native 线程准入与音频消费，随后先回收音频消费者，再关闭准入并取消/join。
+超时按统一 Clock 明确失败并记账，guest exit/fault 不重入回调及禁止 DSO fini 的边界不变。
+
 范围与验证见 [DVM-236](../tasks/dexvm/DVM-236.md)。不实现完整 Android 进程管理；
 不把 native fini 失败或其他开放退出首错标为成功。
 

@@ -134,12 +134,13 @@ public:
         {
             std::unique_lock guard(mutex);
             while (!shutting_down && !ready()) {
+                if (vm->ExecutionDeadlineExpired(self)) break;
                 interrupted = monitors.Interrupted(self);
                 if (interrupted) break;
                 if (timeout_millis.has_value() && clock() >= deadline) break;
-                if (timeout_millis.has_value()) {
+                if (timeout_millis.has_value() || vm->HasExecutionDeadline(self)) {
                     changed.wait_for(guard, std::chrono::milliseconds(2));
-                    if (!advanced) {
+                    if (timeout_millis.has_value() && !advanced) {
                         guard.unlock();
                         advanced = monitors.TryAdvanceClockForTimedPark(
                             self, deadline);
@@ -152,6 +153,7 @@ public:
         }
         lock.ReacquireAfterBlocking(depth);
         vm->Threads().SetWaitState(self, VmThreadWaitState::none);
+        vm->CheckExecutionDeadline(self);
         if (interrupted) {
             static_cast<void>(monitors.ClearInterrupt(self));
             throw VmJavaThrow{"Ljava/lang/InterruptedException;",

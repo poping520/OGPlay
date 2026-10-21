@@ -158,7 +158,7 @@ TEST_CASE("DVM-195 original NativeActivity runs in the existing Java native proc
         runtime::SetWindowInputCallback(vm, *fixture.context, activity);
         CHECK(read(trace.Add(4)) == 11);
         static_cast<void>(fixture.app->Stop());
-        CHECK(read(trace.Add(4)) == 4); // native onStop; process close does not call Java onDestroy
+        CHECK(read(trace.Add(4)) == 5); // healthy Stop runs the foreground onDestroy (ADR-0115 rev. 2026-10-21)
         CHECK(fixture.context->native_activity->InputQueuePointer(activity).IsNull());
         CHECK_FALSE(memory.validate(native, 4));
         CHECK_THROWS(static_cast<void>(bridge.FromReference(actual_activity)));

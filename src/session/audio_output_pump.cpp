@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <algorithm>
 
 #include "ogplay/session/audio_output_pump.h"
 
@@ -49,20 +50,45 @@ void AudioOutputPump::StartRealtime() {
                 PumpRealtimeOnce();
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             } catch (...) {
-                const auto failure = std::current_exception();
-                // Never leave a producer waiting after the only consumer exits.
-                // Interrupt before publishing so observers see the complete failure.
-                try {
-                    if (failure_interrupt_) failure_interrupt_();
-                } catch (...) {
-                    // Preserve the original mixer/device failure.
-                }
-                std::scoped_lock lock(failure_mutex_);
-                worker_failure_ = failure;
+                RecordWorkerFailure(std::current_exception());
                 return;
             }
         }
     });
+}
+
+void AudioOutputPump::RecordWorkerFailure(std::exception_ptr failure) noexcept {
+    // Wake the producer before publishing the failure to the lifecycle owner.
+    try { if (failure_interrupt_) failure_interrupt_(); }
+    catch (...) { /* Preserve the original consumer failure. */ }
+    std::scoped_lock lock(failure_mutex_);
+    worker_failure_ = std::move(failure);
+}
+
+void AudioOutputPump::StartManual(std::function<bool()> needs_progress) {
+    if (!needs_progress) throw std::invalid_argument("manual audio pump needs a backpressure probe");
+    Stop();
+    worker_ = std::jthread([this, probe = std::move(needs_progress)](const std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            try {
+                {
+                    std::scoped_lock lock(mutex_);
+                    if (manual_step_active_ && !suspended_.load(std::memory_order_relaxed) && probe()) {
+                        manual_frames_advanced_ += mix_(chunk_, sample_rate_);
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } catch (...) {
+                RecordWorkerFailure(std::current_exception());
+                return;
+            }
+        }
+    });
+}
+
+void AudioOutputPump::SetManualStepActive(const bool active) {
+    std::scoped_lock lock(mutex_);
+    manual_step_active_ = active;
 }
 
 void AudioOutputPump::Stop() noexcept {
@@ -95,11 +121,14 @@ std::size_t AudioOutputPump::MixOffline(const std::span<std::int16_t> output) {
 std::uint64_t AudioOutputPump::FramesForTicks(
     const std::uint64_t tick_delta, const std::uint64_t ticks_per_second) {
     if (ticks_per_second == 0U) return 0U;
+    std::scoped_lock lock(mutex_);
     const auto scaled =
         tick_delta * static_cast<std::uint64_t>(sample_rate_) + frame_remainder_;
     const auto frames = scaled / ticks_per_second;
     frame_remainder_ = scaled % ticks_per_second;
-    return frames;
+    const auto already_advanced = std::min(frames, manual_frames_advanced_);
+    manual_frames_advanced_ -= already_advanced;
+    return frames - already_advanced;
 }
 
 void AudioOutputPump::PumpRealtimeOnce() {

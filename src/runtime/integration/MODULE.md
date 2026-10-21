@@ -18,6 +18,9 @@ JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own �
 链接错误时延后到真实 Java/JNI 使用，不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
 值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
 JNI 字段访问经解释器共享守卫：骨架非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
+GC roots 同时包含 JNI 引用与字符串 store 的活动 chars/UTF8 lease；Release 前不得扫除
+相应字符串。进程 quiesce 只 join clone runtime 实际拥有的 child；Java-only 线程交由 Java
+thread owner join，不能依赖惰性 native context 是否存在来区分。
 这些 owner hooks 在调用静止后统一撤销，不使下层反向依赖 DexVM。
 
 `GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与

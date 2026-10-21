@@ -74,6 +74,16 @@ public:
         return strings_.contains(string.value);
     }
 
+    void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const {
+        std::vector<JniObjectIdentity> roots;
+        {
+            std::scoped_lock lock(mutex_);
+            for (const auto& [id, entry] : strings_)
+                if (entry.active_accesses != 0) roots.push_back({JniObjectDomain::host, id});
+        }
+        for (const auto identity : roots) visit(identity);
+    }
+
     [[nodiscard]] JniSize Length(const JniObjectIdentity string) const {
         std::scoped_lock lock(mutex_);
         return static_cast<JniSize>(CheckedSize(RequireString(string)->second
@@ -211,6 +221,10 @@ void JniStringStore::Delete(const JniObjectIdentity string) {
 }
 bool JniStringStore::Contains(const JniObjectIdentity string) const noexcept {
     return impl_->Contains(string);
+}
+
+void JniStringStore::VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const {
+    impl_->VisitAccessRoots(visit);
 }
 
 JniSize JniStringStore::Length(const JniObjectIdentity string) const {

@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "1e9922e16c33d08e830c1d3dc0fda1453794d15463e8b40f58e7a752559e0af7",
+    "recipe_sha256": "323948c942f744fb38d3fd19f831743e351fefde0927f754f9c7d859e61f2e3a",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -88,12 +88,12 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 4108416,
-    "sha256": "92fa07c91e8ba87e547d0dded7b342f7071305057dad386b93bdd6c0fc6f69ec",
+    "size": 4119092,
+    "sha256": "753dd8d87b5a54501f1ceb12c2c0acfba18d00ca99597c82041922c1fb10c5fe",
     "dex_entry": "classes.dex",
-    "dex_size": 4103796,
-    "dex_sha256": "70e3893a2d6b355f5b89221d275ca5f38958a79f09bb66511a970cc45a79ba34",
-    "class_count": 2566,
+    "dex_size": 4114472,
+    "dex_sha256": "6a023245aeabfca07439e854afa40c02a289508f059f0b09003f34be346f5231",
+    "class_count": 2575,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"
@@ -231,8 +231,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 133864,
-      "sha256": "92f4c8cbcfa2937956e0807a78a55d03ee79f5e5f992b494f5a346ec64aeeffa",
+      "size": 148620,
+      "sha256": "c1c3b338ab6ac419ff76cc6e90c3eda6f67c4265851fa96bbab6a9ab3eea16f7",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -244,7 +244,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "1ca401e5127551e043b2a5d49003ad4a204d9f6a454ed67c4d5844ec8b50aa4b",
+        "generator_sha256": "c3d36ee033e7aba0884fa502ccdc01a3060b26b7b5a81a201bf23b336974a6ba",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",
@@ -263,7 +263,11 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "09b37394a2b70588de318cc70234cf682819b2243f2f6cae4d90afe6b8b29dd4"
+            "sha256": "5b5898f108fa67384735e2857315f3dc392cd111ab34c3ea82a771141ad17ab7"
+          },
+          {
+            "path": "src/guest/icu/regex_jni.c",
+            "sha256": "78de73e0b427cdcdd9556c03e25e563d7f400df9084268b08b17f21bc345ee34"
           },
           {
             "path": "src/guest/zip/crc32_jni.c",
@@ -279,7 +283,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "d00bf05fa2097d7fef416b5bee8dd18713e2c7a0f18a00ce58760d061a2a8c28"
+            "sha256": "e95745513e9877f04cb585f16c7aa4db776479615fbf871c4a5bc6ac8ba2495f"
           }
         ],
         "inputs": [

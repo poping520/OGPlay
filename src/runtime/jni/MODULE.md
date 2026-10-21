@@ -32,6 +32,8 @@ Bionic、syscall、execution 或 integration。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。
+- JniStringStore.VisitAccessRoots 在锁外枚举仍有 chars/UTF8/critical lease 的字符串身份；
+  VM owner 将其纳入 GC roots，直至对应 Release，不因局部引用或线程退役提前删除。
 - 默认严格执行 local reference 生命周期。仅由上层根据 Manifest `targetSdkVersion` 1..13
   显式启用 Dalvik app-bug 兼容：同一对象复用稳定 direct-style handle，失效 handle 可解析但
   不属于 GC roots；首次跨 frame 重发必须通过回调警告，不能静默兼容或取消 frame 清理。

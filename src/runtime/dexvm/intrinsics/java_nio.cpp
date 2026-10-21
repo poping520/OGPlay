@@ -167,6 +167,8 @@ IntrinsicHandler Wrap(std::string concrete, NioElementKind kind, bool range) {
 }
 
 VmValue BitsValue(std::uint64_t bits, NioElementKind kind) {
+    if (kind == NioElementKind::byte) return VmValue::Int(static_cast<std::int8_t>(bits));
+    if (kind == NioElementKind::short_value) return VmValue::Int(static_cast<std::int16_t>(bits));
     if (kind == NioElementKind::long_value) return VmValue::Long(static_cast<std::int64_t>(bits));
     if (kind == NioElementKind::double_value) return VmValue::Double(std::bit_cast<double>(bits));
     if (kind == NioElementKind::float_value) return VmValue::Float(std::bit_cast<float>(static_cast<std::uint32_t>(bits)));
@@ -412,6 +414,18 @@ IntrinsicClassDecl Exception(const std::string& descriptor, const std::string& p
     b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
     return std::move(b).Build();
 }
+VmValue CharsetCallResult(Interpreter& vm, const VmCallOutcome& result) {
+    if (result.exception.IsValid()) throw VmJavaThrow{
+        vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+    return result.value;
+}
+VmValue CharsetLibraryCall(Interpreter& vm, const char* owner, const char* name,
+                          const char* signature, std::vector<VmValue> arguments = {}) {
+    const auto type = vm.Linker().ResolveDescriptor(owner);
+    const auto method = vm.Linker().FindDirectMethod(type, name, signature);
+    if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference, std::string(owner) + "->" + name);
+    return CharsetCallResult(vm, vm.Call(*method, arguments));
+}
 IntrinsicClassDecl Charset() {
     auto b = IntrinsicClassBuilder::Class("Ljava/nio/charset/Charset;", "Ljava/lang/Object;", {"Ljava/lang/Comparable;"});
     const auto name = b.BoundInstanceField("canonicalName", "Ljava/lang/String;", kAccPrivate | kAccFinal);
@@ -425,6 +439,44 @@ IntrinsicClassDecl Charset() {
     b.StaticMethod("forName", "(Ljava/lang/String;)Ljava/nio/charset/Charset;", [make](IntrinsicContext& c) {
         if (!c.arguments[0].ref.IsValid()) throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "charsetName == null"};
         return make(c, c.vm.StringUtf8(c.arguments[0].ref));
+    });
+    b.StaticMethod("availableCharsets", "()Ljava/util/SortedMap;", [make](IntrinsicContext& c) {
+        auto& vm = c.vm;
+        const auto names = CharsetLibraryCall(vm, "Llibcore/icu/NativeConverter;",
+            "getAvailableCharsetNames", "()[Ljava/lang/String;").ref;
+        const auto names_root = vm.ProtectReferences(std::array{names});
+        const auto comparator = vm.NewIntrinsicInstance("Ljava/lang/String$CaseInsensitiveComparator;");
+        const auto comparator_root = vm.ProtectReferences(std::array{comparator});
+        const auto comparator_type = vm.Model().ObjectClass(comparator);
+        const auto ctor = vm.Linker().FindDirectMethod(comparator_type, "<init>", "()V");
+        if (!ctor) throw DexVmError(DexVmErrorReason::unresolved_reference, "charset comparator constructor");
+        auto initialized = vm.Call(*ctor, std::array{VmValue::Ref(comparator)});
+        CharsetCallResult(vm, initialized);
+        const auto map = vm.NewIntrinsicInstance("Ljava/util/TreeMap;");
+        const auto map_root = vm.ProtectReferences(std::array{map});
+        const auto map_ctor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(map), "<init>", "(Ljava/util/Comparator;)V");
+        if (!map_ctor) throw DexVmError(DexVmErrorReason::unresolved_reference, "charset map constructor");
+        CharsetCallResult(vm, vm.Call(*map_ctor, std::array{VmValue::Ref(map), VmValue::Ref(comparator)}));
+        for (JniSize i = 0; i < vm.Model().ArrayLength(names); ++i) {
+            const auto raw = vm.Model().GetObjectElement(names, i);
+            std::string canonical;
+            try { canonical = CanonicalCharset(vm.StringUtf8(raw)); }
+            catch (const VmJavaThrow& error) {
+                if (error.descriptor == "Ljava/nio/charset/UnsupportedCharsetException;" ||
+                    error.descriptor == "Ljava/nio/charset/IllegalCharsetNameException;") continue;
+                throw;
+            }
+            // Publish only codecs actually supported by this runtime, not
+            // every ICU provider whose conversion protocol is not yet wired.
+            const auto charset = make(c, canonical).ref;
+            const auto charset_root = vm.ProtectReferences(std::array{charset});
+            const auto key = vm.NewStringUtf8(canonical);
+            const auto key_root = vm.ProtectReferences(std::array{key});
+            static_cast<void>(detail::InvokeGuest(vm, map, "put",
+                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(key), VmValue::Ref(charset)}));
+        }
+        return CharsetLibraryCall(vm, "Ljava/util/Collections;", "unmodifiableSortedMap",
+            "(Ljava/util/SortedMap;)Ljava/util/SortedMap;", {VmValue::Ref(map)});
     });
     b.StaticMethod("defaultCharset", "()Ljava/nio/charset/Charset;", [make](IntrinsicContext& c) { return make(c, "UTF-8"); });
     b.StaticMethod("isSupported", "(Ljava/lang/String;)Z", [](IntrinsicContext& c) {

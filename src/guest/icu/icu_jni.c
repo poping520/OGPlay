@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -608,14 +609,6 @@ static jboolean ICU_initLocaleDataNative(JNIEnv *env, jclass cls,
   char *locale = string_utf8(env, locale_value);
   if (locale == NULL)
     return JNI_FALSE;
-  if (!(locale[0] == 0 || strcmp(locale, "en") == 0 ||
-        strcmp(locale, "en_US") == 0 || strcmp(locale, "zh") == 0 ||
-        strcmp(locale, "zh_CN") == 0)) {
-    free(locale);
-    throw_new(env, "java/lang/UnsupportedOperationException",
-              "locale is outside the audited ICU set");
-    return JNI_FALSE;
-  }
   const struct {
     const char *field;
     int date_style;
@@ -752,15 +745,16 @@ typedef struct DecimalEntry {
   UNumberFormat *format;
 } DecimalEntry;
 static DecimalEntry *decimal_entries;
+static pthread_mutex_t decimal_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 static jlong next_decimal_token = 1;
 
 static DecimalEntry *decimal_entry(JNIEnv *env, jlong token) {
-  for (DecimalEntry *p = decimal_entries; p != NULL; p = p->next)
-    if (p->token == token)
-      return p;
-  throw_new(env, "java/lang/IllegalStateException",
-            "invalid decimal formatter token");
-  return NULL;
+  pthread_mutex_lock(&decimal_registry_mutex);
+  DecimalEntry *result = decimal_entries;
+  while (result != NULL && result->token != token) result = result->next;
+  pthread_mutex_unlock(&decimal_registry_mutex);
+  if (result == NULL) throw_new(env, "java/lang/IllegalStateException", "invalid decimal formatter token");
+  return result;
 }
 
 static int apply_symbols(JNIEnv *env, UNumberFormat *format,
@@ -845,25 +839,30 @@ static jlong NativeDecimalFormat_open(
     throw_new(env, "java/lang/OutOfMemoryError", "decimal formatter");
     return 0;
   }
+  pthread_mutex_lock(&decimal_registry_mutex);
   entry->token = next_decimal_token++;
   entry->format = format;
   entry->next = decimal_entries;
   decimal_entries = entry;
+  pthread_mutex_unlock(&decimal_registry_mutex);
   return entry->token;
 }
 
 static void NativeDecimalFormat_close(JNIEnv *env, jclass cls, jlong token) {
   (void)cls;
+  pthread_mutex_lock(&decimal_registry_mutex);
   DecimalEntry **cursor = &decimal_entries;
   while (*cursor != NULL && (*cursor)->token != token)
     cursor = &(*cursor)->next;
   if (*cursor == NULL) {
+    pthread_mutex_unlock(&decimal_registry_mutex);
     throw_new(env, "java/lang/IllegalStateException",
               "invalid decimal formatter token");
     return;
   }
   DecimalEntry *entry = *cursor;
   *cursor = entry->next;
+  pthread_mutex_unlock(&decimal_registry_mutex);
   ICU(unum_close)(entry->format);
   free(entry);
 }
@@ -884,10 +883,12 @@ static jlong NativeDecimalFormat_cloneImpl(JNIEnv *env, jclass cls,
     throw_new(env, "java/lang/OutOfMemoryError", "decimal clone");
     return 0;
   }
+  pthread_mutex_lock(&decimal_registry_mutex);
   entry->token = next_decimal_token++;
   entry->format = clone;
   entry->next = decimal_entries;
   decimal_entries = entry;
+  pthread_mutex_unlock(&decimal_registry_mutex);
   return entry->token;
 }
 
@@ -931,16 +932,31 @@ static jstring NativeDecimalFormat_toPatternImpl(JNIEnv *env, jclass cls,
   return buffered_string(env, read_pattern, &read, "unum_toPattern");
 }
 
-static jcharArray NativeDecimalFormat_formatLong(JNIEnv *env, jclass cls,
-                                                 jlong token, jlong value,
-                                                 jobject iterator) {
-  (void)cls;
+typedef struct DecimalValue {
+  int kind;
+  jlong integer;
+  jdouble real;
+  const char *digits;
+} DecimalValue;
+
+static int32_t format_number(const UNumberFormat *format, DecimalValue value,
+                             UChar *buffer, int32_t capacity,
+                             UFieldPosition *position, UErrorCode *status) {
+  if (value.kind == 1)
+    return ICU(unum_formatDouble)(format, value.real, buffer, capacity, position, status);
+  if (value.kind == 2)
+    return ICU(unum_formatDecimal)(format, value.digits, -1, buffer, capacity, position, status);
+  return ICU(unum_formatInt64)(format, value.integer, buffer, capacity, position, status);
+}
+
+static jcharArray format_decimal(JNIEnv *env, jlong token, DecimalValue value,
+                                 jobject iterator) {
   DecimalEntry *entry = decimal_entry(env, token);
   if (entry == NULL)
     return NULL;
   UErrorCode status = U_ZERO_ERROR;
   int32_t length =
-      ICU(unum_formatInt64)(entry->format, value, NULL, 0, NULL, &status);
+      format_number(entry->format, value, NULL, 0, NULL, &status);
   if (status != U_BUFFER_OVERFLOW_ERROR &&
       !icu_ok(env, "unum_formatInt64", status))
     return NULL;
@@ -950,7 +966,7 @@ static jcharArray NativeDecimalFormat_formatLong(JNIEnv *env, jclass cls,
     throw_new(env, "java/lang/OutOfMemoryError", "formatted number");
     return NULL;
   }
-  length = ICU(unum_formatInt64)(entry->format, value, buffer, length + 1, NULL,
+  length = format_number(entry->format, value, buffer, length + 1, NULL,
                                  &status);
   if (!icu_ok(env, "unum_formatInt64", status)) {
     free(buffer);
@@ -977,8 +993,7 @@ static jcharArray NativeDecimalFormat_formatLong(JNIEnv *env, jclass cls,
         continue;
       UFieldPosition position = {field, 0, 0};
       status = U_ZERO_ERROR;
-      ICU(unum_formatInt64)
-      (entry->format, value, buffer, length + 1, &position, &status);
+      format_number(entry->format, value, buffer, length + 1, &position, &status);
       if (!icu_ok(env, "unum_formatInt64 field", status)) {
         free(fields);
         free(buffer);
@@ -1032,6 +1047,26 @@ static jcharArray NativeDecimalFormat_formatLong(JNIEnv *env, jclass cls,
   if (result != NULL)
     (*env)->SetCharArrayRegion(env, result, 0, length, (const jchar *)buffer);
   free(buffer);
+  return result;
+}
+
+static jcharArray NativeDecimalFormat_formatLong(JNIEnv *env, jclass cls,
+                                                jlong token, jlong value, jobject iterator) {
+  (void)cls;
+  return format_decimal(env, token, (DecimalValue){.integer = value}, iterator);
+}
+static jcharArray NativeDecimalFormat_formatDouble(JNIEnv *env, jclass cls,
+                                                  jlong token, jdouble value, jobject iterator) {
+  (void)cls;
+  return format_decimal(env, token, (DecimalValue){.kind = 1, .real = value}, iterator);
+}
+static jcharArray NativeDecimalFormat_formatDigitList(JNIEnv *env, jclass cls,
+                                                     jlong token, jstring value, jobject iterator) {
+  (void)cls;
+  char *digits = string_utf8(env, value);
+  if (digits == NULL) return NULL;
+  jcharArray result = format_decimal(env, token, (DecimalValue){.kind = 2, .digits = digits}, iterator);
+  free(digits);
   return result;
 }
 
@@ -1260,6 +1295,62 @@ static void TimeZoneNames_fillZoneStrings(JNIEnv *env, jclass cls,
   free(locale);
 }
 
+struct NormalizeRead { UChar *text; int32_t length; jint form; };
+static int32_t normalize_read(void *raw, UChar *out, int32_t capacity, UErrorCode *status) {
+  struct NormalizeRead *p = (struct NormalizeRead *)raw;
+  return ICU(unorm_normalize)(p->text, p->length, p->form, 0, out, capacity, status);
+}
+static jstring NativeNormalizer_normalizeImpl(JNIEnv *env, jclass cls, jstring text, jint form) {
+  (void)cls;
+  jsize length;
+  UChar *input = string_chars(env, text, &length);
+  if (input == NULL) return NULL;
+  struct NormalizeRead read = {input, length, form};
+  jstring result = buffered_string(env, normalize_read, &read, "unorm_normalize");
+  free(input);
+  return result;
+}
+static jboolean NativeNormalizer_isNormalizedImpl(JNIEnv *env, jclass cls, jstring text, jint form) {
+  (void)cls;
+  jsize length;
+  UChar *input = string_chars(env, text, &length);
+  if (input == NULL) return JNI_FALSE;
+  UErrorCode status = 0;
+  UBool result = ICU(unorm_isNormalized)(input, length, form, &status);
+  free(input);
+  return icu_ok(env, "unorm_isNormalized", status) && result;
+}
+static jobjectArray NativeConverter_getAvailableCharsetNames(JNIEnv *env, jclass cls) {
+  (void)cls;
+  const int32_t count = ICU(ucnv_countAvailable)();
+  jclass string = (*env)->FindClass(env, "java/lang/String");
+  if (string == NULL) return NULL;
+  jobjectArray result = (*env)->NewObjectArray(env, count, string, NULL);
+  if (result == NULL) return NULL;
+  for (int32_t i = 0; i < count; ++i) {
+    const char *name = ICU(ucnv_getAvailableName)(i);
+    UErrorCode status = 0;
+    const char *standard = ICU(ucnv_getStandardName)(name, "MIME", &status);
+    if (standard == NULL) { status = 0; standard = ICU(ucnv_getStandardName)(name, "IANA", &status); }
+    if (!icu_ok(env, "ucnv_getStandardName", status)) return NULL;
+    jstring item = (*env)->NewStringUTF(env, standard != NULL ? standard : name);
+    if (item == NULL) return NULL;
+    (*env)->SetObjectArrayElement(env, result, i, item);
+    (*env)->DeleteLocalRef(env, item);
+    if ((*env)->ExceptionCheck(env)) return NULL;
+  }
+  return result;
+}
+static const JNINativeMethod normalizer_methods[] = {
+  {"normalizeImpl", "(Ljava/lang/String;I)Ljava/lang/String;", (void*)NativeNormalizer_normalizeImpl},
+  {"isNormalizedImpl", "(Ljava/lang/String;I)Z", (void*)NativeNormalizer_isNormalizedImpl}
+};
+static const JNINativeMethod converter_methods[] = {
+  {"getAvailableCharsetNames", "()[Ljava/lang/String;", (void*)NativeConverter_getAvailableCharsetNames}
+};
+extern int ogplay_regex_on_load(JNIEnv *);
+extern void ogplay_regex_release(void);
+
 static const JNINativeMethod icu_methods[] = {
     {"getBestDateTimePatternNative",
      "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
@@ -1292,6 +1383,10 @@ static const JNINativeMethod decimal_methods[] = {
     {"formatLong",
      "(JJLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
      (void *)NativeDecimalFormat_formatLong},
+    {"formatDouble", "(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
+     (void *)NativeDecimalFormat_formatDouble},
+    {"formatDigitList", "(JLjava/lang/String;Llibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
+     (void *)NativeDecimalFormat_formatDigitList},
     {"getAttribute", "(JI)I", (void *)NativeDecimalFormat_getAttribute},
     {"getTextAttribute", "(JI)Ljava/lang/String;",
      (void *)NativeDecimalFormat_getTextAttribute},
@@ -1340,7 +1435,12 @@ static int register_methods(JNIEnv *env, const char *name,
 int ogplay_icu_on_load(JNIEnv *env) {
   if (!load_icu_data(env))
     return 0;
-  return register_methods(env, "java/lang/Character", character_methods,
+  return ogplay_regex_on_load(env) &&
+         register_methods(env, "libcore/icu/NativeNormalizer", normalizer_methods,
+             (jint)(sizeof(normalizer_methods)/sizeof(normalizer_methods[0]))) &&
+         register_methods(env, "libcore/icu/NativeConverter", converter_methods,
+             (jint)(sizeof(converter_methods)/sizeof(converter_methods[0]))) &&
+         register_methods(env, "java/lang/Character", character_methods,
              (jint)(sizeof(character_methods) / sizeof(character_methods[0]))) &&
          register_methods(
              env, "libcore/icu/ICU", icu_methods,
@@ -1354,6 +1454,7 @@ int ogplay_icu_on_load(JNIEnv *env) {
 }
 
 void ogplay_icu_release(void) {
+  ogplay_regex_release();
   while (decimal_entries != NULL) {
     DecimalEntry *entry = decimal_entries;
     decimal_entries = entry->next;

@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 72/92（78.3%）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 75/92（81.5%）。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1285,12 +1285,12 @@ note = "DVM-113/DVM-122 按 API 19 Locale→BootDex ICU Java→guest libogplay_j
 
 [dexvm.date_format_api19]
 status = "complete"
-test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools.bootdex_builder_self_test; tools.android_payload_current; tests/dexvm/bootdex_datetime_tests.cpp#DVM-102 regression; tests/dexvm/bootdex_library_tests.cpp#DVM-102 regression"
-note = "DVM-102/122：日期与数字格式化来自 API19 BootDex，25 个 required native 经 guest JNI 调用 ICU 51（宿主不含 ICU）；LocaleData、货币回退、Long/Double 解析、FieldPosition/grouping 与 Unicode 大小写映射受检。具名时区/历史 DST、BigDecimal/BigInteger、double/digit-list formatter 及其余 ICU 查询明确失败。"
+test = "tests/runtime/guest_icu_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/build_bootdex.py audit; tools.android_payload_current"
+note = "DVM-257/WU7-6：日期与数字普通协议执行 API19 BootDex，区域数据走 guest ICU51 回退；long/double/digit-list 格式、字段位置及 Long/Double 解析受检。092 双后端通过。BigDecimal 精确解析、具名时区历史与其余 ICU 查询未纳入。"
 
 [dexvm.sql_date_value_types]
 status = "complete"
-test = "tests/dexvm/bootdex_datetime_tests.cpp#DVM-183; tools.bootdex_builder_self_test; tools/bootdex/build_bootdex.py check"
+test = "tests/runtime/guest_icu_tests.cpp#DVM-183; tools.bootdex_builder_self_test; tools/bootdex/build_bootdex.py check"
 note = "API19 SQL 日期值类型纳入 BootDex。DVM-183 从固定 API 19 core.jar 精确选入 java.sql.Date/Time/Timestamp。继承 java.util.Date，构造、日期归一化与 Timestamp 纳秒语义执行原版 Java。不引入 JDBC、Driver、Connection 或其余 java.sql 包。"
 
 [dexvm.guest_jni_api19]
@@ -1426,7 +1426,7 @@ note = "DVM-12 per-class 状态机、静态初始值、super 顺序与失败粘�
 [dexvm.intrinsics_java_core]
 status = "partial"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/session/profile_entry_scope_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp#DVM-105"
-note = "Object/String/Class、primitive wrapper、Enum、Thread 保留 intrinsic；StringBuilder、Throwable、日期与集合归 BootDex。浮点输出统一原版 RealToString；regionMatches 两重载按 UTF-16 比较并以 ICU51 简单映射折叠；Object valueOf 虚派 toString；引用 arraycopy 逐元素检查且保留成功前缀。IO/NIO 与六种标准 Charset 保持既有范围；完整 ThreadGroup、日期大数与网络长尾未实现。"
+note = "Object/String/Class、wrapper、Enum、Thread 保留 intrinsic；StringBuilder、Throwable、日期与集合归 BootDex。浮点输出用原版 RealToString；regionMatches 按 UTF16/ICU51 折叠；Object valueOf 虚派；引用 arraycopy 检查类型并保留失败前缀。IO/NIO 保持既有范围；WU7-6 从 guest ICU 枚举六种标准 Charset。完整 ThreadGroup、可选 charset codec 与网络长尾未实现。"
 
 [dexvm.system_line_separator]
 status = "complete"
@@ -1645,8 +1645,8 @@ note = "DVM-103 将 Arrays/Collections、排序实现与包装视图迁入 pinne
 
 [dexvm.java_regex]
 status = "complete"
-test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp"
-note = "DVM-87 发布 String 输入上的 Pattern compile/matches/quote 与 Matcher matches/find/reset/start/end/group/replace 核心语义；非法 pattern/flag 明确失败，完整 libcore Unicode/region/命名组不在 bounded surface"
+test = "tests/runtime/guest_icu_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tools/bootdex/build_bootdex.py audit"
+note = "DVM-257/WU7-6：Pattern/Matcher 普通协议及异常使用 API19 BootDex，native 经 guest ICU51 uregex；Unicode 属性、UTF16 offsets、groups、region/bounds、替换、空匹配、语法错误与 GC/退出 peer 关闭受检，094 双后端通过。String 正则共用此路径，不使用宿主 std::regex。"
 
 [dexvm.java_concurrent_core]
 status = "complete"

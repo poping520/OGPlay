@@ -140,12 +140,15 @@
 ## Locale、ICU、正则与密码
 
 - Locale 保持 API19 类型/字段与 22 个静态强根常量，默认值按 VM 注入；大小写和 he/id/yi
-  规范化遵循原版。LocaleData 首批只接受 ROOT/en/en_US/zh/zh_CN；ISO native 用固定 ICU51
+  规范化遵循原版。LocaleData 由 guest ICU51 区域资源及回退提供；ISO native 用固定 ICU51
   的 559 语言/249 国家表，不过滤或越过 NULL，Java 缓存每次返回 clone。
 - Date/Calendar/Format/NumberFormat/TimeZone 普通状态和算法归 BootDex；TimeZone default
   只消费注入值且保持 clone/reset。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
-  formatter long 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。
-  Pattern/Matcher 只承诺 String 与登记 regex 语义，groupCount 不要求已有匹配。
+  formatter long/double/digit-list 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。
+  Pattern/Matcher/PatternSyntaxException、Splitter 与 Normalizer 普通协议归 API19 BootDex；
+  native 经 guest ICU51，String 正则委托同一路径。
+  Charset.availableCharsets 读取 guest ICU 名称表，仅公布既有六种真实 codec，返回不区分大小写
+  的不可变 SortedMap；未支持的转换器不会作为可用编码发布。
 - crypto family 只管 provider、熵、JNI 和资源 owner。AES ECB/CBC 的 NoPadding/PKCS5Padding、
   CBC/ZeroBytePadding 及 CTR/NoPadding、128/192/256 KeyGenerator 已登记；ZeroBytePadding
   由 guest Java 适配到 CBC/NoPadding，Cipher 普通方法无 overlay。
@@ -165,7 +168,7 @@
   验签 SPI 用普通字段保存公钥/最多 1 MiB 消息，真实解码后调用 guest ARM EVP，验后清空。
   摘要仅 MD5/SHA1/SHA256/SHA384/SHA512；NativeBN 只提供值转换和 per-VM token。
   十进制输入保留符号/有效前缀长度，最多 1 MiB、16777216 次 limb 转换；超限明确失败且保留旧值。
-- 未登记能力明确失败：NativeCrypto 的 ENGINE/RSA/EC/X509/TLS 长尾、完整大数/double formatter、具名时区历史、privileged executor、
+- 未登记能力明确失败：NativeCrypto 的 ENGINE/RSA/EC/X509/TLS 长尾、BigDecimal 精确解析、具名时区历史、privileged executor、
   完整 ThreadGroup/反射长尾、RSA Cipher/GCM/其他 transformation、签名生成、通用 CertPathValidator.PKIX、
   撤销检查、HMAC/SHA3/独立 SHA224 摘要。TrustManager 路径验证与只读 AndroidCAStore 已由
   OGPlayJSSE 交付；loopback 客户端 TLS/HTTPS 已闭合，SSLEngine/server TLS 明确失败。AES AlgorithmParameters provider 未注册，原版

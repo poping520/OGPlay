@@ -399,6 +399,7 @@ def validate(root: Path) -> None:
                 "src/guest/crypto/trust_jni.c",
                 "src/guest/crypto/tls_jni.c",
                 "src/guest/icu/icu_jni.c",
+                "src/guest/icu/regex_jni.c",
                 "src/guest/zip/crc32_jni.c",
                 "src/guest/zip/zip_stream_jni.c",
                 "src/guest/math/big_integer_jni.c",

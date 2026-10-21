@@ -1231,6 +1231,7 @@ def build_guest_jni() -> int:
                ROOT / "src/guest/crypto/trust_jni.c",
                ROOT / "src/guest/crypto/tls_jni.c",
                ROOT / "src/guest/icu/icu_jni.c",
+               ROOT / "src/guest/icu/regex_jni.c",
                ROOT / "src/guest/zip/crc32_jni.c",
                ROOT / "src/guest/zip/zip_stream_jni.c",
                ROOT / "src/guest/math/big_integer_jni.c"]

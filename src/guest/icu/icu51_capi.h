@@ -196,3 +196,29 @@ extern int32_t ICU(u_strToLower)(UChar *, int32_t, const UChar *, int32_t,
                                  const char *, UErrorCode *);
 extern int32_t ICU(u_strToUpper)(UChar *, int32_t, const UChar *, int32_t,
                                  const char *, UErrorCode *);
+
+extern int32_t unum_formatDouble_51(const UNumberFormat*, double, UChar*, int32_t, UFieldPosition*, UErrorCode*);
+extern int32_t unum_formatDecimal_51(const UNumberFormat*, const char*, int32_t, UChar*, int32_t, UFieldPosition*, UErrorCode*);
+
+typedef struct URegularExpression URegularExpression;
+extern URegularExpression *uregex_open_51(const UChar*, int32_t, uint32_t, UParseError*, UErrorCode*);
+extern URegularExpression *uregex_clone_51(const URegularExpression*, UErrorCode*);
+extern void uregex_close_51(URegularExpression*);
+extern void uregex_setText_51(URegularExpression*, const UChar*, int32_t, UErrorCode*);
+extern void uregex_setRegion_51(URegularExpression*, int32_t, int32_t, UErrorCode*);
+extern UBool uregex_find_51(URegularExpression*, int32_t, UErrorCode*);
+extern UBool uregex_findNext_51(URegularExpression*, UErrorCode*);
+extern UBool uregex_matches_51(URegularExpression*, int32_t, UErrorCode*);
+extern UBool uregex_lookingAt_51(URegularExpression*, int32_t, UErrorCode*);
+extern int32_t uregex_groupCount_51(URegularExpression*, UErrorCode*);
+extern int32_t uregex_start_51(URegularExpression*, int32_t, UErrorCode*);
+extern int32_t uregex_end_51(URegularExpression*, int32_t, UErrorCode*);
+extern UBool uregex_hitEnd_51(const URegularExpression*, UErrorCode*);
+extern UBool uregex_requireEnd_51(const URegularExpression*, UErrorCode*);
+extern void uregex_useAnchoringBounds_51(URegularExpression*, UBool, UErrorCode*);
+extern void uregex_useTransparentBounds_51(URegularExpression*, UBool, UErrorCode*);
+extern int32_t unorm_normalize_51(const UChar*, int32_t, int32_t, int32_t, UChar*, int32_t, UErrorCode*);
+extern UBool unorm_isNormalized_51(const UChar*, int32_t, int32_t, UErrorCode*);
+extern int32_t ucnv_countAvailable_51(void);
+extern const char *ucnv_getAvailableName_51(int32_t);
+extern const char *ucnv_getStandardName_51(const char*, const char*, UErrorCode*);

@@ -31,13 +31,13 @@ struct NioVm final {
     std::array<std::byte, 64> direct_memory{};
     dx::Interpreter vm;
 
-    NioVm()
+    explicit NioVm(dx::InterpreterBackend backend = dx::InterpreterBackend::switch_dispatch)
         : vm([this]() -> dx::DexClassLinker& {
               linker.RegisterIntrinsics(dx::CoreIntrinsicCatalog());
               ogplay::test::RegisterBootDex(linker);
               linker.Link();
               return linker;
-          }(), model, nullptr, ledger, {}) {
+          }(), model, nullptr, ledger, {.backend = backend}) {
         vm.NIO().SetDirectMemoryAccess({
             [](std::uint32_t) { return memory::GuestAddress(0x1000U); },
             [](memory::GuestAddress, std::uint32_t) {},
@@ -234,4 +234,32 @@ TEST_CASE("DVM-83 NIO marshals heap and direct buffers without moving cursors") 
             return 0U;
         }) == 0U);
     CHECK(nio.Snapshot(Object(2)).position == 3);
+}
+
+TEST_CASE("WU7-6 NIO byte and short reads sign extend on both backends") {
+    for (auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+        NioVm f(backend);
+        const auto on = [&](dx::VmObjectRef receiver, const char* name, const char* descriptor,
+                            std::vector<dx::VmValue> args) {
+            const auto type = f.model.ObjectClass(receiver);
+            const auto slot = f.linker.FindVtableIndex(type, name, descriptor);
+            REQUIRE(slot);
+            args.insert(args.begin(), dx::VmValue::Ref(receiver));
+            const auto result = f.vm.Call(f.linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        for (const char* allocation : {"allocate", "allocateDirect"}) {
+            const auto b = f.Static(allocation, "(I)Ljava/nio/ByteBuffer;", {dx::VmValue::Int(8)});
+            const auto root = f.vm.ProtectReferences(std::array{b});
+            on(b,"put","(IB)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(1),dx::VmValue::Int(-5)});
+            CHECK(on(b,"get","(I)B",{dx::VmValue::Int(1)}).AsInt() == -5);
+            on(b,"putShort","(IS)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(2),dx::VmValue::Int(-1234)});
+            CHECK(on(b,"getShort","(I)S",{dx::VmValue::Int(2)}).AsInt() == -1234);
+            on(b,"putChar","(IC)Ljava/nio/ByteBuffer;",{dx::VmValue::Int(4),dx::VmValue::Int(49200)});
+            CHECK(on(b,"getChar","(I)C",{dx::VmValue::Int(4)}).AsInt() == 49200);
+            const auto view = on(b,"asShortBuffer","()Ljava/nio/ShortBuffer;",{}).ref;
+            CHECK(on(view,"get","(I)S",{dx::VmValue::Int(1)}).AsInt() == -1234);
+        }
+    }
 }

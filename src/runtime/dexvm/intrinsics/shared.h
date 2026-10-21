@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <memory>
 #include <random>
-#include <regex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -394,8 +393,7 @@ inline void GuestLine(IntrinsicContext& context, const std::string& line) {
     return out;
 }
 
-// UTF-8 narrow form for regex evaluation (std::regex has no char16_t
-// specialisation; patterns games use are ASCII so the round-trip is exact).
+// UTF-8 conversion for byte-oriented boundaries.
 [[nodiscard]] inline std::string ToUtf8(const std::u16string& value) {
     const auto bytes = Utf8Encode(value);
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
@@ -403,18 +401,6 @@ inline void GuestLine(IntrinsicContext& context, const std::string& line) {
 
 [[nodiscard]] inline std::u16string FromUtf8(const std::string& value) {
     return Utf8DecodeReplace(std::as_bytes(std::span(value)));
-}
-
-// Compiles a Java regex with the ECMAScript engine. The subset titles use
-// (literals, classes, quantifiers, alternation) is grammar-compatible;
-// invalid patterns throw the documented PatternSyntaxException.
-[[nodiscard]] inline std::regex CompileRegex(const std::u16string& pattern) {
-    try {
-        return std::regex(ToUtf8(pattern));
-    } catch (const std::regex_error& error) {
-        throw VmJavaThrow{"Ljava/util/regex/PatternSyntaxException;",
-                          std::string("invalid pattern: ") + error.what()};
-    }
 }
 
 // Shared range check for String(byte[]/char[], offset, count) forms.

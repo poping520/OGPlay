@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -59,6 +60,7 @@ public:
     void Delete(JniObjectIdentity string);
     [[nodiscard]] bool Contains(JniObjectIdentity string) const noexcept;
 
+    void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const;
     [[nodiscard]] JniSize Length(JniObjectIdentity string) const;
     [[nodiscard]] JniSize ModifiedUtf8Length(JniObjectIdentity string) const;
     [[nodiscard]] std::vector<JniChar> Region(JniObjectIdentity string,

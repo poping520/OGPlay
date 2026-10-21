@@ -13,9 +13,9 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| TML 1.0 | macOS | 标题；三点击 survey 零命中 | 退出不干净：native worker 回收报 `unknown guest thread id` | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
+| TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
-| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 新沙盒死锁已修，600 帧退出 0 | GAThread `NativeDecimalFormat.formatDouble` 未实现；CG/点击、Win 待复验 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
+| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
 | Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 场景 1200 帧 | macOS 退出 native futex 超 2 秒预算；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` | [DVM-204](../tasks/dexvm/DVM-204.md) |
 | Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；1024×600 呈现 900 帧，CLI/GUI 退出 0 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
@@ -26,11 +26,11 @@
 ## 未闭合问题
 
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
-  MCP shutdown 路径的 `unknown guest thread id` 曾复现，未修复。
+  Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）。[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
   测试失败：ogplay_tests 1903/1903、ogplay_app_tests 89/89 通过，0 失败，保留既有 7 skip。
-- 一致性：dalvik/tests switch/threaded 72/92（78.3%）；链接错误可 catch，异常栈/线程语义已对齐，见 [DVM-256](../tasks/dexvm/DVM-256.md)、[WU7-3](../tasks/diagnostics/DIAG-7.md)。
+- 一致性：dalvik/tests 双后端 75/92（81.5%）；062/092/094 通过，070 缺 direct 共享数组，见 [DVM-257](../tasks/dexvm/DVM-257.md)。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

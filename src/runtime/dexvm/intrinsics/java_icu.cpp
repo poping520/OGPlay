@@ -119,11 +119,11 @@ IntrinsicClassDecl DecimalBoundary() {
   for (const auto &[name, descriptor] : methods)
     b.GuestNativeStatic(name, descriptor,
                         kAccPrivate | kAccStatic | kAccNative);
-  b.UnimplementedStatic("formatDigitList",
+  b.GuestNativeStatic("formatDigitList",
                         "(JLjava/lang/String;Llibcore/icu/"
                         "NativeDecimalFormat$FieldPositionIterator;)[C",
                         kAccPrivate | kAccStatic | kAccNative);
-  b.UnimplementedStatic(
+  b.GuestNativeStatic(
       "formatDouble",
       "(JDLlibcore/icu/NativeDecimalFormat$FieldPositionIterator;)[C",
       kAccPrivate | kAccStatic | kAccNative);
@@ -225,6 +225,17 @@ IntrinsicClassDecl TimeZoneBoundary(const CoreIntrinsicServices &services) {
 
 void AppendJavaIcu(std::vector<IntrinsicClassDecl> &catalog,
                    const CoreIntrinsicServices &services) {
+  {
+    auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeNormalizer;");
+    b.GuestNativeStatic("normalizeImpl", "(Ljava/lang/String;I)Ljava/lang/String;", kAccPrivate | kAccStatic | kAccNative);
+    b.GuestNativeStatic("isNormalizedImpl", "(Ljava/lang/String;I)Z", kAccPrivate | kAccStatic | kAccNative);
+    catalog.push_back(std::move(b).Build());
+  }
+  {
+    auto b = IntrinsicClassBuilder::Class("Llibcore/icu/NativeConverter;");
+    b.GuestNativeStatic("getAvailableCharsetNames", "()[Ljava/lang/String;", kAccPublic | kAccStatic | kAccNative);
+    catalog.push_back(std::move(b).Build());
+  }
   catalog.push_back(IcuBoundary());
   catalog.push_back(DecimalBoundary());
   catalog.push_back(TimeZoneNamesBoundary());

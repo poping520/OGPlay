@@ -81,8 +81,17 @@ std::int32_t GuestCloneThreadRuntime::Spawn(
                 child_thread_id, memory_bus_, futex_table_));
             return -kEagain;
         }
+        {
+            std::scoped_lock lock(outcomes_mutex_);
+            spawned_threads_.insert(child_thread_id);
+        }
         return committed;
     }
+}
+
+bool GuestCloneThreadRuntime::OwnsThread(const std::uint64_t thread_id) const {
+    std::scoped_lock lock(outcomes_mutex_);
+    return spawned_threads_.contains(thread_id);
 }
 
 void GuestCloneThreadRuntime::RethrowFailure() const {

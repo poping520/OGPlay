@@ -70,7 +70,6 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Array();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_FileNotFoundException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_UnsupportedEncodingException();
-[[nodiscard]] IntrinsicClassDecl Declare_java_util_regex_PatternSyntaxException();
 [[nodiscard]] IntrinsicClassDecl Declare_java_io_EOFException();
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

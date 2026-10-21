@@ -975,6 +975,14 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
         if (address.has_value() && close.has_value())
             TrackGuestNativeResourceField(*address, *close);
     }
+    for (const auto* owner : {"Ljava/util/regex/Pattern;", "Ljava/util/regex/Matcher;"}) {
+        if (const auto type = linker.FindClass(owner)) {
+            linker.EnsureClassLinked(*type);
+            const auto field = linker.FindFieldRecursive(*type, "address", "J");
+            const auto close = linker.FindDirectMethod(*type, "closeImpl", "(J)V");
+            if (field && close) TrackGuestNativeResourceField(*field, *close);
+        }
+    }
     const auto track_native_field = [&](const char* owner, const char* field_name,
                                         const char* cleanup_name) {
         const auto type = linker.FindClass(owner);

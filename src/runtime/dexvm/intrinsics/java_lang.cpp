@@ -805,61 +805,20 @@ template <typename Float, typename Int>
     return static_cast<Int>(value);
 }
 
-template <typename Float>
-[[nodiscard]] std::string FormatFloating(Float value) {
-    if (std::isnan(value)) return "NaN";
-    if (std::isinf(value)) return std::signbit(value) ? "-Infinity" : "Infinity";
-    if (value == 0) return std::signbit(value) ? "-0.0" : "0.0";
-
-    // API 19 RealToString deliberately prints extra precision for the
-    // smallest float subnormals, and special-cases Double.MIN_VALUE.
-    if constexpr (sizeof(Float) == sizeof(float)) {
-        const auto bits = std::bit_cast<std::uint32_t>(static_cast<float>(value));
-        const auto magnitude = bits & 0x7fffffffU;
-        if (magnitude >= 1U && magnitude <= 7U) {
-            static constexpr std::array<std::string_view, 7> kSmallSubnormals{
-                "1.4E-45", "2.8E-45", "4.2E-45", "5.6E-45",
-                "7.0E-45", "8.4E-45", "9.8E-45",
-            };
-            std::string text(kSmallSubnormals[magnitude - 1U]);
-            if ((bits & 0x80000000U) != 0) text.insert(text.begin(), '-');
-            return text;
-        }
-    } else {
-        const auto bits =
-            std::bit_cast<std::uint64_t>(static_cast<double>(value));
-        if ((bits & 0x7fffffffffffffffULL) == 1ULL) {
-            return (bits & 0x8000000000000000ULL) != 0
-                       ? "-4.9E-324"
-                       : "4.9E-324";
-        }
-    }
-
-    std::array<char, 128> buffer{};
-    const auto absolute = std::fabs(value);
-    const auto format = absolute >= static_cast<Float>(1e-3) &&
-                                absolute < static_cast<Float>(1e7)
-                            ? std::chars_format::fixed
-                            : std::chars_format::scientific;
-    const auto converted = std::to_chars(buffer.data(), buffer.data() + buffer.size(),
-                                         value, format);
-    if (converted.ec != std::errc{}) NumberFormat("floating formatting");
-    std::string text(buffer.data(), converted.ptr);
-    auto exponent = text.find_first_of("eE");
-    if (exponent == std::string::npos) {
-        if (text.find('.') == std::string::npos) text += ".0";
-        return text;
-    }
-    text[exponent] = 'E';
-    if (text.find('.', 0) == std::string::npos || text.find('.') > exponent) {
-        text.insert(exponent, ".0");
-        exponent += 2;
-    }
-    std::size_t sign = exponent + 1;
-    if (sign < text.size() && text[sign] == '+') text.erase(sign, 1);
-    if (sign < text.size() && text[sign] == '-') ++sign;
-    while (sign + 1 < text.size() && text[sign] == '0') text.erase(sign, 1);
-    return text;
+// Ordinary decimal rendering uses the pinned libcore algorithm, shared with builders.
+[[nodiscard]] VmValue FormatFloating(Interpreter& vm, VmValue value, bool wide) {
+    const auto type = vm.Linker().ResolveDescriptor("Ljava/lang/RealToString;");
+    const auto getter = vm.Linker().FindDirectMethod(
+        type, "getInstance", "()Ljava/lang/RealToString;");
+    if (!getter) throw DexVmError(DexVmErrorReason::unresolved_reference,
+                                  "RealToString.getInstance is unavailable");
+    const auto converter = vm.Call(*getter, {});
+    if (converter.exception.IsValid()) throw VmJavaThrow{
+        vm.Linker().Class(converter.exception_class).descriptor,
+        converter.exception_message, converter.exception};
+    const auto roots = vm.ProtectReferences(std::array{converter.value.ref});
+    return InvokeGuest(vm, converter.value.ref, wide ? "doubleToString" : "floatToString",
+                       wide ? "(D)Ljava/lang/String;" : "(F)Ljava/lang/String;", {value});
 }
 
 [[nodiscard]] bool FloatingMagnitudeBelowOne(std::string_view text,
@@ -1517,8 +1476,8 @@ void AddFloatingCommon(IntrinsicClassBuilder& builder, const char* descriptor,
     builder.FinalMethod("compareTo", std::string("(") + descriptor + ")I", [](IntrinsicContext& c) { const auto left = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide))); const auto right = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.arguments[0].ref, wide))); if constexpr (wide) return VmValue::Int(JavaDoubleCompare(left, right)); else return VmValue::Int(JavaFloatCompare(left, right)); });
     builder.FinalOverrideMethod("equals", "(Ljava/lang/Object;)Z", [descriptor](IntrinsicContext& c) { if (!IsExactClass(c, c.arguments[0].ref, descriptor)) return Bool(false); const auto left = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide))); const auto right = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.arguments[0].ref, wide))); if constexpr (wide) return Bool(CanonicalDoubleBits(left) == CanonicalDoubleBits(right)); else return Bool(CanonicalFloatBits(left) == CanonicalFloatBits(right)); });
     builder.FinalOverrideMethod("hashCode", "()I", [](IntrinsicContext& c) { const auto value = std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide))); if constexpr (wide) { const auto canonical = CanonicalDoubleBits(value); return VmValue::Int(static_cast<std::int32_t>(canonical ^ (canonical >> 32U))); } else return VmValue::Int(static_cast<std::int32_t>(CanonicalFloatBits(value))); });
-    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [](IntrinsicContext& c) { return Make(c, Widen(FormatFloating(std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)))))); });
-    builder.StaticMethod("toString", std::string("(") + primitive + ")Ljava/lang/String;", [argument](IntrinsicContext& c) { return Make(c, Widen(FormatFloating(argument(c.arguments[0])))); });
+    builder.FinalOverrideMethod("toString", "()Ljava/lang/String;", [answer](IntrinsicContext& c) { return FormatFloating(c.vm, answer(std::bit_cast<Float>(static_cast<Bits>(ReadBoxed(c, c.receiver, wide)))), wide); });
+    builder.StaticMethod("toString", std::string("(") + primitive + ")Ljava/lang/String;", [](IntrinsicContext& c) { return FormatFloating(c.vm, c.arguments[0], wide); });
     builder.StaticMethod("toHexString", std::string("(") + primitive + ")Ljava/lang/String;", [argument](IntrinsicContext& c) { return Make(c, Widen(FormatHexFloating(argument(c.arguments[0])))); });
     builder.StaticMethod(bits_to_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"), [argument](IntrinsicContext& c) { if constexpr (wide) return VmValue::Long(static_cast<std::int64_t>(CanonicalDoubleBits(argument(c.arguments[0])))); else return VmValue::Int(static_cast<std::int32_t>(CanonicalFloatBits(argument(c.arguments[0])))); });
     builder.StaticMethod(raw_bits_name, std::string("(") + primitive + ")" + (wide ? "J" : "I"), [argument, bits](IntrinsicContext& c) { if constexpr (wide) return VmValue::Long(static_cast<std::int64_t>(bits(argument(c.arguments[0])))); else return VmValue::Int(static_cast<std::int32_t>(bits(argument(c.arguments[0])))); });
@@ -1594,10 +1553,30 @@ IntrinsicClassDecl Declare_java_lang_Character() {
     add_predicate("isSpaceChar", [](int cp){return CharacterIsSpace(cp);});
     add_predicate("isISOControl", [](int cp){return (cp>=0&&cp<=0x1f)||(cp>=0x7f&&cp<=0x9f);});
     builder.StaticMethod("isSpace", "(C)Z", [](IntrinsicContext& c){const auto cp=static_cast<std::uint16_t>(c.arguments[0].AsInt()); return Bool(cp=='\n'||cp=='\t'||cp=='\f'||cp=='\r'||cp==' ');});
-    builder.StaticMethod("toLowerCase", "(C)C", [](IntrinsicContext& c){const auto cp=c.arguments[0].AsInt(); return VmValue::Int(cp>='A'&&cp<='Z'?cp+32:cp);});
-    builder.StaticMethod("toLowerCase", "(I)I", [](IntrinsicContext& c){const auto cp=c.arguments[0].AsInt(); return VmValue::Int(cp>='A'&&cp<='Z'?cp+32:cp);});
-    builder.StaticMethod("toUpperCase", "(C)C", [](IntrinsicContext& c){const auto cp=c.arguments[0].AsInt(); return VmValue::Int(cp>='a'&&cp<='z'?cp-32:cp);});
-    builder.StaticMethod("toUpperCase", "(I)I", [](IntrinsicContext& c){const auto cp=c.arguments[0].AsInt(); return VmValue::Int(cp>='a'&&cp<='z'?cp-32:cp);});
+    builder.GuestNativeStatic("toLowerCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
+    builder.GuestNativeStatic("toUpperCaseImpl", "(I)I", kAccPrivate | kAccStatic | kAccNative);
+    const auto map_case = [](IntrinsicContext& c, bool upper, bool as_char) {
+        const auto cp = as_char ? static_cast<std::uint16_t>(c.arguments[0].AsInt()) : c.arguments[0].AsInt();
+        std::int32_t result = cp;
+        if (upper && cp >= 'a' && cp <= 'z') result -= 32;
+        else if (!upper && cp >= 'A' && cp <= 'Z') result += 32;
+        else if (cp >= (upper ? 181 : 192)) {
+            const auto owner = c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;");
+            const auto method = c.vm.Linker().FindDirectMethod(owner,
+                upper ? "toUpperCaseImpl" : "toLowerCaseImpl", "(I)I");
+            if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference, "Character case native missing");
+            const auto outcome = c.vm.Call(*method, std::array{VmValue::Int(cp)});
+            if (outcome.exception.IsValid()) throw VmJavaThrow{
+                c.vm.Linker().Class(outcome.exception_class).descriptor,
+                outcome.exception_message, outcome.exception};
+            result = outcome.value.AsInt();
+        }
+        return VmValue::Int(as_char ? static_cast<std::uint16_t>(result) : result);
+    };
+    builder.StaticMethod("toLowerCase", "(C)C", [map_case](IntrinsicContext& c){ return map_case(c, false, true); });
+    builder.StaticMethod("toLowerCase", "(I)I", [map_case](IntrinsicContext& c){ return map_case(c, false, false); });
+    builder.StaticMethod("toUpperCase", "(C)C", [map_case](IntrinsicContext& c){ return map_case(c, true, true); });
+    builder.StaticMethod("toUpperCase", "(I)I", [map_case](IntrinsicContext& c){ return map_case(c, true, false); });
     builder.StaticMethod("isHighSurrogate", "(C)Z", [](IntrinsicContext& c){const auto cp=static_cast<std::uint16_t>(c.arguments[0].AsInt());return Bool(cp>=0xd800&&cp<=0xdbff);});
     builder.StaticMethod("isLowSurrogate", "(C)Z", [](IntrinsicContext& c){const auto cp=static_cast<std::uint16_t>(c.arguments[0].AsInt());return Bool(cp>=0xdc00&&cp<=0xdfff);});
     builder.StaticMethod("isSurrogatePair", "(CC)Z", [](IntrinsicContext& c){const auto h=static_cast<std::uint16_t>(c.arguments[0].AsInt()),l=static_cast<std::uint16_t>(c.arguments[1].AsInt());return Bool(h>=0xd800&&h<=0xdbff&&l>=0xdc00&&l<=0xdfff);});
@@ -2312,32 +2291,38 @@ IntrinsicClassDecl Declare_java_lang_String() {
                     Value(context, context.receiver),
                     Value(context, context.arguments[0].ref), true));
             });
+    const auto region_matches = [](IntrinsicContext& context, bool overloaded) {
+        const bool ignore_case = overloaded && context.arguments[0].AsInt() != 0;
+        const std::size_t shift = overloaded ? 1U : 0U;
+        const auto text = Value(context, context.receiver);
+        const auto other_ref = context.arguments[shift + 1].ref;
+        if (!other_ref.IsValid()) throw VmJavaThrow{
+            "Ljava/lang/NullPointerException;", "string == null"};
+        const auto other = Value(context, other_ref);
+        const auto start = context.arguments[shift].AsInt();
+        const auto other_start = context.arguments[shift + 2].AsInt();
+        const auto length = context.arguments[shift + 3].AsInt();
+        if (start < 0 || other_start < 0 ||
+            static_cast<std::int64_t>(text.size()) - start < length ||
+            static_cast<std::int64_t>(other.size()) - other_start < length) return Bool(false);
+        const auto fold = [&](char16_t unit) {
+            if (unit < 128) return AsciiLower(unit);
+            const auto upper = InvokeGuestStatic(context.vm, "Ljava/lang/Character;",
+                "toUpperCase", "(C)C", {VmValue::Int(unit)});
+            return static_cast<char16_t>(InvokeGuestStatic(context.vm, "Ljava/lang/Character;",
+                "toLowerCase", "(C)C", {upper}).AsInt());
+        };
+        for (std::int32_t i = 0; i < length; ++i) {
+            const auto left = text[static_cast<std::size_t>(start) + static_cast<std::size_t>(i)];
+            const auto right = other[static_cast<std::size_t>(other_start) + static_cast<std::size_t>(i)];
+            if (left != right && (!ignore_case || fold(left) != fold(right))) return Bool(false);
+        }
+        return Bool(true);
+    };
     builder.FinalMethod("regionMatches", "(ILjava/lang/String;II)Z",
-        [](IntrinsicContext& context) {
-            const auto text = Value(context, context.receiver);
-            if (!context.arguments[1].ref.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "string == null"};
-            }
-            const auto other = Value(context, context.arguments[1].ref);
-            const auto this_offset = context.arguments[0].AsInt();
-            const auto other_offset = context.arguments[2].AsInt();
-            const auto length = context.arguments[3].AsInt();
-            if (other_offset < 0 ||
-                static_cast<std::int64_t>(other.size()) - other_offset < length ||
-                this_offset < 0 ||
-                static_cast<std::int64_t>(text.size()) - this_offset < length) {
-                return VmValue::Int(0);
-            }
-            if (length <= 0) return VmValue::Int(1);
-            return VmValue::Int(
-                text.compare(static_cast<std::size_t>(this_offset),
-                             static_cast<std::size_t>(length), other,
-                             static_cast<std::size_t>(other_offset),
-                             static_cast<std::size_t>(length)) == 0
-                    ? 1
-                    : 0);
-        });
+        [region_matches](IntrinsicContext& context) { return region_matches(context, false); });
+    builder.FinalMethod("regionMatches", "(ZILjava/lang/String;II)Z",
+        [region_matches](IntrinsicContext& context) { return region_matches(context, true); });
     builder.FinalMethod("concat", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 return Make(context, Value(context, context.receiver) +
@@ -2667,13 +2652,11 @@ IntrinsicClassDecl Declare_java_lang_String() {
             });
     builder.StaticMethod("valueOf", "(F)Ljava/lang/String;",
         [](IntrinsicContext& context) {
-                return Make(context,
-                            Widen(std::to_string(context.arguments[0].AsFloat())));
+                return FormatFloating(context.vm, context.arguments[0], false);
             });
     builder.StaticMethod("valueOf", "(D)Ljava/lang/String;",
         [](IntrinsicContext& context) {
-                return Make(context,
-                            Widen(std::to_string(context.arguments[0].AsDouble())));
+                return FormatFloating(context.vm, context.arguments[0], true);
             });
     builder.StaticMethod("valueOf", "(Z)Ljava/lang/String;",
         [](IntrinsicContext& context) {
@@ -2702,13 +2685,7 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 if (!argument.IsValid()) {
                     return Make(context, std::u16string(u"null"));
                 }
-                auto& model = context.vm.Model();
-                const auto kind = model.Kind(argument);
-                if (kind == VmObjectKind::string || kind == VmObjectKind::external) {
-                    return Make(context, Value(context, argument));
-                }
-                return Make(context,
-                            Widen("@" + std::to_string(argument.Value())));
+                return InvokeGuest(context.vm, argument, "toString", "()Ljava/lang/String;");
             });
     auto result = std::move(builder).Build();
     return result;
@@ -2958,14 +2935,20 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                     throw VmJavaThrow{"Ljava/lang/NullPointerException;",
                                       "arraycopy on null array"};
                 }
+                const auto source_kind = model.Kind(source);
+                const auto target_kind = model.Kind(target);
+                const auto is_array = [](VmObjectKind kind) {
+                    return kind == VmObjectKind::object_array || kind == VmObjectKind::primitive_array;
+                };
+                if (!is_array(source_kind) || !is_array(target_kind)) {
+                    throw VmJavaThrow{"Ljava/lang/ArrayStoreException;", "arraycopy requires arrays"};
+                }
                 if (length < 0 || source_pos < 0 || target_pos < 0 ||
                     source_pos > model.ArrayLength(source) - length ||
                     target_pos > model.ArrayLength(target) - length) {
               throw VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
                         "arraycopy range is out of bounds"};
                 }
-                const auto source_kind = model.Kind(source);
-                const auto target_kind = model.Kind(target);
                 if (source_kind == VmObjectKind::object_array &&
                     target_kind == VmObjectKind::object_array) {
                     // Overlap-safe copy: buffer the source range first.
@@ -2974,9 +2957,16 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                     for (std::int32_t index = 0; index < length; ++index) {
                 staged.push_back(model.GetObjectElement(source, source_pos + index));
                     }
+                    const auto element_class = model.ObjectArrayElementClass(target);
                     for (std::int32_t index = 0; index < length; ++index) {
+                        const auto value = staged[static_cast<std::size_t>(index)];
+                        if (value.IsValid() && !context.vm.Linker().IsAssignable(
+                                element_class, model.ObjectClass(value))) {
+                            throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
+                                              "arraycopy element is incompatible"};
+                        }
                         model.SetObjectElement(target, target_pos + index,
-                                       staged[static_cast<std::size_t>(index)]);
+                                               value);
                     }
                     return VmValue::Void();
                 }

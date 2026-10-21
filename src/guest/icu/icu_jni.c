@@ -1314,6 +1314,19 @@ static const JNINativeMethod decimal_methods[] = {
      (void *)NativeDecimalFormat_setTextAttribute},
     {"toPatternImpl", "(JZ)Ljava/lang/String;",
      (void *)NativeDecimalFormat_toPatternImpl}};
+static jint Character_toLowerCaseImpl(JNIEnv *env, jclass cls, jint code_point) {
+  (void)env;
+  (void)cls;
+  return ICU(u_tolower)(code_point);
+}
+static jint Character_toUpperCaseImpl(JNIEnv *env, jclass cls, jint code_point) {
+  (void)env;
+  (void)cls;
+  return ICU(u_toupper)(code_point);
+}
+static const JNINativeMethod character_methods[] = {
+    {"toLowerCaseImpl", "(I)I", (void *)Character_toLowerCaseImpl},
+    {"toUpperCaseImpl", "(I)I", (void *)Character_toUpperCaseImpl}};
 static const JNINativeMethod timezone_methods[] = {
     {"fillZoneStrings", "(Ljava/lang/String;[[Ljava/lang/String;)V",
      (void *)TimeZoneNames_fillZoneStrings}};
@@ -1327,7 +1340,9 @@ static int register_methods(JNIEnv *env, const char *name,
 int ogplay_icu_on_load(JNIEnv *env) {
   if (!load_icu_data(env))
     return 0;
-  return register_methods(
+  return register_methods(env, "java/lang/Character", character_methods,
+             (jint)(sizeof(character_methods) / sizeof(character_methods[0]))) &&
+         register_methods(
              env, "libcore/icu/ICU", icu_methods,
              (jint)(sizeof(icu_methods) / sizeof(icu_methods[0]))) &&
          register_methods(

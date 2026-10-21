@@ -231,8 +231,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 133256,
-      "sha256": "ca6dcadeaf8a55f345c3332eb8ac9030d2e155625801a708d5a4ca75f163f2c1",
+      "size": 133864,
+      "sha256": "92f4c8cbcfa2937956e0807a78a55d03ee79f5e5f992b494f5a346ec64aeeffa",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -263,7 +263,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "984fa38200807b3e1e6ff357bb76e16a1c01f5186a6b2d9f44216e30a265e166"
+            "sha256": "09b37394a2b70588de318cc70234cf682819b2243f2f6cae4d90afe6b8b29dd4"
           },
           {
             "path": "src/guest/zip/crc32_jni.c",
@@ -279,7 +279,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "dbe7a9363dac3e7b9e444d1918ae8b6d7b4585d55695fdb1d1d1cf37f56f8ffb"
+            "sha256": "d00bf05fa2097d7fef416b5bee8dd18713e2c7a0f18a00ce58760d061a2a8c28"
           }
         ],
         "inputs": [

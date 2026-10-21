@@ -44,6 +44,29 @@ using namespace ogplay::test::interpreter;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("dexvm floating String valueOf and wrapper rendering use libcore RealToString") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm vm(config);
+        VmThreadRuntime threads(vm.interpreter);
+        for (bool wide : {false, true}) {
+            for (const auto& [value, expected] : std::vector<std::pair<double, std::string>>{
+                     {64.0, "64.0"}, {-0.0, "-0.0"}, {1e8, "1.0E8"},
+                     {std::numeric_limits<double>::infinity(), "Infinity"},
+                     {std::numeric_limits<double>::quiet_NaN(), "NaN"}}) {
+                const auto argument = wide ? VmValue::Double(value) : VmValue::Float(static_cast<float>(value));
+                const auto signature = wide ? "(D)Ljava/lang/String;" : "(F)Ljava/lang/String;";
+                const auto string = [&](const char* owner, const char* name) {
+                    const auto result = vm.CallStatic(owner, name, signature, {argument});
+                    REQUIRE_FALSE(result.exception.IsValid());
+                    return vm.interpreter.StringUtf8(result.value.ref);
+                };
+                CHECK(string("Ljava/lang/String;", "valueOf") == expected);
+                CHECK(string(wide ? "Ljava/lang/Double;" : "Ljava/lang/Float;", "toString") == expected);
+            }
+        }
+    });
+}
+
 TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
@@ -424,7 +447,7 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
         std::set<std::string> result;
         for (const auto& method : java_class.methods) {
             result.insert(method.name + method.descriptor);
-            CHECK(static_cast<bool>(method.implementation));
+            CHECK((static_cast<bool>(method.implementation) || method.guest_native));
         }
         return result;
     };
@@ -549,6 +572,7 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
         "isLowerCase(C)Z","isLowerCase(I)Z","isUpperCase(C)Z","isUpperCase(I)Z","isWhitespace(C)Z","isWhitespace(I)Z",
         "isSpaceChar(C)Z","isSpaceChar(I)Z","isSpace(C)Z","isISOControl(C)Z","isISOControl(I)Z",
         "toLowerCase(C)C","toLowerCase(I)I","toUpperCase(C)C","toUpperCase(I)I",
+        "toLowerCaseImpl(I)I","toUpperCaseImpl(I)I",
         "isHighSurrogate(C)Z","isLowSurrogate(C)Z","isSurrogatePair(CC)Z","isValidCodePoint(I)Z","isBmpCodePoint(I)Z",
         "isSupplementaryCodePoint(I)Z","charCount(I)I","toCodePoint(CC)I","highSurrogate(I)C","lowSurrogate(I)C","reverseBytes(C)C",
         "toChars(I)[C", "codePointAt([CII)I", "codePointBefore([CI)I",
@@ -558,6 +582,7 @@ TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {
 
 TEST_CASE("dexvm primitive wrapper parsing bits and Character boundaries") {
     Vm vm;
+    VmThreadRuntime threads(vm.interpreter);
     const auto string = [&](std::string_view value) {
         return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
     };

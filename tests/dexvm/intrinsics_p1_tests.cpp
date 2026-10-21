@@ -368,6 +368,94 @@ TEST_CASE("dexvm P1 System.arraycopy and Math") {
     ExpectInt(vm.CallStatic("mathMix", "()I"), 10);
 }
 
+TEST_CASE("dexvm reference arraycopy checks each element and retains the copied prefix") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Vm vm({.backend = backend});
+        const auto object = vm.linker.ResolveDescriptor("Ljava/lang/Object;");
+        const auto string = vm.linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto source = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Ljava/lang/Object;"), object, 4);
+        const auto target = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Ljava/lang/String;"), string, 4);
+        const auto text = vm.model.NewString(u"copied");
+        const auto sentinel = vm.model.NewString(u"untouched");
+        const auto bad = vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
+        vm.model.SetObjectElement(source, 0, text);
+        vm.model.SetObjectElement(source, 2, bad);
+        vm.model.SetObjectElement(source, 3, text);
+        for (int i = 0; i < 4; ++i) vm.model.SetObjectElement(target, i, sentinel);
+        const auto copy = [&](VmObjectRef src, int from, VmObjectRef dst, int to, int length) {
+            return vm.CallStatic("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
+                {VmValue::Ref(src), VmValue::Int(from), VmValue::Ref(dst), VmValue::Int(to), VmValue::Int(length)},
+                "Ljava/lang/System;");
+        };
+        const auto outcome = copy(source, 0, target, 0, 4);
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/ArrayStoreException;");
+        CHECK(vm.model.GetObjectElement(target, 0) == text);
+        CHECK_FALSE(vm.model.GetObjectElement(target, 1).IsValid());
+        CHECK(vm.model.GetObjectElement(target, 2) == sentinel);
+        CHECK(vm.model.GetObjectElement(target, 3) == sentinel);
+        CHECK_FALSE(copy(target, 0, target, 1, 3).exception.IsValid());
+        CHECK(vm.model.GetObjectElement(target, 1) == text);
+        CHECK_FALSE(vm.model.GetObjectElement(target, 2).IsValid());
+        CHECK(vm.model.GetObjectElement(target, 3) == sentinel);
+        const auto not_array = copy(bad, 0, target, 0, 0);
+        REQUIRE(not_array.exception.IsValid());
+        CHECK(vm.linker.Class(not_array.exception_class).descriptor == "Ljava/lang/ArrayStoreException;");
+    }
+}
+
+TEST_CASE("dexvm String regionMatches overloads preserve libcore bounds and case rules") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Vm vm({.backend = backend});
+        const auto receiver = vm.model.NewString(u"AbCd");
+        const auto other = vm.model.NewString(u"abcd");
+        const auto type = vm.linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto call = [&](bool overloaded, bool ignore, int start, VmObjectRef rhs, int offset, int length) {
+            const auto slot = vm.linker.FindVtableIndex(type, "regionMatches",
+                overloaded ? "(ZILjava/lang/String;II)Z" : "(ILjava/lang/String;II)Z");
+            REQUIRE(slot.has_value());
+            std::vector<VmValue> args{VmValue::Ref(receiver)};
+            if (overloaded) args.push_back(VmValue::Int(ignore));
+            args.insert(args.end(), {VmValue::Int(start), VmValue::Ref(rhs), VmValue::Int(offset), VmValue::Int(length)});
+            return vm.interpreter.Call(vm.linker.Class(type).vtable[*slot], args);
+        };
+        for (bool overloaded : {false, true}) {
+            ExpectInt(call(overloaded, false, 0, other, 0, 4), 0);
+            ExpectInt(call(overloaded, false, 1, other, 1, 1), 1);
+            ExpectInt(call(overloaded, true, -1, other, 0, 0), 0);
+            ExpectInt(call(overloaded, true, 4, other, 4, 0), 1);
+            ExpectInt(call(overloaded, true, 5, other, 5, -1), 1);
+            ExpectInt(call(overloaded, true, 0, other, 0, INT32_MAX), 0);
+            const auto null = call(overloaded, true, -1, VmObjectRef{}, -1, -1);
+            REQUIRE(null.exception.IsValid());
+            CHECK(vm.linker.Class(null.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        }
+        ExpectInt(call(true, true, 0, other, 0, 4), 1);
+    }
+}
+
+TEST_CASE("dexvm String valueOf Object invokes the enum object's toString") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Vm vm({.backend = backend});
+        const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
+        const auto constant = vm.CallStatic("valueOf", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;",
+            {VmValue::Ref(vm.model.ClassObject(enum_class)), VmValue::Ref(vm.model.NewString(u"SMALL"))},
+            "Ljava/lang/Enum;");
+        REQUIRE_FALSE(constant.exception.IsValid());
+        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
+            {constant.value}, "Ljava/lang/String;")) == "SMALL");
+        const auto tag = vm.linker.ResolveDescriptor("LP1EnumTagged;");
+        REQUIRE_FALSE(vm.interpreter.EnsureClassInitialized(tag).exception.IsValid());
+        const auto field = vm.linker.FindFieldRecursive(tag, "TAG", "LP1EnumTagged;");
+        REQUIRE(field.has_value());
+        const auto tagged = VmObjectRef(vm.linker.Class(tag).static_storage[vm.linker.Field(*field).slot]);
+        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(tagged)}, "Ljava/lang/String;")) == "TAG!");
+        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
+            {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/String;")) == "null");
+    }
+}
+
 TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         CoreIntrinsicServices services;

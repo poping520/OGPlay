@@ -210,6 +210,9 @@ TEST_CASE("WU7-6 ICU51 regex preserves UTF16 groups regions replacement syntax e
              {VmValue::Ref(f.Text("a+")),VmValue::Ref(f.Text("_"))})) == "xx_y");
         const auto before = vm.GuestNativeResourceCount();
         static_cast<void>(vm.CollectGarbage("regex-peers-reclaimed"));
+        try { vm.RunFinalization(); }
+        catch (const VmJavaThrow& error) { FAIL(error.descriptor << ": " << error.message); }
+        static_cast<void>(vm.CollectGarbage("regex-peers-reclaimed-finalized"));
         CHECK(vm.GuestNativeResourceCount() < before);
         CHECK(f.ledger.Unimplemented().empty());
     }

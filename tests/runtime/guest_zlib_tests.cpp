@@ -501,6 +501,8 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
             {VmValue::Ref(deflater), VmValue::Long(token)}), "Ljava/lang/IllegalStateException;");
         static_cast<void>(vm.CollectGarbage("gzip-before-owner-test"));
+        vm.RunFinalization();
+        static_cast<void>(vm.CollectGarbage("gzip-before-owner-test-finalized"));
         const auto baseline = vm.GuestNativeResourceCount();
         const auto alive = construct("Ljava/util/zip/Deflater;");
         const auto alive_root = vm.ProtectReferences(std::array{alive});
@@ -513,6 +515,8 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
             CHECK(vm.GuestNativeResourceCount() == baseline + 2);
         }
         static_cast<void>(vm.CollectGarbage("gzip-abandoned-owner"));
+        vm.RunFinalization();
+        static_cast<void>(vm.CollectGarbage("gzip-abandoned-owner-finalized"));
         CHECK(vm.GuestNativeResourceCount() == baseline + 1);
         expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
             {VmValue::Ref(alive), VmValue::Long(abandoned_token)}), "Ljava/lang/IllegalStateException;");

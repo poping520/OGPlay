@@ -73,7 +73,23 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   pending，退出恢复原状态；失败及未尝试资源回队列，不放宽正常 JNI 调用。
   外部宿主 GC 遇到绑定到其他宿主的默认 execution 时只扫堆，将 guest 清理留队，
   由合法 execution 所有者的后续 GC/退出释放，不借用活动 Java 栈。
-- System.gc 显式调用同一 STW 收集器（普通回收不强制清 SoftReference）；未关联队列的 WeakReference 清空不依赖 ReferenceQueue 的懒字段元数据。
+- System.gc/Runtime.gc 显式调用同一 STW 收集器，普通回收保留 SoftReference、压力回收清软引用。
+  weak/soft 清理先于 finalizer 保活，phantom 在复标记后清理/入队；入队唤醒原版队列等待者，
+  无队列的引用同样清空。新 invoke 前废弃旧 result 槽，不能将过期返回值当强根。
+- 对象模型完成实例分配后通过显式 observer 调用 FinalizerReference.add，解释器只识别真正
+  覆盖 finalize 的类；Java referent/zombie/list 是唯一状态。原版 Daemons 用真实 guest/host
+  守护线程执行 finalize，异常记录后吞掉；复活对象不再第二次自动登记。runFinalization
+  等待进入时批次（含正在执行者），不等待后续新任务；固定 ROM 的 LIFO sentinel 越过旧任务
+  时由 VM 批次快照补足。watchdog 使用统一 Clock 的 10 秒阈值，原版 handler/guest exit(2)
+  不终止宿主进程。详见 ADR-0151。
+- native 关闭在释放 VM 锁前按已登记 cleanup/token 占有 owner 字段并保活；成功退役、异常恢复。
+  与 Java finalizer、GC/teardown 共用关闭事实，不能重复关闭 peer，也不将非法 token 伪作成功。
+- Thread runtime 核对对象身份而非可复用 handle；死 Thread 的 host/context tombstone 延至
+  teardown 回收，新 identity 可合法复用其句柄，不重启旧 Java Thread。
+- Runtime maxMemory 是当前 growth limit，totalMemory 是已提交目标（至少 allocated），
+  freeMemory 为 total-allocated；VMRuntime 的利用率按 Dalvik 1024 刻度并限制于 0.2..0.8，
+  clearGrowthLimit 将上限升至 maximum，native allocation/free 独立计数并按堆配置驱动 GC/
+  finalization 水位。不查询宿主剩余内存。
 - 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
 - Throwable 栈以方法身份与 DEX PC 保存，物化时读取同 DEX unit 的 source/debug_info；无调试信息保留未知位置，真实 native 入口保留 Native Method 帧。check-cast 的 CCE 消息使用可读类名与数组维度。

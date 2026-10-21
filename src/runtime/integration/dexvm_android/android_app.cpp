@@ -43,6 +43,10 @@ Decl Declare_android_app_Notification(const Context&) {
 
 Decl Declare_android_app_ActivityManager(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager;");
+    builder.StaticMethod("staticGetMemoryClass", "()I", [](dx::IntrinsicContext& c) { return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().HeapGrowthLimitBytes() / (1024U * 1024U))); });
+    builder.StaticMethod("staticGetLargeMemoryClass", "()I", [](dx::IntrinsicContext& c) { return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().MaximumHeapBytes() / (1024U * 1024U))); });
+    builder.VirtualMethod("getMemoryClass", "()I", [](dx::IntrinsicContext& c) { return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().HeapGrowthLimitBytes() / (1024U * 1024U))); });
+    builder.VirtualMethod("getLargeMemoryClass", "()I", [](dx::IntrinsicContext& c) { return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().MaximumHeapBytes() / (1024U * 1024U))); });
     builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)Ljava/lang/UnsupportedOperationException;",
         [](dx::IntrinsicContext& call) -> dx::VmValue {
             static_cast<void>(dx::IntrinsicCall(call).NonNullRef(0, "operation"));

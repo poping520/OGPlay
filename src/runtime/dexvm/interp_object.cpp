@@ -327,6 +327,9 @@ void Interpreter::Impl::StepObjectOrInvoke(
             }
         }
 
+        // A new invoke invalidates the previous result before any nested GC.
+        frame.last_result = VmValue::Void();
+        execution.exit_result = VmValue::Void();
         // Both dispatch backends use the same symbolic-to-runtime target
         // selection.  Operand decoding remains backend-specific.
         const auto target = SelectInvokeTarget(
@@ -398,7 +401,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
                                 &method, frame.pc);
                     try {
                         frame.last_result =
-                            bridge->Invoke(method, receiver, rest);
+                            InvokeNativeWithResources(method, receiver, rest);
                         RecordTrace(DexVmTraceKind::native_exit, execution,
                                     &method, frame.pc);
                         RecordTrace(DexVmTraceKind::method_exit, execution,

@@ -447,6 +447,9 @@ public:
     [[nodiscard]] std::size_t RegisteredIntrinsicSideTableCount() const noexcept;
     [[nodiscard]] GcMarkResult MarkReachable(bool clear_soft_references = false);
     [[nodiscard]] GcSweepResult SweepGarbage(const GcMarkResult& mark);
+    void RegisterFinalizable(VmObjectRef object);
+    void EnsureFinalizerDaemons();
+    void RunFinalization();
     [[nodiscard]] GcSweepResult CollectGarbage(
         std::string_view trigger = "explicit_test", bool clear_soft_references = false);
     [[nodiscard]] RootScope ProtectReferences(

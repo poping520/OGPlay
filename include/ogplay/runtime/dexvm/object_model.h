@@ -137,6 +137,7 @@ public:
     [[nodiscard]] GcSweepResult Sweep(const GcMarkResult& mark,
                                       const GcSweepHooks& hooks);
 
+    void SetInstanceAllocationObserver(std::function<void(VmObjectRef)> observer);
     [[nodiscard]] VmObjectRef NewInstance(DexClassId java_class,
                                           std::uint16_t slot_count);
     [[nodiscard]] std::span<Slot> InstanceSlots(VmObjectRef ref);
@@ -206,6 +207,13 @@ public:
     [[nodiscard]] std::uint64_t MaximumHeapBytes() const noexcept;
     [[nodiscard]] bool ShouldCollectFor(std::uint64_t request_bytes) const noexcept;
     void AdjustTargetAfterGc() noexcept;
+    [[nodiscard]] float TargetHeapUtilization() const noexcept;
+    void SetTargetHeapUtilization(float value) noexcept;
+    void ClearGrowthLimit() noexcept;
+    [[nodiscard]] std::uint64_t NativeAllocatedBytes() const noexcept;
+    [[nodiscard]] bool RegisterNativeAllocation(std::uint64_t bytes);
+    void RegisterNativeFree(std::uint64_t bytes) noexcept;
+    void UpdateNativeWatermark() noexcept;
     [[nodiscard]] bool GrowFor(std::uint64_t request_bytes) noexcept;
 
     [[nodiscard]] static std::uint64_t EstimateInstanceBytes(

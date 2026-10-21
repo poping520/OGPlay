@@ -66,6 +66,10 @@ public:
     JniPrimitiveArrayStore* arrays{};
     JavaObjectInterop interop;
     JavaObjectModelConfig config;
+    std::function<void(VmObjectRef)> instance_observer;
+    std::uint32_t utilization_units{768};
+    std::uint64_t native_bytes{};
+    std::uint64_t native_watermark{};
     std::uint64_t heap_target_bytes{};
 
     std::vector<Record> records;
@@ -223,6 +227,8 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
     impl_->arrays = &arrays;
     impl_->config = config;
     impl_->heap_target_bytes = config.initial_heap_target_bytes;
+    impl_->native_watermark = config.initial_heap_target_bytes;
+    impl_->utilization_units = config.target_utilization_percent * 1024U / 100U;
     impl_->interop = std::move(interop);
     if (config.initial_heap_target_bytes == 0U ||
         config.initial_heap_target_bytes > config.heap_growth_limit_bytes ||
@@ -541,6 +547,10 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
     return result;
 }
 
+void JavaObjectModel::SetInstanceAllocationObserver(std::function<void(VmObjectRef)> observer) {
+    impl_->instance_observer = std::move(observer);
+}
+
 VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class,
                                          const std::uint16_t slot_count) {
     const auto bytes = 32ULL + static_cast<std::uint64_t>(slot_count) * 8ULL;
@@ -559,7 +569,9 @@ VmObjectRef JavaObjectModel::NewInstance(const DexClassId java_class,
         impl_->free_instance_storage.pop_back();
         impl_->instance_storage[record.storage].assign(slot_count, Slot{});
     }
-    return impl_->Register(std::move(record));
+    const auto ref = impl_->Register(std::move(record));
+    if (impl_->instance_observer) impl_->instance_observer(ref);
+    return ref;
 }
 
 std::span<Slot> JavaObjectModel::InstanceSlots(const VmObjectRef ref) {
@@ -1067,10 +1079,10 @@ bool JavaObjectModel::ShouldCollectFor(
 
 void JavaObjectModel::AdjustTargetAfterGc() noexcept {
     const auto live = impl_->allocated_bytes;
-    const auto utilization = impl_->config.target_utilization_percent;
-    auto target = live > UINT64_MAX / 100U
+    const auto utilization = impl_->utilization_units;
+    auto target = live > UINT64_MAX / 1024U
                       ? UINT64_MAX
-                      : (live * 100U + utilization - 1U) / utilization;
+                      : (live * 1024U + utilization - 1U) / utilization;
     const auto add = [](const std::uint64_t left, const std::uint64_t right) {
         return left > UINT64_MAX - right ? UINT64_MAX : left + right;
     };
@@ -1086,10 +1098,10 @@ bool JavaObjectModel::GrowFor(const std::uint64_t request_bytes) noexcept {
             impl_->config.heap_growth_limit_bytes - request_bytes)
         return false;
     const auto projected = impl_->allocated_bytes + request_bytes;
-    const auto utilization = impl_->config.target_utilization_percent;
-    auto target = projected > UINT64_MAX / 100U
+    const auto utilization = impl_->utilization_units;
+    auto target = projected > UINT64_MAX / 1024U
                       ? UINT64_MAX
-                      : (projected * 100U + utilization - 1U) / utilization;
+                      : (projected * 1024U + utilization - 1U) / utilization;
     const auto add = [](const std::uint64_t left, const std::uint64_t right) {
         return left > UINT64_MAX - right ? UINT64_MAX : left + right;
     };
@@ -1125,4 +1137,26 @@ std::uint64_t JavaObjectModel::EstimateObjectArrayBytes(const JniSize length) {
 
 namespace ogplay::runtime::dexvm {
 std::uint64_t JavaObjectModel::MaximumHeapBytes() const noexcept { return impl_->config.maximum_heap_bytes; }
+}
+
+namespace ogplay::runtime::dexvm {
+float JavaObjectModel::TargetHeapUtilization() const noexcept { return static_cast<float>(impl_->utilization_units) / 1024.0F; }
+void JavaObjectModel::SetTargetHeapUtilization(float value) noexcept {
+    impl_->utilization_units = static_cast<std::uint32_t>(std::clamp(value, 0.2F, 0.8F) * 1024.0F);
+}
+void JavaObjectModel::ClearGrowthLimit() noexcept { impl_->config.heap_growth_limit_bytes = impl_->config.maximum_heap_bytes; }
+std::uint64_t JavaObjectModel::NativeAllocatedBytes() const noexcept { return impl_->native_bytes; }
+bool JavaObjectModel::RegisterNativeAllocation(std::uint64_t bytes) {
+    if (bytes > UINT64_MAX - impl_->native_bytes) throw std::overflow_error("native allocation accounting overflow");
+    impl_->native_bytes += bytes;
+    return impl_->native_bytes > impl_->native_watermark;
+}
+void JavaObjectModel::RegisterNativeFree(std::uint64_t bytes) noexcept {
+    if (bytes <= impl_->native_bytes) impl_->native_bytes -= bytes;
+}
+void JavaObjectModel::UpdateNativeWatermark() noexcept {
+    const auto bytes = impl_->native_bytes;
+    const auto free = std::clamp(bytes / impl_->utilization_units * (1024U - impl_->utilization_units), impl_->config.min_free_bytes, impl_->config.max_free_bytes);
+    impl_->native_watermark = bytes > UINT64_MAX - free ? UINT64_MAX : bytes + free;
+}
 }

@@ -116,8 +116,8 @@
     "threaded": "pass"
   },
   "030-bad-finalizer": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "031-class-attributes": {
     "switch": "fail:unimplemented",
@@ -140,8 +140,8 @@
     "threaded": "fail:unimplemented"
   },
   "036-finalizer": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "037-inherit": {
     "switch": "pass",
@@ -228,12 +228,12 @@
     "threaded": "pass"
   },
   "059-finalizer-throw": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "061-out-of-memory": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "062-character-encodings": {
     "switch": "pass",
@@ -284,8 +284,8 @@
     "threaded": "pass"
   },
   "074-gc-thrash": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "075-verification-error": {
     "switch": "pass",
@@ -304,8 +304,8 @@
     "threaded": "pass"
   },
   "079-phantom": {
-    "switch": "fail:timeout",
-    "threaded": "fail:timeout"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "080-oom-throw": {
     "switch": "pass",
@@ -380,8 +380,8 @@
     "threaded": "pass"
   },
   "098-native-allocations": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "300-package-override": {
     "switch": "excluded:oracle",

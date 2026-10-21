@@ -27,6 +27,10 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
 
 ## Context、组件与进程
 
+ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的 growth limit，
+getLargeMemoryClass/staticGetLargeMemoryClass 读取 maximum，单位 MiB；与 Runtime 内存查询
+共用 JavaObjectModel 配置，不读取宿主内存，不使用固定档位。
+
 Context→ContextWrapper→Application/Service/ContextThemeWrapper→Activity 层级固定。
 Application/base Context/ClassLoader/descriptor 身份稳定，wrapper 虚派委托 base；getClassLoader
 返回关联应用 facade，不取 receiver defining loader/Thread context loader。Activity 仅顶层，isChild=false。

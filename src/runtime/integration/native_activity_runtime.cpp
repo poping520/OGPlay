@@ -134,14 +134,21 @@ public:
         const auto function = call.vm.StringUtf8(typed.NonNullRef(1, "function"));
         NativeLibraryLoadResult loaded;
         memory::GuestAddress entry;
+        auto& execution_lock = call.vm.ExecutionLock();
+        const auto depth = execution_lock.ReleaseForBlocking();
         try {
             loaded = ctx->native_libraries->LoadPath(path, ctx->application_class_loader_token, NativeLibraryEntry::native_activity);
             entry = session.Process().FindModuleExport(loaded.module_index, function);
             if (entry.IsNull()) throw std::runtime_error("NativeActivity entry is missing: " + function);
         } catch (const std::exception& error) {
+            execution_lock.ReacquireAfterBlocking(depth);
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.native_activity.load", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", error.what()};
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(depth);
+            throw;
         }
+        execution_lock.ReacquireAfterBlocking(depth);
         Instance item;
         item.module_index = loaded.module_index;
         item.thread = thread(call.vm.CurrentContextToken());

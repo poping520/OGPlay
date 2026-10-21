@@ -43,6 +43,11 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 ## 进程与库加载
 
+- 锁顺序：持有 VM 执行锁时，禁止获取进程 `guest_call_mutex_`、`native_load_mutex_`
+  或 DexVM native context 的 `call_mutex`。进入可能等待这些锁或执行 guest 的边界前，
+  按完整递归深度 `ReleaseForBlocking`；正常及异常出口均 `ReacquireAfterBlocking`。
+  JNI 回调在桥入口重新获取 VM 锁；释放期间只使用已复制的参数与稳定 owner，不访问 VM 状态。
+
 - AndroidGuestProcess 注册 `/dev/urandom` (1:9) 与 `/dev/random` (1:8)，通过 VFS reader
   注入 `hal::FillSecureRandom`；每次读取生成新的完整随机字节，失败由 VFS 映射 EIO。
   两者均使用宿主 OS CSPRNG，不模拟 Linux 熵池；O_NONBLOCK 不引入 EAGAIN/熵量等待。

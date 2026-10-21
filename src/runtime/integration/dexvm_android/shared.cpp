@@ -839,13 +839,22 @@ dx::IntrinsicHandler PlatformSystemLoadHandlerImpl(
                     "Ljava/lang/UnsatisfiedLinkError;",
                     "APK native library loader is unavailable"};
             }
+            // Loading can wait on process call/load locks and invoke guest
+            // constructors/JNI_OnLoad. JNI reentry acquires the VM lock itself.
+            auto& execution_lock = call.vm.ExecutionLock();
+            const auto depth = execution_lock.ReleaseForBlocking();
             try {
                 load(*context->native_libraries, argument,
                      context->application_class_loader_token);
             } catch (const NativeLibraryLoadError& error) {
+                execution_lock.ReacquireAfterBlocking(depth);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
                                       error.what()};
+            } catch (...) {
+                execution_lock.ReacquireAfterBlocking(depth);
+                throw;
             }
+            execution_lock.ReacquireAfterBlocking(depth);
             return dx::VmValue::Void();
         });
 }

@@ -7,6 +7,7 @@
 #include "runtime/integration/dexvm_android/shared.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include <chrono>
+#include <cstdlib>
 #include <atomic>
 #include "ogplay/runtime/vfs/sandbox_store.h"
 #include "../dexvm/boot_dex.h"
@@ -394,6 +395,136 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     bridge.reset();
     session->Stop();
     CHECK_FALSE(session->Running());
+}
+
+// The observer runs inside a registered native while the root call mutex is
+// held. The worker holds the VM lock before entering the real System handler;
+// root JNI clinit must progress while that handler waits for the call mutex.
+TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class initialization") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    auto libc = LibcElf();
+    auto root = AppElf({"libroot.so", "libc.so", kJniVersion1_6});
+    const std::array native_code{0xe92d4080U, 0xe3a070e0U,
+                                 0xef000000U, 0xe8bd8080U};
+    for (std::size_t i = 0; i < native_code.size(); ++i)
+        Put32(root, 0x1080U + i * 4U, native_code[i]);
+    const std::array inputs{
+        loader::Elf32ModuleInput{"libroot.so", root, memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc, memory::GuestAddress{0x10000000U}},
+    };
+    VirtualFileSystem filesystem;
+    std::promise<void> native_entered, worker_entered, finished;
+    auto native_ready = native_entered.get_future();
+    auto worker_ready = worker_entered.get_future();
+    auto done = finished.get_future();
+    std::atomic<bool> armed{false};
+    bool initialized = false;
+    DexVmGuestBridge* active_bridge{};
+    AndroidGuestCallSession* active_session{};
+    JniObjectIdentity owner_identity{};
+    AndroidGuestCallSessionRequest request{
+        19, "libroot.so", inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}};
+    request.guest_call_slice_observer_thread = std::this_thread::get_id();
+    request.guest_call_slice_observer = [&](std::uint64_t) {
+        if (!armed.exchange(false)) return;
+        native_entered.set_value();
+        worker_ready.wait();
+        initialized = active_session->Fields().EnsureClassInitialized(owner_identity, 1U);
+        CHECK(active_session->Classes().GetFieldId(owner_identity, "exitCode", "I", true));
+        CHECK_FALSE(active_bridge->Vm().ExecutionLock().HeldByCurrentThread());
+    };
+    auto session = AndroidGuestCallSession::Start(request);
+    active_session = session.get();
+    loader::ApkNativeLibraryInventory inventory{{
+        Library("libb.so", AppElf({"libb.so", "", kJniVersion1_6})),
+    }};
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    NativeLibraryLoader libraries(session->Process(), selected);
+    auto context = std::make_shared<DexVmAndroidContext>();
+    context->session = session.get();
+    context->native_libraries = &libraries;
+    core::CapabilityLedger ledger;
+    auto bridge = std::make_unique<DexVmGuestBridge>(
+        *session, ReadDexFixture("aps5.dex"), AndroidIntrinsicCatalog(context),
+        context, ledger, nullptr, DexVmBridgeConfig{}, test::ReadBootDex());
+    active_bridge = bridge.get();
+    context->threads = &bridge->Threads();
+    auto& vm = bridge->Vm();
+    const auto owner = bridge->Linker().ResolveDescriptor("Lfixture/Aps5;");
+    owner_identity = *bridge->RegisteredClassIdentity(owner);
+    const auto fail = bridge->Linker().FindDirectMethod(owner, "fail", "()V");
+    REQUIRE(fail);
+    const auto module = session->Process().LoadApplicationModules("libroot.so", {});
+    const auto target = session->Process().FindModuleExport(module.root_module_index, "JNI_OnLoad").Add(0x80U);
+    const std::array methods{JniNativeMethod{"fail", "()V", target}};
+    session->Natives().RegisterNatives(owner_identity, methods);
+    const auto system = session->Classes().FindClass("java/lang/System");
+    REQUIRE(system);
+    const auto load = session->Classes().GetMethodId(*system, "loadLibrary", "(Ljava/lang/String;)V", true);
+    REQUIRE(load);
+    JniJavaVm java_vm(session->Environment());
+    REQUIRE(java_vm.AttachCurrentThread(5U, kJniVersion1_6).status == JniStatus::ok);
+    const auto name = vm.NewStringUtf8("b");
+    const auto name_ref = session->Environment().PublishLocalObject(5U, bridge->Model().ToIdentity(name));
+    // A broken lock order must fail within a bound instead of hanging the suite.
+    std::thread watchdog([&] {
+        if (done.wait_for(std::chrono::seconds(10)) != std::future_status::ready)
+            std::abort();
+    });
+    auto worker = std::async(std::launch::async, [&] {
+        native_ready.wait();
+        VmExecutionLockScope lock(vm.ExecutionLock());
+        worker_entered.set_value();
+        const std::array<JniValue, 1> arguments{name_ref};
+        static_cast<void>(session->Invocations().InvokeStatic(
+            5U, *system, *load, arguments, JniArgumentSource::value_array));
+        CHECK(vm.ExecutionLock().HeldByCurrentThread());
+        CHECK_FALSE(session->Environment().ExceptionCheck(5U));
+    });
+    armed = true;
+    const auto outcome = vm.Call(*fail, {});
+    worker.get();
+    finished.set_value();
+    watchdog.join();
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    CHECK(initialized);
+    REQUIRE(libraries.Records().size() == 1U);
+    CHECK(libraries.Records()[0].jni_on_load_calls == 1U);
+    CHECK(java_vm.DetachCurrentThread(5U) == JniStatus::ok);
+}
+
+TEST_CASE("native load failures restore recursive VM execution ownership") {
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    ApplicationProcess fixture;
+    auto& vm = fixture.bridge->Vm();
+    VmExecutionLockScope first(vm.ExecutionLock());
+    VmExecutionLockScope second(vm.ExecutionLock());
+    const std::array arguments{
+        VmValue::Ref(vm.NewStringUtf8("/data/app-lib/libmissing.so")),
+        VmValue::Ref(vm.NewStringUtf8("ANativeActivity_onCreate")),
+    };
+    IntrinsicContext call{vm, VmObjectRef{}, arguments};
+    bool released = false;
+    vm.ExecutionLock().SetBlockingObserver(&released,
+        [](void* state, std::thread::id, bool blocked) noexcept {
+            if (blocked) *static_cast<bool*>(state) = true;
+        });
+    struct ClearObserver final {
+        VmExecutionLock& lock;
+        ~ClearObserver() { lock.SetBlockingObserver(nullptr, nullptr); }
+    } clear{vm.ExecutionLock()};
+    CHECK_THROWS_AS(android_intrinsics::PlatformSystemLoadHandler(fixture.context)(call), VmJavaThrow);
+    CHECK(released);
+    CHECK(vm.ExecutionLock().HeldByCurrentThread());
+    released = false;
+    CHECK_THROWS_AS(fixture.context->native_activity->Call(call, "loadNativeCode"), VmJavaThrow);
+    CHECK(released);
+    const auto depth = vm.ExecutionLock().ReleaseForBlocking();
+    vm.ExecutionLock().ReacquireAfterBlocking(depth);
+    CHECK(depth == 2U);
 }
 
 TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {

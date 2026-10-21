@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "25dc1f9c9b20ff991bbcf1511366ac3c48aa3edf29ed45d67e198423c9316701",
+    "recipe_sha256": "125607074f9c8f649788d17644f21c9f54babb08cee06e47b4acbf17e969903c",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -88,12 +88,12 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 4128024,
-    "sha256": "651ada80fefd8c1e0775d9d7e1c0e129f57e45f49185378a956e6c9c986015af",
+    "size": 4141192,
+    "sha256": "34b3ada8b75a47425c21413cf1b7b96b27fb9b2e41023ecf36832e60fef87001",
     "dex_entry": "classes.dex",
-    "dex_size": 4123404,
-    "dex_sha256": "e9abe4729827320479152130a6ede58b51e2097645f406642eec156264b9ff7d",
-    "class_count": 2586,
+    "dex_size": 4136572,
+    "dex_sha256": "dc6f22d73b2e59cddc5c208457f4a6d2ca07bdde42ad6479adee2ca8a38383a6",
+    "class_count": 2596,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a"

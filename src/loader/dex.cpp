@@ -642,7 +642,7 @@ public:
             limits.max_work_units, 65536ULL + 8ULL * header_.data_size);
         statistics_.storage_limit = std::min<std::uint64_t>(
             limits.max_storage_bytes, 1024ULL * 1024ULL +
-                                          256ULL * header_.file_size);
+                                          384ULL * header_.file_size);
     }
 
     void Work(const std::uint64_t amount, const std::size_t offset) {
@@ -1189,6 +1189,31 @@ void ApplySystemMethodAnnotation(const DexImage& image,
     }
 }
 
+
+// Signature is a system annotation: concatenate checked string fragments,
+// without exposing it as a runtime-visible annotation instance.
+void ReadSignature(const DexImage& image, const CachedAnnotation& cached,
+                   std::optional<std::u16string>& output, AnnotationBudget& budget) {
+    const auto& annotation = cached.annotation;
+    if (image.types[annotation.type_index].descriptor != "Ldalvik/annotation/Signature;") return;
+    if (output || annotation.elements.size() != 1 ||
+        image.strings[annotation.elements[0].name_string_index].value != u"value" ||
+        annotation.elements[0].value.kind != DexAnnotationValueKind::array)
+        Fail(DexErrorReason::invalid_range, cached.offset, "invalid Signature annotation");
+    std::size_t size{};
+    for (const auto& value : annotation.elements[0].value.values) {
+        if (value.kind != DexAnnotationValueKind::string_index)
+            Fail(DexErrorReason::invalid_range, cached.offset, "Signature fragment is not a string");
+        const auto length = image.strings[value.index].value.size();
+        budget.Work(length + 1, cached.offset);
+        budget.Storage(length * sizeof(char16_t), cached.offset);
+        size += length;
+    }
+    output.emplace(); output->reserve(size);
+    for (const auto& value : annotation.elements[0].value.values)
+        *output += image.strings[value.index].value;
+}
+
 void ReadSystemMetadata(const Reader& reader, DexImage& image,
                         const DexAnnotationLimits& limits) {
     AnnotationBudget budget(image, limits, image.annotation_statistics);
@@ -1197,6 +1222,8 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
     budget.Reserve(image.method_system_metadata, image.methods.size(), 0U);
     budget.Reserve(image.field_runtime_metadata, image.fields.size(), 0U);
     budget.Reserve(image.class_annotation_metadata, image.classes.size(), 0U);
+    budget.Reserve(image.method_annotation_metadata, image.methods.size(), 0U);
+    image.method_annotation_metadata.resize(image.methods.size());
     image.class_system_metadata.resize(image.classes.size());
     image.method_system_metadata.resize(image.methods.size());
     image.field_runtime_metadata.resize(image.fields.size());
@@ -1219,6 +1246,7 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
             budget.Work(1U, cached->offset);
             const auto& annotation = cached->annotation;
             if (annotation.visibility == DexAnnotationVisibility::system) {
+                ReadSignature(image, *cached, image.class_annotation_metadata[class_index].signature, budget);
                 ApplySystemClassAnnotation(
                     image, annotation, image.class_system_metadata[class_index],
                     image.class_annotation_metadata[class_index].annotation_default,
@@ -1248,6 +1276,8 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
                     budget.Grow(output, cached->offset);
                     output.push_back(cached->annotation);
                 }
+                if (cached->annotation.visibility == DexAnnotationVisibility::system)
+                    ReadSignature(image, *cached, image.field_runtime_metadata[field_index].signature, budget);
             }
         }
         const auto methods_at = fields_at + static_cast<std::size_t>(fields_size) * 8U;
@@ -1263,8 +1293,14 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
             for (const auto* cached : annotations.Set(reader.U32(at + 4U))) {
                 budget.Work(1U, cached->offset);
                 if (cached->annotation.visibility == DexAnnotationVisibility::system) {
+                    ReadSignature(image, *cached, image.method_annotation_metadata[method_index].signature, budget);
                     ApplySystemMethodAnnotation(image, cached->annotation,
                         image.method_system_metadata[method_index], budget, *cached);
+                }
+                if (cached->annotation.visibility == DexAnnotationVisibility::runtime) {
+                    auto& output = image.method_annotation_metadata[method_index].annotations;
+                    annotations.CopyPayload(*cached); budget.Grow(output, cached->offset);
+                    output.push_back(cached->annotation);
                 }
             }
         }
@@ -1283,12 +1319,21 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
             budget.RequireData(reader, list_offset, 4U, true);
             const auto count = reader.U32(list_offset);
             budget.RequireData(reader, list_offset, 4ULL + 4ULL * count, true);
+            const auto& prototype = image.prototypes[image.methods[method_index].prototype_index];
+            if (count != prototype.parameter_type_indices.size())
+                Fail(DexErrorReason::invalid_range, list_offset, "parameter annotation arity mismatch");
+            auto& parameters = image.method_annotation_metadata[method_index].parameters;
+            budget.Reserve(parameters, count, list_offset); parameters.resize(count);
             for (std::uint32_t parameter = 0; parameter < count; ++parameter) {
                 budget.Work(1U, list_offset);
                 for (const auto* cached : annotations.Set(reader.U32(
                          static_cast<std::size_t>(list_offset) + 4U +
                          static_cast<std::size_t>(parameter) * 4U))) {
                     budget.Work(1U, cached->offset);
+                    if (cached->annotation.visibility == DexAnnotationVisibility::runtime) {
+                        annotations.CopyPayload(*cached); budget.Grow(parameters[parameter], cached->offset);
+                        parameters[parameter].push_back(cached->annotation);
+                    }
                 }
             }
         }

@@ -341,6 +341,60 @@ VMRuntime 的利用率、growth limit、native allocation 记账共用 JavaObjec
   既有退出失败仍为 Tales 读 0x315f0001、Dead Trigger 清理超预算、PVZ stopService；
   比较证据 `.local/analysis/wu7-4/scenarios-comparison.json`，非正式 title gate。
 
+## WU7-5 · 反射、注解与泛型（2026-10-21）
+
+### 实现与边界
+
+- DEX 保留 method/parameter runtime-visible encoded value，class/field/method 的 system
+  Signature 受检拼接字符串片段；复制、参数矩阵与拼接均计入现有工作/存储预算。增加新的
+  method/parameter 拥有型投影后，存储的随输入系数由 256 调整为 384，固定 256 MiB 上限、
+  深度/单项/工作量限制不变；共享注解大数组回归验证 class/field/method 副本互不影响。
+- Method、Constructor 的 getAnnotation/getAnnotations/getDeclaredAnnotations/isAnnotationPresent
+  及参数二维数组统一委托 AnnotationRuntime；不继承方法注解，每次返回独立数组。
+  Field 继续复用同一运行时。按原版 AnnotationAccess/Annotation.cpp 跳过无法加载的注解类型，
+  注解成员自身的缺失类型/枚举和类型不匹配异常仍保真。补 Class.isAnnotation；注解文本的
+  byte/char、浮点、Class/enum 对象使用 Java 值与原版浮点/toString 协议，不用宿主格式猜测。
+- 泛型统一执行固定 ROM 的 GenericSignatureParser、Types 与 Type 实现，覆盖 Class 的
+  superclass/interfaces/type parameters、Field type、Method return/parameter/exception/type
+  parameters 与 Constructor parameter/exception/type parameters。无签名回退原始类型；
+  支持变量作用域、边界、通配符、泛型数组与精确格式/缺失类型异常。不另写宿主签名解析器，
+  不缓存 guest Type 引用。TypeVariableImpl 的 enclosing declaration 复用受检系统元数据。
+- Field.isEnumConstant 读取 ACC_ENUM；Class.getClasses 按原版 Class.java 沿超类聚合
+  class_def 为 public 的成员（protected 内部类的 class_def 也可能为 public，不能按 InnerClass
+  flags 误滤）。AccessibleObject/Field/Method/Constructor 的包内 signature getter 保留原版虚派。
+- 通用 Proxy 拆为 [DVM-259](../dexvm/DVM-259.md)：需要独立的 loader/接口集合身份、方法
+  合并、协变返回、声明异常交集、InvocationHandler 分派及 GC 回归，不能直接套用单接口的
+  注解合成类。本次保持明确失败，未生成字节码文件或伪造代理成功。
+
+### 用例结论（两后端一致）
+
+| 用例 | 结果 | 第一处差异 / 剩余缺口 | ledger |
+| --- | --- | --- | --- |
+| 004-annotations | fail:output | 第 92 行只有实现类名差异：oracle `class $Proxy13`，实际 `class java.lang.annotation.$Impl$14`；其余输出逐字节一致。注解 API 已走通，实现类统一留给 DVM-259 | 空 |
+| 031-class-attributes | fail:output | 第 17 行 oracle `genericSignature: null`，实际 `<unknown>`。固定 API19 Class.smali 与 4.4 Class.java 没有测试反射查找的私有 Class.getSignatureAttribute；泛型公共 API 已正确执行到底。其余差异是成员列表次序及匿名类 modifier 8→0；当前 DEX InnerClass.accessFlags=0，保留产物事实。不擅自把 031 排除或添加虚构私有 API | 空 |
+| 035-enum | pass | isEnumConstant 已按真实 flag 返回 | 空 |
+| 044-proxy | fail:unimplemented | Proxy.generateProxy，拆为 DVM-259 | `dexvm.intrinsic.Ljava/lang/reflect/Proxy;.generateProxy(Ljava/lang/String;[Ljava/lang/Class;Ljava/lang/ClassLoader;)Ljava/lang/Class;` |
+| 046-reflect | pass | 泛型 Field、Method、Constructor 查询全部逐字节一致 | 空 |
+| 085-old-style-inner-class | excluded:oracle | 原 build `-source 1.4`；当前 JDK17/1.7 的 Main$1 有 EnclosingClass(Main)+InnerClass，Main$2 有 EnclosingMethod(create)+InnerClass。oracle 的全 null 不适用于该产物，VM 答案保持不变 | 不执行 |
+
+取证 `.local/analysis/wu7-5/{085-smali,031-smali}/`、`004-annotations-diff.txt`、
+`031-class-attributes-diff.txt`、`metadata-proof.json`（机器核对仅上述差异）；最终定向报告 `target5/`。031 未改源码、oracle 或分类，085
+按既有固定 ORACLE_DIVERGENCE 机制登记，self-test 继续拒绝表外 pass 回退。
+
+### 验证
+
+- 仅构建 ogplay-cli、ogplay_tests。反射/DEX/catalog/intrinsic contract 主题 71/71、4426 断言
+  通过（`tests-verified.log`）；新双后端回归覆盖注解防御性数组、参数空槽、默认值、null、
+  泛型变量/边界/通配符/数组、原始类型回退、签名格式与缺失类型异常。
+- BootDex build/check 与 payload 通过；未改 guest JNI 源码。BootDex builder、payload、
+  dalvik probe self-test 3/3 通过（`boot-{build,check}.log`、`tool-tests.log`）。
+- 最终全量 --check-baseline 退出 0：0 回归、4 个后端新增 pass，035/046 通过；
+  各 84/91（92.3%，原 82/92），分母因 085 排除减一。004/031 从未实现转为 output 差异；
+  除 085 外不新增排除、不改 oracle 或源码。随后 --update-baseline，报告
+  `.local/analysis/wu7-5/{full-final,baseline-updated}/`。更新轮同样退出 0、零回归，
+  分类与最终检查完全一致，基线已写入。
+  按任务要求未跑游戏场景。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

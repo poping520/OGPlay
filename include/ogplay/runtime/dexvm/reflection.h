@@ -15,6 +15,8 @@ namespace ogplay::runtime::dexvm {
 class Interpreter;
 class ReflectionCodec;
 
+[[nodiscard]] VmObjectRef ReflectGenericType(Interpreter& vm, VmObjectRef declaration, std::string_view query);
+
 struct ReflectMethodMeta final {
     std::uint32_t slot{};
     VmMethodId method;

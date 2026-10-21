@@ -1,0 +1,44 @@
+.class public Lgeneric/Box;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Comparable;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"<T:", string:"Ljava/lang/Number;>Ljava/lang/Object;Ljava/lang/Comparable<TT;>;"}
+.end-annotation
+.field public value:Ljava/lang/Number;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"TT;"}
+.end-annotation
+.field public values:Ljava/util/List;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"Ljava/util/List<+TT;>;"}
+.end-annotation
+.field public array:[Ljava/lang/Number;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"[TT;"}
+.end-annotation
+.field public raw:I
+.field public static enum constant:Lgeneric/Box;
+.method public compareTo(Ljava/lang/Object;)I
+.registers 3
+const/4 v0, 0
+return v0
+.end method
+.method public transform(Ljava/lang/Number;)Ljava/util/List;
+.registers 2
+const/4 v0, 0
+return-object v0
+.end method
+
+.class public Lgeneric/Bad;
+.super Ljava/lang/Object;
+.field public value:Ljava/lang/Object;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"!"}
+.end-annotation
+
+.class public Lgeneric/Missing;
+.super Ljava/lang/Object;
+.field public value:Ljava/lang/Object;
+.system-annotation Ldalvik/annotation/Signature;
+.element value array:{string:"Lgeneric/Absent;"}
+.end-annotation

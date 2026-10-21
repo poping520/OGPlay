@@ -221,10 +221,14 @@ struct LinkedField final {
     bool is_wide{};
     bool is_ref{};
     std::uint16_t slot{};
+    std::optional<std::u16string> generic_signature;
     std::vector<LinkedAnnotation> runtime_annotations;
 };
 
 struct LinkedMethod final {
+    std::optional<std::u16string> generic_signature;
+    std::vector<LinkedAnnotation> runtime_annotations;
+    std::vector<std::vector<LinkedAnnotation>> parameter_annotations;
     VmMethodId id;
     DexClassId owner;
     std::string name;
@@ -299,6 +303,7 @@ struct LinkedClass final {
     std::optional<DexUnitId> dex_unit;
     bool is_annotation_implementation{};
     std::optional<DexClassId> annotation_interface;
+    std::optional<std::u16string> generic_signature;
     std::vector<LinkedAnnotation> runtime_annotations;
     std::vector<std::pair<std::string, LinkedAnnotationValue>>
         annotation_defaults;

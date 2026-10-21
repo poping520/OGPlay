@@ -12,8 +12,8 @@
     "threaded": "pass"
   },
   "004-annotations": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "fail:output",
+    "threaded": "fail:output"
   },
   "005-args": {
     "switch": "pass",
@@ -120,8 +120,8 @@
     "threaded": "pass"
   },
   "031-class-attributes": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "fail:output",
+    "threaded": "fail:output"
   },
   "032-concrete-sub": {
     "switch": "pass",
@@ -136,8 +136,8 @@
     "threaded": "pass"
   },
   "035-enum": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "036-finalizer": {
     "switch": "pass",
@@ -180,8 +180,8 @@
     "threaded": "pass"
   },
   "046-reflect": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "047-returns": {
     "switch": "pass",
@@ -328,8 +328,8 @@
     "threaded": "pass"
   },
   "085-old-style-inner-class": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "excluded:oracle",
+    "threaded": "excluded:oracle"
   },
   "086-null-super": {
     "switch": "fail:unimplemented",

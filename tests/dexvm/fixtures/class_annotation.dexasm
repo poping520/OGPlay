@@ -141,3 +141,14 @@
 .runtime-annotation Lann/MissingEnum;
 .element policy enum:Ljava/lang/annotation/RetentionPolicy;.NOPE:Ljava/lang/annotation/RetentionPolicy;
 .end-annotation
+
+.class public Lann/Executable;
+.super Ljava/lang/Object;
+.method public constructor <init>(I)V
+.registers 2
+return-void
+.end method
+.method public accept(ILjava/lang/Object;)V
+.registers 3
+return-void
+.end method

@@ -57,6 +57,9 @@ EXCLUDED = {
 
 # Fixed oracle mismatches against the target Dalvik 4.4 device semantics.
 ORACLE_DIVERGENCE = {
+    "085-old-style-inner-class": (
+        "excluded:oracle",
+        "原 build 使用 -source 1.4；当前 JDK17/1.7 产物 Main$1 有 EnclosingClass(Main)+InnerClass，Main$2 有 EnclosingMethod(create)+InnerClass；oracle 期望全 null 不适用于该产物"),
     "300-package-override": (
         "excluded:oracle",
         "expected.txt 对应 4.4 之后的修复；4.4 的 createVtable 因 b/7301030 有意允许（vm/oo/Class.cpp:2919）"),
@@ -341,8 +344,10 @@ def self_test() -> None:
         assert check_baseline(path, merged, subset, ("switch",), ["b"]) == 0
     from types import SimpleNamespace
     assert not (set(EXCLUDED) & set(ORACLE_DIVERGENCE))
-    assert all(kind == "excluded:oracle" and "vm/oo/Class.cpp:2919" in reason
+    assert all(kind == "excluded:oracle" and reason
                for kind, reason in ORACLE_DIVERGENCE.values())
+    assert "vm/oo/Class.cpp:2919" in ORACLE_DIVERGENCE["300-package-override"][1]
+    assert "-source 1.4" in ORACLE_DIVERGENCE["085-old-style-inner-class"][1]
     oracle_test = "300-package-override"
     oracle_results = run_test(oracle_test, SimpleNamespace(backends=BACKENDS), None)
     assert all(r.outcome == "excluded:oracle" and "b/7301030" in r.detail for r in oracle_results)

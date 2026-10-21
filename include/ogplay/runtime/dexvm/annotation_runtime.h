@@ -34,6 +34,10 @@ public:
         VmFieldId field, VmObjectRef annotation_class);
     [[nodiscard]] VmObjectRef GetFieldAnnotations(VmFieldId field);
 
+    [[nodiscard]] VmObjectRef GetMethodAnnotation(VmMethodId method, VmObjectRef annotation_class);
+    [[nodiscard]] VmObjectRef GetMethodAnnotations(VmMethodId method);
+    [[nodiscard]] VmObjectRef GetParameterAnnotations(VmMethodId method);
+
     [[nodiscard]] VmObjectRef GetDefaultValue(VmMethodId method);
 
     [[nodiscard]] VmValue ReadMember(VmObjectRef instance, std::size_t index);
@@ -64,6 +68,7 @@ private:
     [[nodiscard]] DexClassId RequireAnnotationClass(VmObjectRef class_object);
     [[nodiscard]] DexClassId EnsureImplClass(DexClassId annotation_type);
     [[nodiscard]] VmObjectRef Materialize(const LinkedAnnotation& annotation);
+    [[nodiscard]] VmObjectRef MaterializeAnnotations(const std::vector<LinkedAnnotation>& annotations);
     [[nodiscard]] VmObjectRef EmptyAnnotationArray();
     [[nodiscard]] VmObjectRef MakeAnnotationArray(
         const std::vector<VmObjectRef>& values);

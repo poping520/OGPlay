@@ -1,3 +1,4 @@
+#include <tuple>
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
@@ -1057,6 +1058,25 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         CHECK(read(invoke(cipher, "doFinal", "([B)[B",
                           {VmValue::Ref(bytes("00112233445566778899aabbccddeeff"))})
                        .ref) == read(bytes("69c4e0d86a7b0430d8cdb78070b4c55a")));
+        // String.foldCase is lower(upper(char)), rather than a full string
+        // conversion: sharp-s must not expand, and Turkish I/final sigma fold.
+        for (const auto& [left, right, matches] :
+             std::vector<std::tuple<std::u16string, std::u16string, bool>>{
+                 {u"\u00c4", u"\u00e4", true}, {u"\u0130", u"i", true},
+                 {u"\u0131", u"I", true}, {u"\u03c2", u"\u03c3", true},
+                 {u"\u212a", u"k", true}, {u"\u00df", u"s", false},
+                 {std::u16string(1, char16_t{0xd800}), std::u16string(1, char16_t{0xd801}), false}}) {
+            const auto a = vm.Model().NewString(left);
+            const auto b = vm.Model().NewString(right);
+            const auto roots = vm.ProtectReferences(std::array{a, b});
+            CHECK(invoke(a, "regionMatches", "(ZILjava/lang/String;II)Z",
+                {VmValue::Int(1), VmValue::Int(0), VmValue::Ref(b),
+                 VmValue::Int(0), VmValue::Int(1)}).AsInt() == matches);
+        }
+        CHECK(direct("Ljava/lang/Character;", "toUpperCase", "(I)I",
+                     {VmValue::Int(0x10428)}).AsInt() == 0x10400);
+        CHECK(direct("Ljava/lang/Character;", "toLowerCase", "(I)I",
+                     {VmValue::Int(0x10400)}).AsInt() == 0x10428);
         const auto iso = direct("Llibcore/icu/ICU;", "getISOLanguagesNative",
                                 "()[Ljava/lang/String;", {}).ref;
         CHECK(vm.Model().ArrayLength(iso) == 559);

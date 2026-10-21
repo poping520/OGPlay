@@ -140,6 +140,27 @@ TEST_CASE("dexvm arrays and implicit exceptions") {
     });
 }
 
+TEST_CASE("dexvm aput-object rejects incompatible values before changing the element") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm vm(config);
+        const auto string = vm.linker.ResolveDescriptor("Ljava/lang/String;");
+        const auto array = vm.model.NewObjectArray(vm.linker.ResolveDescriptor("[Ljava/lang/String;"), string, 1);
+        const auto text = vm.model.NewString(u"keep");
+        const auto bad = vm.interpreter.NewIntrinsicInstance("Ljava/lang/Object;");
+        vm.model.SetObjectElement(array, 0, text);
+        const auto put = [&](VmObjectRef value, VmObjectRef target, int index) {
+            return vm.CallStatic("LArrayStoreProbe;", "put", "(Ljava/lang/Object;[Ljava/lang/String;I)V",
+                {VmValue::Ref(value), VmValue::Ref(target), VmValue::Int(index)});
+        };
+        ExpectException(vm, put(bad, array, 0), "Ljava/lang/ArrayStoreException;");
+        CHECK(vm.model.GetObjectElement(array, 0) == text);
+        ExpectException(vm, put(bad, VmObjectRef{}, 0), "Ljava/lang/NullPointerException;");
+        ExpectException(vm, put(bad, array, -1), "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        CHECK_FALSE(put(VmObjectRef{}, array, 0).exception.IsValid());
+        CHECK_FALSE(vm.model.GetObjectElement(array, 0).IsValid());
+    });
+}
+
 TEST_CASE("dexvm objects, fields and dispatch") {
     WithEachBackend([](InterpreterConfig config) {
     Vm vm(config);

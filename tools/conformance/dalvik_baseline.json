@@ -8,8 +8,8 @@
     "threaded": "pass"
   },
   "003-omnibus-opcodes": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "fail:output",
+    "threaded": "fail:output"
   },
   "004-annotations": {
     "switch": "fail:crash",
@@ -40,8 +40,8 @@
     "threaded": "pass"
   },
   "011-array-copy": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "012-math": {
     "switch": "pass",
@@ -144,8 +144,8 @@
     "threaded": "fail:unimplemented"
   },
   "037-inherit": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "038-inner-null": {
     "switch": "pass",
@@ -216,8 +216,8 @@
     "threaded": "fail:output"
   },
   "055-enum-performance": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "056-const-string-jumbo": {
     "switch": "pass",
@@ -320,8 +320,8 @@
     "threaded": "pass"
   },
   "083-jit-regressions": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "084-class-init": {
     "switch": "pass",

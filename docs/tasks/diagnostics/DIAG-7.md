@@ -89,6 +89,44 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 - Scenario validator（9 文件）、`capabilities.py check`、`git diff --check` 通过；
   CURRENT 更新 Angry Birds 到达点及探针通过率。
 
+## WU7-2 · 数组存储与 core 字符串语义（2026-10-21）
+
+- 按局部行为修复处理；未改链接器、分类器、排除表或游戏逻辑，未跑游戏场景。
+- 数组：两后端的 aput-object 原已有兼容性检查，本次去掉未知 value class 可跳过检查的条件，
+  并补双后端 ASE/不写入、null、越界优先级回归。011/083 的实际根因是 System.arraycopy
+  引用路径直接写入：现按 Dalvik `java_lang_System.cpp` 逐元素校验，首个不兼容元素前
+  的前缀保留后抛 ASE，重叠拷贝仍安全；非数组先抛 ASE，再检查范围。
+- 浮点：String.valueOf(float/double) 的 std::to_string 产生六位定点尾数；
+  Float/Double.toString 原另用宿主 to_chars 近似。两者及实例 toString 现统一委托 pinned
+  BootDex RealToString，与原版 StringBuilder/StringBuffer.append 使用同一算法、ThreadLocal
+  和既有 native digit generator。测试夹具按该依赖挂载 VmThreadRuntime。
+- String.regionMatches：原有普通重载，缺 boolean 重载；现共享 libdvm String.java 的
+  null/范围/非正 length 规则，逐 UTF-16 char 比较。忽略大小写采用 lower(upper(char))，
+  Character 的 ASCII 快路保持原版阈值，其余通过原版 toLowerCaseImpl/toUpperCaseImpl
+  接入 guest ICU51 u_tolower/u_toupper，不使用宿主 locale 或整串大小写映射。
+- Enum：valueOf 及 Enum.name/toString 正常；String.valueOf(Object) 原直接返回 `@句柄`，
+  现在 null 返回 "null"，其余虚派实际对象 toString 并保留异常，常量子类覆盖也生效；
+  根因不在链接器/vtable。
+- 目标五例双后端：011、083、037、055 均 pass；003 从 fail:unimplemented 变为 fail:output，
+  ledger 为空。当前停于 Classes.checkCast：CCE 消息为 `LClasses; cannot be cast to LMoreClasses;`，
+  原版断言要求消息前七字是 `Classes`，故 regionMatches(false,...) 正确返回 false 后断言失败。
+  双后端独立取证 `.local/analysis/wu7-2/cast-probe/`；未扩修异常消息。
+- 定向 C++：interpreter/core_catalog/intrinsics_p1 的相关 59 例、3237 断言通过；
+  `-tce` 排除两项未改逻辑的结构检查：catalog 旧未实现白名单缺 BaseDexClassLoader /
+  ProxySelector / Posix 等项、APK Support 测试期待已由 skeleton 提供的 Activity 不存在。
+  初跑详情保留 `.local/analysis/wu7-2-tests.log`，最终相关结果 `wu7-2-tests-final.log`；
+  未用这些结构检查的失败替代本次行为验证，也未顺带维护其无关断言。
+- Unicode/guest native：在现有 guest crypto/ICU 主题补双后端 regionMatches 回归，覆盖
+  土耳其 I、final sigma、Kelvin、ß 不展开、surrogate 与 supplementary Character 简单映射；
+  该测试 1 例、3386 断言通过（`wu7-2-unicode-tests.log`）。复用 builder 原版转换检查
+  1 例、1176 断言通过（`wu7-2-builder-tests.log`）。
+- 只构建 ogplay_tests、ogplay-cli 及受影响的统一 guest JNI；guest 库两次独立构建一致，
+  已更新库及 manifest；Android payload 校验通过（`wu7-2-guest-build.log`、`wu7-2-payload.log`）。
+- 全量 `--check-baseline` 退出 0：0 回归、8 个后端结果新增 pass，003 双后端仅分类变化；
+  switch/threaded 各 58/93（62.4%）。随后对上述五例执行 `--update-baseline`，无回归才
+  合并写入，保留其余项；日志 `.local/analysis/wu7-2-{target,full,update}.log`。
+- capabilities check、diff check 通过；更新受影响 MODULE 的语义边界与 CURRENT 通过率。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

@@ -58,8 +58,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
                     const auto element_class =
                         model->ObjectArrayElementClass(array);
                     const auto value_class = model->ObjectClass(value);
-                    if (value_class.IsValid() &&
-                        !linker->IsAssignable(element_class, value_class)) {
+                    if (!linker->IsAssignable(element_class, value_class)) {
                         ThrowJava("Ljava/lang/ArrayStoreException;",
                                   linker->Class(value_class).descriptor);
                         return;

@@ -1573,3 +1573,11 @@
     const/4 v0, 3
     return v0
 .end method
+
+.class public LArrayStoreProbe;
+.super Ljava/lang/Object;
+.method public static put(Ljava/lang/Object;[Ljava/lang/String;I)V
+.registers 3
+    aput-object v0, v1, v2
+    return-void
+.end method

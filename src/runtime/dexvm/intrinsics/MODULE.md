@@ -27,6 +27,13 @@
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
   scratch 为有界局部值，digits/digitCount/firstK 用绑定字段。Character 现有 wrapper 边界补齐
   五个 UTF-16 array 原语，无 builder 状态；详见 DVM-151 / ADR-0057。
+- String.valueOf(float/double) 与 Float/Double.toString（含实例方法）统一执行 BootDex
+  RealToString，复用原版 ThreadLocal 实例与 digit generator；不再用宿主定点格式化。
+  String.valueOf(Object) 对非 null 对象虚派 toString，保留返回值与异常。
+  regionMatches 两重载按 UTF-16 单元与 libcore 边界规则比较；忽略大小写用
+  Character.toLowerCase(toUpperCase(char))，Unicode 简单映射交 guest ICU51，非整串 case folding。
+- System.arraycopy 先校验数组与范围；引用拷贝保持重叠安全并逐元素检查赋值兼容性，
+  首个不兼容元素前的前缀保留，随后抛 ArrayStoreException。
 - Math 普通方法/常量/random 归 BootDex，仅保留 24 个 libm native；不宣称 fdlibm 逐位一致。
   Throwable/StackTraceElement/异常家族归 BootDex，仅保留两个栈 native；消息虚派、原异常
   身份、cause/suppressed 与输出格式归 Java。PrintStream 来自 BootDex，保存实际 OutputStream

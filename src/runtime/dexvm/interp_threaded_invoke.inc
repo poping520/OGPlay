@@ -79,6 +79,9 @@
         large_storage.resize(invoke.registers.size());
         argument_storage = large_storage.data();
     }
+    // A new invoke invalidates the previous result before any nested GC.
+    frame.last_result = VmValue::Void();
+    execution.exit_result = VmValue::Void();
     std::size_t argument_count{};
     std::size_t register_cursor{};
     VmObjectRef receiver;
@@ -209,7 +212,7 @@
             OGPLAY_SYNC_EXECUTION();
             try {
                 frame.last_result =
-                    bridge->Invoke(linker->Method(target_id), receiver, rest);
+                    InvokeNativeWithResources(linker->Method(target_id), receiver, rest);
                 ticks = execution.ticks;
                 OGPLAY_RECORD_TRACE(DexVmTraceKind::native_exit, execution,
                                     &linker->Method(target_id), frame.pc);

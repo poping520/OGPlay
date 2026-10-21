@@ -1060,6 +1060,7 @@ Interpreter::Interpreter(DexClassLinker& linker, JavaObjectModel& model,
     impl_->unsafe = std::make_unique<UnsafeRuntime>(*this);
     impl_->annotations = std::make_unique<AnnotationRuntime>(*this);
     RegisterIntrinsicStateTable(impl_->annotations->Hooks());
+    model.SetInstanceAllocationObserver([this](VmObjectRef object) { RegisterFinalizable(object); });
 }
 
 BigIntRuntime& Interpreter::BigInts() { return impl_->big_ints; }
@@ -1086,6 +1087,7 @@ ZipRuntime& Interpreter::ZIP() { return impl_->zip; }
 const ZipRuntime& Interpreter::ZIP() const { return impl_->zip; }
 
 Interpreter::~Interpreter() {
+    impl_->model->SetInstanceAllocationObserver({});
     if (impl_->nio_runtime != &impl_->nio) {
         impl_->nio_runtime->SweepDomain(JniObjectDomain::dex_vm);
         impl_->nio_runtime->SetObjectModel(nullptr);
@@ -1244,7 +1246,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             impl_->RecordTrace(DexVmTraceKind::method_enter, execution,
                                &impl_->linker->Method(method_id));
             try {
-                outcome.value = impl_->bridge->Invoke(
+                outcome.value = impl_->InvokeNativeWithResources(
                     impl_->linker->Method(method_id), receiver, rest);
                 impl_->RecordTrace(DexVmTraceKind::native_exit, execution,
                                    &impl_->linker->Method(method_id));

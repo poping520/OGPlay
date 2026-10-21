@@ -37,6 +37,7 @@ namespace {
 struct VmThreadRecord final {
     std::uint64_t id{};
     VmObjectRef object;
+    JniObjectIdentity object_identity;
     VmMethodId run_method;
     VmThreadRuntime::UncaughtExceptionDispatcher uncaught_dispatcher;
     std::string name;
@@ -58,6 +59,7 @@ public:
     mutable std::mutex mutex;
     std::condition_variable changed;
     std::unordered_map<std::uint32_t, std::unique_ptr<VmThreadRecord>> records;
+    std::vector<std::unique_ptr<VmThreadRecord>> retired_records;
     struct NativeContext final { InterpreterExecutionContext context; bool daemon; };
     std::unordered_map<std::uint64_t, NativeContext> native_contexts;
     VmObjectRef root_object;
@@ -71,7 +73,8 @@ public:
 
     [[nodiscard]] VmThreadRecord* Find(const VmObjectRef object) const {
         const auto found = records.find(object.Value());
-        return found == records.end() ? nullptr : found->second.get();
+        return found == records.end() || vm->Model().FindIdentity(found->second->object_identity) != object
+            ? nullptr : found->second.get();
     }
 
     [[nodiscard]] std::string NameOf(const VmThreadRecord* record) const {
@@ -298,6 +301,7 @@ std::uint64_t VmThreadRuntime::SetNativeThreadObject(
     auto record = std::make_unique<VmThreadRecord>();
     record->id = impl_->next_id++;
     record->object = object;
+    record->object_identity = impl_->vm->Model().ToIdentity(object);
     record->context = found->second.context;
     record->status = VmThreadStatus::running;
     record->name = "Thread-" + std::to_string(record->id);
@@ -354,7 +358,17 @@ void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name,
     }
     auto created = std::make_unique<VmThreadRecord>();
     created->id = thread_id;
+    // A swept Thread handle can be reused, while its joined host tombstone
+    // still exists. Keep that record for teardown without claiming the new
+    // Java identity or destroying its host-thread wrapper under the VM lock.
+    if (const auto stale = impl_->records.find(thread_object.Value()); stale != impl_->records.end()) {
+        if (stale->second->status == VmThreadStatus::created || stale->second->status == VmThreadStatus::running)
+            throw DexVmError(DexVmErrorReason::internal_invariant, "live Thread identity was recycled");
+        impl_->retired_records.push_back(std::move(stale->second));
+        impl_->records.erase(stale);
+    }
     created->object = thread_object;
+    created->object_identity = impl_->vm->Model().ToIdentity(thread_object);
     created->run_method = run_method;
     created->uncaught_dispatcher = std::move(uncaught_dispatcher);
     created->name = name.empty() ? "Thread-" + std::to_string(created->id)
@@ -799,6 +813,9 @@ void VmThreadRuntime::Shutdown() {
         for (const auto& [_, native] : impl_->native_contexts)
             impl_->vm->RequestStop(native.context);
         for (const auto& [_, record] : impl_->records) {
+            if (record->host) live.push_back(record.get());
+        }
+        for (const auto& record : impl_->retired_records) {
             if (record->host) live.push_back(record.get());
         }
     }

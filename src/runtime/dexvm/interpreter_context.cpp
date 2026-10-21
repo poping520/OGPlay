@@ -613,42 +613,57 @@ GcMarkResult Interpreter::MarkReachable(const bool clear_soft_references) {
         });
 }
 
-GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
-    VmExecutionLockScope lock_scope(impl_->execution_lock);
-    impl_->QueueFieldNativeResources(&mark);
+void Interpreter::Impl::ProcessReferences(const GcMarkResult& mark, const bool phantom, const bool finalizers) {
     // The collector holds VmExecutionLock: publish cleared weak referents and
     // queue links without entering guest code or parking on a guest monitor.
-    const auto reference = impl_->linker->FindClass("Ljava/lang/ref/Reference;");
-    const auto queue_class = impl_->linker->FindClass("Ljava/lang/ref/ReferenceQueue;");
+    const auto phantom_class = linker->FindClass("Ljava/lang/ref/PhantomReference;");
+    const auto finalizer_class = linker->FindClass("Ljava/lang/ref/FinalizerReference;");
+    const auto reference = linker->FindClass("Ljava/lang/ref/Reference;");
+    const auto queue_class = linker->FindClass("Ljava/lang/ref/ReferenceQueue;");
     if (reference && queue_class) {
-        const auto referent = impl_->linker->FindFieldRecursive(*reference, "referent", "Ljava/lang/Object;");
-        const auto queue = impl_->linker->FindFieldRecursive(*reference, "queue", "Ljava/lang/ref/ReferenceQueue;");
-        const auto next = impl_->linker->FindFieldRecursive(*reference, "queueNext", "Ljava/lang/ref/Reference;");
-        const auto head = impl_->linker->FindFieldRecursive(*queue_class, "head", "Ljava/lang/ref/Reference;");
+        const auto referent = linker->FindFieldRecursive(*reference, "referent", "Ljava/lang/Object;");
+        const auto queue = linker->FindFieldRecursive(*reference, "queue", "Ljava/lang/ref/ReferenceQueue;");
+        const auto next = linker->FindFieldRecursive(*reference, "queueNext", "Ljava/lang/ref/Reference;");
+        const auto head = linker->FindFieldRecursive(*queue_class, "head", "Ljava/lang/ref/Reference;");
         if (referent) {
             for (std::size_t i = 0; i < mark.marked.size(); ++i) {
                 if (!mark.marked[i]) continue;
                 const auto owner = VmObjectRef(static_cast<std::uint32_t>(i + 1));
-                const auto owner_class = impl_->model->ObjectClass(owner);
-                if (!owner_class.IsValid() || !impl_->linker->IsAssignable(*reference, owner_class)) continue;
-                auto slots = impl_->model->InstanceSlots(owner);
-                auto& target = slots[impl_->linker->Field(*referent).slot];
+                const auto owner_class = model->ObjectClass(owner);
+                if (!owner_class.IsValid() || !linker->IsAssignable(*reference, owner_class)) continue;
+                const bool is_finalizer = finalizer_class && linker->IsAssignable(*finalizer_class, owner_class);
+                const bool is_phantom = phantom_class && linker->IsAssignable(*phantom_class, owner_class);
+                if (is_finalizer != finalizers || (!finalizers && is_phantom != phantom)) continue;
+                auto slots = model->InstanceSlots(owner);
+                auto& target = slots[linker->Field(*referent).slot];
                 if (target.bits == 0 || mark.IsMarked(VmObjectRef(target.bits))) continue;
+                if (is_finalizer) {
+                    const auto zombie = linker->FindFieldRecursive(*finalizer_class, "zombie", "Ljava/lang/Object;");
+                    if (!zombie) throw DexVmError(DexVmErrorReason::unresolved_reference, "finalizer zombie field");
+                    slots[linker->Field(*zombie).slot] = target;
+                }
                 target = {0, SlotTag::ref};
                 // Clearing an unqueued WeakReference must not depend on the
                 // lazy ReferenceQueue class having materialized its fields.
                 if (!queue || !next || !head) continue;
-                const auto queue_ref = VmObjectRef(slots[impl_->linker->Field(*queue).slot].bits);
-                auto& next_slot = slots[impl_->linker->Field(*next).slot];
+                const auto queue_ref = VmObjectRef(slots[linker->Field(*queue).slot].bits);
+                auto& next_slot = slots[linker->Field(*next).slot];
                 if (!queue_ref.IsValid() || next_slot.bits != 0) continue;
-                auto& queue_head = impl_->model->InstanceSlots(queue_ref)[impl_->linker->Field(*head).slot];
+                auto& queue_head = model->InstanceSlots(queue_ref)[linker->Field(*head).slot];
                 next_slot = {queue_head.bits == 0 ? owner.Value() : queue_head.bits, SlotTag::ref};
                 queue_head = {owner.Value(), SlotTag::ref};
-                slots[impl_->linker->Field(*queue).slot] = {0, SlotTag::ref};
-                impl_->monitors->NotifyForGc(queue_ref);
+                slots[linker->Field(*queue).slot] = {0, SlotTag::ref};
+                monitors->NotifyForGc(queue_ref);
             }
         }
     }
+}
+
+GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    impl_->QueueFieldNativeResources(&mark);
+    impl_->ProcessReferences(mark, false, false);
+    impl_->ProcessReferences(mark, true, false);
     return impl_->model->Sweep(
         mark,
         GcSweepHooks{
@@ -675,6 +690,80 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
                     impl_->gc_integration.clear_weak_references(identity);
                 }
             }});
+}
+
+VmValue Interpreter::Impl::InvokeNativeWithResources(const LinkedMethod& method,
+        const VmObjectRef receiver, const std::span<const VmValue> arguments) {
+    struct ClosingField { VmObjectRef object; VmFieldId field; std::int64_t invalid; };
+    std::vector<ClosingField> closing;
+    std::vector<VmObjectRef> roots;
+    const auto token = arguments.size() == 1 && arguments[0].kind == VmValue::Kind::wide
+        ? arguments[0].AsLong() : 0;
+    if (token != 0) for (const auto& rule : guest_native_resource_fields) {
+        if (rule.cleanup != method.id) continue;
+        const auto& field = linker->Field(rule.field);
+        model->VisitLiveObjects([&](VmObjectRef object) {
+            if (model->Kind(object) != VmObjectKind::vm_instance ||
+                !linker->IsAssignable(field.owner, model->ObjectClass(object))) return;
+            auto slots = model->InstanceSlots(object);
+            const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
+                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+            if (stored != token) return;
+            closing.push_back({object, rule.field, rule.invalid_token});
+            roots.push_back(object);
+            const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
+            slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
+            slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
+        });
+    }
+    // Claim the peer under the VM lock, before guest JNI releases that lock.
+    // A concurrent GC/finalizer must not schedule the same close again.
+    const auto closing_roots = owner->ProtectReferences(roots);
+    try {
+        const auto result = bridge->Invoke(method, receiver, arguments);
+        RetireClosedNativeResource(method.id, arguments);
+        return result;
+    } catch (...) {
+        for (const auto& entry : closing) {
+            auto slots = model->InstanceSlots(entry.object);
+            const auto slot = linker->Field(entry.field).slot;
+            const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[slot].bits) |
+                (std::uint64_t(slots[slot + 1].bits) << 32U));
+            if (stored != entry.invalid) continue;
+            const auto original = std::bit_cast<std::uint64_t>(token);
+            slots[slot].bits = static_cast<std::uint32_t>(original);
+            slots[slot + 1].bits = static_cast<std::uint32_t>(original >> 32U);
+        }
+        throw;
+    }
+}
+
+void Interpreter::Impl::RetireClosedNativeResource(const VmMethodId cleanup,
+                                                   const std::span<const VmValue> arguments) {
+    if (arguments.size() != 1 || arguments[0].kind != VmValue::Kind::wide) return;
+    const auto token = arguments[0].AsLong();
+    if (token == 0) return;
+    for (const auto& rule : guest_native_resource_fields) {
+        if (rule.cleanup != cleanup) continue;
+        const auto& field = linker->Field(rule.field);
+        model->VisitLiveObjects([&](VmObjectRef object) {
+            if (model->Kind(object) != VmObjectKind::vm_instance ||
+                !linker->IsAssignable(field.owner, model->ObjectClass(object))) return;
+            auto slots = model->InstanceSlots(object);
+            const auto stored = std::bit_cast<std::int64_t>(std::uint64_t(slots[field.slot].bits) |
+                (std::uint64_t(slots[field.slot + 1].bits) << 32U));
+            if (stored != token) return;
+            const auto invalid = std::bit_cast<std::uint64_t>(rule.invalid_token);
+            slots[field.slot].bits = static_cast<std::uint32_t>(invalid);
+            slots[field.slot + 1].bits = static_cast<std::uint32_t>(invalid >> 32U);
+        });
+    }
+    std::erase_if(guest_native_resources, [&](const auto& item) {
+        return item.second.cleanup == cleanup && item.second.token == token;
+    });
+    std::erase_if(pending_guest_cleanup, [&](const auto& item) {
+        return item.cleanup == cleanup && item.token == token;
+    });
 }
 
 void Interpreter::TrackGuestNativeResourceField(VmFieldId field_id, VmMethodId cleanup,
@@ -805,12 +894,116 @@ void Interpreter::ReleaseGuestNativeResources(const bool all) {
     }
 }
 
+void Interpreter::RegisterFinalizable(const VmObjectRef object) {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    const auto type = impl_->model->ObjectClass(object);
+    const auto reference = impl_->linker->FindClass("Ljava/lang/ref/FinalizerReference;");
+    if (!reference || !impl_->linker->Class(*reference).is_boot_dex) return;
+    const auto [cached, added] = impl_->finalizable_classes.try_emplace(type.Value(), false);
+    if (added) {
+        const auto method_slot = impl_->linker->FindVtableIndex(type, "finalize", "()V");
+        if (method_slot) {
+            const auto method = impl_->linker->Class(type).vtable[*method_slot];
+            cached->second = impl_->linker->Class(impl_->linker->Method(method).owner).descriptor != "Ljava/lang/Object;";
+        }
+    }
+    if (!cached->second) return;
+    const auto roots = ProtectReferences(std::array{object});
+    impl_->linker->EnsureClassLinked(*reference);
+    const auto add = impl_->linker->FindDirectMethod(*reference, "add", "(Ljava/lang/Object;)V");
+    if (!add) throw DexVmError(DexVmErrorReason::unresolved_reference, "FinalizerReference.add");
+    const auto outcome = Call(*add, std::array{VmValue::Ref(object)});
+    if (outcome.exception.IsValid()) throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+}
+
+void Interpreter::EnsureFinalizerDaemons() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    if (impl_->finalizer_daemons_started || impl_->starting_finalizer_daemons || impl_->threads == nullptr || impl_->threads->ShuttingDown()) return;
+    const auto type = impl_->linker->FindClass("Ljava/lang/Daemons;");
+    if (!type || !impl_->linker->Class(*type).is_boot_dex) return;
+    impl_->starting_finalizer_daemons = true;
+    try {
+        impl_->linker->EnsureClassLinked(*type);
+        const auto start = impl_->linker->FindDirectMethod(*type, "start", "()V");
+        if (!start) throw DexVmError(DexVmErrorReason::unresolved_reference, "Daemons.start");
+        const auto outcome = Call(*start, {});
+        if (outcome.exception.IsValid()) throw VmJavaThrow{impl_->linker->Class(outcome.exception_class).descriptor, outcome.exception_message, outcome.exception};
+        impl_->finalizer_daemons_started = true;
+        impl_->starting_finalizer_daemons = false;
+    } catch (...) { impl_->starting_finalizer_daemons = false; throw; }
+}
+
+void Interpreter::RunFinalization() {
+    VmExecutionLockScope lock_scope(impl_->execution_lock);
+    EnsureFinalizerDaemons();
+    const auto type = impl_->linker->ResolveDescriptor("Ljava/lang/ref/FinalizerReference;");
+    const auto method = impl_->linker->FindDirectMethod(type, "finalizeAllEnqueued", "()V");
+    if (!method) throw DexVmError(DexVmErrorReason::unresolved_reference, "FinalizerReference.finalizeAllEnqueued");
+    // API19's pinned ReferenceQueue pushes at head: its sentinel may overtake
+    // an older finalizer. Snapshot this batch before enqueueing the sentinel.
+    const auto& linker = *impl_->linker;
+    const auto instance_ref = [&](VmObjectRef object, const char* name, const char* descriptor) {
+        const auto field = linker.FindFieldRecursive(impl_->model->ObjectClass(object), name, descriptor);
+        if (!field) throw DexVmError(DexVmErrorReason::unresolved_reference, std::string("finalizer field ") + name);
+        return VmObjectRef(impl_->model->InstanceSlots(object)[linker.Field(*field).slot].bits);
+    };
+    const auto daemon_type = impl_->linker->ResolveDescriptor("Ljava/lang/Daemons$FinalizerDaemon;");
+    const auto daemon_field = linker.FindFieldRecursive(daemon_type, "INSTANCE", "Ljava/lang/Daemons$FinalizerDaemon;");
+    const auto queue_field = linker.FindFieldRecursive(type, "queue", "Ljava/lang/ref/ReferenceQueue;");
+    if (!daemon_field || !queue_field) throw DexVmError(DexVmErrorReason::unresolved_reference, "finalizer queue metadata");
+    const auto daemon = VmObjectRef(linker.Class(daemon_type).static_storage[linker.Field(*daemon_field).slot]);
+    const auto queue = VmObjectRef(linker.Class(type).static_storage[linker.Field(*queue_field).slot]);
+    std::vector<std::pair<VmObjectRef, VmObjectRef>> batch;
+    std::vector<VmObjectRef> roots;
+    auto next = instance_ref(queue, "head", "Ljava/lang/ref/Reference;");
+    std::set<std::uint32_t> visited;
+    while (next.IsValid() && visited.insert(next.Value()).second) {
+        const auto zombie = instance_ref(next, "zombie", "Ljava/lang/Object;");
+        batch.emplace_back(next, zombie);
+        roots.push_back(next); roots.push_back(zombie);
+        next = instance_ref(next, "queueNext", "Ljava/lang/ref/Reference;");
+    }
+    const auto active = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
+    roots.push_back(active);
+    const auto batch_roots = ProtectReferences(roots);
+    const auto result = Call(*method, {});
+    if (result.exception.IsValid()) {
+        if (impl_->linker->Class(result.exception_class).descriptor != "Ljava/lang/InterruptedException;")
+            throw VmJavaThrow{impl_->linker->Class(result.exception_class).descriptor, result.exception_message, result.exception};
+        impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
+        return;
+    }
+    while (true) {
+        const auto current = instance_ref(daemon, "finalizingObject", "Ljava/lang/Object;");
+        const bool pending = (active.IsValid() && active == current) ||
+            std::any_of(batch.begin(), batch.end(), [&](const auto& entry) {
+                return instance_ref(entry.first, "zombie", "Ljava/lang/Object;").IsValid() ||
+                    (entry.second.IsValid() && entry.second == current);
+            });
+        if (!pending) break;
+        try { impl_->threads->Sleep(1); }
+        catch (const VmJavaThrow& error) {
+            if (error.descriptor != "Ljava/lang/InterruptedException;") throw;
+            impl_->threads->Interrupt(impl_->threads->CurrentThreadObject());
+            break;
+        }
+    }
+}
+
 GcSweepResult Interpreter::CollectGarbage(const std::string_view trigger, const bool clear_soft_references) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
     auto& execution = impl_->Execution();
     const auto gc_started = hal::Clock::SteadyTimestampNs();
     impl_->RecordTrace(DexVmTraceKind::gc_begin, execution);
-    const auto mark = MarkReachable(clear_soft_references);
+    if (const auto reference = impl_->linker->FindClass("Ljava/lang/ref/FinalizerReference;")) {
+        const auto head = impl_->linker->FindFieldRecursive(*reference, "head", "Ljava/lang/ref/FinalizerReference;");
+        if (head && impl_->linker->Class(*reference).static_storage[impl_->linker->Field(*head).slot] != 0)
+            EnsureFinalizerDaemons();
+    }
+    auto mark = MarkReachable(clear_soft_references);
+    impl_->ProcessReferences(mark, false, false);
+    impl_->ProcessReferences(mark, false, true);
+    mark = MarkReachable(clear_soft_references);
     const auto swept = SweepGarbage(mark);
     impl_->model->AdjustTargetAfterGc();
     ReleaseGuestNativeResources();

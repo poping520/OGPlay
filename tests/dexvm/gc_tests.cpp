@@ -2,6 +2,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <atomic>
+#include "ogplay/hal/clock.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 #include <set>
 #include <memory>
 #include <unordered_map>
@@ -16,6 +20,10 @@
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/jni_guest/jni_guest_static_calls.h"
 #include "ogplay/runtime/jni/jni_class_registry.h"
+
+DOCTEST_REGISTER_EXCEPTION_TRANSLATOR(const ogplay::runtime::dexvm::VmJavaThrow& error) {
+    return doctest::String((error.descriptor + ": " + error.message).c_str());
+}
 
 namespace {
 
@@ -53,7 +61,8 @@ struct GcVm final {
     Interpreter vm;
 
     GcVm(const std::vector<IntrinsicClassDecl>& extras = {},
-         const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
+         const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+         NativeMethodBridge* native_bridge = nullptr)
         : vm([this, &extras]() -> DexClassLinker& {
                  auto catalog = CoreIntrinsicCatalog();
                  auto builder =
@@ -75,7 +84,7 @@ struct GcVm final {
                  linker.Link();
                  return linker;
              }(),
-             model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
+             model, native_bridge, ledger, InterpreterConfig{.backend = backend}) {}
 };
 
 TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roots") {
@@ -502,5 +511,223 @@ TEST_CASE("WU7-3 System.gc clears weak interns while retaining literals in both 
         const auto result = f.vm.Call(f.linker.Class(type).vtable[*get], std::array{VmValue::Ref(weak)});
         REQUIRE_FALSE(result.exception.IsValid());
         CHECK_FALSE(result.value.ref.IsValid());
+    }
+}
+
+TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        GcVm f({}, backend);
+        VmThreadRuntime threads(f.vm);
+        const auto stat = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner), name, signature);
+            REQUIRE(method);
+            const auto result = f.vm.Call(*method, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto on = [&](VmObjectRef receiver, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+            const auto type = f.model.ObjectClass(receiver);
+            const auto slot = f.linker.FindVtableIndex(type, name, signature);
+            REQUIRE(slot);
+            args.insert(args.begin(), VmValue::Ref(receiver));
+            const auto result = f.vm.Call(f.linker.Class(type).vtable[*slot], args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        const auto runtime = stat("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;").ref;
+        const auto root = f.vm.ProtectReferences(std::array{runtime});
+        CHECK(on(runtime, "maxMemory", "()J").AsLong() == static_cast<std::int64_t>(f.model.HeapGrowthLimitBytes()));
+        CHECK(on(runtime, "totalMemory", "()J").AsLong() - on(runtime, "freeMemory", "()J").AsLong() == static_cast<std::int64_t>(f.model.AllocatedBytes()));
+        const auto before = on(runtime, "freeMemory", "()J").AsLong();
+        const auto bytes = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4096);
+        CHECK(on(runtime, "freeMemory", "()J").AsLong() < before);
+        CHECK(f.model.IsValidRef(bytes));
+        const auto specific = stat("Ldalvik/system/VMRuntime;", "getRuntime", "()Ldalvik/system/VMRuntime;").ref;
+        CHECK(stat("Ldalvik/system/VMRuntime;", "getRuntime", "()Ldalvik/system/VMRuntime;").ref == specific);
+        CHECK(on(specific, "getTargetHeapUtilization", "()F").AsFloat() == doctest::Approx(0.75));
+        CHECK(on(specific, "setTargetHeapUtilization", "(F)F", {VmValue::Float(0.6F)}).AsFloat() == doctest::Approx(0.75));
+        CHECK(on(specific, "getTargetHeapUtilization", "()F").AsFloat() == doctest::Approx(614.0 / 1024.0));
+        CHECK(f.model.TargetHeapUtilization() == doctest::Approx(614.0 / 1024.0));
+        const auto setter = f.linker.FindVtableIndex(f.model.ObjectClass(specific), "setTargetHeapUtilization", "(F)F");
+        REQUIRE(setter);
+        const auto invalid = f.vm.Call(f.linker.Class(f.model.ObjectClass(specific)).vtable[*setter], std::array{VmValue::Ref(specific), VmValue::Float(0.0F)});
+        REQUIRE(invalid.exception.IsValid());
+        CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        on(specific, "registerNativeAllocation", "(I)V", {VmValue::Int(4096)});
+        CHECK(f.model.NativeAllocatedBytes() == 4096);
+        on(specific, "registerNativeFree", "(I)V", {VmValue::Int(1024)});
+        CHECK(f.model.NativeAllocatedBytes() == 3072);
+        // API19's deprecated external-allocation protocol was removed in 3.0.
+        CHECK(on(specific, "trackExternalAllocation", "(J)Z", {VmValue::Long(8192)}).AsInt() == 1);
+        CHECK(f.model.NativeAllocatedBytes() == 3072);
+        on(specific, "clearGrowthLimit", "()V");
+        CHECK(on(runtime, "maxMemory", "()J").AsLong() == static_cast<std::int64_t>(f.model.MaximumHeapBytes()));
+    }
+}
+
+TEST_CASE("WU7-4 finalizer daemon preserves resurrection swallows exceptions and finalizes once") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto calls = std::make_shared<std::atomic<int>>(0);
+        auto worker = std::make_shared<std::atomic<bool>>(false);
+        auto declaration = IntrinsicClassBuilder::Class("Lgc/Finalizable;");
+        declaration.StaticField("resurrected", "Ljava/lang/Object;");
+        declaration.OverrideMethod("finalize", "()V", [calls, worker](IntrinsicContext& c) -> VmValue {
+            ++*calls;
+            *worker = c.vm.Threads().CurrentThreadObject().IsValid() && c.vm.Threads().ThreadId(c.vm.Threads().CurrentThreadObject()) != 1;
+            const auto type = c.vm.Model().ObjectClass(c.receiver);
+            const auto field = c.vm.Linker().FindFieldRecursive(type, "resurrected", "Ljava/lang/Object;");
+            REQUIRE(field);
+            c.vm.Linker().MutableClass(type).static_storage[c.vm.Linker().Field(*field).slot] = c.receiver.Value();
+            throw VmJavaThrow{"Ljava/lang/RuntimeException;", "finalizer test exception"};
+        }, kAccProtected);
+        GcVm f({std::move(declaration).Build()}, backend);
+        VmThreadRuntime threads(f.vm);
+        f.vm.Monitors().SetTimeSource([] { return static_cast<std::int64_t>(ogplay::hal::Clock::SteadyTimestampNs() / 1000000U); });
+        const auto object = f.vm.NewIntrinsicInstance("Lgc/Finalizable;");
+        const auto identity = f.model.ToIdentity(object);
+        static_cast<void>(f.vm.CollectGarbage("finalizable-unreachable"));
+        f.vm.RunFinalization();
+        CHECK(calls->load() == 1);
+        CHECK(worker->load());
+        CHECK(f.model.FindIdentity(identity).IsValid());
+        const auto type = f.linker.ResolveDescriptor("Lgc/Finalizable;");
+        const auto field = f.linker.FindFieldRecursive(type, "resurrected", "Ljava/lang/Object;");
+        REQUIRE(field);
+        f.linker.MutableClass(type).static_storage[f.linker.Field(*field).slot] = 0;
+        static_cast<void>(f.vm.CollectGarbage("resurrected-cleared"));
+        f.vm.RunFinalization();
+        static_cast<void>(f.vm.CollectGarbage("sentinel-cleared"));
+        CHECK(calls->load() == 1);
+        CHECK_FALSE(f.model.FindIdentity(identity).IsValid());
+        CHECK_FALSE(threads.TakeFailure().has_value());
+        threads.Shutdown();
+    }
+}
+
+TEST_CASE("WU7-4 weak soft and phantom queues distinguish pressure and finalizer reachability") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        GcVm f({}, backend);
+        const auto make = [&](const char* owner, const char* signature, std::vector<VmValue> args = {}) {
+            const auto instance = f.vm.NewIntrinsicInstance(owner);
+            const auto root = f.vm.ProtectReferences(std::array{instance});
+            const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(instance), "<init>", signature);
+            REQUIRE(ctor);
+            args.insert(args.begin(), VmValue::Ref(instance));
+            const auto result = f.vm.Call(*ctor, args);
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return instance;
+        };
+        const auto invoke = [&](VmObjectRef receiver, const char* name, const char* signature) {
+            const auto type = f.model.ObjectClass(receiver);
+            const auto slot = f.linker.FindVtableIndex(type, name, signature);
+            REQUIRE(slot);
+            const auto result = f.vm.Call(f.linker.Class(type).vtable[*slot], std::array{VmValue::Ref(receiver)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value;
+        };
+        for (const auto* owner : {"Ljava/lang/ref/WeakReference;", "Ljava/lang/ref/SoftReference;", "Ljava/lang/ref/PhantomReference;"}) {
+            const auto queue = make("Ljava/lang/ref/ReferenceQueue;", "()V");
+            const auto qr = f.vm.ProtectReferences(std::array{queue});
+            const auto value = f.vm.NewIntrinsicInstance("Lgc/RootBox;");
+            const auto reference = make(owner, "(Ljava/lang/Object;Ljava/lang/ref/ReferenceQueue;)V", {VmValue::Ref(value), VmValue::Ref(queue)});
+            const auto root = f.vm.ProtectReferences(std::array{reference});
+            if (std::string_view(owner).find("Phantom") != std::string_view::npos)
+                CHECK_FALSE(invoke(reference, "get", "()Ljava/lang/Object;").ref.IsValid());
+            static_cast<void>(f.vm.CollectGarbage("ordinary-reference"));
+            if (std::string_view(owner).find("Soft") != std::string_view::npos) {
+                CHECK(f.model.IsValidRef(value));
+                CHECK_FALSE(invoke(queue, "poll", "()Ljava/lang/ref/Reference;").ref.IsValid());
+                static_cast<void>(f.vm.CollectGarbage("reference-pressure", true));
+            }
+            CHECK_FALSE(f.model.IsValidRef(value));
+            CHECK(invoke(queue, "poll", "()Ljava/lang/ref/Reference;").ref == reference);
+            CHECK_FALSE(invoke(queue, "poll", "()Ljava/lang/ref/Reference;").ref.IsValid());
+            CHECK_FALSE(invoke(reference, "get", "()Ljava/lang/Object;").ref.IsValid());
+        }
+    }
+}
+
+TEST_CASE("WU7-4 a reclaimed Thread handle can start again with a new Java identity") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto declaration = IntrinsicClassBuilder::Class("Lgc/Worker;", "Ljava/lang/Thread;");
+        declaration.OverrideMethod("run", "()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        GcVm f({std::move(declaration).Build()}, backend);
+        VmThreadRuntime threads(f.vm);
+        const auto old = f.vm.NewIntrinsicInstance("Lgc/Worker;");
+        const auto identity = f.model.ToIdentity(old);
+        const auto old_id = threads.AllocateThreadId();
+        threads.Start(old, "old-worker", old_id);
+        threads.Join(old);
+        static_cast<void>(f.vm.CollectGarbage("dead-thread"));
+        CHECK_FALSE(f.model.FindIdentity(identity).IsValid());
+        VmObjectRef recycled;
+        for (std::size_t i = 0; i < 1024 && !recycled.IsValid(); ++i) {
+            const auto object = f.vm.NewIntrinsicInstance("Lgc/Worker;");
+            if (object == old) recycled = object;
+        }
+        REQUIRE(recycled.IsValid());
+        const auto root = f.vm.ProtectReferences(std::array{recycled});
+        CHECK(f.model.ToIdentity(recycled) != identity);
+        CHECK_FALSE(threads.IsAlive(recycled));
+        CHECK(threads.ThreadId(recycled) == 0);
+        const auto new_id = threads.AllocateThreadId();
+        CHECK(new_id != old_id);
+        threads.Start(recycled, "new-worker", new_id);
+        threads.Join(recycled);
+        CHECK(threads.ThreadId(recycled) == new_id);
+        CHECK_FALSE(threads.TakeFailure().has_value());
+        threads.Shutdown();
+    }
+}
+
+TEST_CASE("WU7-4 native close claims its owner before reentrant collection and restores on failure") {
+    struct Bridge final : NativeMethodBridge {
+        Interpreter* vm{};
+        int calls{};
+        bool nested_cleanup{true};
+        bool reject{};
+        VmValue Invoke(const LinkedMethod&, VmObjectRef, std::span<const VmValue>) override {
+            ++calls;
+            if (reject) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "close rejected"};
+            if (nested_cleanup) {
+                nested_cleanup = false;
+                static_cast<void>(vm->CollectGarbage("while-native-close-is-active"));
+                vm->ReleaseGuestNativeResources(true);
+            }
+            return VmValue::Void();
+        }
+    };
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Bridge bridge;
+        auto declaration = IntrinsicClassBuilder::Class("Lgc/CloseOwner;");
+        declaration.InstanceField("peer", "J");
+        declaration.GuestNativeStatic("release", "(J)V", kAccPublic | kAccStatic | kAccNative);
+        GcVm f({std::move(declaration).Build()}, backend, &bridge);
+        bridge.vm = &f.vm;
+        const auto type = f.linker.ResolveDescriptor("Lgc/CloseOwner;");
+        const auto field = f.linker.FindFieldRecursive(type, "peer", "J");
+        const auto cleanup = f.linker.FindDirectMethod(type, "release", "(J)V");
+        REQUIRE(field); REQUIRE(cleanup);
+        f.vm.TrackGuestNativeResourceField(*field, *cleanup);
+        const auto owner = f.vm.NewIntrinsicInstance("Lgc/CloseOwner;");
+        const auto root = f.vm.ProtectReferences(std::array{owner});
+        const auto slot = f.linker.Field(*field).slot;
+        f.model.InstanceSlots(owner)[slot] = {123, SlotTag::wide_lo};
+        f.model.InstanceSlots(owner)[slot + 1] = {0, SlotTag::wide_hi};
+        const auto closed = f.vm.Call(*cleanup, std::array{VmValue::Long(123)});
+        REQUIRE_FALSE(closed.exception.IsValid());
+        CHECK(bridge.calls == 1);
+        CHECK(f.model.InstanceSlots(owner)[slot].bits == 0);
+        CHECK(f.vm.GuestNativeResourceCount() == 0);
+        bridge.reject = true;
+        f.model.InstanceSlots(owner)[slot].bits = 456;
+        const auto failed = f.vm.Call(*cleanup, std::array{VmValue::Long(456)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.model.InstanceSlots(owner)[slot].bits == 456);
+        CHECK(f.vm.GuestNativeResourceCount() == 1);
+        bridge.reject = false;
+        f.vm.ReleaseGuestNativeResources(true);
+        CHECK(bridge.calls == 3);
+        CHECK(f.vm.GuestNativeResourceCount() == 0);
     }
 }

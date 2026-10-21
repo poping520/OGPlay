@@ -20,8 +20,8 @@
 
 ## lang、线程与退出
 
-- 根类 Object 保留 API19 protected finalize 的空实现，支持子类显式 super 调用；
-  不因此提供自动 Java finalizer 调度，资源清扫仍经现有 GC owner hooks。
+- 根类 Object 保留 API19 protected finalize 空实现；覆盖者经 FinalizerReference/Daemons
+  自动调度，引用清理、复活与 native 资源收尾遵循 DexVM 的 GC 契约。
 - String 的 UTF-16 由 VM/JNI 唯一拥有；内部 char[] 构造复制不可变快照，_getChars 只复制区间。
   三个 builder 与 IntegralToString 普通方法归 BootDex，value/count/shared 是唯一可变事实源，
   无 builder map、clone/sweep 或普通方法 overlay。RealToString 仅保留受检 native digit generator；
@@ -53,9 +53,13 @@
 - Runtime 的单例、hook List、shuttingDown、add/remove/exit/halt 执行原版 Java；System.exit
   委托 Runtime.exit，nativeExit 进入 Interpreter.Exit，不能返回 guest 或直接退出宿主。
   宿主 Stop 保持取消语义；availableProcessors 保留单执行通道事实 1。
-  Runtime gc/内存统计/nativeLoad/runFinalization 尚未支持；runFinalizersOnExit(true) 立即
+  Runtime gc/内存统计/runFinalization 接入真实 GC/堆及原版 finalizer；nativeLoad 保留生产
+  loader 边界。runFinalizersOnExit(true) 立即
   记账抛 UnsupportedOperationException，false 保持未启用。见 [DVM-150](../../../../docs/tasks/dexvm/DVM-150.md)。
-- System.gc 显式请求现有 VM 的普通 STW 回收，不强制清 SoftReference；不扩展 finalizer 或 PhantomReference 能力。
+- System.gc 显式请求普通 STW；runFinalization 等待当前 finalizer 批次。VMRuntime 普通单例、
+  参数校验与已退役 external-allocation 协议执行原版 Java；利用率与 native allocation/free
+  更新 JavaObjectModel 的真实配置/计数。无 JIT 的 start/disable 与 4.4 无 JIT 构建相同。
+  addressOf、newNonMovableArray、SDK 重配、缓存预加载/VM 标识查询等未接通 native 明确失败。
 - System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
   注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
   不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）；ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。

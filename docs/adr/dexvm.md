@@ -48,6 +48,8 @@
 - [ADR-0147 · API19 表面机器生成，行为按需实现](#adr-0147)
 - [ADR-0148 · 纯 Java ROM 类按规则自动纳入 BootDex](#adr-0148)
 
+- [ADR-0151 · finalizer 由原版守护线程执行、堆查询共用真实配置](#adr-0151)
+
 <a id="adr-0017"></a>
 
 ## ADR-0017 · 有界 DEX 解释执行与平台内建类边界
@@ -1389,3 +1391,33 @@ ADR-0147 的骨架补齐了全部 ROM 类型，但未实现成员只能明确失
 Resolve.cpp、AccessCheck.cpp、CodeVerify.cpp 和 mterp 指令。用双后端 catch 后继续执行、
 首次/再次失败类、缺成员/种类/访问/分派及真实 bootstrap 遮蔽回归验证；内部无效 handle
 仍必须失败。跑目标 dalvik/tests、全量基线棘轮与九个既有正常基础场景，缺口保留在 DVM-256。
+
+<a id="adr-0151"></a>
+
+## ADR-0151 · finalizer 由原版守护线程执行、堆查询共用真实配置
+
+- 状态：Accepted
+- 日期：2026-10-21
+- 关联：[DVM-258 / WU7-4](../tasks/dexvm/DVM-258.md)
+- Supersedes：ADR-0033 中 PhantomReference 不支持的边界；沿用 ADR-0029、0040、0060 的所有权与堆模型。
+
+### 决定
+
+对象模型通过显式实例分配 observer 通知解释器，由解释器在创建可 finalize 对象时调用
+固定 BootDex 的 FinalizerReference.add。referent、zombie、列表和队列只保存在 Java 字段。
+GC 按 soft/weak → finalizer 保活 → phantom 的次序处理，再以复标记后的存活图清扫；
+守护线程用既有 VmThreadRuntime，每个 guest daemon 对应真实宿主线程。
+
+FinalizerReference/Daemons 保留原版 finalize、异常日志、sentinel 与 10 秒 watchdog；
+时间只由统一 Clock 提供，超时退出只作用于 guest 进程。固定 ROM 队列按 head 后进先出，
+sentinel 可越过已有工作，因此 VM 边界额外保留进入时批次并等待它完成，不等待后续新批次。
+对象可复活，但不会第二次自动 finalize；原有 native token 的 owner GC/teardown 回收继续存在。
+
+Runtime 内存统计与 ActivityManager 档位只读取 JavaObjectModel。VMRuntime 普通单例和
+已退役的旧 external-allocation 协议执行原版 Java；有效 native 分配记账驱动同一 GC/finalizer，
+不伪造分配成功、不借宿主可用内存猜测 guest 档位。未接通的 VMRuntime 接口继续明确失败。
+
+### 验证
+
+双后端 GC、对象复活/一次 finalize/异常吞掉、引用队列、堆守恒及配置/档位一致性回归，
+加原版七目标、全量基线和九基础场景；证据写 DVM-258 / DIAG-7，不以基础场景代替 title gate。

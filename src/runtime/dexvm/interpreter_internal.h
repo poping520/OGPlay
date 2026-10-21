@@ -467,6 +467,12 @@ public:
                                               std::uint32_t string_index);
     void TraceIntrinsicSideTables(VmObjectRef owner,
                                   const VmRootVisitor& visitor) const;
+    VmValue InvokeNativeWithResources(const LinkedMethod& method, VmObjectRef receiver, std::span<const VmValue> arguments);
+    void RetireClosedNativeResource(VmMethodId cleanup, std::span<const VmValue> arguments);
+    void ProcessReferences(const GcMarkResult& mark, bool phantom, bool finalizers);
+    bool finalizer_daemons_started{};
+    bool starting_finalizer_daemons{};
+    std::unordered_map<std::uint32_t, bool> finalizable_classes;
     void PrepareSafeAllocation(std::uint64_t request_bytes,
                                std::string_view trigger);
 };

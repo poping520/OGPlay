@@ -1052,6 +1052,9 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         const auto before_gc = vm.GuestNativeResourceCount();
         CHECK(before_gc > 3);
         static_cast<void>(vm.CollectGarbage("cipher-test"));
+        try { vm.RunFinalization(); }
+        catch (const VmJavaThrow& error) { FAIL(error.descriptor << ": " << error.message); }
+        static_cast<void>(vm.CollectGarbage("crypto-finalizers-complete"));
         CHECK(vm.GuestNativeResourceCount() < before_gc);
         CHECK(vm.GuestNativeResourceCount() >= 2);
         invoke(cipher, "init", "(ILjava/security/Key;)V", {VmValue::Int(1), VmValue::Ref(key)});
@@ -1265,7 +1268,9 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
                {VmValue::Ref(hi_there), VmValue::Int(0), VmValue::Int(3)});
         const auto hmac = invoke(mac, "doFinal", "([B)[B",
                                  {VmValue::Ref(bytes("5468657265"))}).ref;
-        INFO(core::EncodeHex(read(hmac), core::HexCase::lower));
+        const auto hmac_roots = vm.ProtectReferences(std::array{hmac});
+        const auto hmac_hex = core::EncodeHex(read(hmac), core::HexCase::lower);
+        INFO(hmac_hex);
         CHECK(read(hmac) == read(bytes(
             "b617318655057264e28bc0b6fb378c8ef146be00")));
         CHECK(read(invoke(mac, "doFinal", "([B)[B",

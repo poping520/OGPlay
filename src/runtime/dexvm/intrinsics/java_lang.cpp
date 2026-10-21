@@ -333,6 +333,44 @@ namespace ogplay::runtime::dexvm::intrinsics {
     } // namespace
 
     void AppendJavaLangInterfaces(std::vector<IntrinsicClassDecl>& catalog) {
+        {
+            auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMRuntime;");
+            for (const auto& [name, signature] : std::array{
+                std::pair{"addressOf", "(Ljava/lang/Object;)J"},
+                std::pair{"bootClassPath", "()Ljava/lang/String;"},
+                std::pair{"classPath", "()Ljava/lang/String;"},
+                std::pair{"newNonMovableArray", "(Ljava/lang/Class;I)Ljava/lang/Object;"},
+                std::pair{"preloadDexCaches", "()V"},
+                std::pair{"properties", "()[Ljava/lang/String;"},
+                std::pair{"setTargetSdkVersion", "(I)V"},
+                std::pair{"vmLibrary", "()Ljava/lang/String;"},
+                std::pair{"vmVersion", "()Ljava/lang/String;"}})
+                b.UnimplementedVirtual(name, signature, kAccPublic | kAccNative);
+            b.VirtualMethod("getTargetHeapUtilization", "()F", [](IntrinsicContext& c) { return VmValue::Float(c.vm.Model().TargetHeapUtilization()); }, kAccPublic | kAccNative);
+            b.UnimplementedDirect("nativeSetTargetHeapConcurrentStart", "(I)I", kAccPrivate | kAccNative);
+            b.UnimplementedDirect("nativeSetTargetHeapMinFree", "(I)I", kAccPrivate | kAccNative);
+            b.DirectMethod("nativeSetTargetHeapUtilization", "(F)V", [](IntrinsicContext& c) { c.vm.Model().SetTargetHeapUtilization(c.arguments[0].AsFloat()); return VmValue::Void(); }, kAccPrivate | kAccNative);
+            b.VirtualMethod("clearGrowthLimit", "()V", [](IntrinsicContext& c) { c.vm.Model().ClearGrowthLimit(); return VmValue::Void(); }, kAccPublic | kAccNative);
+            b.VirtualMethod("isDebuggerActive", "()Z", [](IntrinsicContext&) { return VmValue::Int(0); }, kAccPublic | kAccNative);
+            for (const auto* name : {"startJitCompilation", "disableJitCompilation"})
+                b.VirtualMethod(name, "()V", [](IntrinsicContext&) { return VmValue::Void(); }, kAccPublic | kAccNative);
+            b.VirtualMethod("registerNativeAllocation", "(I)V", [](IntrinsicContext& c) {
+                const auto bytes = c.arguments[0].AsInt();
+                if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
+                if (c.vm.Model().RegisterNativeAllocation(static_cast<std::uint64_t>(bytes))) {
+                    static_cast<void>(c.vm.CollectGarbage("native-allocation"));
+                    c.vm.RunFinalization();
+                    c.vm.Model().UpdateNativeWatermark();
+                }
+                return VmValue::Void();
+            }, kAccPublic | kAccNative);
+            b.VirtualMethod("registerNativeFree", "(I)V", [](IntrinsicContext& c) {
+                const auto bytes = c.arguments[0].AsInt();
+                if (bytes < 0) throw VmJavaThrow{"Ljava/lang/RuntimeException;", "allocation size negative"};
+                c.vm.Model().RegisterNativeFree(static_cast<std::uint64_t>(bytes)); return VmValue::Void();
+            }, kAccPublic | kAccNative);
+            catalog.push_back(std::move(b).Build());
+        }
         catalog.push_back(Declare_java_lang_Appendable());
         catalog.push_back(Declare_java_lang_AutoCloseable());
         catalog.push_back(Declare_java_lang_CharSequence());
@@ -366,11 +404,11 @@ IntrinsicClassDecl Declare_java_lang_Runtime(const CoreIntrinsicServices& servic
     builder.UnimplementedStatic("nativeLoad",
         "(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/String;",
         kAccPrivate | kAccNative);
-    for (const auto* name : {"freeMemory", "totalMemory", "maxMemory"}) {
-        builder.UnimplementedVirtual(name, "()J", kAccPublic | kAccNative);
-    }
-    builder.UnimplementedVirtual("gc", "()V", kAccPublic | kAccNative);
-    builder.UnimplementedVirtual("runFinalization", "()V");
+    builder.VirtualMethod("maxMemory", "()J", [](IntrinsicContext& c) { return VmValue::Long(static_cast<std::int64_t>(c.vm.Model().HeapGrowthLimitBytes())); }, kAccPublic | kAccNative);
+    builder.VirtualMethod("totalMemory", "()J", [](IntrinsicContext& c) { return VmValue::Long(static_cast<std::int64_t>(std::max(c.vm.Model().HeapTargetBytes(), c.vm.Model().AllocatedBytes()))); }, kAccPublic | kAccNative);
+    builder.VirtualMethod("freeMemory", "()J", [](IntrinsicContext& c) { return VmValue::Long(static_cast<std::int64_t>(std::max(c.vm.Model().HeapTargetBytes(), c.vm.Model().AllocatedBytes()) - c.vm.Model().AllocatedBytes())); }, kAccPublic | kAccNative);
+    builder.VirtualMethod("gc", "()V", [](IntrinsicContext& c) { static_cast<void>(c.vm.CollectGarbage("Runtime.gc")); return VmValue::Void(); }, kAccPublic | kAccNative);
+    builder.VirtualMethod("runFinalization", "()V", [](IntrinsicContext& c) { c.vm.RunFinalization(); return VmValue::Void(); });
     builder.StaticMethod("runFinalizersOnExit", "(Z)V", [](IntrinsicContext& context) {
         if (context.arguments[0].AsInt() != 0) {
             if (auto* ledger = context.vm.Ledger())
@@ -2965,6 +3003,7 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",
                                   "arraycopy element types are incompatible"};
             });
+    builder.StaticMethod("runFinalization", "()V", [](IntrinsicContext& c) { c.vm.RunFinalization(); return VmValue::Void(); });
     builder.StaticMethod("gc", "()V",
         [](IntrinsicContext& context) {
                 // Dalvik Runtime.gc requests an ordinary collection, preserving

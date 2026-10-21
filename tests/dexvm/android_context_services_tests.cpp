@@ -955,3 +955,19 @@ TEST_CASE("DVM-241 offline connectivity distinguishes unsupported types and pres
         REQUIRE(hits.size() == 1); CHECK(hits.front().id == "dexvm.connectivity_offline");
     }
 }
+
+TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto manager = f.New("Landroid/content/Context;");
+        const auto root = f.vm.ProtectReferences(std::array{manager});
+        const auto memory = f.On(manager, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+            {VmValue::Ref(f.vm.NewStringUtf8("activity"))}).ref;
+        REQUIRE(memory.IsValid());
+        const auto mr = f.vm.ProtectReferences(std::array{memory});
+        CHECK(f.On(memory, "getMemoryClass", "()I").AsInt() == static_cast<std::int32_t>(f.model.HeapGrowthLimitBytes() / (1024U * 1024U)));
+        CHECK(f.On(memory, "getLargeMemoryClass", "()I").AsInt() == static_cast<std::int32_t>(f.model.MaximumHeapBytes() / (1024U * 1024U)));
+        CHECK(f.Static("Landroid/app/ActivityManager;", "staticGetMemoryClass", "()I").AsInt() == f.On(memory, "getMemoryClass", "()I").AsInt());
+        CHECK(f.Static("Landroid/app/ActivityManager;", "staticGetLargeMemoryClass", "()I").AsInt() == f.On(memory, "getLargeMemoryClass", "()I").AsInt());
+    }
+}

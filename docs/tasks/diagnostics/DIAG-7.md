@@ -318,6 +318,29 @@ Charset 枚举只发布六种已支持的实际 codec。未引入宿主 ICU/loca
 - WB 新沙盒 GAThread 已越过 formatDouble；下一首错为
   `ContentValues$1.<init>()V`，不扩修独立能力。正常九场景的退出依赖与最终结果详见任务单。
 
+## WU7-4 · 堆、finalization 与引用队列（2026-10-21）
+
+实现与证据见 [DVM-258](../dexvm/DVM-258.md)，装配决定见
+[ADR-0151](../../adr/dexvm.md#adr-0151)。Runtime 内存查询、ActivityManager 内存档位和
+VMRuntime 的利用率、growth limit、native allocation 记账共用 JavaObjectModel 堆配置。
+4.4 已退役的 external allocation 方法执行原版；其余未支持 native 仍明确记账失败。
+
+- 原版 FinalizerReference/Daemons/PhantomReference 进入 BootDex；分配登记、weak/soft 清除、
+  finalizer zombie 保活、复标记、phantom 入队依次执行，支持复活与一次 finalize。
+  runFinalization 等待进入时的 pending/active 批次；原版吞异常、10 秒 watchdog 经统一
+  Clock 执行，超时请求 guest exit(2)，不杀宿主。030 的卡死输出亦逐字节符合 oracle。
+- 074 同时修正两后端过期 invoke result 根和回收后复用 Thread 句柄的身份判断。
+  native owner 在 JNI 关闭前占有 token、成功退役、异常恢复，避免异步 finalize 与 GC 重复关闭。
+- 030、036、059、061、074、079、098 双后端全部 pass，ledger 空；079 不再超时。
+  全量检查零回归，基线由各 75/92（81.5%）升至 82/92（89.1%），增加 14 个后端 pass；
+  报告 `.local/analysis/wu7-4/{full-native-final,baseline-updated}/`。
+- 仅构建受影响 CLI/测试目标；GC、内存、线程、ICU、zlib 等主题 98/98、7851 断言通过，
+  真实 guest crypto/BKS 1/1、3528 断言通过；BootDex build/check、payload 与工具检查通过。
+  未修改 guest JNI 源码，不重建 libogplay_jni。
+- 九个新沙盒正常场景保持 6/9 passed，与 WU7-1b 相同通过集合、零回退，全部运行检查点通过。
+  既有退出失败仍为 Tales 读 0x315f0001、Dead Trigger 清理超预算、PVZ stopService；
+  比较证据 `.local/analysis/wu7-4/scenarios-comparison.json`，非正式 title gate。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

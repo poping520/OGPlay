@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 75/92（81.5%）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 82/92（89.1%）。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1376,7 +1376,7 @@ note = "DVM-8/49/61/71/74：统一 VmObjectRef 句柄空间；session 拥有的 
 [dexvm.gc]
 status = "partial"
 test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
-note = "DVM-42..49/95/103、ADR-0029/0060：精确非移动 STW 标记清除；OwnedStateTable 强制唯一名称、trace 与 sweep 策略；三层堆（initial/growth/maximum），分配失败依次 GC、增长、OOM 前 GC。System.gc 请求普通 STW 回收；WeakReference 清空不依赖队列元数据，支持入队与唤醒；Soft/Phantom 不在范围。长时运行 gate 未重跑。"
+note = "DVM-258/WU7-4：精确 STW、三层堆；Runtime/ActivityManager/VMRuntime 共用真实堆查询、利用率与 native 压力记账。Weak/Soft/Phantom 清理入队；原版 FinalizerReference/Daemons 执行、复活仅一次、异常吞掉，runFinalization 等当前批次，10 秒 watchdog 请求 guest exit(2)。finalizersOnExit、长时 gate 未支持/验收。"
 
 [dexvm.interpreter_core]
 status = "complete"
@@ -1931,7 +1931,7 @@ note = "DVM-121：ColorStateList、StateSet、R.attr 来自 BootDex；Manifest t
 [dexvm.runtime_shutdown_hooks]
 status = "complete"
 test = "tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp#DVM-150; tests/runtime/application_exit_tests.cpp#DVM-150"
-note = "DVM-150：Runtime add/removeShutdownHook/exit/halt 执行原版 Java，hook 列表为 GC 强根；System.exit 共用协议，保存每 VM 退出码并停止执行，Java catch 无法吞掉退出。宿主 Stop 仍为取消；不提供 non-daemon 自动退出、hook 超时与 Java finalization；Runtime gc/堆统计/nativeLoad 不在此项。"
+note = "DVM-150/258：Runtime add/removeShutdownHook/exit/halt 执行原版 Java，hook 列表为 GC 强根；System.exit 保存每 VM 退出码，Java catch 无法吞掉退出。宿主 Stop 仍为取消；finalizer/堆查询见 dexvm.gc。run-dex 等待非 daemon；hook 超时及 finalizersOnExit 未支持。"
 
 [runtime.egl_khr_object_boundary]
 status = "partial"

@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-258](DVM-258.md) | WU7-4 堆查询、finalization、引用队列与 VMRuntime | 完成 |
 | [DVM-257](DVM-257.md) | WU7-6 guest ICU51 区域/格式/正则/字符集枚举 | 有界完成；070 共享数组仍缺 |
 | [DVM-256](DVM-256.md) | guest 链接/解析失败按 Dalvik 时机抛 Java Error | 已交付；004 注解接口待补 |
 | [DVM-251](DVM-251.md) | 默认逻辑尺寸下 nativeRender 空指针首错 | 待定位，见 VFS-09 对照证据 |

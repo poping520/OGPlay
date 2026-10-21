@@ -1,5 +1,6 @@
 #include "ogplay/runtime/jni/jni_object_array.h"
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -88,6 +89,24 @@ public:
         std::scoped_lock lock(mutex_);
         auto& entry = Require(array);
         entry.elements[CheckedIndex(entry, index)] = value;
+    }
+
+    void CopyWithin(const JniObjectIdentity array, const JniSize source,
+                    const JniSize target, const JniSize length) {
+        std::scoped_lock lock(mutex_);
+        auto& elements = Require(array).elements;
+        const auto size = static_cast<JniSize>(elements.size());
+        if (length < 0 || source < 0 || target < 0 ||
+            source > size - length || target > size - length)
+            Fail(JniObjectArrayErrorReason::invalid_index, "JNI object array copy range is out of bounds");
+        // Every source element already belongs to this typed array. No new
+        // value or class is imported; retain identities under one array lock.
+        if (source < target)
+            std::copy_backward(elements.begin() + source, elements.begin() + source + length,
+                               elements.begin() + target + length);
+        else if (source > target)
+            std::copy(elements.begin() + source, elements.begin() + source + length,
+                      elements.begin() + target);
     }
 
 private:
@@ -209,6 +228,11 @@ void JniObjectArrayStore::Set(const JniObjectIdentity array,
                               const JniSize index,
                               std::optional<JniObjectValue> value) {
     impl_->Set(array, index, value);
+}
+
+void JniObjectArrayStore::CopyWithin(const JniObjectIdentity array, const JniSize source,
+                                    const JniSize target, const JniSize length) {
+    impl_->CopyWithin(array, source, target, length);
 }
 
 }  // namespace ogplay::runtime

@@ -14,7 +14,9 @@ DexVM bridge 拥有 JNI 反射转换适配：FromReflected 使用 ReflectionRunt
 校验引用类型、声明类与 static 标志，在 VM 执行锁内发布调用线程 local reference；ID 不
 拥有 wrapper，不另建字段存储。销毁前先停止调用，再清除 JniEnvironment 的反射 hooks。
 JNI FindClass 的显式 resolver 在 VM 执行锁内按需链接并发布 own 成员，保留平台注册表
-既有实现；被动 FindClass 不递归调用 resolver。异常 factory 发布真实 local Throwable。
+既有实现；被动 FindClass 不递归调用 resolver。预发布遇到实现类型非 interface 等 Java
+链接错误时延后到真实 Java/JNI 使用，不因未使用的非法类使进程装配失败；失败发布不保留递归标记。
+值传输复用稳定的双向类身份缓存，成员解析仍经发布入口补齐按需物化的成员。异常 factory 发布真实 local Throwable。
 JNI 字段访问经解释器共享守卫：骨架非常量字段记账、挂起 UnsatisfiedLinkError，禁止侧表回落。
 这些 owner hooks 在调用静止后统一撤销，不使下层反向依赖 DexVM。
 
@@ -293,6 +295,10 @@ headless/NativeActivity，以及 [tests/dexvm](../../../tests/dexvm/) 的 Androi
 两种策略都完成宿主线程/资源回收，重复 Stop 不重跑 finalization。
 AndroidGuestProcess::NativeTerminationSignal 只读查询根线程的信号终止事实，不改变 NativeExitCode、退出准入或停止协议。
 
+DexVM bridge 的 Java worker 先登记 execution token，首次 native 操作才在 VM 锁外准备
+独立 CPU/TLS/JNI context；Java-only 线程不占 native 池。实际 native context 仍为线程独占，
+worker 最多 31 个，进程最后一槽保留给 OpenSL callback；满池明确失败，退出回收已分配的槽。
+准备与退役串行，避免监视器快照从其他宿主准备 context 时把资源登记到已结束的线程。
 DexVM bridge 通过 token→guest TID 显式准备 NDK Looper，Java 主线程在 Activity/JNI 启动前
 已关联，HandlerThread.prepare 复用该 registry。线程退出释放内部引用，进程 teardown
 先 shutdown Looper 以唤醒阻塞轮询。native clone 的存活来自 lifecycle hook，不继承父 Looper。

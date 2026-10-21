@@ -175,6 +175,7 @@ public:
     [[nodiscard]] VmObjectRef GetObjectElement(VmObjectRef ref,
                                                JniSize index);
     void SetObjectElement(VmObjectRef ref, JniSize index, VmObjectRef value);
+    void CopyObjectElementsWithin(VmObjectRef ref, JniSize source, JniSize target, JniSize length);
 
     [[nodiscard]] JniSize ArrayLength(VmObjectRef ref) const;
 

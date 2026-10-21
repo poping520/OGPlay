@@ -8,7 +8,7 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 
 - `ogplay-cli dexvm run-dex <dex|jar> [--class] [--backend] [--enable-assertions] [--ledger-json] [-- args]`：
   以生产相同的 bound core/Android catalog、BootDex、API19 骨架装配独立 VM 并调用 `main(String[])`。
-  无 APK、Manifest、native 进程、图形或音频；src/ 无测试专属分支。
+  无 APK、Manifest，不启动图形或音频呈现；WU7-H 接入生产 guest 进程与 platform JNI/NIO，src/ 无测试专属分支。
 - 语义对齐 dalvikvm：guest System.out/err 原样写宿主 stdout（run-test 本就合并 2>&1）；
   main 返回 0、未捕获异常经线程 handler 或 ThreadGroup 分派后 1、System.exit(n) 为 n；
   main 返回后 root 线程死亡并唤醒 joiner，再等待非 daemon 线程；VM/装配错误为 70。
@@ -258,6 +258,51 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   ogplay_app_tests 89/89、1873 断言通过，0 失败/skip。两项均退出 0，日志
   `wu7-t-final-green-{tests,app}.log`；最终构建 `wu7-t-build12.log`。
   Python oracle 语法检查、UTF-8 与 diff check 通过。未改链接器、准入规则或生产 uncaught 路径。
+
+## WU7-H · run-dex 平台运行时装配（2026-10-21）
+
+- 诊断能力扩展：复用现有 `AndroidGuestProcess::Start → AndroidGuestCallSession::AdoptProcess`
+  和 `DexVmGuestBridge`，未新增入口或测试分支。按 API19 Bionic profile 读取 system ELF，
+  与 APK 相同通过 NativeLibraryLoader 执行 guest JNI 的 constructors/JNI_OnLoad；
+  ICU 数据、tzdata 注入 VFS。JNI 双向桥、native 注册、NIO 和 VM 状态表均由生产 bridge 装配。
+- 没有 APK/.so inventory，仅提供系统库来源；应用 System.load/loadLibrary 缺库抛
+  UnsatisfiedLinkError。保留 stdout 字节、dalvikvm 退出码、-ea、真实 NativeStart.main
+  帧、main 返回后的 root 终止及非 daemon 等待；关闭 bridge 的帧钟快进，继续由 realtime
+  Clock 推进 Android 时钟。未修改 VM 字节码语义或 APK 启动流程。
+- 初轮全量发现装配接入暴露的回退：051 Java-only worker 提前占 native 池（含 OpenSL 保留槽），
+  065 未使用的非法 interface 图在 JNI 预发布阶段失败并触发构造清理崩溃，096 数组运输反复
+  扫描类成员/反向身份导致超时。作为零回归的必要依赖，bridge 改为首次 native 操作才分配
+  独占 CPU/TLS（VM 锁外，保留 OpenSL 槽），预发布的 Java 链接错误延至实际使用；
+  值传输复用稳定的双向类身份缓存，显式 JNI 解析仍补齐新物化成员。采样进一步确认同一
+  Object[] 的 arraycopy 被重复 JNI 校验拖慢：现由对象模型/store 在完整范围检查后批量移动，
+  重叠方向正确、引用身份不变；跨数组失败前缀不变。补双向重叠、null、空区间/自复制与
+  越界不写入回归。未放宽失败分类或 60 秒预算。
+- 仅构建 ogplay-cli、ogplay_app_tests、受 bridge 影响的 ogplay_tests；run_dex_tests.cpp
+  6/6、29 断言通过，含原有全部用例，
+  新增双后端 `String.format("%,d", 1234567)` 输出 `1,234,567`、direct buffer putInt/getInt
+  输出 42，以及应用 native 库拒绝。Locale.getDisplayName 重载尚未实现，未扩修。
+  JNI 线程/对象、native loader、对象数组主题 30/30、1654 断言通过；arraycopy 的本地存储
+  与失败前缀主题 2/2、52 断言通过。构建与最终定向证据：
+  `.local/analysis/wu7-h-{build-finalized,app-finalized,jni-finalized,arraycopy-verified}.log`。
+- 全量 `--check-baseline --jobs 4 --timeout 60` 退出 0：零回归、零新增 pass，
+  仅 092 双后端由 fail:crash 变为 fail:unimplemented；双后端仍各 72/92（78.3%）。
+  报告 `.local/analysis/wu7-h/full-final/`，日志 `wu7-h-full-final.log`。
+  随后 native context 准备/退役补同一互斥，定向复验保持全通过；再次全量
+  `--update-baseline --jobs 4 --timeout 60` 退出 0、零回归，仍各 72/92，仅更新 092
+  两个分类。最终报告 `update-final/`、日志 `wu7-h-update-final.log`；capabilities/UTF-8/diff
+  检查通过，未改分类器或排除表。
+  初轮与定位证据：`wu7-h-full.log`、`wu7-h-065-lldb-bt.log`、`wu7-h-096-sample.txt`；
+  051/065 双后端恢复见 `wu7-h-regressions-final.log`（该阶段 096 仍超时），096 最终恢复
+  见 `wu7-h-copy-regression.log`（switch 36.57s、threaded 23.25s）。
+
+以下两后端结果一致，作为 WU7-6 输入；本次只消除装配遮挡，不修后续语义缺口：
+
+| 用例 | 分类 | 第一处差异 / 后续首错 | ledger |
+| --- | --- | --- | --- |
+| 070-nio-buffer | fail:output | 第 1 行 `has array: true` → `false`；继续至 Main.storeValues:139，负 byte put/get 报 `byte get/store failed` | 空 |
+| 092-locale | fail:unimplemented | 第 3 行应为 `France(GMT): Monday, January 2, 2012`，实际 `UnsupportedOperationException: locale is outside the audited ICU set`（LocaleData.initLocaleData）；捕获后继续至 Main.testNormalizer:126，NFD 骨架字段未实现 | `dexvm.skeleton.field.Ljava/text/Normalizer$Form;->NFD:Ljava/text/Normalizer$Form;` ×1 |
+| 094-pattern | fail:output | 第 1 行应为 `str1 matches: true`，实际 ExceptionInInitializerError；Main.<clinit>:72 的 WEB_URL Pattern.compile 抛 PatternSyntaxException（invalid escaped character / trailing escape） | 空 |
+| 062-character-encodings | fail:unimplemented | 第 1 行应为 `Missing: []`，实际 UnsatisfiedLinkError：Charset.availableCharsets 未实现（Main.main:17） | `dexvm.intrinsic.Ljava/nio/charset/Charset;.availableCharsets()Ljava/util/SortedMap;` ×1 |
 
 ## 剩余
 

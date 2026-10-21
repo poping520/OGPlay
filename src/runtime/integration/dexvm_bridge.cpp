@@ -32,7 +32,8 @@ constexpr std::uint64_t kRootThreadId = 1;
 // word and compares that value with pthread_internal_t::tid. Keep the native
 // execution contexts in a compact, reserved guest-TID range.
 constexpr std::uint64_t kDexVmProcessThreadBase = UINT64_C(0x4000);
-constexpr std::uint32_t kDexVmNativeContextSlots = 32;
+// The final process slot is reserved for the OpenSL callback worker.
+constexpr std::uint32_t kDexVmNativeContextSlots = 31;
 
 namespace dx = ogplay::runtime::dexvm;
 
@@ -374,15 +375,18 @@ public:
     std::unique_ptr<dx::VmThreadRuntime> threads;
 
     std::unordered_map<std::uint32_t, JniObjectIdentity> class_identities;
+    std::unordered_map<std::uint64_t, dx::DexClassId> native_class_ids;
     std::unordered_map<std::uint32_t, dx::VmFieldId> field_identities;
     std::unordered_map<std::uint32_t, JniReference> class_global_refs;
     std::unordered_set<std::uint32_t> registering_classes;
     mutable std::mutex thread_contexts_mutex;
+    std::mutex native_preparation_mutex;
     std::unordered_map<std::uint64_t, std::uint64_t> token_to_process_thread{
         {1, kRootThreadId}};
     std::unordered_map<std::uint64_t, std::uint64_t> process_thread_to_token{
         {kRootThreadId, 1}};
     std::unordered_map<std::uint64_t, std::uint32_t> process_thread_slots;
+    std::unordered_set<std::uint64_t> java_thread_tokens;
     std::unordered_map<std::uint64_t, dx::InterpreterExecutionContext> native_attachments;
 
     DexVmGuestBridge* owner{};
@@ -536,6 +540,11 @@ public:
         if (linked.is_array) {
             return {JniObjectDomain::dex_vm, java_class.Value()};
         }
+        // Value transport needs the stable class identity, not a fresh scan of
+        // every method and field on each object-array store. JNI resolution
+        // still publishes newly materialized members via RegisterClassForNative.
+        if (const auto found = class_identities.find(java_class.Value());
+            found != class_identities.end()) return found->second;
         return RegisterClassForNative(java_class);
     }
 
@@ -547,17 +556,16 @@ public:
             static_cast<void>(linker.Class(java_class));
             return java_class;
         }
-        for (const auto& [raw, registered] : class_identities) {
-            if (registered == identity) return dx::DexClassId(raw);
-        }
+        if (const auto type = ClassForJniIdentity(identity)) return *type;
         throw DexVmBridgeError(
             "JNI class identity is not published in DexVM");
     }
 
     [[nodiscard]] std::optional<dx::DexClassId> ClassForJniIdentity(
         const JniObjectIdentity identity) const {
-        for (const auto& [raw, registered] : class_identities) {
-            if (registered == identity) return dx::DexClassId(raw);
+        if (identity.domain == JniObjectDomain::host) {
+            const auto found = native_class_ids.find(identity.value);
+            if (found != native_class_ids.end()) return found->second;
         }
         return std::nullopt;
     }
@@ -607,15 +615,75 @@ public:
     return session->Environment().PublishLocalObject(thread, identity);
     }
 
-    [[nodiscard]] std::uint64_t ProcessThreadForToken(
-        const std::uint64_t token) const {
-        const std::scoped_lock lock(thread_contexts_mutex);
-        const auto found = token_to_process_thread.find(token);
-        if (found == token_to_process_thread.end()) {
-            throw DexVmBridgeError(
-                "DexVM execution context has no native thread context");
+    [[nodiscard]] std::uint64_t ProcessThreadForToken(const std::uint64_t token) {
+        {
+            const std::scoped_lock lock(thread_contexts_mutex);
+            if (const auto found = token_to_process_thread.find(token);
+                found != token_to_process_thread.end()) return found->second;
+            if (!java_thread_tokens.contains(token))
+                throw DexVmBridgeError("DexVM execution context has no native thread context");
         }
-        return found->second;
+        // Java-only workers consume no native CPU/TLS slots. Allocate on their
+        // first native operation, outside the VM lock (JNI attach/detach may
+        // hold JavaVM/monitor locks and reenter the interpreter).
+        auto& execution_lock = vm->ExecutionLock();
+        const auto depth = execution_lock.ReleaseForBlocking();
+        try {
+            std::unique_lock preparing(native_preparation_mutex);
+            std::optional<std::uint64_t> existing;
+            {
+                const std::scoped_lock lock(thread_contexts_mutex);
+                if (const auto found = token_to_process_thread.find(token);
+                    found != token_to_process_thread.end()) existing = found->second;
+                else if (!java_thread_tokens.contains(token))
+                    throw DexVmBridgeError("DexVM execution context retired before native preparation");
+            }
+            if (existing) {
+                preparing.unlock();
+                execution_lock.ReacquireAfterBlocking(depth);
+                return *existing;
+            }
+            std::uint32_t slot = kDexVmNativeContextSlots;
+            std::uint64_t process_thread{};
+            {
+                const std::scoped_lock lock(thread_contexts_mutex);
+                for (std::uint32_t candidate = 0;
+                     candidate < kDexVmNativeContextSlots; ++candidate) {
+                    const auto used = std::find_if(
+                        process_thread_slots.begin(),
+                        process_thread_slots.end(),
+                        [candidate](const auto& entry) {
+                            return entry.second == candidate;
+                        });
+                    if (used == process_thread_slots.end()) {
+                        slot = candidate;
+                        break;
+                    }
+                }
+                if (slot == kDexVmNativeContextSlots) {
+                    throw DexVmBridgeError(
+                        "DexVM native thread context pool is exhausted");
+                }
+                process_thread = kDexVmProcessThreadBase + slot;
+                process_thread_slots.emplace(process_thread, slot);
+            }
+            try {
+                session->PrepareDexVmThread(process_thread, slot);
+                const std::scoped_lock lock(thread_contexts_mutex);
+                token_to_process_thread.emplace(token, process_thread);
+                process_thread_to_token.emplace(process_thread, token);
+            } catch (...) {
+                const std::scoped_lock lock(thread_contexts_mutex);
+                process_thread_slots.erase(process_thread);
+                throw;
+            }
+            preparing.unlock();
+            execution_lock.ReacquireAfterBlocking(depth);
+            return process_thread;
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(depth);
+            throw;
+        }
     }
 
     [[nodiscard]] dx::InterpreterExecutionContext ContextForJniThread(
@@ -972,6 +1040,7 @@ public:
     const auto name = linked.descriptor.substr(1, linked.descriptor.size() - 2);
     if (const auto existing = classes.FindClass(name); existing.has_value()) {
       class_identities.emplace(class_id.Value(), *existing);
+      native_class_ids.emplace(existing->value, class_id);
       PublishMissingMethods(class_id, *existing);
       PublishMissingFields(class_id, *existing);
       return *existing;
@@ -979,6 +1048,10 @@ public:
     if (!registering_classes.emplace(class_id.Value()).second) {
       throw DexVmBridgeError("dexvm JNI class hierarchy contains a cycle");
     }
+    const auto unregister = [this, class_id](void*) {
+      registering_classes.erase(class_id.Value());
+    };
+    const std::unique_ptr<void, decltype(unregister)> registration(this, unregister);
     JniClassDeclaration declaration;
     declaration.name = name;
     if (linked.super.has_value()) {
@@ -993,6 +1066,10 @@ public:
     declaration.interfaces.reserve(linked.direct_interfaces.size());
     for (const auto interface_id : linked.direct_interfaces) {
       const auto &interface_class = linker.Class(interface_id);
+      if (!interface_class.is_interface) {
+        throw dx::JavaLinkageError(dx::JavaLinkageKind::incompatible_class_change,
+                                  "implemented type is not an interface: " + interface_class.descriptor);
+      }
       static_cast<void>(RegisterClassForNative(interface_id));
       declaration.interfaces.push_back(interface_class.descriptor.substr(
           1, interface_class.descriptor.size() - 2));
@@ -1024,6 +1101,7 @@ public:
     }
     registering_classes.erase(class_id.Value());
     class_identities.emplace(class_id.Value(), identity);
+    native_class_ids.emplace(identity.value, class_id);
     for (const auto field : linked.own_instance_fields) BindField(identity, field);
     for (const auto field : linked.own_static_fields) BindField(identity, field);
     for (const auto &[implementation, method_id] : handlers) {
@@ -1066,7 +1144,13 @@ public:
     for (const auto class_id : linker.AllClasses()) {
       const auto &linked = linker.Class(class_id);
       if (linked.is_array) continue;
-      static_cast<void>(RegisterClassForNative(class_id));
+      try {
+        static_cast<void>(RegisterClassForNative(class_id));
+      } catch (const dx::JavaLinkageError&) {
+        // Eager JNI projection must not turn an unused, invalid Java class
+        // into an assembly error. Its first Java/JNI use reports the linkage
+        // error through the existing interpreter/resolver path.
+      }
     }
   }
 
@@ -2062,50 +2146,20 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
     if (guest_thread_id < 2U) {
         throw DexVmBridgeError("DexVM child thread id is invalid");
     }
-    std::uint32_t slot = kDexVmNativeContextSlots;
-    std::uint64_t process_thread{};
-    {
-        const std::scoped_lock lock(impl_->thread_contexts_mutex);
-        for (std::uint32_t candidate = 0;
-             candidate < kDexVmNativeContextSlots; ++candidate) {
-            const auto used = std::find_if(
-                impl_->process_thread_slots.begin(),
-                impl_->process_thread_slots.end(),
-                [candidate](const auto& entry) {
-                    return entry.second == candidate;
-                });
-            if (used == impl_->process_thread_slots.end()) {
-                slot = candidate;
-                break;
-            }
-        }
-        if (slot == kDexVmNativeContextSlots) {
-            throw DexVmBridgeError(
-                "DexVM native thread context pool is exhausted");
-        }
-        process_thread = kDexVmProcessThreadBase + slot;
-        impl_->process_thread_slots.emplace(process_thread, slot);
-    }
-    try {
-        impl_->session->PrepareDexVmThread(process_thread, slot);
-        const std::scoped_lock lock(impl_->thread_contexts_mutex);
-        impl_->token_to_process_thread.emplace(execution_token,
-                                               process_thread);
-        impl_->process_thread_to_token.emplace(process_thread,
-                                               execution_token);
-    } catch (...) {
-        const std::scoped_lock lock(impl_->thread_contexts_mutex);
-        impl_->process_thread_slots.erase(process_thread);
-        throw;
-    }
+    const std::scoped_lock lock(impl_->thread_contexts_mutex);
+    impl_->java_thread_tokens.emplace(execution_token);
 }
 
 void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id,
                                     const std::uint64_t execution_token) noexcept {
     static_cast<void>(guest_thread_id);
+    // A monitor snapshot may prepare this context from another host. Finish
+    // that preparation before retiring its token and native resources.
+    const std::scoped_lock preparing(impl_->native_preparation_mutex);
     std::uint64_t process_thread{};
     {
         const std::scoped_lock lock(impl_->thread_contexts_mutex);
+        impl_->java_thread_tokens.erase(execution_token);
         const auto found = impl_->token_to_process_thread.find(execution_token);
         if (found == impl_->token_to_process_thread.end()) return;
         process_thread = found->second;

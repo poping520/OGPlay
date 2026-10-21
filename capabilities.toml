@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7：run-dex 运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节分类。--check-baseline 拒绝 pass 回退，--update-baseline 仅允许无回归及固定 oracle 迁移；300 为 excluded:oracle。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。switch/threaded 各 72/92（78.3%）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 72/92（78.3%）。"
 
 [tools.dex_dependency_survey]
 status = "complete"

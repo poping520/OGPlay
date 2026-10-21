@@ -140,3 +140,30 @@ TEST_CASE("JNI object arrays use authoritative VM results and strict host fallba
     arrays.SetAssignability({});
     CHECK_THROWS_AS(arrays.Set(typed, 0, value), JniObjectArrayError);
 }
+
+TEST_CASE("JNI object array self copy preserves identities overlap and rejected ranges") {
+    using namespace ogplay::runtime;
+    JniClassRegistry classes;
+    const auto type = classes.RegisterClass(Class("java/lang/Object"));
+    JniObjectArrayStore arrays(classes);
+    const JniObjectValue first{AllocateJniHostObjectIdentity(), type};
+    const JniObjectValue second{AllocateJniHostObjectIdentity(), type};
+    const auto array = arrays.New(type, 4);
+    arrays.Set(array, 0, first);
+    arrays.Set(array, 1, second);
+    arrays.CopyWithin(array, 0, 1, 3);
+    CHECK(arrays.Get(array, 0) == first);
+    CHECK(arrays.Get(array, 1) == first);
+    CHECK(arrays.Get(array, 2) == second);
+    CHECK_FALSE(arrays.Get(array, 3).has_value());
+    arrays.CopyWithin(array, 1, 0, 3);
+    CHECK(arrays.Get(array, 0) == first);
+    CHECK(arrays.Get(array, 1) == second);
+    CHECK_FALSE(arrays.Get(array, 2).has_value());
+    arrays.CopyWithin(array, 4, 4, 0);
+    arrays.CopyWithin(array, 0, 0, 4);
+    CHECK_THROWS_AS(arrays.CopyWithin(array, -1, 0, 1), JniObjectArrayError);
+    CHECK_THROWS_AS(arrays.CopyWithin(array, 0, 3, 2), JniObjectArrayError);
+    CHECK_THROWS_AS(arrays.CopyWithin(array, 0, 0, -1), JniObjectArrayError);
+    CHECK(arrays.Get(array, 1) == second);
+}

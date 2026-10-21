@@ -633,6 +633,151 @@ private:
     dx::IntrinsicContext& call_;
     dx::VmObjectRef data_;
 };
+
+// nativeInitialize/nativeAddBatch inputs. PointerCoords/PointerProperties are
+// BootDex objects; their values are read through the guest-visible API only.
+constexpr std::int32_t kMaxMotionPointers = 16;
+using MotionAxes = std::array<float, MotionSnapshotLayout::axis_count>;
+
+[[noreturn]] void ThrowMotion(const char* type, std::string message) {
+    throw dx::VmJavaThrow{type, std::move(message)};
+}
+
+void ValidateMotionPointerCount(const std::int32_t count) {
+    if (count < 1) ThrowMotion("Ljava/lang/IllegalArgumentException;", "pointerCount must be at least 1");
+    if (count > kMaxMotionPointers)
+        ThrowMotion("Ljava/lang/IllegalArgumentException;", "pointerCount exceeds the 16 pointer limit");
+}
+
+void ValidateMotionArray(dx::Interpreter& vm, const dx::VmObjectRef array, const std::int32_t count,
+                         const char* name) {
+    if (!array.IsValid())
+        ThrowMotion("Ljava/lang/IllegalArgumentException;", std::string(name) + " array must not be null");
+    if (vm.Model().ArrayLength(array) < count)
+        ThrowMotion("Ljava/lang/IllegalArgumentException;",
+                    std::string(name) + " array must be large enough to hold all pointers");
+}
+
+MotionAxes ReadPointerCoords(dx::Interpreter& vm, const dx::VmObjectRef array, const std::int32_t index,
+                             const float x_offset, const float y_offset) {
+    const auto coords = vm.Model().GetObjectElement(array, index);
+    if (!coords.IsValid()) ThrowMotion("Ljava/lang/NullPointerException;", "pointerCoords");
+    MotionAxes axes{};
+    for (std::size_t axis = 0; axis < axes.size(); ++axis)
+        axes[axis] = CallAndroidMethod(vm, coords, "getAxisValue", "(I)F",
+            {dx::VmValue::Int(static_cast<std::int32_t>(axis))}).AsFloat();
+    axes[0] -= x_offset;
+    axes[1] -= y_offset;
+    return axes;
+}
+
+std::int32_t ReadIntField(dx::Interpreter& vm, const dx::VmObjectRef object, const char* name) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, "I");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                     std::string("PointerProperties field is missing: ") + name);
+    return static_cast<std::int32_t>(vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits);
+}
+
+struct MotionInit final {
+    std::int32_t action{}, device{}, source{}, flags{}, meta{}, buttons{}, edges{};
+    std::int64_t down_time_ms{}, event_time_ms{};
+    float x_precision{}, y_precision{};
+    std::vector<std::pair<std::int32_t, std::int32_t>> pointers;  // id, tool type
+    std::vector<MotionAxes> axes;
+};
+
+constexpr std::int64_t MillisToNanos(const std::int64_t ms) {
+    return static_cast<std::int64_t>(static_cast<std::uint64_t>(ms) * 1000000U);
+}
+
+dx::VmObjectRef NewMotionEvent(dx::Interpreter& vm, const MotionInit& init) {
+    using Layout = MotionSnapshotLayout;
+    const auto instance = vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
+    const auto root = vm.ProtectReferences(std::array{instance});
+    const auto count = init.pointers.size();
+    const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
+        JniPrimitiveKind::long_integer, static_cast<JniSize>(Layout::Sample(count, 1)));
+    const auto data_root = vm.ProtectReferences(std::array{data});
+    const auto put = [&](std::size_t index, std::uint64_t bits) {
+        vm.Model().SetPrimitiveElement(data, static_cast<JniSize>(index), bits);
+    };
+    put(Layout::action, static_cast<std::uint32_t>(init.action));
+    put(Layout::device, static_cast<std::uint32_t>(init.device));
+    put(Layout::source, static_cast<std::uint32_t>(init.source));
+    put(Layout::flags, static_cast<std::uint32_t>(init.flags));
+    put(Layout::meta, static_cast<std::uint32_t>(init.meta));
+    put(Layout::buttons, static_cast<std::uint32_t>(init.buttons));
+    put(Layout::edges, static_cast<std::uint32_t>(init.edges));
+    put(Layout::down_time, static_cast<std::uint64_t>(MillisToNanos(init.down_time_ms)));
+    put(Layout::x_offset, 0);
+    put(Layout::y_offset, 0);
+    put(Layout::x_precision, std::bit_cast<std::uint32_t>(init.x_precision));
+    put(Layout::y_precision, std::bit_cast<std::uint32_t>(init.y_precision));
+    put(Layout::pointer_count, count);
+    put(Layout::history_count, 0);
+    for (std::size_t i = 0; i < count; ++i) {
+        put(Layout::header_size + i * 2, static_cast<std::uint32_t>(init.pointers[i].first));
+        put(Layout::header_size + i * 2 + 1, static_cast<std::uint32_t>(init.pointers[i].second));
+    }
+    const auto base = Layout::Sample(count, 0);
+    put(base, static_cast<std::uint64_t>(MillisToNanos(init.event_time_ms)));
+    for (std::size_t i = 0; i < count; ++i)
+        for (std::size_t axis = 0; axis < Layout::axis_count; ++axis)
+            put(base + 1 + i * Layout::axis_count + axis, std::bit_cast<std::uint32_t>(init.axes[i][axis]));
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(instance), "mOgplaySnapshot", "[J");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "MotionEvent snapshot field is missing");
+    vm.Model().InstanceSlots(instance)[vm.Linker().Field(*field).slot] = {data.Value(), dx::SlotTag::ref};
+    return instance;
+}
+
+// MotionEvent.obtain(downTime, eventTime, action, pointerCount, pointerProperties,
+// pointerCoords, metaState, buttonState, xPrecision, yPrecision, deviceId, edgeFlags,
+// source, flags). Argument layout is shared by both overloads below; `properties` holds
+// either PointerProperties[] or int[] pointer ids.
+dx::VmValue ObtainMotionEvent(dx::IntrinsicContext& call, const bool pointer_ids) {
+    auto& vm = call.vm;
+    const auto& a = call.arguments;
+    // Overload (JJII[I[Coords;IFFIIII) has no buttonState; (..[Props;[Coords;IIFFIIII) does.
+    const std::size_t after_meta = 7;
+    const auto count = a[3].AsInt();
+    const auto properties = a[4].ref;
+    const auto coords = a[5].ref;
+    ValidateMotionPointerCount(count);
+    MotionInit init;
+    init.down_time_ms = a[0].AsLong();
+    init.event_time_ms = a[1].AsLong();
+    init.action = a[2].AsInt();
+    init.meta = a[6].AsInt();
+    std::size_t next = after_meta;
+    if (!pointer_ids) init.buttons = a[next++].AsInt();
+    init.x_precision = a[next++].AsFloat();
+    init.y_precision = a[next++].AsFloat();
+    init.device = a[next++].AsInt();
+    init.edges = a[next++].AsInt();
+    init.source = a[next++].AsInt();
+    init.flags = a[next++].AsInt();
+    if (pointer_ids) {
+        // Java side of the AOSP overload: pointerIds[i] is dereferenced before native validation.
+        if (!properties.IsValid()) ThrowMotion("Ljava/lang/NullPointerException;", "pointerIds");
+        if (vm.Model().ArrayLength(properties) < count)
+            ThrowMotion("Ljava/lang/ArrayIndexOutOfBoundsException;", "pointerIds");
+    } else {
+        ValidateMotionArray(vm, properties, count, "pointerProperties");
+    }
+    ValidateMotionArray(vm, coords, count, "pointerCoords");
+    for (std::int32_t i = 0; i < count; ++i) {
+        if (pointer_ids) {
+            init.pointers.emplace_back(
+                static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(properties, i)), 0);
+        } else {
+            const auto props = vm.Model().GetObjectElement(properties, i);
+            if (!props.IsValid()) ThrowMotion("Ljava/lang/NullPointerException;", "pointerProperties");
+            init.pointers.emplace_back(ReadIntField(vm, props, "id"), ReadIntField(vm, props, "toolType"));
+        }
+        init.axes.push_back(ReadPointerCoords(vm, coords, i, 0, 0));
+    }
+    return dx::VmValue::Ref(NewMotionEvent(vm, init));
+}
 } // namespace
 
 Decl Declare_android_view_MotionEvent(const Context& context) {
@@ -783,6 +928,45 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
             return dx::VmValue::Float(MotionSnapshotReader(call, data).Float(axis == 0 ? Layout::x_precision : Layout::y_precision));
         });
     }
+    builder.StaticMethod("obtain", "(JJII[I[Landroid/view/MotionEvent$PointerCoords;IFFIIII)Landroid/view/MotionEvent;",
+        [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, true); });
+    builder.StaticMethod("obtain",
+        "(JJII[Landroid/view/MotionEvent$PointerProperties;[Landroid/view/MotionEvent$PointerCoords;IIFFIIII)"
+        "Landroid/view/MotionEvent;",
+        [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, false); });
+    // nativeAddBatch: the current sample becomes the newest historical sample.
+    builder.FinalMethod("addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V", [data](dx::IntrinsicContext& call) {
+        auto& vm = call.vm;
+        MotionSnapshotReader reader(call, data);
+        const auto count = static_cast<std::int32_t>(reader.Word(Layout::pointer_count));
+        const auto pointers = static_cast<std::size_t>(count);
+        const auto history = static_cast<std::size_t>(reader.Word(Layout::history_count));
+        const auto array = call.arguments[1].ref;
+        ValidateMotionArray(vm, array, count, "pointerCoords");
+        std::vector<MotionAxes> axes;
+        for (std::int32_t i = 0; i < count; ++i)
+            axes.push_back(ReadPointerCoords(vm, array, i, reader.Float(Layout::x_offset), reader.Float(Layout::y_offset)));
+        const auto fresh = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
+            JniPrimitiveKind::long_integer, static_cast<JniSize>(Layout::Sample(pointers, history + 2)));
+        const auto fresh_root = vm.ProtectReferences(std::array{fresh});
+        const auto put = [&](std::size_t index, std::uint64_t bits) {
+            vm.Model().SetPrimitiveElement(fresh, static_cast<JniSize>(index), bits);
+        };
+        // Everything keeps its position; the old current sample is appended as the newest history.
+        const auto old_end = Layout::Sample(pointers, history + 1);
+        for (std::size_t i = 0; i < old_end; ++i) put(i, reader.Word(i));
+        const auto stride = Layout::Sample(pointers, 1) - Layout::Sample(pointers, 0);
+        for (std::size_t i = 0; i < stride; ++i) put(old_end + i, reader.Word(Layout::Sample(pointers, 0) + i));
+        put(Layout::meta, static_cast<std::uint32_t>(reader.Int(Layout::meta) | call.arguments[2].AsInt()));
+        put(Layout::history_count, history + 1);
+        const auto base = Layout::Sample(pointers, 0);
+        put(base, static_cast<std::uint64_t>(MillisToNanos(call.arguments[0].AsLong())));
+        for (std::size_t i = 0; i < pointers; ++i)
+            for (std::size_t axis = 0; axis < Layout::axis_count; ++axis)
+                put(base + 1 + i * Layout::axis_count + axis, std::bit_cast<std::uint32_t>(axes[i][axis]));
+        dx::IntrinsicCall(call).SetRef(data, fresh);
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("recycle", "()V", [data](dx::IntrinsicContext& call) {
         static_cast<void>(MotionSnapshotReader(call, data));
         dx::IntrinsicCall(call).SetRef(data, dx::VmObjectRef{});

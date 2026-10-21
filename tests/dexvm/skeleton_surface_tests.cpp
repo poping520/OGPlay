@@ -40,7 +40,7 @@ struct Vm {
             builder.StaticMethod("answer","()I",[](IntrinsicContext&){return VmValue::Int(77);});
             builder.UnimplementedStatic("plain","()I");
             auto decl=std::move(builder).Build();
-            IntrinsicFieldDecl field;field.name="VALUE";field.descriptor="I";field.is_static=true;field.has_constant=true;field.integral=88;
+            IntrinsicFieldDecl field;field.name="VALUE";field.descriptor="I";field.access_flags=0x19;field.is_static=true;field.has_constant=true;field.integral=88;
             decl.fields.push_back(field);
             linker.RegisterIntrinsics(std::array{decl});
         }
@@ -63,13 +63,13 @@ TEST_CASE("API19 skeleton lazy identity hierarchy and own members") {
     auto slot=f.linker.FindVtableIndex(base,"toString","()Ljava/lang/String;");REQUIRE(slot);
     const auto override_id=f.linker.Class(base).vtable[*slot];
     CHECK(f.linker.Method(override_id).owner==base);CHECK(f.linker.Method(override_id).is_skeleton);
-    CHECK_THROWS_AS(static_cast<void>(f.linker.ResolveDescriptor("Lshape/ForbiddenOverride;")),DexVmError);
+    CHECK_THROWS_AS(static_cast<void>(f.linker.ResolveDescriptor("Lshape/ForbiddenOverride;")),JavaLinkageError);
     CHECK(f.linker.Class(child).own_instance_fields.empty());
     for(auto method:f.linker.MethodsOf(child))CHECK(f.linker.Method(method).name=="apply");
     CHECK(f.linker.FindFieldRecursive(child,"value","I")==f.linker.FindFieldRecursive(base,"value","I"));
     Vm off(InterpreterBackend::switch_dispatch,false);
-    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Lshape/Child;")),DexVmError);
-    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/shape/Base;")),DexVmError);
+    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Lshape/Child;")),JavaLinkageError);
+    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/shape/Base;")),JavaLinkageError);
 }
 TEST_CASE("API19 skeleton constants and fail closed access both backends") {
     for(auto backend:{InterpreterBackend::switch_dispatch,InterpreterBackend::threaded}) {

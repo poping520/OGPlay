@@ -51,8 +51,8 @@ struct ReflectionVm final {
                   REQUIRE(surface.good());
                   linker.RegisterSkeletonSurface({std::istreambuf_iterator<char>(surface), {}});
               }
-              linker.RegisterDex(ReadFixture(fixture));
               ogplay::test::RegisterBootDex(linker);
+              linker.RegisterDex(ReadFixture(fixture));
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
@@ -873,7 +873,7 @@ TEST_CASE("Field runtime marker annotations dispatch on both backends") {
         CHECK_THROWS_AS(
             static_cast<void>(vm.interpreter.Reflection().DeclaredMethods(
                 vm.linker.ResolveDescriptor("Lannotation/Subject;"))),
-            DexVmError);
+            JavaLinkageError);
     }
 }
 
@@ -1036,6 +1036,28 @@ TEST_CASE("Class newInstance uses the nullary constructor without wrapping") {
     const auto outcome = call("Lreflect/ThrowingDefault;");
     ExpectException(vm, outcome, "Ljava/lang/RuntimeException;");
     CHECK(outcome.exception == target);
+}
+
+TEST_CASE("protected reflective field access precedes null receiver validation") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm vm("reflection.dex", backend);
+        auto& reflect = vm.interpreter.Reflection();
+        const auto field = FieldWrapper(vm, "Lreflect/Base;", "protectedField");
+        const auto caller = vm.linker.ResolveDescriptor("Lother/Sub;");
+        CHECK_THROWS_AS(static_cast<void>(reflect.GetField(field, VmObjectRef{}, std::nullopt, caller)), VmJavaThrow);
+        try {
+            static_cast<void>(reflect.GetField(field, VmObjectRef{}, std::nullopt, caller));
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.descriptor == "Ljava/lang/IllegalAccessException;");
+        }
+        reflect.SetAccessible(field, true);
+        try {
+            static_cast<void>(reflect.GetField(field, VmObjectRef{}, std::nullopt, caller));
+            FAIL("null receiver accepted");
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.descriptor == "Ljava/lang/NullPointerException;");
+        }
+    }
 }
 
 TEST_CASE("Field get and set share access initialization and widening rules") {
@@ -1675,5 +1697,5 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
     }
     ReflectionVm off("interp.dex", InterpreterBackend::switch_dispatch, false, true);
     CHECK(off.linker.Class(off.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;")).is_boot_dex);
-    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/os/NullVibrator;")), DexVmError);
+    CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/os/NullVibrator;")), JavaLinkageError);
 }

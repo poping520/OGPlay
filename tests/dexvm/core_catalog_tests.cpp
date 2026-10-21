@@ -381,7 +381,7 @@ TEST_CASE("dormant classes with missing hierarchy link only when reached") {
         static_cast<void>(
             vm.linker.ResolveDescriptor("LDormantOptional;"));
         FAIL("reached class with missing hierarchy did not fail");
-    } catch (const DexVmError& error) {
+    } catch (const JavaLinkageError& error) {
         const std::string message = error.what();
         CHECK(message.find("class hierarchy is not available: ") !=
               std::string::npos);
@@ -418,18 +418,11 @@ TEST_CASE("APK Android Support classes remain application-owned") {
     CHECK(vm.CallStatic(support_descriptor, "answer", "()I").value.AsInt() ==
           42);
 
-    // The APK fixture also declares this framework class.  It is discarded,
-    // so an absent platform catalog cannot accidentally expose the APK copy.
-    CHECK_FALSE(vm.linker.FindClass("Landroid/app/Activity;").has_value());
-
-    auto activity = IntrinsicClassBuilder::Class(
-        "Landroid/app/Activity;", "Ljava/lang/Object;");
-    Vm with_platform({}, {}, {std::move(activity).Build()});
-    const auto platform =
-        with_platform.linker.ResolveDescriptor("Landroid/app/Activity;");
-    CHECK(with_platform.linker.Class(platform).defining_loader ==
-          kBootstrapLoader);
-    CHECK(with_platform.linker.Class(platform).is_intrinsic);
+    // A real BootDex definition shadows the APK copy, independent of package prefix.
+    const auto activity = vm.linker.FindClass("Landroid/app/Activity;");
+    REQUIRE(activity);
+    CHECK(vm.linker.Class(*activity).defining_loader == kBootstrapLoader);
+    CHECK(vm.linker.Class(*activity).is_boot_dex);
 }
 
 TEST_CASE("dexvm API 19 primitive wrapper family inventory is complete") {

@@ -129,15 +129,9 @@ void ExpectInvalidRegister(Vm& vm, const std::string& owner,
                            const std::string& name,
                            const std::string& descriptor,
                            std::vector<VmValue> arguments) {
-    try {
-        static_cast<void>(vm.CallStatic(owner, name, descriptor,
-                                        std::move(arguments)));
-        FAIL("expected DexVmError for out-of-range registers");
-    } catch (const DexVmError& error) {
-        CHECK(error.Reason() == DexVmErrorReason::invalid_register);
-        CHECK(std::string(error.what()).find("register out of range") !=
-              std::string::npos);
-    }
+    const auto outcome = vm.CallStatic(owner, name, descriptor, std::move(arguments));
+    ExpectException(vm, outcome, "Ljava/lang/VerifyError;");
+    CHECK(outcome.exception_message.find("register out of range") != std::string::npos);
 }
 
 void ExpectMatchingStructuralDiagnostic(
@@ -151,31 +145,26 @@ void ExpectMatchingStructuralDiagnostic(
     method.code->instructions.assign(units);
     const auto where = std::string("LFlow;.loopSum");
     std::string precheck_what;
-    DexVmErrorReason precheck_reason{};
+
     try {
         vm.linker.PrecheckMethod(id);
         FAIL("expected PrecheckMethod to reject");
-    } catch (const DexVmError& error) {
+    } catch (const JavaLinkageError& error) {
         precheck_what = error.what();
-        precheck_reason = error.Reason();
+        CHECK(error.Kind() == JavaLinkageKind::verify);
     }
     try {
         static_cast<void>(BuildFastCode(*method.code, where));
         FAIL("expected BuildFastCode to reject");
     } catch (const DexVmError& error) {
         CHECK(std::string(error.what()) == precheck_what);
-        CHECK(error.Reason() == precheck_reason);
+        // FastCode only accepts prechecked input; rejecting it here remains a host error.
         CHECK(precheck_what == where + ": " + detail);
     }
 }
 
-struct CapturedDexVmError final {
-    DexVmErrorReason reason{};
-    std::string what;
-};
-
 template <typename Patch>
-CapturedDexVmError CaptureInvokeWideError(const InterpreterBackend backend,
+std::string CaptureInvokeWideError(const InterpreterBackend backend,
                                           Patch&& patch) {
     InterpreterConfig config;
     config.backend = backend;
@@ -186,13 +175,9 @@ CapturedDexVmError CaptureInvokeWideError(const InterpreterBackend backend,
     patch(method);
     method.prechecked = false;
     method.fast_code.reset();
-    try {
-        static_cast<void>(vm.interpreter.Call(id, {}));
-        FAIL("expected DexVmError for malformed wide invoke");
-    } catch (const DexVmError& error) {
-        return {error.Reason(), error.what()};
-    }
-    return {};
+    const auto outcome = vm.interpreter.Call(id, {});
+    ExpectException(vm, outcome, "Ljava/lang/VerifyError;");
+    return outcome.exception_message;
 }
 
 [[nodiscard]] bool PatchOpcodeRegisterWord(std::vector<std::uint16_t>& units,
@@ -457,10 +442,8 @@ TEST_CASE("dexvm invoke-wide 35c rejects non-consecutive and OOB pairs") {
             InterpreterBackend::switch_dispatch, patch);
         const auto threaded_error =
             CaptureInvokeWideError(InterpreterBackend::threaded, patch);
-        CHECK(switch_error.reason == DexVmErrorReason::invalid_register);
-        CHECK(switch_error.what.find(needle) != std::string::npos);
-        CHECK(threaded_error.reason == switch_error.reason);
-        CHECK(threaded_error.what == switch_error.what);
+        CHECK(switch_error.find(needle) != std::string::npos);
+        CHECK(threaded_error == switch_error);
     };
     compare_backends(
         [](LinkedMethod& method) {

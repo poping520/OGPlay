@@ -1,7 +1,7 @@
     if (instruction.handler == FastHandler::object_checked) {
         if (opcode >= 0x1fU && opcode <= 0x25U) {
             const auto java_class = linker->ResolveTypeIndex(
-                dex_unit, static_cast<std::uint32_t>(instruction.extra));
+                dex_unit, static_cast<std::uint32_t>(instruction.extra), frame.method->owner);
             instruction.resolved_id = java_class.Value();
             if (opcode == 0x23U || opcode == 0x24U || opcode == 0x25U) {
                 const auto& linked = linker->Class(java_class);
@@ -24,14 +24,16 @@
                 linker->ResolveFieldIndex(
                            dex_unit,
                            static_cast<std::uint32_t>(instruction.extra),
-                           is_static)
+                           is_static, frame.method->owner)
                     .field.Value();
         }
         instruction.handler = FastHandler::object_fast;
     }
 
     const auto java_class = [&] {
-        return DexClassId(instruction.resolved_id);
+        const auto type = DexClassId(instruction.resolved_id);
+        linker->EnsureClassLinked(type);
+        return type;
     };
 
     switch (opcode) {
@@ -97,6 +99,8 @@
         }
         case 0x22: {
             const auto type = java_class();
+            if ((linker->Class(type).access_flags & (kAccAbstract | kAccInterface)) != 0U)
+                throw JavaLinkageError(JavaLinkageKind::instantiation, linker->Class(type).descriptor);
             PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
                                       linker->Class(type).instance_slots),
                                   "new-instance");
@@ -376,6 +380,7 @@
 
     if (opcode >= 0x52U && opcode <= 0x5fU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
+        linker->EnsureClassLinked(field.owner);
         if (field.is_unimplemented) { OGPLAY_SYNC_EXECUTION(); RequireImplementedField(field); }
         const auto receiver = GetFastRef(regs, instruction.b);
         if (!receiver.IsValid()) {
@@ -423,6 +428,7 @@
 
     if (opcode >= 0x60U && opcode <= 0x6dU) {
         const auto& field = linker->Field(VmFieldId(instruction.resolved_id));
+        linker->EnsureClassLinked(field.owner);
         if (field.is_unimplemented) { OGPLAY_SYNC_EXECUTION(); RequireImplementedField(field); }
         OGPLAY_SYNC_EXECUTION();
         EnsureInitialized(execution, field.owner);

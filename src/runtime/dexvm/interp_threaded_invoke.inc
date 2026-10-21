@@ -8,7 +8,7 @@
                                           : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
             dex_unit, static_cast<std::uint32_t>(instruction.extra),
-            invoke_kind);
+            invoke_kind, frame.method->owner);
         const auto& named = linker->Method(resolved.method);
         if (invoke.registers.size() != named.ins_words) {
             FailCode("invoke argument words do not match descriptor of " +
@@ -138,6 +138,7 @@
     const auto callee_static = linker->Method(target_id).is_static;
     const auto callee_kind = linker->Method(target_id).kind;
     const auto callee_owner = linker->Method(target_id).owner;
+    linker->EnsureClassLinked(callee_owner);
     if (callee_static) {
         OGPLAY_SYNC_EXECUTION();
         EnsureInitialized(execution, callee_owner);
@@ -227,8 +228,7 @@
             break;
         }
         case MethodKind::abstract:
-            FailCode("abstract method invoked: " +
-                     linker->Method(target_id).name);
+            throw JavaLinkageError(JavaLinkageKind::abstract_method, linker->Method(target_id).name);
     }
     }
     if (continue_same_frame) {

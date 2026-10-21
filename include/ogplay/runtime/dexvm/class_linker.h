@@ -405,15 +405,18 @@ public:
     // Constant-pool resolution against the registered dex (cached).
     [[nodiscard]] DexClassId ResolveTypeIndex(std::uint32_t type_index);
     [[nodiscard]] DexClassId ResolveTypeIndex(DexUnitId unit,
-                                              std::uint32_t type_index);
+                                              std::uint32_t type_index,
+                                              std::optional<DexClassId> caller = std::nullopt);
     [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
         std::uint32_t method_index, InvokeKind kind);
     [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
-        DexUnitId unit, std::uint32_t method_index, InvokeKind kind);
+        DexUnitId unit, std::uint32_t method_index, InvokeKind kind,
+        std::optional<DexClassId> caller = std::nullopt);
     [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
         std::uint32_t field_index, bool is_static);
     [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
-        DexUnitId unit, std::uint32_t field_index, bool is_static);
+        DexUnitId unit, std::uint32_t field_index, bool is_static,
+        std::optional<DexClassId> caller = std::nullopt);
 
     // Runtime dispatch helpers.
     [[nodiscard]] std::optional<std::uint16_t> FindVtableIndex(
@@ -481,6 +484,7 @@ public:
     [[nodiscard]] std::vector<GapSurveyHit> GapSurveyHits() const;
 
 private:
+    void MarkVerificationFailed(DexClassId id);
     [[nodiscard]] DexUnitId RegisterDexUnit(
         std::vector<std::uint8_t> dex_bytes, bool boot);
     class Impl;

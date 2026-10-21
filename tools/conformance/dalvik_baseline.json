@@ -12,8 +12,8 @@
     "threaded": "fail:output"
   },
   "004-annotations": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
   },
   "005-args": {
     "switch": "pass",
@@ -92,8 +92,8 @@
     "threaded": "pass"
   },
   "024-illegal-access": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "025-access-controller": {
     "switch": "pass",
@@ -124,8 +124,8 @@
     "threaded": "fail:unimplemented"
   },
   "032-concrete-sub": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "033-class-init-deadlock": {
     "switch": "pass",
@@ -164,8 +164,8 @@
     "threaded": "pass"
   },
   "042-new-instance": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "043-privates": {
     "switch": "pass",
@@ -244,16 +244,16 @@
     "threaded": "excluded:scope"
   },
   "064-field-access": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "065-mismatched-implements": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "066-mismatched-super": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "067-preemptive-unpark": {
     "switch": "excluded:compile",
@@ -264,8 +264,8 @@
     "threaded": "excluded:harness"
   },
   "069-field-type": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "070-nio-buffer": {
     "switch": "fail:output",
@@ -280,16 +280,16 @@
     "threaded": "fail:output"
   },
   "073-mismatched-field": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "074-gc-thrash": {
     "switch": "fail:unimplemented",
     "threaded": "fail:unimplemented"
   },
   "075-verification-error": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "076-boolean-put": {
     "switch": "pass",

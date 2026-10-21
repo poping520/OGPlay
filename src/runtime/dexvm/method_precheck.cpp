@@ -30,19 +30,19 @@ struct Decoded final {
         std::uint64_t width{};
         if (ident == 0x0100U) {  // packed-switch payload
             if (pc + 2 > units.size()) {
-                throw DexVmError(DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                                  where + ": packed payload truncated");
             }
             width = 4ULL + 2ULL * units[pc + 1];
         } else if (ident == 0x0200U) {  // sparse-switch payload
             if (pc + 2 > units.size()) {
-                throw DexVmError(DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                                  where + ": sparse payload truncated");
             }
             width = 2ULL + 4ULL * units[pc + 1];
         } else if (ident == 0x0300U) {  // fill-array-data payload
             if (pc + 4 > units.size()) {
-                throw DexVmError(DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                                  where + ": array payload truncated");
             }
             const auto element_width = units[pc + 1];
@@ -53,23 +53,22 @@ struct Decoded final {
                     (static_cast<std::uint64_t>(element_width) * count + 1U) /
                         2U;
         } else {
-            throw DexVmError(DexVmErrorReason::invalid_opcode,
+            throw JavaLinkageError(JavaLinkageKind::verify,
                              where + ": unknown payload ident");
         }
         if (width > units.size() - pc) {
-            throw DexVmError(DexVmErrorReason::invalid_code,
+            throw JavaLinkageError(JavaLinkageKind::verify,
                              where + ": payload exceeds method end");
         }
         return {opcode, static_cast<std::uint32_t>(width), true};
     }
     const auto& info = gen::kDexOpcodeTable[opcode];
     if (!info.defined) {
-        throw DexVmError(
-            DexVmErrorReason::invalid_opcode,
+        throw JavaLinkageError(JavaLinkageKind::verify,
             where + ": rejected opcode " + std::to_string(opcode));
     }
     if (info.width > units.size() - pc) {
-        throw DexVmError(DexVmErrorReason::invalid_code,
+        throw JavaLinkageError(JavaLinkageKind::verify,
                          where + ": instruction exceeds method end");
     }
     return {opcode, info.width, false};
@@ -167,6 +166,8 @@ struct Decoded final {
 }  // namespace
 
 void DexClassLinker::PrecheckMethod(const VmMethodId id) {
+    EnsureClassLinked(Method(id).owner);
+    try {
     auto& method = MutableMethod(id);
     if (method.prechecked) return;
     if (method.kind != MethodKind::interpreted) {
@@ -178,11 +179,11 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
     const auto registers = code.info.registers_size;
     const auto where = Class(method.owner).descriptor + "." + method.name;
     if (units.empty()) {
-        throw DexVmError(DexVmErrorReason::invalid_code,
+        throw JavaLinkageError(JavaLinkageKind::verify,
                          where + ": empty instruction stream");
     }
     if (method.ins_words > registers) {
-        throw DexVmError(DexVmErrorReason::invalid_code,
+        throw JavaLinkageError(JavaLinkageKind::verify,
                          where + ": ins exceed registers");
     }
 
@@ -200,7 +201,7 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
         pc += decoded.width;
     }
     if (pc != units.size()) {
-        throw DexVmError(DexVmErrorReason::invalid_code,
+        throw JavaLinkageError(JavaLinkageKind::verify,
                          where + ": instruction stream is misaligned");
     }
 
@@ -216,8 +217,7 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                                         const bool wide) {
             const std::uint32_t needed = wide ? 2U : 1U;
             if (reg >= registers || registers - reg < needed) {
-                throw DexVmError(
-                    DexVmErrorReason::invalid_register,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                     where + ": register out of range at pc " +
                         std::to_string(instruction_pc));
             }
@@ -282,8 +282,7 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
             case DexInstructionFormat::k35c: {
                 const auto count = (unit >> 12U) & 0xfU;
                 if (count > 5U) {
-                    throw DexVmError(
-                        DexVmErrorReason::invalid_code,
+                    throw JavaLinkageError(JavaLinkageKind::verify,
                         where + ": 35c register count exceeds 5 at pc " +
                             std::to_string(instruction_pc));
                 }
@@ -345,14 +344,13 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                 static_cast<std::int64_t>(instruction_pc) + offset;
             if (target < 0 ||
                 target >= static_cast<std::int64_t>(units.size())) {
-                throw DexVmError(DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                                  where + ": branch target out of method");
             }
             const auto target_pc = static_cast<std::uint32_t>(target);
             if (info.format == DexInstructionFormat::k31t) {
                 if (!payload_starts.contains(target_pc)) {
-                    throw DexVmError(
-                        DexVmErrorReason::invalid_code,
+                    throw JavaLinkageError(JavaLinkageKind::verify,
                         where + ": payload reference does not hit a payload");
                 }
                 const auto ident = units[target_pc];
@@ -362,12 +360,11 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                 if ((fill && ident != 0x0300U) ||
                     (packed && ident != 0x0100U) ||
                     (sparse && ident != 0x0200U)) {
-                    throw DexVmError(DexVmErrorReason::invalid_code,
+                    throw JavaLinkageError(JavaLinkageKind::verify,
                                      where + ": payload ident mismatch");
                 }
             } else if (!boundaries.contains(target_pc)) {
-                throw DexVmError(
-                    DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                     where + ": branch target is not an instruction boundary");
             }
         }
@@ -375,8 +372,7 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
         // move-result* must directly follow an invoke or filled-new-array.
         if (info.name.starts_with("move-result")) {
             if (!previous_sets_result) {
-                throw DexVmError(
-                    DexVmErrorReason::invalid_code,
+                throw JavaLinkageError(JavaLinkageKind::verify,
                     where + ": move-result without preceding invoke at pc " +
                         std::to_string(instruction_pc));
             }
@@ -388,6 +384,10 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
         (void)previous_opcode;
     }
     method.prechecked = true;
+    } catch (const JavaLinkageError&) {
+        MarkVerificationFailed(Method(id).owner);
+        throw;
+    }
 }
 
 const FastCode& DexClassLinker::FastCodeFor(const VmMethodId id) {

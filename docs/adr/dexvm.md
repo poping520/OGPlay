@@ -1349,3 +1349,43 @@ ADR-0147 的骨架补齐了全部 ROM 类型，但未实现成员只能明确失
 - 类被纳入后其原版构造器/方法真实执行，探测分支行为可能变化：准入前后必须对已适配游戏做
   前后对照冒烟；BootDex 体积、首帧耗时与内存变化需测量，退化超过 10% 停止并汇报。
 - 宿主侧仍有大量未实现的 intrinsic 成员；本规则只消除其中“原版即纯 Java”的部分。
+
+<a id="adr-0150"></a>
+
+## ADR-0150 · guest 链接错误与 VM 内部故障分离
+
+- 状态：Accepted（WU7-1b 用户明确授权）
+- 日期：2026-10-21
+- 关联：[DVM-256](../tasks/dexvm/DVM-256.md)、[DVM-254](../tasks/dexvm/DVM-254.md)、ADR-0147
+
+### 决定
+
+1. 用独立、强类型的 Java linkage failure 通道表示 guest 可观察错误，不从 DexVmError
+   的 reason/message 推测 Java 类名。解释器两后端共用异常展开出口；宿主直接 Call 也返回
+   VmCallOutcome 中的真实 Java throwable，嵌套调用保持 guest catch 和继续执行。
+2. 类首次实际链接时检查继承关系、final 与循环等；失败标记只属于失败类及依赖它的类。
+   首次传播 ICCE / VerifyError / LinkageError 等原始类别，后续使用该不可用类抛 NCDFE。
+   失败类不重新布局，不发布可执行的半成品；不污染其他类或成功缓存。final 方法覆盖
+   对照 Class.cpp:2848 的 bail：createVtable 返回 false 且没有 pending 时抛 VirtualMachineError。
+3. 指令解析时缺方法/字段抛 NSME/NSFE，static/instance 或 interface 调用种类不符抛 ICCE，
+   访问违反 loader/package/member 规则抛 IAE。缓存只保存成功的结构解析，不能绕过 caller
+   访问校验。new abstract/interface 抛 InstantiationError；abstract 调用抛 AME。
+   访问检查采用 Dalvik AccessCheck.cpp 的规则，不引入全量 verifier 数据流实现。
+4. bootstrap 的 intrinsic、BootDex、固定 ROM skeleton 按真实来源 parent-first；只有已提供
+   的类型遮蔽应用类，包名前缀本身不能禁止应用 DEX 的独有类。未提供 android.* 类型仍由
+   application loader 定义，不覆盖已登记平台类，不引入动态 classpath。
+5. DexVmError 留给宿主装配/声明错误、无效内部 handle/slot/cache、未预检输入进入 FastCode、执行预算、
+   生命周期取消和线程 owner 不变量等。DEX 二进制解析/宿主声明损坏和未支持 native
+   仍沿既有明确失败和账本；合法载入方法的结构预检拒绝则是 guest VerifyError。
+   不将内部 bug 伪装成 Java linkage failure，也不伪造修复或成功。
+6. JNI/反射沿 DVM-254 的查找与 pending/包装边界适配新类型，区分缺类与已失败类；
+   survey 的既有显式合成与记账保留，新链接/访问失败同样抛错，不增加中性返回。
+   VM 内部异常/平台对象工厂可创建抽象类型的受控实例，guest new 与 JNI AllocObject
+   才执行实例化限制，不能把 VM 工厂误当作 guest new。
+
+### 依据与验证
+
+对照 Dalvik 4.4 Class.cpp（dvmLinkClass、CLASS_ERROR / throwEarlierClassFailure）、
+Resolve.cpp、AccessCheck.cpp、CodeVerify.cpp 和 mterp 指令。用双后端 catch 后继续执行、
+首次/再次失败类、缺成员/种类/访问/分派及真实 bootstrap 遮蔽回归验证；内部无效 handle
+仍必须失败。跑目标 dalvik/tests、全量基线棘轮与九个既有正常基础场景，缺口保留在 DVM-256。

@@ -21,6 +21,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 - ClassOf 可显式注入共享 semantic store 的真实类型解析器；查表/jclass 未命中时在
   registry 锁外调用。无解析器或未知 identity 明确失败，不按 method owner 推断类型；
   owner 在 guest threads 停止后撤销解析器，类型登记仍遵循 EnsureRegistered/Forget。
+- FindClass 的解析回调若已发布 Java 异常，返回 null 并保留原 pending，不以查询缺失覆盖它。
 - guest-memory 标量和受限 C 字符串读取统一经过私有 `jni_guest_memory.h`；整数按 A32
   little-endian 解码，名称/签名等元数据保持 1024 字节扫描上限。`NewStringUTF` 正文
   使用独立、可注入资源预算，默认最多 3 MiB Modified UTF-8 payload（另读终止符）、

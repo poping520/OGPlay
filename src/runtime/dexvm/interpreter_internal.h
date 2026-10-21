@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ogplay/runtime/dexvm/access_flags.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/class_loader_facade.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"

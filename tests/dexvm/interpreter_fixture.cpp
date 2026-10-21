@@ -74,8 +74,8 @@ Vm::Vm(const InterpreterConfig config,
                   std::make_move_iterator(extra_catalog.begin()),
                   std::make_move_iterator(extra_catalog.end()));
               linker.RegisterIntrinsics(catalog);
-              linker.RegisterDex(ReadFixture(extra_fixture.empty() ? "interp.dex" : extra_fixture));
               ogplay::test::RegisterBootDex(linker);
+              linker.RegisterDex(ReadFixture(extra_fixture.empty() ? "interp.dex" : extra_fixture));
               linker.Link();
               return linker;
           }(),

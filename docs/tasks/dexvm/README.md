@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-256](DVM-256.md) | guest 链接/解析失败按 Dalvik 时机抛 Java Error | 已交付；004 注解接口待补 |
 | [DVM-251](DVM-251.md) | 默认逻辑尺寸下 nativeRender 空指针首错 | 待定位，见 VFS-09 对照证据 |
 | [DVM-250](DVM-250.md) | 同包有界 task 与 Activity 实例复用 | 有界能力/首错验证完成 |
 | [DVM-244](DVM-244.md) | 资源位图解码与共用像素后端 | 有界能力/首错验证完成 |

@@ -427,9 +427,9 @@ DexUnitId DexClassLinker::RegisterDexUnit(
             // ParseDex has already rejected duplicates within this DEX unit.
             continue;
         }
-        if (!boot && (IsPlatformDescriptor(descriptor) || impl_->skeleton_index.contains(descriptor))) {
-            // 临时规则判定为平台所有的 APK 类不参与解释（03 §1），由 intrinsic
-            // catalog 胜出；android.support.* 已在上方作为应用类排除。
+        if (!boot && impl_->skeleton_index.contains(descriptor)) {
+            // Only real bootstrap definitions shadow APK classes; package names
+            // alone do not define a bootstrap class.
             continue;
         }
         const bool merge_intrinsic =
@@ -701,8 +701,8 @@ void DexClassLinker::Link() {
                 linked.super = *super;
             }
         } else if (linked.descriptor != "Ljava/lang/Object;") {
-            Fail(DexVmErrorReason::invalid_hierarchy,
-                 "class without superclass: " + linked.descriptor);
+            // Defer this guest class failure until first use.
+            continue;
         }
         for (const auto interface_index : definition.interface_type_indices) {
             const auto name = image.types[interface_index].descriptor;
@@ -752,7 +752,7 @@ std::string DexClassLinker::DumpSurfaceJson() {
     std::vector<std::string> names;
     for (const auto& [name, range] : impl_->skeleton_index) { (void)range; names.push_back(name); }
     std::sort(names.begin(), names.end());
-    for (const auto& name : names) { try { (void)ResolveDescriptor(name); } catch (const DexVmError&) {} }
+    for (const auto& name : names) { try { (void)ResolveDescriptor(name); } catch (const JavaLinkageError&) {} catch (const DexVmError&) {} }
     auto ids = AllClasses();
     std::sort(ids.begin(), ids.end(), [&](auto a, auto b) {
         return Class(a).descriptor < Class(b).descriptor;
@@ -760,6 +760,7 @@ std::string DexClassLinker::DumpSurfaceJson() {
     for (const auto id : ids) {
         std::string link_error;
         try { EnsureClassLinked(id); }
+        catch (const JavaLinkageError& error) { link_error = error.what(); }
         catch (const DexVmError& error) { link_error = error.what(); }
         const auto& cls = Class(id);
         const auto& extra = impl_->ExtrasAt(id);
@@ -853,11 +854,15 @@ std::optional<DexClassId> DexClassLinker::FindClass(
     return impl_->classes[found->second].id;
 }
 
+void DexClassLinker::MarkVerificationFailed(DexClassId id) { impl_->ExtrasAt(id).link_failed = true; }
+
 void DexClassLinker::EnsureClassLinked(const DexClassId id) {
     if (!impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant,
              "class used before initial linking completed");
     }
+    if (impl_->ExtrasAt(id).link_failed) throw JavaLinkageError(JavaLinkageKind::no_class, impl_->ClassAt(id).descriptor);
+    try {
     MarkInitiatedBy(id, impl_->ClassAt(id).defining_loader);
     if (impl_->ExtrasAt(id).linked) return;
 
@@ -877,7 +882,7 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
         if (missing_super.has_value()) {
             if ((!impl_->gap_survey || !IsPlatformDescriptor(*missing_super)) &&
                 !impl_->skeleton_index.contains(*missing_super) && !FindClass(*missing_super)) {
-                Fail(DexVmErrorReason::unknown_class,
+                throw JavaLinkageError(JavaLinkageKind::no_class,
                      "class hierarchy is not available: " + *missing_super +
                          " (required by " + required_by + ")");
             }
@@ -889,7 +894,7 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
             for (const auto& name : missing_interfaces) {
                 if ((!impl_->gap_survey || !IsPlatformDescriptor(name)) &&
                     !impl_->skeleton_index.contains(name) && !FindClass(name)) {
-                    Fail(DexVmErrorReason::unknown_class,
+                    throw JavaLinkageError(JavaLinkageKind::no_class,
                          "class hierarchy is not available: " + name +
                              " (required by " + required_by + ")");
                 }
@@ -912,6 +917,10 @@ void DexClassLinker::EnsureClassLinked(const DexClassId id) {
 
     std::set<std::uint32_t> visiting;
     impl_->LinkClass(id, visiting);
+    } catch (const JavaLinkageError&) {
+        impl_->ExtrasAt(id).link_failed = true;
+        throw;
+    }
 }
 
 DexClassId DexClassLinker::ResolveDescriptor(
@@ -969,6 +978,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         // never an instance class and never participates in dispatch.
         LinkedClass linked;
         linked.descriptor = std::string(descriptor);
+        linked.access_flags = kAccPublic;
         linked.is_intrinsic = true;
         linked.defining_loader = kBootstrapLoader;
         linked.super = FindClass("Ljava/lang/Object;");
@@ -990,6 +1000,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         // the run continues and the gap is reported instead of aborting.
         LinkedClass linked;
         linked.descriptor = std::string(descriptor);
+        linked.access_flags = kAccPublic;
         linked.is_intrinsic = true;
         linked.defining_loader = kBootstrapLoader;
         linked.super = FindClass("Ljava/lang/Object;");
@@ -1009,7 +1020,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         RecordGapSurveyHit(std::string(descriptor), {}, context);
         return id;
     }
-    Fail(DexVmErrorReason::unknown_class,
+    throw JavaLinkageError(JavaLinkageKind::no_class,
          "class is not available: " + std::string(descriptor));
 }
 

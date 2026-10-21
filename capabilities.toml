@@ -1251,7 +1251,7 @@ note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有�
 [dexvm.class_linker]
 status = "complete"
 test = "tests/dexvm/class_name_codec_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-7/94/99/103、ADR-0028/0030：注册/层级/布局/vtable/iftable 四步链接与懒预检；地址稳定存储，按 InvokeKind 隔离调用点缓存；Boot/Application 独立 DexUnit。BootDex 类全量登记，intrinsic 只能对同签名方法 overlay，未绑定 native 失败；允许缩小可见性；同名同原型跨包/loader 仍重写，不可访问时限流 warn，intrinsic 同规则；final/未准入覆盖失败，static/virtual 错配抛 ICCE；intrinsic 父类延迟解析。"
+note = "DVM-256、ADR-0150：Boot/App 按实际 bootstrap 身份 parent-first；层级/布局/vtable/iftable 懒链接。guest 链接失败首次原错误、后续 NCDFE；缺成员、种类、访问、实例化、abstract 分派与结构预检在双后端抛可 catch 的 Java 错误，失败不污染其他类。内部不变量仍 DexVmError；不实现全量 verifier 数据流。4.4 同名同原型覆盖允许缩小可见性及跨包/loader，访问受限时限流 warn；final 覆盖拒绝。"
 
 [dexvm.boot_dex]
 status = "complete"

@@ -27,6 +27,7 @@
 .super Ljava/lang/Object;
 
 .field public baseField:I
+.field protected protectedField:I
 .field private hiddenBase:I
 
 .method public constructor <init>()V

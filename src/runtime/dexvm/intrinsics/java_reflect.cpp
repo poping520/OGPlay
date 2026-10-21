@@ -213,16 +213,12 @@ namespace {
         java_class = context.vm.ClassLoaders().LoadClass(loader, name);
     } catch (const ClassNameCodecError&) {
         return SetClassNotFound(context, name);
-    } catch (const DexVmError& error) {
-        if (error.Reason() == DexVmErrorReason::unknown_class) {
-            return SetClassNotFound(context, name);
-        }
-        // API19 dvmFindClassByName retains the lookup/link exception as the
-        // cause of ClassNotFoundException. The Java half only unwraps an
-        // ExceptionInInitializerError; link failures remain wrapped.
-        const auto cause = context.vm.MakeThrowable(
-            "Ljava/lang/LinkageError;", error.what());
+    } catch (const JavaLinkageError& error) {
+        const auto cause = context.vm.MakeThrowable(error.Descriptor(), error.what());
         return SetClassNotFound(context, name, cause);
+    } catch (const DexVmError& error) {
+        if (error.Reason() == DexVmErrorReason::unknown_class) return SetClassNotFound(context, name);
+        throw;
     }
     if (initialize) {
         const auto outcome = context.vm.EnsureClassInitialized(java_class);

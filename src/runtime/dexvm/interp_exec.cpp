@@ -240,7 +240,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         }
         case 0x1c: {  // const-class (does not trigger <clinit>, 02 §5)
             const auto java_class =
-                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
             SetRef(frame, vAA, model->ClassObject(java_class));
             advance();
             return;
@@ -281,7 +281,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             const auto ref = GetRef(frame, vAA);
             if (ref.IsValid()) {
                 const auto target =
-                    linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
+                    linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
                 const auto source = model->ObjectClass(ref);
                 if (!source.IsValid() ||
                     !linker->IsAssignable(target, source)) {
@@ -299,10 +299,9 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         }
         case 0x20: {  // instance-of (does not trigger <clinit>)
             const auto ref = GetRef(frame, vB4);
+            const auto target = linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
             bool result = false;
             if (ref.IsValid()) {
-                const auto target =
-                    linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
                 const auto source = model->ObjectClass(ref);
                 result = source.IsValid() &&
                          linker->IsAssignable(target, source);
@@ -327,7 +326,9 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         // ---- allocation --------------------------------------------------
         case 0x22: {  // new-instance
             const auto java_class =
-                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
+            if ((linker->Class(java_class).access_flags & (kAccAbstract | kAccInterface)) != 0U)
+                throw JavaLinkageError(JavaLinkageKind::instantiation, linker->Class(java_class).descriptor);
             PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(
                                       linker->Class(java_class).instance_slots),
                                   "new-instance");
@@ -346,7 +347,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
                 return;
             }
             const auto array_class =
-                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
             const auto& linked = linker->Class(array_class);
             if (!linked.is_array) {
                 FailCode("new-array with non-array type");
@@ -374,7 +375,7 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
         case 0x24:    // filled-new-array
         case 0x25: {  // filled-new-array/range
             const auto array_class =
-                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1]);
+                linker->ResolveTypeIndex(dex_unit, units[frame.pc + 1], frame.method->owner);
             const auto& linked = linker->Class(array_class);
             if (!linked.is_array) FailCode("filled-new-array non-array type");
             const auto& element = linked.array_element_descriptor;

@@ -1905,6 +1905,12 @@ DexVmGuestBridge::DexVmGuestBridge(
             const auto java_class = bridge_state->linker.ResolveDescriptor("L" + name + ";");
             bridge_state->linker.EnsureClassLinked(java_class);
             return bridge_state->RegisterClassForNative(java_class);
+        } catch (const dx::JavaLinkageError& error) {
+            const auto error_class = bridge_state->linker.ResolveDescriptor(error.Descriptor());
+            const auto thread = bridge_state->ProcessThreadForToken(bridge_state->vm->CurrentContextToken());
+            bridge_state->session->Environment().ThrowNew(thread,
+                bridge_state->RegisterClassForNative(error_class), error.what());
+            return std::nullopt;
         } catch (const dx::DexVmError& error) {
             if (error.Reason() == dx::DexVmErrorReason::unknown_class) return std::nullopt;
             throw;

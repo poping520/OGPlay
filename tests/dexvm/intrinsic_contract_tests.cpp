@@ -435,10 +435,10 @@ TEST_CASE("DVM-94 method resolution cache is isolated by invoke kind") {
     CHECK(vm.linker.Method(direct.method).name == "<init>");
     CHECK_THROWS_AS((void)vm.linker.ResolveMethodIndex(
                         constructor, InvokeKind::static_call),
-                    DexVmError);
+                    JavaLinkageError);
     CHECK_THROWS_AS((void)vm.linker.ResolveMethodIndex(
                         constructor, InvokeKind::virtual_call),
-                    DexVmError);
+                    JavaLinkageError);
 }
 
 TEST_CASE("dexvm intrinsic call provides typed arguments and prebound fields") {

@@ -642,6 +642,8 @@ void BindJniGuestClassAndInstanceSlots(
                 address_space, memory::GuestAddress{frame.registers[1]},
                 frame.thread_id, "class name");
             const auto java_class = classes.ResolveClass(name);
+            if (environment.ExceptionCheck(frame.thread_id))
+                return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             if (!java_class.has_value()) {
                 jni_guest_detail::ThrowLookupError(environment, classes, frame.thread_id,
                     "java/lang/NoClassDefFoundError", name);

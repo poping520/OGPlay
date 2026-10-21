@@ -116,6 +116,10 @@ AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，�
 
 ## BootDex、骨架与 dexvm 链接定向回归
 
+改 DexVM/BootDex/intrinsic 语义后，跑全量
+`python3 tools/conformance/dalvik_tests.py --check-baseline`；目标用例转 pass 后用
+`--update-baseline` 提交新基线（有回归时拒绝更新）。
+
 涉及 BootDex、API19 骨架或 dexvm 链接的改动，按影响范围仅构建 `ogplay_tests`，使用：
 
 ```sh

@@ -1,0 +1,398 @@
+{
+  "001-nop": {
+    "switch": "excluded:harness",
+    "threaded": "excluded:harness"
+  },
+  "002-sleep": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "003-omnibus-opcodes": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "004-annotations": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "005-args": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "006-count10": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "007-exceptions": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "008-instanceof": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "009-instanceof2": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "010-instance": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "011-array-copy": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "012-math": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "013-math2": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "014-math3": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "015-switch": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "016-intern": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "017-float": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "018-stack-overflow": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "019-wrong-array-type": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "020-string": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "021-string2": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "022-interface": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "023-many-interfaces": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "024-illegal-access": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "025-access-controller": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "026-access": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "027-arithmetic": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "028-array-write": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "029-assert": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "030-bad-finalizer": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "031-class-attributes": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "032-concrete-sub": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "033-class-init-deadlock": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "034-call-null": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "035-enum": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "036-finalizer": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "037-inherit": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "038-inner-null": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "039-join-main": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "040-miranda": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "041-narrowing": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "042-new-instance": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "043-privates": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "044-proxy": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "045-reflect-array": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "046-reflect": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "047-returns": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "048-server-socket": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "049-show-object": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "050-sync-test": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "051-thread": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "052-verifier-fun": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "053-wait-some": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "054-uncaught": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "055-enum-performance": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "056-const-string-jumbo": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "058-enum-order": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "059-finalizer-throw": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "061-out-of-memory": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "062-character-encodings": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "063-process-manager": {
+    "switch": "excluded:scope",
+    "threaded": "excluded:scope"
+  },
+  "064-field-access": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "065-mismatched-implements": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "066-mismatched-super": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "067-preemptive-unpark": {
+    "switch": "excluded:compile",
+    "threaded": "excluded:compile"
+  },
+  "068-classloader": {
+    "switch": "excluded:harness",
+    "threaded": "excluded:harness"
+  },
+  "069-field-type": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "070-nio-buffer": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "071-dexfile": {
+    "switch": "excluded:harness",
+    "threaded": "excluded:harness"
+  },
+  "072-precise-gc": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "073-mismatched-field": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "074-gc-thrash": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "075-verification-error": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "076-boolean-put": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "077-method-override": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "078-polymorphic-virtual": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "079-phantom": {
+    "switch": "fail:timeout",
+    "threaded": "fail:timeout"
+  },
+  "080-oom-throw": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "081-hot-exceptions": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "082-inline-execute": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "083-jit-regressions": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "084-class-init": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "085-old-style-inner-class": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "086-null-super": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "087-gc-after-link": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "088-monitor-verification": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "089-many-methods": {
+    "switch": "excluded:harness",
+    "threaded": "excluded:harness"
+  },
+  "090-loop-formation": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "091-deep-interface-hierarchy": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "092-locale": {
+    "switch": "fail:crash",
+    "threaded": "fail:crash"
+  },
+  "093-serialization": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "094-pattern": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "095-switch-MAX_INT": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "096-array-copy-concurrent-gc": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "097-suspend-check": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "098-native-allocations": {
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
+  },
+  "300-package-override": {
+    "switch": "fail:output",
+    "threaded": "fail:output"
+  },
+  "301-abstract-protected": {
+    "switch": "pass",
+    "threaded": "pass"
+  },
+  "302-float-conversion": {
+    "switch": "pass",
+    "threaded": "pass"
+  }
+}

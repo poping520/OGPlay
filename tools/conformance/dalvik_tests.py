@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -40,6 +41,7 @@ REPO = Path(__file__).resolve().parents[2]
 DEFAULT_TESTS = REPO / ".local/aosp/dalvik/tests"
 DEFAULT_OUT = REPO / ".local/analysis/wu6"
 DEFAULT_CLI = REPO / "build/release/ogplay-cli"
+BASELINE = Path(__file__).with_name("dalvik_baseline.json")
 BACKENDS = ("switch", "threaded")
 INTERNAL_ERROR_EXIT = 70
 
@@ -248,6 +250,46 @@ def summarize(results: list[Result], out: Path, backends) -> str:
     return text
 
 
+def compare_baseline(baseline: dict, results: list[Result], backends=BACKENDS,
+                     only: list[str] | None = None) -> dict[str, list[str]]:
+    current: dict[str, dict[str, str]] = {}
+    for r in results:
+        current.setdefault(r.test, {})[r.backend] = r.outcome
+    tests = set(only) if only is not None else set(baseline) | set(current)
+    changes: dict[str, list[str]] = {"regressions": [], "new passes": [], "other changes": []}
+    for test in sorted(tests):
+        for backend in backends:
+            before = baseline.get(test, {}).get(backend, "missing")
+            after = current.get(test, {}).get(backend, "missing")
+            if before == after:
+                continue
+            kind = "regressions" if before == "pass" else (
+                "new passes" if after == "pass" else "other changes")
+            changes[kind].append(f"{test} {backend}: {before} -> {after}")
+    return changes
+
+
+def check_baseline(path: Path, baseline: dict, results: list[Result], backends=BACKENDS,
+                   only: list[str] | None = None, update: bool = False) -> int:
+    changes = compare_baseline(baseline, results, backends, only)
+    for kind, rows in changes.items():
+        print(f"Baseline {kind}: {len(rows)}")
+        for row in rows:
+            print(f"  {row}")
+    if changes["regressions"]:
+        if update:
+            print("Baseline update refused: regressions detected.")
+        return 1
+    if update:
+        # Merge only observed results; subset/backend runs must retain other passes.
+        merged = {test: dict(outcomes) for test, outcomes in baseline.items()}
+        for r in results:
+            merged.setdefault(r.test, {})[r.backend] = r.outcome
+        path.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"Baseline updated: {path}")
+    return 0
+
+
 def self_test() -> None:
     assert normalize(b"a\r\nb") == normalize(b"a\nb")
     assert classify(b"x\n", b"x\n", 0, False, [])[0] == "pass"
@@ -260,6 +302,34 @@ def self_test() -> None:
     assert outcome == "fail:output" and detail.startswith("line 2"), detail
     assert all(kind.startswith("excluded:") and reason for kind, reason in EXCLUDED.values())
     assert crash_message("error [ogplay]\n  class is not available: LX;\n") == "class is not available: LX;"
+    baseline = {"a": {"switch": "pass", "threaded": "pass"},
+                "b": {"switch": "fail:output", "threaded": "fail:crash"}}
+    results = [Result("a", "switch", "fail:timeout"), Result("a", "threaded", "pass"),
+               Result("b", "switch", "pass"), Result("b", "threaded", "fail:output")]
+    changes = compare_baseline(baseline, results)
+    assert changes == {"regressions": ["a switch: pass -> fail:timeout"],
+                       "new passes": ["b switch: fail:output -> pass"],
+                       "other changes": ["b threaded: fail:crash -> fail:output"]}
+    for outcome in ("fail:output", "fail:unimplemented", "fail:crash", "fail:timeout",
+                    "excluded:compile", "excluded:scope", "excluded:harness"):
+        assert len(compare_baseline(baseline, [Result("a", "switch", outcome)],
+                                    ("switch",), ["a"])["regressions"]) == 1
+    assert len(compare_baseline(baseline, [])["regressions"]) == 2
+    subset = [Result("b", "switch", "pass")]
+    assert compare_baseline(baseline, subset, ("switch",), ["b"]) == {
+        "regressions": [], "new passes": ["b switch: fail:output -> pass"], "other changes": []}
+    assert not compare_baseline(baseline, [Result("a", "switch", "pass")],
+                                ("switch",), ["a"])["regressions"]
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "baseline.json"
+        original = json.dumps(baseline).encode("utf-8")
+        path.write_bytes(original)
+        assert check_baseline(path, baseline, results, update=True) == 1
+        assert path.read_bytes() == original
+        assert check_baseline(path, baseline, subset, ("switch",), ["b"], update=True) == 0
+        merged = json.loads(path.read_text(encoding="utf-8"))
+        assert merged == {**baseline, "b": {"switch": "pass", "threaded": "fail:crash"}}
+        assert check_baseline(path, merged, subset, ("switch",), ["b"]) == 0
     print("dalvik_tests self-test ok")
 
 
@@ -273,17 +343,24 @@ def main() -> int:
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--only", action="append", help="test name (repeatable)")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--check-baseline", action="store_true", help="fail if a baseline pass regresses")
+    parser.add_argument("--update-baseline", action="store_true", help="update baseline only without regressions")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return 0
     args.backends = tuple(args.backends or BACKENDS)
+    baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if (
+        args.check_baseline or args.update_baseline) else None
     args.out = args.out.resolve()
     if not args.cli.exists():
         parser.error(f"ogplay-cli not found: {args.cli}")
     tests = sorted(p.name for p in args.tests_dir.iterdir()
                    if p.is_dir() and re.match(r"\d{3}-", p.name) and (p / "expected.txt").exists())
     if args.only:
+        unknown = set(args.only) - set(tests)
+        if unknown:
+            parser.error(f"unknown tests: {', '.join(sorted(unknown))}")
         tests = [t for t in tests if t in set(args.only)]
     tools = toolchain()
     results: list[Result] = []
@@ -293,6 +370,8 @@ def main() -> int:
             for r in batch:
                 print(f"{r.test:32} {r.backend:8} {r.outcome:20} {r.detail[:90]}", flush=True)
     print(summarize(results, args.out, args.backends).split("\n\n")[1])
+    if baseline is not None:
+        return check_baseline(BASELINE, baseline, results, args.backends, args.only, args.update_baseline)
     return 0
 
 

@@ -35,6 +35,20 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
   `Invalid path: /data`）、reflection（1）、vm_monitor（1）失败在未改动的 HEAD 上同样复现，与本单无关。
 - 全量试跑（`dalvik_tests.py --jobs 4 --timeout 60`）：switch 52/93（55.9%）、threaded 52/93（55.9%），分母为未排除 93 例；报告 `.local/analysis/wu6/REPORT.md`。
 
+## WU7-0 · 只升不降基线（2026-10-21）
+
+- 从 `.local/analysis/wu6/summary.json` 生成仓库基线
+  `tools/conformance/dalvik_baseline.json`，保存逐用例、逐后端分类。
+- `--check-baseline` 将 pass 退步判为回归并退出 1，新增 pass 与其他分类变化分别报告；
+  `--only` / `--backend` 仅比较选中范围。`--update-baseline` 有回归时拒写并退出 1，
+  无回归时合并本次结果，保留未运行项。分类逻辑、排除表不变，不接 CTest 全量门禁。
+- `--self-test` 通过：覆盖分类变化、各类回归、缺失结果、子集/后端比较、拒绝更新及子集合并。
+- 全量 `--check-baseline --out .local/analysis/wu7-0/full`：退出 0，双后端仍各 52/93，
+  0 回归、0 新增 pass、0 其他变化；日志 `.local/analysis/wu7-0-full.log`。
+- `--only 012-math --check-baseline --out .local/analysis/wu7-0/subset`：退出 0，
+  双后端均 pass，0 回归、0 新增；日志 `.local/analysis/wu7-0-subset.log`。
+- `capabilities.py check`、`git diff --check` 通过；用法与语义改动后的全量回归要求已补入工具说明和开发参考。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

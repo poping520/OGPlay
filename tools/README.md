@@ -48,6 +48,8 @@ build-tools 29.0.2 包（与 d8.jar 同目录，`OGPLAY_DX_JAR` 可覆盖）。�
 ```text
 python3 tools/conformance/dalvik_tests.py --self-test
 python3 tools/conformance/dalvik_tests.py [--only <test>] [--backend switch] [--jobs 4] [--timeout 60]
+python3 tools/conformance/dalvik_tests.py --check-baseline # pass 退步退出 1；支持 --only 子集
+python3 tools/conformance/dalvik_tests.py --update-baseline # 无回归才更新仓库基线，子集合并保留其余项
 ```
 
 产物默认写 `.local/analysis/wu6/`（summary.md/json、逐用例 stdout/stderr/ledger），不进仓库。

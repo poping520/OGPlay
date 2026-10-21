@@ -2467,64 +2467,38 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return Make(context, out);
             });
-    builder.FinalMethod("replaceAll", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
-        [](IntrinsicContext& context) {
-                const auto value = ToUtf8(Value(context, context.receiver));
-                const auto pattern =
-                    CompileRegex(Value(context, context.arguments[0].ref));
-                const auto replacement =
-                    ToUtf8(Value(context, context.arguments[1].ref));
-                return Make(context,
-                            FromUtf8(std::regex_replace(value, pattern,
-                                                        replacement)));
+    for (const auto* method : {"replaceAll", "replaceFirst"}) {
+        builder.FinalMethod(method, "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+            [method](IntrinsicContext& c) {
+                auto& vm = c.vm;
+                const auto pattern = InvokeGuestStatic(vm, "Ljava/util/regex/Pattern;", "compile",
+                    "(Ljava/lang/String;)Ljava/util/regex/Pattern;", {c.arguments[0]}).ref;
+                const auto pattern_root = vm.ProtectReferences(std::array{pattern});
+                const auto matcher = InvokeGuest(vm, pattern, "matcher",
+                    "(Ljava/lang/CharSequence;)Ljava/util/regex/Matcher;", {VmValue::Ref(c.receiver)}).ref;
+                const auto matcher_root = vm.ProtectReferences(std::array{matcher});
+                return InvokeGuest(vm, matcher, method, "(Ljava/lang/String;)Ljava/lang/String;", {c.arguments[1]});
             });
-    builder.FinalMethod("split", "(Ljava/lang/String;)[Ljava/lang/String;",
-        [](IntrinsicContext& context) {
-                auto& vm = context.vm;
-                const auto value = ToUtf8(Value(context, context.receiver));
-                const auto pattern =
-                    CompileRegex(Value(context, context.arguments[0].ref));
-                // Java limit-0 semantics: split on every match, then drop trailing
-                // empty segments.
-                std::vector<std::string> segments;
-                std::size_t cursor = 0;
-                std::smatch match;
-                auto remaining = value;
-                while (std::regex_search(remaining, match, pattern) &&
-                       !(match.position(0) == 0 && match.length(0) == 0)) {
-                    const auto position =
-                        static_cast<std::string::size_type>(match.position(0));
-                    const auto length =
-                        static_cast<std::string::size_type>(match.length(0));
-                    if (match.length(0) == 0) {
-                        // Zero-width match: split after the next character.
-                        segments.push_back(remaining.substr(0, position + 1));
-                        remaining = remaining.substr(position + 1);
-                    } else {
-                        segments.push_back(remaining.substr(0, position));
-                        remaining = remaining.substr(position + length);
-                    }
-                    cursor += 1;
-                    if (cursor > value.size()) break;  // defensive progress bound
-                }
-                segments.push_back(remaining);
-                while (!segments.empty() && segments.back().empty()) {
-                    segments.pop_back();
-                }
-                const auto array_class =
-                    vm.Linker().ResolveDescriptor("[Ljava/lang/String;");
-                const auto element_class =
-                    vm.Linker().ResolveDescriptor("Ljava/lang/String;");
-                const auto array = vm.Model().NewObjectArray(
-                    array_class, element_class,
-                    static_cast<JniSize>(segments.size()));
-                for (std::size_t index = 0; index < segments.size(); ++index) {
-                    vm.Model().SetObjectElement(
-                        array, static_cast<JniSize>(index),
-                        vm.Model().NewString(FromUtf8(segments[index])));
-                }
-                return VmValue::Ref(array);
+    }
+    builder.FinalMethod("matches", "(Ljava/lang/String;)Z", [](IntrinsicContext& c) {
+        return InvokeGuestStatic(c.vm, "Ljava/util/regex/Pattern;", "matches",
+            "(Ljava/lang/String;Ljava/lang/CharSequence;)Z", {c.arguments[0], VmValue::Ref(c.receiver)});
+    });
+    for (const bool limit : {false, true}) {
+        builder.FinalMethod("split", limit ? "(Ljava/lang/String;I)[Ljava/lang/String;" : "(Ljava/lang/String;)[Ljava/lang/String;",
+            [limit](IntrinsicContext& c) {
+                const auto count = limit ? c.arguments[1] : VmValue::Int(0);
+                const auto fast = InvokeGuestStatic(c.vm, "Ljava/util/regex/Splitter;", "fastSplit",
+                    "(Ljava/lang/String;Ljava/lang/String;I)[Ljava/lang/String;",
+                    {c.arguments[0], VmValue::Ref(c.receiver), count});
+                if (fast.ref.IsValid()) return fast;
+                const auto pattern = InvokeGuestStatic(c.vm, "Ljava/util/regex/Pattern;", "compile",
+                    "(Ljava/lang/String;)Ljava/util/regex/Pattern;", {c.arguments[0]}).ref;
+                const auto root = c.vm.ProtectReferences(std::array{pattern});
+                return InvokeGuest(c.vm, pattern, "split", "(Ljava/lang/CharSequence;I)[Ljava/lang/String;",
+                    {VmValue::Ref(c.receiver), count});
             });
+    }
     builder.FinalMethod("indexOf", "(Ljava/lang/String;)I",
         [](IntrinsicContext& context) {
                 const auto haystack = Value(context, context.receiver);

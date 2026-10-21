@@ -145,6 +145,7 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/guest_native_values_tests.cpp
     tests/runtime/activity_task_stack_tests.cpp
     tests/runtime/guest_zlib_tests.cpp
+    tests/runtime/guest_icu_tests.cpp
     tests/runtime/guest_crypto_bks_tests.cpp
     tests/runtime/guest_crypto_certificates_tests.cpp
     tests/runtime/application_exit_tests.cpp

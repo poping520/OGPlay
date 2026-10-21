@@ -50,7 +50,6 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
 
     catalog.insert(catalog.end(), {
         Declare_java_io_UnsupportedEncodingException(),
-        Declare_java_util_regex_PatternSyntaxException(),
         Declare_java_io_EOFException(),
     });
 

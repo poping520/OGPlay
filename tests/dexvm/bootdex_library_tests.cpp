@@ -82,52 +82,12 @@ TEST_CASE("DVM-87 Arrays primitive algorithms are deterministic") {
         {VmValue::Ref(list), VmValue::Ref(second)}).value.AsInt() == 2);
 }
 
-TEST_CASE("DVM-87 Pattern Matcher supports find group and replacement") {
-    Dvm87Vm fixture;
-    const auto expression = fixture.vm.NewStringUtf8("a+");
-    const auto pattern = fixture.Static(
-        "Ljava/util/regex/Pattern;", "compile",
-        "(Ljava/lang/String;)Ljava/util/regex/Pattern;",
-        {VmValue::Ref(expression)}).value.ref;
-    const auto input = fixture.vm.NewStringUtf8("xxaaay");
-    const auto matcher = fixture.Virtual(
-        pattern, "matcher",
-        "(Ljava/lang/CharSequence;)Ljava/util/regex/Matcher;",
-        {VmValue::Ref(input)}).value.ref;
-
-    CHECK(fixture.Virtual(matcher, "find", "()Z").value.AsInt() == 1);
-    CHECK(fixture.Virtual(matcher, "start", "()I").value.AsInt() == 2);
-    CHECK(fixture.vm.StringUtf8(fixture.Virtual(
-        matcher, "group", "()Ljava/lang/String;").value.ref) == "aaa");
-    const auto replaced = fixture.Virtual(
-        matcher, "replaceAll", "(Ljava/lang/String;)Ljava/lang/String;",
-        {VmValue::Ref(fixture.vm.NewStringUtf8("_"))});
-    CHECK(fixture.vm.StringUtf8(replaced.value.ref) == "xx_y");
-}
-
-TEST_CASE("DVM-102 regression Regex groupCount does not depend on match success") {
- Dvm87Vm f;
- auto p=f.Static("Ljava/util/regex/Pattern;","compile","(Ljava/lang/String;)Ljava/util/regex/Pattern;",{VmValue::Ref(f.vm.NewStringUtf8("(a)(b)?"))});
- Dvm87Vm::RequireOk(p);
- auto matcher=f.Virtual(p.value.ref,"matcher","(Ljava/lang/CharSequence;)Ljava/util/regex/Matcher;",{VmValue::Ref(f.vm.NewStringUtf8("xx"))});
- Dvm87Vm::RequireOk(matcher);
- auto count=f.Virtual(matcher.value.ref,"groupCount","()I");
- CHECK_MESSAGE(!count.exception.IsValid(),count.exception_message);
- if (!count.exception.IsValid()) CHECK(count.value.AsInt()==2);
-}
-
-TEST_CASE("DVM-102 regression BootDex static values follow DEX field order") {
-  Dvm87Vm f;
-  const auto owner = f.linker.ResolveDescriptor("Ljava/util/TimeZone;");
-  Dvm87Vm::RequireOk(f.vm.EnsureClassInitialized(owner));
-  for (const auto& [name, expected] : std::array{std::pair{"LONG", 1U}, std::pair{"SHORT", 0U}}) {
-    const auto field = f.linker.FindFieldRecursive(owner, name, "I");
-    REQUIRE(field.has_value());
-    CHECK(f.linker.Class(owner).static_storage[f.linker.Field(*field).slot] == expected);
-  }
-  const auto field = f.linker.FindFieldRecursive(owner, "defaultTimeZone", "Ljava/util/TimeZone;");
-  REQUIRE(field.has_value());
-  CHECK(f.linker.Class(owner).static_storage[f.linker.Field(*field).slot] == 0U);
+TEST_CASE("API19 regex requires the guest ICU bridge") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        Dvm87Vm fixture(backend);
+        CHECK_THROWS_AS(static_cast<void>(fixture.Static("Ljava/util/regex/Pattern;", "compile",
+            "(Ljava/lang/String;)Ljava/util/regex/Pattern;", {VmValue::Ref(fixture.vm.NewStringUtf8("a+"))})), DexVmError);
+    }
 }
 
 TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {

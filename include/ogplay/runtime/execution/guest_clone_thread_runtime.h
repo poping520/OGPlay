@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 
 #include "ogplay/cpu/thread_group.h"
 #include "ogplay/runtime/execution/guest_thread_runner.h"
@@ -36,6 +37,7 @@ public:
                             std::function<bool()> spawn_allowed = {});
 
     void RethrowFailure() const;
+    [[nodiscard]] bool OwnsThread(std::uint64_t thread_id) const;
 
     [[nodiscard]] GuestCloneThreadJoin Join(std::uint64_t thread_id);
 
@@ -59,7 +61,8 @@ private:
     std::function<bool()> spawn_allowed_;
     mutable std::mutex failure_mutex_;
     std::exception_ptr failure_;
-    std::mutex outcomes_mutex_;
+    mutable std::mutex outcomes_mutex_;
+    std::set<std::uint64_t> spawned_threads_;
     std::map<std::uint64_t, GuestThreadRunOutcome> outcomes_;
 };
 

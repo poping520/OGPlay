@@ -1881,6 +1881,7 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->vm->SetGcIntegration(dx::InterpreterGcIntegration{
         [&session](const std::function<void(JniObjectIdentity)>& visit) {
             session.Environment().VisitReferenceRoots(visit);
+            session.Strings().VisitAccessRoots(visit);
         },
         [&session, bridge_state](const JniObjectIdentity identity) {
             if (const auto found = bridge_state->asset_managers.find(identity.value);

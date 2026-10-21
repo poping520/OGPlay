@@ -236,8 +236,8 @@
     "threaded": "fail:unimplemented"
   },
   "062-character-encodings": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "063-process-manager": {
     "switch": "excluded:scope",
@@ -356,16 +356,16 @@
     "threaded": "pass"
   },
   "092-locale": {
-    "switch": "fail:unimplemented",
-    "threaded": "fail:unimplemented"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "093-serialization": {
     "switch": "pass",
     "threaded": "pass"
   },
   "094-pattern": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "095-switch-MAX_INT": {
     "switch": "pass",

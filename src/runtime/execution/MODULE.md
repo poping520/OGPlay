@@ -15,6 +15,8 @@ JNI、framework 或 integration。
 - `GuestCloneThreadRuntime` 可接收窄诊断状态，在 child 宿主线程执行 guest runner 的整个
   驻留期登记 host_tid/guest_tid/PC，每个 budget slice 更新 PC/last progress，并以 RAII
   保留退出 tombstone；关闭时不登记。
+- GuestCloneThreadRuntime.OwnsThread 按实际成功 spawn 的身份识别 clone child，退出后保留
+  归属；共享 lifecycle 中的 Java-only 线程不归本 owner join。
 - clone 从 CPU 创建、初始 SetState 到执行及最终 GetState 抛出宿主异常时先保存首错，再请求进程线程组退出并中断 futex；完成故障线程
   的退出清理，通过显式 notifier 取消上层其他等待。`RethrowFailure` 与 join 保留原异常，
   不允许已退出宿主线程仍保持 guest running、直到 join 才暴露失败。

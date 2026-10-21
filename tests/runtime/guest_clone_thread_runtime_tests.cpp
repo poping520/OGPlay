@@ -81,7 +81,12 @@ TEST_CASE("ARM clone starts a real host thread at the child return path") {
           ogplay::runtime::GuestThreadRunStop::unhandled_supervisor_call);
     CHECK(parent.GetState().Register(ogplay::cpu::CoreRegister::r0) == 100);
 
+    CHECK(clone_runtime.OwnsThread(100));
+    CHECK_FALSE(clone_runtime.OwnsThread(41));
+    lifecycle.Register(200); // A Java-only thread shares the process lifecycle.
+    CHECK_FALSE(clone_runtime.OwnsThread(200));
     const auto child = clone_runtime.Join(100);
+    CHECK(clone_runtime.OwnsThread(100));
     CHECK(child.run.reason ==
           ogplay::runtime::GuestThreadRunStop::guest_exit);
     REQUIRE(child.run.exit.has_value());

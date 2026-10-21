@@ -1692,12 +1692,11 @@ public:
         BeginTeardown();
         StopOpenSlesCallbackThread();
         auto children = lifecycle_.States();
-        {
-            const std::scoped_lock lock(dexvm_threads_mutex_);
-            std::erase_if(children, [this](const GuestThreadRuntimeState& state) {
-                return state.thread_id == kRootThreadId || dexvm_threads_.contains(state.thread_id);
-            });
-        }
+        // Java-only threads share lifecycle state but never belong to clone.
+        // Native CPU contexts are lazy and may already have been retired.
+        std::erase_if(children, [this](const GuestThreadRuntimeState& state) {
+            return !clone_runtime_->OwnsThread(state.thread_id);
+        });
         for (const auto& child : children) {
             if (child.status == GuestThreadStatus::running) {
                 lifecycle_.RequestExit(child.thread_id, 0);

@@ -304,6 +304,20 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 | 094-pattern | fail:output | 第 1 行应为 `str1 matches: true`，实际 ExceptionInInitializerError；Main.<clinit>:72 的 WEB_URL Pattern.compile 抛 PatternSyntaxException（invalid escaped character / trailing escape） | 空 |
 | 062-character-encodings | fail:unimplemented | 第 1 行应为 `Missing: []`，实际 UnsatisfiedLinkError：Charset.availableCharsets 未实现（Main.main:17） | `dexvm.intrinsic.Ljava/nio/charset/Charset;.availableCharsets()Ljava/util/SortedMap;` ×1 |
 
+## WU7-6 · guest ICU51 补齐（2026-10-21）
+
+实现、APK 证据及退出验收见 [DVM-257](../dexvm/DVM-257.md)。区域资源取消白名单，
+补 double/digit-list、API19 Pattern/Matcher 与 Normalizer native，统一走 guest ICU51 C ABI；
+Charset 枚举只发布六种已支持的实际 codec。未引入宿主 ICU/locale/regex。
+
+- 062、092、094：双后端逐字节 pass，ledger 空。
+- 070：双后端 fail:output，ledger 空；byte/short 符号扩展已修，后续数值输出全部一致。
+  唯一差异为第一行 direct buffer `has array: true` → `false`；共享 byte[] backing 仍缺。
+- 全量检查零回归，更新基线后各 75/92（81.5%，原 72/92）；报告
+  `.local/analysis/wu7-6/{full,baseline-updated,full-final}/`。未改分类器、oracle 或排除。
+- WB 新沙盒 GAThread 已越过 formatDouble；下一首错为
+  `ContentValues$1.<init>()V`，不扩修独立能力。正常九场景的退出依赖与最终结果详见任务单。
+
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

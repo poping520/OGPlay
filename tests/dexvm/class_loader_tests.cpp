@@ -49,8 +49,8 @@ struct LoaderVm final {
               // Bind the real platform natives required by the full BootDex artifact.
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
                   std::make_shared<DexVmAndroidContext>()));
-              linker.RegisterDex(ReadFixture("interp.dex"));
               ogplay::test::RegisterBootDex(linker);
+              linker.RegisterDex(ReadFixture("interp.dex"));
               linker.Link();
               return linker;
           }(), model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
@@ -416,7 +416,7 @@ TEST_CASE("ClassLoader refuses dynamic namespaces and bootstrap app lookup") {
     ExpectException(vm, vm.Virtual(
         system, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
         {VmValue::Ref(vm.String("DormantOptional"))}),
-        "Ljava/lang/LinkageError;");
+        "Ljava/lang/NoClassDefFoundError;");
 
     const auto custom =
         vm.interpreter.NewIntrinsicInstance("Ljava/lang/ClassLoader;");
@@ -471,7 +471,7 @@ TEST_CASE("Class forName follows API19 caller loader initialization and errors")
         const auto linkage_cause = Ref(vm.Virtual(
             linkage.exception, "getCause", "()Ljava/lang/Throwable;"));
         CHECK(vm.linker.Class(vm.model.ObjectClass(linkage_cause)).descriptor ==
-              "Ljava/lang/LinkageError;");
+              "Ljava/lang/NoClassDefFoundError;");
         CHECK(Ref(vm.Virtual(linkage.exception, "getException",
                              "()Ljava/lang/Throwable;")) == linkage_cause);
         CHECK(Ref(find("[I")) == vm.model.ClassObject(
@@ -577,7 +577,7 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
                 const auto call = linker.ResolveMethodIndex(app, i, InvokeKind::static_call);
                 CHECK(linker.Method(call.method).dex_unit == boot);
             } else if (name == u"appOnly") {
-                CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)), DexVmError);
+                CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)), JavaLinkageError);
             }
         }
         JniStringStore strings;

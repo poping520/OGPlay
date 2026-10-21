@@ -452,6 +452,18 @@ public:
             *caller, model->ObjectClass(protected_receiver));
     }
 
+    [[nodiscard]] bool CanAccessField(const ReflectFieldMeta& meta,
+                                      const VmObjectRef receiver,
+                                      const std::optional<DexClassId> caller) const {
+        if (!CanAccessMember(meta.declaring_class, meta.access_flags, caller, receiver)) return false;
+        // Dalvik java_lang_reflect_Field.cpp validateFieldAccess checks this
+        // before validating a null receiver, including protected static fields.
+        return (meta.access_flags & kAccProtected) == 0U ||
+               (caller && SameRuntimePackage(*caller, meta.declaring_class)) ||
+               (caller && receiver.IsValid() &&
+                linker->IsAssignable(*caller, model->ObjectClass(receiver)));
+    }
+
     void RequireInstantiable(const DexClassId java_class) const {
         const auto& linked = linker->Class(java_class);
         const bool primitive = linked.descriptor.size() == 1U;
@@ -988,9 +1000,7 @@ VmValue ReflectionRuntime::GetField(
     const std::optional<DexClassId> caller) {
     const auto& meta = FieldMetadata(wrapper);
     const auto& field = impl_->linker->Field(meta.field);
-    if (!IsAccessible(wrapper) && !impl_->CanAccessMember(
-            meta.declaring_class, meta.access_flags, caller,
-            field.is_static ? VmObjectRef{} : receiver)) {
+    if (!IsAccessible(wrapper) && !impl_->CanAccessField(meta, receiver, caller)) {
         throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
                           "access to field denied"};
     }
@@ -1037,9 +1047,7 @@ void ReflectionRuntime::SetField(
             throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
                               "field is marked final"};
         }
-        if (!impl_->CanAccessMember(
-                meta.declaring_class, meta.access_flags, caller,
-                field.is_static ? VmObjectRef{} : receiver)) {
+        if (!impl_->CanAccessField(meta, receiver, caller)) {
             throw VmJavaThrow{"Ljava/lang/IllegalAccessException;",
                               "access to field denied"};
         }

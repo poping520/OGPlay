@@ -50,7 +50,7 @@ constexpr const char* kAbsent = "Landroid/bogus/Absent;";
 TEST_CASE("unknown platform classes fail unless the gap survey is enabled") {
     Linked off;
     CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor(kAbsent)),
-                    DexVmError);
+                    JavaLinkageError);
     CHECK(off.linker.GapSurveyHits().empty());
 
     Linked on;

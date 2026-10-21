@@ -65,6 +65,7 @@ public:
         std::optional<std::string> missing_super;
         std::vector<std::string> missing_interfaces;
         bool linked{};
+        bool link_failed{};
         bool skeleton_merged{};
     };
 
@@ -189,29 +190,88 @@ public:
         return fields[id.Value() - 1];
     }
 
+    [[nodiscard]] bool SamePackage(DexClassId a, DexClassId b) {
+        const auto package = [](std::string_view name) {
+            const auto slash = name.rfind('/');
+            return slash == std::string_view::npos ? std::string_view{} : name.substr(0, slash);
+        };
+        return ClassAt(a).defining_loader == ClassAt(b).defining_loader &&
+            package(ClassAt(a).descriptor) == package(ClassAt(b).descriptor);
+    }
+    void CheckClassAccess(DexClassId target, std::optional<DexClassId> caller) {
+        if (!caller || ClassAt(target).descriptor.size() == 1U) return;
+        auto component = target;
+        while (ClassAt(component).is_array) {
+            const auto& descriptor = ClassAt(component).array_element_descriptor;
+            if (!IsRefDescriptor(descriptor)) return;
+            const auto found = class_by_descriptor.find(descriptor);
+            if (found == class_by_descriptor.end()) Fail(DexVmErrorReason::internal_invariant, "array element class is missing");
+            component = classes[found->second].id;
+        }
+        if ((ClassAt(component).access_flags & kAccPublic) == 0U &&
+            !SamePackage(component, *caller)) {
+            throw JavaLinkageError(JavaLinkageKind::illegal_access,
+                ClassAt(*caller).descriptor + " cannot access " + ClassAt(component).descriptor);
+        }
+    }
+    void CheckMemberAccess(DexClassId owner, std::uint32_t flags, std::optional<DexClassId> caller) {
+        if (!caller || (flags & kAccPublic) != 0U || *caller == owner) return;
+        if ((flags & kAccPrivate) == 0U) {
+            if (SamePackage(owner, *caller)) return;
+            if ((flags & kAccProtected) != 0U) {
+                auto current = ClassAt(*caller).super;
+                while (current) {
+                    if (*current == owner) return;
+                    current = ClassAt(*current).super;
+                }
+            }
+        }
+        throw JavaLinkageError(JavaLinkageKind::illegal_access,
+            ClassAt(*caller).descriptor + " cannot access member of " + ClassAt(owner).descriptor);
+    }
+    [[noreturn]] void BadDefinition(DexClassId id, JavaLinkageKind kind,
+                                    DexVmErrorReason internal_reason, std::string message) {
+        if (ClassAt(id).is_intrinsic && !ClassAt(id).is_skeleton) Fail(internal_reason, std::move(message));
+        throw JavaLinkageError(kind, std::move(message));
+    }
     void LinkClass(const DexClassId id, std::set<std::uint32_t>& visiting) {
+        auto& extra = ExtrasAt(id);
+        if (extra.link_failed) throw JavaLinkageError(JavaLinkageKind::no_class, ClassAt(id).descriptor);
+        try { LinkClassBody(id, visiting); }
+        catch (const JavaLinkageError&) {
+            extra.link_failed = true;
+            visiting.erase(id.Value());
+            throw;
+        }
+    }
+
+    void LinkClassBody(const DexClassId id, std::set<std::uint32_t>& visiting) {
         auto& linked = ClassAt(id);
         auto& extra = ExtrasAt(id);
         if (extra.linked) return;
         MergeSkeletonMembers(id);
         if (!visiting.insert(id.Value()).second) {
-            Fail(DexVmErrorReason::invalid_hierarchy,
+            BadDefinition(id, JavaLinkageKind::circularity, DexVmErrorReason::invalid_hierarchy,
                  "class hierarchy contains a cycle at " + linked.descriptor);
         }
 
+        if (!linked.super && linked.descriptor != "Ljava/lang/Object;" && !linked.is_intrinsic) {
+            BadDefinition(id, JavaLinkageKind::linkage, DexVmErrorReason::invalid_hierarchy, "class without superclass: " + linked.descriptor);
+        }
         std::uint16_t slot_cursor = 0;
         if (linked.super.has_value()) {
             LinkClass(*linked.super, visiting);
             const auto& super = ClassAt(*linked.super);
             const auto& super_extra = ExtrasAt(*linked.super);
             if ((super.access_flags & kAccFinal) != 0) {
-                Fail(DexVmErrorReason::invalid_hierarchy,
+                BadDefinition(id, JavaLinkageKind::incompatible_class_change, DexVmErrorReason::invalid_hierarchy,
                      "final class is extended: " + super.descriptor);
             }
             if (super.is_interface) {
-                Fail(DexVmErrorReason::invalid_hierarchy,
+                BadDefinition(id, JavaLinkageKind::incompatible_class_change, DexVmErrorReason::invalid_hierarchy,
                      "interface used as superclass of " + linked.descriptor);
             }
+            CheckClassAccess(*linked.super, id);
             slot_cursor = super.instance_slots;
             linked.vtable = super.vtable;
             extra.virtual_lookup = super_extra.virtual_lookup;
@@ -232,9 +292,10 @@ public:
         for (const auto interface_id : linked.direct_interfaces) {
             LinkClass(interface_id, visiting);
             if (!ClassAt(interface_id).is_interface) {
-                Fail(DexVmErrorReason::invalid_hierarchy,
+                BadDefinition(id, JavaLinkageKind::incompatible_class_change, DexVmErrorReason::invalid_hierarchy,
                      "non-interface implemented by " + linked.descriptor);
             }
+            CheckClassAccess(interface_id, id);
             append_unique(interface_id);
             for (const auto inherited : ClassAt(interface_id).interfaces) {
                 append_unique(inherited);
@@ -312,7 +373,7 @@ public:
                              overridden.name);
                 }
                 if ((inherited_flags & kAccFinal) != 0) {
-                    Fail(DexVmErrorReason::invalid_override,
+                    BadDefinition(id, JavaLinkageKind::virtual_machine, DexVmErrorReason::invalid_override,
                          "final method is overridden: " +
                              ClassAt(overridden.owner).descriptor + "." +
                              overridden.name + " by " + linked.descriptor);

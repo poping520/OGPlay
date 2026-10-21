@@ -15,7 +15,7 @@ DexClassId DexClassLinker::ResolveTypeIndex(const std::uint32_t type_index) {
 }
 
 DexClassId DexClassLinker::ResolveTypeIndex(
-    const DexUnitId unit_id, const std::uint32_t type_index) {
+    const DexUnitId unit_id, const std::uint32_t type_index, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
     if (type_index >= unit.image.types.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
@@ -25,6 +25,8 @@ DexClassId DexClassLinker::ResolveTypeIndex(
     if (!cached.has_value()) {
         cached = ResolveDescriptor(unit.image.types[type_index].descriptor);
     }
+    EnsureClassLinked(*cached);
+    impl_->CheckClassAccess(*cached, caller);
     return *cached;
 }
 
@@ -40,7 +42,7 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
 
 ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     const DexUnitId unit_id, const std::uint32_t method_index,
-    const InvokeKind requested_kind) {
+    const InvokeKind requested_kind, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
     if (method_index >= unit.image.methods.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
@@ -66,7 +68,16 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
                           : requested_kind;
     auto& cached = unit.method_cache[method_index]
                                     [static_cast<std::size_t>(kind)];
-    if (cached.has_value()) return *cached;
+    const auto check_access = [&](const ResolvedCallSite& call) {
+        impl_->CheckClassAccess(owner, caller);
+        const auto& method = impl_->MethodAt(call.method);
+        impl_->CheckMemberAccess(method.owner, method.access_flags, caller);
+    };
+    if (cached.has_value()) { check_access(*cached); return *cached; }
+    if ((kind == InvokeKind::interface_call) != impl_->ClassAt(owner).is_interface) {
+        throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
+                              "method owner has wrong interface kind: " + owner_descriptor);
+    }
 
     std::optional<VmMethodId> resolved;
     std::optional<std::uint16_t> vtable_slot;
@@ -81,7 +92,7 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
         auto current = std::optional<DexClassId>(owner);
         while (current.has_value() && !resolved.has_value()) {
             const auto candidate = declared_direct(*current);
-            if (candidate.has_value() && impl_->MethodAt(*candidate).is_static) {
+            if (candidate.has_value()) {
                 resolved = candidate;
             }
             current = impl_->ClassAt(*current).super;
@@ -109,7 +120,7 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
     // missing implementation or a host failure (dalvik/tests/077).
     if (!resolved.has_value() && kind == InvokeKind::static_call &&
         FindVtableIndex(owner, name, descriptor).has_value()) {
-        Fail(DexVmErrorReason::incompatible_class_change,
+        throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
              "invoke-static resolves to virtual method: " + owner_descriptor + "->" + name + descriptor);
     }
     if (!resolved.has_value() &&
@@ -118,46 +129,36 @@ ResolvedCallSite DexClassLinker::ResolveMethodIndex(
         while (current.has_value()) {
             const auto candidate = declared_direct(*current);
             if (candidate.has_value() && impl_->MethodAt(*candidate).is_static) {
-                Fail(DexVmErrorReason::incompatible_class_change,
+                throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
                      "virtual invoke resolves to static method: " + owner_descriptor + "->" + name + descriptor);
             }
             current = impl_->ClassAt(*current).super;
         }
     }
-    if (!resolved.has_value() &&
-        kind == InvokeKind::interface_call &&
-        impl_->ClassAt(owner).is_interface) {
-        // Interface methods dispatch by name+descriptor on the receiver at
-        // runtime (02 §7); synthesize the abstract declaration so the
-        // constant pool resolves even when the interface (typically an
-        // intrinsic one) declares no method table.
-        LinkedMethod synthetic;
-        synthetic.owner = owner;
-        synthetic.name = name;
-        synthetic.descriptor = descriptor;
-        synthetic.kind = MethodKind::abstract;
-        synthetic.declared_invoke_kind = DeclaredInvokeKind::interface_call;
-        const auto parts = SplitDescriptor(descriptor);
-        synthetic.shape = ShapeOf(parts, false);
-        synthetic.return_shorty = ShortyOf(parts.return_type);
-        synthetic.ins_words = synthetic.shape.incoming_words;
-        resolved = impl_->AddMethod(std::move(synthetic));
+    if (!resolved && (kind == InvokeKind::virtual_call || kind == InvokeKind::super_call)) {
+        const auto direct = declared_direct(owner);
+        if (direct) {
+            const auto& method = impl_->MethodAt(*direct);
+            impl_->CheckClassAccess(owner, caller);
+            impl_->CheckMemberAccess(method.owner, method.access_flags, caller);
+        }
     }
     if (!resolved.has_value() && GapSurveyEnabled() &&
         IsPlatformDescriptor(owner_descriptor)) {
         resolved = SynthesizeSurveyMethod(owner, name, descriptor, kind);
     }
     if (!resolved.has_value()) {
-        Fail(DexVmErrorReason::unresolved_reference,
+        throw JavaLinkageError(JavaLinkageKind::no_method,
              "method cannot be resolved: " + owner_descriptor + "->" + name +
                  descriptor);
     }
     const auto& method = impl_->MethodAt(*resolved);
     if ((kind == InvokeKind::static_call) != method.is_static) {
-        Fail(DexVmErrorReason::unresolved_reference,
+        throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
              "method static kind mismatch: " + owner_descriptor + "->" +
                  name + descriptor);
     }
+    check_access(ResolvedCallSite{*resolved, owner, kind, vtable_slot});
     cached = ResolvedCallSite{*resolved, owner, kind, vtable_slot};
     return *cached;
 }
@@ -173,7 +174,7 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
 
 ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     const DexUnitId unit_id, const std::uint32_t field_index,
-    const bool is_static) {
+    const bool is_static, std::optional<DexClassId> caller) {
     auto& unit = impl_->UnitAt(unit_id);
     if (field_index >= unit.image.fields.size()) {
         Fail(DexVmErrorReason::unresolved_reference,
@@ -181,11 +182,14 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     }
     auto& cached = unit.field_cache[field_index];
     if (cached.has_value()) {
+        EnsureClassLinked(cached->declared_owner);
         const auto& field = impl_->FieldAt(cached->field);
         if (field.is_static != is_static) {
-            Fail(DexVmErrorReason::unresolved_reference,
+            throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
                  "field static kind mismatch: " + field.name);
         }
+        impl_->CheckClassAccess(cached->declared_owner, caller);
+        impl_->CheckMemberAccess(field.owner, field.access_flags, caller);
         return *cached;
     }
     const auto& image = unit.image;
@@ -197,15 +201,17 @@ ResolvedFieldRef DexClassLinker::ResolveFieldIndex(
     const auto descriptor = image.types[entry.type_index].descriptor;
     const auto resolved = FindFieldRecursive(owner, name, descriptor);
     if (!resolved.has_value()) {
-        Fail(DexVmErrorReason::unresolved_reference,
+        throw JavaLinkageError(JavaLinkageKind::no_field,
              "field cannot be resolved: " + owner_descriptor + "->" + name +
                  ":" + descriptor);
     }
     const auto& field = impl_->FieldAt(*resolved);
     if (field.is_static != is_static) {
-        Fail(DexVmErrorReason::unresolved_reference,
+        throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
              "field static kind mismatch: " + owner_descriptor + "->" + name);
     }
+    impl_->CheckClassAccess(owner, caller);
+    impl_->CheckMemberAccess(field.owner, field.access_flags, caller);
     cached = ResolvedFieldRef{*resolved, owner};
     return *cached;
 }

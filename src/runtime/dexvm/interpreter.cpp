@@ -545,13 +545,13 @@ void Interpreter::Impl::CheckInvokeWidePair(
                        frame.method->name + " pc " +
                        std::to_string(frame.pc);
     if (lo + 1U >= frame.regs.size()) {
-        throw DexVmError(DexVmErrorReason::invalid_register,
+        throw JavaLinkageError(JavaLinkageKind::verify,
                          where + ": register out of range");
     }
     if (require_listed_consecutive) {
         if (!listed_hi.has_value() || *listed_hi != lo + 1U) {
-            throw DexVmError(
-                DexVmErrorReason::invalid_register,
+            throw JavaLinkageError(
+                JavaLinkageKind::verify,
                 where + ": wide invoke argument is not a consecutive pair");
         }
     }
@@ -711,7 +711,7 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(
         const auto slot = linker->FindVtableIndex(
             *current.super, named.name, named.descriptor);
         if (!slot.has_value()) {
-            FailCode("invoke-super dispatch failed for " + named.name);
+            throw JavaLinkageError(JavaLinkageKind::no_method, named.name);
         }
         return linker->Class(*current.super).vtable[*slot];
     }
@@ -719,6 +719,10 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(
     const auto receiver_class = model->ObjectClass(receiver);
     if (!receiver_class.IsValid()) {
         FailCode("receiver class is unknown for " + named.name);
+    }
+    if (!linker->IsAssignable(named.owner, receiver_class)) {
+        throw JavaLinkageError(JavaLinkageKind::incompatible_class_change,
+                              "receiver does not implement " + linker->Class(named.owner).descriptor);
     }
     const auto& vtable = linker->Class(receiver_class).vtable;
     if (kind == InvokeKind::virtual_call && vtable_slot.has_value() &&
@@ -736,7 +740,7 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(
         return linker->SynthesizeSurveyMethod(receiver_class, name, descriptor,
                                               kind);
     }
-    FailCode("virtual dispatch failed for " + named.name + " on " +
+    throw JavaLinkageError(JavaLinkageKind::abstract_method, "virtual dispatch failed for " + named.name + " on " +
              linker->Class(receiver_class).descriptor);
 }
 
@@ -757,15 +761,15 @@ VmCallOutcome Interpreter::Impl::Run(InterpreterExecutionState& execution,
         } catch (const VmJavaThrow& thrown) {
             if (thrown.existing.IsValid()) owner->SetPendingException(thrown.existing);
             else ThrowJava(thrown.descriptor, thrown.message);
+        } catch (const JavaLinkageError& error) {
+            ThrowJava(error.Descriptor(), error.what());
         } catch (const std::bad_alloc&) {
             model->SetEmergencyReserve(true);
             ThrowJava("Ljava/lang/OutOfMemoryError;",
                       "host allocation failed inside DexVM heap");
             model->SetEmergencyReserve(false);
         } catch (const DexVmError& error) {
-            if (error.Reason() == DexVmErrorReason::incompatible_class_change) {
-                ThrowJava("Ljava/lang/IncompatibleClassChangeError;", error.what());
-            } else if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
+            if (error.Reason() == DexVmErrorReason::heap_budget_exhausted) {
                 // The OutOfMemoryError object itself must still allocate;
                 // a bounded emergency reserve keeps this honest instead of
                 // crashing while reporting the exhaustion.
@@ -1122,6 +1126,7 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
         // nested calls (native -> interpreter re-entry) share the budget.
         execution.ticks = 0;
     }
+    try {
     const auto owner = impl_->linker->Method(method_id).owner;
     impl_->linker->EnsureClassLinked(owner);
     if (impl_->linker->Method(method_id).is_static) {
@@ -1244,12 +1249,19 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
             return outcome;
         }
         case MethodKind::abstract:
-            throw DexVmError(DexVmErrorReason::invalid_member,
+            throw JavaLinkageError(JavaLinkageKind::abstract_method,
                              "abstract method invoked directly: " +
                                  impl_->linker->Method(method_id).name);
     }
     throw DexVmError(DexVmErrorReason::internal_invariant,
                      "unreachable method kind");
+    } catch (const JavaLinkageError& error) {
+        VmCallOutcome outcome;
+        outcome.exception = MakeThrowable(error.Descriptor(), error.what());
+        outcome.exception_class = impl_->model->ObjectClass(outcome.exception);
+        outcome.exception_message = error.what();
+        return outcome;
+    }
 }
 
 VmCallOutcome Interpreter::Call(
@@ -1379,7 +1391,11 @@ VmObjectRef Interpreter::MakeThrowable(const std::string_view descriptor,
                          "throwable class is not registered: " +
                              std::string(descriptor));
     }
-    const auto throwable = impl_->AllocateInstance(*java_class);
+    // VM exception construction, like dvmThrowVirtualMachineError, may allocate
+    // an abstract Throwable class; only guest new-instance rejects abstract types.
+    impl_->linker->EnsureClassLinked(*java_class);
+    const auto throwable = impl_->model->NewInstance(
+        *java_class, impl_->linker->Class(*java_class).instance_slots);
     const auto root = ProtectReferences(std::array{throwable});
     const auto stack = impl_->CaptureStack();
     InitializeThrowable(throwable, message.empty() ? VmObjectRef{} : NewStringUtf8(message));
@@ -1633,6 +1649,8 @@ VmCallOutcome Interpreter::AllocateJniObject(const DexClassId java_class) {
         if (initialized.exception.IsValid()) return initialized;
         impl_->PrepareSafeAllocation(JavaObjectModel::EstimateInstanceBytes(slots), "jni-alloc-object");
         outcome.value = VmValue::Ref(impl_->AllocateInstance(java_class));
+    } catch (const JavaLinkageError& error) {
+        failure(error.Descriptor(), error.what());
     } catch (const DexVmError& error) {
         if (error.Reason() != DexVmErrorReason::heap_budget_exhausted) throw;
         failure("Ljava/lang/OutOfMemoryError;", error.what());

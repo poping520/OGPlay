@@ -254,11 +254,8 @@ VmObjectRef AnnotationRuntime::Materialize(const LinkedAnnotation& annotation) {
     DexClassId type;
     try {
         type = linker.ResolveDescriptor(annotation.type_descriptor);
-    } catch (const DexVmError& error) {
-        if (error.Reason() == DexVmErrorReason::unknown_class ||
-            error.Reason() == DexVmErrorReason::unresolved_reference) {
-            ThrowMissingType(annotation.type_descriptor);
-        }
+    } catch (const JavaLinkageError& error) {
+        if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(annotation.type_descriptor);
         throw;
     }
     const auto impl = EnsureImplClass(type);
@@ -403,7 +400,8 @@ VmObjectRef AnnotationRuntime::GetClassAnnotations(const DexClassId java_class,
                     const auto type =
                         linker.ResolveDescriptor(annotation.type_descriptor);
                     if (!AnnotationTypeIsInherited(type)) continue;
-                } catch (const DexVmError&) {
+                } catch (const JavaLinkageError& error) {
+                    if (error.Kind() != JavaLinkageKind::no_class) throw;
                     continue;
                 }
             }
@@ -577,11 +575,8 @@ VmValue AnnotationRuntime::MaterializeEncoded(
         try {
             const auto type = linker.ResolveDescriptor(encoded.descriptor);
             return VmValue::Ref(model.ClassObject(type));
-        } catch (const DexVmError& error) {
-            if (error.Reason() == DexVmErrorReason::unknown_class ||
-                error.Reason() == DexVmErrorReason::unresolved_reference) {
-                ThrowMissingType(encoded.descriptor);
-            }
+        } catch (const JavaLinkageError& error) {
+            if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(encoded.descriptor);
             throw;
         }
     }
@@ -589,11 +584,8 @@ VmValue AnnotationRuntime::MaterializeEncoded(
         DexClassId type;
         try {
             type = linker.ResolveDescriptor(encoded.descriptor);
-        } catch (const DexVmError& error) {
-            if (error.Reason() == DexVmErrorReason::unknown_class ||
-                error.Reason() == DexVmErrorReason::unresolved_reference) {
-                ThrowMissingType(encoded.descriptor);
-            }
+        } catch (const JavaLinkageError& error) {
+            if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(encoded.descriptor);
             throw;
         }
         const auto initialized = interpreter_->EnsureClassInitialized(type);
@@ -641,11 +633,8 @@ VmValue AnnotationRuntime::MaterializeArray(
     DexClassId array_class;
     try {
         array_class = linker.ResolveDescriptor(array_descriptor);
-    } catch (const DexVmError& error) {
-        if (error.Reason() == DexVmErrorReason::unknown_class ||
-            error.Reason() == DexVmErrorReason::unresolved_reference) {
-            ThrowMissingType(array_descriptor);
-        }
+    } catch (const JavaLinkageError& error) {
+        if (error.Kind() == JavaLinkageKind::no_class) ThrowMissingType(array_descriptor);
         throw;
     }
     const auto length = static_cast<JniSize>(encoded.values.size());

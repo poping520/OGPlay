@@ -1581,3 +1581,367 @@
     aput-object v0, v1, v2
     return-void
 .end method
+
+# ADR-0150: valid DEX structures with linkage failures deferred to first use.
+.class public LLinkageProbe;
+.super Ljava/lang/Object;
+.method public static ok()I
+.registers 1
+    const/16 v0, 42
+    return v0
+.end method
+
+.method public static missingClass()V
+.registers 2
+    const-class v0, Lmissing/Absent;
+    return-void
+.end method
+.method public static caught_missingClass()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->missingClass()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/NoClassDefFoundError; :try_start :try_end :handler
+.end method
+
+.method public static missingMethod()V
+.registers 2
+    invoke-static {}, LLinkageProbe;->absent()V
+    return-void
+.end method
+.method public static caught_missingMethod()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->missingMethod()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/NoSuchMethodError; :try_start :try_end :handler
+.end method
+
+.method public static missingField()V
+.registers 2
+    sget v0, LLinkageProbe;->absent:I
+    return-void
+.end method
+.method public static caught_missingField()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->missingField()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/NoSuchFieldError; :try_start :try_end :handler
+.end method
+
+.method public static fieldKind()V
+.registers 2
+    sget v0, Laccess/Target;->instance:I
+    return-void
+.end method
+.method public static caught_fieldKind()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->fieldKind()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IncompatibleClassChangeError; :try_start :try_end :handler
+.end method
+
+.method public static methodKind()V
+.registers 2
+    invoke-static {}, Laccess/Target;->virtualMethod()V
+    return-void
+.end method
+.method public static caught_methodKind()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->methodKind()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IncompatibleClassChangeError; :try_start :try_end :handler
+.end method
+
+.method public static privateField()V
+.registers 2
+    sget v0, Laccess/Target;->secret:I
+    return-void
+.end method
+.method public static caught_privateField()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->privateField()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IllegalAccessError; :try_start :try_end :handler
+.end method
+
+.method public static privateMethod()V
+.registers 2
+    invoke-static {}, Laccess/Target;->secretMethod()V
+    return-void
+.end method
+.method public static caught_privateMethod()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->privateMethod()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IllegalAccessError; :try_start :try_end :handler
+.end method
+
+.method public static hiddenClass()V
+.registers 2
+    const-class v0, Lhidden/Hidden;
+    return-void
+.end method
+.method public static caught_hiddenClass()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->hiddenClass()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IllegalAccessError; :try_start :try_end :handler
+.end method
+
+.method public static instantiate()V
+.registers 2
+    new-instance v0, LAbstractProbe;
+    return-void
+.end method
+.method public static caught_instantiate()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->instantiate()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/InstantiationError; :try_start :try_end :handler
+.end method
+
+.method public static abstractCall()V
+.registers 2
+    new-instance v0, LConcreteProbe;
+    invoke-virtual {v0}, LAbstractProbe;->value()V
+    return-void
+.end method
+.method public static caught_abstractCall()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->abstractCall()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/AbstractMethodError; :try_start :try_end :handler
+.end method
+
+.method public static badSuper()V
+.registers 2
+    new-instance v0, LBadSuper;
+    return-void
+.end method
+.method public static caught_badSuper()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->badSuper()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IncompatibleClassChangeError; :try_start :try_end :handler
+.end method
+
+.method public static badInterface()V
+.registers 2
+    new-instance v0, LBadInterface;
+    return-void
+.end method
+.method public static caught_badInterface()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->badInterface()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/IncompatibleClassChangeError; :try_start :try_end :handler
+.end method
+
+.method public static finalOverride()V
+.registers 2
+    new-instance v0, LFinalChild;
+    return-void
+.end method
+.method public static caught_finalOverride()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->finalOverride()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/VirtualMachineError; :try_start :try_end :handler
+.end method
+
+.method public static verify()V
+.registers 2
+    invoke-static {}, LBadCode;->bad()V
+    return-void
+.end method
+.method public static caught_verify()I
+.registers 2
+    :try_start
+    invoke-static {}, LLinkageProbe;->verify()V
+    :try_end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    invoke-static {}, LLinkageProbe;->ok()I
+    move-result v0
+    return v0
+    .catch Ljava/lang/VerifyError; :try_start :try_end :handler
+.end method
+
+.class public Laccess/Target;
+.super Ljava/lang/Object;
+.field public instance:I
+.field private static secret:I
+.method public virtualMethod()V
+.registers 1
+    return-void
+.end method
+.method private static secretMethod()V
+.registers 0
+    return-void
+.end method
+.method public static warm()V
+.registers 1
+    sget v0, Laccess/Target;->secret:I
+    invoke-static {}, Laccess/Target;->secretMethod()V
+    return-void
+.end method
+
+.class Lhidden/Hidden;
+.super Ljava/lang/Object;
+
+.class public abstract LAbstractProbe;
+.super Ljava/lang/Object;
+.method public abstract value()V
+.end method
+
+.class public LConcreteProbe;
+.super LAbstractProbe;
+
+.class public interface abstract LLinkInterface;
+.super Ljava/lang/Object;
+.class public LBadSuper;
+.super LLinkInterface;
+.class public LBadInterface;
+.super Ljava/lang/Object;
+.implements Laccess/Target;
+
+.class public LFinalBase;
+.super Ljava/lang/Object;
+.method public final value()V
+.registers 1
+    return-void
+.end method
+.class public LFinalChild;
+.super LFinalBase;
+.method public value()V
+.registers 1
+    return-void
+.end method
+
+.class public LBadCode;
+.super Ljava/lang/Object;
+.method public static bad()V
+.registers 1
+    move-result v0
+    return-void
+.end method
+
+.class public Landroid/guest/OnlyApp;
+.super Ljava/lang/Object;
+.method public static value()I
+.registers 1
+    const/16 v0, 7
+    return v0
+.end method
+.class public Landroid/guest/BootProvided;
+.super Ljava/lang/Object;
+.method public static value()I
+.registers 1
+    const/16 v0, 99
+    return v0
+.end method

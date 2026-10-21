@@ -111,7 +111,7 @@
         case 0x1c:
             SetFastRef(regs, instruction.a,
                    model->ClassObject(linker->ResolveTypeIndex(dex_unit,
-                       static_cast<std::uint32_t>(instruction.extra))));
+                       static_cast<std::uint32_t>(instruction.extra), frame.method->owner)));
             OGPLAY_DISPATCH_NEXT();
         case 0x28:
         case 0x29:

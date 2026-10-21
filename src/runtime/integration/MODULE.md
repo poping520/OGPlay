@@ -157,6 +157,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   与 GC 同锁，不增加引用根，未知 external identity 不递归导入，teardown 撤销解析器。
   native 资源清理 scope 以当前 JNI 线程 local ref 保活并暂清 pending，所有出口恢复原
   throwable；清理错误独立传给调用方，普通 JNI pending gate 保持严格。
+- JNI 类解析遇 guest linkage failure 时在当前调用线程发布原 Java 错误，再返回空身份；
+  真实内部错误继续传播，不能把它当作查询未命中。
 - 类注册保留完整父类/direct interface 图；interface MethodID 在实际 receiver 上虚派。
   JNI 数组兼容/IsAssignableFrom 复用 linker 的类、接口、数组协变与 primitive 规则；
   任一侧不属于 VM 返回 nullopt 保留 JNI 校验，不能无条件放行或把不相等视作不兼容。

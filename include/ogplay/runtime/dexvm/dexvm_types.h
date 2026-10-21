@@ -40,6 +40,37 @@ using VmFieldId = DexVmHandle<VmFieldIdTag>;
 // value 0 is null.
 using VmObjectRef = DexVmHandle<VmObjectRefTag>;
 
+// Guest-visible linkage failures carry no guest refs; VM entry/dispatch owns
+// throwable allocation and Java unwinding. Never infer these from host errors.
+enum class JavaLinkageKind : std::uint8_t {
+    no_class, no_method, no_field, incompatible_class_change, illegal_access,
+    instantiation, abstract_method, verify, linkage, circularity, virtual_machine,
+};
+class JavaLinkageError final : public std::runtime_error {
+public:
+    JavaLinkageError(JavaLinkageKind kind, std::string message)
+        : std::runtime_error(std::move(message)), kind_(kind) {}
+    [[nodiscard]] JavaLinkageKind Kind() const noexcept { return kind_; }
+    [[nodiscard]] const char* Descriptor() const noexcept {
+        switch (kind_) {
+        case JavaLinkageKind::no_class: return "Ljava/lang/NoClassDefFoundError;";
+        case JavaLinkageKind::no_method: return "Ljava/lang/NoSuchMethodError;";
+        case JavaLinkageKind::no_field: return "Ljava/lang/NoSuchFieldError;";
+        case JavaLinkageKind::incompatible_class_change: return "Ljava/lang/IncompatibleClassChangeError;";
+        case JavaLinkageKind::illegal_access: return "Ljava/lang/IllegalAccessError;";
+        case JavaLinkageKind::instantiation: return "Ljava/lang/InstantiationError;";
+        case JavaLinkageKind::abstract_method: return "Ljava/lang/AbstractMethodError;";
+        case JavaLinkageKind::verify: return "Ljava/lang/VerifyError;";
+        case JavaLinkageKind::linkage: return "Ljava/lang/LinkageError;";
+        case JavaLinkageKind::circularity: return "Ljava/lang/ClassCircularityError;";
+        case JavaLinkageKind::virtual_machine: return "Ljava/lang/VirtualMachineError;";
+        }
+        return "Ljava/lang/LinkageError;";
+    }
+private:
+    JavaLinkageKind kind_;
+};
+
 enum class DexVmErrorReason : std::uint8_t {
     incompatible_class_change,
     invalid_image,

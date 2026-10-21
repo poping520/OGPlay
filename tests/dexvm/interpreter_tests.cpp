@@ -318,6 +318,48 @@ TEST_CASE("dexvm vtable follows Dalvik 4.4 inaccessible override and final rules
     });
 }
 
+TEST_CASE("dexvm guest linkage errors are catchable and do not poison unrelated execution") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm vm(config);
+        REQUIRE_FALSE(vm.CallStatic("Laccess/Target;", "warm", "()V").exception.IsValid());
+        // The same constant-pool entry, already resolved by an allowed caller,
+        // still checks the access rights of the next caller.
+        for (const auto& [name, type] : std::vector<std::pair<std::string, std::string>>{
+                 {"missingClass", "NoClassDefFoundError"}, {"missingMethod", "NoSuchMethodError"},
+                 {"missingField", "NoSuchFieldError"}, {"fieldKind", "IncompatibleClassChangeError"},
+                 {"methodKind", "IncompatibleClassChangeError"}, {"privateField", "IllegalAccessError"},
+                 {"privateMethod", "IllegalAccessError"}, {"hiddenClass", "IllegalAccessError"},
+                 {"instantiate", "InstantiationError"}, {"abstractCall", "AbstractMethodError"}}) {
+            INFO(name);
+            ExpectException(vm, vm.CallStatic("LLinkageProbe;", name, "()V"), "Ljava/lang/" + type + ";");
+            ExpectInt(vm.CallStatic("LLinkageProbe;", "caught_" + name, "()I"), 42);
+            ExpectInt(vm.CallStatic("LLinkageProbe;", "ok", "()I"), 42);
+        }
+        for (const auto& [name, type] : std::vector<std::pair<std::string, std::string>>{
+                 {"badSuper", "IncompatibleClassChangeError"}, {"badInterface", "IncompatibleClassChangeError"},
+                 {"finalOverride", "VirtualMachineError"}, {"verify", "VerifyError"}}) {
+            INFO(name);
+            ExpectInt(vm.CallStatic("LLinkageProbe;", "caught_" + name, "()I"), 42);
+            ExpectException(vm, vm.CallStatic("LLinkageProbe;", name, "()V"), "Ljava/lang/NoClassDefFoundError;");
+            ExpectInt(vm.CallStatic("LLinkageProbe;", "ok", "()I"), 42);
+        }
+        CHECK_THROWS_AS(static_cast<void>(vm.linker.Class(DexClassId(0xfffffff0U))), DexVmError);
+        CHECK_THROWS_AS(static_cast<void>(vm.linker.Method(VmMethodId(0xfffffff0U))), DexVmError);
+    });
+}
+
+TEST_CASE("dexvm parent first uses actual bootstrap presence instead of package prefixes") {
+    WithEachBackend([](InterpreterConfig config) {
+        auto boot = IntrinsicClassBuilder::Class("Landroid/guest/BootProvided;");
+        boot.StaticMethod("value", "()I", [](IntrinsicContext&) { return VmValue::Int(8); });
+        Vm vm(config, {}, {std::move(boot).Build()});
+        ExpectInt(vm.CallStatic("Landroid/guest/OnlyApp;", "value", "()I"), 7);
+        ExpectInt(vm.CallStatic("Landroid/guest/BootProvided;", "value", "()I"), 8);
+        CHECK(vm.linker.Class(vm.linker.ResolveDescriptor("Landroid/guest/OnlyApp;")).defining_loader == kApplicationLoader);
+        CHECK(vm.linker.Class(vm.linker.ResolveDescriptor("Landroid/guest/BootProvided;")).defining_loader == kBootstrapLoader);
+    });
+}
+
 TEST_CASE("dexvm clinit runs once before static access") {
     WithEachBackend([](InterpreterConfig config) {
     Vm vm(config);

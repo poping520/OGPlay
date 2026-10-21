@@ -99,7 +99,7 @@ struct ClassLoaderFields final {
         if (error.Reason() == DexVmErrorReason::unknown_class) {
             throw VmJavaThrow{"Ljava/lang/ClassNotFoundException;", name};
         }
-        throw VmJavaThrow{"Ljava/lang/LinkageError;", error.what()};
+        throw;
     }
 }
 

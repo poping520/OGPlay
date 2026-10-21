@@ -18,8 +18,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   APK 副本的层级、字段、方法、注解与 clinit，不要求字节码相同。常量池经现有惰性解析
   指向同一父类身份；同包 APK 独有类仍归 application。层级/布局/vtable/iftable 懒链接。
   未触达可选类不阻断启动；触达后
-  缺失层级、循环继承、非法覆盖明确失败。应用自带 `android.support.*` 归 app loader，真正平台
-  前缀类忽略。数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。
+  缺失层级、循环继承、非法覆盖只使触达的类及其依赖类不可用。bootstrap 未提供的类型
+  即使位于 android.* 也从应用 DEX 加载；数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。
 - vtable 按名称和完整签名匹配继承槽，允许重写缩小可见性；父方法 private 不构成重写，
   按 Dalvik 4.4 b/7301030，包私有方法跨包/loader 仍覆盖同名同原型父槽。
   intrinsic 父类遵循相同规则；构成重写时仍拒绝 final 方法及未准入的 intrinsic 覆盖。
@@ -27,6 +27,14 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   Interpreter.SetLogger 同步给 linker，早期链接的警告暂存并在首次注入时发布。
   调用解析仅找到相反 static/virtual 类别的方法时，经两后端统一转为 guest
   `IncompatibleClassChangeError`，供 Java catch 处理。
+- ADR-0150：guest 链接/解析失败使用独立 JavaLinkageError，两后端共用 Java 异常展开，
+  `Call` 同样返回真实 throwable。首次类链接失败传播原错误，再使用抛 NCDFE；成员解析失败
+  只影响当前指令。缺方法/字段为 NSME/NSFE，种类不符为 ICCE、不可访问为 IAE，
+  new abstract/interface 为 InstantiationError，abstract 分派为 AME；惰性结构预检为 VerifyError。
+  Dalvik 4.4 final 方法覆盖失败经链接 bail 抛 VirtualMachineError（Class.cpp:2848）。
+  成功缓存不得绕过 caller 访问校验或失败类状态。内部 handle/布局/受审 intrinsic 契约破坏、
+  无法解析的 DEX 输入与受限执行器故障仍为 DexVmError，禁止按其消息猜测 Java 异常。
+  survey 沿用既有显式记账/替身策略，不为这些失败添加中性返回。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与
   move-result；对照 API 19 `CodeVerify.cpp`，不做全量数据流。
 - 每 VM 只有稳定 application `PathClassLoader` 与 boot loader；application→boot→null。

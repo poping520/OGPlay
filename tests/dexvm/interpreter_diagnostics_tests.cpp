@@ -132,6 +132,11 @@ TEST_CASE("dexvm fatal errors retain the interpreted guest call stack") {
     WithEachBackend([](InterpreterConfig config) {
         auto builder =
             IntrinsicClassBuilder::Class("Ldiagnostics/Host;");
+        // Force a real host fault; missing members now produce catchable Java errors.
+        builder.StaticMethod("capture", "()I", [](IntrinsicContext&) -> VmValue {
+            throw DexVmError(DexVmErrorReason::unresolved_reference,
+                "method cannot be resolved: Ldiagnostics/Host;->capture()I");
+        });
         std::vector<IntrinsicClassDecl> catalog;
         catalog.push_back(DiagnosticSystemPropertiesOverlay());
         catalog.push_back(std::move(builder).Build());
@@ -196,6 +201,12 @@ TEST_CASE("dexvm fatal invoke diagnostics render bounded typed arguments") {
             [](IntrinsicContext& call) {
                 return VmValue::Ref(call.vm.NewStringUtf8("host-view"));
             });
+        const auto host_fault = [](IntrinsicContext&) -> VmValue {
+            throw DexVmError(DexVmErrorReason::internal_invariant, "diagnostic host fault");
+        };
+        builder.VirtualMethod("missing", "(Ljava/lang/String;)I", host_fault);
+        builder.StaticMethod("missingRange", "(Ljava/lang/String;FIZBSCJD[Ljava/lang/String;)I", host_fault);
+        builder.StaticMethod("missingMany", "(IIIIIIIIIIIIIIIII)I", host_fault);
         std::vector<IntrinsicClassDecl> catalog;
         catalog.push_back(DiagnosticSystemPropertiesOverlay());
         catalog.push_back(std::move(builder).Build());

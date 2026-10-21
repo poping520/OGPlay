@@ -133,7 +133,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
     // ---- iget/iput family (0x52..0x5f) -----------------------------------
     if (opcode >= 0x52 && opcode <= 0x5f) {
         const auto resolved =
-            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], false);
+            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], false, frame.method->owner);
         const auto& field = linker->Field(resolved.field);
         RequireImplementedField(field);
         const auto receiver = GetRef(frame, vB4);
@@ -185,7 +185,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
     // ---- sget/sput family (0x60..0x6d) ------------------------------------
     if (opcode >= 0x60 && opcode <= 0x6d) {
         const auto resolved =
-            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], true);
+            linker->ResolveFieldIndex(dex_unit, units[frame.pc + 1], true, frame.method->owner);
         const auto& field = linker->Field(resolved.field);
         RequireImplementedField(field);
         EnsureInitialized(execution, field.owner);
@@ -238,7 +238,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
             : base == 0x71 ? InvokeKind::static_call
                            : InvokeKind::interface_call;
         const auto resolved = linker->ResolveMethodIndex(
-            dex_unit, units[frame.pc + 1], invoke_kind);
+            dex_unit, units[frame.pc + 1], invoke_kind, frame.method->owner);
         const auto& named = linker->Method(resolved.method);
 
         std::vector<std::uint32_t> registers;
@@ -415,7 +415,7 @@ void Interpreter::Impl::StepObjectOrInvoke(
                 return;
             }
             case MethodKind::abstract:
-                FailCode("abstract method invoked: " + method.name);
+                throw JavaLinkageError(JavaLinkageKind::abstract_method, method.name);
         }
         return;
     }

@@ -470,7 +470,7 @@ public:
 
     // Optional structured logger for guest-visible output (System.out,
     // android.util.Log) and uncaught-exception diagnostics.
-    void SetLogger(core::Logger* logger) noexcept;
+    void SetLogger(core::Logger* logger);
     [[nodiscard]] core::Logger* Log() const noexcept;
     // Optional raw console for System.out/err (dexvm run-dex). When set,
     // committed text goes here byte-for-byte instead of the structured log.

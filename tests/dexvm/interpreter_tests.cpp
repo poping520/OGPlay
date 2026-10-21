@@ -240,52 +240,81 @@ TEST_CASE("dexvm virtual and super dispatch through subclass") {
     });
 }
 
-TEST_CASE("dexvm vtable permits narrower visibility and separates runtime packages") {
+TEST_CASE("dexvm vtable follows Dalvik 4.4 inaccessible override and final rules") {
     WithEachBackend([](InterpreterConfig config) {
         const auto body = [](IntrinsicContext&) { return VmValue::Int(1); };
-        auto base = IntrinsicClassBuilder::Class("Loverride/p/Base;");
-        base.VirtualMethod("narrow", "()I", body);
-        base.VirtualMethod("packageMethod", "()I", body, 0U);
-        auto same = IntrinsicClassBuilder::Class("Loverride/p/Same;", "Loverride/p/Base;");
-        same.OverrideMethod("narrow", "()I", body, kAccProtected);
-        same.OverrideMethod("packageMethod", "()I", body, 0U);
-        auto cross = IntrinsicClassBuilder::Class("Loverride/q/Cross;", "Loverride/p/Base;");
-        cross.OverrideMethod("narrow", "()I", body, 0U);
-        cross.VirtualMethod("packageMethod", "()I", body, 0U);
-        auto returned = IntrinsicClassBuilder::Class("Loverride/p/Returned;", "Loverride/q/Cross;");
-        returned.OverrideMethod("packageMethod", "()I", body, 0U);
-        Vm vm(config, {}, {std::move(base).Build(), std::move(same).Build(),
-                          std::move(cross).Build(), std::move(returned).Build()});
-        const auto parent = vm.linker.ResolveDescriptor("Loverride/p/Base;");
-        const auto same_class = vm.linker.ResolveDescriptor("Loverride/p/Same;");
-        const auto cross_class = vm.linker.ResolveDescriptor("Loverride/q/Cross;");
-        const auto returned_class = vm.linker.ResolveDescriptor("Loverride/p/Returned;");
-        const auto app_class = vm.linker.ResolveDescriptor("Loverride/p/AppChild;");
-        const auto slot = [&](DexClassId type, const char* name) {
-            const auto found = vm.linker.FindVtableIndex(type, name, "()I");
-            REQUIRE(found.has_value());
-            return *found;
+        const auto catalog = [&] {
+            auto base = IntrinsicClassBuilder::Class("Loverride/p/Base;");
+            base.VirtualMethod("narrow", "()I", body);
+            base.VirtualMethod("packageMethod", "()I", body, 0U);
+            base.DirectMethod("privateMethod", "()I", body);
+            auto same = IntrinsicClassBuilder::Class("Loverride/p/Same;", "Loverride/p/Base;");
+            same.OverrideMethod("narrow", "()I", body, kAccProtected);
+            same.OverrideMethod("packageMethod", "()I", body, 0U);
+            auto cross = IntrinsicClassBuilder::Class("Loverride/q/Cross;", "Loverride/p/Base;");
+            cross.OverrideMethod("narrow", "()I", body, 0U);
+            cross.OverrideMethod("packageMethod", "()I", body, 0U);
+            cross.VirtualMethod("privateMethod", "()I", body);
+            return std::vector<IntrinsicClassDecl>{std::move(base).Build(),
+                std::move(same).Build(), std::move(cross).Build()};
         };
-        const auto narrow = slot(parent, "narrow");
-        const auto package = slot(parent, "packageMethod");
-        for (const auto child : {same_class, cross_class, app_class}) {
-            CHECK(slot(child, "narrow") == narrow);
-            CHECK(vm.linker.Method(vm.linker.Class(child).vtable[narrow]).owner == child);
+        ogplay::core::Logger logger;
+        const auto verify = [&](Vm& vm) {
+            vm.interpreter.SetLogger(&logger);
+            const auto parent = vm.linker.ResolveDescriptor("Loverride/p/Base;");
+            const auto same = vm.linker.ResolveDescriptor("Loverride/p/Same;");
+            const auto cross = vm.linker.ResolveDescriptor("Loverride/q/Cross;");
+            const auto app = vm.linker.ResolveDescriptor("Loverride/p/AppChild;");
+            const auto slot = [&](DexClassId type, const char* name) {
+                const auto found = vm.linker.FindVtableIndex(type, name, "()I");
+                REQUIRE(found.has_value());
+                return *found;
+            };
+            for (const auto name : {"narrow", "packageMethod"}) {
+                for (const auto child : {same, cross, app}) {
+                    const auto index = slot(child, name);
+                    CHECK(index == slot(parent, name));
+                    const auto target = vm.linker.Class(child).vtable[index];
+                    CHECK(vm.linker.Method(target).owner == child);
+                    const auto object = vm.model.NewInstance(child, vm.linker.Class(child).instance_slots);
+                    ExpectInt(vm.interpreter.Call(target, std::array{VmValue::Ref(object)}), child == app ?
+                              (std::string_view(name) == "narrow" ? 2 : 3) : 1);
+                }
+            }
+            CHECK_FALSE(vm.linker.FindVtableIndex(parent, "privateMethod", "()I").has_value());
+            CHECK(vm.linker.Method(vm.linker.Class(cross).vtable[slot(cross, "privateMethod")]).owner == cross);
+            CHECK(vm.linker.Class(parent).defining_loader != vm.linker.Class(app).defining_loader);
+            vm.interpreter.SetLogger(&logger); // Reattaching does not replay warnings twice.
+        };
+        Vm vm(config, {}, catalog());
+        verify(vm);
+        auto warnings = logger.Snapshot(ogplay::core::LogLevel::warn, "runtime.dexvm.override");
+        REQUIRE(warnings.size() == 2);
+        for (const auto& warning : warnings) {
+            CHECK(warning.level == ogplay::core::LogLevel::warn);
+            CHECK(warning.message.find("Loverride/p/Base;") != std::string::npos);
+            CHECK(warning.message.find("packageMethod()I") != std::string::npos);
+            CHECK(warning.fields.size() == 4);
         }
-        CHECK(slot(same_class, "packageMethod") == package);
-        CHECK(vm.linker.Method(vm.linker.Class(same_class).vtable[package]).owner == same_class);
-        for (const auto child : {cross_class, app_class}) {
-            CHECK(slot(child, "packageMethod") != package);
-            CHECK(vm.linker.Class(child).vtable[package] == vm.linker.Class(parent).vtable[package]);
-            CHECK(vm.linker.Method(vm.linker.Class(child).vtable[slot(child, "packageMethod")]).owner == child);
+        CHECK(warnings[0].message.find("Loverride/q/Cross;") != std::string::npos);
+        CHECK(warnings[1].message.find("Loverride/p/AppChild;") != std::string::npos);
+        Vm repeated(config, {}, catalog());
+        verify(repeated);
+        CHECK(logger.Snapshot(ogplay::core::LogLevel::warn, "runtime.dexvm.override").size() == 2);
+        for (const auto& warning : warnings) {
+            CHECK(logger.SuppressedCount(warning.category, warning.message) == 1);
         }
-        CHECK(vm.linker.Class(parent).defining_loader != vm.linker.Class(app_class).defining_loader);
-        // Returning to the ancestor's package must find its older slot, even
-        // though the intermediate class has another same-signature slot.
-        CHECK(slot(returned_class, "packageMethod") == package);
-        CHECK(vm.linker.Method(vm.linker.Class(returned_class).vtable[package]).owner == returned_class);
-        CHECK(vm.linker.Class(returned_class).vtable[slot(cross_class, "packageMethod")] ==
-              vm.linker.Class(cross_class).vtable[slot(cross_class, "packageMethod")]);
+        auto final_base = IntrinsicClassBuilder::Class("Lfinal/p/Base;");
+        final_base.FinalMethod("method", "()I", body, 0U);
+        auto final_child = IntrinsicClassBuilder::Class("Lfinal/q/Child;", "Lfinal/p/Base;");
+        final_child.OverrideMethod("method", "()I", body);
+        try {
+            Vm rejected(config, {}, {std::move(final_base).Build(), std::move(final_child).Build()});
+            FAIL("overriding an inaccessible final method must fail linking");
+        } catch (const DexVmError& error) {
+            CHECK(error.Reason() == DexVmErrorReason::invalid_override);
+            CHECK(std::string(error.what()).find("final method is overridden") != std::string::npos);
+        }
     });
 }
 

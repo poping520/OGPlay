@@ -19,6 +19,7 @@ Outcome classes:
   excluded:compile      javac/d8 rejected the unmodified sources
   excluded:scope        outside AGENTS.md scope (reason recorded)
   excluded:harness      needs harness support not built yet (reason recorded)
+  excluded:oracle       expected.txt differs from target Dalvik 4.4 (source recorded)
 
 This is a conformance probe, not a gate: results are evidence for planning.
 """
@@ -52,6 +53,13 @@ EXCLUDED = {
     "068-classloader": ("excluded:harness", "loads a secondary src-ex dex from a device path"),
     "071-dexfile": ("excluded:harness", "src-ex secondary dex, DexFile on device paths and a native library"),
     "089-many-methods": ("excluded:harness", "expects dx's own 64K-reference build error; the VM is never started"),
+}
+
+# Fixed oracle mismatches against the target Dalvik 4.4 device semantics.
+ORACLE_DIVERGENCE = {
+    "300-package-override": (
+        "excluded:oracle",
+        "expected.txt 对应 4.4 之后的修复；4.4 的 createVtable 因 b/7301030 有意允许（vm/oo/Class.cpp:2919）"),
 }
 
 # Ports of the custom `build` scripts (classes removed after the first javac pass).
@@ -207,8 +215,8 @@ def run_one(cli: Path, dex: Path, expected: bytes, out: Path, backend: str, time
 
 
 def run_test(test: str, args, tools) -> list[Result]:
-    if test in EXCLUDED:
-        outcome, reason = EXCLUDED[test]
+    if test in EXCLUDED or test in ORACLE_DIVERGENCE:
+        outcome, reason = (ORACLE_DIVERGENCE if test in ORACLE_DIVERGENCE else EXCLUDED)[test]
         return [Result(test, b, outcome, reason) for b in args.backends]
     out = args.out / "tests" / test
     out.mkdir(parents=True, exist_ok=True)
@@ -256,14 +264,15 @@ def compare_baseline(baseline: dict, results: list[Result], backends=BACKENDS,
     for r in results:
         current.setdefault(r.test, {})[r.backend] = r.outcome
     tests = set(only) if only is not None else set(baseline) | set(current)
-    changes: dict[str, list[str]] = {"regressions": [], "new passes": [], "other changes": []}
+    changes: dict[str, list[str]] = {"regressions": [], "new passes": [], "other changes": [], "oracle migrations": []}
     for test in sorted(tests):
         for backend in backends:
             before = baseline.get(test, {}).get(backend, "missing")
             after = current.get(test, {}).get(backend, "missing")
             if before == after:
                 continue
-            kind = "regressions" if before == "pass" else (
+            migration = before == "pass" and after == "excluded:oracle" and test in ORACLE_DIVERGENCE
+            kind = "oracle migrations" if migration else "regressions" if before == "pass" else (
                 "new passes" if after == "pass" else "other changes")
             changes[kind].append(f"{test} {backend}: {before} -> {after}")
     return changes
@@ -309,15 +318,15 @@ def self_test() -> None:
     changes = compare_baseline(baseline, results)
     assert changes == {"regressions": ["a switch: pass -> fail:timeout"],
                        "new passes": ["b switch: fail:output -> pass"],
-                       "other changes": ["b threaded: fail:crash -> fail:output"]}
+                       "other changes": ["b threaded: fail:crash -> fail:output"], "oracle migrations": []}
     for outcome in ("fail:output", "fail:unimplemented", "fail:crash", "fail:timeout",
-                    "excluded:compile", "excluded:scope", "excluded:harness"):
+                    "excluded:compile", "excluded:scope", "excluded:harness", "excluded:oracle"):
         assert len(compare_baseline(baseline, [Result("a", "switch", outcome)],
                                     ("switch",), ["a"])["regressions"]) == 1
     assert len(compare_baseline(baseline, [])["regressions"]) == 2
     subset = [Result("b", "switch", "pass")]
     assert compare_baseline(baseline, subset, ("switch",), ["b"]) == {
-        "regressions": [], "new passes": ["b switch: fail:output -> pass"], "other changes": []}
+        "regressions": [], "new passes": ["b switch: fail:output -> pass"], "other changes": [], "oracle migrations": []}
     assert not compare_baseline(baseline, [Result("a", "switch", "pass")],
                                 ("switch",), ["a"])["regressions"]
     with tempfile.TemporaryDirectory() as directory:
@@ -330,6 +339,32 @@ def self_test() -> None:
         merged = json.loads(path.read_text(encoding="utf-8"))
         assert merged == {**baseline, "b": {"switch": "pass", "threaded": "fail:crash"}}
         assert check_baseline(path, merged, subset, ("switch",), ["b"]) == 0
+    from types import SimpleNamespace
+    assert not (set(EXCLUDED) & set(ORACLE_DIVERGENCE))
+    assert all(kind == "excluded:oracle" and "vm/oo/Class.cpp:2919" in reason
+               for kind, reason in ORACLE_DIVERGENCE.values())
+    oracle_test = "300-package-override"
+    oracle_results = run_test(oracle_test, SimpleNamespace(backends=BACKENDS), None)
+    assert all(r.outcome == "excluded:oracle" and "b/7301030" in r.detail for r in oracle_results)
+    oracle_baseline = {oracle_test: {b: "pass" for b in BACKENDS}}
+    migration = compare_baseline(oracle_baseline, oracle_results)
+    assert migration == {"regressions": [], "new passes": [], "other changes": [],
+                         "oracle migrations": [f"{oracle_test} {b}: pass -> excluded:oracle" for b in BACKENDS]}
+    for bad in ("fail:output", "excluded:scope", "missing"):
+        rows = [] if bad == "missing" else [Result(oracle_test, b, bad) for b in BACKENDS]
+        assert len(compare_baseline(oracle_baseline, rows)["regressions"]) == 2
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "baseline.json"
+        path.write_text(json.dumps(oracle_baseline), encoding="utf-8")
+        assert check_baseline(path, oracle_baseline, oracle_results, update=True) == 0
+        assert json.loads(path.read_text(encoding="utf-8")) == {
+            oracle_test: {b: "excluded:oracle" for b in BACKENDS}}
+        mixed = {**oracle_baseline, "a": {"switch": "pass"}}
+        original = json.dumps(mixed)
+        path.write_text(original, encoding="utf-8")
+        assert check_baseline(path, mixed, oracle_results + [Result("a", "switch", "fail:crash")],
+                              update=True) == 1
+        assert path.read_text(encoding="utf-8") == original
     print("dalvik_tests self-test ok")
 
 

@@ -21,8 +21,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   缺失层级、循环继承、非法覆盖明确失败。应用自带 `android.support.*` 归 app loader，真正平台
   前缀类忽略。数组按需合成并支持引用协变及 Object/Cloneable/Serializable 关系。
 - vtable 按名称和完整签名匹配继承槽，允许重写缩小可见性；父方法 private 不构成重写，
-  包私有方法只在 defining loader 与包名均相同时构成重写，否则保留父槽并追加子槽。
+  按 Dalvik 4.4 b/7301030，包私有方法跨包/loader 仍覆盖同名同原型父槽。
   intrinsic 父类遵循相同规则；构成重写时仍拒绝 final 方法及未准入的 intrinsic 覆盖。
+  不可访问的覆盖通过注入 Logger 以 first_and_count 限流记录双方类和方法；
+  Interpreter.SetLogger 同步给 linker，早期链接的警告暂存并在首次注入时发布。
   调用解析仅找到相反 static/virtual 类别的方法时，经两后端统一转为 guest
   `IncompatibleClassChangeError`，供 Java catch 处理。
 - `PrecheckMethod` 懒校验 opcode、寄存器/wide pair、invoke 参数、branch/payload 与

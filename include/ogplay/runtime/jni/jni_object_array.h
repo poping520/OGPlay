@@ -63,6 +63,8 @@ public:
         JniObjectIdentity array, JniSize index) const;
     void Set(JniObjectIdentity array, JniSize index,
              std::optional<JniObjectValue> value);
+    // Range checked, overlap-safe movement within the same typed array.
+    void CopyWithin(JniObjectIdentity array, JniSize source, JniSize target, JniSize length);
 
 private:
     class Impl;

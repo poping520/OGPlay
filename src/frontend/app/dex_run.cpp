@@ -12,7 +12,8 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
-#include "ogplay/runtime/integration/dexvm_io_vfs.h"
+#include "ogplay/runtime/integration/dexvm_bridge.h"
+#include "ogplay/runtime/integration/native_library_loader.h"
 #include "ogplay/runtime/vfs/vfs.h"
 #include <array>
 #include <chrono>
@@ -170,14 +171,9 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto boot_dex = ReadDex(data / "android/19/framework/bootdex.jar");
     auto skeleton = ReadFile(data / "dexvm/api19-skeleton.bin");
 
-    runtime::JniStringStore strings;
-    runtime::JniPrimitiveArrayStore arrays;
-    dx::JavaObjectModel model{strings, arrays};
-    dx::DexClassLinker linker;
     core::CapabilityLedger ledger;
     const auto context = std::make_shared<runtime::DexVmAndroidContext>();
-    linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
-    linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
+    auto catalog = runtime::AndroidIntrinsicCatalog(context);
     // The real dalvikvm entry is NativeStart.main, which calls the selected
     // application's main. Retain that actual call boundary in captured stacks.
     auto entry = dx::IntrinsicClassBuilder::Class("Ldalvik/system/NativeStart;");
@@ -191,38 +187,73 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
             if (result.exception.IsValid()) vm.SetPendingException(result.exception);
             return dx::VmValue::Void();
         }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
-    linker.RegisterIntrinsics(std::array{std::move(entry).Build()});
-    linker.RegisterBootDex(std::move(boot_dex));
-    linker.RegisterSkeletonSurface(std::move(skeleton));
-    linker.RegisterDex(std::move(app_dex));
-    linker.Link();
+    catalog.push_back(std::move(entry).Build());
 
-    dx::InterpreterConfig config;
-    config.enable_assertions = options.enable_assertions;
-    config.backend = options.backend == "threaded" ? dx::InterpreterBackend::threaded
-                                                   : dx::InterpreterBackend::switch_dispatch;
-    dx::Interpreter vm(linker, model, nullptr, ledger, config);
-    vm.BindDefaultExecutionHost();
     core::Logger logger;
     logger.AddSink(std::make_shared<core::ConsoleSink>(stderr), core::LogLevel::warn);
-    vm.SetLogger(&logger);
+    runtime::VirtualFileSystem vfs;
+    const auto& bionic = runtime::SelectBionicProfile(19);
+    std::vector<runtime::BionicOwnedModule> owned_system;
+    for (const auto name : bionic.guest_libraries) {
+        const auto bytes = ReadFile(data / bionic.data_directory / "lib" / name);
+        std::vector<std::byte> image(bytes.size());
+        std::memcpy(image.data(), bytes.data(), bytes.size());
+        owned_system.push_back({std::string(name), std::move(image), memory::GuestAddress{0}});
+    }
+    std::vector<runtime::BionicModuleSource> system_sources;
+    std::vector<runtime::BionicModuleSource> dependencies;
+    std::span<const std::byte> libc;
+    for (const auto& source : owned_system) {
+        system_sources.push_back({source.name, source.image});
+        if (source.name == "libc.so") libc = source.image;
+        else dependencies.push_back({source.name, source.image});
+    }
+    auto system = runtime::BuildBionicModuleSet(bionic, "libc.so", libc, dependencies);
+    const auto inputs = system.Inputs();
+    const auto put_payload = [&](const char* guest_path, const char* relative_path) {
+        const auto bytes = ReadFile(data / bionic.data_directory / relative_path);
+        vfs.PutFile(guest_path, std::as_bytes(std::span(bytes)), false);
+    };
+    put_payload("/system/usr/icu/icudt51l.dat", "icu/icudt51l.dat");
+    put_payload("/system/usr/share/zoneinfo/tzdata", "zoneinfo/tzdata");
+    runtime::AndroidGuestProcessRequest request;
+    request.system_modules = inputs;
+    request.width = 800;
+    request.height = 480;
+    request.filesystem = &vfs;
+    request.boundary_options.logger = &logger;
+    request.initial_environment = std::make_shared<const runtime::GuestProcessEnvironment>(
+        runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
+    auto session = runtime::AndroidGuestCallSession::AdoptProcess(
+        runtime::AndroidGuestProcess::Start(request));
+    // Only platform libraries are available: no APK or application .so inventory.
+    loader::ApkNativeLibraryInventory inventory({});
+    loader::ApkSelectedNativeLibraries selected(inventory, loader::AndroidArmAbi::armeabi_v7a);
+    runtime::NativeLibraryLoader native_libraries(session->Process(), selected,
+                                                 bionic, system_sources, &logger);
+    context->session = session.get();
+    context->vfs = &vfs;
+    context->native_libraries = &native_libraries;
+    runtime::DexVmBridgeConfig config;
+    config.interpreter.enable_assertions = options.enable_assertions;
+    config.interpreter.backend = options.backend == "threaded" ? dx::InterpreterBackend::threaded
+                                                               : dx::InterpreterBackend::switch_dispatch;
+    runtime::DexVmGuestBridge bridge(*session, std::move(app_dex), catalog, context,
+                                    ledger, &logger, config, std::move(boot_dex),
+                                    std::move(skeleton));
+    static_cast<void>(native_libraries.LoadLibrary("ogplay_jni", context->application_class_loader_token));
+    auto& vm = bridge.Vm();
+    auto& linker = bridge.Linker();
+    auto& model = bridge.Model();
+    auto& threads = bridge.Threads();
     vm.SetConsoleSink(console ? console : DexConsole([](const std::string_view bytes) {
         static_cast<void>(std::fwrite(bytes.data(), sizeof(char), bytes.size(), stdout));
         static_cast<void>(std::fflush(stdout));
     }));
-    runtime::RegisterAndroidAudioTrackStateTable(vm, context);
-    runtime::RegisterAndroidSurfaceStreamStateTable(vm, context);
-    runtime::RegisterAndroidSchedulerStateTable(vm, context);
-    runtime::RegisterAndroidValueStateTables(vm, context);
-    runtime::RegisterAndroidDatabaseStateTables(vm, context);
-    runtime::RegisterAndroidOwnerAttachedStateTable(vm, context);
-    runtime::VirtualFileSystem vfs;
-    runtime::DexVmIoVfsAdapter io_file_system{vfs};
-    vm.IO().SetFileSystem(&io_file_system);
-    dx::VmThreadRuntime threads(vm);
     // A standalone run has no frame pump: a realtime unified Clock drives the
     // single Android monotonic clock that Thread.sleep/wait and System time read.
-    vm.Monitors().SetTimeSource([context] { return context->uptime_millis.load(); });
+    vm.Monitors().SetClockAdvance({});
+    vm.Monitors().SetClockDriverBlockedProbe({});
     std::jthread clock_driver([context](const std::stop_token stop) {
         hal::RealtimeClock clock(1000);
         auto last = clock.Ticks();

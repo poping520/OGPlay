@@ -356,8 +356,8 @@
     "threaded": "pass"
   },
   "092-locale": {
-    "switch": "fail:crash",
-    "threaded": "fail:crash"
+    "switch": "fail:unimplemented",
+    "threaded": "fail:unimplemented"
   },
   "093-serialization": {
     "switch": "pass",

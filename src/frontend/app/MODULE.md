@@ -20,7 +20,10 @@ DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Andro
 
 DumpDexSurface 同时装配 bundled API19 骨架索引；只有该显式诊断枚举会物化完整骨架，字段状态区分常量与未实现访问。
 
-RunDex（一致性探针，DIAG-7）以与生产相同的 bound core/Android catalog、BootDex 与骨架装配独立
-VM，加载单个 dex/jar，经真实 native 入口 `NativeStart.main` 调用 `main(String[])`；无 APK、native 进程、图形或音频。realtime 统一
+RunDex（一致性探针，DIAG-7）复用 AndroidGuestProcess 的 rootless API19 system ELF 进程、
+AndroidGuestCallSession、DexVmGuestBridge 与 NativeLibraryLoader，加载生产同源的 guest JNI、
+ICU 数据与 tzdata；JNI 注册、NIO 和 bound core/Android catalog、BootDex、骨架与 APK 路径共用。
+加载单个 dex/jar，经真实 native 入口 `NativeStart.main` 调用 `main(String[])`；无 APK，
+不启动图形或音频呈现，不提供应用 `.so` 来源，`System.load/loadLibrary` 缺库明确抛 UnsatisfiedLinkError。realtime 统一
 Clock 驱动 Android 单调时钟；main 返回后 root 线程死亡、等待包含已创建待运行者的非 daemon 线程，未捕获异常经线程
 handler 或 ThreadGroup 分派（处理器失败写 stderr）。结果只作行为证据，不是兼容结论。

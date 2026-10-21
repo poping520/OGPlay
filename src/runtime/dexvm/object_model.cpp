@@ -888,6 +888,28 @@ void JavaObjectModel::SetObjectElement(const VmObjectRef ref,
     impl_->interop.object_arrays->Set(record.identity, index, stored);
 }
 
+void JavaObjectModel::CopyObjectElementsWithin(const VmObjectRef ref, const JniSize source,
+                                              const JniSize target, const JniSize length) {
+    const auto& record = impl_->At(ref);
+    if (record.kind != VmObjectKind::object_array)
+        Fail(DexVmErrorReason::object_model_failure, "object is not an object array");
+    const auto size = ArrayLength(ref);
+    if (length < 0 || source < 0 || target < 0 ||
+        source > size - length || target > size - length)
+        Fail(DexVmErrorReason::object_model_failure, "object array copy range is out of bounds");
+    if (impl_->interop.object_arrays != nullptr) {
+        impl_->interop.object_arrays->CopyWithin(record.identity, source, target, length);
+        return;
+    }
+    auto& elements = impl_->fallback_object_arrays[record.storage].elements;
+    if (source < target)
+        std::copy_backward(elements.begin() + source, elements.begin() + source + length,
+                           elements.begin() + target + length);
+    else if (source > target)
+        std::copy(elements.begin() + source, elements.begin() + source + length,
+                  elements.begin() + target);
+}
+
 JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
     if (record.kind == VmObjectKind::primitive_array ||

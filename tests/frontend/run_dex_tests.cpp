@@ -76,3 +76,25 @@ TEST_CASE("WU7-3 run-dex retains main and the actual native entry in uncaught st
                         "\tat dalvik.system.NativeStart.main(Native Method)\n");
     }
 }
+
+TEST_CASE("run-dex uses platform guest JNI and direct NIO memory on both backends") {
+    for (const auto* backend : {"switch", "threaded"}) {
+        CAPTURE(backend);
+        auto options = Options("rundex.Platform");
+        options.backend = backend;
+        std::string output;
+        CHECK(ogplay::app::RunDex(options, [&](std::string_view bytes) { output += bytes; }) == 0);
+        CHECK(output == "1,234,567\n42\n");
+    }
+}
+
+TEST_CASE("run-dex explicitly rejects application native libraries") {
+    for (const auto* backend : {"switch", "threaded"}) {
+        auto options = Options("rundex.AppNative");
+        options.backend = backend;
+        std::string output;
+        CHECK(ogplay::app::RunDex(options, [&](std::string_view bytes) { output += bytes; }) == 1);
+        CHECK(output.find("java.lang.UnsatisfiedLinkError") != std::string::npos);
+        CHECK(output.find("rundex_application") != std::string::npos);
+    }
+}

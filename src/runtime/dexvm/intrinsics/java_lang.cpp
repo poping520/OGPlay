@@ -2951,6 +2951,10 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 }
                 if (source_kind == VmObjectKind::object_array &&
                     target_kind == VmObjectKind::object_array) {
+                    if (source == target) {
+                        model.CopyObjectElementsWithin(source, source_pos, target_pos, length);
+                        return VmValue::Void();
+                    }
                     // Overlap-safe copy: buffer the source range first.
                     std::vector<VmObjectRef> staged;
                     staged.reserve(static_cast<std::size_t>(length));

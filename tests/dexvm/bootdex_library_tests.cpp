@@ -176,6 +176,9 @@ TEST_CASE("API19 Build family executes from BootDex without class intrinsics") {
 TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intrinsic overlay") {
     Dvm87Vm f;
     const auto all = f.linker.AllClasses();
+    auto catalog = CoreIntrinsicCatalog();
+    const auto android = AndroidIntrinsicCatalog(f.context);
+    catalog.insert(catalog.end(), android.begin(), android.end());
     std::size_t count{};
     for (const auto type : all) {
         if (!f.linker.Class(type).is_boot_dex) continue;
@@ -183,64 +186,28 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         CAPTURE(std::string(descriptor));
         f.linker.EnsureClassLinked(type);
         ++count;
-        if (descriptor == "Ljava/lang/Math;" ||
-            descriptor == "Ljava/util/UUID;" ||
-            descriptor == "Ljava/lang/Void;" ||
-            descriptor == "Ljava/lang/ref/SoftReference;" ||
-            descriptor == "Ljava/lang/reflect/Modifier;" ||
-            descriptor == "Ljava/lang/reflect/Proxy;" ||
-            descriptor == "Ldalvik/system/VMStack;" ||
-            descriptor.starts_with("Ljava/security/MessageDigest") ||
-            descriptor.starts_with("Ljava/security/Digest") ||
-            descriptor == "Ljava/security/ProviderException;" ||
-            descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLMessageDigestJDK") ||
-            descriptor.starts_with("Landroid/") ||
-            descriptor.starts_with("Lcom/android/internal/os/IResultReceiver") ||
-            descriptor == "Lcom/android/internal/util/ArrayUtils;" ||
-            descriptor.starts_with("Ljavax/crypto/") ||
-            descriptor.starts_with("Lcom/android/org/conscrypt/OpenSSLCipher$") ||
-            descriptor == "Lcom/android/org/conscrypt/OpenSSLCipher;" ||
-            descriptor.starts_with("Ljava/io/") ||
-            descriptor.starts_with("Ljava/net/") ||
-            descriptor.starts_with("Ljava/beans/") ||
-            descriptor.starts_with("Ljava/util/concurrent/") ||
-            descriptor.starts_with("Ljava/util/concurrent/CountDownLatch") ||
-            descriptor.starts_with("Ljava/util/concurrent/Semaphore") ||
-            descriptor.starts_with("Ljava/util/concurrent/CyclicBarrier") ||
-            descriptor.starts_with("Ljava/text/ChoiceFormat") ||
-            descriptor.starts_with("Ljava/text/MessageFormat") ||
-            descriptor.starts_with("Ljavax/security/auth/x500/") ||
-            descriptor.starts_with("Lorg/apache/harmony/security/")) {
-            const auto check = [&](VmMethodId method) {
-                const auto& linked = f.linker.Method(method);
-                if (descriptor == "Landroid/util/DisplayMetrics;" &&
-                    linked.name == "getDeviceDensity" && linked.descriptor == "()I") {
-                    CHECK(linked.kind == MethodKind::intrinsic);
-                    return;
-                }
-                if (descriptor == "Landroid/os/Parcel;" &&
-                    linked.name == "init" && linked.descriptor == "(I)V") {
-                    CHECK(linked.kind == MethodKind::intrinsic);
-                    return;
-                }
-                if (descriptor == "Landroid/app/backup/BackupManager;" &&
-                    linked.name == "checkServiceBinder" && linked.descriptor == "()V") {
-                    CHECK(linked.kind == MethodKind::intrinsic);
-                    return;
-                }
-                if (descriptor ==
-                        "Landroid/provider/Settings$NameValueCache;" &&
-                    (linked.name == "getStringForUser" ||
-                     linked.name == "putStringForUser")) {
-                    CHECK(linked.kind == MethodKind::intrinsic);
-                    return;
-                }
-                if (!(f.linker.Method(method).access_flags & kAccNative))
-                    CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
-            };
-            for (const auto method : f.linker.Class(type).own_virtual_methods) check(method);
-            for (const auto method : f.linker.Class(type).own_direct_methods) check(method);
-        }
+        // Handwritten overlays remain authoritative. Compare every own method
+        // with the production catalogs rather than a growing class whitelist.
+        const auto check = [&](VmMethodId method) {
+            const auto& linked = f.linker.Method(method);
+            CAPTURE(linked.name);
+            CAPTURE(linked.descriptor);
+            bool overlay = false;
+            for (const auto& declaration : catalog) {
+                if (declaration.descriptor != descriptor) continue;
+                for (const auto& candidate : declaration.methods)
+                    if (candidate.name == linked.name && candidate.descriptor == linked.descriptor)
+                        overlay = true;
+            }
+            if (overlay && !(linked.access_flags & (kAccNative | kAccAbstract)))
+                CHECK(linked.kind == MethodKind::intrinsic);
+            else if (!overlay && !linked.is_skeleton && !(linked.access_flags & (kAccNative | kAccAbstract))) {
+                CHECK(linked.kind == MethodKind::interpreted);
+                CHECK(linked.code.has_value());
+            }
+        };
+        for (const auto method : f.linker.Class(type).own_virtual_methods) check(method);
+        for (const auto method : f.linker.Class(type).own_direct_methods) check(method);
         if (!descriptor.starts_with("Ljava/util/")) continue;
         // All newly selected collection implementations are ordinary DEX.
         const auto collection = f.linker.ResolveDescriptor("Ljava/util/Collection;");
@@ -251,7 +218,7 @@ TEST_CASE("DVM-103 all BootDex classes link and collection methods have no intri
         for (const auto method : f.linker.Class(type).own_direct_methods)
             CHECK(f.linker.Method(method).kind != MethodKind::intrinsic);
     }
-    CHECK(count == 1825);
+    CHECK(count == ogplay::loader::ParseDex(Dvm102BootDex()).classes.size());
 }
 
 TEST_CASE("DVM-103 deferred intrinsic interfaces preserve declaration order") {

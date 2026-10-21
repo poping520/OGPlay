@@ -84,6 +84,7 @@ struct Vm final {
                   if (load_boot_dex) {
                       ogplay::test::BindBootDexPlatformNatives(linker);
                       linker.RegisterBootDex(ReadBootDex());
+                      ogplay::test::RegisterBootDexSkeleton(linker);
                   }
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();
@@ -342,12 +343,14 @@ TEST_CASE("dexvm P1 collections use Java string equality for keys") {
   }
 }
 
-TEST_CASE("dexvm core java.io streams work without the Android catalog") {
+TEST_CASE("dexvm core java.io streams and missing filesystem use production class sources") {
     for (const auto backend : {InterpreterBackend::switch_dispatch,
                                InterpreterBackend::threaded}) {
         InterpreterConfig config;
         config.backend = backend;
-        Vm vm(config);
+        CoreIntrinsicServices services;
+        services.current_time_millis = [] { return INT64_C(1400000000000); };
+        Vm vm(config, true, services);
         CHECK_THROWS_AS(
             static_cast<void>(vm.interpreter.IO().CreateFile("/direct.dat")),
             IoRuntimeError);
@@ -355,7 +358,7 @@ TEST_CASE("dexvm core java.io streams work without the Android catalog") {
         ExpectThrow(
             vm,
             vm.CallStatic("coreIoCreateWithoutFileSystem", "()Z"),
-            "Ljava/io/IOException;", "guest filesystem is unavailable");
+            "Ljava/io/IOException;", "open failed: EIO (I/O error)");
     }
 }
 

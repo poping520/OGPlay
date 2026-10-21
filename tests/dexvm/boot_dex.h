@@ -37,41 +37,10 @@ inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
     std::memcpy(context.boot_classpath_bytes.data(), raw.data(), raw.size());
     context.boot_classpath_archive = loader::ParseApkArchive(context.boot_classpath_bytes);
 }
-inline void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker) {
-    // Core-only fixtures load the full curated artifact. Bind its audited
-    // Android native owners to real handlers, even when not exercised.
-    if (!linker.FindClass("Landroid/graphics/Typeface;")) {
-        const auto context = std::make_shared<runtime::DexVmAndroidContext>();
-        for (const auto& declaration : runtime::AndroidIntrinsicCatalog(context)) {
-            if (declaration.descriptor == "Lcom/google/android/gles_jni/GLImpl;" ||
-                declaration.descriptor == "Landroid/graphics/Typeface;" ||
-                declaration.descriptor == "Landroid/app/NativeActivity;" ||
-                declaration.descriptor == "Landroid/database/CursorWindow;" ||
-                declaration.descriptor == "Landroid/database/sqlite/SQLiteConnection;" ||
-                declaration.descriptor == "Landroid/database/sqlite/SQLiteDebug;" ||
-                declaration.descriptor == "Landroid/database/sqlite/SQLiteGlobal;" ||
-                declaration.descriptor == "Landroid/media/AudioTrack;" ||
-                declaration.descriptor == "Landroid/media/MediaPlayer;" ||
-                declaration.descriptor == "Landroid/widget/VideoView;" ||
-                declaration.descriptor == "Landroid/view/SurfaceView;" ||
-                declaration.descriptor == "Landroid/view/LayoutInflater;" ||
-                declaration.descriptor == "Landroid/view/View;" ||
-                declaration.descriptor == "Landroid/media/SoundPool$SoundPoolImpl;" ||
-                declaration.descriptor == "Landroid/util/EventLog;" ||
-                declaration.descriptor == "Landroid/os/Binder;" ||
-                declaration.descriptor == "Landroid/os/Parcel;" ||
-                declaration.descriptor == "Landroid/os/SystemProperties;" ||
-                declaration.descriptor == "Landroid/os/FileUtils;")
-                linker.RegisterIntrinsics(std::array{declaration});
-            if (declaration.descriptor == "Landroid/view/KeyEvent;" ||
-                declaration.descriptor == "Landroid/view/KeyCharacterMap;" ||
-                declaration.descriptor == "Landroid/net/wifi/WifiManager;" ||
-                declaration.descriptor == "Landroid/net/wifi/WifiManager$WifiLock;" ||
-                declaration.descriptor == "Landroid/net/wifi/WifiManager$MulticastLock;")
-                linker.RegisterIntrinsics(std::array{declaration});
-        }
-    }
-}
+// Fill absent Android declarations using the production catalog. Existing test
+// declarations remain explicit overrides; callers install Core first.
+void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
+void RegisterBootDexSkeleton(runtime::dexvm::DexClassLinker& linker);
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
     BindBootDexPlatformNatives(linker);
     linker.RegisterBootDex(ReadBootDex());

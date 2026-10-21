@@ -33,6 +33,7 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "ogplay/loader/dex_class_data.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -166,10 +167,25 @@ TEST_CASE("DVM NativeCrypto identity and members come from API 19 BootDex") {
     const auto type = fixture.linker.ResolveDescriptor(
         "Lcom/android/org/conscrypt/NativeCrypto;");
     const auto& linked = fixture.linker.Class(type);
-    CHECK(linked.own_direct_methods.size() == 232U);
-    CHECK(linked.own_virtual_methods.size() == 0U);
-    CHECK(linked.own_static_fields.size() == 41U);
-    CHECK(linked.own_instance_fields.empty());
+    CHECK(linked.is_boot_dex);
+    const auto bytes = Dvm102BootDex();
+    const auto dex = ogplay::loader::ParseDex(bytes);
+    const auto classes = ogplay::loader::ReadDexClassData(bytes, dex);
+    const auto& original = classes.at(*linked.dex_class_def_index);
+    CHECK(linked.own_direct_methods.size() == original.direct_methods.size());
+    CHECK(linked.own_virtual_methods.size() == original.virtual_methods.size());
+    const auto original_fields = [&](const auto& fields) {
+        return std::count_if(fields.begin(), fields.end(), [&](const auto id) {
+            return !fixture.linker.Field(id).is_skeleton;
+        });
+    };
+    CHECK(original_fields(linked.own_static_fields) == original.static_fields.size());
+    CHECK(original_fields(linked.own_instance_fields) == original.instance_fields.size());
+    for (const auto id : linked.own_static_fields) {
+        const auto& field = fixture.linker.Field(id);
+        CHECK(field.owner == type);
+        CHECK(field.is_static);
+    }
 
     const auto clinit = fixture.linker.FindDirectMethod(type, "<clinit>", "()V");
     REQUIRE(clinit.has_value());
@@ -307,15 +323,19 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
             "Ljavax/net/ssl/HttpsURLConnection;",
             "getDefaultHostnameVerifier",
             "()Ljavax/net/ssl/HostnameVerifier;");
-        f.RequireOk(result);
-        CHECK(result.value.ref.IsValid());
+        // API19 initializes both defaults in NoPreloadHolder. Without a
+        // guest native loader, even the hostname getter reaches TLS setup.
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor ==
+              "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK(result.exception_message == "APK native library loader is unavailable");
         result = f.Static(
             "Ljavax/net/ssl/HttpsURLConnection;",
             "getDefaultSSLSocketFactory",
             "()Ljavax/net/ssl/SSLSocketFactory;");
         REQUIRE(result.exception.IsValid());
         CHECK(f.linker.Class(result.exception_class).descriptor ==
-              "Ljava/lang/UnsatisfiedLinkError;");
+              "Ljava/lang/NoClassDefFoundError;");
 
         result = f.Static("Ljavax/net/ssl/SSLContext;", "getInstance",
                           "(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;",
@@ -329,7 +349,7 @@ TEST_CASE("DVM-149 Apache HTTP BootDex supports the Restlet startup object path"
              VmValue::Ref(VmObjectRef{})});
         REQUIRE(ssl_init.exception.IsValid());
         CHECK(f.linker.Class(ssl_init.exception_class).descriptor ==
-              "Ljava/lang/UnsatisfiedLinkError;");
+              "Ljava/lang/NoClassDefFoundError;");
     }
 }
 

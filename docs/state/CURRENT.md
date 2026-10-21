@@ -28,8 +28,8 @@
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   MCP shutdown 路径的 `unknown guest thread id` 曾复现，未修复。
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
-  （[DVM-190](../tasks/dexvm/DVM-190.md)）；全 BootDex 类链接因 MediaPlayer overlay/类数断言
-  失败，未整体复验。
+  （[DVM-190](../tasks/dexvm/DVM-190.md)）；全 BootDex 类链接及骨架/survey 定向回归已通过，
+  见 [DVM-255](../tasks/dexvm/DVM-255.md) 的 HEAD 清理记录。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证；
   Dead Trigger 第 0 帧停滞修复 Windows/Linux 未实跑。

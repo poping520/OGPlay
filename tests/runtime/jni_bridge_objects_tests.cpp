@@ -821,9 +821,21 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
             }
             env.ExceptionClear(1);
         };
-        CHECK_FALSE(linker.FindClass("Landroid/view/MotionEvent$PointerCoords;"));
+        CHECK(linker.FindClass("Landroid/view/MotionEvent$PointerCoords;"));
+        CHECK_FALSE(linker.FindClass("Landroid/os/NullVibrator;"));
+        const auto lazy = call("FindClass", text(0, "android/os/NullVibrator"));
+        if (!enabled) { CHECK(lazy == 0U); pending("java/lang/NoClassDefFoundError"); }
+        else {
+            REQUIRE(lazy != 0U);
+            const auto klass = linker.ResolveDescriptor("Landroid/os/NullVibrator;");
+            const auto receiver = f.bridge->Model().NewInstance(klass, linker.Class(klass).instance_slots);
+            const auto reference = f.bridge->PublishLocal(receiver);
+            const auto ctor = lookup("GetMethodID", lazy, "<init>", "()V");
+            REQUIRE(ctor != 0U);
+            static_cast<void>(call("CallVoidMethod", reference.Value(), ctor));
+            pending("java/lang/UnsatisfiedLinkError");
+        }
         const auto owner = call("FindClass", text(0, "android/view/MotionEvent$PointerCoords"));
-        if (!enabled) { CHECK(owner == 0U); pending("java/lang/NoClassDefFoundError"); continue; }
         REQUIRE(owner != 0U);
         CHECK(call("FindClass", text(0, "android/view/MotionEvent$PointerCoords")) != 0U);
         const auto type = linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;");
@@ -833,7 +845,7 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
             const auto method = lookup("GetMethodID", owner, name, "()V");
             REQUIRE(method != 0U);
             static_cast<void>(call("CallVoidMethod", object_ref.Value(), method));
-            pending("java/lang/UnsatisfiedLinkError");
+            CHECK_FALSE(env.ExceptionCheck(1));
         }
         CHECK(lookup("GetStaticMethodID", owner, "createArray", "(I)[Landroid/view/MotionEvent$PointerCoords;") != 0U);
         const auto constant = lookup("GetStaticFieldID", owner, "INITIAL_PACKED_AXIS_VALUES", "I");
@@ -843,8 +855,12 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
         REQUIRE(field != 0U);
         for (const auto* slot : {"GetFloatField", "SetFloatField"}) {
             static_cast<void>(call(slot, object_ref.Value(), field));
-            pending("java/lang/UnsatisfiedLinkError");
+            CHECK_FALSE(env.ExceptionCheck(1));
         }
+        static_cast<void>(call("SetFloatField", object_ref.Value(), field, 0x40200000U));
+        CHECK_FALSE(env.ExceptionCheck(1));
+        CHECK(call("GetFloatField", object_ref.Value(), field) == 0x40200000U);
+        if (!enabled) continue;
         const auto point = call("FindClass", text(0, "android/graphics/PointF"));
         const auto creator = lookup("GetStaticFieldID", point, "CREATOR", "Landroid/os/Parcelable$Creator;");
         REQUIRE(creator != 0U);
@@ -863,11 +879,11 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
         REQUIRE(wide != 0U);
         for (const auto* slot : {"GetLongField", "SetLongField"}) {
             static_cast<void>(call(slot, object_ref.Value(), wide));
-            pending("java/lang/UnsatisfiedLinkError");
+            CHECK_FALSE(env.ExceptionCheck(1));
         }
         const auto hits = f.ledger.Unimplemented();
-        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
-            return hit.id == "dexvm.skeleton.field.Landroid/view/MotionEvent$PointerCoords;->x:F" && hit.count == 2;
+        CHECK(std::none_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id.find("MotionEvent$PointerCoords;") != std::string::npos;
         }));
         CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
             return hit.id == "dexvm.skeleton.field.Landroid/graphics/PointF;->CREATOR:Landroid/os/Parcelable$Creator;" && hit.count == 2;

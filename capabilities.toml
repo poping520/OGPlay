@@ -1223,6 +1223,11 @@ status = "partial"
 test = "tests/runtime/boundary/integration/android_boundary_hle_tests.cpp; tests/runtime/boundary/integration/android_boundary_liblog_tests.cpp; tests/runtime/boundary/integration/android_egl_lifecycle_tests.cpp; tests/runtime/boundary/integration/android_boundary_libc_libdl_tests.cpp; tests/runtime/boundary/integration/android_boundary_opensles_tests.cpp; tests/runtime/boundary/integration/android_gles2_shaders_tests.cpp; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp; tests/runtime/boundary/integration/android_gles_shared_resources_tests.cpp; tests/runtime/boundary/integration/android_gles1_state_tests.cpp; tests/runtime/boundary/integration/android_gles1_rendering_tests.cpp; tests/runtime/boundary/integration/android_boundary_looper_tests.cpp; tests/runtime/boundary/integration/android_egl_sharing_tests.cpp; tests/runtime/boundary/integration/android_frame_presentation_tests.cpp; tests/runtime/boundary/integration/android_native_activity_io_tests.cpp; tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp"
 note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、有界 RAM/VBO 取数及位置/法线变换；双权重真实像素、关闭对照及 Context 切换回归通过。仍未执行 matrix palette 全量一致性套件，保留 partial。"
 
+[tools.dalvik_conformance]
+status = "partial"
+test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
+note = "DIAG-7：ogplay-cli dexvm run-dex 以生产平台类来源运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节比较并分类。仅 VM 语义探针，非门禁；libcore/JUnit、src-ex 二级 dex、多 dex 未支持。通过率见任务单。"
+
 [tools.dex_dependency_survey]
 status = "complete"
 test = "tools.dex_dependency_survey_self_test"

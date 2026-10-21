@@ -13,30 +13,30 @@
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| TML 1.0 | macOS | 三点击 survey 零命中；正常场景 1800 呈现帧，onPause 线程准入已修 | shutdown.clean=false：native worker 回收报 `unknown guest thread id`；原 VM shutting down 消失 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
+| TML 1.0 | macOS | 标题；三点击 survey 零命中 | 退出不干净：native worker 回收报 `unknown guest thread id` | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-255](../tasks/dexvm/DVM-255.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
-| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 新沙盒 f=0 死锁已修复，600 帧退出 0；定向 9 例/125 断言通过 | GAThread `NativeDecimalFormat.formatDouble` ULE；CG 首图/点击、Win 待复验 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
+| Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 新沙盒死锁已修，600 帧退出 0 | GAThread `NativeDecimalFormat.formatDouble` 未实现；CG/点击、Win 待复验 | [DVM-236](../tasks/dexvm/DVM-236.md)、[WU-PERF-15](../tasks/optimization/WU-PERF-15.md) |
 | Tales From Deep Space 1.0.0 | macOS | 1920×1080 存档重载，初始场景 80 FPS | **退出读 0x315f0001**；800×480/1280×720 菜单裁剪 | [DVM-218](../tasks/dexvm/DVM-218.md)、[BND-29](../tasks/boundary/BND-29.md) |
-| Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 正常场景 1200 呈现帧，onPause 线程准入已修 | shutdown.clean=false：Surface/input queue native futex 耗尽 2 秒清理预算，音频消费仍推进；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` 未修 | [DVM-204](../tasks/dexvm/DVM-204.md) |
-| Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；CLI 1024×600 呈现 900 帧退出 0，GUI 视频实帧后正常退出 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
+| Dead Trigger 1.1.0 | Win / macOS | Win 第一关/存档重载；macOS 场景 1200 帧 | macOS 退出 native futex 超 2 秒预算；隔离 f=4740 receiver 错、默认存档缺 `Dialog(Context)` | [DVM-204](../tasks/dexvm/DVM-204.md) |
+| Dungeon Hunter（P1000） | macOS | 无 Profile、用户挂载；1024×600 呈现 900 帧，CLI/GUI 退出 0 | 默认 800×480 恢复游戏后 nativeRender 读 0（PC 0x30885b08）；未改默认尺寸 | [VFS-09](../tasks/vfs/VFS-09.md)、[DVM-251](../tasks/dexvm/DVM-251.md) |
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
-| PVZ | macOS | TermsActivity 首帧；正常场景 baseline 通过 | 退出 onDestroy 调用 `ContextWrapper.stopService` 未实现；整体 failed，后续交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
-| Angry Birds 2.3.0 | macOS | 手动场景恢复至 sequence=5000、无 guest fault；普通启动 1000 呈现帧退出 0 | 场景退出 onDestroy 拒绝 APK 缩小可见性的重写；整体 failed，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[DIAG-6](../tasks/diagnostics/DIAG-6.md) |
+| PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
+| Angry Birds 2.3.0 | macOS | 5000 帧，背景音乐正常 | 退出 onDestroy 被“缩小可见性重写”拒绝（同 dalvik 077）；画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md) |
 
 ## 未闭合问题
 
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   MCP shutdown 路径的 `unknown guest thread id` 曾复现，未修复。
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
-  （[DVM-190](../tasks/dexvm/DVM-190.md)）；全 BootDex 类链接及骨架/survey 定向回归已通过，
-  见 [DVM-255](../tasks/dexvm/DVM-255.md) 的 HEAD 清理记录。
+  （[DVM-190](../tasks/dexvm/DVM-190.md)）；network_sqlite 7 例（`Invalid path: /data`）、
+  reflection 1 例、vm_monitor 1 例失败未修。
+- 一致性：dalvik/tests 探针就绪，结果待出（[DIAG-7](../tasks/diagnostics/DIAG-7.md)）。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
-- 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证；
-  Dead Trigger 第 0 帧停滞修复 Windows/Linux 未实跑。
+- 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 
 ## 支持边界与未验收项
 
-- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity/quirks；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 呈现 120 帧、退出码 0；定向测试中的 6 项旧 Android 断言失败已由 HEAD 基线复现，未扩大修复。
+- Profile（[APS-15](../tasks/apk-startup/APS-15.md)）：仅接受 v4 identity/quirks；API 19、入口、ABI、VFS 与音频走通用路径。Angry Birds 无 Profile 可启动并退出 0。
 
 - VFS：语义根删除返回 EBUSY、缺失自动重建并记 warn；37 定向用例/436 断言通过，TML 现有 `-3` 持久沙盒自动恢复 obb，连续两次启动越过打开阶段、根保留且既有文件哈希不变，同达 Mono sigaction / Unity EGL 首错（证据 `.local/sandbox-roots-{tests.log,proof.json}`）。多实例需显式 installation-id；PackageManager 仅当前 APK；多 ROM 未验收。
 - GUI/Dashboard（[GUI-10](../tasks/gui/GUI-10.md)）：core 改为 C++ 外观与共享游戏库，桌面/CLI

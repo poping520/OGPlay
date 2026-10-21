@@ -66,6 +66,7 @@ public:
     VmThreadWaitState root_wait_state{VmThreadWaitState::none};
     std::uint64_t progress_generation{};
     bool shutting_down{};
+    bool root_finished{};  // standalone main returned (dvmDetachCurrentThread)
     std::string failure;
 
     [[nodiscard]] VmThreadRecord* Find(const VmObjectRef object) const {
@@ -370,7 +371,7 @@ void VmThreadRuntime::Start(const VmObjectRef thread_object, std::string name,
 bool VmThreadRuntime::IsAlive(const VmObjectRef thread_object) const {
     const std::lock_guard guard(impl_->mutex);
     if (impl_->root_object.IsValid() && thread_object == impl_->root_object) {
-        return !impl_->shutting_down;
+        return !impl_->shutting_down && !impl_->root_finished;
     }
     const auto* record = impl_->Find(thread_object);
     if (record == nullptr) return false;
@@ -387,6 +388,14 @@ std::uint64_t VmThreadRuntime::ThreadId(const VmObjectRef thread_object) const {
     return record == nullptr ? 0U : record->id;
 }
 
+void VmThreadRuntime::FinishRootThread() {
+    {
+        const std::lock_guard guard(impl_->mutex);
+        impl_->root_finished = true;
+    }
+    impl_->changed.notify_all();
+}
+
 void VmThreadRuntime::Join(const VmObjectRef thread_object) {
     VmThreadRecord* record{};
     bool root = false;
@@ -398,8 +407,9 @@ void VmThreadRuntime::Join(const VmObjectRef thread_object) {
         if (record == nullptr && !root) return;  // never started
     }
     impl_->ParkUntil(
-        [record, root] {
-            return !root && record->status != VmThreadStatus::created &&
+        [impl = impl_.get(), record, root] {
+            if (root) return impl->root_finished;
+            return record->status != VmThreadStatus::created &&
                    record->status != VmThreadStatus::running;
         },
         "Thread.join()", std::nullopt, VmThreadWaitState::joining);
@@ -421,8 +431,9 @@ void VmThreadRuntime::Join(const VmObjectRef thread_object,
         if (record == nullptr && !root) return;
     }
     impl_->ParkUntil(
-        [record, root] {
-            return !root && record->status != VmThreadStatus::created &&
+        [impl = impl_.get(), record, root] {
+            if (root) return impl->root_finished;
+            return record->status != VmThreadStatus::created &&
                    record->status != VmThreadStatus::running;
         },
         "Thread.join()", timeout_millis, VmThreadWaitState::joining);

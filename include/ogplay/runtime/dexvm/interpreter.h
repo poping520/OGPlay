@@ -235,6 +235,9 @@ struct InterpreterConfig final {
     // Step() so the bridge path stays a regression anchor after families
     // migrate to direct handlers.
     bool force_all_bridge{false};
+    // dalvikvm -ea: Class.desiredAssertionStatus answers true for every class.
+    // API 19 apps run without it; only standalone conformance runs enable it.
+    bool enable_assertions{false};
     DexVmDiagnosticsConfig diagnostics;
 };
 
@@ -409,6 +412,7 @@ public:
     [[nodiscard]] UnsafeRuntime& Unsafe() noexcept;
     [[nodiscard]] AnnotationRuntime& Annotations() noexcept;
     [[nodiscard]] const InterpreterStats& Stats() const noexcept;
+    [[nodiscard]] const InterpreterConfig& Config() const noexcept;
     [[nodiscard]] std::optional<InterpreterSnapshot> TrySnapshot() const;
 
     // DVM-52 diagnostics. Filtering and descriptor formatting happen only
@@ -468,6 +472,11 @@ public:
     // android.util.Log) and uncaught-exception diagnostics.
     void SetLogger(core::Logger* logger) noexcept;
     [[nodiscard]] core::Logger* Log() const noexcept;
+    // Optional raw console for System.out/err (dexvm run-dex). When set,
+    // committed text goes here byte-for-byte instead of the structured log.
+    using ConsoleSink = std::function<void(std::string_view)>;
+    void SetConsoleSink(ConsoleSink sink);
+    [[nodiscard]] const ConsoleSink& Console() const noexcept;
 
     // Object.clone: model-level shallow copy plus intrinsic side tables
     // (resource) keyed by the source handle.

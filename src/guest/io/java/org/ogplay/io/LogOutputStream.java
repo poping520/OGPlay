@@ -19,16 +19,18 @@ public final class LogOutputStream extends OutputStream {
         if (closed) throw new IOException("diagnostic stream is closed");
     }
 
-    private void emitPending() throws IOException {
-        if (pending.size() != 0) {
-            emit(pending.toString("UTF-8"));
+    // A line end commits even an empty line; flush/close commit only a
+    // non-empty fragment. The host keeps the line-end fact for raw consoles.
+    private void emitPending(boolean lineEnd) throws IOException {
+        if (lineEnd || pending.size() != 0) {
+            emit(pending.toString("UTF-8"), lineEnd);
             pending.reset();
         }
     }
 
     @Override public synchronized void write(int value) throws IOException {
         requireOpen();
-        if ((value & 255) == 10) emitPending();
+        if ((value & 255) == 10) emitPending(true);
         else pending.write(value);
     }
 
@@ -42,7 +44,7 @@ public final class LogOutputStream extends OutputStream {
         for (int i = offset; i < end; ++i) {
             if (bytes[i] == 10) {
                 pending.write(bytes, start, i - start);
-                emitPending();
+                emitPending(true);
                 start = i + 1;
             }
         }
@@ -51,15 +53,15 @@ public final class LogOutputStream extends OutputStream {
 
     @Override public synchronized void flush() throws IOException {
         requireOpen();
-        emitPending();
+        emitPending(false);
     }
 
     @Override public synchronized void close() throws IOException {
         if (!closed) {
-            emitPending();
+            emitPending(false);
             closed = true;
         }
     }
 
-    private static native void emit(String text);
+    private static native void emit(String text, boolean lineEnd);
 }

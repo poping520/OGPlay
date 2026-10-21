@@ -11,6 +11,7 @@
 #include "ogplay/app/agent.h"
 #include "ogplay/app/host.h"
 #include "ogplay/app/diagnostics.h"
+#include "ogplay/app/dex_run.h"
 
 #include "ogplay/app/game_run.h"
 #include "library_commands.h"
@@ -32,6 +33,10 @@ constexpr std::string_view kSynopsis =
     "\n"
     "Commands:\n"
     "  dexvm dump-surface [--bootdex <jar>]  Export linked platform JSON\n"
+    "  dexvm run-dex <dex|jar> [--class <name>] [--backend switch|threaded]\n"
+    "        [--enable-assertions] [--ledger-json <file>] [-- args...]\n"
+    "                                Run a standalone main like dalvikvm;\n"
+    "                                exit 0/1(uncaught)/System.exit, 70 on VM error\n"
     "  run-apk <apk> [options]       Run an APK directly\n"
     "  library [--library-root <dir>] <subcommand>\n"
     "                                Manage the game library\n"
@@ -135,6 +140,18 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
             else throw std::invalid_argument("dump-surface accepts only --bootdex <jar>");
             Write(stdout, app::DumpDexSurface(boot) + "\n");
             return 0;
+        }
+        if (argc >= 3 && std::string_view(argv[1]) == "dexvm" &&
+            std::string_view(argv[2]) == "run-dex") {
+            std::vector<std::string_view> args(argv + 3, argv + argc);
+            const auto options = app::ParseDexRunArgs(args);
+            try {
+                return app::RunDex(options);
+            } catch (const std::exception& error) {
+                // Keep VM/setup failures distinct from guest exit statuses.
+                Write(stderr, FormatError(error.what()));
+                return 70;
+            }
         }
         if (std::string_view(argv[1]) == "library") return RunLibraryCommand(std::span(argv + 2, static_cast<std::size_t>(argc - 2)));
         if (std::string_view(argv[1]) == "run-apk") {

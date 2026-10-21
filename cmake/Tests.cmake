@@ -300,6 +300,7 @@ ogplay_add_test_executable(ogplay_file_lock_tests tests/hal/file_lock_tests.cpp
 target_link_libraries(ogplay_file_lock_tests PRIVATE OGPlay::Hal ogplaycore ogplay_desktop_app)
 ogplay_add_test_executable(ogplay_app_tests
     tests/frontend/surface_export_tests.cpp
+    tests/frontend/run_dex_tests.cpp
     tests/frontend/game_run_args_tests.cpp
     tests/frontend/library_store_tests.cpp tests/frontend/library_lock_tests.cpp
     tests/frontend/cli_library_tests.cpp tests/frontend/apk_fixture.cpp tests/frontend/app_serialization_tests.cpp
@@ -308,8 +309,9 @@ ogplay_add_test_executable(ogplay_app_tests
     tests/frontend/library_visuals_tests.cpp tests/frontend/data_hint_tests.cpp)
 target_link_libraries(ogplay_app_tests PRIVATE ogplaycore ogplay_cli_app ogplay_desktop_app)
 target_compile_definitions(ogplay_app_tests PRIVATE OGPLAY_TEST_HAS_GUI=$<BOOL:${OGPLAY_BUILD_GUI}>
-    OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-add_dependencies(ogplay_app_tests ogplay_stage_data)
+    OGPLAY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    OGPLAY_DEXVM_FIXTURE_DIR="${OGPLAY_DEXVM_FIXTURE_DIR}")
+add_dependencies(ogplay_app_tests ogplay_stage_data ogplay_dexvm_fixtures)
 
 ogplay_add_test_executable(ogplay_tests ${OGPLAY_TEST_SOURCES})
 target_link_libraries(ogplay_tests PRIVATE
@@ -737,6 +739,14 @@ add_test(
         --check
 )
 set_tests_properties(tools.dexvm_opcode_catalog_current
+    PROPERTIES LABELS "tools;dexvm")
+
+add_test(
+    NAME tools.dalvik_tests_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/dalvik_tests.py --self-test
+)
+set_tests_properties(tools.dalvik_tests_self_test
     PROPERTIES LABELS "tools;dexvm")
 
 add_test(

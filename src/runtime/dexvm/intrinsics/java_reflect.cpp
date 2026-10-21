@@ -349,10 +349,10 @@ IntrinsicClassDecl Declare_java_lang_Class(
             return VmValue::Ref(package);
         });
     builder.VirtualMethod("desiredAssertionStatus", "()Z",
-        [](IntrinsicContext&) {
-            // OGPlay does not expose Dalvik assertion-control arguments;
-            // API 19 defaults assertions to disabled when no rule matches.
-            return VmValue::Int(0);
+        [](IntrinsicContext& context) {
+            // API 19 defaults assertions to disabled when no rule matches; only
+            // the global -ea switch of standalone runs is modelled, not per-class rules.
+            return VmValue::Int(context.vm.Config().enable_assertions ? 1 : 0);
         });
     builder.VirtualMethod("getSimpleName", "()Ljava/lang/String;",
         [](IntrinsicContext& context) {

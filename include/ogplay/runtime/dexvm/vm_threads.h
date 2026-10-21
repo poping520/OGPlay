@@ -80,6 +80,10 @@ public:
 
     // Parks the calling VM thread until the target finishes. Releases the
     // execution lock while parked so the target can actually run.
+    // Standalone `main` returned: the root Thread dies and its joiners wake,
+    // as dalvikvm's DetachCurrentThread does before DestroyJavaVM. The APK
+    // lifecycle never calls this; its main thread lives until Shutdown.
+    void FinishRootThread();
     void Join(VmObjectRef thread_object);
     void Join(VmObjectRef thread_object, std::int64_t timeout_millis);
 

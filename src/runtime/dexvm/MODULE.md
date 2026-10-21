@@ -84,6 +84,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - execution context 进入时验证活动宿主归属；阻塞释放 VM 锁不解除归属，禁止异宿主
   重入或删除活动 context。JNI 附加线程注册既有 context，不创建宿主线程；Thread 身份
   按需初始化，存活期间进入 GC roots，detach 后终止并唤醒 join。
+  root Thread 在 APK 生命周期中存活到 Shutdown；只有独立 run-dex 在 main 返回后调用
+  `FinishRootThread`，按 dalvikvm DetachCurrentThread 使 root 死亡并唤醒其 joiner。
   生产 bridge 还将默认 root execution 绑定到创建宿主，空闲时也禁止由后台借用。
   Java worker 的 run 与未捕获异常分派共用其 execution scope；分派期间的异常引用
   显式保活，处理器中的 Java/native 调用不回落到默认 root。
@@ -92,6 +94,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - host lifecycle 的 worker-progress 等待使用显式 wall-time 上限，且不获取 execution lock；
   常驻 runnable guest 不能阻断 Surface 等后续平台事件发布。普通 guest `Thread.yield()`
   仍使用既有 `Yield()` 语义。
+
+- System.out/err 经 LogOutputStream 提交文本与“是否行尾”事实：默认写结构化日志（空片段不记），
+  设置 `SetConsoleSink` 时按原字节（含空行、无行尾片段）交给宿主控制台，仅 run-dex 使用。
+  `InterpreterConfig::enable_assertions` 只对应 dalvikvm `-ea` 全局开关，APK 运行保持关闭。
 
 ### Core intrinsic 与专用 runtime
 

@@ -34,6 +34,7 @@ public:
     [[nodiscard]] static bool IsArray(std::string_view descriptor) noexcept;
     [[nodiscard]] static std::string ClassGetName(
         std::string_view descriptor);
+    [[nodiscard]] static std::string HumanReadableDescriptor(std::string_view descriptor);
     [[nodiscard]] static std::string BinaryNameToDescriptor(
         std::string_view name);
 };

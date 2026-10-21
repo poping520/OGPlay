@@ -8,8 +8,8 @@
     "threaded": "pass"
   },
   "003-omnibus-opcodes": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "004-annotations": {
     "switch": "fail:unimplemented",
@@ -24,8 +24,8 @@
     "threaded": "pass"
   },
   "007-exceptions": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "008-instanceof": {
     "switch": "pass",
@@ -196,8 +196,8 @@
     "threaded": "pass"
   },
   "050-sync-test": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "051-thread": {
     "switch": "pass",
@@ -212,8 +212,8 @@
     "threaded": "pass"
   },
   "054-uncaught": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "055-enum-performance": {
     "switch": "pass",
@@ -276,8 +276,8 @@
     "threaded": "excluded:harness"
   },
   "072-precise-gc": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "073-mismatched-field": {
     "switch": "pass",
@@ -372,8 +372,8 @@
     "threaded": "pass"
   },
   "096-array-copy-concurrent-gc": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "097-suspend-check": {
     "switch": "pass",

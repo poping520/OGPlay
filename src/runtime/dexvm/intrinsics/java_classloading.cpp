@@ -238,6 +238,11 @@ IntrinsicClassDecl Declare_java_lang_ClassLoader(
         return VmValue::Void();
     }, kAccProtected);
 
+    // libdvm ClassLoader.java:692 explicitly specifies an empty body.
+    // Dalvik assertions are controlled by VM startup options, not this setter.
+    builder.VirtualMethod("setDefaultAssertionStatus", "(Z)V", [](IntrinsicContext&) {
+        return VmValue::Void();
+    });
     builder.StaticMethod(
         "getSystemClassLoader", "()Ljava/lang/ClassLoader;",
         [](IntrinsicContext& context) {

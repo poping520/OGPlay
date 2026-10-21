@@ -48,15 +48,17 @@
   main group、daemon 附加事实及 null context loader 遵循 API19 原生附加构造边界。
   实例 uncaught handler 优先于默认 handler；handler 自身异常按 API19 忽略，无 handler
   保留进程致命诊断。ThreadGroup 仅 bounded system/main、名称和存活枚举，结束后 group 为 null。
+  ThreadGroup.uncaughtException 依次虚派 parent、默认 handler；无 handler 时向 System.err 打印线程名前缀和原版 Throwable 栈，ThreadDeath 不输出。APK 无 handler 的工作线程仍走原有进程致命出口。
   线程栈来自本 VM safe-point snapshot，不伪造完整 ThreadGroup/State。
 - Runtime 的单例、hook List、shuttingDown、add/remove/exit/halt 执行原版 Java；System.exit
   委托 Runtime.exit，nativeExit 进入 Interpreter.Exit，不能返回 guest 或直接退出宿主。
   宿主 Stop 保持取消语义；availableProcessors 保留单执行通道事实 1。
   Runtime gc/内存统计/nativeLoad/runFinalization 尚未支持；runFinalizersOnExit(true) 立即
   记账抛 UnsupportedOperationException，false 保持未启用。见 [DVM-150](../../../../docs/tasks/dexvm/DVM-150.md)。
+- System.gc 显式请求现有 VM 的普通 STW 回收，不强制清 SoftReference；不扩展 finalizer 或 PhantomReference 能力。
 - System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
   注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
-  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）。
+  不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）；ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。
 - 平台 enum 用 IntrinsicEnumBuilder 在链接前生成字段、$VALUES、clinit、values/valueOf；
   BootDex enum 复用 Enum.getSharedConstants，禁止 EnumSet 的 C++ 副本。顶层接口只声明
   已登记 shape，Thread.UncaughtExceptionHandler 归 Thread family。

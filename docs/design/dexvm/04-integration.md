@@ -149,8 +149,8 @@ Settings（设备身份）、Locale、PackageManager 受限面——远小于 on
 不参考）：
 
 - **分配器**：arena 页 + size-class 空闲链，非移动；大对象独立整页。触发
-  条件：分配水位越过预算比例阈值（受检参数）；`System.gc()` 只记账，
-  是否触发由水位决定。
+  条件：分配水位越过预算比例阈值（受检参数）；WU7-3 起 `System.gc()` 显式请求普通回收，
+  与分配流使用同一 STW 收集器（见 09 §7）。
 - **根集**：全部线程全部 VM 帧的 tagged ref 槽（02 §7 的 tag 在此兑现
   精确性）、类静态 ref 槽、JNI local/global 引用表、intern 表、Thread
   对象、`<clinit>` 进行中的类对象。native 持有的引用必然经 JNI 引用表，

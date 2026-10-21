@@ -50,7 +50,8 @@ struct MonitorVm final {
     // it explicitly, so timed waits stay reproducible.
     std::atomic<std::int64_t> clock_millis{0};
 
-    explicit MonitorVm(const bool platform_bindings = false)
+    explicit MonitorVm(const bool platform_bindings = false,
+                       const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : model(strings, arrays, {}),
           linker(),
           interpreter(
@@ -58,12 +59,12 @@ struct MonitorVm final {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog());
                   if (platform_bindings) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
                       std::make_shared<DexVmAndroidContext>()));
-                  linker.RegisterDex(ReadFixture("interp.dex"));
                   ogplay::test::RegisterBootDex(linker);
+                  linker.RegisterDex(ReadFixture("interp.dex"));
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, {}),
+              model, nullptr, ledger, InterpreterConfig{.backend = backend}),
           threads(interpreter) {}
 
     void UseTestClock() {
@@ -363,28 +364,30 @@ TEST_CASE("dexvm timed wait without a Clock fails instead of guessing") {
 }
 
 TEST_CASE("dexvm interrupt wakes a waiter and re-acquires before throwing") {
-    MonitorVm vm;
-    vm.UseTestClock();
-    const auto lock = vm.Lock();
-    const auto target = vm.Make("LWaitInterrupt;");
-    const auto thread_object = target;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        MonitorVm vm(false, backend);
+        vm.UseTestClock();
+        const auto lock = vm.Lock();
+        const auto target = vm.Make("LWaitInterrupt;");
+        const auto thread_object = target;
 
-    vm.threads.Start(thread_object, "interruptible",
-                     vm.threads.AllocateThreadId());
-    REQUIRE(WaitFor(
-        [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
+        vm.threads.Start(thread_object, "interruptible",
+                         vm.threads.AllocateThreadId());
+        REQUIRE(WaitFor(
+            [&] { return vm.interpreter.Monitors().WaitingCount(lock) == 1U; }));
 
-    vm.threads.Interrupt(thread_object);
-    vm.threads.Join(thread_object);
+        vm.threads.Interrupt(thread_object);
+        vm.threads.Join(thread_object);
 
-    // The body caught InterruptedException and then exited the monitor. That
-    // exit only balances if wait() re-acquired it before throwing.
-    CHECK(!vm.threads.TakeFailure().has_value());
-    CHECK(vm.Observed() == 7);
-    // "The interrupted status of the current thread is cleared when this
-    // exception is thrown" (JLS, AOSP waitMonitor done:).
-    CHECK(!vm.threads.IsInterrupted(thread_object));
-    CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
+        // The body caught InterruptedException and then exited the monitor. That
+        // exit only balances if wait() re-acquired it before throwing.
+        CHECK(!vm.threads.TakeFailure().has_value());
+        CHECK(vm.Observed() == 7);
+        // "The interrupted status of the current thread is cleared when this
+        // exception is thrown" (JLS, AOSP waitMonitor done:).
+        CHECK(!vm.threads.IsInterrupted(thread_object));
+        CHECK(vm.interpreter.Monitors().WaitingCount(lock) == 0U);
+    }
 }
 
 TEST_CASE("dexvm interrupt before wait is honoured without parking") {

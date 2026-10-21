@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 // FastCode threaded interpreter. The steady-state loop lives in one function:
 // GCC/Clang dispatch with per-opcode labels-as-values and an indirect goto at
 // every handler tail; MSVC with a dense handler switch loop. Family bodies are

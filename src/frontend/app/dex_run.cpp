@@ -6,6 +6,7 @@
 #include "ogplay/hal/clock.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
+#include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -107,7 +108,8 @@ void WaitForNonDaemonThreads(dx::Interpreter& vm, dx::VmThreadRuntime& threads) 
         if (vm.ExitCode()) return;
         bool waiting = false;
         for (const auto& thread : threads.Snapshot()) {
-            if (thread.id == 1U || thread.status != dx::VmThreadStatus::running) continue;
+            if (thread.id == 1U || (thread.status != dx::VmThreadStatus::running &&
+                                     thread.status != dx::VmThreadStatus::created)) continue;
             const auto daemon = CallVirtual(vm, dx::VmObjectRef{thread.object}, "isDaemon", "()Z");
             if (!daemon.exception.IsValid() && daemon.value.AsInt() == 0) waiting = true;
         }
@@ -176,6 +178,20 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     const auto context = std::make_shared<runtime::DexVmAndroidContext>();
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
+    // The real dalvikvm entry is NativeStart.main, which calls the selected
+    // application's main. Retain that actual call boundary in captured stacks.
+    auto entry = dx::IntrinsicClassBuilder::Class("Ldalvik/system/NativeStart;");
+    entry.StaticMethod("main", "([Ljava/lang/String;)V",
+        [&options](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            const auto owner = vm.Linker().ResolveDescriptor(ClassDescriptor(options.main_class));
+            const auto target = vm.Linker().FindDirectMethod(owner, "main", "([Ljava/lang/String;)V");
+            if (!target) throw std::runtime_error("static main(String[]) not found");
+            const auto result = vm.Call(*target, call.arguments);
+            if (result.exception.IsValid()) vm.SetPendingException(result.exception);
+            return dx::VmValue::Void();
+        }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+    linker.RegisterIntrinsics(std::array{std::move(entry).Build()});
     linker.RegisterBootDex(std::move(boot_dex));
     linker.RegisterSkeletonSurface(std::move(skeleton));
     linker.RegisterDex(std::move(app_dex));
@@ -239,7 +255,9 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
         }
         try {
             const std::array main_arguments{dx::VmValue::Ref(argv)};
-            const auto outcome = vm.Call(*main, main_arguments);
+            const auto entry_method = linker.FindDirectMethod(
+                linker.ResolveDescriptor("Ldalvik/system/NativeStart;"), "main", "([Ljava/lang/String;)V");
+            const auto outcome = vm.Call(*entry_method, main_arguments);
             if (outcome.exception.IsValid()) {
                 status = 1;
                 const auto thrown_root = vm.ProtectReferences(std::array{outcome.exception});

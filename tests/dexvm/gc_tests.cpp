@@ -52,7 +52,8 @@ struct GcVm final {
         std::make_shared<std::uint32_t>(0);
     Interpreter vm;
 
-    GcVm(const std::vector<IntrinsicClassDecl>& extras = {})
+    GcVm(const std::vector<IntrinsicClassDecl>& extras = {},
+         const InterpreterBackend backend = InterpreterBackend::switch_dispatch)
         : vm([this, &extras]() -> DexClassLinker& {
                  auto catalog = CoreIntrinsicCatalog();
                  auto builder =
@@ -74,7 +75,7 @@ struct GcVm final {
                  linker.Link();
                  return linker;
              }(),
-             model, nullptr, ledger) {}
+             model, nullptr, ledger, InterpreterConfig{.backend = backend}) {}
 };
 
 TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roots") {
@@ -475,4 +476,30 @@ TEST_CASE("DVM-109 soft references retain caches until pressure and interned str
     CHECK(f.model.InternString(u"dvm109-weak-intern-😀") == fresh); // Literal promotion.
     static_cast<void>(f.vm.CollectGarbage());
     CHECK(f.model.IsValidRef(fresh));
+}
+
+TEST_CASE("WU7-3 System.gc clears weak interns while retaining literals in both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        GcVm f({}, backend);
+        const auto literal = f.model.InternString(u"wu7-3-constant");
+        const auto value = f.model.NewString(u"wu7-3-dynamic");
+        CHECK(f.model.InternString(value) == value);
+        const auto weak = f.vm.NewIntrinsicInstance("Ljava/lang/ref/WeakReference;");
+        const auto root = f.vm.ProtectReferences(std::array{weak});
+        const auto ctor = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/lang/ref/WeakReference;"),
+            "<init>", "(Ljava/lang/Object;)V");
+        REQUIRE(ctor.has_value());
+        REQUIRE_FALSE(f.vm.Call(*ctor, std::array{VmValue::Ref(weak), VmValue::Ref(value)}).exception.IsValid());
+        const auto gc = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/lang/System;"), "gc", "()V");
+        REQUIRE(gc.has_value());
+        REQUIRE_FALSE(f.vm.Call(*gc, {}).exception.IsValid());
+        CHECK_FALSE(f.model.IsValidRef(value));
+        CHECK(f.model.IsValidRef(literal));
+        const auto type = f.model.ObjectClass(weak);
+        const auto get = f.linker.FindVtableIndex(type, "get", "()Ljava/lang/Object;");
+        REQUIRE(get.has_value());
+        const auto result = f.vm.Call(f.linker.Class(type).vtable[*get], std::array{VmValue::Ref(weak)});
+        REQUIRE_FALSE(result.exception.IsValid());
+        CHECK_FALSE(result.value.ref.IsValid());
+    }
 }

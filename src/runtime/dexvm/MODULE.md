@@ -72,8 +72,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   pending，退出恢复原状态；失败及未尝试资源回队列，不放宽正常 JNI 调用。
   外部宿主 GC 遇到绑定到其他宿主的默认 execution 时只扫堆，将 guest 清理留队，
   由合法 execution 所有者的后续 GC/退出释放，不借用活动 Java 栈。
+- System.gc 显式调用同一 STW 收集器（普通回收不强制清 SoftReference）；未关联队列的 WeakReference 清空不依赖 ReferenceQueue 的懒字段元数据。
 - 堆按 ADR-0060 区分 initial target、growth limit 与 maximum：越过当前目标先 GC，再增长，
   越过增长上限时执行 before-OOM GC 后才失败；GC 后按 live set、利用率和 min/max free 调整目标。
+- Throwable 栈以方法身份与 DEX PC 保存，物化时读取同 DEX unit 的 source/debug_info；无调试信息保留未知位置，真实 native 入口保留 Native Method 帧。check-cast 的 CCE 消息使用可读类名与数组维度。
 - `Interpreter::Call` 返回值或未捕获 Java 异常；寄存器带类别 tag，默认 512 帧。invoke 只有
   interpreted/intrinsic/native bridge 三路；缺实现记账失败。致命故障附有界 guest stack、指令、
   target/参数诊断，不依赖 trace，也不输出 host 地址。

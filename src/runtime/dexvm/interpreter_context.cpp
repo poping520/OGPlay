@@ -625,7 +625,7 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
         const auto queue = impl_->linker->FindFieldRecursive(*reference, "queue", "Ljava/lang/ref/ReferenceQueue;");
         const auto next = impl_->linker->FindFieldRecursive(*reference, "queueNext", "Ljava/lang/ref/Reference;");
         const auto head = impl_->linker->FindFieldRecursive(*queue_class, "head", "Ljava/lang/ref/Reference;");
-        if (referent && queue && next && head) {
+        if (referent) {
             for (std::size_t i = 0; i < mark.marked.size(); ++i) {
                 if (!mark.marked[i]) continue;
                 const auto owner = VmObjectRef(static_cast<std::uint32_t>(i + 1));
@@ -635,6 +635,9 @@ GcSweepResult Interpreter::SweepGarbage(const GcMarkResult& mark) {
                 auto& target = slots[impl_->linker->Field(*referent).slot];
                 if (target.bits == 0 || mark.IsMarked(VmObjectRef(target.bits))) continue;
                 target = {0, SlotTag::ref};
+                // Clearing an unqueued WeakReference must not depend on the
+                // lazy ReferenceQueue class having materialized its fields.
+                if (!queue || !next || !head) continue;
                 const auto queue_ref = VmObjectRef(slots[impl_->linker->Field(*queue).slot].bits);
                 auto& next_slot = slots[impl_->linker->Field(*next).slot];
                 if (!queue_ref.IsValid() || next_slot.bits != 0) continue;

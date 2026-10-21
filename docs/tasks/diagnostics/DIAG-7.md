@@ -1,6 +1,6 @@
 # DIAG-7 · WU6a dalvik/tests 一致性摸底
 
-状态：探针已实现（run-dex 与驱动）；全量试跑与报告待执行。依赖：ADR-0147/0148、DVM-255（BootDex 准入）、
+状态：全量试跑完成（run-dex 与驱动已实现）。依赖：ADR-0147/0148、DVM-255（BootDex 准入）、
 DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为与游戏无关的行为判据，
 产出 DexVM 语义通过率与失败分类；本单不修复任何失败用例。
 
@@ -33,8 +33,8 @@ DIAG-5/6。目标是用 AOSP 4.4 自带 `dalvik/tests` 的 expected.txt 作为�
 - 回归：android_logging、intrinsics_p1、thread_intrinsic、vm_thread、application_exit、
   activity_window_lifecycle、DVM-255 过滤器与 surface_export 全部通过。network_sqlite（7，
   `Invalid path: /data`）、reflection（1）、vm_monitor（1）失败在未改动的 HEAD 上同样复现，与本单无关。
+- 全量试跑（`dalvik_tests.py --jobs 4 --timeout 60`）：switch 52/93（55.9%）、threaded 52/93（55.9%），分母为未排除 93 例；报告 `.local/analysis/wu6/REPORT.md`。
 
 ## 剩余
 
-- 全量 98 用例双后端试跑与 `.local/analysis/wu6/REPORT.md`（交由测试 Agent）。
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。

@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7：ogplay-cli dexvm run-dex 以生产平台类来源运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节比较并分类。仅 VM 语义探针，非门禁；libcore/JUnit、src-ex 二级 dex、多 dex 未支持。通过率见任务单。"
+note = "DIAG-7：ogplay-cli dexvm run-dex 以生产平台类来源运行独立 dex main（stdout 原样、dalvikvm 退出码、-ea、realtime Clock）；dalvik_tests.py 用 javac+dx 编译 AOSP 4.4 dalvik/tests，双后端逐字节比较并分类。仅 VM 语义探针，非门禁；libcore/JUnit、src-ex 二级 dex、多 dex 未支持。通过率 switch 52/93、threaded 52/93（55.9%，未排除 93 例）。"
 
 [tools.dex_dependency_survey]
 status = "complete"

@@ -165,7 +165,7 @@ note = "M6 WU-0356 发布 session_state/step/lifecycle/shutdown closed-schema MC
 
 [automation.profile_session]
 status = "complete"
-test = "tests/frontend/mcp_http_server_tests.cpp#MCP HTTP bridges session commands without entering guest code; frontend.run_apk_options"
+test = "tests/frontend/mcp_http_server_tests.cpp#MCP HTTP bridges session commands without entering guest code; frontend.run_apk_options; tests/session/audio_output_pump_tests.cpp"
 note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模式；复用 exact Profile bootstrap/lifecycle/ANGLE/audio/teardown，guest 主线程消费命令并发布 frame/ticks/movie/exit/fault 原子状态"
 
 [automation.scenario_runner]

@@ -1755,8 +1755,16 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 "stopping guest process", {}, {{"reason", name}});
         }
         std::exception_ptr first_failure;
+        bool timeout_recorded = false;
         const auto record_failure = [&] {
             state_ = LifecycleRunState::failed;
+            const auto deadline = session.CleanupDeadlineNs();
+            if (!timeout_recorded && deadline != 0 &&
+                hal::Clock::SteadyTimestampNs() >= deadline) {
+                timeout_recorded = true;
+                if (auto* ledger = bindings_.bridge->Vm().Ledger())
+                    ledger->RecordUnimplemented("session.lifecycle.cleanup_timeout", 0);
+            }
             if (!first_failure) {
                 first_failure = std::current_exception();
             } else if (bindings_.logger) {
@@ -1816,10 +1824,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     throw std::runtime_error(*error);
             });
             if (activity_started_) guest([&] { CallActivity("onStop", "()V", {}); });
+            if (bindings_.context->activity.IsValid())
+                guest([&] { CallActivity("onDestroy", "()V", {}); });
         }
         if (egl_pacer_attached_) runtime::ShutdownEglSwapPacer(*bindings_.context);
         guest([&] { runtime::ShutdownLocalServices(bindings_.bridge->Vm(), *bindings_.context); });
         attempt([&] { runtime::ShutdownPendingIntents(bindings_.bridge->Vm(), *bindings_.context); });
+        phase("teardown.audio_drain");
+        if (bindings_.before_guest_shutdown) attempt(bindings_.before_guest_shutdown);
         runtime::RetireGuestEglSurface(*bindings_.context);
         session.BeginTeardown();
         attempt([&] { StopAllRenderers(); });
@@ -1829,8 +1841,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         phase("teardown.thread_join");
         attempt([&] { session.QuiesceNativeWorkers(); });
         attempt([&] { bindings_.bridge->Threads().Shutdown(); });
-        // A process close is not Activity.finish(). Instance destruction remains
-        // in ServiceActivitySwitch; never synthesize onDestroy for the stack.
+        // The foreground Activity's cooperative destruction has completed;
+        // background instances are retired with the process resources below.
         phase("teardown.media_retire");
         attempt([&] { runtime::ReleaseAndroidDialogs(*bindings_.context); });
         attempt([&] { runtime::ReleaseAndroidMediaResources(*bindings_.context); });

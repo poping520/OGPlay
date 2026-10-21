@@ -409,6 +409,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
 
         }
         std::unique_ptr<hal::AudioOutput> audio_output;
+        std::unique_ptr<session::AudioOutputPump> audio_pump;
         audio_output = hal::CreateSdlAudioOutput(kDesktopAudioOutputSpec);
         audio_output->Start();
         std::uint64_t active_frame{};
@@ -554,6 +555,12 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             filesystem.FlushAll();
         };
         app_request.host.pump_host_events = pump_host_events;
+        app_request.host.before_guest_shutdown = [&] {
+            if (audio_pump) {
+                audio_pump->Stop();
+                audio_pump->RethrowWorkerFailure();
+            }
+        };
         app_request.host.before_process_stop = [&] {
             call_progress.Begin(active_frame, 0U);
         };
@@ -701,7 +708,6 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             write_survey();
             throw;
         }
-        std::unique_ptr<session::AudioOutputPump> audio_pump;
         if (audio_output) {
             audio_pump = std::make_unique<session::AudioOutputPump>(
                 [guest](const std::span<std::int16_t> output,
@@ -714,7 +720,11 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     static_cast<void>(
                         guest->PcmPlayback().InterruptBlockingWaits());
                 });
-            if (!mcp_manual_step) audio_pump->StartRealtime();
+            if (mcp_manual_step) {
+                audio_pump->StartManual([guest] {
+                    return guest->PcmPlayback().BlockingWriterCount() != 0U;
+                });
+            } else audio_pump->StartRealtime();
         }
         agent::McpLifecycleState mcp_lifecycle{
             agent::McpLifecycleState::running};
@@ -933,7 +943,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 }
                 active_frame = driver.state().frame + 1U;
                 exit_state.frame = active_frame;
-                static_cast<void>(driver.step());
+                if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(true);
+                try { static_cast<void>(driver.step()); }
+                catch (...) {
+                    if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
+                    throw;
+                }
+                if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
                 const auto stepped = driver.state();
                 if (mcp_manual_step && audio_pump) {
                     const auto tick_delta = stepped.clock_ticks - last_audio_ticks;
@@ -993,7 +1009,12 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (!failure) capture_exit();
         control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
-        if (audio_pump) audio_pump->Stop();
+        // onPause may join an AudioTrack producer. Keep its consumer alive even
+        // after manual stepping has stopped advancing the offline mixer.
+        if (audio_pump) {
+            audio_pump->SetSuspended(false);
+            if (mcp_manual_step) audio_pump->StartRealtime();
+        }
         write_survey();
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "stopping Activity lifecycle",
@@ -1008,6 +1029,11 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (!failure) failure = std::current_exception();
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;
+        }
+        if (audio_pump) {
+            audio_pump->Stop();
+            try { audio_pump->RethrowWorkerFailure(); }
+            catch (...) { if (!failure) failure = std::current_exception(); }
         }
         if (audio_output) audio_output->Stop();
         publish_session();

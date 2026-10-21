@@ -7,6 +7,8 @@
 #include <span>
 #include <stdexcept>
 #include <thread>
+#include <future>
+#include "ogplay/audio/open_sles_pcm_mixer.h"
 #include <vector>
 
 #include "ogplay/hal/audio.h"
@@ -181,4 +183,51 @@ TEST_CASE("session audio pump suspends realtime submit") {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     CHECK(output.Submits() == frozen);
     pump.Stop();
+}
+
+TEST_CASE("manual audio pump releases synchronous step backpressure without idle advancement") {
+    using namespace ogplay;
+    for (const bool fail_mix : {false, true}) {
+        audio::OpenSlesPcmMixer mixer;
+        const auto player = mixer.CreatePlayer({48000U, 2U, 16U}, 2U);
+        const std::vector<std::byte> pcm(4096U);
+        REQUIRE(mixer.Enqueue(player, pcm));
+        mixer.SetPlayState(player, audio::OpenSlesPlayState::playing);
+        std::atomic<std::uint64_t> advanced{};
+        session::AudioOutputPump pump(
+            [&](std::span<std::int16_t> output, std::uint32_t rate) {
+                if (fail_mix) throw std::runtime_error("manual mixer failure");
+                static_cast<void>(mixer.MixAdditiveStereoPcm16(output, rate));
+                const auto frames = output.size() / 2U;
+                advanced.fetch_add(frames);
+                return frames;
+            }, nullptr, 48000U, 2U,
+            [&] { static_cast<void>(mixer.InterruptBlockingWaits()); });
+        pump.StartManual([&] { return mixer.BlockingWriterCount() != 0U; });
+        auto writer = std::async(std::launch::async, [&] {
+            return mixer.EnqueueBlocking(player, pcm, pcm.size());
+        });
+        // Queued PCM and a blocked writer alone must not consume manual time.
+        CHECK(writer.wait_for(std::chrono::milliseconds(20)) == std::future_status::timeout);
+        CHECK(advanced == 0U);
+        pump.SetManualStepActive(true);
+        const auto ready = writer.wait_for(std::chrono::seconds(2));
+        if (ready != std::future_status::ready)
+            static_cast<void>(mixer.InterruptBlockingWaits());
+        const auto result = writer.get();
+        pump.SetManualStepActive(false);
+        pump.Stop();
+        CHECK(ready == std::future_status::ready);
+        if (fail_mix) {
+            CHECK(result == audio::OpenSlesEnqueueResult::interrupted);
+            CHECK_THROWS_WITH(pump.RethrowWorkerFailure(), "manual mixer failure");
+        } else {
+            CHECK(result == audio::OpenSlesEnqueueResult::enqueued);
+            CHECK(advanced >= 1024U);
+            CHECK_NOTHROW(pump.RethrowWorkerFailure());
+            // Early consumption is charged against later Clock-derived frames.
+            CHECK(pump.FramesForTicks(advanced.load(), 48000U) == 0U);
+            CHECK(pump.FramesForTicks(480U, 48000U) == 480U);
+        }
+    }
 }

@@ -325,6 +325,7 @@ public:
         bindings.interrupt_guest_waits = [this] {
             static_cast<void>(session->InterruptBlockingWaits());
         };
+        bindings.before_guest_shutdown = std::move(host.before_guest_shutdown);
         bindings.finalize_guest = [this] {
             if (host.before_process_stop) host.before_process_stop();
             // Native-backed Java objects (Mac, streams, etc.) run their guest

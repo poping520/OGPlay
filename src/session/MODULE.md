@@ -59,8 +59,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   guest EGL swap 在 intrinsic 内 publish，不由 lifecycle 再次 present。lifecycle
   仅在 guest-owned GLSurfaceView 路径注册 driver 线程，并在每帧尾推进条件 swap
   pacer。进程 teardown 在 guest-owned 回调前只解除宿主帧 pacer 等待；在有界 root
-  scope 中完成失焦、onPause、surfaceDestroyed/onStop，再永久退役 Java/native 图形与
-  取消 renewable JNI frame。回调期间可能新建等待，因此 join
+  scope 中完成失焦、onPause、surfaceDestroyed/onStop 与前台 onDestroy，再永久退役 Java/native 图形与
+  取消 renewable JNI frame。协作回调完成前允许 Java/native 线程与 AudioTrack 正常创建，
+  音频消费者保持推进（手动步进退出时暂转实时消费），回调结束/超时后先停止音频消费者，
+  再关闭线程准入并 join。
+  Java join 与其他阻塞共享不可续期 Clock deadline；超时明确失败并记账，不冒充完成。
+  回调期间可能新建等待，因此 join
   前再次 interrupt。该顺序是 OGPlay 进程退出策略，不伪称 AOSP 在
   `surfaceDestroyed` 回调前使 Surface 失效。
   注入诊断状态时，Stop 额外发布 begin、guest callbacks、scheduler、thread join、
@@ -131,7 +135,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   返回仍受限。已有 startActivity+finish 可退役旧渲染实例。
   intrinsic renderer 按 View 持有稳定 runtime/worker，后台回调不读前台 renderer 投影。
   pause/resume 在所属 GLThread 确认，EGLSurface 可重建，Context 按 preserve 请求释放。
-  最后实例结束才退出；重复/中间 finish 不错误退出，Stop 在 join 后销毁全部保留实例。
+  最后实例结束才退出；重复/中间 finish 不错误退出，Stop 在协作回调后 join，再退役后台保留实例资源。
   入口 Activity
   实例化时把自身句柄发布为 `task_root_activity`（进程唯一 task 的根，
   `Activity.isTaskRoot()` 的判定依据），switch 到达的 Activity 不是根。
@@ -165,8 +169,12 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   Submit/水位查询失败时置位 `DeviceFailed` 并停止继续提交。设备、mixer 和 callback
   异常统一先调用显式 FailureInterrupt 唤醒 producer，再保存原异常并交还主循环。
   未注入 `sound_resource_loader` 时默认走 `LoadEncodedAudioWindow`。
-  MCP 手动步进不启动实时 worker，只按 lifecycle Clock tick 差推进离线混音；mixer/callback
-  异常保留原异常并交还主循环，设备提交失败单独记录。进程按 stream 初始化 native gain，
+  MCP 手动步进按 lifecycle Clock tick 差推进离线混音；许可 step 正在执行且 PCM writer
+  被队列背压阻塞时，独立消费者可先混音释放 writer，避免主 Looper 写入与 step 后消费互等。
+  提前消费帧从后续 Clock 额度扣回，不重复推进音频；无 step 或无背压不消费，不提交 HAL。
+  消费者错误先 interrupt writer，再交还主循环，不能静默绕过写入。
+  宿主协作停止期间恢复消费并暂启实时 worker，在生命周期回调结束、guest 线程退役前停止。
+  mixer/callback 异常保留原异常并交还主循环，设备提交失败单独记录。进程按 stream 初始化 native gain，
   视频混音底座按每播放器 stream 应用增益；VideoView 固定 MUSIC，普通 MediaPlayer
   按已设置 stream，不在 session 再次缩放。
 
@@ -240,8 +248,11 @@ native 清理失败仍继续关闭进程和 surface；前端保留运行首错�
 GLES/Canvas producer 活跃时视频泵不覆盖底图。纯视频窗口使用空软件底图触发统一合成。
 
 DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，
-退出事实优先。健康宿主关闭在既有预算内独立尝试前台失焦/pause、Surface retire/stop，
-不合成全栈 onDestroy；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
+退出事实优先。健康宿主关闭在既有预算内独立尝试前台失焦/pause、Surface retire/stop、
+前台 onDestroy；期间 VM 仍可创建 Java/native 线程，音频消费保持推进。回调后先调用显式
+`before_guest_shutdown` 停止并回收音频消费者，再 BeginTeardown、VM shutdown/join；
+超时传播原错并记 `session.lifecycle.cleanup_timeout`，到期后不继续 guest 回调。
+后台实例资源随进程退役；普通 Activity.finish 仍按实例执行 destroy 并传播异常。
 进程关闭拒绝新转换/输入，关闭 scheduler、join native/Java worker 后由 owner 退役媒体/图形
 资源，再执行仍允许的 native cleanup。退出预算覆盖重入且不续期，首错保持、重复 Stop 幂等。
 进程 Stop 不执行模块卸载式 DSO fini；底层显式 permitted 卸载/停机的执行与失败传播保持。

@@ -1055,9 +1055,10 @@ TEST_CASE("DVM-234 graceful cleanup retains native execution until retirement") 
     });
     const auto deadline = process->CleanupDeadlineNs();
     CHECK(process->Invoke(frame).return_value != 0U);
-    CHECK_THROWS_WITH(process->PrepareDexVmThread(16385, 0),
-                      "new guest thread rejected during teardown");
+    CHECK_NOTHROW(process->PrepareDexVmThread(16385, 0));
     process->BeginTeardown();
+    CHECK_THROWS_WITH(process->PrepareDexVmThread(16386, 1),
+                      "new guest thread rejected during teardown");
     CHECK_THROWS_AS(static_cast<void>(process->Invoke(frame)), runtime::A32GuestCallCancelled);
     CHECK_THROWS_WITH(process->RunGracefulCleanup([] {}), "teardown cleanup admission rejected");
     process->RunTeardownCleanup([&] {

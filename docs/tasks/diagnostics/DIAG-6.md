@@ -50,3 +50,22 @@
   WB/Angry Birds 强制清理前未能写出 JSON，命中数未知，不记作零。
 - 跨游戏去重 1 项：Tales `Display.getRealSize(Point)`，reflection、skeleton、首次 #1、2 次命中；
   前十候选只含“显示尺寸”，不足三个主题不补凑。最终报告 38 行。
+
+## 手动步进停滞修复（2026-10-21，局部行为修复）
+
+- Angry Birds 稳定停在逻辑帧 192、呈现序号约 187/188。宿主采样确认主线程位于
+  PumpJavaThreads → Handler → AudioTrack.write → EnqueueBlocking；GL 线程仍在运行。
+  手动音频消费者原本等 driver.step 返回后才消费，主 Looper 同步写满队列后与消费互等。
+- 通用 AudioOutputPump 增加只在许可 step 活跃且 PCM writer 阻塞时工作的离线消费者；
+  提前消费量从后续 Clock 额度扣回。空闲不推进、无背压不消费、失败唤醒 producer 并传播；
+  runner、场景预算、断言与 shutdown 判据未修改，无游戏例外。
+- 只构建 ogplay_tests、ogplay-cli；audio_output_pump_tests.cpp 6/6、39 断言通过，
+  禁用背压消费后新增测试超时失败；tools.scenario_runner_self_test 通过。
+- 三个正常场景各一次：Angry Birds baseline 达 sequence=5000（48.9 秒），停滞消失；
+  Lili 整体 passed、shutdown.clean=true；PVZ baseline 通过。
+  Angry Birds / PVZ 整体仍 failed：新增的 onDestroy 路径分别触发 APK 类重写可见性校验、
+  ContextWrapper.stopService 未实现；未放宽清理规则或借本次音频修复扩展独立能力。
+- 普通 Angry Birds 新沙盒 1000 呈现帧、exit 0 再次确认。presentedFrame 是实际发布给宿主的
+  最新 producer sequence，允许跳号；successfulPresents 是宿主呈现次数，两者不互换。
+- 原始采样、反证、自测与三份 Result：`.local/analysis/manual-step-stall/`；
+  本次停滞修复不能表述为三个场景全通过，也不代表视觉/title gate 验收。

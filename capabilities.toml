@@ -1675,8 +1675,8 @@ note = "DVM-80..88 计划的 family ownership、Context、NIO/direct buffer、Ja
 
 [dexvm.gap_survey]
 status = "complete"
-test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp"
-note = "M9 适配流水线：run-apk --survey-gaps 打开诊断 survey 模式，未声明的平台类/方法合成中性桩、逐次记账，一次运行收割整条缺口队列并按命中次数输出机读工作单；APK class_def 全量注册、按首次真实使用链接，未触达的缺失层级不阻断启动，触达后默认明确失败或在 survey 中合成并记账。survey 运行显式标注为非兼容性结论。配套 tools/dexvm_gap_report.py（静态潜在清单，schema 2 带 role）与 tools/dexvm_stub_gen.py（生成占位/中性方法行，引用返回值一律进人工决策清单）"
+test = "tests/dexvm/gap_survey_tests.cpp; tests/dexvm/skeleton_surface_tests.cpp#gap survey; tests/runtime/jni_bridge_objects_tests.cpp#gap survey; tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp"
+note = "run-apk --survey-gaps（DIAG-5）：与 API19 骨架共存，层级/常量/声明同正常运行；被调用的未实现方法（骨架/intrinsic/BootDex，含 JNI、反射入口）、被访问的非恒定未实现字段及 API19 未声明成员返回中性值并记账。JSON schema 2：来源、通道、首次序号/uptime/前5帧栈、次数，按次数与首次命中两种排序。永远不是兼容性结论；中性值后行为可能已偏离。配套 tools/dexvm_gap_report.py 与 tools/dexvm_stub_gen.py"
 
 [loader.binary_xml_pull]
 status = "complete"
@@ -2071,7 +2071,7 @@ note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 
 [dexvm.api19_skeleton]
 status = "partial"
 test = "tests/dexvm/skeleton_surface_tests.cpp; tests/dexvm/reflection_tests.cpp#DVM-254; tests/runtime/jni_bridge_objects_tests.cpp#DVM-254; tests/runtime/jni_guest_instance_calls_tests.cpp#DVM-254; tools/api19_skeleton.py --self-test; tools/api19_skeleton.py --check"
-note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既有声明/handler优先；JNI/反射可查骨架，缺失挂起/抛NoSuch错误；真实常量，未实现方法/构造器及非常量字段访问记账失败，反射调用包装目标异常。pending门禁不放宽；survey不变。骨架行为、Unsafe等其他字段通道与正式title gate未验；既有手写层次不重写，ROM外依赖仍失败。"
+note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既有声明/handler优先；JNI/反射可查骨架，缺失挂起/抛NoSuch错误；真实常量，未实现方法/构造器及非常量字段访问记账失败，反射调用包装目标异常。pending门禁不放宽；survey 与骨架共存（DIAG-5）。骨架行为、Unsafe等其他字段通道与正式title gate未验；既有手写层次不重写，ROM外依赖仍失败。"
 
 [dexvm.bootdex_rom_java]
 status = "partial"

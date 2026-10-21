@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <deque>
+#include <functional>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -91,7 +93,10 @@ public:
     // Gap survey state; the map key is "owner" or "owner->member" so the
     // report order is deterministic.
     bool gap_survey{};
-    std::map<std::string, std::uint32_t> survey_hits;
+    std::function<std::uint64_t()> survey_uptime_ms;
+    std::map<std::string, GapSurveyHit> survey_hits;
+    std::uint64_t survey_total_hits{};
+    std::mutex survey_mutex;
     std::uint32_t next_annotation_impl{};
 
     [[nodiscard]] DexUnit& UnitAt(const DexUnitId id) {

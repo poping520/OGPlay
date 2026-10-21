@@ -874,3 +874,115 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
         }));
     }
 }
+
+TEST_CASE("gap survey records JNI-channel hits on skeleton members and answers neutrally") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const bool survey : {false, true}) {
+        std::vector<std::uint8_t> skeleton;
+        {
+            std::ifstream input(std::string(OGPLAY_SOURCE_DIR) + "/data/dexvm/api19-skeleton.bin", std::ios::binary);
+            REQUIRE(input.good());
+            skeleton.assign(std::istreambuf_iterator<char>(input), {});
+        }
+        ApplicationProcess f(InterpreterBackend::switch_dispatch, std::nullopt,
+                             "application.dex", {}, std::move(skeleton));
+        auto& session = *f.session;
+        auto& env = session.Environment();
+        auto& classes = session.Classes();
+        auto& linker = f.bridge->Linker();
+        if (survey) linker.EnableGapSurvey();
+        memory::AddressSpace memory;
+        memory::CheckedMemoryBus bus(memory);
+        cpu::InterpreterCpu cpu(bus);
+        GuestJniAbi abi(memory);
+        const memory::GuestAddress data{0x70000000};
+        memory.Map({data, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
+        JniGuestCallDispatcher dispatcher(f.ledger);
+        JniJavaVm java_vm(env);
+        JniGuestBindingContext context{env, classes, session.Invocations(), session.Fields(),
+            session.Strings(), session.Arrays(), java_vm, session.Objects(), memory};
+        BindJniGuestSlots(dispatcher, context);
+        dispatcher.Seal();
+        const auto text = [&](std::uint32_t offset, const std::string& value) {
+            std::vector<std::byte> bytes;
+            for (const auto c : value) bytes.push_back(static_cast<std::byte>(c));
+            bytes.push_back(std::byte{});
+            memory.Write(data.Add(offset), bytes);
+            return data.Add(offset).Value();
+        };
+        const auto call = [&](const char* name, std::uint32_t a = 0, std::uint32_t b = 0, std::uint32_t c = 0) {
+            const auto slot = FindJniSlot(name);
+            REQUIRE(slot);
+            const auto target = bus.Read32(kJniGuestEnvironmentTable.Add(slot->Value() * 4U));
+            cpu::A32State state;
+            state.SetThreadId(1); state.SetState(cpu::ExecutionState::thumb);
+            state.SetRegister(cpu::CoreRegister::pc, target & ~1U);
+            state.SetRegister(cpu::CoreRegister::r0, abi.Environment().Value());
+            state.SetRegister(cpu::CoreRegister::r1, a); state.SetRegister(cpu::CoreRegister::r2, b);
+            state.SetRegister(cpu::CoreRegister::r3, c);
+            state.SetRegister(cpu::CoreRegister::sp, data.Add(0x800).Value());
+            cpu.SetState(state);
+            const auto handled = dispatcher.Handle(cpu, cpu.Run(1));
+            REQUIRE(handled);
+            return cpu.GetState().Register(cpu::CoreRegister::r0);
+        };
+        const auto lookup = [&](const char* slot, std::uint32_t owner, const char* name, const char* descriptor) {
+            return call(slot, owner, text(0x100, name), text(0x200, descriptor));
+        };
+        const auto pending = [&](const char* expected) {
+            REQUIRE(env.ExceptionCheck(1));
+            const auto meta = env.PendingExceptionMetadata(1);
+            if (meta && meta->exception_class.value != 0U) CHECK(classes.ClassName(meta->exception_class) == expected);
+            else {
+                const auto ref = env.ExceptionOccurred(1);
+                env.ExceptionClear(1);
+                const auto object = f.bridge->FromReference(ref);
+                CHECK(linker.Class(f.bridge->Model().ObjectClass(object)).descriptor == "L" + std::string(expected) + ";");
+            }
+            env.ExceptionClear(1);
+        };
+        const auto owner = call("FindClass", text(0, "android/graphics/PointF"));
+        REQUIRE(owner != 0U);
+        const auto type = linker.ResolveDescriptor("Landroid/graphics/PointF;");
+        const auto object = f.bridge->Model().NewInstance(type, linker.Class(type).instance_slots);
+        const auto object_ref = f.bridge->PublishLocal(object);
+        const auto negate = lookup("GetMethodID", owner, "negate", "()V");
+        REQUIRE(negate != 0U);
+        const auto field = lookup("GetStaticFieldID", owner, "CREATOR", "Landroid/os/Parcelable$Creator;");
+        REQUIRE(field != 0U);
+        static_cast<void>(call("CallVoidMethod", object_ref.Value(), negate));
+        if (!survey) {
+            // Quirk control: without survey both accesses still fail closed.
+            CHECK(linker.GapSurveyHits().empty());
+            pending("java/lang/UnsatisfiedLinkError");
+            static_cast<void>(call("GetStaticObjectField", owner, field));
+            pending("java/lang/UnsatisfiedLinkError");
+            continue;
+        }
+        static_cast<void>(call("GetStaticObjectField", owner, field));
+        CHECK_FALSE(env.ExceptionCheck(1));
+        // A member API 19 does not declare is still a lookup miss, not a stub.
+        CHECK(lookup("GetMethodID", owner, "absent", "()V") == 0U);
+        env.ExceptionClear(1);
+        const auto hits = linker.GapSurveyHits();
+        const auto find = [&](const char* member) -> const dexvm::GapSurveyHit* {
+            for (const auto& hit : hits) {
+                if (hit.owner_descriptor == "Landroid/graphics/PointF;" && hit.member == member) return &hit;
+            }
+            return nullptr;
+        };
+        const auto* method = find("negate()V");
+        REQUIRE(method != nullptr);
+        CHECK(method->source == dexvm::GapSurveySource::skeleton);
+        CHECK(method->first_channel == dexvm::GapSurveyChannel::jni);
+        CHECK(method->channel_hits[static_cast<std::size_t>(dexvm::GapSurveyChannel::jni)] == 1U);
+        const auto* member = find("CREATOR:Landroid/os/Parcelable$Creator;");
+        REQUIRE(member != nullptr);
+        CHECK(member->kind == dexvm::GapSurveyKind::field);
+        CHECK(member->first_channel == dexvm::GapSurveyChannel::jni);
+        CHECK(member->source == dexvm::GapSurveySource::skeleton);
+        CHECK(find("absent()V") == nullptr);
+    }
+}

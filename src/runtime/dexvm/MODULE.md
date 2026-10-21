@@ -169,7 +169,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 固定 BootDex 类可按类显式准入其原版 native 声明到 guest JNI；准入不定义类或复制成员，
   未导出的符号仍明确失败。该机制用于 API 19 `NativeCrypto`、`CRC32` 与压缩流 native，
   并由制品审计校验签名集合。
-- Gap survey 默认关闭，只对真实触达的平台缺口生成 0/null/void 并记账；结果不是兼容性结论。
+- Gap survey 默认关闭；开启后与 API19 骨架共存（类层次、常量、成员声明与正常模式一致），仅对被调用的未实现
+  方法/构造器（骨架、intrinsic、BootDex 声明，含 JNI/反射入口）、被访问的非恒定未实现字段及 API19 未声明成员生成
+  0/null/void 并记账（来源、通道、首次序号/时间/前 5 帧栈、次数）；结果永远不是兼容性结论。
 
 ## 尚未实现与测试
 
@@ -226,7 +228,8 @@ findLoadedClass 仍不合成。普通启动禁止全量建类；显式 dump-surf
 生成的非恒定 static/实例字段带 is_unimplemented，switch/threaded 的 sget/sput/iget/iput
 在访问存储前记 `dexvm.skeleton.field.*` 并抛 UnsatisfiedLinkError；不会返回默认零/null。
 常量保留原始数值位与 UTF-16 字符串；不覆盖手写/BootDex 的初始化值。
-Survey 继续绕过未物化骨架类型并使用原中性方法路径；该模式不代表兼容支持。
+Survey 保留骨架：未实现方法/字段命中时记账（仍写 ledger）并返回 0/null/void，字段读写落在零初始化槽位；
+仅 API19 不存在的成员/类沿用合成中性桩。关闭 survey 即恢复上述失败语义；该模式不代表兼容支持。
 JNI/反射查询与枚举复用真实 own-member 表面和修饰符；存在但未实现的成员查找成功。
 解释器、反射和 JNI owner 共用 `RequireImplementedField`，禁止非常量字段回落零值存储。
 JNI 缺成员挂起 NoSuchMethodError/NoSuchFieldError，反射查询抛对应 NoSuch*Exception；

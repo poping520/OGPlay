@@ -180,7 +180,11 @@ public:
 
     // ---- register access with tag enforcement (02 §7) -------------------
 
-    void RequireImplementedField(const LinkedField& field);
+    void RequireImplementedField(
+        const LinkedField& field,
+        GapSurveyChannel channel = GapSurveyChannel::java);
+    void RecordSurveyHit(const LinkedMethod* method, const LinkedField* field,
+                         GapSurveyChannel channel);
 
     [[noreturn]] void FailCode(const std::string& message) const {
         const auto& execution = Execution();
@@ -443,9 +447,10 @@ public:
         const LinkedMethod* method_{};
         VmObjectRef object_;
     };
-    [[nodiscard]] VmValue InvokeIntrinsic(const LinkedMethod& method,
-                                          VmObjectRef receiver,
-                                          std::span<const VmValue> arguments);
+    [[nodiscard]] VmValue InvokeIntrinsic(
+        const LinkedMethod& method, VmObjectRef receiver,
+        std::span<const VmValue> arguments,
+        GapSurveyChannel channel = GapSurveyChannel::java);
     [[nodiscard]] VmMethodId SelectInvokeTarget(
         VmMethodId symbolic_method, InvokeKind kind,
         std::optional<std::uint16_t> vtable_slot, VmObjectRef receiver,

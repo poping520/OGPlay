@@ -85,12 +85,18 @@ ogplay-cli run-apk <title>.apk --profiles-dir data/profiles-dexvm \
   --exit-after-frames 120 --survey-gaps .local/<title>_survey.json
 ```
 
-survey 模式下，未声明的平台类/方法会被合成为**中性桩**（0/null/void）、逐次
-记账，运行继续往下走。产物按命中次数排序，就是下一批的工作单：
+survey 模式与 API19 骨架共存（层级、常量、声明与正常运行一致）：被调用的未实现方法
+（骨架/intrinsic/BootDex，含 JNI、反射入口）、被访问的非恒定未实现字段，以及 API19 未
+声明的成员，都会返回中性值（0/null/void）并逐次记账，运行继续往下走。每条记录含来源
+（skeleton/intrinsic/bootdex/missing）、首次通道（java/jni/reflection）及各通道次数、首次
+命中序号/uptime/前 5 帧 guest 栈、次数。`missing_members` 按次数排序，`members_by_first_hit`
+按首次命中顺序（越靠前越可能是正常运行的真实首错；之后的命中可能已被中性值带偏）：
 
 ```json
 {"summary": {"missing_classes": 3, "missing_members": 41, "stub_hits": 900},
- "missing_members": [{"class": "Landroid/…;", "member": "getX()I", "hits": 812}]}
+ "missing_members": [{"class": "Landroid/…;", "member": "getX()I", "source": "skeleton",
+   "channel": "java", "first_hit_index": 7, "hits": 812, "first_stack": ["…"]}],
+ "members_by_first_hit": [{"class": "Landroid/…;", "member": "getX()I", "first_hit_index": 7}]}
 ```
 
 配合 `tools/dexvm_stub_gen.py --survey … --reached-only` 直接得到「真正被执行

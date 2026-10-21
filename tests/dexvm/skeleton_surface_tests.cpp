@@ -38,6 +38,7 @@ struct Vm {
         if(handwritten){
             auto builder=IntrinsicClassBuilder::Class("Landroid/shape/Base;");
             builder.StaticMethod("answer","()I",[](IntrinsicContext&){return VmValue::Int(77);});
+            builder.UnimplementedStatic("plain","()I");
             auto decl=std::move(builder).Build();
             IntrinsicFieldDecl field;field.name="VALUE";field.descriptor="I";field.is_static=true;field.has_constant=true;field.integral=88;
             decl.fields.push_back(field);
@@ -122,16 +123,132 @@ TEST_CASE("API19 skeleton real artifact remains indexed until requested") {
     CHECK(std::any_of(constants.begin(),constants.end(),[](const auto& c){return c.name=="DISPLAY_SERVICE" && c.string_value=="display";}));
 }
 
-TEST_CASE("API19 skeleton preserves survey neutral methods and recorded stubs") {
+namespace {
+const GapSurveyHit* FindHit(const std::vector<GapSurveyHit>& hits,const std::string& owner,const std::string& member) {
+    for(const auto& h:hits)if(h.owner_descriptor==owner&&h.member==member)return &h;
+    return nullptr;
+}
+}
+
+TEST_CASE("gap survey keeps the API19 skeleton: real constants, hierarchy and no hits for declarations") {
+    for(auto backend:{InterpreterBackend::switch_dispatch,InterpreterBackend::threaded}) {
+        Vm f(backend);f.linker.EnableGapSurvey();
+        auto constant=f.Call("constant");REQUIRE_FALSE(constant.exception.IsValid());CHECK(constant.value.AsInt()==123);
+        auto text=f.Call("string","()Ljava/lang/String;");REQUIRE_FALSE(text.exception.IsValid());CHECK(f.model.StringValue(text.value.ref)==u"中😀");
+        const auto base=f.linker.ResolveDescriptor("Landroid/shape/Base;");
+        const auto child=f.linker.ResolveDescriptor("Lshape/Child;");
+        const auto callback=f.linker.ResolveDescriptor("Landroid/shape/Callback;");
+        CHECK(f.linker.Class(base).is_skeleton);CHECK(f.linker.Class(callback).is_skeleton);
+        CHECK(f.linker.IsAssignable(base,child));CHECK(f.linker.IsAssignable(callback,child));
+        CHECK(f.linker.FindFieldRecursive(child,"value","I")==f.linker.FindFieldRecursive(base,"value","I"));
+        CHECK(f.linker.GapSurveyHits().empty());
+    }
+}
+
+TEST_CASE("gap survey answers called skeleton members neutrally and records source, channel and order") {
+    for(auto backend:{InterpreterBackend::switch_dispatch,InterpreterBackend::threaded}) {
+        // Control: without survey the same calls fail and nothing is recorded.
+        Vm off(backend);
+        CHECK(off.Call("missing").exception.IsValid());CHECK(off.Call("staticGet").exception.IsValid());
+        CHECK(off.linker.GapSurveyHits().empty());
+
+        Vm f(backend);f.linker.EnableGapSurvey([]{return std::uint64_t{4242};});
+        const auto neutral=[&](const char* name,const char* desc="()I",std::vector<VmValue> args={}) {
+            auto r=f.Call(name,desc,std::move(args));REQUIRE_MESSAGE(!r.exception.IsValid(),r.exception_message);return r;
+        };
+        CHECK(neutral("missing").value.AsInt()==0);
+        CHECK(neutral("staticGet").value.AsInt()==0);
+        neutral("staticPut","()V");
+        const auto object=f.vm->NewIntrinsicInstance("Landroid/shape/Base;");
+        CHECK(neutral("instanceGet","(Landroid/shape/Base;)I",{VmValue::Ref(object)}).value.AsInt()==0);
+        neutral("instancePut","(Landroid/shape/Base;)V",{VmValue::Ref(object)});
+        const auto base=f.linker.ResolveDescriptor("Landroid/shape/Base;");
+        const auto ctor=f.linker.FindDirectMethod(base,"<init>","()V");REQUIRE(ctor);
+        REQUIRE_FALSE(f.vm->Call(*ctor,std::array{VmValue::Ref(object)}).exception.IsValid());
+        const auto slot=f.linker.FindVtableIndex(base,"toString","()Ljava/lang/String;");REQUIRE(slot);
+        const auto text=f.vm->Call(f.linker.Class(base).vtable[*slot],std::array{VmValue::Ref(object)});
+        REQUIRE_FALSE(text.exception.IsValid());CHECK_FALSE(text.value.ref.IsValid());
+        // Constants never count as hits.
+        CHECK(neutral("constant").value.AsInt()==123);
+
+        const auto hits=f.linker.GapSurveyHits();
+        const std::string owner="Landroid/shape/Base;";
+        const auto* method=FindHit(hits,owner,"missing()I");REQUIRE(method);
+        CHECK(method->kind==GapSurveyKind::method);CHECK(method->source==GapSurveySource::skeleton);
+        CHECK(method->first_channel==GapSurveyChannel::java);CHECK(method->hits==1U);
+        CHECK(method->channel_hits[static_cast<std::size_t>(GapSurveyChannel::java)]==1U);
+        CHECK(method->first_hit_index==1U);CHECK(method->first_uptime_ms==4242U);
+        REQUIRE_FALSE(method->first_stack.empty());
+        CHECK(method->first_stack.front().rfind("Lshape/Calls;->missing()I",0)==0);
+        CHECK(method->first_stack.size()<=kGapSurveyStackFrames);
+        const auto* state=FindHit(hits,owner,"state:I");REQUIRE(state);
+        CHECK(state->kind==GapSurveyKind::field);CHECK(state->source==GapSurveySource::skeleton);CHECK(state->hits==2U);
+        const auto* value=FindHit(hits,owner,"value:I");REQUIRE(value);CHECK(value->hits==2U);
+        CHECK(state->first_hit_index<value->first_hit_index);
+        CHECK(FindHit(hits,owner,"<init>()V"));CHECK(FindHit(hits,owner,"toString()Ljava/lang/String;"));
+        CHECK_FALSE(FindHit(hits,owner,"VALUE:I"));CHECK_FALSE(FindHit(hits,owner,"TEXT:Ljava/lang/String;"));
+        for(const auto& h:hits)CHECK(h.source!=GapSurveySource::missing);
+        // The ledger keeps accounting exactly as in a normal run.
+        const auto ledger=f.ledger.Unimplemented();
+        CHECK(std::any_of(ledger.begin(),ledger.end(),[](const auto& h){return h.id=="dexvm.skeleton.field.Landroid/shape/Base;->state:I"&&h.count==2;}));
+    }
+}
+
+TEST_CASE("gap survey classifies intrinsic, missing sources and attributes the entry channel to the direct call") {
+    Vm f(InterpreterBackend::switch_dispatch,true,true);f.linker.EnableGapSurvey();
+    const auto base=f.linker.ResolveDescriptor("Landroid/shape/Base;");
+    const auto object=f.vm->NewIntrinsicInstance("Landroid/shape/Base;");
+    // Handwritten declaration without a handler.
+    const auto plain=f.linker.FindDirectMethod(base,"plain","()I");REQUIRE(plain);
+    CHECK(f.vm->Call(*plain,{}).value.AsInt()==0);
+    // Generated skeleton member merged onto a handwritten class keeps its source.
+    CHECK(f.Call("missing").value.AsInt()==0);
+    // A member API19 does not declare is the only synthesized stub.
+    const auto bogus=f.linker.SynthesizeSurveyMethod(base,"bogus","()V",InvokeKind::virtual_call);
+    REQUIRE_FALSE(f.vm->Call(bogus,std::array{VmValue::Ref(object)}).exception.IsValid());
+    // Entry channels: only the directly called member is attributed, nested guest calls stay Java.
+    const auto ctor=f.linker.FindDirectMethod(base,"<init>","()V");REQUIRE(ctor);
+    const std::array args{VmValue::Ref(object)};
+    {GapSurveyChannelScope scope(GapSurveyChannel::jni);REQUIRE_FALSE(f.vm->Call(*ctor,args).exception.IsValid());}
+    {GapSurveyChannelScope scope(GapSurveyChannel::reflection);REQUIRE_FALSE(f.vm->Call(*ctor,args).exception.IsValid());}
+    REQUIRE_FALSE(f.vm->Call(*ctor,args).exception.IsValid());
+    {GapSurveyChannelScope scope(GapSurveyChannel::jni);REQUIRE_FALSE(f.Call("missing").exception.IsValid());}
+    const auto field=f.linker.FindFieldRecursive(base,"state","I");REQUIRE(field);
+    f.vm->RequireImplementedField(*field,GapSurveyChannel::reflection);
+    f.vm->RequireImplementedField(*field,GapSurveyChannel::jni);
+
+    const auto hits=f.linker.GapSurveyHits();const std::string owner="Landroid/shape/Base;";
+    CHECK(FindHit(hits,owner,"plain()I")->source==GapSurveySource::intrinsic);
+    CHECK(FindHit(hits,owner,"bogus()V")->source==GapSurveySource::missing);
+    const auto* init=FindHit(hits,owner,"<init>()V");REQUIRE(init);
+    CHECK(init->source==GapSurveySource::skeleton);CHECK(init->hits==3U);CHECK(init->first_channel==GapSurveyChannel::jni);
+    CHECK(init->channel_hits[static_cast<std::size_t>(GapSurveyChannel::java)]==1U);
+    CHECK(init->channel_hits[static_cast<std::size_t>(GapSurveyChannel::jni)]==1U);
+    CHECK(init->channel_hits[static_cast<std::size_t>(GapSurveyChannel::reflection)]==1U);
+    const auto* missing=FindHit(hits,owner,"missing()I");REQUIRE(missing);
+    CHECK(missing->first_channel==GapSurveyChannel::java);CHECK(missing->hits==2U);
+    const auto* state=FindHit(hits,owner,"state:I");REQUIRE(state);
+    CHECK(state->first_channel==GapSurveyChannel::reflection);
+    CHECK(state->channel_hits[static_cast<std::size_t>(GapSurveyChannel::jni)]==1U);
+    // Without survey the same direct field guard fails (quirk control).
+    Vm off(InterpreterBackend::switch_dispatch,true,true);
+    const auto off_field=off.linker.FindFieldRecursive(off.linker.ResolveDescriptor("Landroid/shape/Base;"),"state","I");REQUIRE(off_field);
+    CHECK_THROWS_AS(off.vm->RequireImplementedField(*off_field,GapSurveyChannel::jni),VmJavaThrow);
+}
+
+TEST_CASE("gap survey keeps handwritten and unknown-platform behavior beside the skeleton") {
     Vm f(InterpreterBackend::switch_dispatch,true,true);
     f.linker.EnableGapSurvey();
     auto result=f.Call("missing");REQUIRE_FALSE(result.exception.IsValid());CHECK(result.value.AsInt()==0);
-    auto hits=f.linker.GapSurveyHits();
-    CHECK(std::any_of(hits.begin(),hits.end(),[](const auto& h){return h.member=="missing()I";}));
-    auto callback=f.linker.ResolveDescriptor("Landroid/shape/Callback;");
-    CHECK_FALSE(f.linker.Class(callback).is_skeleton);
-    hits=f.linker.GapSurveyHits();
-    CHECK(std::any_of(hits.begin(),hits.end(),[](const auto& h){return h.owner_descriptor=="Landroid/shape/Callback;" && h.member.empty();}));
+    // A class API19 does not declare still becomes a recorded stub class.
+    const auto absent=f.linker.ResolveDescriptor("Landroid/bogus/Absent;");
+    CHECK(f.linker.Class(absent).is_intrinsic);CHECK_FALSE(f.linker.Class(absent).is_skeleton);
+    const auto hits=f.linker.GapSurveyHits();
+    const auto* stub=FindHit(hits,"Landroid/bogus/Absent;","");REQUIRE(stub);
+    CHECK(stub->kind==GapSurveyKind::class_stub);CHECK(stub->source==GapSurveySource::missing);
+    // A skeleton-declared class no longer becomes a survey stub.
+    CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/shape/Callback;")).is_skeleton);
+    CHECK_FALSE(FindHit(f.linker.GapSurveyHits(),"Landroid/shape/Callback;",""));
     auto malformed=Surface();malformed.resize(16);
     DexClassLinker bad;
     CHECK_THROWS_AS(bad.RegisterSkeletonSurface(std::move(malformed)),DexVmError);

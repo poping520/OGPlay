@@ -121,3 +121,47 @@ TEST_CASE("gap survey json is a hottest-first work queue marked as a survey") {
     CHECK(json.find("\"stub_hits\": 43") != std::string::npos);
     CHECK(json.find("hot()V") < json.find("cold()V"));
 }
+
+TEST_CASE("gap survey json carries source, channel and both orderings") {
+    GapSurveyHit early{"Landroid/view/View;", "dispatchTouchEvent(Landroid/view/MotionEvent;)Z", 2};
+    early.source = GapSurveySource::skeleton;
+    early.first_channel = GapSurveyChannel::jni;
+    early.channel_hits = {1U, 1U, 0U};
+    early.first_hit_index = 1;
+    early.first_uptime_ms = 250;
+    early.first_stack = {"Lgame/Main;->onTouch(I)V pc=4"};
+    GapSurveyHit hot{"Landroid/widget/TextView;", "setText(Ljava/lang/CharSequence;)V", 90};
+    hot.source = GapSurveySource::intrinsic;
+    hot.channel_hits = {90U, 0U, 0U};
+    hot.first_hit_index = 5;
+    GapSurveyHit field{"Landroid/view/View;", "mFlags:I", 3};
+    field.kind = GapSurveyKind::field;
+    field.source = GapSurveySource::bootdex;
+    field.channel_hits = {0U, 0U, 3U};
+    field.first_channel = GapSurveyChannel::reflection;
+    field.first_hit_index = 3;
+    const std::vector<GapSurveyHit> hits{hot, early, field};
+
+    const auto json = RenderGapSurveyJson(hits, "Title.apk");
+    CHECK(json.find("\"survey\": true") != std::string::npos);
+    CHECK(json.find("never a compatibility result") != std::string::npos);
+    CHECK(json.find("\"members_by_source\": {\"skeleton\": 1, \"intrinsic\": 1, "
+                    "\"bootdex\": 1, \"missing\": 0}") != std::string::npos);
+    CHECK(json.find("\"member_hits_by_channel\": {\"java\": 91, \"jni\": 1, "
+                    "\"reflection\": 3}") != std::string::npos);
+    CHECK(json.find("\"source\": \"skeleton\", \"channel\": \"jni\"") != std::string::npos);
+    CHECK(json.find("\"kind\": \"field\"") != std::string::npos);
+    CHECK(json.find("\"first_uptime_ms\": 250") != std::string::npos);
+    CHECK(json.find("Lgame/Main;->onTouch(I)V pc=4") != std::string::npos);
+    // missing_members is hottest first; members_by_first_hit is earliest first.
+    const auto by_first = json.find("\"members_by_first_hit\"");
+    REQUIRE(by_first != std::string::npos);
+    const auto hot_hits = json.find("setText(");
+    const auto early_hits = json.find("dispatchTouchEvent(");
+    CHECK(hot_hits < early_hits);
+    const auto first_early = json.find("dispatchTouchEvent(", by_first);
+    const auto first_field = json.find("mFlags:I", by_first);
+    const auto first_hot = json.find("setText(", by_first);
+    CHECK(first_early < first_field);
+    CHECK(first_field < first_hot);
+}

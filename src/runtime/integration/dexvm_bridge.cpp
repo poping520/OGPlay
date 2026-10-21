@@ -757,7 +757,7 @@ public:
   }
 
   void RequireJniField(const dx::VmFieldId field, const std::uint64_t thread) {
-    try { vm->RequireImplementedField(field); }
+    try { vm->RequireImplementedField(field, dx::GapSurveyChannel::jni); }
     catch (const dx::VmJavaThrow& error) {
       const auto error_class = linker.ResolveDescriptor(error.descriptor);
       session->Environment().ThrowNew(thread, RegisterClassForNative(error_class), error.message);
@@ -1121,6 +1121,7 @@ public:
         for (const auto& value : invocation.arguments) {
             arguments.push_back(ToVmValue(value, invocation.thread_id));
         }
+        const dx::GapSurveyChannelScope survey_channel(dx::GapSurveyChannel::jni);
         const auto outcome = vm->Call(context, method_id, arguments);
         if (outcome.exception.IsValid()) {
             // JNI semantics: leave the exception pending for the caller.

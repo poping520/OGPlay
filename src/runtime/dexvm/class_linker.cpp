@@ -911,7 +911,7 @@ DexClassId DexClassLinker::ResolveDescriptor(
         if (impl_->link_complete) EnsureClassLinked(*existing);
         return *existing;
     }
-    if (!impl_->gap_survey && impl_->skeleton_index.contains(std::string(descriptor))) {
+    if (impl_->skeleton_index.contains(std::string(descriptor))) {
         const auto id = impl_->MaterializeSkeletonClass(std::string(descriptor));
         if (impl_->link_complete) EnsureClassLinked(id);
         return id;
@@ -994,14 +994,24 @@ DexClassId DexClassLinker::ResolveDescriptor(
             impl_->ExtrasAt(id).linked = true;
             ++impl_->linked_class_count;
         }
-        RecordGapSurveyHit(std::string(descriptor), {});
+        GapSurveyContext context;
+        context.kind = GapSurveyKind::class_stub;
+        context.source = GapSurveySource::missing;
+        RecordGapSurveyHit(std::string(descriptor), {}, context);
         return id;
     }
     Fail(DexVmErrorReason::unknown_class,
          "class is not available: " + std::string(descriptor));
 }
 
-void DexClassLinker::EnableGapSurvey() { impl_->gap_survey = true; }
+void DexClassLinker::EnableGapSurvey(std::function<std::uint64_t()> uptime_ms) {
+    impl_->gap_survey = true;
+    impl_->survey_uptime_ms = std::move(uptime_ms);
+}
+
+bool DexClassLinker::HasSkeletonClass(const std::string_view descriptor) const {
+    return impl_->skeleton_index.contains(std::string(descriptor));
+}
 
 bool DexClassLinker::GapSurveyEnabled() const noexcept {
     return impl_->gap_survey;
@@ -1019,10 +1029,30 @@ void DexClassLinker::MarkInitiatedBy(const DexClassId java_class,
 }
 
 void DexClassLinker::RecordGapSurveyHit(const std::string& owner_descriptor,
-                                        const std::string& member) {
+                                        const std::string& member,
+                                        const GapSurveyContext& context) {
     const auto key = member.empty() ? owner_descriptor
                                     : owner_descriptor + "->" + member;
-    ++impl_->survey_hits[key];
+    const std::lock_guard lock(impl_->survey_mutex);
+    const auto index = ++impl_->survey_total_hits;
+    auto [entry, inserted] = impl_->survey_hits.try_emplace(key);
+    auto& hit = entry->second;
+    ++hit.hits;
+    ++hit.channel_hits[static_cast<std::size_t>(context.channel)];
+    if (!inserted) return;
+    hit.owner_descriptor = owner_descriptor;
+    hit.member = member;
+    hit.kind = context.kind;
+    hit.source = context.source;
+    hit.first_channel = context.channel;
+    hit.first_hit_index = index;
+    if (impl_->survey_uptime_ms) hit.first_uptime_ms = impl_->survey_uptime_ms();
+    if (context.capture_stack) {
+        hit.first_stack = context.capture_stack(hit.first_caller_bootdex);
+        if (hit.first_stack.size() > kGapSurveyStackFrames) {
+            hit.first_stack.resize(kGapSurveyStackFrames);
+        }
+    }
 }
 
 VmMethodId DexClassLinker::SynthesizeSurveyMethod(
@@ -1048,6 +1078,7 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
             ? DeclaredInvokeKind::interface_call
             : DeclaredInvokeKind::virtual_call;
     method.kind = MethodKind::intrinsic;
+    method.survey_synthesized = true;
     // Deliberately unregistered: the interpreter answers neutrally and
     // records the hit, so the stub can never be mistaken for an
     // implementation.
@@ -1076,17 +1107,12 @@ VmMethodId DexClassLinker::SynthesizeSurveyMethod(
 }
 
 std::vector<GapSurveyHit> DexClassLinker::GapSurveyHits() const {
+    const std::lock_guard lock(impl_->survey_mutex);
     std::vector<GapSurveyHit> hits;
     hits.reserve(impl_->survey_hits.size());
-    for (const auto& [key, count] : impl_->survey_hits) {
-        const auto separator = key.find("->");
-        GapSurveyHit hit;
-        hit.owner_descriptor = key.substr(0, separator);
-        if (separator != std::string::npos) {
-            hit.member = key.substr(separator + 2);
-        }
-        hit.hits = count;
-        hits.push_back(std::move(hit));
+    for (const auto& [key, hit] : impl_->survey_hits) {
+        (void)key;
+        hits.push_back(hit);
     }
     return hits;
 }

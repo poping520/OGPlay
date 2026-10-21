@@ -152,6 +152,132 @@ TEST_CASE("BND46 Java MotionEvent preserves snapshot axes history identity and G
   }
 }
 
+TEST_CASE("MotionEvent.obtain and addBatch rebuild events from BootDex pointer values") {
+  for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+    AndroidValueVm f(backend);
+    constexpr auto coords_type = "Landroid/view/MotionEvent$PointerCoords;";
+    constexpr auto props_type = "Landroid/view/MotionEvent$PointerProperties;";
+    const auto set_float = [&](VmObjectRef object, const char* name, float value) {
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, "F");
+        REQUIRE(field.has_value());
+        f.model.InstanceSlots(object)[f.linker.Field(*field).slot] = {std::bit_cast<std::uint32_t>(value), SlotTag::cat1};
+    };
+    const auto set_int = [&](VmObjectRef object, const char* name, std::int32_t value) {
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, "I");
+        REQUIRE(field.has_value());
+        f.model.InstanceSlots(object)[f.linker.Field(*field).slot] = {static_cast<std::uint32_t>(value), SlotTag::cat1};
+    };
+    const auto coords_array = [&](std::vector<std::array<float, 3>> values, std::size_t length) {
+        const auto array = f.model.NewObjectArray(f.linker.ResolveDescriptor(std::string("[") + coords_type),
+            f.linker.ResolveDescriptor(coords_type), static_cast<JniSize>(length));
+        static_cast<void>(f.vm.ProtectReferences(std::array{array}));
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            const auto coords = f.New(coords_type);
+            static_cast<void>(f.vm.ProtectReferences(std::array{coords}));
+            set_float(coords, "x", values[i][0]);
+            set_float(coords, "y", values[i][1]);
+            set_float(coords, "pressure", values[i][2]);
+            set_float(coords, "orientation", 0.5F);
+            f.model.SetObjectElement(array, static_cast<JniSize>(i), coords);
+        }
+        return array;
+    };
+    constexpr auto motion = "Landroid/view/MotionEvent;";
+    constexpr auto ids_signature = "(JJII[I[Landroid/view/MotionEvent$PointerCoords;IFFIIII)Landroid/view/MotionEvent;";
+    const auto ids = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 2);
+    static_cast<void>(f.vm.ProtectReferences(std::array{ids}));
+    f.model.SetPrimitiveElement(ids, 0, 4);
+    f.model.SetPrimitiveElement(ids, 1, 7);
+    const auto coords = coords_array({{10, 20, 0.25F}, {30, 40, 0.75F}}, 3);
+    const auto obtain_ids = [&](VmObjectRef pointer_ids, VmObjectRef pointer_coords, int count) {
+        return f.StaticOutcome(motion, "obtain", ids_signature,
+            {VmValue::Long(4000), VmValue::Long(5000), VmValue::Int(2), VmValue::Int(count),
+             VmValue::Ref(pointer_ids), VmValue::Ref(pointer_coords), VmValue::Int(3),
+             VmValue::Float(0.5F), VmValue::Float(0.25F), VmValue::Int(9), VmValue::Int(4), VmValue::Int(0x1002), VmValue::Int(8)});
+    };
+    const auto outcome = obtain_ids(ids, coords, 2);
+    REQUIRE_FALSE(outcome.exception.IsValid());
+    const auto event = outcome.value.ref;
+    const auto root = f.vm.ProtectReferences(std::array{event});
+    const auto integer = [&](const char* name) { return f.On(event, name, "()I").AsInt(); };
+    CHECK(integer("getPointerCount") == 2);
+    CHECK(integer("getAction") == 2);
+    CHECK(integer("getDeviceId") == 9);
+    CHECK(integer("getSource") == 0x1002);
+    CHECK(integer("getFlags") == 8);
+    CHECK(integer("getEdgeFlags") == 4);
+    CHECK(integer("getMetaState") == 3);
+    CHECK(integer("getHistorySize") == 0);
+    CHECK(f.On(event, "getPointerId", "(I)I", {VmValue::Int(1)}).AsInt() == 7);
+    CHECK(f.On(event, "getX", "(I)F", {VmValue::Int(1)}).AsFloat() == 30);
+    CHECK(f.On(event, "getY", "(I)F", {VmValue::Int(0)}).AsFloat() == 20);
+    CHECK(f.On(event, "getPressure", "(I)F", {VmValue::Int(1)}).AsFloat() == 0.75F);
+    CHECK(f.On(event, "getOrientation", "(I)F", {VmValue::Int(0)}).AsFloat() == 0.5F);
+    CHECK(f.On(event, "getDownTime", "()J").AsLong() == 4000);
+    CHECK(f.On(event, "getEventTime", "()J").AsLong() == 5000);
+    CHECK(f.On(event, "getXPrecision", "()F").AsFloat() == 0.5F);
+
+    // addBatch: the previous current sample becomes the newest historical sample.
+    for (const auto& [time, x] : std::array{std::pair{5010, 11.0F}, std::pair{5020, 12.0F}}) {
+        const auto batch = coords_array({{x, x + 100, 1}, {x + 200, x + 300, 1}}, 2);
+        const auto added = f.OnOutcome(event, "addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V",
+            {VmValue::Long(time), VmValue::Ref(batch), VmValue::Int(0x10)});
+        REQUIRE_FALSE(added.exception.IsValid());
+    }
+    CHECK(integer("getHistorySize") == 2);
+    CHECK(integer("getMetaState") == 0x13);
+    CHECK(f.On(event, "getX", "(I)F", {VmValue::Int(0)}).AsFloat() == 12);
+    CHECK(f.On(event, "getY", "(I)F", {VmValue::Int(1)}).AsFloat() == 312);
+    CHECK(f.On(event, "getEventTime", "()J").AsLong() == 5020);
+    CHECK(f.On(event, "getHistoricalX", "(II)F", {VmValue::Int(0), VmValue::Int(0)}).AsFloat() == 10);
+    CHECK(f.On(event, "getHistoricalX", "(II)F", {VmValue::Int(1), VmValue::Int(0)}).AsFloat() == 30);
+    CHECK(f.On(event, "getHistoricalX", "(II)F", {VmValue::Int(0), VmValue::Int(1)}).AsFloat() == 11);
+    CHECK(f.On(event, "getHistoricalEventTime", "(I)J", {VmValue::Int(0)}).AsLong() == 5000);
+    CHECK(f.On(event, "getHistoricalEventTime", "(I)J", {VmValue::Int(1)}).AsLong() == 5010);
+    CHECK(f.On(event, "getHistoricalPressure", "(II)F", {VmValue::Int(1), VmValue::Int(0)}).AsFloat() == 0.75F);
+    CHECK(f.On(event, "getPointerId", "(I)I", {VmValue::Int(0)}).AsInt() == 4);
+
+    // PointerProperties overload also carries buttonState and tool type.
+    const auto props = f.model.NewObjectArray(f.linker.ResolveDescriptor(std::string("[") + props_type),
+        f.linker.ResolveDescriptor(props_type), 2);
+    static_cast<void>(f.vm.ProtectReferences(std::array{props}));
+    for (std::int32_t i = 0; i < 2; ++i) {
+        const auto property = f.New(props_type);
+        static_cast<void>(f.vm.ProtectReferences(std::array{property}));
+        set_int(property, "id", 20 + i);
+        set_int(property, "toolType", 1 + i);
+        f.model.SetObjectElement(props, i, property);
+    }
+    const auto prop_outcome = f.StaticOutcome(motion, "obtain",
+        "(JJII[Landroid/view/MotionEvent$PointerProperties;[Landroid/view/MotionEvent$PointerCoords;IIFFIIII)Landroid/view/MotionEvent;",
+        {VmValue::Long(1), VmValue::Long(2), VmValue::Int(0), VmValue::Int(2), VmValue::Ref(props), VmValue::Ref(coords),
+         VmValue::Int(0), VmValue::Int(2), VmValue::Float(1), VmValue::Float(1), VmValue::Int(0), VmValue::Int(0),
+         VmValue::Int(0x1002), VmValue::Int(0)});
+    REQUIRE_FALSE(prop_outcome.exception.IsValid());
+    const auto typed = prop_outcome.value.ref;
+    const auto typed_root = f.vm.ProtectReferences(std::array{typed});
+    CHECK(f.On(typed, "getButtonState", "()I").AsInt() == 2);
+    CHECK(f.On(typed, "getPointerId", "(I)I", {VmValue::Int(1)}).AsInt() == 21);
+    CHECK(f.On(typed, "getToolType", "(I)I", {VmValue::Int(1)}).AsInt() == 2);
+    CHECK(f.On(typed, "findPointerIndex", "(I)I", {VmValue::Int(20)}).AsInt() == 0);
+    CHECK(f.On(typed, "getX", "(I)F", {VmValue::Int(1)}).AsFloat() == 30);
+
+    // Illegal arguments follow AOSP validation.
+    const auto thrown = [&](const VmCallOutcome& result) {
+        return result.exception.IsValid() ? f.linker.Class(result.exception_class).descriptor : std::string();
+    };
+    CHECK(thrown(obtain_ids(ids, coords, 0)) == "Ljava/lang/IllegalArgumentException;");
+    CHECK(thrown(obtain_ids(ids, coords_array({{1, 2, 3}}, 1), 2)) == "Ljava/lang/IllegalArgumentException;");
+    CHECK(thrown(obtain_ids(ids, VmObjectRef{}, 2)) == "Ljava/lang/IllegalArgumentException;");
+    CHECK(thrown(obtain_ids(ids, coords_array({{1, 2, 3}}, 2), 2)) == "Ljava/lang/NullPointerException;");
+    CHECK(thrown(obtain_ids(VmObjectRef{}, coords, 2)) == "Ljava/lang/NullPointerException;");
+    CHECK(thrown(f.OnOutcome(event, "addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V",
+        {VmValue::Long(6000), VmValue::Ref(coords_array({{1, 2, 3}}, 1)), VmValue::Int(0)}))
+        == "Ljava/lang/IllegalArgumentException;");
+    CHECK(integer("getHistorySize") == 2);
+  }
+}
+
 TEST_CASE("BND46 timed KeyEvent retains metadata in both interpreters") {
   for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
     AndroidValueVm f(backend);

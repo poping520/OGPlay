@@ -489,6 +489,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                 field.is_wide = IsWideDescriptor(field.descriptor);
                 field.is_ref = IsRefDescriptor(field.descriptor);
                 if (encoded.field_index < image_ref.field_runtime_metadata.size()) {
+                    field.generic_signature = image_ref.field_runtime_metadata[encoded.field_index].signature;
                     for (const auto& annotation :
                          image_ref.field_runtime_metadata[encoded.field_index].annotations) {
                         field.runtime_annotations.push_back(
@@ -510,6 +511,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                     current.is_wide = field.is_wide;
                     current.is_ref = field.is_ref;
                     current.runtime_annotations = std::move(field.runtime_annotations);
+                    current.generic_signature = std::move(field.generic_signature);
                     dex_order.push_back(*existing_field);
                 } else {
                     const auto field_id = impl_->AddField(std::move(field));
@@ -550,6 +552,17 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                 method.access_flags = encoded.access_flags;
                 method.dex_method_index = encoded.method_index;
                 method.dex_unit = unit_id;
+                if (encoded.method_index < image_ref.method_annotation_metadata.size()) {
+                    const auto& metadata = image_ref.method_annotation_metadata[encoded.method_index];
+                    method.generic_signature = metadata.signature;
+                    for (const auto& annotation : metadata.annotations)
+                        method.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+                    for (const auto& parameter : metadata.parameters) {
+                        auto& annotations = method.parameter_annotations.emplace_back();
+                        for (const auto& annotation : parameter)
+                            annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
+                    }
+                }
                 method.is_static = (encoded.access_flags & kAccStatic) != 0;
                 method.declared_invoke_kind = direct
                     ? (method.is_static ? DeclaredInvokeKind::static_call
@@ -606,6 +619,9 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                     current.access_flags = method.access_flags;
                     current.dex_method_index = method.dex_method_index;
                     current.dex_unit = method.dex_unit;
+                    current.generic_signature = std::move(method.generic_signature);
+                    current.runtime_annotations = std::move(method.runtime_annotations);
+                    current.parameter_annotations = std::move(method.parameter_annotations);
                     current.code = std::move(method.code);
                     current.shape = std::move(method.shape);
                     current.return_shorty = method.return_shorty;
@@ -638,6 +654,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
         }
         if (class_index < image_ref.class_annotation_metadata.size()) {
             const auto& meta = image_ref.class_annotation_metadata[class_index];
+            stored.generic_signature = meta.signature;
             stored.runtime_annotations.clear();
             stored.runtime_annotations.reserve(meta.runtime_annotations.size());
             for (const auto& annotation : meta.runtime_annotations) {

@@ -49,6 +49,13 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   无关方法的类型。访问检查按 loader/package/member/receiver；invoke 统一处理可赋值、unbox/
   widen、虚派、boxing 与原异常身份包装。
 
+- 运行时注解的 class/field/method/parameter 与默认值均来自本成员所属 DEX unit，统一由
+  AnnotationRuntime 物化；Method/Constructor 注解不继承，参数按原型发布独立二维数组。
+  Signature 为 system 元数据，由原版 libcore GenericSignatureParser 与 Type 实现解析，
+  支持 class/field/method/constructor 泛型、type variable、wildcard 和 generic array；无签名
+  回退原始类型，畸形/缺失类型保留原版 Java 异常。enclosing declaration 从受检元数据取得，
+  不按名称猜测。通用 Proxy 生成仍明确失败。
+
 ### 对象、GC、执行
 
 - Posix.statvfs 经 IoRuntime/IoFileSystem 查询 GuestFileSystemStats，检查计数不变量与

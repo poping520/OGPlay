@@ -12,6 +12,7 @@ std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
         Declare_java_lang_Object(),
         Declare_java_lang_ClassLoader(services),
         Declare_java_lang_reflect_Proxy(),
+        Declare_libcore_reflect_AnnotationAccess(),
         Declare_dalvik_system_VMStack(),
         Declare_java_lang_BootClassLoader(),
         Declare_dalvik_system_BaseDexClassLoader(),

@@ -39,6 +39,7 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_ClassLoader(
     const CoreIntrinsicServices& services);
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Proxy();
+[[nodiscard]] IntrinsicClassDecl Declare_libcore_reflect_AnnotationAccess();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_VMStack();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_BootClassLoader();
 [[nodiscard]] IntrinsicClassDecl Declare_dalvik_system_BaseDexClassLoader();

@@ -1268,6 +1268,11 @@ TEST_CASE("Dalvik system metadata closes nested enclosing and throws reflection"
     CHECK(vm.model.GetObjectElement(members, 0) ==
           class_object("Lreflect/Outer$Member;"));
 
+    const auto public_classes = Ref(class_call("Lreflect/Outer;", "getClasses", "()[Ljava/lang/Class;"));
+    for (JniSize i = 0; i < vm.model.ArrayLength(public_classes); ++i) {
+        const auto member = vm.model.ClassOfClassObject(vm.model.GetObjectElement(public_classes, i));
+        CHECK((vm.linker.Class(member).access_flags & kAccPublic) != 0);
+    }
     CHECK(vm.interpreter.StringUtf8(Ref(class_call(
               "Lreflect/Outer$1Local;", "getSimpleName",
               "()Ljava/lang/String;"))) == "Local");
@@ -1532,12 +1537,9 @@ TEST_CASE("Class runtime annotations query members defaults inherited and isolat
                         "Ljava/lang/TypeNotPresentException;");
 
         const auto method = MethodWrapper(vm, "Lann/Named;", "number");
-        ExpectException(
-            vm,
-            vm.Virtual(method, "getAnnotation",
+        CHECK_FALSE(Ref(vm.Virtual(method, "getAnnotation",
                        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
-                       {VmValue::Ref(ClassOf(vm, "Lann/Marker;"))}),
-            "Ljava/lang/UnsatisfiedLinkError;");
+                       {VmValue::Ref(ClassOf(vm, "Lann/Marker;"))})).IsValid());
 
         const auto live = ClassAnnotation(vm, "Lann/Host;", "Lann/Named;");
         const auto roots = vm.interpreter.ProtectReferences(std::array{live});
@@ -1698,4 +1700,81 @@ TEST_CASE("DVM-254 reflection resolves skeleton shape and wraps unimplemented ta
     ReflectionVm off("interp.dex", InterpreterBackend::switch_dispatch, false, true);
     CHECK(off.linker.Class(off.linker.ResolveDescriptor("Landroid/view/MotionEvent$PointerCoords;")).is_boot_dex);
     CHECK_THROWS_AS(static_cast<void>(off.linker.ResolveDescriptor("Landroid/os/NullVibrator;")), JavaLinkageError);
+}
+
+TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive parameter arrays") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm f("class_annotation.dex", backend);
+        auto& vm = f.interpreter;
+        const auto annotations = f.linker.Class(f.linker.ResolveDescriptor("Lann/DefaultsHost;")).runtime_annotations;
+        REQUIRE(annotations.size() == 1);
+        const auto method = MethodWrapper(f, "Lann/Executable;", "accept", {"I", "Ljava/lang/Object;"});
+        const auto constructor = ConstructorWrapper(f, "Lann/Executable;", {"I"});
+        for (const auto wrapper : {method, constructor}) {
+            const auto id = wrapper == method ? vm.Reflection().MethodMetadata(wrapper).method : vm.Reflection().ConstructorMetadata(wrapper).method;
+            auto& metadata = f.linker.MutableMethod(id);
+            metadata.runtime_annotations = annotations;
+            metadata.parameter_annotations.resize(wrapper == method ? 2 : 1);
+            metadata.parameter_annotations[0] = annotations;
+            const auto annotation_class = ClassOf(f, "Lann/Named;");
+            const auto annotation = Ref(f.Virtual(wrapper, "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;", {VmValue::Ref(annotation_class)}));
+            REQUIRE(annotation.IsValid());
+            CHECK(Int(f.Virtual(annotation, "number", "()I")) == 3);
+            CHECK(Int(f.Virtual(wrapper, "isAnnotationPresent", "(Ljava/lang/Class;)Z", {VmValue::Ref(annotation_class)})) == 1);
+            CHECK_FALSE(Ref(f.Virtual(wrapper, "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;", {VmValue::Ref(ClassOf(f, "Lann/Marker;"))})).IsValid());
+            ExpectException(f, f.Virtual(wrapper, "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;", {VmValue::Ref(VmObjectRef{})}), "Ljava/lang/NullPointerException;");
+            const auto first = Ref(f.Virtual(wrapper, "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;"));
+            f.model.SetObjectElement(first, 0, VmObjectRef{});
+            CHECK(f.model.GetObjectElement(Ref(f.Virtual(wrapper, "getAnnotations", "()[Ljava/lang/annotation/Annotation;")), 0).IsValid());
+            const auto parameters = Ref(f.Virtual(wrapper, "getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;"));
+            CHECK(f.model.ArrayLength(parameters) == (wrapper == method ? 2 : 1));
+            const auto row = f.model.GetObjectElement(parameters, 0);
+            REQUIRE(f.model.ArrayLength(row) == 1);
+            f.model.SetObjectElement(row, 0, VmObjectRef{});
+            const auto again = Ref(f.Virtual(wrapper, "getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;"));
+            CHECK(f.model.GetObjectElement(f.model.GetObjectElement(again, 0), 0).IsValid());
+            if (wrapper == method) CHECK(f.model.ArrayLength(f.model.GetObjectElement(again, 1)) == 0);
+        }
+        const auto unannotated = MethodWrapper(f, "Lann/Named;", "number");
+        CHECK(f.model.ArrayLength(Ref(f.Virtual(unannotated, "getAnnotations", "()[Ljava/lang/annotation/Annotation;"))) == 0);
+    }
+}
+
+TEST_CASE("WU7-5 generic signatures use original parser and preserve raw types and errors") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ReflectionVm f("reflection_generics.dex", backend);
+        const auto type = ClassOf(f, "Lgeneric/Box;");
+        CHECK(Ref(f.Virtual(type, "getGenericSuperclass", "()Ljava/lang/reflect/Type;")) == ClassOf(f, "Ljava/lang/Object;"));
+        const auto variables = Ref(f.Virtual(type, "getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;"));
+        REQUIRE(f.model.ArrayLength(variables) == 1);
+        const auto variable = f.model.GetObjectElement(variables, 0);
+        CHECK(f.interpreter.StringUtf8(Ref(f.Virtual(variable, "getName", "()Ljava/lang/String;"))) == "T");
+        const auto bounds = Ref(f.Virtual(variable, "getBounds", "()[Ljava/lang/reflect/Type;"));
+        CHECK(f.model.GetObjectElement(bounds, 0) == ClassOf(f, "Ljava/lang/Number;"));
+        const auto field_type = [&](const char* name) { return Ref(f.Virtual(FieldWrapper(f, "Lgeneric/Box;", name), "getGenericType", "()Ljava/lang/reflect/Type;")); };
+        CHECK(field_type("raw") == ClassOf(f, "I"));
+        CHECK(f.interpreter.StringUtf8(Ref(f.Virtual(field_type("value"), "getName", "()Ljava/lang/String;"))) == "T");
+        const auto parameterized = field_type("values");
+        CHECK(Ref(f.Virtual(parameterized, "getRawType", "()Ljava/lang/reflect/Type;")) == ClassOf(f, "Ljava/util/List;"));
+        const auto arguments = Ref(f.Virtual(parameterized, "getActualTypeArguments", "()[Ljava/lang/reflect/Type;"));
+        const auto upper = Ref(f.Virtual(f.model.GetObjectElement(arguments, 0), "getUpperBounds", "()[Ljava/lang/reflect/Type;"));
+        CHECK(f.interpreter.StringUtf8(Ref(f.Virtual(f.model.GetObjectElement(upper, 0), "getName", "()Ljava/lang/String;"))) == "T");
+        CHECK(Ref(f.Virtual(field_type("array"), "getGenericComponentType", "()Ljava/lang/reflect/Type;")).IsValid());
+        const auto interfaces = Ref(f.Virtual(type, "getGenericInterfaces", "()[Ljava/lang/reflect/Type;"));
+        REQUIRE(f.model.ArrayLength(interfaces) == 1);
+        CHECK(Ref(f.Virtual(f.model.GetObjectElement(interfaces, 0), "getRawType", "()Ljava/lang/reflect/Type;")) == ClassOf(f, "Ljava/lang/Comparable;"));
+        CHECK(Int(f.Virtual(FieldWrapper(f, "Lgeneric/Box;", "constant"), "isEnumConstant", "()Z")) == 1);
+        CHECK(Int(f.Virtual(FieldWrapper(f, "Lgeneric/Box;", "raw"), "isEnumConstant", "()Z")) == 0);
+        const auto method = MethodWrapper(f, "Lgeneric/Box;", "transform", {"Ljava/lang/Number;"});
+        f.linker.MutableMethod(f.interpreter.Reflection().MethodMetadata(method).method).generic_signature = u"<U:TT;>(TU;)Ljava/util/List<TU;>;";
+        const auto returned = Ref(f.Virtual(method, "getGenericReturnType", "()Ljava/lang/reflect/Type;"));
+        CHECK(Ref(f.Virtual(returned, "getRawType", "()Ljava/lang/reflect/Type;")) == ClassOf(f, "Ljava/util/List;"));
+        const auto parameters = Ref(f.Virtual(method, "getGenericParameterTypes", "()[Ljava/lang/reflect/Type;"));
+        const auto parameter = f.model.GetObjectElement(parameters, 0);
+        CHECK(f.interpreter.StringUtf8(Ref(f.Virtual(parameter, "getName", "()Ljava/lang/String;"))) == "U");
+        const auto declaration = Ref(f.Virtual(parameter, "getGenericDeclaration", "()Ljava/lang/reflect/GenericDeclaration;"));
+        CHECK(Int(f.Virtual(declaration, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(method)})) == 1);
+        ExpectException(f, f.Virtual(FieldWrapper(f, "Lgeneric/Bad;", "value"), "getGenericType", "()Ljava/lang/reflect/Type;"), "Ljava/lang/reflect/GenericSignatureFormatError;");
+        ExpectException(f, f.Virtual(FieldWrapper(f, "Lgeneric/Missing;", "value"), "getGenericType", "()Ljava/lang/reflect/Type;"), "Ljava/lang/TypeNotPresentException;");
+    }
 }

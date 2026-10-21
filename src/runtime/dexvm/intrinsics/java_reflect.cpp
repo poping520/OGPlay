@@ -421,6 +421,17 @@ IntrinsicClassDecl Declare_java_lang_Class(
             return VmValue::Ref(context.vm.Reflection().MaterializeTypeArray(
                 system.member_classes));
         });
+    builder.VirtualMethod("getClasses", "()[Ljava/lang/Class;", [](IntrinsicContext& c) {
+        std::vector<DexClassId> members;
+        auto type = std::optional{Represented(c)};
+        while (type) {
+            for (const auto member : c.vm.Linker().ReflectionSystemMetadata(*type).member_classes) {
+                if ((c.vm.Linker().Class(member).access_flags & kAccPublic) != 0) members.push_back(member);
+            }
+            type = c.vm.Linker().Class(*type).super;
+        }
+        return VmValue::Ref(c.vm.Reflection().MaterializeTypeArray(members));
+    });
     builder.VirtualMethod("getClassLoader", "()Ljava/lang/ClassLoader;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(
@@ -465,6 +476,9 @@ IntrinsicClassDecl Declare_java_lang_Class(
     builder.VirtualMethod("isPrimitive", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(IsPrimitiveDescriptor(
             context.vm.Linker().Class(Represented(context)).descriptor) ? 1 : 0);
+    });
+    builder.VirtualMethod("isAnnotation", "()Z", [](IntrinsicContext& c) {
+        return VmValue::Int((c.vm.Linker().Class(Represented(c)).access_flags & kAccAnnotation) != 0);
     });
     builder.VirtualMethod("isEnum", "()Z", [](IntrinsicContext& context) {
         return VmValue::Int(IsEnumClass(context, Represented(context)) ? 1 : 0);
@@ -696,6 +710,15 @@ IntrinsicClassDecl Declare_java_lang_Class(
                 Represented(context), false));
         });
 
+    builder.VirtualMethod("getGenericSuperclass", "()Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericSuperclass"));
+    });
+    builder.VirtualMethod("getGenericInterfaces", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericInterfaces"));
+    });
+    builder.VirtualMethod("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getTypeParameters"));
+    });
     return std::move(builder).Build();
 }
 
@@ -753,6 +776,9 @@ IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
                 context.receiver, context.arguments[0].AsInt() != 0);
             return VmValue::Void();
         });
+    builder.VirtualMethod("getSignatureAttribute", "()Ljava/lang/String;", [](IntrinsicContext&) -> VmValue {
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "AccessibleObject has no signature"};
+    }, kAccNone);
     return std::move(builder).Build();
 }
 
@@ -1159,15 +1185,15 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
             }
             return VmValue::Ref(context.vm.NewStringUtf8(text));
         });
-    builder.UnimplementedOverride(
-        "isAnnotationPresent", "(Ljava/lang/Class;)Z");
-    builder.UnimplementedOverride(
-        "getAnnotation",
-        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedOverride(
-        "getAnnotations", "()[Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedOverride(
-        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;");
+    builder.OverrideMethod("getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetMethodAnnotation(c.vm.Reflection().ConstructorMetadata(c.receiver).method, c.arguments[0].ref)); });
+    builder.OverrideMethod("isAnnotationPresent", "(Ljava/lang/Class;)Z",
+        [](IntrinsicContext& c) { return VmValue::Int(c.vm.Annotations().GetMethodAnnotation(c.vm.Reflection().ConstructorMetadata(c.receiver).method, c.arguments[0].ref).IsValid()); });
+    for (const auto* name : {"getAnnotations", "getDeclaredAnnotations"})
+        builder.OverrideMethod(name, "()[Ljava/lang/annotation/Annotation;",
+            [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetMethodAnnotations(c.vm.Reflection().ConstructorMetadata(c.receiver).method)); });
+    builder.VirtualMethod("getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetParameterAnnotations(c.vm.Reflection().ConstructorMetadata(c.receiver).method)); });
     builder.VirtualMethod(
         "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;",
         [](IntrinsicContext& context) {
@@ -1175,6 +1201,19 @@ IntrinsicClassDecl Declare_java_lang_reflect_Constructor() {
                 context.receiver, context.arguments[0].ref,
                 context.vm.CurrentCallerClass()));
         });
+    builder.VirtualMethod("getGenericParameterTypes", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericParameterTypes"));
+    });
+    builder.VirtualMethod("getGenericExceptionTypes", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericExceptionTypes"));
+    });
+    builder.VirtualMethod("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getTypeParameters"));
+    });
+    builder.OverrideMethod("getSignatureAttribute", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+        const auto& signature = c.vm.Linker().Method(c.vm.Reflection().ConstructorMetadata(c.receiver).method).generic_signature;
+        return VmValue::Ref(signature ? c.vm.Model().NewString(*signature) : VmObjectRef{});
+    }, kAccNone);
     return std::move(builder).Build();
 }
 
@@ -1205,6 +1244,9 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
     builder.InstanceField("slot", "I", kAccPrivate);
     builder.InstanceField("fieldDexIndex", "I", kAccPrivate | kAccFinal);
 
+    builder.VirtualMethod("isEnumConstant", "()Z", [](IntrinsicContext& c) {
+        return VmValue::Int((c.vm.Reflection().FieldMetadata(c.receiver).access_flags & kAccEnum) != 0);
+    });
     builder.VirtualMethod("getDeclaringClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
             return VmValue::Ref(context.vm.Model().ClassObject(
@@ -1341,6 +1383,13 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
                 return VmValue::Void();
             });
     }
+    builder.VirtualMethod("getGenericType", "()Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericType"));
+    });
+    builder.OverrideMethod("getSignatureAttribute", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+        const auto& signature = c.vm.Linker().Field(c.vm.Reflection().FieldMetadata(c.receiver).field).generic_signature;
+        return VmValue::Ref(signature ? c.vm.Model().NewString(*signature) : VmObjectRef{});
+    }, kAccNone);
     return std::move(builder).Build();
 }
 
@@ -1499,15 +1548,15 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
             }
             return VmValue::Ref(context.vm.NewStringUtf8(text));
     });
-    builder.UnimplementedOverride(
-        "isAnnotationPresent", "(Ljava/lang/Class;)Z");
-    builder.UnimplementedOverride(
-        "getAnnotation",
-        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedOverride(
-        "getAnnotations", "()[Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedOverride(
-        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;");
+    builder.OverrideMethod("getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetMethodAnnotation(c.vm.Reflection().MethodMetadata(c.receiver).method, c.arguments[0].ref)); });
+    builder.OverrideMethod("isAnnotationPresent", "(Ljava/lang/Class;)Z",
+        [](IntrinsicContext& c) { return VmValue::Int(c.vm.Annotations().GetMethodAnnotation(c.vm.Reflection().MethodMetadata(c.receiver).method, c.arguments[0].ref).IsValid()); });
+    for (const auto* name : {"getAnnotations", "getDeclaredAnnotations"})
+        builder.OverrideMethod(name, "()[Ljava/lang/annotation/Annotation;",
+            [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetMethodAnnotations(c.vm.Reflection().MethodMetadata(c.receiver).method)); });
+    builder.VirtualMethod("getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;",
+        [](IntrinsicContext& c) { return VmValue::Ref(c.vm.Annotations().GetParameterAnnotations(c.vm.Reflection().MethodMetadata(c.receiver).method)); });
     builder.VirtualMethod(
         "getDefaultValue", "()Ljava/lang/Object;",
         [](IntrinsicContext& context) {
@@ -1523,6 +1572,22 @@ IntrinsicClassDecl Declare_java_lang_reflect_Method() {
                 context.arguments[1].ref,
                 context.vm.CurrentCallerClass()));
         });
+    builder.VirtualMethod("getGenericReturnType", "()Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericReturnType"));
+    });
+    builder.VirtualMethod("getGenericParameterTypes", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericParameterTypes"));
+    });
+    builder.VirtualMethod("getGenericExceptionTypes", "()[Ljava/lang/reflect/Type;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getGenericExceptionTypes"));
+    });
+    builder.VirtualMethod("getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;", [](IntrinsicContext& c) {
+        return VmValue::Ref(ReflectGenericType(c.vm, c.receiver, "getTypeParameters"));
+    });
+    builder.OverrideMethod("getSignatureAttribute", "()Ljava/lang/String;", [](IntrinsicContext& c) {
+        const auto& signature = c.vm.Linker().Method(c.vm.Reflection().MethodMetadata(c.receiver).method).generic_signature;
+        return VmValue::Ref(signature ? c.vm.Model().NewString(*signature) : VmObjectRef{});
+    }, kAccNone);
     return std::move(builder).Build();
 }
 
@@ -1542,6 +1607,27 @@ IntrinsicClassDecl Declare_java_lang_reflect_Type() {
     return std::move(IntrinsicClassBuilder::Interface(
                          "Ljava/lang/reflect/Type;"))
         .Build();
+}
+
+IntrinsicClassDecl Declare_libcore_reflect_AnnotationAccess() {
+    auto b = IntrinsicClassBuilder::Class("Llibcore/reflect/AnnotationAccess;");
+    b.StaticMethod("getEnclosingMethodOrConstructor", "(Ljava/lang/Class;)Ljava/lang/reflect/AccessibleObject;",
+        [](IntrinsicContext& c) {
+            const auto type = c.vm.Model().ClassOfClassObject(c.arguments[0].ref);
+            const auto metadata = c.vm.Linker().ReflectionSystemMetadata(type);
+            if (!metadata.enclosing_method) return VmValue::Ref(VmObjectRef{});
+            const auto method = *metadata.enclosing_method;
+            const auto& linked = c.vm.Linker().Method(method);
+            if (linked.name == "<init>") {
+                for (const auto& candidate : c.vm.Reflection().DeclaredConstructors(linked.owner))
+                    if (candidate.method == method) return VmValue::Ref(c.vm.Reflection().MaterializeConstructor(candidate));
+            } else {
+                const auto candidate = c.vm.Reflection().FindDeclaredMethodByDescriptor(linked.owner, linked.name, linked.descriptor);
+                if (candidate) return VmValue::Ref(c.vm.Reflection().MaterializeMethod(*candidate));
+            }
+            throw DexVmError(DexVmErrorReason::unresolved_reference, "enclosing generic declaration");
+        });
+    return std::move(b).Build();
 }
 
 IntrinsicClassDecl Declare_java_lang_reflect_Proxy() {

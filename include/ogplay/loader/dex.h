@@ -172,10 +172,18 @@ struct DexRuntimeAnnotation final {
 };
 
 struct DexFieldRuntimeMetadata final {
+    std::optional<std::u16string> signature;
     std::vector<DexRuntimeAnnotation> annotations;
 };
 
+struct DexMethodAnnotationMetadata final {
+    std::optional<std::u16string> signature;
+    std::vector<DexRuntimeAnnotation> annotations;
+    std::vector<std::vector<DexRuntimeAnnotation>> parameters;
+};
+
 struct DexClassAnnotationMetadata final {
+    std::optional<std::u16string> signature;
     std::vector<DexRuntimeAnnotation> runtime_annotations;
     std::optional<DexRuntimeAnnotation> annotation_default;
 };
@@ -216,6 +224,7 @@ struct DexImage final {
     std::vector<DexMethodSystemMetadata> method_system_metadata;
     std::vector<DexFieldRuntimeMetadata> field_runtime_metadata;
     std::vector<DexClassAnnotationMetadata> class_annotation_metadata;
+    std::vector<DexMethodAnnotationMetadata> method_annotation_metadata;
     DexAnnotationStatistics annotation_statistics;
 
     [[nodiscard]] std::optional<DexMapItem> FindMapItem(

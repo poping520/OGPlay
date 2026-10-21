@@ -83,9 +83,10 @@
 - Class/Method/Constructor/Field/reflect.Array 只委托 linker、ReflectionRuntime、ReflectionCodec
   和 typed array store；不读写 raw member id。public 聚合按 class→superclass→direct interface；
   nested/enclosing/Throws 只读 Dalvik metadata，禁止名称拆分猜测。Class.getEnumConstants 复用
-  `isEnum` 与 `SharedEnumConstants`，返回具体枚举数组类型的浅克隆。Class/Field 运行时注解查询
-  委托 `AnnotationRuntime`；Method.getDefaultValue 读取注解声明默认值。禁止 generic 与
-  通用 annotation proxy。invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
+  `isEnum` 与 `SharedEnumConstants`，返回具体枚举数组类型的浅克隆。Class/Field/Method/Constructor 与参数运行时注解查询
+  委托 `AnnotationRuntime`，不继承方法注解，数组每次新建；Method.getDefaultValue 读取声明默认值。
+  泛型读取 DEX Signature，执行原版 GenericSignatureParser/Type 实现，无签名回退原始类型；
+  不缓存 guest Type 引用。通用 Proxy 合成仍明确未实现。invoke/实例化/字段读写保留类型转换和原异常引用；Modifier 与对象流普通协议归 BootDex。
 - 加载器与反射透传 typed guest linkage failure；Class.forName 保留原异常作为 CNFE cause，
   注解中缺失类型仍按既有 TypeNotPresentException 协议。DexVmError 内部故障不转换为 Java 错误。
 - 集合、迭代器、Arrays/Collections、Random、ThreadLocal、普通 atomic/同步器和

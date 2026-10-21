@@ -1226,7 +1226,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 82/92（89.1%）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（085/300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 84/91（92.3%，085 已排除）。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -1336,7 +1336,7 @@ note = "DVM-64/143：不可变 ReflectionMetadata 与唯一 wrapper 工厂；Met
 [dexvm.class_reflection_core]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/dexvm/android_value_tests.cpp#DVM-143; tests/dexvm/reflection_tests.cpp#DVM-182"
-note = "DVM-65/143/181/182：API19 Class 名称、loader、forName、层级、分类、assignability/cast 与成员查询；getMethod/getDeclaredMethod 按名称与参数定向扫描，无关方法的缺失类型不阻断；Class 运行时注解查询与 getEnumConstants。不含 generic、Method/Constructor 注解与通用 Proxy。"
+note = "DVM-65/143/181/182、WU7-5：API19 Class 名称、loader、forName、分类、层级/公共成员类、枚举和惰性成员查询。Class/Field/Method/Constructor 泛型由 DEX Signature 驱动原版 GenericSignatureParser，支持变量、通配符、泛型数组及无签名原始类型回退；不缓存 guest Type。通用 Proxy 待 DVM-259。"
 
 [dexvm.reflection_invoke]
 status = "complete"
@@ -1356,12 +1356,12 @@ note = "DVM-68 以真实 instance/static slots 和统一 ReflectionCodec 交付 
 [dexvm.reflection_system_metadata]
 status = "complete"
 test = "tests/dexvm/reflection_tests.cpp; tests/loader/dex_tests.cpp#reject invalid encoded values; tests/loader/dex_tests.cpp#annotation limits distinguish"
-note = "DVM-69/205：受检解析 InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws，不做 $ 猜测；encoded value 按 DEX 精确校验，非法形态失败；注解 item/set 偏移缓存，单项限制与随输入增长的整体工作/存储预算，超限报 resource_limit。不物化通用 annotation proxy。"
+note = "DVM-69/205：受检解析 InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws/Signature，不做 $ 猜测；encoded value 按 DEX 精确校验，非法形态失败；注解 item/set 偏移缓存，单项限制与随输入增长的整体工作/存储预算，超限报 resource_limit。不物化通用 annotation proxy。"
 
 [dexvm.reflection_field_annotations]
 status = "complete"
-test = "tests/loader/dex_tests.cpp#runtime-visible field marker annotation; tests/dexvm/reflection_tests.cpp#Field runtime marker annotations dispatch on both backends; tests/dexvm/reflection_tests.cpp#Class runtime annotations query members defaults inherited and isolation"
-note = "DVM-181 将 Class/Field 运行时注解查询接到同一 AnnotationRuntime：递归 encoded value、AnnotationDefault、@Inherited 超类继承、受限实现类成员分派与 API19 缺失/类型不匹配异常。Method.getDefaultValue 读取声明默认值。Method/Constructor/参数注解、通用 Proxy 与完整反射仍明确未实现。"
+test = "tests/loader/dex_tests.cpp; tests/dexvm/reflection_tests.cpp"
+note = "DVM-181/WU7-5：Class/Field/Method/Constructor/参数运行时注解共用 AnnotationRuntime，含默认值、@Inherited 类继承、数组防御性复制、equals/hashCode/toString。不可加载的注解类型按 4.4 跳过，成员缺失类型/枚举与类型不匹配仍抛精确异常。实现类保持受限合成，不宣称通用 Proxy（DVM-259）。"
 
 [dexvm.reflection_metadata_laziness]
 status = "complete"

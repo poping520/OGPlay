@@ -543,6 +543,9 @@ TEST_CASE("DEX shared annotation items and sets decode once and preserve owned o
                                       .elements[0].value.values[0];
         class_value.kind = ogplay::loader::DexAnnotationValueKind::boolean_value;
         CHECK(field_value.kind == ogplay::loader::DexAnnotationValueKind::null_reference);
+        REQUIRE(image.method_annotation_metadata[0].annotations.size() == 1);
+        CHECK(image.method_annotation_metadata[0].annotations[0].elements[0].value.values[0].kind ==
+              ogplay::loader::DexAnnotationValueKind::null_reference);
     }
 }
 

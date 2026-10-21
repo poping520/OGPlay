@@ -77,14 +77,15 @@
   `map_list`，并严格解码字符串、类型 descriptor、prototype type_list/shorty；交叉验证
   field/method ID、class_def、接口列表及所有索引与 UTF-16 长度；DVM-69 投影
   InnerClass/EnclosingClass/EnclosingMethod/MemberClasses/Throws system annotations；
-  DVM-181 另外保留 class/field runtime-visible 递归 encoded value 与
-  `AnnotationDefault`，method/parameter 注解仍只受检不发布查询面；encoded value
+  另外保留 class/field/method/parameter runtime-visible 递归 encoded value、
+  `AnnotationDefault` 与 class/field/method 的 Signature 字符串片段拼接；Signature 保持 system
+  元数据，不作为运行时注解发布。复制、拼接和参数矩阵均计入相同受检预算；encoded value
   kind/value_arg 按 DEX 宽度与复合/null/boolean 规则 fail closed；不执行任何字节码。
   注解 item/set 在单次解析内按偏移缓存受检、不可变结果；引用处仍校验 member owner
   与 AnnotationDefault 声明类型。返回元数据保持拥有型，深复制另计预算。
   单项保留 depth=16、elements=1024、array=65535，并有独立 item node 上限；
   整体工作量默认 `min(65536+8*data_size, 16 Mi units)`，存储默认
-  `min(1 MiB+256*file_size, 256 MiB)`，调用方可传通用硬上限。
+  `min(1 MiB+384*file_size, 256 MiB)`，调用方可传通用硬上限。
   工作量计入解码、缓存查找/引用遍历、投影及副本；存储按宿主元素大小、容器容量增长、
   map 节点保守开销及副本计量，包含临时解析缓冲，不等同进程 RSS 或 guest 堆。
   长度/范围与预算在 reserve/copy 前校验；`resource_limit` 错误保留偏移、预算类型、

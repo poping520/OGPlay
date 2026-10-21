@@ -41,6 +41,7 @@ class AssertionType(str, Enum):
 class ResultStatus(str, Enum):
     PASSED = "passed"
     FAILED = "failed"
+    SURVEY = "survey"
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ class ScenarioResult:
     checkpoints: tuple[CheckpointResult, ...]
     firstFailure: str | None
     shutdown: ShutdownResult
+    survey: bool = False
     schema: int = field(default=1, init=False)
 
     def to_json(self) -> str:
@@ -165,7 +167,7 @@ def validate_result_schema(path: Path) -> dict[str, Any]:
         raise ScenarioError(f"cannot read result schema {path}: {error}") from error
     required = {
         "schema", "scenarioId", "status", "profile", "checkpoints",
-        "firstFailure", "shutdown",
+        "firstFailure", "shutdown", "survey",
     }
     if (schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema" or
             schema.get("type") != "object" or

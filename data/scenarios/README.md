@@ -83,3 +83,27 @@ python tools/run_scenario.py \
 证据引用始终相对输出目录；`frame` 写无网格 PNG，`state` 写原子 session JSON，`logs` 引用
 同一子进程 stdout/stderr。当前 MCP 尚未发布 GPU trace，因此请求 `gpu_trace` 证据会明确
 失败，不会伪造空 trace。
+
+## 基础场景与运行设置
+
+九款基础场景的 exact identity 来自原 APK（所选 ARM `.so` 的解压字节 SHA-256）；当前
+九款均无 Title Profile，不新增游戏 Profile。场景不等于正式 title gate，未实测通过的
+场景仍须按任务报告处理缺口。[WU5](../../docs/tasks/diagnostics/DIAG-6.md) 记录实际结果。
+
+| 场景 | 目标 / 必需设置 |
+| --- | --- |
+| tml.basic | 标题，暂不点击；APK 自带数据走现有装配，无额外 OBB fixture |
+| lili.basic | 开场影片后的存档菜单 |
+| wild_blood.basic | external fixture 映射原 Android 目录，`--external-guest-dir /sdcard/Android`；开场/菜单基础帧 |
+| tales.basic | 1920×1080（`--surface-width 1920 --surface-height 1080`）；New Game → Slot 1；存档重载需另提供既有沙盒 |
+| dead_trigger.basic | OBB fixture；基础启动，第一关/存档需另行固化交互 |
+| dungeon_hunter.basic | external fixture 映射原 data 目录，`--external-guest-dir /sdcard/gameloft/games/DungeonHunter --surface-width 1024 --surface-height 600` |
+| asphalt5.basic | 语言选择 |
+| pvz.basic | TermsActivity 首帧，后续帧/交互不在已验范围 |
+| angry_birds.basic | 5000 呈现帧，绘制内容仍未验收 |
+
+默认每次在证据目录创建新磁盘沙盒，复用 run-apk 初始化/OBB 挂载；指定既有存档用
+`--sandbox-dir` 并记录来源。输入覆盖与 survey 的成对运行/排序纪律见
+[操作手册](../../docs/playbook/SCENARIO-RUNNER.md#适配与回归相同输入两种模式)。
+survey 的 Result 标记 `survey=true`，成功状态是 `survey` / checkpoint `observed`，
+失败仍 `failed`；任何 survey 结果都不能作为回归通过证据。

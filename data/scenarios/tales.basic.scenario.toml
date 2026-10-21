@@ -1,0 +1,103 @@
+# Exact identity extracted from the original APK; no Title Profile exists.
+# Baseline progress only; frame/no-fault assertions do not certify visual correctness.
+schema = 1
+id = "tales.basic"
+
+[profile]
+package = "com.amazon.games.Tales"
+version_code = 2
+so_sha256 = "341677bc27404db270df26f6fc2fd8757f3bd13eaf199f9dd43d5c49d90c6562"
+abi = "armeabi-v7a"
+
+[[fixture]]
+id = "tales.apk"
+kind = "apk"
+required = true
+
+[limits]
+startup_frames = 100
+startup_ticks = 10000000000
+startup_wall_time_ms = 120000
+total_frames = 130100
+total_ticks = 23000000000
+total_wall_time_ms = 510000
+
+[[checkpoint]]
+id = "baseline"
+provider = "frame"
+max_frames = 100000
+max_ticks = 10000000000
+wall_time_ms = 240000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "step"
+frames = 1
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 900
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+# Known New Game route toward the initial scene; 1920x1080 guest coordinates.
+[[checkpoint]]
+id = "new_game"
+provider = "frame"
+max_frames = 10000
+max_ticks = 1000000000
+wall_time_ms = 30000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "click"
+x = 1250
+y = 910
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1002
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+[[checkpoint]]
+id = "slot_menu"
+provider = "frame"
+max_frames = 10000
+max_ticks = 1000000000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "step"
+frames = 300
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1302
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"
+
+# Slot 1 is visible at the same coordinates after New Game.
+[[checkpoint]]
+id = "select_slot"
+provider = "frame"
+max_frames = 10000
+max_ticks = 1000000000
+wall_time_ms = 60000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "click"
+x = 1250
+y = 910
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1902
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"

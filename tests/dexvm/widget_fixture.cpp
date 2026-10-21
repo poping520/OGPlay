@@ -100,6 +100,26 @@ ClickVm::ClickVm(const InterpreterBackend backend)
                   }
               }
               linker.RegisterIntrinsics(android);
+              std::vector<IntrinsicClassDecl> touch_probes;
+              auto activity_probe = IntrinsicClassBuilder::Class("LTouchActivityProbe;", "Landroid/app/Activity;");
+              activity_probe.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
+                  ++touch_dispatch_events; return VmValue::Int(1);
+              });
+              touch_probes.push_back(std::move(activity_probe).Build());
+              auto fallback_probe = IntrinsicClassBuilder::Class("LTouchFallbackProbe;", "Landroid/app/Activity;");
+              fallback_probe.OverrideMethod("onUserInteraction", "()V", [this](IntrinsicContext&) {
+                  ++user_interactions; return VmValue::Void();
+              });
+              fallback_probe.OverrideMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
+                  ++activity_touch_events; return VmValue::Int(1);
+              });
+              touch_probes.push_back(std::move(fallback_probe).Build());
+              auto group_probe = IntrinsicClassBuilder::Class("LTouchGroupProbe;", "Landroid/widget/FrameLayout;");
+              group_probe.OverrideMethod("onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
+                  ++intercept_events; return VmValue::Int(intercept_touches);
+              });
+              touch_probes.push_back(std::move(group_probe).Build());
+              linker.RegisterIntrinsics(touch_probes);
               auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
               content_view.OverrideMethod("onTouchEvent",
                                "(Landroid/view/MotionEvent;)Z",

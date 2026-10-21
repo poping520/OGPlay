@@ -195,58 +195,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                std::abs(current_y - down_y) > 8.0F * density;
     }
 
-    DeepTouchDispatchResult DispatchDeepTouchEvent(
-        dx::Interpreter& vm, runtime::DexVmAndroidContext& context,
-        const std::int32_t action, const float x, const float y,
-        const std::uint64_t captured_view, const runtime::AndroidBoundaryInput* snapshot) {
-        auto& linker = vm.Linker();
-        const auto invoke = [&](const std::uint64_t handle)
-            -> DeepTouchDispatchResult {
-            const dx::VmObjectRef receiver{static_cast<std::uint32_t>(handle)};
-            const auto receiver_class = vm.Model().ObjectClass(receiver);
-            const auto index = linker.FindVtableIndex(
-                receiver_class, "onTouchEvent",
-                "(Landroid/view/MotionEvent;)Z");
-            if (!index.has_value()) {
-                return {.error = "View has no onTouchEvent method"};
-            }
-            const auto method = linker.Class(receiver_class).vtable[*index];
-            const auto& owner = linker.Class(linker.Method(method).owner);
-            if (action == kMotionActionDown &&
-                owner.descriptor == "Landroid/app/Activity;") {
-                return {};
-            }
-            auto adjusted = snapshot ? *snapshot : runtime::AndroidBoundaryInput{};
-            if (snapshot && action == kMotionActionCancel) adjusted.action = kMotionActionCancel;
-            const auto event = snapshot ? runtime::MakeMotionEvent(vm, adjusted)
-                                       : runtime::MakeMotionEvent(vm, action, x, y, 0);
-            const auto outcome = vm.Call(
-                method, std::vector<dx::VmValue>{dx::VmValue::Ref(receiver),
-                                                 dx::VmValue::Ref(event)});
-            if (outcome.exception.IsValid()) {
-                return {.error = "View onTouchEvent failed: uncaught Java exception\n" +
-                                 RenderJavaException(linker, outcome)};
-            }
-            const bool handled = outcome.value.AsInt() != 0;
-            return {.handled = handled,
-                    .captured_view = (action == kMotionActionUp || action == kMotionActionCancel) ? 0U : handle};
-        };
-
-        if (action != kMotionActionDown) {
-            if (captured_view == 0U) return {};
-            const auto node = runtime::FindViewUiNode(context, captured_view);
-            if (!node.has_value() || !context.ui_tree.IsAttached(*node)) {
-                return {};
-            }
-            return invoke(captured_view);
-        }
-        for (const auto handle : runtime::FindTouchReceiversAt(context, x, y)) {
-            auto result = invoke(handle);
-            if (result.error.has_value() || result.handled) return result;
-        }
-        return {};
-    }
-
     DexActivityLifecycle::DexActivityLifecycle(
         DexActivityLifecycleBindings bindings,
         const std::uint64_t ticks_per_frame,
@@ -557,8 +505,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         for (const auto& input: pending_input_) {
             if (runtime::DispatchAndroidDialogInput(vm, context, input)) {
-                gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false;
-                deep_touch_handle_ = 0; scroll_view_handle_ = 0; scroll_dragging_ = false;
+                context.ui_touch_capture = 0;
+                context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();
+                scroll_view_handle_ = 0; scroll_dragging_ = false;
                 continue;
             }
             if (context.window_input_queue.IsValid()) {
@@ -647,12 +596,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         scroll_view_handle_ = handle;
                     }
                 }
-                const auto hit = runtime::FindClickableViewAt(
-                    *bindings_.context, pointer_x_, pointer_y_);
-                gesture_candidate_ = hit.value_or(0U);
-                gesture_click_eligible_ = false;
-                gesture_touch_consumed_ = false;
-                deep_touch_handle_ = 0U;
+
             }
             if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
                 const auto node = runtime::FindViewUiNode(
@@ -670,23 +614,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         // Once the ancestor ScrollView intercepts, Android
                         // cancels the original child target. This revokes both
                         // its touch capture and click eligibility.
-                        if (gesture_candidate_ != 0U) {
-                            const auto cancelled = runtime::DispatchViewGestureEvent(
-                                vm, context, gesture_candidate_,
-                                kMotionActionCancel, pointer_x_, pointer_y_,
-                                gesture_click_eligible_, gesture_touch_consumed_, &input);
-                            if (cancelled.error.has_value()) Fail(*cancelled.error);
-                        }
-                        if (deep_touch_handle_ != 0U) {
-                            const auto cancelled = DispatchDeepTouchEvent(
-                                vm, context, kMotionActionCancel, pointer_x_,
-                                pointer_y_, deep_touch_handle_, &input);
-                            if (cancelled.error.has_value()) Fail(*cancelled.error);
-                        }
-                        gesture_candidate_ = 0U;
-                        gesture_click_eligible_ = false;
-                        gesture_touch_consumed_ = false;
-                        deep_touch_handle_ = 0U;
+                        const auto cancelled = runtime::DispatchDeepTouchEvent(
+                            vm, context, kMotionActionCancel, pointer_x_, pointer_y_,
+                            context.ui_touch_capture, &input);
+                        if (cancelled.error) Fail(*cancelled.error);
                         scroll_dragging_ = true;
                     }
                     if (scroll_dragging_) {
@@ -710,26 +641,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     continue;
                 }
             }
-            const bool had_listener_candidate = gesture_candidate_ != 0U;
-            if (had_listener_candidate) {
-                const auto result = runtime::DispatchViewGestureEvent(
-                    vm, *bindings_.context, gesture_candidate_, action,
-                    pointer_x_, pointer_y_, gesture_click_eligible_,
-                    gesture_touch_consumed_, &input);
-                if (result.error.has_value()) Fail(*result.error);
-                gesture_click_eligible_ = result.click_eligible;
-                gesture_touch_consumed_ = result.touch_consumed;
-                if (!result.keep_capture) gesture_candidate_ = 0U;
-                if (result.handled) continue;
-            }
-            if (!had_listener_candidate) {
-                const auto result = DispatchDeepTouchEvent(
-                    vm, *bindings_.context, action, pointer_x_, pointer_y_,
-                    deep_touch_handle_, &input);
-                if (result.error.has_value()) Fail(*result.error);
-                deep_touch_handle_ = result.captured_view;
-                if (result.handled) continue;
-            }
+            const auto result = runtime::DispatchDeepTouchEvent(
+                vm, context, action, pointer_x_, pointer_y_, context.ui_touch_capture, &input);
+            if (result.error) Fail(*result.error);
+            if (result.handled) continue;
             const auto event = runtime::MakeMotionEvent(
                 vm, input);
             CallActivity("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
@@ -1112,7 +1027,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             context.focused_edit_text = dx::VmObjectRef{};
             context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
             sized_content_view_ = dx::VmObjectRef{}; sized_content_node_.reset();
-            gesture_candidate_ = 0; gesture_click_eligible_ = false; gesture_touch_consumed_ = false; deep_touch_handle_ = 0;
+            context.ui_touch_capture = 0;
+            context.ui_touch_activity = dx::VmObjectRef{};
+            context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();
             activity_started_ = false; activity_resumed_ = false;
         };
         const auto destroy_instance = [&](const dx::VmObjectRef object,

@@ -396,6 +396,7 @@ TEST_CASE("BND46 deep touch dispatch preserves encoded action and cancels captur
     vm.ResetTouchView(true);
     AndroidBoundaryInput snapshot;
     snapshot.type = AndroidBoundaryInputType::pointer_motion;
+    REQUIRE(ogplay::session::DispatchDeepTouchEvent(vm.interpreter, *vm.context, 0, 12, 34, 0).handled);
     snapshot.action = 5 | (1 << 8);
     AndroidInputPointer first, second;
     first.axes[0] = 12; first.axes[1] = 34;
@@ -411,4 +412,95 @@ TEST_CASE("BND46 deep touch dispatch preserves encoded action and cancels captur
     CHECK_FALSE(result.error.has_value());
     CHECK(vm.TouchViewValue("getLastAction") == 3);
     CHECK(result.captured_view == 0);
+}
+
+TEST_CASE("LUI18 decor dispatch shares host capture and virtual Activity fallback") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        vm.context->activity = vm.activity;
+        const auto window = vm.CallOn(vm.activity, "getWindow", "()Landroid/view/Window;").ref;
+        const auto decor = vm.CallOn(window, "getDecorView", "()Landroid/view/View;").ref;
+        const auto view = vm.NewTouchView();
+        vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        vm.ResetTouchView(true);
+        const auto send = [&](int action, float x, float y) {
+            const auto event = MakeMotionEvent(vm.interpreter, action, x, y, 0);
+            return vm.CallOn(decor, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt();
+        };
+        CHECK(send(0, 12, 34) == 1);
+        CHECK(vm.context->ui_touch_capture == view.Value());
+        CHECK(DispatchDeepTouchEvent(vm.interpreter, *vm.context, 2, 130, 135, 0).handled);
+        CHECK(send(1, 130, 135) == 1);
+        CHECK(vm.TouchViewValue("getEvents") == 3);
+        CHECK(vm.context->ui_touch_capture == 0);
+        // Host DOWN, guest multi-pointer phases, guest UP share the owner.
+        CHECK(DispatchDeepTouchEvent(vm.interpreter, *vm.context, 0, 12, 34, 0).handled);
+        AndroidBoundaryInput input;
+        input.type = AndroidBoundaryInputType::pointer_motion;
+        input.action = 5 | (1 << 8);
+        AndroidInputPointer first, second;
+        first.axes[0] = 130; first.axes[1] = 135; second = first; second.id = 4;
+        input.pointers = {first, second};
+        auto event = MakeMotionEvent(vm.interpreter, input);
+        CHECK(vm.CallOn(decor, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
+        CHECK(vm.TouchViewValue("getLastAction") == (5 | (1 << 8)));
+        input.action = 6 | (1 << 8);
+        event = MakeMotionEvent(vm.interpreter, input);
+        CHECK(vm.CallOn(decor, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
+        CHECK(vm.context->ui_touch_capture == view.Value());
+        CHECK(send(1, 130, 135) == 1);
+
+        const auto fallback = vm.interpreter.NewIntrinsicInstance("LTouchFallbackProbe;");
+        vm.context->activity = fallback;
+        const auto w2 = vm.CallOn(fallback, "getWindow", "()Landroid/view/Window;").ref;
+        const auto d2 = vm.CallOn(w2, "getDecorView", "()Landroid/view/View;").ref;
+        vm.ResetTouchView(false);
+        const auto down = MakeMotionEvent(vm.interpreter, 0, 12, 34, 0);
+        CHECK(vm.CallOn(d2, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(down)}).AsInt() == 1);
+        CHECK(vm.user_interactions == 1);
+        CHECK(vm.activity_touch_events == 1);
+        const auto override = vm.interpreter.NewIntrinsicInstance("LTouchActivityProbe;");
+        const auto w3 = vm.CallOn(override, "getWindow", "()Landroid/view/Window;").ref;
+        const auto d3 = vm.CallOn(w3, "getDecorView", "()Landroid/view/View;").ref;
+        CHECK(vm.CallOn(d3, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(down)}).AsInt() == 1);
+        CHECK(vm.touch_dispatch_events == 1);
+    }
+}
+
+TEST_CASE("LUI18 ViewGroup interception cancels child capture") {
+    ClickVm vm;
+    const auto group = vm.interpreter.NewIntrinsicInstance("LTouchGroupProbe;");
+    const auto child = vm.NewTouchView();
+    vm.CallOn(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+    vm.CallOn(vm.activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+    vm.ResetTouchView(true);
+    REQUIRE(DispatchDeepTouchEvent(vm.interpreter, *vm.context, 0, 12, 34, 0).handled);
+    CHECK(vm.intercept_events == 1);
+    vm.intercept_touches = true;
+    CHECK(DispatchDeepTouchEvent(vm.interpreter, *vm.context, 2, 13, 35, 0).handled);
+    CHECK(vm.TouchViewValue("getLastAction") == 3);
+    CHECK(vm.context->ui_touch_capture == 0);
+    CHECK(vm.TouchViewValue("getEvents") == 2);
+}
+
+TEST_CASE("LUI18 guest View calls enabled listener before virtual onTouchEvent") {
+    ClickVm vm;
+    const auto view = vm.NewTouchView();
+    const auto listener = vm.NewListener();
+    vm.CallOn(view, "setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", {VmValue::Ref(listener)});
+    vm.ResetTouchView(true);
+    const auto event = MakeMotionEvent(vm.interpreter, 0, 12, 34, 0);
+    const auto root = vm.interpreter.ProtectReferences(std::array{event});
+    vm.SetTouchResult(true);
+    CHECK(vm.CallOn(view, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
+    CHECK(vm.CallStaticInt("getTouches") == 1);
+    CHECK(vm.TouchViewValue("getEvents") == 0);
+    vm.SetTouchResult(false);
+    CHECK(vm.CallOn(view, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
+    CHECK(vm.CallStaticInt("getTouches") == 2);
+    CHECK(vm.TouchViewValue("getEvents") == 1);
+    vm.CallOn(view, "setEnabled", "(Z)V", {VmValue::Int(0)});
+    CHECK(vm.CallOn(view, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
+    CHECK(vm.CallStaticInt("getTouches") == 2);
+    CHECK(vm.TouchViewValue("getEvents") == 2);
 }

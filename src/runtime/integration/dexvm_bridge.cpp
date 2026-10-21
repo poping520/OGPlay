@@ -217,6 +217,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         }
         for (const auto event : context.gl_surface_events) root(event);
     }
+    root(context.ui_touch_activity);
+    for (const auto& [_, ref] : context.ui_touch_targets) root(ref);
     for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
     for (const auto& [_, ref] : context.ui_view_images) root(ref);

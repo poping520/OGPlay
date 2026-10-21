@@ -797,6 +797,13 @@ struct DexVmAndroidContext final {
       ui_click_listeners;
   std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
       ui_touch_listeners;
+  // One non-split gesture shared by host and guest dispatch. View bindings
+  // retain receivers; capture is validated against attachment and Activity.
+  std::uint64_t ui_touch_capture{};
+  dexvm::VmObjectRef ui_touch_activity;
+  std::unordered_map<std::uint32_t, dexvm::VmObjectRef> ui_touch_targets;
+  struct TouchClickState { bool eligible{}; bool consumed{}; };
+  std::unordered_map<std::uint32_t, TouchClickState> ui_touch_clicks;
   // Guest LayoutParams objects retain their typed host value independently
   // of attachment. A View points at its current params object; attaching or
   // updateViewLayout copies that value into the UiTree's sole layout fact.
@@ -1071,6 +1078,21 @@ FindClickableViewAt(DexVmAndroidContext &context, float x, float y);
 // traversal order: reverse child Z, deepest first, then the parent.
 [[nodiscard]] std::vector<std::uint64_t>
 FindTouchReceiversAt(DexVmAndroidContext &context, float x, float y);
+
+struct DeepTouchDispatchResult final {
+  bool handled{};
+  std::uint64_t captured_view{};
+  std::optional<std::string> error;
+};
+[[nodiscard]] DeepTouchDispatchResult DispatchDeepTouchEvent(
+    dexvm::Interpreter& vm, DexVmAndroidContext& context, std::int32_t action,
+    float x, float y, std::uint64_t captured_view,
+    const AndroidBoundaryInput* snapshot = nullptr);
+[[nodiscard]] bool DispatchContentTouchEvent(dexvm::Interpreter& vm,
+    DexVmAndroidContext& context, dexvm::VmObjectRef event);
+[[nodiscard]] bool DispatchAndroidViewTouch(dexvm::Interpreter& vm,
+    DexVmAndroidContext& context, dexvm::VmObjectRef view,
+    dexvm::VmObjectRef event, bool group);
 
 // DexVM/View binding helpers. BindViewToUiNode enforces the one-to-one live
 // identity invariant; EnsureViewUiNode creates a detached generic node for a

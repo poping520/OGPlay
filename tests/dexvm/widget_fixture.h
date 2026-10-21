@@ -56,6 +56,9 @@ struct ClickVm final {
     std::vector<ogplay::loader::BinaryXmlElement> inflater_elements;
     std::vector<int> inflater_finish_ids;
     std::function<void(IntrinsicContext&)> inflater_finish_hook;
+    std::int32_t touch_dispatch_events{}, user_interactions{}, activity_touch_events{};
+    bool intercept_touches{};
+    std::int32_t intercept_events{};
     std::int32_t content_view_events{};
     std::int32_t content_change_events{};
     std::function<void(IntrinsicContext&)> content_change_hook;

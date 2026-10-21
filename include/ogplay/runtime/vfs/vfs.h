@@ -73,6 +73,7 @@ struct VfsOpenOptions final {
     bool append{};
     bool large_file{};
     bool no_follow{};
+    bool exclusive{};
 };
 
 // Immutable open-description flags, excluding creation and descriptor flags.

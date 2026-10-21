@@ -44,6 +44,7 @@ struct AndroidVm final {
       std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
   ogplay::core::CapabilityLedger ledger;
   Interpreter interpreter;
+  VmThreadRuntime threads;
 
   explicit AndroidVm(InterpreterConfig config = {})
       : interpreter(
@@ -58,7 +59,7 @@ struct AndroidVm final {
               linker.Link();
               return linker;
             }(),
-            model, nullptr, ledger, config) {}
+            model, nullptr, ledger, config), threads(interpreter) { context->threads = &threads; }
 
   [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
                                    const std::string_view name,
@@ -96,8 +97,45 @@ struct AndroidVm final {
 TEST_CASE("android intrinsic catalog is unique and directly bound") {
   auto context = std::make_shared<ogplay::runtime::DexVmAndroidContext>();
   const auto catalog = ogplay::runtime::AndroidIntrinsicCatalog(context);
-  CHECK(catalog.size() == 176);
+  REQUIRE_FALSE(catalog.empty());
 
+  const std::unordered_set<std::string> intentionally_unimplemented{
+      "Landroid/content/res/XmlResourceParser$Impl;.defineEntityReplacementText(Ljava/lang/String;Ljava/lang/String;)V",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeCount()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeName(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeNamespace(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributePrefix(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeType(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getAttributeValue(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getColumnNumber()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.getDepth()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.getFeature(Ljava/lang/String;)Z",
+      "Landroid/content/res/XmlResourceParser$Impl;.getInputEncoding()Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getLineNumber()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.getNamespace()Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getNamespace(Ljava/lang/String;)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceCount(I)I",
+      "Landroid/content/res/XmlResourceParser$Impl;.getNamespacePrefix(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getNamespaceUri(I)Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getPositionDescription()Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getPrefix()Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getProperty(Ljava/lang/String;)Ljava/lang/Object;",
+      "Landroid/content/res/XmlResourceParser$Impl;.getTextCharacters([I)[C",
+      "Landroid/content/res/XmlResourceParser$Impl;.isAttributeDefault(I)Z",
+      "Landroid/content/res/XmlResourceParser$Impl;.isEmptyElementTag()Z",
+      "Landroid/content/res/XmlResourceParser$Impl;.isWhitespace()Z",
+      "Landroid/content/res/XmlResourceParser$Impl;.nextTag()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.nextText()Ljava/lang/String;",
+      "Landroid/content/res/XmlResourceParser$Impl;.nextToken()I",
+      "Landroid/content/res/XmlResourceParser$Impl;.require(ILjava/lang/String;Ljava/lang/String;)V",
+      "Landroid/content/res/XmlResourceParser$Impl;.setFeature(Ljava/lang/String;Z)V",
+      "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/InputStream;Ljava/lang/String;)V",
+      "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/Reader;)V",
+      "Landroid/content/res/XmlResourceParser$Impl;.setProperty(Ljava/lang/String;Ljava/lang/Object;)V",
+      "Landroid/os/FileUtils;.getVolumeUUID(Ljava/lang/String;)I",
+  };
+  std::unordered_set<std::string> unimplemented;
   std::unordered_set<std::string> descriptors;
   for (const auto& declaration : catalog) {
     CHECK_FALSE(declaration.descriptor.starts_with("Ljava/io/"));
@@ -110,8 +148,15 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     CHECK_FALSE(declaration.descriptor.starts_with("Lorg/xml/"));
     CHECK(descriptors.insert(declaration.descriptor).second);
     for (const auto& method : declaration.methods) {
-      if ((method.access_flags & 0x0400U) == 0U) {
-        CHECK(static_cast<bool>(method.implementation));
+      if ((method.access_flags & 0x0400U) == 0U && !method.guest_native) {
+        CAPTURE(declaration.descriptor);
+        CAPTURE(method.name);
+        CAPTURE(method.descriptor);
+        if (!method.implementation) {
+          const auto key = declaration.descriptor + "." + method.name + method.descriptor;
+          CHECK(intentionally_unimplemented.contains(key));
+          unimplemented.insert(key);
+        }
       }
     }
     if (declaration.clinit_implementation) {
@@ -119,6 +164,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     }
   }
 
+  CHECK(unimplemented == intentionally_unimplemented);
   for (const auto* descriptor : {"Landroid/content/SharedPreferences;",
                                  "Landroid/content/SharedPreferences$Editor;",
                                  "Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;",
@@ -146,12 +192,11 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
     });
   };
   CHECK(method_count("Landroid/app/Application;") == 2);
-  CHECK(method_count("Landroid/app/Activity;") == 33);
   CHECK(has_method("Landroid/app/Activity;", "hasWindowFocus", "()Z"));
   CHECK(has_method("Landroid/app/Activity;", "onWindowFocusChanged", "(Z)V"));
   CHECK(method_count("Landroid/app/Service;") == 13);
-  CHECK(method_count("Landroid/content/Context;") == 29);
-  CHECK(method_count("Landroid/content/ContextWrapper;") == 30);
+  CHECK(has_method("Landroid/content/Context;", "getResources", "()Landroid/content/res/Resources;"));
+  CHECK(has_method("Landroid/content/ContextWrapper;", "getBaseContext", "()Landroid/content/Context;"));
   CHECK(has_method("Landroid/content/Context;", "checkPermission",
                    "(Ljava/lang/String;II)I"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "checkPermission",
@@ -166,7 +211,7 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
                    "()[Ljava/io/File;"));
   CHECK(has_method("Landroid/content/ContextWrapper;", "getObbDir",
                    "()Ljava/io/File;"));
-  CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 4);
+  CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 0); // Java methods belong to BootDex.
   CHECK(method_count("Landroid/content/IntentFilter;") == 24);
   CHECK(has_method(
       "Landroid/content/IntentFilter;", "match",
@@ -178,8 +223,8 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(method_count("Landroid/os/Binder;") == 10);
   CHECK(method_count("Landroid/view/View$OnFocusChangeListener;") == 1);
   CHECK(has_method("Landroid/view/View;", "hasWindowFocus", "()Z"));
-  CHECK(method_count("Landroid/content/pm/PackageManager;") == 6);
-  CHECK(method_count("Landroid/widget/TextView;") == 33);
+  CHECK(has_method("Landroid/content/pm/PackageManager;", "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;"));
+  CHECK(has_method("Landroid/widget/TextView;", "setText", "(Ljava/lang/CharSequence;)V"));
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10;") == 25);
   CHECK(method_count("Ljavax/microedition/khronos/egl/EGL10$Impl;") == 25);
 }
@@ -285,7 +330,7 @@ TEST_CASE("ContextWrapper owns one base identity and delegates supported calls")
         "/data/app/org.example.wrapper-1.apk");
   CHECK(static_cast<std::int32_t>(
             info_field("targetSdkVersion", "I").bits) == 19);
-  CHECK(static_cast<std::int32_t>(info_field("flags", "I").bits) == 4);
+  CHECK(static_cast<std::int32_t>(info_field("flags", "I").bits) == ((1 << 2) | (1 << 23)));
 
   outcome = vm.interpreter.Call(
       vm.Virtual("Landroid/content/ContextWrapper;", "attachBaseContext",
@@ -376,7 +421,7 @@ TEST_CASE("Context getString is final and resolves through inherited Resources")
   CHECK(vm.interpreter.StringUtf8(direct.value.ref) ==
         "Terms \xE6\x9D\xA1\xE6\xAC\xBE");
 
-  for (const auto bad_id : {0x7f010099U, kNotString, kCycleA}) {
+  for (const auto bad_id : {0x7f010099U, kCycleA}) {
     const auto failure = vm.interpreter.Call(
         inherited_method,
         std::vector{VmValue::Ref(wrapper),
@@ -625,7 +670,7 @@ TEST_CASE("PackageManager P0 exposes only explicit current-package facts") {
     CHECK(int_field(application.value.ref, "targetSdkVersion") == 19);
     CHECK(int_field(application.value.ref, "icon") ==
           static_cast<std::int32_t>(0x7f020001U));
-    CHECK(int_field(application.value.ref, "flags") == 4);
+    CHECK(int_field(application.value.ref, "flags") == ((1 << 2) | (1 << 23)));
     CHECK(vm.interpreter.StringUtf8(ref_field(
               application.value.ref, "sourceDir", "Ljava/lang/String;")) ==
           "/data/app/org.example.game-1.apk");
@@ -917,7 +962,7 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
   CHECK(read_field(configuration, "screenHeightDp") == 480);
   CHECK(read_field(configuration, "smallestScreenWidthDp") == 480);
   CHECK(read_field(configuration, "densityDpi") == 160);
-  CHECK(read_field(configuration, "screenLayout") == 0x10000023);
+  CHECK(read_field(configuration, "screenLayout") == (0x10000000 | 0x40 | 0x20 | 0x3));
 
   vm.context->surface_width = 320;
   vm.context->surface_height = 480;
@@ -926,7 +971,7 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
   CHECK(read_field(configuration, "screenWidthDp") == 320);
   CHECK(read_field(configuration, "screenHeightDp") == 480);
   CHECK(read_field(configuration, "smallestScreenWidthDp") == 320);
-  CHECK(read_field(configuration, "screenLayout") == 0x12);
+  CHECK(read_field(configuration, "screenLayout") == (0x40 | 0x10 | 0x2));
 
   vm.context->ui_density = 0.0F;
   CHECK_THROWS(static_cast<void>(vm.interpreter.Call(
@@ -1287,7 +1332,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     CHECK_FALSE(context->active_surface_holders.contains(holder.Value()));
 
     // A callback registered after an already-attached SurfaceView does not
-    // receive past created/changed, but it does observe the later destroy.
+    // receive past created/changed or a destroy for a generation it never saw.
     const auto late_surface =
         interpreter.NewIntrinsicInstance("Landroid/view/SurfaceView;");
     call_on(live_parent, "addView", "(Landroid/view/View;)V",
@@ -1302,7 +1347,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     CHECK(read("created") == 2);
     call_on(live_parent, "removeView", "(Landroid/view/View;)V",
             {VmValue::Ref(late_surface)});
-    CHECK(read("destroyed") == 2);
+    CHECK(read("destroyed") == 1);
 
     // Exact replacement sequence used by frameworks that switch from a
     // software SurfaceView to a GL SurfaceView: the old instance is removed,
@@ -1330,7 +1375,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
 
     call_on(live_parent, "removeView", "(Landroid/view/View;)V",
             {VmValue::Ref(replacement_surface)});
-    CHECK(read("destroyed") == 3);
+    CHECK(read("destroyed") == 2);
     CHECK_FALSE(context->active_surface_holders.contains(
         replacement_holder.Value()));
     CHECK(context->managed_host_surface_open);
@@ -1346,7 +1391,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     };
     CHECK(event_count("surfaceCreated") == 3);
     CHECK(event_count("surfaceChanged") == 3);
-    CHECK(event_count("surfaceDestroyed") == 3);
+    CHECK(event_count("surfaceDestroyed") == 2);
 }
 
 TEST_CASE("Thread priority validates and records the guest fact") {

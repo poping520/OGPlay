@@ -1114,6 +1114,38 @@ TEST_CASE("DVM-105/169/175-180 crypto and BKS use BootDex and real guest libcryp
         CHECK(invoke(calendar, "getFirstDayOfWeek", "()I", {}).AsInt() == 1);
         CHECK(invoke(calendar, "getMinimalDaysInFirstWeek", "()I", {})
                   .AsInt() == 1);
+        // ICU-dependent Calendar and custom-zone parsing belong in the real
+        // guest JNI fixture; core-only tests validate the missing-bridge boundary.
+        invoke(calendar, "setTimeInMillis", "(J)V", {VmValue::Long(1704067200000LL)});
+        CHECK(invoke(calendar, "get", "(I)I", {VmValue::Int(1)}).AsInt() == 2024);
+        CHECK(invoke(calendar, "get", "(I)I", {VmValue::Int(2)}).AsInt() == 0);
+        for (const auto& [id, offset] : std::array{
+                 std::pair{"GMT+08:00", 28800000}, std::pair{"GMT-03:30", -12600000}}) {
+            const auto zone = direct("Ljava/util/TimeZone;", "getTimeZone",
+                "(Ljava/lang/String;)Ljava/util/TimeZone;", {VmValue::Ref(vm.NewStringUtf8(id))}).ref;
+            const auto zone_root = vm.ProtectReferences(std::array{zone});
+            CHECK(invoke(zone, "getRawOffset", "()I", {}).AsInt() == offset);
+            direct("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {VmValue::Ref(zone)});
+            const auto cached = direct("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;", {}).ref;
+            CHECK(invoke(cached, "getRawOffset", "()I", {}).AsInt() == offset);
+            direct("Ljava/util/TimeZone;", "setDefault", "(Ljava/util/TimeZone;)V", {VmValue::Ref(VmObjectRef{})});
+            const auto reset = direct("Ljava/util/TimeZone;", "getDefault", "()Ljava/util/TimeZone;", {}).ref;
+            CHECK(invoke(reset, "getRawOffset", "()I", {}).AsInt() == 0);
+        }
+        const auto choice = vm.NewIntrinsicInstance("Ljava/text/ChoiceFormat;");
+        const auto choice_root = vm.ProtectReferences(std::array{choice});
+        direct("Ljava/text/ChoiceFormat;", "<init>", "(Ljava/lang/String;)V",
+            {VmValue::Ref(choice), VmValue::Ref(vm.NewStringUtf8("0#none|1#one|1<many"))});
+        CHECK(vm.StringUtf8(invoke(choice, "format", "(J)Ljava/lang/String;", {VmValue::Long(2)}).ref) == "many");
+        const auto serialized_bytes = vm.NewIntrinsicInstance("Ljava/io/ByteArrayOutputStream;");
+        const auto object_output = vm.NewIntrinsicInstance("Ljava/io/ObjectOutputStream;");
+        const auto serialization_roots = vm.ProtectReferences(std::array{serialized_bytes, object_output});
+        direct("Ljava/io/ByteArrayOutputStream;", "<init>", "()V", {VmValue::Ref(serialized_bytes)});
+        direct("Ljava/io/ObjectOutputStream;", "<init>", "(Ljava/io/OutputStream;)V",
+            {VmValue::Ref(object_output), VmValue::Ref(serialized_bytes)});
+        expect_exception(invoke_result(object_output, "writeObject", "(Ljava/lang/Object;)V",
+            {VmValue::Ref(object_output)}), "Ljava/io/NotSerializableException;");
+
         const auto unknown_currency = vm.NewStringUtf8("ZZZ");
         const auto unknown_roots = vm.ProtectReferences(std::array{unknown_currency});
         CHECK_FALSE(direct(

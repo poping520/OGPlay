@@ -75,10 +75,12 @@ TEST_CASE("DVM-140 Intent putExtras merges Java Bundle mappings without aliasing
         CHECK_FALSE(f.On(intent, "getSerializableExtra", "(Ljava/lang/String;)Ljava/io/Serializable;",
                          {VmValue::Ref(key)}).ref.IsValid());
         for (const auto target : {intent, f.New("Landroid/content/Intent;")}) {
+            // The pinned ROM Intent bytecode returns this for a null Bundle.
+            const auto before = f.On(target, "getExtras", "()Landroid/os/Bundle;").ref.IsValid();
             const auto outcome = f.OnOutcome(target, "putExtras", signature, {VmValue::Ref(VmObjectRef{})});
-            REQUIRE(outcome.exception.IsValid());
-            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-            CHECK(f.On(target, "getExtras", "()Landroid/os/Bundle;").ref.IsValid());
+            REQUIRE_FALSE(outcome.exception.IsValid());
+            CHECK(outcome.value.ref == target);
+            CHECK(f.On(target, "getExtras", "()Landroid/os/Bundle;").ref.IsValid() == before);
         }
     }
 }

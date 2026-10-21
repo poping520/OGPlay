@@ -1,3 +1,4 @@
+#include <cerrno>
 #include "../dexvm/boot_dex.h"
 #include "../dexvm/tls_fixtures.h"
 
@@ -28,6 +29,8 @@
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -194,7 +197,12 @@ struct OracleServer final {
                  const std::string& client_ca = {}) {
         const auto root = std::filesystem::path(OGPLAY_SOURCE_DIR);
         const auto script = root / "tests/fixtures/tls/loopback_https.py";
-        std::string command = "python \"" + script.string() + "\" --cert \"" +
+#ifdef _WIN32
+        const std::string python = "python";
+#else
+        const std::string python = "python3";
+#endif
+        std::string command = python + " \"" + script.string() + "\" --cert \"" +
             (root / "tests/fixtures/tls" / cert).string() + "\" --key \"" +
             (root / "tests/fixtures/tls" / key).string() + "\"";
         if (!client_ca.empty()) {
@@ -231,7 +239,20 @@ struct OracleServer final {
         const auto marker = line.find("PORT=");
         port_ = static_cast<std::uint16_t>(std::stoi(line.substr(marker + 5)));
 #else
-        pipe_ = popen(command.c_str(), "r");
+        int output[2]{};
+        REQUIRE(pipe(output) == 0);
+        const auto exec_command = "exec " + command;
+        child_pid_ = fork();
+        REQUIRE(child_pid_ >= 0);
+        if (child_pid_ == 0) {
+            dup2(output[1], STDOUT_FILENO);
+            close(output[0]);
+            close(output[1]);
+            execl("/bin/sh", "sh", "-c", exec_command.c_str(), static_cast<char*>(nullptr));
+            _exit(127);
+        }
+        close(output[1]);
+        pipe_ = fdopen(output[0], "r");
         REQUIRE(pipe_ != nullptr);
         char line[64]{};
         REQUIRE(fgets(line, sizeof(line), pipe_) != nullptr);
@@ -249,7 +270,11 @@ struct OracleServer final {
         }
         if (stdout_read_ != nullptr) CloseHandle(stdout_read_);
 #else
-        if (pipe_ != nullptr) pclose(pipe_);
+        if (child_pid_ > 0) {
+            kill(child_pid_, SIGTERM);
+            while (waitpid(child_pid_, nullptr, 0) < 0 && errno == EINTR) {}
+        }
+        if (pipe_ != nullptr) fclose(pipe_);
 #endif
     }
     [[nodiscard]] std::uint16_t Port() const { return port_; }
@@ -261,6 +286,7 @@ private:
     HANDLE stdout_read_{};
 #else
     FILE* pipe_{};
+    pid_t child_pid_{};
 #endif
 };
 

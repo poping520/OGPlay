@@ -306,8 +306,7 @@ TEST_CASE("DVM-185 WebView.destroy isolates settings and enforces thread rules")
             });
         AndroidValueVm fixture(
             backend, {std::move(subclass).Build(), std::move(destroyer).Build()});
-        VmThreadRuntime threads(fixture.vm);
-        fixture.context->threads = &threads;
+        fixture.context->threads = &fixture.threads;
         RegisterAndroidSchedulerStateTable(fixture.vm, fixture.context);
 
         const auto web_type =
@@ -452,8 +451,7 @@ TEST_CASE("disabled WebView policy reports asynchronous failure and supports can
             });
         AndroidValueVm fixture(
             backend, {std::move(client_class).Build()});
-        VmThreadRuntime threads(fixture.vm);
-        fixture.context->threads = &threads;
+        fixture.context->threads = &fixture.threads;
         RegisterAndroidSchedulerStateTable(fixture.vm, fixture.context);
         fixture.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
         const auto activity = fixture.New("Landroid/app/Activity;");

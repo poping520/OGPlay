@@ -352,10 +352,16 @@ TEST_CASE("DexVM streaming write releases VM lock while byte-budget blocked") {
     arguments.insert(arguments.begin(), VmValue::Ref(track));
     std::atomic<std::int32_t> result{-99};
     std::atomic<bool> exception{};
+    const auto worker_context = fixture.vm.CreateExecutionContext();
+    std::exception_ptr worker_failure;
     std::jthread writer([&] {
-        const auto outcome = fixture.vm.Call(method, arguments);
-        exception = outcome.exception.IsValid();
-        if (!exception.load()) result = outcome.value.AsInt();
+        try {
+            fixture.vm.RunInExecutionContext(worker_context, [&] {
+                const auto outcome = fixture.vm.Call(method, arguments);
+                exception = outcome.exception.IsValid();
+                if (!exception.load()) result = outcome.value.AsInt();
+            });
+        } catch (...) { worker_failure = std::current_exception(); }
     });
     bool parked{};
     for (std::size_t attempt = 0; attempt < 100000U; ++attempt) {
@@ -368,11 +374,14 @@ TEST_CASE("DexVM streaming write releases VM lock while byte-budget blocked") {
     if (!parked) {
         static_cast<void>(fixture.mixer.InterruptBlockingWaits());
     }
-    REQUIRE(parked);
-
-    static_cast<void>(fixture.CallOn(track, "play", "()V"));
-    fixture.MixFrames(400U);
+    if (parked) {
+        static_cast<void>(fixture.CallOn(track, "play", "()V"));
+        fixture.MixFrames(400U);
+    }
     writer.join();
+    fixture.vm.DiscardExecutionContext(worker_context);
+    if (worker_failure) std::rethrow_exception(worker_failure);
+    REQUIRE(parked);
     CHECK_FALSE(exception.load());
     CHECK(result.load() == buffer_size);
     CHECK(fixture.mixer.QueuedBytes(

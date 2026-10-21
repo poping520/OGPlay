@@ -311,7 +311,6 @@ TEST_CASE("DVM-107 builder CharSequence range append uses UTF16 and validates be
 TEST_CASE("DVM-109 UUID deserialization restores private readObject invariants") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
-        VmThreadRuntime threads(f.vm);
         const auto uuid = f.Static("Ljava/util/UUID;", "fromString", "(Ljava/lang/String;)Ljava/util/UUID;", {VmValue::Ref(f.vm.NewStringUtf8("f81d4fae-7dec-11d0-a765-00a0c91e6bf6"))}).ref;
         const auto buffer = f.New("Ljava/io/ByteArrayOutputStream;");
         const auto out = f.New("Ljava/io/ObjectOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(buffer)});
@@ -654,7 +653,6 @@ TEST_CASE("DVM-151 builder integer and floating appends execute original convers
     for (const bool bridge : {false, true})
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend, {}, bridge);
-        VmThreadRuntime threads(f.vm);
         for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
             const auto b = f.New(owner);
             const auto root = f.vm.ProtectReferences(std::array{b});
@@ -689,7 +687,6 @@ TEST_CASE("DVM-151 builder integer and floating appends execute original convers
 TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm f(backend);
-        VmThreadRuntime threads(f.vm);
         for (const auto* owner : {"Ljava/lang/StringBuilder;", "Ljava/lang/StringBuffer;"}) {
             const auto b = f.New(owner, "(I)V", {VmValue::Int(0)});
             const auto root = f.vm.ProtectReferences(std::array{b});

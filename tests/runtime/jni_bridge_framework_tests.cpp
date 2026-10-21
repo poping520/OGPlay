@@ -498,7 +498,7 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         auto records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
         REQUIRE_FALSE(records.empty());
         CHECK(records.back().message.find("ClassNotFoundException") != std::string::npos);
-        CHECK(records.back().message.find("caused by Ljava/lang/LinkageError;") != std::string::npos);
+        CHECK(records.back().message.find("caused by Ljava/lang/NoClassDefFoundError;") != std::string::npos);
         CHECK(records.back().message.find("Lfixture/AbsentCallback;") != std::string::npos);
         env.PushLocalFrame(1, 2);
         const auto occurred = env.ExceptionOccurred(1);

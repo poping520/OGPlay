@@ -71,6 +71,88 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     auto catalog = CoreIntrinsicCatalog();
     std::set<std::string> descriptors;
     std::set<std::string> intentionally_unimplemented = {
+        // Explicit bounded native/platform boundaries added since the original inventory.
+        "Ldalvik/system/BaseDexClassLoader;.findLibrary(Ljava/lang/String;)Ljava/lang/String;",
+        "Ljava/net/ProxySelector;.setDefault(Ljava/net/ProxySelector;)V",
+        "Ljava/net/ProxySelector;.select(Ljava/net/URI;)Ljava/util/List;",
+        "Ljava/net/ProxySelector;.connectFailed(Ljava/net/URI;Ljava/net/SocketAddress;Ljava/io/IOException;)V",
+        "Llibcore/io/Posix;.preadBytes(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I",
+        "Llibcore/io/Posix;.pwriteBytes(Ljava/io/FileDescriptor;Ljava/lang/Object;IIJ)I",
+        "Llibcore/io/Posix;.recvfromBytes(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetSocketAddress;)I",
+        "Llibcore/io/Posix;.sendtoBytes(Ljava/io/FileDescriptor;Ljava/lang/Object;IIILjava/net/InetAddress;I)I",
+        "Llibcore/io/Posix;.umaskImpl(I)I",
+        "Llibcore/io/Posix;.accept(Ljava/io/FileDescriptor;Ljava/net/InetSocketAddress;)Ljava/io/FileDescriptor;",
+        "Llibcore/io/Posix;.bind(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V",
+        "Llibcore/io/Posix;.chown(Ljava/lang/String;II)V",
+        "Llibcore/io/Posix;.connect(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V",
+        "Llibcore/io/Posix;.dup(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;",
+        "Llibcore/io/Posix;.dup2(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;",
+        "Llibcore/io/Posix;.environ()[Ljava/lang/String;",
+        "Llibcore/io/Posix;.execv(Ljava/lang/String;[Ljava/lang/String;)V",
+        "Llibcore/io/Posix;.execve(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V",
+        "Llibcore/io/Posix;.fchmod(Ljava/io/FileDescriptor;I)V",
+        "Llibcore/io/Posix;.fchown(Ljava/io/FileDescriptor;II)V",
+        "Llibcore/io/Posix;.fcntlFlock(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I",
+        "Llibcore/io/Posix;.fcntlLong(Ljava/io/FileDescriptor;IJ)I",
+        "Llibcore/io/Posix;.fcntlVoid(Ljava/io/FileDescriptor;I)I",
+        "Llibcore/io/Posix;.fstatvfs(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;",
+        "Llibcore/io/Posix;.getegid()I",
+        "Llibcore/io/Posix;.getenv(Ljava/lang/String;)Ljava/lang/String;",
+        "Llibcore/io/Posix;.geteuid()I",
+        "Llibcore/io/Posix;.getgid()I",
+        "Llibcore/io/Posix;.getpeername(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;",
+        "Llibcore/io/Posix;.getpid()I",
+        "Llibcore/io/Posix;.getppid()I",
+        "Llibcore/io/Posix;.getpwnam(Ljava/lang/String;)Llibcore/io/StructPasswd;",
+        "Llibcore/io/Posix;.getpwuid(I)Llibcore/io/StructPasswd;",
+        "Llibcore/io/Posix;.getsockname(Ljava/io/FileDescriptor;)Ljava/net/SocketAddress;",
+        "Llibcore/io/Posix;.getsockoptByte(Ljava/io/FileDescriptor;II)I",
+        "Llibcore/io/Posix;.getsockoptInAddr(Ljava/io/FileDescriptor;II)Ljava/net/InetAddress;",
+        "Llibcore/io/Posix;.getsockoptInt(Ljava/io/FileDescriptor;II)I",
+        "Llibcore/io/Posix;.getsockoptLinger(Ljava/io/FileDescriptor;II)Llibcore/io/StructLinger;",
+        "Llibcore/io/Posix;.getsockoptTimeval(Ljava/io/FileDescriptor;II)Llibcore/io/StructTimeval;",
+        "Llibcore/io/Posix;.getsockoptUcred(Ljava/io/FileDescriptor;II)Llibcore/io/StructUcred;",
+        "Llibcore/io/Posix;.gettid()I",
+        "Llibcore/io/Posix;.getuid()I",
+        "Llibcore/io/Posix;.if_indextoname(I)Ljava/lang/String;",
+        "Llibcore/io/Posix;.ioctlInetAddress(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
+        "Llibcore/io/Posix;.kill(II)V",
+        "Llibcore/io/Posix;.lchown(Ljava/lang/String;II)V",
+        "Llibcore/io/Posix;.listen(Ljava/io/FileDescriptor;I)V",
+        "Llibcore/io/Posix;.mincore(JJ[B)V",
+        "Llibcore/io/Posix;.mlock(JJ)V",
+        "Llibcore/io/Posix;.mmap(JJIILjava/io/FileDescriptor;J)J",
+        "Llibcore/io/Posix;.msync(JJI)V",
+        "Llibcore/io/Posix;.munlock(JJ)V",
+        "Llibcore/io/Posix;.munmap(JJ)V",
+        "Llibcore/io/Posix;.pipe()[Ljava/io/FileDescriptor;",
+        "Llibcore/io/Posix;.poll([Llibcore/io/StructPollfd;I)I",
+        "Llibcore/io/Posix;.readv(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I",
+        "Llibcore/io/Posix;.sendfile(Ljava/io/FileDescriptor;Ljava/io/FileDescriptor;Llibcore/util/MutableLong;J)J",
+        "Llibcore/io/Posix;.setegid(I)V",
+        "Llibcore/io/Posix;.setenv(Ljava/lang/String;Ljava/lang/String;Z)V",
+        "Llibcore/io/Posix;.seteuid(I)V",
+        "Llibcore/io/Posix;.setgid(I)V",
+        "Llibcore/io/Posix;.setsid()I",
+        "Llibcore/io/Posix;.setsockoptByte(Ljava/io/FileDescriptor;III)V",
+        "Llibcore/io/Posix;.setsockoptGroupReq(Ljava/io/FileDescriptor;IILlibcore/io/StructGroupReq;)V",
+        "Llibcore/io/Posix;.setsockoptIfreq(Ljava/io/FileDescriptor;IILjava/lang/String;)V",
+        "Llibcore/io/Posix;.setsockoptInt(Ljava/io/FileDescriptor;III)V",
+        "Llibcore/io/Posix;.setsockoptIpMreqn(Ljava/io/FileDescriptor;III)V",
+        "Llibcore/io/Posix;.setsockoptLinger(Ljava/io/FileDescriptor;IILlibcore/io/StructLinger;)V",
+        "Llibcore/io/Posix;.setsockoptTimeval(Ljava/io/FileDescriptor;IILlibcore/io/StructTimeval;)V",
+        "Llibcore/io/Posix;.setuid(I)V",
+        "Llibcore/io/Posix;.shutdown(Ljava/io/FileDescriptor;I)V",
+        "Llibcore/io/Posix;.socket(III)Ljava/io/FileDescriptor;",
+        "Llibcore/io/Posix;.socketpair(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V",
+        "Llibcore/io/Posix;.strsignal(I)Ljava/lang/String;",
+        "Llibcore/io/Posix;.symlink(Ljava/lang/String;Ljava/lang/String;)V",
+        "Llibcore/io/Posix;.tcdrain(Ljava/io/FileDescriptor;)V",
+        "Llibcore/io/Posix;.tcsendbreak(Ljava/io/FileDescriptor;I)V",
+        "Llibcore/io/Posix;.unsetenv(Ljava/lang/String;)V",
+        "Llibcore/io/Posix;.waitpid(ILlibcore/util/MutableInt;I)I",
+        "Llibcore/io/Posix;.writev(Ljava/io/FileDescriptor;[Ljava/lang/Object;[I[I)I",
+
         // DVM-102: precise native failures frozen in api19.json (date_family_audit).
         "Llibcore/icu/ICU;.addLikelySubtags(Ljava/lang/String;)Ljava/lang/String;",
         "Llibcore/icu/ICU;.getAvailableBreakIteratorLocalesNative()[Ljava/lang/String;",
@@ -233,7 +315,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     CHECK(descriptors.contains("Ljava/net/URL;"));
     CHECK(descriptors.contains("Ljava/nio/charset/Charset;"));
     CHECK(descriptors.contains("Ljava/util/Locale;"));
-    CHECK(descriptors.contains("Ljavax/net/ssl/SSLSocketFactory;"));
+    CHECK_FALSE(descriptors.contains("Ljavax/net/ssl/SSLSocketFactory;"));
     CHECK(descriptors.contains("Ljavax/xml/parsers/SAXParserFactory;"));
     CHECK(descriptors.contains("Lorg/xml/sax/XMLReader;"));
 
@@ -241,6 +323,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     boot_linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(boot_linker);
     boot_linker.Link();
+    CHECK(boot_linker.Class(boot_linker.ResolveDescriptor("Ljavax/net/ssl/SSLSocketFactory;")).is_boot_dex);
     for (const auto* name : {"Ljava/lang/Iterable;", "Ljava/io/DataInput;", "Ljava/io/DataOutput;",
                              "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;",
                              "Ljava/io/ObjectStreamConstants;"}) {
@@ -271,7 +354,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
             });
         REQUIRE(declaration != catalog.end());
         for (const auto& method : declaration->methods) {
-            result.emplace(method.name, method.descriptor);
+            CHECK(result.emplace(method.name, method.descriptor).second);
         }
         return result;
     };
@@ -281,6 +364,7 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
               {"<init>", "()V"},
               {"clone", "()Ljava/lang/Object;"},
               {"equals", "(Ljava/lang/Object;)Z"},
+              {"finalize", "()V"},
               {"getClass", "()Ljava/lang/Class;"},
               {"hashCode", "()I"},
               {"notify", "()V"},
@@ -343,7 +427,11 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         boot_linker.ResolveDescriptor("Ljava/lang/CharSequence;"),
         boot_linker.ResolveDescriptor("Ljava/io/Serializable;")});
     const auto string_signatures = signatures("Ljava/lang/String;");
-    CHECK(string_signatures.size() == 60U);
+    // Boundaries and overloads matter; a class gaining a supported method
+    // must not invalidate an unrelated frozen method count.
+    CHECK(string_signatures.contains({"regionMatches", "(ILjava/lang/String;II)Z"}));
+    CHECK(string_signatures.contains({"regionMatches", "(ZILjava/lang/String;II)Z"}));
+    CHECK(string_signatures.contains({"intern", "()Ljava/lang/String;"}));
     CHECK(string_signatures.contains({
         "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;"}));
     CHECK(signatures("Ljava/lang/Integer;").size() == 37U);

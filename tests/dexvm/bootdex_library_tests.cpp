@@ -1,3 +1,4 @@
+#include <bit>
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -283,7 +284,12 @@ TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest stat
         f.RequireOk(fire(1,1));CHECK(*calls==0);f.RequireOk(fire(1,2));CHECK(*calls==1);
         f.RequireOk(f.Virtual(events,"removePropertyChangeListener","(Ljava/beans/PropertyChangeListener;)V",{VmValue::Ref(observer)}));f.RequireOk(fire(2,3));CHECK(*calls==1);
         const auto choice=f.vm.NewIntrinsicInstance("Ljava/text/ChoiceFormat;");
-        f.Construct(choice,"Ljava/text/ChoiceFormat;","(Ljava/lang/String;)V",{VmValue::Ref(f.vm.NewStringUtf8("0#none|1#one|1<many"))});
+        const auto limits = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[D"), JniPrimitiveKind::double_value, 3);
+        const std::array<double, 3> bounds{0.0, 1.0, 2.0};
+        for (int i = 0; i < 3; ++i) f.model.SetPrimitiveElement(limits, i, std::bit_cast<std::uint64_t>(bounds[static_cast<std::size_t>(i)]));
+        const auto labels = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Ljava/lang/String;"), f.linker.ResolveDescriptor("Ljava/lang/String;"), 3);
+        for (int i = 0; i < 3; ++i) f.model.SetObjectElement(labels, i, f.vm.NewStringUtf8(std::array{"none", "one", "many"}[static_cast<std::size_t>(i)]));
+        f.Construct(choice,"Ljava/text/ChoiceFormat;","([D[Ljava/lang/String;)V",{VmValue::Ref(limits), VmValue::Ref(labels)});
         const auto rendered=f.Virtual(choice,"format","(J)Ljava/lang/String;",{VmValue::Long(2)});f.RequireOk(rendered);CHECK(f.vm.StringUtf8(rendered.value.ref)=="many");
         const auto format=f.vm.NewIntrinsicInstance("Ljava/text/MessageFormat;");
         f.Construct(format,"Ljava/text/MessageFormat;","(Ljava/lang/String;)V",{VmValue::Ref(f.vm.NewStringUtf8("Hello {0}"))});

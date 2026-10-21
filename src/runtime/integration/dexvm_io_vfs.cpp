@@ -163,11 +163,11 @@ void DexVmIoVfsAdapter::WriteFile(const std::string_view path,
 
 std::int32_t DexVmIoVfsAdapter::OpenHandle(
     const std::string_view path, const bool read, const bool write,
-    const bool create, const bool truncate) {
+    const bool create, const bool truncate, const bool exclusive) {
   try {
     return file_system_.Open(
         path, {.read = read, .write = write, .create = create,
-               .truncate = truncate});
+               .truncate = truncate, .exclusive = exclusive});
   } catch (const VfsError& error) {
     throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
   }

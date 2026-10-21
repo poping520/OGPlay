@@ -125,7 +125,8 @@ TEST_CASE("APS-14 Activity finish and destroy state follows each Java instance")
             static_cast<void>(f.app->Stop());
             CHECK(state("pauseState") == 0);
             CHECK(state("stopState") == 0);
-            CHECK(state("destroyState") == -1);
+            // Cooperative host shutdown calls onDestroy without instance finish.
+            CHECK(state("destroyState") == 0);
             CHECK(state("state") == 0);
         }
     }

@@ -35,6 +35,26 @@ std::uint32_t GlesApiError::Code() const noexcept { return code_; }
 namespace {
 
 #if OGPLAY_HAS_ANGLE
+// ANGLE Metal reads its draw drawable even when EGL_READ names another
+// pbuffer. Bind the read drawable for default-framebuffer source operations;
+// user FBOs keep their own read binding. Restore EGL currency on every exit.
+template<class Operation>
+void WithDefaultReadSurface(EglLifecycle& lifecycle, Operation&& operation) {
+    const auto draw = lifecycle.DrawSurface(), read = lifecycle.ReadSurface();
+    if (!draw || !read || draw == read ||
+        lifecycle.Info().backend.renderer != AngleRenderer::metal) {
+        operation();
+        return;
+    }
+    GLint binding{};
+    glGetIntegerv(lifecycle.Info().client_version >= 3 ? 0x8CAAU : GL_FRAMEBUFFER_BINDING, &binding);
+    if (binding != 0) { operation(); return; }
+    lifecycle.BindSurfaces(read, read);
+    try { operation(); }
+    catch (...) { lifecycle.BindSurfaces(draw, read); throw; }
+    lifecycle.BindSurfaces(draw, read);
+}
+
 // Software-decompressed images are tightly packed host bytes, independent of guest unpack state.
 class ScopedTightUnpack final {
 public:
@@ -969,8 +989,10 @@ void AngleFrame::CopyTextureImage2D(
     const std::int32_t y, const std::int32_t width,
     const std::int32_t height, const std::int32_t border) {
 #if OGPLAY_HAS_ANGLE
-    glCopyTexImage2D(target, level, internal_format, x, y, width, height, border);
-    RequireNoError("glCopyTexImage2D");
+    WithDefaultReadSurface(lifecycle_, [&] {
+        glCopyTexImage2D(target, level, internal_format, x, y, width, height, border);
+        RequireNoError("glCopyTexImage2D");
+    });
 #else
     static_cast<void>(target); static_cast<void>(level); static_cast<void>(internal_format);
     static_cast<void>(x); static_cast<void>(y); static_cast<void>(width);
@@ -1070,8 +1092,10 @@ void AngleFrame::CopyTextureSubImage2D(
     const std::int32_t x, const std::int32_t y, const std::int32_t width,
     const std::int32_t height) {
 #if OGPLAY_HAS_ANGLE
-    glCopyTexSubImage2D(target, level, x_offset, y_offset, x, y, width, height);
-    RequireNoError("glCopyTexSubImage2D");
+    WithDefaultReadSurface(lifecycle_, [&] {
+        glCopyTexSubImage2D(target, level, x_offset, y_offset, x, y, width, height);
+        RequireNoError("glCopyTexSubImage2D");
+    });
 #else
     static_cast<void>(target); static_cast<void>(level);
     static_cast<void>(x_offset); static_cast<void>(y_offset);
@@ -1195,8 +1219,10 @@ void AngleFrame::ReadPixels(
     const std::uint32_t format, const std::uint32_t type,
     const std::span<std::byte> output) {
 #if OGPLAY_HAS_ANGLE
-    glReadPixels(x, y, width, height, format, type, output.data());
-    RequireNoError("glReadPixels");
+    WithDefaultReadSurface(lifecycle_, [&] {
+        glReadPixels(x, y, width, height, format, type, output.data());
+        RequireNoError("glReadPixels");
+    });
 #else
     static_cast<void>(x); static_cast<void>(y); static_cast<void>(width);
     static_cast<void>(height); static_cast<void>(format); static_cast<void>(type);

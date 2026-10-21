@@ -27,7 +27,7 @@ public:
                  std::span<const std::byte> bytes) override;
   [[nodiscard]] std::int32_t OpenHandle(
       std::string_view path, bool read, bool write, bool create,
-      bool truncate) override;
+      bool truncate, bool exclusive = false) override;
   [[nodiscard]] dexvm::IoFileInfo HandleInfo(
       std::int32_t handle) const override;
   [[nodiscard]] std::size_t ReadHandle(

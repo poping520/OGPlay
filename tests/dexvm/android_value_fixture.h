@@ -8,6 +8,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
+#include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/integration/dexvm_android.h"
 
@@ -27,11 +28,13 @@ struct AndroidValueVm final {
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
+    VmThreadRuntime threads;
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {},
                    bool force_all_bridge = false,
-                   const char* dex_fixture = nullptr);
+                   const char* dex_fixture = nullptr,
+                   bool include_skeleton = false);
 
     VmObjectRef New(const char* descriptor,
                     const char* constructor = "()V",

@@ -301,153 +301,38 @@ TEST_CASE("DVM-217 AtomicFile commits rolls back and recovers through VFS") {
     }
 }
 
-TEST_CASE("File declarations match Android class shape through second batch") {
-    const auto catalog = CoreIntrinsicCatalog();
-    const auto declaration = [&](const std::string_view descriptor)
-        -> const IntrinsicClassDecl& {
-        const auto found = std::ranges::find(
-            catalog, descriptor, &IntrinsicClassDecl::descriptor);
-        REQUIRE(found != catalog.end());
-        return *found;
-    };
-    const auto& file = declaration("Ljava/io/File;");
-    CHECK(file.interfaces == std::vector<std::string>{
-        "Ljava/io/Serializable;", "Ljava/lang/Comparable;"});
-    const auto path = std::ranges::find(
-        file.fields, std::string_view{"path"}, &IntrinsicFieldDecl::name);
-    REQUIRE(path != file.fields.end());
-    CHECK(path->access_flags == 0x0002U);
-    for (const auto& method : file.methods) {
-        if (method.name != "<init>")
-            CHECK((method.access_flags & 0x0010U) == 0U);
+TEST_CASE("File and stream class shapes come from API19 BootDex") {
+    FileVm vm;
+    const auto file = vm.linker.ResolveDescriptor("Ljava/io/File;");
+    CHECK(vm.linker.Class(file).is_boot_dex);
+    for (const auto* interface : {"Ljava/io/Serializable;", "Ljava/lang/Comparable;"})
+        CHECK(vm.linker.IsAssignable(vm.linker.ResolveDescriptor(interface), file));
+    const auto path = vm.linker.FindFieldRecursive(file, "path", "Ljava/lang/String;");
+    REQUIRE(path.has_value());
+    CHECK(vm.linker.Field(*path).owner == file);
+    CHECK((vm.linker.Field(*path).access_flags & 2U) != 0);
+    const auto bridge = vm.linker.FindVtableIndex(file, "compareTo", "(Ljava/lang/Object;)I");
+    REQUIRE(bridge.has_value());
+    CHECK((vm.linker.Method(vm.linker.Class(file).vtable[*bridge]).access_flags & 0x1041U) == 0x1041U);
+    for (const auto* owner : {"Ljava/io/FileInputStream;", "Ljava/io/FileOutputStream;"}) {
+        const auto type = vm.linker.ResolveDescriptor(owner);
+        CHECK(vm.linker.Class(type).is_boot_dex);
+        CHECK(vm.linker.FindFieldRecursive(type, "fd", "Ljava/io/FileDescriptor;").has_value());
+        for (const auto& [name, descriptor] : std::vector<std::pair<std::string, std::string>>{
+                 {"close", "()V"}, {"getFD", "()Ljava/io/FileDescriptor;"},
+                 {"getChannel", "()Ljava/nio/channels/FileChannel;"}}) {
+            const auto slot = vm.linker.FindVtableIndex(type, name, descriptor);
+            REQUIRE(slot.has_value());
+            CHECK(vm.linker.Method(vm.linker.Class(type).vtable[*slot]).kind == MethodKind::interpreted);
+        }
     }
-    const auto bridge = std::ranges::find_if(file.methods, [](const auto& method) {
-        return method.name == "compareTo" &&
-               method.descriptor == "(Ljava/lang/Object;)I";
-    });
-    REQUIRE(bridge != file.methods.end());
-    CHECK(bridge->access_flags == 0x1041U);
-    for (const auto& [name, descriptor] :
-         std::vector<std::pair<std::string_view, std::string_view>>{
-             {"canRead", "()Z"},
-             {"canWrite", "()Z"},
-             {"isFile", "()Z"},
-             {"list", "(Ljava/io/FilenameFilter;)[Ljava/lang/String;"},
-             {"listFiles", "()[Ljava/io/File;"},
-             {"listFiles", "(Ljava/io/FilenameFilter;)[Ljava/io/File;"},
-             {"listFiles", "(Ljava/io/FileFilter;)[Ljava/io/File;"},
-             {"renameTo", "(Ljava/io/File;)Z"},
-             {"setWritable", "(Z)Z"},
-             {"setWritable", "(ZZ)Z"}}) {
-        const auto method = std::ranges::find_if(
-            file.methods, [&](const auto& candidate) {
-                return candidate.name == name &&
-                       candidate.descriptor == descriptor;
-            });
-        REQUIRE(method != file.methods.end());
-        CHECK(method->access_flags == 0x0001U);
+    for (const auto* owner : {"Ljava/io/FilenameFilter;", "Ljava/io/FileFilter;"}) {
+        const auto& type = vm.linker.Class(vm.linker.ResolveDescriptor(owner));
+        CHECK(type.is_interface);
+        REQUIRE(type.own_virtual_methods.size() == 1);
+        CHECK(vm.linker.Method(type.own_virtual_methods.front()).name == "accept");
+        CHECK(vm.linker.Method(type.own_virtual_methods.front()).kind == MethodKind::abstract);
     }
-
-    for (const auto descriptor : {"Ljava/io/FilenameFilter;",
-                                  "Ljava/io/FileFilter;"}) {
-        const auto& filter = declaration(descriptor);
-        CHECK(filter.is_interface);
-        REQUIRE(filter.methods.size() == 1U);
-        CHECK(filter.methods[0].name == "accept");
-        CHECK(filter.methods[0].access_flags == 0x0401U);
-    }
-
-    const auto& output = declaration("Ljava/io/FileOutputStream;");
-    const auto fd = std::ranges::find(
-        output.fields, std::string_view{"fd"}, &IntrinsicFieldDecl::name);
-    REQUIRE(fd != output.fields.end());
-    CHECK(fd->descriptor == "Ljava/io/FileDescriptor;");
-    CHECK(fd->access_flags == 0x0002U);
-    const auto should_close = std::ranges::find(
-        output.fields, std::string_view{"shouldClose"},
-        &IntrinsicFieldDecl::name);
-    REQUIRE(should_close != output.fields.end());
-    CHECK(should_close->access_flags == 0x0012U);
-    for (const auto& [name, descriptor, flags] :
-         std::vector<std::tuple<std::string_view, std::string_view,
-                                std::uint32_t>>{
-             {"<init>", "(Ljava/io/File;)V", 0x10001U},
-             {"<init>", "(Ljava/io/File;Z)V", 0x10001U},
-             {"<init>", "(Ljava/io/FileDescriptor;)V", 0x10001U},
-             {"<init>", "(Ljava/lang/String;)V", 0x10001U},
-             {"<init>", "(Ljava/lang/String;Z)V", 0x10001U},
-             {"write", "(I)V", 0x0001U},
-             {"write", "([BII)V", 0x0001U},
-             {"close", "()V", 0x0001U},
-             {"getFD", "()Ljava/io/FileDescriptor;", 0x0011U}}) {
-        const auto method = std::ranges::find_if(
-            output.methods, [&](const auto& candidate) {
-                return candidate.name == name &&
-                       candidate.descriptor == descriptor;
-            });
-        REQUIRE(method != output.methods.end());
-        CHECK(method->access_flags == flags);
-    }
-    CHECK(std::ranges::none_of(output.methods, [](const auto& method) {
-        return (method.name == "write" && method.descriptor == "([B)V") ||
-               method.name == "flush" || method.name == "getChannel";
-    }));
-
-    FileVm shape;
-    const auto& output_base = shape.linker.Class(shape.linker.ResolveDescriptor("Ljava/io/OutputStream;"));
-    CHECK(output_base.is_boot_dex);
-    CHECK(output_base.access_flags == 0x0401U);
-    for (const auto* descriptor : {"Ljava/io/ByteArrayOutputStream;", "Ljava/io/DataOutputStream;", "Ljava/io/OutputStream;"}) {
-        CHECK(std::ranges::none_of(catalog, [&](const auto& c) { return c.descriptor == descriptor; }));
-        const auto type = shape.linker.ResolveDescriptor(descriptor);
-        for (const auto method : shape.linker.Class(type).own_virtual_methods)
-            CHECK(shape.linker.Method(method).kind != MethodKind::intrinsic);
-    }
-
-    const auto& input = declaration("Ljava/io/FileInputStream;");
-    const auto input_fd = std::ranges::find(
-        input.fields, std::string_view{"fd"}, &IntrinsicFieldDecl::name);
-    REQUIRE(input_fd != input.fields.end());
-    CHECK(input_fd->descriptor == "Ljava/io/FileDescriptor;");
-    CHECK(input_fd->access_flags == 0x0002U);
-    const auto input_should_close = std::ranges::find(
-        input.fields, std::string_view{"shouldClose"},
-        &IntrinsicFieldDecl::name);
-    REQUIRE(input_should_close != input.fields.end());
-    CHECK(input_should_close->access_flags == 0x0012U);
-    for (const auto& [name, descriptor, flags] :
-         std::vector<std::tuple<std::string_view, std::string_view,
-                                std::uint32_t>>{
-             {"<init>", "(Ljava/io/File;)V", 0x10001U},
-             {"<init>", "(Ljava/io/FileDescriptor;)V", 0x10001U},
-             {"<init>", "(Ljava/lang/String;)V", 0x10001U},
-             {"available", "()I", 0x0001U},
-             {"close", "()V", 0x0001U},
-             {"getFD", "()Ljava/io/FileDescriptor;", 0x0011U},
-             {"read", "()I", 0x0001U},
-             {"read", "([BII)I", 0x0001U},
-             {"skip", "(J)J", 0x0001U}}) {
-        const auto method = std::ranges::find_if(
-            input.methods, [&](const auto& candidate) {
-                return candidate.name == name &&
-                       candidate.descriptor == descriptor;
-            });
-        REQUIRE(method != input.methods.end());
-        CHECK(method->access_flags == flags);
-    }
-    CHECK(std::ranges::none_of(input.methods, [](const auto& method) {
-        return (method.name == "read" && method.descriptor == "([B)I") ||
-               method.name == "getChannel";
-    }));
-
-    const auto& input_base = shape.linker.Class(shape.linker.ResolveDescriptor("Ljava/io/InputStream;"));
-    CHECK(input_base.is_boot_dex);
-    CHECK(input_base.access_flags == 0x0401U);
-    CHECK(std::ranges::none_of(catalog, [](const auto& c) { return c.descriptor == "Ljava/io/InputStream;" || c.descriptor == "Ljava/io/DataInputStream;"; }));
-    const auto input_read = shape.linker.FindVtableIndex(input_base.id, "read", "()I");
-    REQUIRE(input_read);
-    CHECK(shape.linker.Method(input_base.vtable[*input_read]).kind == MethodKind::abstract);
-
 }
 
 TEST_CASE("File first-batch path and object semantics match on both backends") {
@@ -584,9 +469,9 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
         CHECK_FALSE(vm.BoolOn(missing, "isFile"));
 
         CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
-                        {VmValue::Int(1)}).AsInt() == 1);
+                        {VmValue::Int(1)}).AsInt() == 0);
         CHECK(vm.CallOn(writable, "setWritable", "(ZZ)Z",
-                        {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 1);
+                        {VmValue::Int(1), VmValue::Int(0)}).AsInt() == 0);
         CHECK(vm.CallOn(writable, "setWritable", "(Z)Z",
                         {VmValue::Int(0)}).AsInt() == 0);
         CHECK(vm.CallOn(read_only, "setWritable", "(Z)Z",
@@ -710,40 +595,32 @@ TEST_CASE("File second-batch VFS and filter semantics match on both backends") {
     }
 }
 
-TEST_CASE("File APIs fail explicitly when the guest filesystem is unavailable") {
-    FileVm vm;
-    vm.interpreter.IO().SetFileSystem(nullptr);
-    const auto file = vm.NewFile("/data/game/save.dat");
-    const auto target = vm.NewFile("/data/game/moved.dat");
-    const auto expect_unsupported = [&](const std::string& name,
-                                        const std::string& descriptor,
-                                        std::vector<VmValue> arguments = {}) {
-        const auto outcome = vm.CallOnOutcome(
-            file, name, descriptor, std::move(arguments));
-        REQUIRE(outcome.exception.IsValid());
-        CHECK(vm.linker.Class(outcome.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-    };
-    expect_unsupported("canRead", "()Z");
-    expect_unsupported("isFile", "()Z");
-    expect_unsupported("list", "()[Ljava/lang/String;");
-    expect_unsupported("mkdir", "()Z");
-    expect_unsupported("renameTo", "(Ljava/io/File;)Z",
-                       {VmValue::Ref(target)});
-    expect_unsupported("setWritable", "(Z)Z", {VmValue::Int(1)});
-
-    const auto created = vm.CallOnOutcome(file, "createNewFile", "()Z");
-    REQUIRE(created.exception.IsValid());
-    CHECK(vm.linker.Class(created.exception_class).descriptor ==
-          "Ljava/io/IOException;");
-
-    const auto input = vm.interpreter.NewIntrinsicInstance(
-        "Ljava/io/FileInputStream;");
-    const auto opened = vm.CallOnOutcome(
-        input, "<init>", "(Ljava/io/File;)V", {VmValue::Ref(file)});
-    REQUIRE(opened.exception.IsValid());
-    CHECK(vm.linker.Class(opened.exception_class).descriptor ==
-          "Ljava/lang/UnsupportedOperationException;");
+TEST_CASE("File Java failure results preserve the unavailable filesystem boundary") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        vm.interpreter.IO().SetFileSystem(nullptr);
+        const auto file = vm.NewFile("/data/game/save.dat");
+        const auto target = vm.NewFile("/data/game/moved.dat");
+        for (const auto* name : {"canRead", "isFile", "mkdir"}) CHECK_FALSE(vm.BoolOn(file, name));
+        CHECK_FALSE(vm.CallOn(file, "list", "()[Ljava/lang/String;").ref.IsValid());
+        CHECK(vm.CallOn(file, "renameTo", "(Ljava/io/File;)Z", {VmValue::Ref(target)}).AsInt() == 0);
+        CHECK(vm.CallOn(file, "setWritable", "(Z)Z", {VmValue::Int(1)}).AsInt() == 0);
+        const auto created = vm.CallOnOutcome(file, "createNewFile", "()Z");
+        REQUIRE(created.exception.IsValid());
+        CHECK(vm.linker.Class(created.exception_class).descriptor == "Ljava/io/IOException;");
+        const auto input = vm.interpreter.NewIntrinsicInstance("Ljava/io/FileInputStream;");
+        const auto opened = vm.CallOnOutcome(input, "<init>", "(Ljava/io/File;)V", {VmValue::Ref(file)});
+        REQUIRE(opened.exception.IsValid());
+        CHECK(vm.linker.Class(opened.exception_class).descriptor == "Ljava/io/FileNotFoundException;");
+        const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto denied = vm.CallOnOutcome(posix, "access", "(Ljava/lang/String;I)Z",
+            {VmValue::Ref(vm.interpreter.NewStringUtf8("/data/game/save.dat")), VmValue::Int(2)});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(vm.linker.Class(denied.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+        const auto errno_field = vm.linker.FindFieldRecursive(denied.exception_class, "errno", "I");
+        REQUIRE(errno_field.has_value());
+        CHECK(vm.model.InstanceSlots(denied.exception)[vm.linker.Field(*errno_field).slot].bits == 38);
+    }
 }
 
 TEST_CASE("File relative absolute path uses the initial guest root directory") {
@@ -862,12 +739,16 @@ TEST_CASE("File.delete removes real entries and refuses the rest") {
 }
 
 TEST_CASE("File.createNewFile reports whether it created anything") {
-    FileVm vm;
-    const auto file = vm.NewFile("/sdcard/fresh.dat");
-    CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 1);
-    CHECK(vm.BoolOn(file, "exists"));
-    CHECK(vm.CallOn(file, "length", "()J").AsLong() == 0);
-    CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 0);
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        FileVm vm(nullptr, true, {.backend = backend});
+        const auto file = vm.NewFile("/sdcard/fresh.dat");
+        CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 1);
+        CHECK(vm.BoolOn(file, "exists"));
+        CHECK(vm.CallOn(file, "length", "()J").AsLong() == 0);
+        vm.JavaWrite("/sdcard/fresh.dat", "preserved");
+        CHECK(vm.CallOn(file, "createNewFile", "()Z").AsInt() == 0);
+        CHECK(vm.NativeRead("/sdcard/fresh.dat") == "preserved");
+    }
 }
 
 TEST_CASE("File.list distinguishes an empty directory from an invalid path") {

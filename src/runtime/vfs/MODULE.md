@@ -22,6 +22,7 @@
 - 内存、小文件、宿主文件和上层注入的 APK/OBB backing 共用 `Read`/`ReadAt` 数据面。
   `ReadAt`/`WriteAt` 不移动 offset；普通 Read/Write/Seek 在同一打开状态串行，同一节点
   的读写/截断由节点锁排序。失败未交付字节时不推进 offset。
+- create+exclusive 在同一索引锁内检查存在并创建，已存在路径返回 EEXIST，早于截断/写入。
 - append 是打开状态的不可变属性，Duplicate 共享；每次非空 Write 在节点锁内选当前
   EOF、写入并提交 offset，先 seek 不解除追加。WriteAt 对 append fd 按 Android/Linux
   pwrite 行为忽略请求位置并追加，但不移动顺序 offset；其他 fd 保持定位写。

@@ -105,7 +105,9 @@
   RandomAccessFile 的路径/模式、基础字节读写、seek/getFilePointer、length/setLength、FD/channel
   也复用该状态；VFS errno 通过 IoRuntimeError 保真，Java 边界再翻译为对应 IOException。
   File 只消费注入 VFS/工作目录；mkdir/mkdirs 分开，filter 虚派并传播异常，缺 IoFileSystem
-  不与 ENOENT 混淆；setWritable 仅在既有可写对象上报告成功，不伪造权限改变。
+  不与 ENOENT 混淆。Posix.access 按 VFS 可写事实检查 W_OK，缺文件系统为 ENOSYS；
+  open 的 O_CREAT|O_EXCL 在 VFS 索引锁内判定 EEXIST，不截断已有文件。
+  setWritable 沿原版 File 将 chmod 的 ENOSYS 转为 false，不伪造权限改变。
 - InputStreamReader 用 Reader.lock 保护固定 ICU 六标准编码的增量转换，close/GC/teardown
   回收。OutputStreamWriter 使用同一编码集合写入真实 OutputStream，并传播 write/flush/close
   异常；PrintStream 保留原版 FilterOutputStream 继承和目标路由，不覆盖普通方法。

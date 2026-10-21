@@ -416,7 +416,7 @@ TEST_CASE("Object streams round trip default Serializable graphs") {
     }
 }
 
-TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
+TEST_CASE("Object streams preserve explicit exception serialization boundary and invalid headers") {
     FileVm vm(nullptr, false);
     VmThreadRuntime threads(vm.interpreter);
     const auto byte_output = vm.interpreter.NewIntrinsicInstance(
@@ -431,8 +431,12 @@ TEST_CASE("Object streams reject nonserializable objects and invalid headers") {
         output, "writeObject", "(Ljava/lang/Object;)V",
         {VmValue::Ref(output)});
     REQUIRE(unsupported.exception.IsValid());
+    // Writing the NotSerializableException computes the stack-trace array SUID
+    // through SHA. This core-only fixture has no guest native loader; the
+    // actual NotSerializableException check lives in the real JNI fixture.
     CHECK(vm.linker.Class(unsupported.exception_class).descriptor ==
-          "Ljava/io/NotSerializableException;");
+          "Ljava/lang/UnsatisfiedLinkError;");
+    CHECK(unsupported.exception_message == "APK native library loader is unavailable");
 
     const auto invalid_bytes = vm.model.NewPrimitiveArray(
         vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4);

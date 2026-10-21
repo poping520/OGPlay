@@ -166,7 +166,7 @@ def _state(client: McpClient) -> dict[str, Any]:
     state = client.structured("session_state")
     required = {
         "lifecycle", "frame", "guestTicks", "presentedFrame", "movieRequest",
-        "processExit", "guestFault", "shutdownRequested",
+        "processExit", "guestFault", "shutdownRequested", "successfulPresents",
     }
     if set(state) != required:
         raise RunnerError("session_state fields do not match the runner contract")
@@ -176,8 +176,9 @@ def _state(client: McpClient) -> dict[str, Any]:
 class ScenarioExecutor:
     def __init__(self, plan: ScenarioPlan, client: McpClient, process: Any,
                  evidence_dir: Path, stdout_path: Path, stderr_path: Path,
-                 started_at: float) -> None:
+                 started_at: float, survey: bool = False) -> None:
         self.plan = plan
+        self.survey = survey
         self.client = client
         self.process = process
         self.evidence_dir = evidence_dir
@@ -414,7 +415,8 @@ class ScenarioExecutor:
                     tail_path.relative_to(self.evidence_dir).as_posix(),)
             except OSError:
                 pass
-        status = ResultStatus.PASSED.value if error is None else ResultStatus.FAILED.value
+        status = (("observed" if self.survey else ResultStatus.PASSED.value)
+                  if error is None else ResultStatus.FAILED.value)
         return CheckpointResult(
             id=checkpoint.id, status=status,
             startFrame=start_state["frame"], endFrame=state["frame"],
@@ -465,12 +467,12 @@ class ScenarioExecutor:
         shutdown = self.shutdown()
         if not shutdown.clean and first_failure is None:
             first_failure = f"shutdown: {shutdown.error}"
-        status = (ResultStatus.PASSED.value if first_failure is None
-                  else ResultStatus.FAILED.value)
+        status = (ResultStatus.FAILED.value if first_failure is not None else
+                  ResultStatus.SURVEY.value if self.survey else ResultStatus.PASSED.value)
         return ScenarioResult(
             scenarioId=self.plan.id, status=status, profile=self.plan.profile,
             checkpoints=tuple(checkpoints), firstFailure=first_failure,
-            shutdown=shutdown)
+            shutdown=shutdown, survey=self.survey)
 
 
 def _parse_fixtures(values: Sequence[str]) -> dict[str, Path]:
@@ -491,7 +493,9 @@ def _free_port() -> int:
 
 def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
             profiles: Path, evidence_dir: Path,
-            port: int, dexvm_interpreter: str | None = None) -> LaunchedSession:
+            port: int, dexvm_interpreter: str | None = None,
+            survey_gaps: Path | None = None,
+            run_options: Sequence[str] = ()) -> LaunchedSession:
     expected = {item["id"] for item in plan.fixtures if item["required"]}
     missing = sorted(expected - fixtures.keys())
     unknown = sorted(fixtures.keys() - {item["id"] for item in plan.fixtures})
@@ -508,11 +512,12 @@ def _launch(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
         str(ogplay), "run-apk", str(apk_paths[0]),
         "--profiles-dir", str(profiles), "--mcp-port", str(port),
         "--mcp-manual-step",
-        # Scenario results have to be reproducible, so a run never inherits
-        # or leaves behind saved state (ADR-0020 02 §4). Persistence is
-        # covered by CTest, not by scenarios.
-        "--ephemeral-sandbox",
     ]
+    if "--sandbox-dir" not in run_options:
+        command.extend(["--sandbox-dir", str(evidence_dir / "sandbox")])
+    command.extend(run_options)
+    if survey_gaps is not None:
+        command.extend(["--survey-gaps", str(survey_gaps.resolve())])
     if dexvm_interpreter is not None:
         command.extend(["--dexvm-interpreter", dexvm_interpreter])
     external = [fixtures[item["id"]] for item in plan.fixtures
@@ -579,7 +584,7 @@ def self_test(result_schema: Path) -> int:
             "lifecycle": "running", "frame": 0, "guestTicks": 0,
             "presentedFrame": None, "movieRequest": None,
             "processExit": False, "guestFault": None,
-            "shutdownRequested": False,
+            "shutdownRequested": False, "successfulPresents": None,
         }
         png = b"\x89PNG\r\n\x1a\nfixture"
 
@@ -649,13 +654,58 @@ def self_test(result_schema: Path) -> int:
         assert (evidence / "first_frame" / "frame.png").read_bytes() == png
         assert json.loads(result.to_json())["schema"] == 1
 
+        # Survey success is diagnostic, including each checkpoint status.
+        process = _FakeProcess()
+        state.update(frame=0, guestTicks=0, presentedFrame=None,
+                     movieRequest=None, shutdownRequested=False)
+        survey_result = ScenarioExecutor(
+            plan, McpClient(f"http://127.0.0.1:{server.server_port}/mcp"),
+            process, evidence, stdout_path, stderr_path, time.monotonic(),
+            survey=True).run()
+        assert survey_result.survey and survey_result.status == "survey"
+        assert all(item.status == "observed" for item in survey_result.checkpoints)
+        assert '"status":"passed"' not in survey_result.to_json()
+
+        # Exercise actual launch assembly without starting a guest. OBB uses
+        # run-apk's existing mount; no unpacking or alternate sandbox path.
+        from unittest.mock import patch
+        apk = root / "original.apk"
+        obb = root / "main.1.org.example.legacy.obb"
+        apk.touch()
+        obb.touch()
+        fixture_plan = replace(plan, fixtures=(
+            {"id": "legacy.apk", "kind": "apk", "required": True},
+            {"id": "legacy.obb", "kind": "obb", "required": True}))
+        mappings = {"legacy.apk": apk, "legacy.obb": obb}
+        with patch("subprocess.Popen", return_value=_FakeProcess()) as spawn:
+            launched = _launch(fixture_plan, mappings, root / "cli", profiles,
+                               evidence, 12345, survey_gaps=root / "gaps.json")
+            command = spawn.call_args.args[0]
+            assert command[command.index("--obb") + 1] == str(obb)
+            assert command[command.index("--survey-gaps") + 1] == str((root / "gaps.json").resolve())
+            assert command[command.index("--sandbox-dir") + 1] == str(evidence / "sandbox")
+            launched.close_logs()
+            launched = _launch(fixture_plan, mappings, root / "cli", profiles,
+                               evidence, 12345, run_options=(
+                                   "--sandbox-dir", str(root / "sandbox"),
+                                   "--surface-width", "1024", "--surface-height", "600",
+                                   "--external-guest-dir", "/sdcard/example"))
+            command = spawn.call_args.args[0]
+            assert "--survey-gaps" not in command
+            assert "--ephemeral-sandbox" not in command
+            assert command[command.index("--sandbox-dir") + 1] == str(root / "sandbox")
+            assert command[command.index("--surface-width") + 1] == "1024"
+            assert command[command.index("--surface-height") + 1] == "600"
+            assert command[command.index("--external-guest-dir") + 1] == "/sdcard/example"
+            launched.close_logs()
+
         process = _FakeProcess()
         state.clear()
         state.update({
             "lifecycle": "running", "frame": 0, "guestTicks": 0,
             "presentedFrame": None, "movieRequest": None,
             "processExit": False, "guestFault": None,
-            "shutdownRequested": False,
+            "shutdownRequested": False, "successfulPresents": None,
         })
         failure_plan = replace(
             plan,
@@ -673,6 +723,7 @@ def self_test(result_schema: Path) -> int:
             process, failed_evidence, failed_stdout, failed_stderr,
             time.monotonic()).run()
         assert failed.status == "failed"
+        assert not failed.survey
         assert failed.checkpoints[0].endFrame == 1
         assert "frame budget exhausted" in (failed.firstFailure or "")
         assert failed.shutdown.clean
@@ -683,6 +734,38 @@ def self_test(result_schema: Path) -> int:
         assert "started" in failure_tail.read_text(encoding="utf-8")
         assert any(reference.endswith("failure_logs.txt")
                    for reference in failed.checkpoints[0].evidence)
+
+        process = _FakeProcess()
+        state.update(frame=0, guestTicks=0, presentedFrame=None,
+                     movieRequest=None, shutdownRequested=False)
+        survey_failed = ScenarioExecutor(
+            failure_plan, McpClient(f"http://127.0.0.1:{server.server_port}/mcp"),
+            process, failed_evidence, failed_stdout, failed_stderr,
+            time.monotonic(), survey=True).run()
+        assert survey_failed.survey and survey_failed.status == "failed"
+        assert survey_failed.firstFailure == failed.firstFailure
+
+        # Both once and watch entry points must retain survey labeling.
+        process = _FakeProcess()
+        state.update(frame=0, guestTicks=0, presentedFrame=None,
+                     movieRequest=None, shutdownRequested=False)
+        def fake_launch(*args: Any, **kwargs: Any) -> LaunchedSession:
+            assert args[7] == root / "gaps.json"
+            return LaunchedSession(process, stdout_path.open("ab"), stderr_path.open("ab"))
+        with patch(__name__ + "._launch", side_effect=fake_launch), \
+                patch(__name__ + "._free_port", return_value=server.server_port):
+            once = _run_once(plan, mappings, root / "cli", profiles, evidence,
+                             survey_gaps=root / "gaps.json")
+            assert once.survey and once.status == "survey"
+            process = _FakeProcess()
+            state.update(frame=0, guestTicks=0, presentedFrame=None,
+                         movieRequest=None, shutdownRequested=False)
+            generation = _WatchGeneration(plan, mappings, root / "cli", profiles,
+                                          evidence, survey_gaps=root / "gaps.json")
+            generation.execute_from(plan.checkpoints)
+            watched = generation.finish()
+            assert watched.survey and watched.status == "survey"
+            assert all(item.status == "observed" for item in watched.checkpoints)
 
         # Watch-mode prefix comparison and tail helper.
         checkpoints = plan.checkpoints
@@ -731,6 +814,14 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--scenario", type=Path)
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--ogplay-cli", type=Path)
+    parser.add_argument("--survey-gaps", type=Path,
+                        help="diagnostic survey JSON; never produces passing evidence")
+    parser.add_argument("--sandbox-dir", type=Path,
+                        help="explicit sandbox (default: a fresh sandbox inside evidence)")
+    parser.add_argument("--external-guest-dir",
+                        help="run-apk guest mount point for the external fixture")
+    parser.add_argument("--surface-width", type=int, choices=range(1, 4097), metavar="1..4096")
+    parser.add_argument("--surface-height", type=int, choices=range(1, 4097), metavar="1..4096")
     parser.add_argument("--fixture", action="append", default=[])
     parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--fresh", action="store_true",
@@ -740,6 +831,17 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--dexvm-interpreter", choices=("switch", "threaded"),
                         help="select the DexVM interpreter backend")
     return parser.parse_args(argv)
+
+
+def _run_options(args: argparse.Namespace) -> list[str]:
+    options: list[str] = []
+    for name in ("sandbox_dir", "external_guest_dir", "surface_width", "surface_height"):
+        value = getattr(args, name)
+        if value is not None:
+            if isinstance(value, Path):
+                value = value.resolve()
+            options.extend(["--" + name.replace("_", "-"), str(value)])
+    return options
 
 
 def _prepare_evidence_dir(path: Path, fresh: bool) -> Path:
@@ -759,16 +861,18 @@ def _write_result(evidence: Path, result: ScenarioResult) -> None:
 def _run_once(plan: ScenarioPlan, fixtures: dict[str, Path], ogplay: Path,
               profiles: Path,
               evidence: Path,
-              dexvm_interpreter: str | None = None) -> ScenarioResult:
+              dexvm_interpreter: str | None = None,
+              survey_gaps: Path | None = None,
+              run_options: Sequence[str] = ()) -> ScenarioResult:
     port = _free_port()
     started = time.monotonic()
     launched = _launch(plan, fixtures, ogplay, profiles,
-                       evidence, port, dexvm_interpreter)
+                       evidence, port, dexvm_interpreter, survey_gaps, run_options)
     try:
         executor = ScenarioExecutor(
             plan, McpClient(f"http://127.0.0.1:{port}/mcp"), launched.process,
             evidence, evidence / "stdout.log", evidence / "stderr.log",
-            started)
+            started, survey=survey_gaps is not None)
         return executor.run()
     finally:
         launched.close_logs()
@@ -780,16 +884,19 @@ class _WatchGeneration:
     def __init__(self, plan: ScenarioPlan, fixtures: dict[str, Path],
                  ogplay: Path, profiles: Path,
                  evidence: Path,
-                 dexvm_interpreter: str | None = None) -> None:
+                 dexvm_interpreter: str | None = None,
+                 survey_gaps: Path | None = None,
+                 run_options: Sequence[str] = ()) -> None:
         self.evidence = evidence
+        self.survey = survey_gaps is not None
         self.port = _free_port()
         self.launched = _launch(plan, fixtures, ogplay, profiles,
-                                evidence, self.port, dexvm_interpreter)
+                                evidence, self.port, dexvm_interpreter, survey_gaps, run_options)
         self.client = McpClient(f"http://127.0.0.1:{self.port}/mcp")
         self.executor = ScenarioExecutor(
             plan, self.client, self.launched.process, evidence,
             evidence / "stdout.log", evidence / "stderr.log",
-            time.monotonic())
+            time.monotonic(), survey=self.survey)
         self.plan = plan
         self.signatures: list[str] = []
         self.results: list[CheckpointResult] = []
@@ -849,12 +956,12 @@ class _WatchGeneration:
                 break
         if first_failure is None and not shutdown.clean:
             first_failure = f"shutdown: {shutdown.error}"
-        status = (ResultStatus.PASSED.value if first_failure is None
-                  else ResultStatus.FAILED.value)
+        status = (ResultStatus.FAILED.value if first_failure is not None else
+                  ResultStatus.SURVEY.value if self.survey else ResultStatus.PASSED.value)
         return ScenarioResult(
             scenarioId=self.plan.id, status=status, profile=self.plan.profile,
             checkpoints=tuple(self.results), firstFailure=first_failure,
-            shutdown=shutdown)
+            shutdown=shutdown, survey=self.survey)
 
     def abort(self) -> None:
         try:
@@ -897,7 +1004,7 @@ def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
                       f"{gen_dir}", flush=True)
                 current = _WatchGeneration(plan, fixtures, ogplay,
                                            profiles, gen_dir,
-                                           args.dexvm_interpreter)
+                                           args.dexvm_interpreter, args.survey_gaps, _run_options(args))
                 current.execute_from(plan.checkpoints)
                 print("[watch] waiting for scenario changes "
                       "(Ctrl-C to finish)", flush=True)
@@ -940,7 +1047,7 @@ def _run_watch(args: argparse.Namespace, fixtures: dict[str, Path],
         _write_result(current.evidence, result)
         _write_result(evidence, result)
         print(result.to_json())
-        return 0 if result.status == ResultStatus.PASSED.value else 1
+        return 0 if result.status in {ResultStatus.PASSED.value, ResultStatus.SURVEY.value} else 1
 
 
 def main(argv: Sequence[str]) -> int:
@@ -962,10 +1069,10 @@ def main(argv: Sequence[str]) -> int:
     if args.watch:
         return _run_watch(args, fixtures, ogplay, evidence)
     result = _run_once(plan, fixtures, ogplay, args.profiles.resolve(), evidence,
-                       args.dexvm_interpreter)
+                       args.dexvm_interpreter, args.survey_gaps, _run_options(args))
     _write_result(evidence, result)
     print(result.to_json())
-    return 0 if result.status == ResultStatus.PASSED.value else 1
+    return 0 if result.status in {ResultStatus.PASSED.value, ResultStatus.SURVEY.value} else 1
 
 
 if __name__ == "__main__":

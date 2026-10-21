@@ -8,6 +8,7 @@
     "schema",
     "scenarioId",
     "status",
+    "survey",
     "profile",
     "checkpoints",
     "firstFailure",
@@ -16,7 +17,8 @@
   "properties": {
     "schema": {"const": 1},
     "scenarioId": {"type": "string", "minLength": 1},
-    "status": {"enum": ["passed", "failed"]},
+    "status": {"enum": ["passed", "failed", "survey"]},
+    "survey": {"type": "boolean"},
     "profile": {"type": "object"},
     "checkpoints": {
       "type": "array",
@@ -25,6 +27,17 @@
     "firstFailure": {"type": ["string", "null"]},
     "shutdown": {"$ref": "#/$defs/shutdownResult"}
   },
+  "allOf": [{
+    "if": {"properties": {"survey": {"const": true}}},
+    "then": {"properties": {
+      "status": {"enum": ["survey", "failed"]},
+      "checkpoints": {"items": {"properties": {"status": {"enum": ["observed", "failed"]}}}}
+    }},
+    "else": {"properties": {
+      "status": {"enum": ["passed", "failed"]},
+      "checkpoints": {"items": {"properties": {"status": {"enum": ["passed", "failed"]}}}}
+    }}
+  }],
   "$defs": {
     "assertionResult": {
       "type": "object",
@@ -46,7 +59,7 @@
       ],
       "properties": {
         "id": {"type": "string", "minLength": 1},
-        "status": {"enum": ["passed", "failed"]},
+        "status": {"enum": ["passed", "failed", "observed"]},
         "startFrame": {"type": "integer", "minimum": 0},
         "endFrame": {"type": "integer", "minimum": 0},
         "startTicks": {"type": "integer", "minimum": 0},

@@ -78,10 +78,18 @@ python tools/dexvm_stub_gen.py \
 `BoundInstanceField/BoundStaticField` handle，方法默认显式未实现，待逐项绑定真实
 handler。固定清单的来源与复验命令见 `tools/README.md`。
 
-### 步 3 · survey 运行：一次收割全部真实命中
+### 步 3 · 固化输入场景，再成对运行 survey
+
+默认流程见 [SCENARIO-RUNNER.md](SCENARIO-RUNNER.md#适配与回归相同输入两种模式)：
+将已知操作固化为 `data/scenarios/` 的 exact-APK 场景，先正常运行，再用同场景加
+`run_scenario.py --survey-gaps <path>`，输出到独立证据目录。空闲帧只能覆盖启动路径；
+优先级按实际操作覆盖和跨游戏命中数决定。正常未通过明确记录，不用 survey 替代。
+基础回归各一次，正式 title gate/golden 另按三轮验收。
+
+临时探索尚未固化场景时，仍可直接使用 run-apk：
 
 ```bash
-ogplay-cli run-apk <title>.apk --profiles-dir data/profiles-dexvm \
+ogplay-cli run-apk <title>.apk --profiles-dir data/profiles \
   --exit-after-frames 120 --survey-gaps .local/<title>_survey.json
 ```
 

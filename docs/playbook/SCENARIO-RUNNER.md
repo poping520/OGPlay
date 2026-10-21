@@ -41,10 +41,39 @@ python tools/run_scenario.py \
   挂到 `/sdcard`，OBB 原文件挂到 `/sdcard/Android/obb/<package>/`；Profile 可另行
   声明特殊挂载和必需资源。
 - `--evidence-dir` 必须是新目录；`--fresh` 才允许覆盖已有目录。
+- 默认沙盒为新证据目录下的 `sandbox/`，使用 run-apk 的磁盘沙盒初始化，不继承既有存档。
+  `--sandbox-dir <dir>` 可显式复用状态，报告必须注明来源；watch 每代默认各有独立沙盒。
+- `--surface-width` / `--surface-height` 与 `--external-guest-dir` 透传既有 run-apk 设置。
+  场景不保存宿主路径；复跑时保留相同启动设置，并与 Result 一同记录命令。
 - 音频默认走 `SDL_AUDIODRIVER=dummy`，除非环境里已设定。
-- 退出码：`0` 通过，`1` 场景失败，`2` 参数/校验/环境无效。三种情况 stdout 都
+- 退出码：`0` 正常通过或 survey 无执行错误（必须读 status），`1` 场景失败，`2` 参数/校验/环境无效。三种情况 stdout 都
   是单个 JSON 文档，失败时形如 `{"schema":1,"status":"invalid","reason":"…"}`，
   可直接被包装脚本消费。
+
+## 适配与回归：相同输入，两种模式
+
+先按 MCP 已验证路径固化启动与输入 checkpoint；只加已知能走通的交互。每次点击后
+至少推进两帧以派发 down/up，并在操作后的 checkpoint 断言 presented frame 推进、
+no_guest_fault。批量逻辑 step 的帧数不等于 presentedFrame；等待加载/影片应给足预算，
+用 frame minimum_sequence 驱动，不能凭逻辑帧数宣称到达菜单。截图留作到达点审查，
+无 golden 的帧/无 fault 断言只证明基础进展，不自动证明某个画面内容。
+
+1. 不带 survey 运行固定场景：只有 `status=passed` 且 `survey=false` 才是回归证据。
+2. 同场景、相同 fixtures/显示设置，使用新的证据目录，并添加
+   `--survey-gaps <absolute-or-relative-output.json>`。输出路径按调用目录解析，再透传 run-apk。
+3. Result 必有 `survey`；survey 成功为 `status=survey`，成功 checkpoint 为 `observed`，
+   执行/退出错误仍 `failed`。断言的 `passed` 布尔值仅表示该诊断断言求值，不能作通过证据。
+   `--watch` 同样遵守此规则，最终回归需关闭 watch 与 survey。
+4. 汇总 survey schema 2 的 `members_by_first_hit`：按 class/member/kind 去重，先按命中游戏数
+   降序，再按各游戏最小 first_hit_index 升序，最后按成员名确定同序。不同游戏的序号仅为
+   本游戏命中流中的顺序，不是统一时间线。前十项按能力主题提出候选，不在收割时实现。
+5. 正常模式未通过时记首错与缺口，不用 survey 的继续执行替代通过。基础场景各一次；
+   正式 title gate/golden 验收另按三轮执行。
+
+命令示例：在“跑一次”的命令上添加
+`--survey-gaps .local/analysis/<id>/survey.json`，且使用独立的 `--evidence-dir`。
+无 Profile 时从原 APK 提取 package/version/.so SHA-256/ABI，并明确报告无 Profile；
+有同包 Profile 时必须精确匹配，不得编造身份。
 
 ## 读产物
 
@@ -93,5 +122,4 @@ python tools/run_scenario.py --watch --scenario … --evidence-dir … （其余
 `ctest` 中的 `tools.scenario_runner_self_test`（`run_scenario.py --self-test`）用
 假进程与假 MCP 覆盖执行、证据与失败路径，不需要真 APK；
 `tools.scenario_validator_self_test` 与 `tools.scenarios_current` 覆盖场景校验。
-改 runner 或 schema 后这三项必须过。真 APK 场景不入 CI（题库不入库），本地按
-gate 三轮的方式复跑。
+改 runner 或 schema 后这三项必须过。真 APK 场景不入 CI（题库不入库），基础回归各跑一次；正式 title gate/golden 才三轮复跑。

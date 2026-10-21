@@ -1,0 +1,42 @@
+# Exact identity extracted from the original APK; no Title Profile exists.
+# Baseline progress only; frame/no-fault assertions do not certify visual correctness.
+schema = 1
+id = "pvz.basic"
+
+[profile]
+package = "com.popcap.pvz_row"
+version_code = 60001369
+so_sha256 = "ce21195c67dea0f07fb2e2b0fc0a04468f2ec059ce74ed4ddac8f987808f9208"
+abi = "armeabi"
+
+[[fixture]]
+id = "pvz.apk"
+kind = "apk"
+required = true
+
+[limits]
+startup_frames = 100
+startup_ticks = 10000000000
+startup_wall_time_ms = 120000
+total_frames = 100100
+total_ticks = 20000000000
+total_wall_time_ms = 360000
+
+[[checkpoint]]
+id = "baseline"
+provider = "frame"
+max_frames = 100000
+max_ticks = 10000000000
+wall_time_ms = 240000
+evidence = ["frame", "state", "logs"]
+
+[checkpoint.action]
+type = "step"
+frames = 1
+
+[[checkpoint.assertion]]
+type = "frame"
+minimum_sequence = 1
+
+[[checkpoint.assertion]]
+type = "no_guest_fault"

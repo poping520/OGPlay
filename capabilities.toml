@@ -171,7 +171,7 @@ note = "M6 WU-0357 为 gl_surface_view run-apk 增加显式 MCP manual-step 模�
 [automation.scenario_runner]
 status = "complete"
 test = "tools.scenario_runner_self_test"
-note = "WU-0358、DVM-20/21：在 Profile-backed MCP 手动步进会话上执行强类型 Scenario，含帧/tick/wall 三重预算、逐断言 expected/actual 与 frame/state/log 证据，输出 Result v1 JSON；支持 --fresh 与 --watch 增量编写，失败必留日志证据。OBB 与 gpu_trace 明确失败。"
+note = "DIAG-6/WU5：exact-APK MCP 场景含三重预算与 frame/state/log 证据；支持 OBB/external、独立磁盘沙盒、显示尺寸及挂载点透传、fresh/watch。survey-gaps 明示 survey=true，成功仅 survey/observed，失败仍 failed，永不作通过证据；gpu_trace 明确失败。真实九游戏结果见 DIAG-6。"
 
 [agent.control_service]
 status = "complete"

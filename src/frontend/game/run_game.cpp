@@ -538,10 +538,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     return dex_context->uptime_millis.load();
                 });
                 if (survey_gaps_output.has_value()) {
-                    vm.Linker().EnableGapSurvey();
-                    Write("OGPlay: GAP SURVEY RUN — unresolved platform classes "
-                          "and methods answer neutrally and are recorded. This is "
-                          "a diagnostic work queue, not a compatibility result.\n");
+                    vm.Linker().EnableGapSurvey([dex_context] {
+                        return dex_context->uptime_millis.load();
+                    });
+                    Write("OGPlay: GAP SURVEY RUN — called unimplemented members and "
+                          "unresolved platform classes answer neutrally and are "
+                          "recorded (API19 skeleton stays active). This is a "
+                          "diagnostic work queue, not a compatibility result.\n");
                     logger.Write(core::LogLevel::warn, "frontend.run_apk",
                                  "gap survey enabled; run is diagnostic only",
                                  {}, {}, kUnrestrictedLog);
@@ -675,6 +678,19 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                           dex_lifecycle->QueueInput(input);
                       }, [&] { dex_lifecycle->CancelInput(); }};
         }
+        // Written before rethrowing: a survey run usually ends on the first
+        // gap that no stub can paper over, and that harvest is exactly what
+        // the next batch needs. Written on a startup failure, once before teardown (which
+        // can hang on guest audio threads) and again after it with the final counts.
+        const auto write_survey = [&] {
+            if (!survey_gaps_output.has_value()) return;
+            const auto hits = app_process->DexVm().Linker().GapSurveyHits();
+            std::ofstream report(*survey_gaps_output, std::ios::binary);
+            report << runtime::dexvm::RenderGapSurveyJson(
+                hits, PathUtf8(apk_path.filename()));
+            Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) +
+                  " entries to " + survey_gaps_output->string() + "\n");
+        };
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "starting Activity lifecycle", {}, {},
                      kUnrestrictedLog);
@@ -682,6 +698,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             static_cast<void>(driver.start());
         } catch (...) {
             capture_exit();
+            write_survey();
             throw;
         }
         std::unique_ptr<session::AudioOutputPump> audio_pump;
@@ -977,6 +994,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         control_channel->Close();
         ReleaseCapturedFrame(mcp_frames.get(), *guest);
         if (audio_pump) audio_pump->Stop();
+        write_survey();
         logger.Write(core::LogLevel::info, "frontend.run_apk",
                      "stopping Activity lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
@@ -994,17 +1012,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (audio_output) audio_output->Stop();
         publish_session();
         if (missing_data) missing_data->Write();
-        if (survey_gaps_output.has_value()) {
-            // Written before rethrowing: a survey run usually ends on the
-            // first gap that no stub can paper over, and that harvest is
-            // exactly what the next batch needs.
-            const auto hits = app_process->DexVm().Linker().GapSurveyHits();
-            std::ofstream report(*survey_gaps_output, std::ios::binary);
-            report << runtime::dexvm::RenderGapSurveyJson(
-                hits, PathUtf8(apk_path.filename()));
-            Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) +
-                  " entries to " + survey_gaps_output->string() + "\n");
-        }
+        write_survey();
         if (failure) std::rethrow_exception(failure);
     }
     window->Close();

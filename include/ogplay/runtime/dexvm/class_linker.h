@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -229,6 +230,8 @@ struct LinkedMethod final {
     std::uint32_t access_flags{};
     MethodKind kind{MethodKind::interpreted};
     bool is_skeleton{};
+    // Survey-only neutral stub for a member API 19 does not declare.
+    bool survey_synthesized{};
     bool is_static{};
     bool overridable{};
     DeclaredInvokeKind declared_invoke_kind{DeclaredInvokeKind::direct};
@@ -314,12 +317,44 @@ struct ResolvedFieldRef final {
     DexClassId declared_owner;
 };
 
+// Gap survey record vocabulary. The source names who declares the reached
+// surface; the channel names how the title reached it. Diagnostic only.
+enum class GapSurveySource : std::uint8_t {
+    skeleton,   // generated API19 declaration with no behavior
+    intrinsic,  // handwritten intrinsic declaration with no handler
+    bootdex,    // member owned by a BootDex class with no behavior
+    missing,    // not declared by API19 at all (survey-synthesized stub)
+};
+enum class GapSurveyChannel : std::uint8_t { java, jni, reflection };
+enum class GapSurveyKind : std::uint8_t { class_stub, method, field };
+inline constexpr std::size_t kGapSurveyChannelCount = 3U;
+inline constexpr std::size_t kGapSurveyStackFrames = 5U;
+
 // One platform surface the running title reached but the catalogs do not
-// declare, with how often it was hit (survey mode only).
+// implement, with how often it was hit (survey mode only). The first three
+// members keep their historical order.
 struct GapSurveyHit final {
     std::string owner_descriptor;
     std::string member;  // empty when the whole class was missing
     std::uint32_t hits{};
+    GapSurveyKind kind{GapSurveyKind::method};
+    GapSurveySource source{GapSurveySource::missing};
+    GapSurveyChannel first_channel{GapSurveyChannel::java};
+    std::array<std::uint32_t, kGapSurveyChannelCount> channel_hits{};
+    std::uint64_t first_hit_index{};  // 1-based position in the whole hit stream
+    std::uint64_t first_uptime_ms{};
+    bool first_caller_bootdex{};      // top guest frame was BootDex original code
+    std::vector<std::string> first_stack;  // innermost first, <= 5 frames
+};
+
+// Context passed to RecordGapSurveyHit; stack is only built on a first hit.
+struct GapSurveyContext final {
+    GapSurveyKind kind{GapSurveyKind::method};
+    GapSurveySource source{GapSurveySource::missing};
+    GapSurveyChannel channel{GapSurveyChannel::java};
+    // Called only when the entry is new; returns innermost-first frames and
+    // whether the immediate caller is BootDex code.
+    std::function<std::vector<std::string>(bool& caller_bootdex)> capture_stack;
 };
 
 class DexClassLinker final {
@@ -421,11 +456,20 @@ public:
     // list a title actually reaches. A survey run is never a compatibility
     // result: every stub is logged and reported, and the frontend must label
     // the run as a survey.
-    void EnableGapSurvey();
+    //
+    // Survey keeps the API19 skeleton: hierarchy, constants and declarations
+    // equal a normal run. Neutral answers are limited to *called* unimplemented
+    // methods and *accessed* non-constant unimplemented fields (every hit is
+    // recorded), plus synthesized stubs for members API19 does not declare.
+    // uptime_ms stamps first hits with the guest uptime clock (optional).
+    void EnableGapSurvey(std::function<std::uint64_t()> uptime_ms = {});
     [[nodiscard]] bool GapSurveyEnabled() const noexcept;
-    // member is "name(descriptor)ret", or empty for a whole missing class.
+    [[nodiscard]] bool HasSkeletonClass(std::string_view descriptor) const;
+    // member is "name(descriptor)ret" for methods, "name:descriptor" for
+    // fields, or empty for a whole missing class.
     void RecordGapSurveyHit(const std::string& owner_descriptor,
-                            const std::string& member);
+                            const std::string& member,
+                            const GapSurveyContext& context = {});
     // Synthesizes a neutral platform method on owner and records the hit.
     [[nodiscard]] VmMethodId SynthesizeSurveyMethod(
         DexClassId owner, const std::string& name,

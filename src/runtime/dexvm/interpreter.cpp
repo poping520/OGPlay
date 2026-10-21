@@ -17,15 +17,78 @@
 
 namespace ogplay::runtime::dexvm {
 
-void Interpreter::Impl::RequireImplementedField(const LinkedField& field) {
+namespace {
+thread_local GapSurveyChannel t_survey_channel = GapSurveyChannel::java;
+}  // namespace
+
+GapSurveyChannelScope::GapSurveyChannelScope(
+    const GapSurveyChannel channel) noexcept
+    : previous_(t_survey_channel) {
+    t_survey_channel = channel;
+}
+GapSurveyChannelScope::~GapSurveyChannelScope() { t_survey_channel = previous_; }
+
+void Interpreter::Impl::RecordSurveyHit(const LinkedMethod* const method,
+                                        const LinkedField* const field,
+                                        const GapSurveyChannel channel) {
+    const auto owner_id = method != nullptr ? method->owner : field->owner;
+    const auto& declaring = linker->Class(owner_id);
+    GapSurveyContext context;
+    context.channel = channel;
+    context.kind = method != nullptr ? GapSurveyKind::method : GapSurveyKind::field;
+    const bool generated = method != nullptr ? method->is_skeleton : field->is_skeleton;
+    if (method != nullptr && method->survey_synthesized) {
+        context.source = GapSurveySource::missing;
+    } else if (declaring.is_boot_dex) {
+        context.source = GapSurveySource::bootdex;
+    } else if (generated || declaring.is_skeleton) {
+        context.source = GapSurveySource::skeleton;
+    } else {
+        context.source = GapSurveySource::intrinsic;
+    }
+    context.capture_stack = [this](bool& caller_bootdex) {
+        std::vector<std::string> rendered;
+        const auto& frames = Execution().frames;
+        caller_bootdex = !frames.empty() &&
+                         linker->Class(frames.back().method->owner).is_boot_dex;
+        for (auto it = frames.rbegin();
+             it != frames.rend() && rendered.size() < kGapSurveyStackFrames; ++it) {
+            const auto& frame_method = *it->method;
+            rendered.push_back(linker->Class(frame_method.owner).descriptor +
+                               "->" + frame_method.name +
+                               frame_method.descriptor + " pc=" +
+                               std::to_string(it->pc));
+        }
+        return rendered;
+    };
+    const auto member = method != nullptr
+        ? method->name + method->descriptor
+        : field->name + ":" + field->descriptor;
+    linker->RecordGapSurveyHit(declaring.descriptor, member, context);
+    if (logger != nullptr) {
+        logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
+                      "SURVEY neutral stub: " + declaring.descriptor +
+                          (method != nullptr ? "." : "->") + member);
+    }
+}
+
+void Interpreter::Impl::RequireImplementedField(
+    const LinkedField& field, const GapSurveyChannel channel) {
     if (!field.is_unimplemented) return;
     const auto diagnostic = linker->Class(field.owner).descriptor + "->" + field.name + ":" + field.descriptor;
     if (ledger) ledger->RecordUnimplemented("dexvm.skeleton.field." + diagnostic, 0);
+    if (linker->GapSurveyEnabled()) {
+        // Survey mode: record and let the access run on the zero-initialised
+        // slot (reads answer 0/null). Never a compatibility result.
+        RecordSurveyHit(nullptr, &field, channel);
+        return;
+    }
     throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;", "skeleton field is not implemented: " + diagnostic};
 }
 
-void Interpreter::RequireImplementedField(const VmFieldId field) {
-    impl_->RequireImplementedField(impl_->linker->Field(field));
+void Interpreter::RequireImplementedField(const VmFieldId field,
+                                          const GapSurveyChannel channel) {
+    impl_->RequireImplementedField(impl_->linker->Field(field), channel);
 }
 
 // ---- Impl helpers ----------------------------------------------------------
@@ -559,7 +622,7 @@ void Interpreter::Impl::PushInterpretedFrame(
 
 VmValue Interpreter::Impl::InvokeIntrinsic(
     const LinkedMethod& method, const VmObjectRef receiver,
-    const std::span<const VmValue> arguments) {
+    const std::span<const VmValue> arguments, const GapSurveyChannel channel) {
     const auto handler = method.implementation;
     const auto owner_id = method.owner;
     const auto name = method.name;
@@ -610,12 +673,7 @@ VmValue Interpreter::Impl::InvokeIntrinsic(
         if (linker->GapSurveyEnabled()) {
             // Survey mode: record and answer neutrally so one run harvests
             // every gap the title reaches. Never a compatibility result.
-            linker->RecordGapSurveyHit(declaring, name + descriptor);
-            if (logger != nullptr) {
-                logger->Write(core::LogLevel::warn, "runtime.dexvm.survey",
-                              "SURVEY neutral stub: " + declaring + "." + name +
-                                  descriptor);
-            }
+            RecordSurveyHit(&method, nullptr, channel);
             return NeutralValueFor(return_shorty);
         }
         throw VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
@@ -671,7 +729,8 @@ VmMethodId Interpreter::Impl::SelectInvokeTarget(
                                                named.descriptor);
     if (slot.has_value()) return vtable[*slot];
     if (linker->GapSurveyEnabled() &&
-        linker->Class(receiver_class).is_intrinsic) {
+        (linker->Class(receiver_class).is_intrinsic ||
+         linker->Class(receiver_class).is_skeleton)) {
         const auto name = named.name;
         const auto descriptor = named.descriptor;
         return linker->SynthesizeSurveyMethod(receiver_class, name, descriptor,
@@ -1037,6 +1096,9 @@ ReflectionRuntime& Interpreter::Reflection() noexcept {
 VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                 const std::span<const VmValue> arguments) {
     VmExecutionLockScope lock_scope(impl_->execution_lock);
+    // The entry route applies to this call only; nested calls are Java.
+    const auto survey_channel =
+        std::exchange(t_survey_channel, GapSurveyChannel::java);
     if (ExitCode().has_value()) {
         throw DexVmError(DexVmErrorReason::thread_stopped,
                          "guest VM has exited");
@@ -1095,7 +1157,8 @@ VmCallOutcome Interpreter::Call(const VmMethodId method_id,
                                &impl_->linker->Method(method_id));
             try {
                 outcome.value = impl_->InvokeIntrinsic(
-                    impl_->linker->Method(method_id), receiver, rest);
+                    impl_->linker->Method(method_id), receiver, rest,
+                    survey_channel);
                 impl_->RecordTrace(DexVmTraceKind::method_exit, execution,
                                    &impl_->linker->Method(method_id));
             } catch (const VmJavaThrow& thrown) {

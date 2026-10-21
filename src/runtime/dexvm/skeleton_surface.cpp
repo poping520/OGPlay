@@ -93,7 +93,7 @@ std::optional<std::uint32_t> DexClassLinker::Impl::SkeletonMethodFlags(const Lin
 }
 void DexClassLinker::Impl::MergeSkeletonMembers(const DexClassId id) {
     auto& cls=ClassAt(id);auto& extra=ExtrasAt(id);
-    if (extra.skeleton_merged || gap_survey) return;
+    if (extra.skeleton_merged) return;
     extra.skeleton_merged=true;
     if (cls.defining_loader!=kBootstrapLoader) return;
     const auto found=skeleton_index.find(cls.descriptor);if(found==skeleton_index.end())return;

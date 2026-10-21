@@ -858,6 +858,7 @@ VmObjectRef ReflectionRuntime::InvokeMethod(
             return VmObjectRef{};
         }
     }
+    const GapSurveyChannelScope survey_channel(GapSurveyChannel::reflection);
     const auto outcome = impl_->interpreter->Call(target, call_arguments);
     if (outcome.exception.IsValid()) {
         impl_->interpreter->SetPendingException(
@@ -889,6 +890,7 @@ VmObjectRef ReflectionRuntime::InvokeConstructor(
     const auto instance =
         impl_->model->NewInstance(meta.declaring_class, linked.instance_slots);
     call_arguments.insert(call_arguments.begin(), VmValue::Ref(instance));
+    const GapSurveyChannelScope survey_channel(GapSurveyChannel::reflection);
     const auto outcome = impl_->interpreter->Call(meta.method, call_arguments);
     if (outcome.exception.IsValid()) {
         impl_->interpreter->SetPendingException(
@@ -929,6 +931,7 @@ VmObjectRef ReflectionRuntime::NewSerializationInstance(DexClassId java_class, s
     }
     const auto instance = impl_->model->NewInstance(java_class, linker.Class(java_class).instance_slots);
     const auto roots = impl_->interpreter->ProtectReferences(std::array{instance});
+    const GapSurveyChannelScope survey_channel(GapSurveyChannel::reflection);
     const auto result = impl_->interpreter->Call(method, std::array{VmValue::Ref(instance)});
     if (result.exception.IsValid()) {
         impl_->interpreter->SetPendingException(result.exception);
@@ -969,6 +972,7 @@ VmObjectRef ReflectionRuntime::NewInstance(
     const auto instance =
         impl_->model->NewInstance(java_class, linked.instance_slots);
     const std::array call_arguments{VmValue::Ref(instance)};
+    const GapSurveyChannelScope survey_channel(GapSurveyChannel::reflection);
     const auto outcome = impl_->interpreter->Call(
         constructor->method, call_arguments);
     if (outcome.exception.IsValid()) {
@@ -1008,7 +1012,7 @@ VmValue ReflectionRuntime::GetField(
                               "field receiver has incompatible type"};
         }
     }
-    impl_->interpreter->RequireImplementedField(meta.field);
+    impl_->interpreter->RequireImplementedField(meta.field, GapSurveyChannel::reflection);
     const auto raw = impl_->ReadFieldValue(field, receiver);
     if (!requested_type.has_value()) {
         return VmValue::Ref(impl_->codec->BoxReturn(meta.type, raw));
@@ -1058,7 +1062,7 @@ void ReflectionRuntime::SetField(
                               "field receiver has incompatible type"};
         }
     }
-    impl_->interpreter->RequireImplementedField(meta.field);
+    impl_->interpreter->RequireImplementedField(meta.field, GapSurveyChannel::reflection);
     VmValue converted;
     if (source_type.has_value()) {
         const auto boxed = impl_->codec->BoxReturn(*source_type, value);

@@ -276,6 +276,21 @@ struct InterpreterGcIntegration final {
     std::function<void(const VmRootVisitor&)> visit_session_roots;
 };
 
+// Tags the next top-level Interpreter::Call on this host thread with the
+// channel that entered it (JNI CallXMethod, reflection invoke). Consumed by
+// that call only, so nested guest calls are attributed to Java again. Used by
+// gap survey records; has no effect outside survey mode.
+class GapSurveyChannelScope final {
+public:
+    explicit GapSurveyChannelScope(GapSurveyChannel channel) noexcept;
+    ~GapSurveyChannelScope();
+    GapSurveyChannelScope(const GapSurveyChannelScope&) = delete;
+    GapSurveyChannelScope& operator=(const GapSurveyChannelScope&) = delete;
+
+private:
+    GapSurveyChannel previous_;
+};
+
 class Interpreter final {
 public:
     // Keeps intrinsic-owned guest references alive across nested guest calls.
@@ -372,7 +387,10 @@ public:
                             std::uint64_t execution_token) noexcept;
     [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
     // Shared field boundary for interpreter, reflection and JNI owner hooks.
-    void RequireImplementedField(VmFieldId field);
+    // In gap survey mode a hit is recorded (channel names the entry route)
+    // and the access proceeds on the zero-initialised slot instead of failing.
+    void RequireImplementedField(
+        VmFieldId field, GapSurveyChannel channel = GapSurveyChannel::java);
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java
     // exception outcome if initialization fails.

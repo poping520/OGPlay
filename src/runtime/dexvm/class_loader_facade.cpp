@@ -93,7 +93,7 @@ bool ClassLoaderFacade::BootstrapCanLoad(
     while (descriptor.starts_with("[")) descriptor.remove_prefix(1);
     if (ClassNameCodec::IsPrimitive(descriptor)) return descriptor != "V";
     auto component = linker_->FindClass(descriptor);
-    if (!component && !linker_->GapSurveyEnabled()) {
+    if (!component && (!linker_->GapSurveyEnabled() || linker_->HasSkeletonClass(descriptor))) {
         try { component = linker_->ResolveDescriptor(descriptor); }
         catch (const DexVmError& error) {
             if (error.Reason()!=DexVmErrorReason::unknown_class) throw;
@@ -118,7 +118,7 @@ DexClassId ClassLoaderFacade::LoadClass(const VmClassLoaderId loader,
     } else {
         const auto known = linker_->FindClass(descriptor);
         if (known) java_class = *known;
-        else if (!linker_->GapSurveyEnabled()) java_class = linker_->ResolveDescriptor(descriptor);
+        else if (!linker_->GapSurveyEnabled() || linker_->HasSkeletonClass(descriptor)) java_class = linker_->ResolveDescriptor(descriptor);
         else throw DexVmError(DexVmErrorReason::unknown_class, "class is not available: " + descriptor);
     }
     try {

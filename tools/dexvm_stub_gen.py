@@ -26,6 +26,11 @@ def load_members(gaps: dict | None, survey: dict | None
     members: dict[tuple[str, str], int] = {}
     if survey is not None:
         for entry in survey.get("missing_members", []):
+            # Schema 2 also lists members the API19 skeleton already declares
+            # and non-method members; only undeclared methods need new rows.
+            if entry.get("source", "missing") != "missing" or \
+                    entry.get("kind", "method") != "method":
+                continue
             key = (entry["class"], entry["member"])
             members[key] = max(members.get(key, 0), int(entry.get("hits", 0)))
     if gaps is not None:

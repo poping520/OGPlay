@@ -866,7 +866,7 @@ note = "M8 WU-M8-005 绑定 10 种返回类型的 CallNonvirtual*Method/V/A 共 
 [runtime.jni_guest_exceptions]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/runtime/jni_environment_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp#BootDex speech callbacks link and JNI diagnostics retain nested causes"
-note = "Throw/ThrowNew/ExceptionOccurred/Check/Clear/Describe 共用 pending 状态；ThrowNew 校验 MUTF-8，ExceptionDescribe 有界输出 cause 链且不清除异常。pending 期间 Push/PopLocalFrame 保留原异常，NewGlobalRef 拒绝。FatalError 最多扫描 4 KiB，保留可读消息前缀、转义字节、读取状态及 guest 调用点，经宿主致命错误链退出，不返回 guest 或改变 pending。"
+note = "ADR-0153：pending 默认按 Dalvik 非 CheckJNI 放行，实际槽×guest线程×异常类首条结构化 warn 含 LR，并记 warning ledger。Throw 显式替换，Occurred/Check 保留，Describe 调用 Java 打印后恢复；Push/Pop 成功保留，失败按 Dalvik 替换。类初始化 post-clinit 处理原 pending 并保留 cause，普通 Call/NewObject 不预清。引用/线程检查和 FatalError 致命语义不变。"
 
 [runtime.jni_guest_monitors]
 status = "complete"
@@ -1236,7 +1236,7 @@ note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保�
 [tools.jni_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --require-full --check-baseline"
-note = "DIAG-8/WU8-1b：独立 C11/Java JNI 探针覆盖边界、数据、引用、异常、反射、monitor/NIO、注册与 JavaVM pthread；双后端分组/隔离、预期死亡、只升不降基线及 --require-full。静态覆盖 233/233（100%），仅排除 DestroyJavaVM；各 321/399。指针语义、Java 异常映射、未绑定槽及具名 attach 仍有缺口；三条 pending 门禁为契约分歧待决策。"
+note = "DIAG-8/WU8-2e：独立 C11/Java JNI 探针覆盖边界、数据、引用、异常、反射、monitor/NIO、注册与 JavaVM pthread；双后端分组/隔离、预期死亡、只升不降基线及 --require-full。静态覆盖 233/233（100%），仅排除 DestroyJavaVM；各 363/399。pending 按 ADR-0153 放行并记 warn，heap capacity 按 Dalvik 4.4；尚缺数组/String 直接指针语义。"
 
 [tools.dex_dependency_survey]
 status = "complete"
@@ -2086,7 +2086,7 @@ note = "DIAG-4/WU1：真实 catalog/BootDex/平台绑定导出 JSON；API19 ROM 
 [dexvm.api19_skeleton]
 status = "partial"
 test = "tests/dexvm/skeleton_surface_tests.cpp; tests/dexvm/reflection_tests.cpp#DVM-254; tests/runtime/jni_bridge_objects_tests.cpp#DVM-254; tests/runtime/jni_guest_instance_calls_tests.cpp#DVM-254; tools/api19_skeleton.py --self-test; tools/api19_skeleton.py --check"
-note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既有声明/handler优先；JNI/反射可查骨架，缺失挂起/抛NoSuch错误；真实常量，未实现方法/构造器及非常量字段访问记账失败，反射调用包装目标异常。pending门禁不放宽；survey 与骨架共存（DIAG-5）。骨架行为、Unsafe等其他字段通道与正式title gate未验；既有手写层次不重写，ROM外依赖仍失败。"
+note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既有声明/handler优先；JNI/反射可查骨架，缺失挂起/抛NoSuch错误；真实常量，未实现方法/构造器及非常量字段访问记账失败，反射调用包装目标异常。pending 按 ADR-0153 非 CheckJNI 放行并记 warn；survey 与骨架共存（DIAG-5）。骨架行为、Unsafe等其他字段通道与正式title gate未验；既有手写层次不重写，ROM外依赖仍失败。"
 
 [dexvm.bootdex_rom_java]
 status = "partial"

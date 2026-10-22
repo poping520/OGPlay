@@ -517,3 +517,95 @@ override 抛出的第二个异常被忽略，native 观察到的仍是原 pendin
 `scenarios-comparison.json`。能力状态未变，`tools/capabilities.py check` 通过（416 项）。
 
 WU8-2c-I1：ADR-0152 已定稿，稳定 guest payload 阶段 1 基座及后续五阶段验收见 [DVM-260](../dexvm/DVM-260.md)，生产 store 未切换。
+
+## WU8-2e：非 CheckJNI pending 契约与 heap buffer 容量（2026-10-22）
+
+### 决策与实现
+
+[ADR-0153](../../adr/runtime.md#adr-0153) Accepted：按 Dalvik 4.4 非 CheckJNI 默认放行
+pending 下的 JNI 调用，删除严格拒绝分支，不保留无使用者的严格开关。引用类别、线程
+作用域、非法 handle 和未绑定槽仍明确失败。实际 guest 槽入口通过 fast/slow 共用的显式
+hooks 交给 runtime/jni，按「槽 × guest TID × 异常类」首次记录结构化 warn，含槽名、
+线程、异常类、guest LR，并可经 warning ledger / PendingCallDiagnostics 查询；槽内
+GetObjectClass/NewLocalRef 等 helper 不重复算作游戏入槽。
+
+- Call*/NewObject 正常执行时不预清或重新构造原 pending；显式 Throw 或新抛出的 Java
+  异常按 Dalvik 替换。JNI → Java → native 传播已有 VM throwable 时保留对象身份。
+- 首次类初始化在 post-clinit 经 owner 回调交接原 pending：按 Class.cpp:4485–4497
+  标记初始化失败；非 Error 包装 ExceptionInInitializerError、原对象保留为 cause，Error
+  保留身份。已初始化类不消费 pending；dexvm 不反向依赖 JNI 环境。
+- ExceptionOccurred/Check/Clear/Describe、Push/PopLocalFrame、EnsureLocalCapacity 等
+  保留源码各自的语义，见 ADR 清单；Pop 下溢按 Jni.cpp:1435–1445 清原 pending、挂
+  RuntimeException，仍返回 result 的 local ref。Describe 暂清/打印/恢复的合同不变。
+- GetDirectBufferCapacity 按 Jni.cpp:2758–2759 返回 heap Buffer.capacity；heap address
+  仍 NULL，direct 行为不变。未切换数组/String backing，也未修 070 的共享 byte[]。
+
+### JNI 与定向验证
+
+仅构建 `ogplay-cli`、`ogplay_tests`，本次 C/C++ 修改行经 clang-format，21 个文件修改行
+格式检查通过。JNI/jni_guest 主题及 class-loader 相邻契约单测共 **167/167、11,130 条断言**
+通过（`unit-final.log`）；原依赖门禁的断言改为验证放行、原异常身份与 warn，未删除用例。
+新增覆盖 warn 按槽/线程/类去重与 LR、helper 抑制、同类不同 throwable、Clear 后不重报、
+Pop 失败替换，以及已初始化类不消费、首次初始化非 Error 包装/cause 和 Error 身份保留。
+
+| 后端 | 规范级 | 其他 dvm_ | dvm_pending | 全套 |
+| --- | --- | --- | --- | --- |
+| switch | 347/347 | 13/49 | 3/3 | **363/399（91.0%）** |
+| threaded | 347/347 | 13/49 | 3/3 | **363/399（91.0%）** |
+
+两后端均较 WU8-2b 增加 4 pass，既有 359 pass 零回归，转 pass 清单：
+
+- `exception.GetMethodID.dvm_pending`
+- `exception.NewStringUTF.dvm_pending`
+- `exception.CallVoidMethod.dvm_pending`
+- `nio.GetDirectBufferCapacity.dvm_heapCapacity`
+
+先跑 `--coverage --require-full --check-baseline`（`check/`），再跑带 `--update-baseline`
+的全量双后端检查（`final/`）。覆盖 **233/233（100%）**，uncovered=0，仍仅排除
+DestroyJavaVM；基线只更新上述八个 backend/case 结果。剩余每后端 36 条全部为数组/String
+指针语义，沿 ADR-0152 后续阶段实施；pending「契约分歧，待决策」与 heap capacity 项已闭合。
+
+### dalvik 与九场景对比
+
+证据根目录 `.local/analysis/wu8-2e/`。构建完成后独立运行
+`dalvik_tests.py --check-baseline --jobs 2`，双后端各 **84/91（92.3%）**、零回归、零新 pass，
+报告 `dalvik-final/`。此前一次构建/data staging 并行运行出现缺 libc.so 和超时，未用作验收；
+记录见 `validation-notes.md`。最后仅测试夹具重编译，CLI/core SHA-256 与该完整验收相同。
+
+九场景复用 `.local/analysis/wu7-6/run_scenarios_final.py` 的配置/fixtures，仅将报告路径
+定向到本单；最终结果为 `scenarios-final-summary.json`，逐项对比
+WU8-2b `scenarios-verified-summary.json`，机器比较见 `scenarios-comparison.json`。
+
+| 场景 | WU8-2b | WU8-2e | checkpoint / 首错 |
+| --- | --- | --- | --- |
+| tml | pass | pass | 全过，无新增失败 |
+| lili | pass | pass | 全过，无新增失败 |
+| wild_blood | pass | pass | 全过，无新增失败 |
+| tales | shutdown fail | shutdown fail | 全过，仍为退出读 0x315f0001 |
+| dead_trigger | shutdown fail | shutdown fail | 全过，仍为 teardown cleanup wall-time budget exhausted |
+| dungeon_hunter | pass | pass | 全过，无新增失败 |
+| asphalt5 | pass | pass | 全过，无新增失败 |
+| pvz | shutdown fail | shutdown fail | 全过，仍为 ContextWrapper.stopService 未实现 |
+| angry_birds | pass | pass | 全过，无新增失败 |
+
+最终 **6/9**，原通过场景和全部原通过 checkpoint 均无新增失败。没有原失败场景因此
+前进，不继续修三个既有退出问题。
+
+### 场景 pending warn 汇总
+
+最终九场景共 **3 条**首组合 warn，均来自 Tales、guest TID **2**，异常类均为
+`java/lang/ExceptionInInitializerError`；其余八场景为 0。原始位置为
+`scenarios-final/tales/stderr.log:71、72、87`，机器提取保存在 `scenarios-comparison.json`。
+
+| 槽 | 条数 | 首次 guest LR | 所在游戏 |
+| --- | --- | --- | --- |
+| ExceptionCheck | 1 | 0x380b36bc | Tales |
+| ExceptionDescribe | 1 | 0x380b36d4 | Tales |
+| ExceptionClear | 1 | 0x380b36a4 | Tales |
+
+三槽均在旧 allowlist 中，故本轮**新放宽槽的实际游戏命中为 0**；不能把这三条诊断当作
+游戏依赖新宽松行为的证明。Tales 的同一异常来自既有 AWS 初始化 NullPointerException，
+native 检查、打印、清除后继续，最终退出问题未变化。
+
+`tools/capabilities.py check` 通过（417 项）；仅更新真实变化的 pending 契约/探针范围 note，
+CURRENT 只更新日期与一致性一行。

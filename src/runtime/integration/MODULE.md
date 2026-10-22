@@ -337,3 +337,8 @@ JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.pri
 provider 通过 memory owner capability 保护映射并记录修改/restore 拒绝；AddressSpace 与 ledger
 晚于所有 typed view 析构。view 延长 provider backing 生命周期且阻止 block Release，元素
 访问不走全局内存锁。普通 guest HB 和 CPU quiescence 规则不变，退役前停止使用该地址的 CPU。
+
+ADR-0153：process 给 guest JNI bindings 注入结构化 logger，warning ledger 按真实槽/线程/
+异常类去重；普通 Java 重入不预清 JNI pending。VM 类初始化 post-clinit source 在执行锁内
+按 context token 查显式 guest TID，只在该检查点将原 throwable 交解释器包装/保活，返回结果
+再发布 JNI pending，不吞原异常。owner 停止执行后撤销 source。

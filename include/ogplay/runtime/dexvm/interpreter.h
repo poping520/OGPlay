@@ -463,6 +463,9 @@ public:
     // Intrinsic-only propagation path for an already materialized guest
     // throwable. Preserves its object identity and side-table state.
     void SetPendingException(VmObjectRef throwable);
+    // Owner transfers a JNI pending throwable at the post-clinit check only.
+    // Callback consumes its external pending; VM roots/wraps/returns it normally.
+    void SetClassInitializationPendingSource(std::function<VmObjectRef()> source);
     void InitThrowableCause(VmObjectRef throwable, VmObjectRef cause);
     void InitializeThrowable(VmObjectRef throwable, VmObjectRef message = VmObjectRef{});
     [[nodiscard]] VmObjectRef CaptureThrowableStack();

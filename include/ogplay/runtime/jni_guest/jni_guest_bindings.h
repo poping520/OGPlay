@@ -48,6 +48,7 @@ struct JniGuestBindingContext final {
     dexvm::NioRuntime* nio{};
     JniGuestStringLimits string_limits{};
     JniGuestStringObserver string_observer{};
+    core::Logger* logger{};
 };
 
 class JniGuestBindingError final : public std::runtime_error {

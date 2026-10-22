@@ -55,6 +55,9 @@ public:
     [[nodiscard]] bool IsJavaVmBound(JniInvokeSlot slot) const;
     void RecordWarning(std::string_view id, std::uint64_t lr) const;
     void RecordUnimplemented(std::string_view id, std::uint64_t lr) const;
+    // Owner callbacks bracket both slow and fast JNIEnv transport, including faults.
+    void SetEnvironmentCallHooks(std::function<void(const JniGuestCallFrame&)> enter,
+                                 std::function<void(const JniGuestCallFrame&)> leave);
     void Seal();
     [[nodiscard]] bool IsSealed() const noexcept { return sealed_; }
 
@@ -83,6 +86,7 @@ private:
     std::array<std::optional<JniGuestCallHandler>,
                kJniInvokeInterfaceSlotCount>
         java_vm_{};
+    std::function<void(const JniGuestCallFrame&)> enter_, leave_;
     bool sealed_{};
     mutable std::mutex pending_fault_mutex_;
     mutable std::vector<PendingFault> pending_faults_;

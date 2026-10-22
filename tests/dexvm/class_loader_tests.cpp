@@ -665,3 +665,46 @@ TEST_CASE("WU7-3 ClassLoader default assertion setter is an API19 no-op") {
         }
     }
 }
+
+TEST_CASE("ADR-0153 JNI pending enters class initialization and becomes its failure") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto* descriptor : {"Ljava/lang/RuntimeException;", "Ljava/lang/LinkageError;"}) {
+            LoaderVm vm(backend);
+            auto original = vm.interpreter.MakeThrowable(descriptor, "pending-clinit");
+            const auto root = vm.interpreter.ProtectReferences(std::array{original});
+            // Allocation/constructor invocation need not initialize the class.
+            const auto exception_class = vm.linker.ResolveDescriptor(descriptor);
+            REQUIRE_FALSE(vm.interpreter.EnsureClassInitialized(exception_class).exception.IsValid());
+            REQUIRE_FALSE(
+                vm.interpreter
+                    .EnsureClassInitialized(vm.linker.ResolveDescriptor("Ljava/lang/ExceptionInInitializerError;"))
+                    .exception.IsValid());
+            bool initialized_called = false;
+            vm.interpreter.SetClassInitializationPendingSource([&]() -> VmObjectRef {
+                initialized_called = true;
+                return original;
+            });
+            CHECK_FALSE(vm.interpreter.EnsureClassInitialized(exception_class).exception.IsValid());
+            CHECK_FALSE(initialized_called);
+            const auto target = vm.linker.ResolveDescriptor("LClinitUser;");
+            REQUIRE(vm.linker.Class(target).clinit_state == ClinitState::uninitialized);
+            bool transferred = false;
+            vm.interpreter.SetClassInitializationPendingSource([&]() -> VmObjectRef {
+                if (transferred) return VmObjectRef{};
+                transferred = true;
+                return original;
+            });
+            const auto outcome = vm.interpreter.EnsureClassInitialized(target);
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(transferred);
+            CHECK(vm.linker.Class(target).clinit_state == ClinitState::failed);
+            if (std::string_view(descriptor) == "Ljava/lang/LinkageError;") {
+                CHECK(outcome.exception == original);
+            } else {
+                CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/ExceptionInInitializerError;");
+                CHECK(vm.interpreter.ThrowableCause(outcome.exception) == original);
+            }
+            vm.interpreter.SetClassInitializationPendingSource({});
+        }
+    }
+}

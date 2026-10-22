@@ -57,6 +57,8 @@
 - [ADR-0135 · 共享 native 按需装载与独立 JNI 初始化](#adr-0135)
 - [ADR-0149 · 宿主与 guest 共用内容树触摸捕获](#adr-0149)
 
+- [ADR-0153 · JNI pending 按非 CheckJNI Dalvik 执行与 NIO 历史容量](#adr-0153)
+
 <a id="adr-0001"></a>
 
 ## ADR-0001 · 采用进程级 HLE 兼容层
@@ -1360,3 +1362,85 @@ packageName，不将亮度等属性应用到宿主。无完整系统窗口服务
 
 host/guest 使用同一 resolved UiTree 与 capture 状态，detach/实例切换统一清理；guest
 覆写与异常按 VM 虚调用保留，运行新缺口独立记账，不由本能力扩展解决。
+
+<a id="adr-0153"></a>
+
+## ADR-0153 · JNI pending 按非 CheckJNI Dalvik 执行与 NIO 历史容量
+
+- 状态：Accepted
+- 日期：2026-10-22
+- 来源：WU8-2e；用户确认采用 Dalvik 4.4 非 CheckJNI 行为。
+- 替代范围：runtime/jni MODULE 的严格 pending gate 与 jni_guest 的 heap capacity=-1；
+  引用类别、线程作用域、参数/类型与未实现明确失败的条款继续有效。
+
+### 背景
+
+Dalvik `CheckJni.cpp:909–916` 才对没有 ExcepOkay 标志的调用检查 pending。
+`Jni.cpp:213–238` 的 ScopedJniThreadState 只转换线程状态；`interp/Stack.cpp:351–415、442–529、548–635`
+的 callPrep/dvmCallMethodV/A 均没有 pending 门禁。正式版游戏在非 CheckJNI 路径执行，
+OGPlay 旧门禁对应的是额外检查行为，导致三条 dvm_pending 用例及潜在真机合法路径宿主退出。
+
+### 决策与诊断
+
+默认所有 JNI 槽不再仅因 pending 拒绝执行。不保留严格模式：既有门禁单测可以改为新语义/
+诊断断言，没有必须保留该模式的使用者，故删除拒绝分支与死错误枚举，不增加未用开关。
+引用种类、失效 local、跨线程引用、线程附着与未绑定槽仍明确失败；放宽不意味着容忍坏 handle。
+
+每个「实际槽 × guest 线程 × 异常类」首次 pending 入槽发布一次结构化 warn，字段为 slot、
+guest_thread、exception_class、guest_lr，并记 warning ledger；同组合本进程内不重复，即使
+清除/重新抛出同类异常也不重置。新线程号/槽/异常类分别计。去重按类而非 throwable identity。
+fast/slow transport 共用显式 enter/leave hook，将真实槽/LR 交给 runtime/jni；槽内
+NewLocalRef/GetObjectClass 等 helper 不重复伪装成另一次 guest 入槽。JNI 嵌套重入仍按真实槽
+观察；无 guest transport 的独立 runtime/jni 调用 LR=0，可经 PendingCallDiagnostics 查询。
+异常类由 owner 注入 resolver 读取已有元数据/对象身份，不为诊断新建 Java throwable。
+
+### Java 执行与 pending 身份
+
+- Call*：`Jni.cpp:1909–1973` → `Stack.cpp:442–529、548–635` 正常入帧；
+  `Interp.cpp:1876–1975` 不在入口预清 pending。简单正常返回经
+  `mterp/c/OP_RETURN_VOID.cpp:1–6`、`gotoTargets.cpp:527–590` 的 break frame 退出，保留
+  原异常身份，方法返回值照常处理。OGPlay 将原 pending 留在 JNI 环境，不把它当新 Java
+  调用的入口异常。新抛出的异常按 Dalvik 更新 pending；不得为放行而先清除/重新构造原异常。
+  Java → native 返回时沿既有 pending 传播进入解释器异常展开；显式 Throw 可替换原异常。
+- NewObject/V/A：`Jni.cpp:1527–1584` 初始化类、分配对象、执行构造器并返回 local ref，
+  不因入口已有 pending 跳过构造器。已初始化类的正常构造仍保留原 pending 与新对象；构造器
+  真正抛出的异常使用其新 throwable。AllocObject 对未初始化类同样走初始化入口。
+- 类初始化：已初始化类不触发初始化或消费原 pending。首次初始化遵循
+  `oo/Class.cpp:4450–4497`：先 superclass、static values、<clinit>，随后检查线程 pending，
+  包括初始化前已存在的异常；有异常则 class 标 failed。
+  `Exception.cpp:1271–1305` 对 Error 保留身份，对非 Error 包装 ExceptionInInitializerError、
+  原 throwable 保留为 cause。OGPlay 用 VM owner 显式回调在 post-clinit 检查点交接 JNI
+  pending，不预先清除；交接后立刻由解释器保活并复用既有包装/失败状态机，结果回传 JNI。
+  这是 Dalvik 明确的替换分支，不是为绕门禁隐去原异常；dexvm 不反向依赖 JNI 环境。
+
+### 有专门 pending 语义的入口
+
+| 入口 | 保留的源码行为 |
+| --- | --- |
+| Throw | `Jni.cpp:1333–1340` 设置给定的非 NULL 对象，允许替换已有 pending；引用有效性仍检查 |
+| ThrowNew | `1347–1356` 构造并设置新异常，真实构造/分配失败沿现有异常路径 |
+| ExceptionOccurred | `1363–1372` 返回原 throwable 的 local ref，不清除 |
+| ExceptionCheck | `1395–1399` 只查询，不清除 |
+| ExceptionClear | `1375–1380` 清除 |
+| ExceptionDescribe | `1383–1387 → Exception.cpp:564–592` 暂清、执行 printStackTrace、忽略打印异常并恢复原 pending |
+| PushLocalFrame | `1418–1428` 成功保留；容量/栈失败先清 pending，再挂 OOME、返回 JNI_ERR |
+| PopLocalFrame | `1435–1445` 正常保留 pending，把 result 发布到外层帧；frame 下溢清 pending、挂 RuntimeException，仍发布 result |
+| EnsureLocalCapacity | `1485–1491` 成功保留，失败挂 OOME、返回 -1 |
+| MonitorExit | `2525–2549` 非 owner 挂 IllegalMonitorStateException、JNI_ERR，保留 monitor 状态 |
+| FatalError | `1406–1409` 记录消息后致命退出，不能因 pending 转成可恢复失败 |
+
+其它分配/查找/Region 等真正发生错误时，继续按各自 Jni.cpp 分支抛 Java 异常；不保证旧
+pending 压过一个新抛出的异常。Delete/Release 等释放入口照常执行并保留原 pending。
+
+### NIO 历史行为
+
+`Jni.cpp:2748–2759` 的 GetDirectBufferCapacity 直接读取 Buffer.capacity，故 heap
+ByteBuffer 也返回 capacity（探针长度 7 返回 7）。GetDirectBufferAddress 对 heap 仍 NULL，
+direct 的地址/容量不变。此处明确采用 Dalvik 4.4 实现，而 JNI 规范及后续 ART 为 heap 返回 -1；
+不伪造 direct backing，不改变 allocateDirect 的 hasArray 缺口或 ADR-0152 生产迁移阶段。
+
+### 验收与后果
+
+JNI 四条目标转 pass、既有 pass 零回归；dalvik 双后端和九基础场景按 DIAG-8 验证，
+收集游戏中的新增 pending warn 作为实际依赖证据。warn 不改变控制流、不自动修后续首错。
+仅首组合输出避免音频/渲染热循环刷屏；诊断去重状态归环境进程，不靠 TLS 或全局表。

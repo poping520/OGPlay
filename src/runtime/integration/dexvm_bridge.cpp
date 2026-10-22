@@ -1513,6 +1513,12 @@ public:
         // Pending exception propagates into the interpreter.
         if (const auto pending = session->Environment().PendingExceptionMetadata(process_thread)) {
             session->Environment().ExceptionClear(process_thread);
+            // ADR-0153: factory-created VM throwables already have identity;
+            // re-entering Java must not reconstruct the pending exception.
+            if (pending->throwable.domain == JniObjectDomain::dex_vm) {
+                const auto existing = model->FromIdentity(pending->throwable);
+                throw dx::VmJavaThrow{linker.Class(model->ObjectClass(existing)).descriptor, {}, existing};
+            }
             if (pending->exception_class.value != 0) {
                 const auto type = DexClassIdentity(pending->exception_class);
                 const auto encoded = std::vector<std::uint8_t>(pending->modified_utf8_message.begin(), pending->modified_utf8_message.end());
@@ -1654,6 +1660,23 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->vm->BindDefaultExecutionHost();
     impl_->vm->SetNioRuntime(&session.NIO());
+    impl_->vm->SetClassInitializationPendingSource([bridge_state]() -> dx::VmObjectRef {
+        std::optional<std::uint64_t> thread;
+        {
+            const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
+            const auto found = bridge_state->token_to_process_thread.find(bridge_state->vm->CurrentContextToken());
+            if (found != bridge_state->token_to_process_thread.end()) thread = found->second;
+        }
+        if (!thread || !bridge_state->session->Environment().IsThreadAttached(*thread)) return dx::VmObjectRef{};
+        auto& environment = bridge_state->session->Environment();
+        const auto pending = environment.PendingExceptionMetadata(*thread);
+        if (!pending) return dx::VmObjectRef{};
+        const auto object = bridge_state->model->FromIdentity(pending->throwable);
+        // Explicit post-clinit transfer; the VM installs the same identity before
+        // wrapping non-Error failures (Dalvik Class.cpp:4485-4497).
+        environment.ExceptionClear(*thread);
+        return object;
+    });
     if (android_context != nullptr) {
         impl_->vm->Network().Configure(android_context->network_policy,
                                        android_context->network_transport);
@@ -2083,6 +2106,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
     if (impl_->threads) impl_->threads->Shutdown();
+    if (impl_->vm) impl_->vm->SetClassInitializationPendingSource({});
     impl_->session->Process().SetBitmapHooks({});
     if (impl_->android_context) {
         impl_->android_context->retire_native_surface = {};

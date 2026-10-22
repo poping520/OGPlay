@@ -19,16 +19,20 @@ Bionic、syscall、execution 或 integration。
 - `JniClassRegistry::FindClass` 为被动查询；`ResolveClass` 可经 owner 的显式 resolver
   按需链接/发布类。回调在注册表锁外执行，owner 停止调用后撤销，不启动全量物化。
 - `ThrowNew` 可由 owner 的 ThrowableFactory 发布真实 local Throwable，保留异常类/消息
-  元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，pending gate 不变。
+  元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，真实新抛出的异常可按 Dalvik 替换原 pending。
 - 字段 owner 用 `JniFieldAccessPending` 表示已挂起 Java 异常；禁止据此回落零值侧表。
 
-- AllocObject 通过 owner 安装的分配回调进入共享对象模型；引用、线程与 pending gate
-  在本层校验。回调在独立锁外执行、发布当前线程 local reference；无后端明确失败，
+- AllocObject 通过 owner 安装的分配回调进入共享对象模型；引用、线程作用域
+  在本层校验，pending 按 ADR-0153 放行并记诊断。回调在独立锁外执行、发布当前线程 local reference；无后端明确失败，
   owner 在调用静止后撤销。本层不复制类布局或执行构造器。
 - 233 个 JNIEnv 槽与 8 个 JavaVM 槽的索引稳定。
-- 未绑定槽记账并 trap；引用类别、线程作用域和 pending exception gate 必须严格检查。
-- 按 API19 CheckJNI，pending exception 下允许 Push/PopLocalFrame，原异常身份不变；
-  NewGlobalRef 仍受严格门禁，不以清除异常绕过检查。
+- 未绑定槽记账并 trap；引用类别和线程作用域保持严格。ADR-0153 按 Dalvik 非 CheckJNI
+  默认放行 pending 下的 JNI 调用，不保留严格开关。每个槽×guest 线程×异常类第一次发布
+  结构化 warn（slot/thread/class/guest LR），可查询并交显式 owner observer 记 warning ledger。
+  guest transport 标记真实入槽，槽内 helper 不重复记成新调用，独立 HLE LR=0；同组合不重报。
+- Push/PopLocalFrame 成功保留原 pending 身份；Throw 显式替换，ExceptionOccurred/Check
+  不清除，Clear 清除；Pop 下溢在 guest ABI 清 pending 后挂 RuntimeException、仍发布 result；
+  新的真实 Java 异常可替换旧 pending。特殊入口清单见 ADR-0153。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
 - guest handle 保持固定宽度，不暴露宿主指针。引用 handle 低位编码类别，表项决定存活性；

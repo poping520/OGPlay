@@ -854,6 +854,7 @@ public:
                  {"utf16_units", static_cast<std::uint64_t>(units)},
                  {"lr", core::GuestAddress{frame.link_register}}});
         };
+        jni_bindings.logger = logger_;
         BindJniGuestSlots(jni_dispatcher_, jni_bindings);
         jni_dispatcher_.Seal();
         const auto attached = java_vm_.AttachCurrentThread(

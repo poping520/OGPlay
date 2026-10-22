@@ -515,3 +515,5 @@ override 抛出的第二个异常被忽略，native 观察到的仍是原 pendin
 
 场景 **6/9**，通过数不减、原失败没有新增 checkpoint/断言失败；逐项证据存
 `scenarios-comparison.json`。能力状态未变，`tools/capabilities.py check` 通过（416 项）。
+
+WU8-2c-I1：ADR-0152 已定稿，稳定 guest payload 阶段 1 基座及后续五阶段验收见 [DVM-260](../dexvm/DVM-260.md)，生产 store 未切换。

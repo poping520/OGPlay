@@ -128,6 +128,23 @@ struct MemoryStatistics final {
 using MappingChangeSubscription = std::shared_ptr<void>;
 using MappingChangeHandler = std::function<void(GuestRange)>;
 
+class ProtectedMappingError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// Explicit owner capability. AddressSpace must outlive this handle and its maps.
+class ProtectedMappingOwner final {
+public:
+    ProtectedMappingOwner() = default;
+
+private:
+    std::shared_ptr<void> lifetime_;
+    const void* space_{};
+    std::uint64_t id_{};
+    friend class AddressSpace;
+};
+
 class AddressSpace final {
 public:
     AddressSpace();
@@ -139,6 +156,7 @@ public:
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept;
     [[nodiscard]] std::uint64_t PageSize() const noexcept;
+    [[nodiscard]] std::uint64_t BackingPageSize() const noexcept;
     [[nodiscard]] MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler);
     void Map(const GuestRange& range, PageProtection protection);
     // Atomically replace guest pages (including holes) with zeroed anonymous
@@ -149,6 +167,15 @@ public:
     [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds,
                                           std::uint64_t size,
                                           PageProtection protection);
+    // Diagnostics run under the mapping lock and must not reenter AddressSpace.
+    [[nodiscard]] ProtectedMappingOwner RegisterProtectedOwner(std::function<void(std::string_view)> diagnostic);
+    [[nodiscard]] GuestAddress MapProtectedAnywhere(const ProtectedMappingOwner& owner, const GuestRange& bounds,
+                                                    std::uint64_t size);
+    void UnmapProtected(const ProtectedMappingOwner& owner, const GuestRange& range);
+    // Trusted provider bootstrap only: validate ownership/RW once. Never publish
+    // this address as a public span; owner keeps mapping/base stable until release.
+    [[nodiscard]] std::byte* ResolveProtected(const ProtectedMappingOwner& owner, const GuestRange& range);
+    void RejectProtectedMutation(const GuestRange& range, std::string_view operation) const;
     void Protect(const GuestRange& range, PageProtection protection);
     void Unmap(const GuestRange& range);
     void ValidateMapped(const GuestRange& range,

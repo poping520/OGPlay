@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <thread>
 #include <set>
+#include <string>
+#include <vector>
 
 #include "ogplay/memory/address_space.h"
 
@@ -379,4 +381,29 @@ TEST_CASE("mapping subscriptions publish committed ranges and retire safely") {
     MappingChangeSubscription expired;
     { AddressSpace temporary; expired = temporary.ObserveMappingChanges([](GuestRange) {}); }
     expired.reset();
+}
+
+TEST_CASE("Java payload protected ownership preserves adjacent 4 KiB pages on host backing") {
+    using namespace ogplay::memory;
+    AddressSpace space, foreign;
+    std::vector<std::string> denied;
+    auto owner = space.RegisterProtectedOwner([&](std::string_view operation) { denied.emplace_back(operation); });
+    const GuestRange bounds{GuestAddress{0x10000}, 0x100000};
+    const auto start = space.MapProtectedAnywhere(owner, bounds, 4096);
+    const GuestRange protected_page{start, 4096};
+    const GuestRange neighbor{start.Add(4096), 4096};
+    space.Map(neighbor, PageProtection::read | PageProtection::write);
+    space.Write32(neighbor.Start(), 0xaabbccdd);
+    CHECK_THROWS_AS(space.Protect({start, 8192}, PageProtection::read), ProtectedMappingError);
+    CHECK_THROWS_AS(space.Unmap({start, 8192}), ProtectedMappingError);
+    CHECK_THROWS_AS(space.ReplaceAnonymous({start, 8192}, PageProtection::none), ProtectedMappingError);
+    CHECK(space.Read32(neighbor.Start()) == 0xaabbccdd);
+    CHECK_THROWS_AS(static_cast<void>(space.ResolveProtected(owner, {start.Add(4092), 8})), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(foreign.ResolveProtected(owner, protected_page)), std::invalid_argument);
+    CHECK_THROWS_AS(space.UnmapProtected(owner, {start, 8192}), std::invalid_argument);
+    space.UnmapProtected(owner, protected_page);
+    CHECK(space.Read32(neighbor.Start()) == 0xaabbccdd);
+    CHECK(space.DirectPageTable()->at(start.Value() >> kGuestPageBits) == nullptr);
+    CHECK(space.DirectPageTable()->at(neighbor.Start().Value() >> kGuestPageBits) != nullptr);
+    CHECK(denied.size() == 3);
 }

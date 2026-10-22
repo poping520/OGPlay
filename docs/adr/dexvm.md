@@ -1429,12 +1429,12 @@ Runtime 内存统计与 ActivityManager 档位只读取 JavaObjectModel。VMRunt
 
 ## ADR-0152 · Java primitive/String payload 使用稳定 guest backing
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-10-22
-- 来源：WU8-2c-D，只读调查；实现尚未开始。
-- 关系：拟细化 [ADR-0016](runtime.md#adr-0016) 的直接表发布条件；沿用
+- 来源：WU8-2c-D 调查；WU8-2c-I1 按用户审阅定稿。实施见 [DVM-260](../tasks/dexvm/DVM-260.md)。
+- 关系：细化 [ADR-0016](runtime.md#adr-0016) 的直接表发布条件；沿用
   [ADR-0057](#adr-0057) 的 String 不可变快照/私有字段边界和
-  [ADR-0060](#adr-0060) 的逻辑堆增长规则。草案不撤销现行合同。
+  [ADR-0060](#adr-0060) 的逻辑堆增长规则。本决策不切换尚未验收的生产 store。
 
 ### 背景与现状证据
 
@@ -1461,12 +1461,12 @@ reserve/commit/protect/decommit（`hal/virtual_memory.h:35–48`），不提供�
 
 WU8-2b 两后端各 359/399，相关失败现为 **36**（array 34、String 2），不是历史统计 35；
 多出的是 WU8-2a 暴露的 StringCritical isCopy。070 当前只差 allocateDirect 的 hasArray。
-本次只读已有报告，未重跑测试或游戏；宿主页查询为 16 KiB，guest 页仍为 4 KiB。
+WU8-2c-D 调查只读已有报告，未重跑测试或游戏；宿主页查询为 16 KiB，guest 页仍为 4 KiB。
 九个已有场景 state.json 无数组长度/类型分布，不能据此选择池大小或承诺 FPS/RSS 收益。
 
-### 决策草案
+### 决策
 
-拟选 **A 的修正版**：primitive 数组及 immutable String 的权威 payload 自创建起放在
+采用 **A 的修正版**：primitive 数组及 immutable String 的权威 payload 自创建起放在
 同一进程 AddressSpace 内，使用稳定、不可移动的 typed byte block；Java、JNI、NIO 访问
 同一字节。对象头、句柄、GC 图与方法/字段布局仍归 DexVM，不引入完整 Dalvik heap/object ABI。
 **pin/lease 是 GC 与资源生命周期机制，不只是诊断计数**；无需搬移 pin 不等于无需保活。
@@ -1474,7 +1474,7 @@ WU8-2b 两后端各 359/399，相关失败现为 **36**（array 34、String 2）
 #### 存储与依赖
 
 - integration/process 拥有 payload allocator，显式注入 store。runtime/jni 只定义强类型
-  payload/borrow 句柄与受检访问接口，不依赖 AddressSpace 实现、DexVM 或 OS；jni_guest
+  payload/borrow 句柄与 typed accessor 接口，不依赖 AddressSpace 实现、DexVM 或 OS；jni_guest
   将有效借用解析为强类型 GuestAddress。不得以全局裸指针、TLS 猜 owner 或跨层反向调用串接。
 - store 的 authority 是 kind/length/owned block/view；Region 等可返回临时值快照，但不维护
   与 guest block 双写的长期 vector。单元夹具可显式使用 host-copy provider；生产 direct
@@ -1498,16 +1498,23 @@ WU8-2b 两后端各 359/399，相关失败现为 **36**（array 34、String 2）
   String identity 的保活合同，同时保活 block；这比 Dalvik 仅 pin backing char[] 更保守，
   不据此宣称精确 weak-reference 时序等价。detach 不自动回收可能由别的 native 线程
   持有的地址；shutdown 必须先停止并 join CPU/线程，再退役 leases/backing。
-- VM execution lock 在 native 执行时释放，不能拿它证明 native writer 与解释器没有
-  C++ data race；一个 fence 也不能解决这个问题。首版拟增加 **managed payload 的
-  checked-only 映射策略**：权限仍为 RW/非 X，但同时从直接读写表和独立读表排除；Java/
-  provider 与所有 CPU 的访问共用受检内存同步路径。现有 AddressSpace.Read/Write 已在锁内
-  访问 base+address，这仍然是真共享内存，不是借出副本；暂不开放长期裸 host span。
-- 该策略是需要实施的新机制，不是假称现状已经安全。metadata/权限/策略变更需更新映射
-  世代及通知，并验证所有在途 CPU 的映射退役边界；observer、跨页、execute 校验不能绕过。
-  无同步业务竞争不承诺多元素一致快照；跨线程发布仍遵守 monitor/volatile/pthread/futex
-  的既有 happens-before。以后重开 JIT 快径须单独证明原子性、内存序、observer 和收益，
-  不能用“同址、非移动”代替验收。
+- 托管 payload 页使用与普通 RW 非 X guest 页相同的映射策略，照常进入 JIT 直接
+  读写表（独立读表也正常发布；observer 仍按既有规则禁用快径）。现有模型本就由 JIT
+  直接访存、宿主 HLE 同时访问同一 backing；数组 payload 与 guest malloc 缓冲区没有
+  本质差异。跨线程可见性沿用 monitor/volatile/pthread/futex 的现有 happens-before，
+  不新增无同步数据竞争或多元素一致快照承诺。
+- 不采用 managed payload checked-only 策略：持有数组指针的混音、解码、像素循环不能
+  每次访存都走受检回调。只有实测证明需要时，才另议诊断开关，不作为本阶段生产策略。
+- 宿主 typed accessor 在构造时验证 block 所有权、范围及类型对齐，持有不可移除的
+  block/provider 生命周期；每次只做数组/视图边界检查，再经 base+guest 地址读写，
+  不调用持全局锁的 AddressSpace::Read/Write，不向外暴露长期裸宿主 span。活跃 accessor
+  阻止 Release/reuse，避免在每次元素访问重复检查 lease；关闭 provider 后最后一个 view
+  退役才回收映射。owner 必须串行化 accessor 创建/释放与 block 回收。
+- 前提是 provider 注册的范围在映射锁内受保护：munmap/mprotect/mremap、MAP_FIXED
+  替换（含任意部分重叠）在修改前整体拒绝并记 ledger；普通不涉及这些范围的 syscall
+  保持既有行为。provider 活跃期间拒绝独立 restore，AddressSpace 不移动且晚于 owner
+  析构，reservation base 因而稳定。分配/释放仍发布世代和 MappingChange，并遵守既有
+  CPU quiescence；直接访存线程停止后才能回收其可能使用的 block。
 
 #### String 与 070
 
@@ -1533,13 +1540,13 @@ WU8-2b 两后端各 359/399，相关失败现为 **36**（array 34、String 2）
 
 | 方案 | 改动面与性能 | 风险与跨平台可行性 |
 | --- | --- | --- |
-| A：统一 guest backing（拟选） | 改 allocator/provider、两 store、对象模型计量、GC roots、guest borrow、内存策略及 NIO；借用从 O(N) 复制变为有界元数据操作，释放不搬运 payload。 | 首版 CPU 受检访问可能变慢，需实测；VAS/页碎片、漏 Release、restore 是主要成本。复用 Windows/macOS 现有 reservation/commit，无需页别名；两平台仍需实际验证。 |
+| A：统一 guest backing（已选） | 改 allocator/provider、两 store、对象模型计量、GC roots、guest borrow、内存策略及 NIO；借用从 O(N) 复制变为有界元数据操作，释放不搬运 payload。 | typed accessor 热路径须以 vector 对照微基准验收；VAS/页碎片、漏 Release、restore 是主要成本。复用 Windows/macOS 现有 reservation/commit，无需页别名；两平台仍需实际验证。 |
 | B：首次 JNI 借用才迁移或别名 | 未暴露对象保留宿主存储，首次迁移 O(N)，原子切换所有 Java/Region/NIO 访问到新 authority；降低未借出小对象的 guest 占用。 | 迁移后不得在 Release 时迁回，已发布地址和多借用必须稳定；长期维护双后端、迁移峰值/回滚。malloc vector 非页对齐且可能与别的分配共页，不能直接别名。真 alias 需两平台新 HAL 协议及粒度/寿命/快照验证，当前未具备。 |
 | C：复制 + 边界写回 | 维持现有 arena，增加 COMMIT/ABORT/回调前同步，改动较局部；每次同步仍 O(N)。 | 当前 TRUE 已如实，不能改 FALSE。可改善部分释放断言，却覆盖不到 isCopy=FALSE、无 Release 的长期写、无 JNI 边界的即时可见及双向并发更新；JIT 直接写也不受普通 observer 完整观察。两平台易做，但不满足本单目标。 |
 
 不选择将 vector.data() 塞进 JIT 表的“半别名”方案，也不把后台定期同步当作可见性合同。
-若实施前实测说明 A 的地址占用或受检路径性能不可接受，应重新评估 B；Proposed 不预先
-承诺布局参数或性能收益。
+若实测说明 A 的地址占用或访问性能不可接受，应重新评估 B；本决策不预先承诺布局参数
+或游戏性能收益。
 
 ### 后果、配额与存档边界
 
@@ -1563,14 +1570,14 @@ WU8-2b 两后端各 359/399，相关失败现为 **36**（array 34、String 2）
 ### 分阶段实施与验收
 
 每阶段单独 Work Unit、提交及报告；每项限定一个存储/入口主题，可在一次会话实施。
-本草案不执行这些阶段。共同验收是既有 pass 零回归、233/233 静态覆盖保持；涉及生产
+阶段 1 只通过夹具验证基座；共同验收是既有 pass 零回归、233/233 静态覆盖保持。涉及生产
 路径的阶段跑 JNI/dalvik 双后端基线和同配置 9 基础场景，不能低于 WU8-2b 的 6/9，
 且原通过场景及 checkpoint 不得新增失败。Windows/macOS 分别留证，不能以单平台通过
 标记跨平台完成；host-copy 夹具不替代生产 guest backing 验证。
 
 | 阶段 | 实施范围（一会话） | 具体验收与预期转 pass |
 | --- | --- | --- |
-| 1. backing 基座 | integration 注入 provider、页内 allocator、checked-only 页策略、所有权/世代与 restore 拒绝、配额失败回滚；先用夹具，不切生产 store。 | 4/16 KiB 宿主模型下对齐/邻页/预算/回收、两张直接表都排除、CPU 并发受检访问与快照拒绝；JNI 仍 359/399。不拿夹具页量当游戏分布。 |
+| 1. backing 基座 | integration 注入 provider、页内 allocator、typed accessor、受保护映射、所有权/世代与 restore 拒绝、配额失败回滚；先用夹具，不切生产 store。 | 4/16 KiB 宿主模型下对齐/邻页/预算/回收、与普通 RW 页直接表策略一致，受保护映射拒绝 guest 修改，CPU/accessor 双向可见与快照拒绝；Release 下 1e7 读写与 vector 比值不超过 1.5，否则停在本阶段；JNI 仍 359/399。不拿夹具页量当游戏分布。 |
 | 2. primitive authority | Java/JNI 创建、导入、Region/aget/aput/clone 切到唯一 backing；先保持显式 copy borrow；统一原生入口收费与数组 access roots。 | 类型/位模式/边界、native-only 创建/import 只收费一次、pin 无普通引用仍能 GC 保活、释放后可回收；无预定新 pass。授权代表场景采样长度分桶、峰值 live/pin/committed、碎片和 callback/帧耗时，决定池参数。 |
 | 3. 数组 direct borrow | 八类 Elements 与 PrimitiveCritical 去掉 staging，采用对象/kind/pointer 的计数 lease；0/ABORT/COMMIT 按 Dalvik，detach/shutdown 顺序收口。 | **34 条**：八类 isCopy/alias/ABORT/COMMIT 共 32 + Critical isCopy/alias 2，预计 JNI 393/399；新增重复借用、跨 native 线程发布、无 Release 长持有/GC、COMMIT 后存活及 teardown 用例。性能不够则不放行生产迁移。 |
 | 4. String direct UTF-16 | String authority 使用同源 char payload，Chars/Critical 借地址；保留 immutable/builder 快照和 UTF8 copy，不迁移私有字段布局。 | **2 条** StringChars/StringCritical isCopy，预计 JNI 395/399；NUL/surrogate/空串/offset、GC 长借用、两种 kind 隔离、UTF8 TRUE 及 builder/intern/hash 不变。 |

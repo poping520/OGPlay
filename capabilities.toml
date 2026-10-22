@@ -428,6 +428,11 @@ status = "complete"
 test = "tests/memory/address_space_tests.cpp"
 note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿主页上保持独立映射、权限与释放；M5 WU-0290 为 RW 非执行页维护稳定 JIT 写页表；WU-PERF-09/ADR-0096 独立发布 R/RX/RW 可读数据页表，同步映射、权限和快照撤销；优化 WU-PERF-02..03 增加一次锁 page-aware C string scan 与映射世代 write-preflight 票据；SBX-15 增加先准备 backing 的原子匿名替换，清零目标页及空洞，保留邻页并发布权限/账本/直接页表/世代"
 
+[runtime.java_payload_backing]
+status = "partial"
+test = "tests/runtime/java_payload_provider_tests.cpp; tests/memory/address_space_tests.cpp"
+note = "ADR-0152 / DVM-260：阶段 1 仅夹具；integration provider 提供稳定 guest backing、8-byte 小块池/大块、generation、typed accessor、逻辑增长/提交配额和 pin 统计。受保护映射拒绝 guest 修改及独立 restore，普通 RW JIT 策略不变。生产 JNI store、DexVM、NIO 尚未接入，Windows 未实跑。"
+
 [memory.soft_mmu]
 status = "complete"
 test = "tests/memory/bus_tests.cpp"

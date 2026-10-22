@@ -324,3 +324,16 @@ bridge 可接收固定 API19 骨架字节，在 BootDex 之后、应用 DEX 之�
 
 JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.printStackTrace()，
 输出沿 Java System.err；Java 打印异常被忽略，pending 的清除、保活与恢复由 JNI 层拥有。
+
+## Java payload provider（ADR-0152，阶段 1）
+
+`GuestJavaPayloadProvider` 归 integration owner，显式接收 AddressSpace/ledger/limits；当前仅
+单元夹具调用，不自动安装到 JNI store、DexVM、guest binding 或 NIO。小块 8-byte 对齐放
+可配置 slab，大块独立映射；全部 first-fit 查同一 guest 账本。映射按宿主 backing 粒度对齐，
+按 guest 页退役，不破坏相邻 4 KiB 页。零长块也占独立地址/身份；复用地址更换 generation。
+分配在锁内按 ADR-0060 的 initial target → growth limit 规则计算收费，物理提交另限额，
+映射/元数据失败回滚目标与计数；可查询 allocated/committed/slab free/pin bytes/count。
+此预算当前仅夹具独立使用，阶段 2 必须接入 VM 唯一 charge/GC context，禁止形成第二生产堆账本。
+provider 通过 memory owner capability 保护映射并记录修改/restore 拒绝；AddressSpace 与 ledger
+晚于所有 typed view 析构。view 延长 provider backing 生命周期且阻止 block Release，元素
+访问不走全局内存锁。普通 guest HB 和 CPU quiescence 规则不变，退役前停止使用该地址的 CPU。

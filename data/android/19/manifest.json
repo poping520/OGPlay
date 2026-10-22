@@ -115,7 +115,9 @@
         "path": "notices/icu4c-unicode-license.txt",
         "sha256": "ecab49b0a28761bedcd38bc5a237a81acdfaacb655afea02c72ca1c120267749"
       }
-    ]
+    ],
+    "unicode_version": "6.2",
+    "cldr_version": "23.0"
   },
   "libraries": [
     {

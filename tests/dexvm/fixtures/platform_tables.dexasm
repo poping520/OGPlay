@@ -1,0 +1,56 @@
+# API19 framework platform tables through real invoke instructions.
+.class public Lfixture/PlatformTables;
+.super Ljava/lang/Object;
+.method public static property(Ljava/lang/String;)Ljava/lang/String;
+.registers 1
+    invoke-static {v0}, Ljava/lang/System;->getProperty(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static properties()Ljava/util/Properties;
+.registers 1
+    invoke-static {}, Ljava/lang/System;->getProperties()Ljava/util/Properties;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static service(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/Object;
+.registers 2
+    invoke-virtual {v0, v1}, Landroid/content/Context;->getSystemService(Ljava/lang/String;)Ljava/lang/Object;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static display(Landroid/hardware/display/DisplayManager;I)Landroid/view/Display;
+.registers 2
+    invoke-virtual {v0, v1}, Landroid/hardware/display/DisplayManager;->getDisplay(I)Landroid/view/Display;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static uname(Llibcore/io/Posix;)Llibcore/io/StructUtsname;
+.registers 1
+    invoke-virtual {v0}, Llibcore/io/Posix;->uname()Llibcore/io/StructUtsname;
+    move-result-object v0
+    return-object v0
+.end method
+
+# Observe the binding override before Application.<clinit> executes.
+.class public Lfixture/PlatformApplication;
+.super Landroid/app/Application;
+.field public static initialTmp:Ljava/lang/String;
+.method static constructor <clinit>()V
+.registers 1
+    const-string v0, "java.io.tmpdir"
+    invoke-static {v0}, Ljava/lang/System;->getProperty(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    sput-object v0, Lfixture/PlatformApplication;->initialTmp:Ljava/lang/String;
+    return-void
+.end method
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Application;-><init>()V
+    return-void
+.end method
+.method public static initial()Ljava/lang/String;
+.registers 1
+    sget-object v0, Lfixture/PlatformApplication;->initialTmp:Ljava/lang/String;
+    return-object v0
+.end method

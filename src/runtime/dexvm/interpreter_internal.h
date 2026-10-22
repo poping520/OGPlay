@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ogplay/runtime/dexvm/platform_tables.h"
+#include "ogplay/runtime/dexvm/generated/icu_metadata.h"
+
 // Internal interpreter state shared by the kernel translation units and
 // intrinsic class files. Not installed; include order is private.
 
@@ -146,14 +149,21 @@ public:
     NioRuntime* nio_runtime{&nio};
     ZipRuntime zip;
     std::unique_ptr<UnsafeRuntime> unsafe;
-    std::unordered_map<std::string, std::string> system_properties{
-        {"file.separator", "/"},
-        {"java.home", "/system"},
-        {"java.io.tmpdir", "/tmp"},
-        {"line.separator", "\n"},
-        {"path.separator", ":"},
-        {"user.dir", "/"},
-    };
+    VmObjectRef system_properties_object;
+    std::unordered_map<std::string, std::string> system_properties = [] {
+        std::unordered_map<std::string, std::string> result;
+        for (const auto& entry : kSystemProperties) {
+            auto value = entry.value;
+            if (entry.source == "ICU.getIcuVersion()")
+                value = kBundledIcuVersion;
+            else if (entry.source == "ICU.getUnicodeVersion()")
+                value = kBundledUnicodeVersion;
+            else if (entry.source == "ICU.getCldrVersion()")
+                value = kBundledCldrVersion;
+            result.emplace(entry.key, value);
+        }
+        return result;
+    }();
     std::unique_ptr<AnnotationRuntime> annotations;
     std::vector<IntrinsicStateTableHooks> intrinsic_state_tables;
     core::Logger* logger{};

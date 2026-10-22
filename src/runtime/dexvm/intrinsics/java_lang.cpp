@@ -3478,6 +3478,8 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
         [](IntrinsicContext&) {
                 return VmValue::Ref(VmObjectRef{});
             });
+    builder.StaticMethod("getProperties", "()Ljava/util/Properties;",
+                         [](IntrinsicContext& call) { return VmValue::Ref(call.vm.SystemProperties()); });
     builder.StaticMethod("getProperty", "(Ljava/lang/String;)Ljava/lang/String;",
         [](IntrinsicContext& context) {
                 const auto key = PropertyKey(context, context.arguments[0].ref);
@@ -3580,8 +3582,10 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                            {context.arguments[0]});
     });
     builder.ClassInitializer(
-        [line_separator](IntrinsicContext& context) {
+        [line_separator, initialize = services.initialize_system_properties](IntrinsicContext& context) {
             auto& vm = context.vm;
+            if (initialize) initialize(vm);
+            static_cast<void>(vm.SystemProperties());
             vm.SetIntrinsicStaticRef("Ljava/lang/System;", "out",
                                      "Ljava/io/PrintStream;",
                     InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
@@ -3598,7 +3602,7 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 {VmValue::Ref(key)}).ref;
             IntrinsicCall(context).SetRef(line_separator, value);
             return VmValue::Void();
-            });
+        });
     auto result = std::move(builder).Build();
     return result;
 }

@@ -54,3 +54,16 @@ add_custom_command(
 )
 add_custom_target(ogplay_dexvm_fixtures
     DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp")
+
+# API19 ICU property fallbacks follow the bundled payload metadata, not host ICU.
+set(_ogplay_platform_manifest "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/manifest.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ogplay_platform_manifest}")
+file(READ "${_ogplay_platform_manifest}" _ogplay_platform_metadata)
+foreach(_version IN ITEMS version unicode_version cldr_version)
+    string(JSON _ogplay_icu_${_version} GET "${_ogplay_platform_metadata}" icu ${_version})
+    if(NOT _ogplay_icu_${_version} MATCHES "^[0-9]+(\\.[0-9]+)*$")
+        message(FATAL_ERROR "Invalid bundled ICU ${_version}")
+    endif()
+endforeach()
+file(WRITE "${OGPLAY_GENERATED_DIR}/ogplay/runtime/dexvm/generated/icu_metadata.h"
+    "#pragma once\n#include <string_view>\nnamespace ogplay::runtime::dexvm {\ninline constexpr std::string_view kBundledIcuVersion = \"${_ogplay_icu_version}\";\ninline constexpr std::string_view kBundledUnicodeVersion = \"${_ogplay_icu_unicode_version}\";\ninline constexpr std::string_view kBundledCldrVersion = \"${_ogplay_icu_cldr_version}\";\n}\n")

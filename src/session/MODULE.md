@@ -269,3 +269,6 @@ AndroidAppProcessRequest 的原生单次调用默认预算引用 runtime/common 
 Profile 和用户设置均不覆盖。
 
 AndroidAppProcessRequest.skeleton_bytes 与已解包 BootDex 一并显式交给 bridge；session 不解析骨架或读取宿主类路径。
+
+Application 类初始化前从 Context.getCacheDir 取得缓存路径改写 java.io.tmpdir，
+对齐 API19 ActivityThread 绑定时机；没有缓存目录时保留绑定前默认值。

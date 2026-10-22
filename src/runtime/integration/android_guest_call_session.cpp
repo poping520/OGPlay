@@ -2013,6 +2013,22 @@ public:
         return loader::LookupElf32Symbol(loaded_.link_namespace, scope, name).address;
     }
 
+    std::optional<memory::GuestAddress> FindLibraryExport(const std::string_view library,
+                                                          const std::string_view symbol) const {
+        std::scoped_lock lock(dynamic_link_mutex_);
+        const auto& modules = loaded_.link_namespace.modules;
+        const auto module = std::ranges::find_if(
+            modules, [library](const auto& entry) { return entry.name == library || entry.dynamic.soname == library; });
+        if (module == modules.end()) return std::nullopt;
+        const auto scope = loader::ExtendElf32LinkNamespace(loaded_.link_namespace, module->name, {}).scope;
+        try {
+            const auto address = loader::LookupElf32Symbol(loaded_.link_namespace, scope, symbol).address;
+            return address.Value() ? std::optional(address) : std::nullopt;
+        } catch (const loader::LinkError&) {
+            return std::nullopt;
+        }
+    }
+
     memory::GuestAddress GuestEnvironment() const noexcept {
         return guest_jni_.Environment(); }
     memory::GuestAddress GuestJavaVm() const noexcept {
@@ -2722,8 +2738,19 @@ void AndroidGuestProcess::ReleaseDexVmThread(
     const std::uint64_t thread_id) noexcept {
     impl_->ReleaseDexVmThread(thread_id);
 }
-dexvm::NioDirectMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const { return impl_->GuestMemoryAccess(); }
-memory::GuestAddress AndroidGuestProcess::FindModuleExport(const std::size_t index, const std::string_view name) const { return impl_->FindModuleExport(index, name); }
+
+dexvm::NioDirectMemoryAccess AndroidGuestProcess::GuestMemoryAccess() const {
+    return impl_->GuestMemoryAccess();
+}
+
+memory::GuestAddress AndroidGuestProcess::FindModuleExport(const std::size_t index, const std::string_view name) const {
+    return impl_->FindModuleExport(index, name);
+}
+
+std::optional<memory::GuestAddress> AndroidGuestProcess::FindLibraryExport(std::string_view library,
+                                                                           std::string_view symbol) const {
+    return impl_->FindLibraryExport(library, symbol);
+}
 memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
 memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
 JniEnvironment& AndroidGuestProcess::Environment() noexcept { return impl_->Environment(); }

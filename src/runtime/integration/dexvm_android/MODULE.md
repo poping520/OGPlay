@@ -323,3 +323,8 @@ producer 不入 VM；主泵只把实际 enqueue 通知投给原版 postEventFrom
 固定 API19 debug bitmap；遗留 queued-count、媒体/NDK/EGL window producer、Camera 与 context-loss
 恢复不在范围。默认 Metal 无 external，纹理更新记账失败；构造不触发后端切换。已排入 Java
 Handler 的消息沿原版语义，不宣称 abandon 能撤销已交付消息。普通 MediaPlayer 仍只连接 holder。
+
+Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返回 null，注册但
+未提供的服务记账并抛 UOE。DisplayManager 只查询既有 managed Display；不提供
+外接/虚拟显示及监听。属性来源经显式 core 回调注入；有 ICU 导出时查询 guest，
+无导出时保留随附 manifest 元数据生成的默认值，不隐式加载或访问宿主 ICU。

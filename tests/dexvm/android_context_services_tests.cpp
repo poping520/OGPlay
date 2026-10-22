@@ -971,3 +971,132 @@ TEST_CASE("WU7-4 ActivityManager memory classes share the VM heap limits in both
         CHECK(f.Static("Landroid/app/ActivityManager;", "staticGetLargeMemoryClass", "()I").AsInt() == f.On(memory, "getLargeMemoryClass", "()I").AsInt());
     }
 }
+
+TEST_CASE("DVM-264 DEX platform service registry preserves supported absent and unsupported results") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto roots = f.vm.ProtectReferences(std::array{context});
+        const auto service = [&](const char* name) {
+            return f.StaticOutcome("Lfixture/PlatformTables;", "service",
+                                   "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/Object;",
+                                   {VmValue::Ref(context), VmValue::Ref(f.vm.NewStringUtf8(name))});
+        };
+        const auto display = service("display");
+        REQUIRE_FALSE(display.exception.IsValid());
+        REQUIRE(display.value.ref.IsValid());
+        const auto display_root = f.vm.ProtectReferences(std::array{display.value.ref});
+        CHECK(f.linker.Class(f.model.ObjectClass(display.value.ref)).descriptor ==
+              "Landroid/hardware/display/DisplayManager;");
+        CHECK(service("display").value.ref == display.value.ref);
+        const auto screen = f.Static("Lfixture/PlatformTables;", "display",
+                                     "(Landroid/hardware/display/DisplayManager;I)Landroid/view/Display;",
+                                     {display.value, VmValue::Int(0)})
+                                .ref;
+        REQUIRE(screen.IsValid());
+        CHECK(f.On(screen, "getDisplayId", "()I").AsInt() == 0);
+        CHECK(f.On(screen, "getWidth", "()I").AsInt() == static_cast<int>(f.context->surface_width));
+        const auto window = service("window");
+        CHECK(f.On(window.value.ref, "getDefaultDisplay", "()Landroid/view/Display;").ref == screen);
+        const auto all = f.On(display.value.ref, "getDisplays", "()[Landroid/view/Display;").ref;
+        CHECK(f.model.ArrayLength(all) == 1);
+        CHECK(f.model.GetObjectElement(all, 0) == screen);
+        const auto presentation =
+            f.On(display.value.ref, "getDisplays", "(Ljava/lang/String;)[Landroid/view/Display;",
+                 {VmValue::Ref(f.vm.NewStringUtf8("android.hardware.display.category.PRESENTATION"))})
+                .ref;
+        CHECK(f.model.ArrayLength(presentation) == 0);
+        CHECK_FALSE(f.Static("Lfixture/PlatformTables;", "display",
+                             "(Landroid/hardware/display/DisplayManager;I)Landroid/view/Display;",
+                             {display.value, VmValue::Int(1)})
+                        .ref.IsValid());
+        const auto absent = service("ogplay.nonexistent.service");
+        REQUIRE_FALSE(absent.exception.IsValid());
+        CHECK_FALSE(absent.value.ref.IsValid());
+        const auto unsupported = service("account");
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(unsupported.exception)).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        CHECK(unsupported.exception_message.find("account") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match guest uname") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto os = f.vm.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto roots = f.vm.ProtectReferences(std::array{os});
+        const auto identity = f.Static("Lfixture/PlatformTables;", "uname",
+                                       "(Llibcore/io/Posix;)Llibcore/io/StructUtsname;", {VmValue::Ref(os)})
+                                  .ref;
+        const auto identity_root = f.vm.ProtectReferences(std::array{identity});
+        for (const auto& [key, field] : std::array{std::pair{"os.name", "sysname"}, std::pair{"os.arch", "machine"},
+                                                   std::pair{"os.version", "release"}}) {
+            const auto value =
+                f.Static("Lfixture/PlatformTables;", "property", "(Ljava/lang/String;)Ljava/lang/String;",
+                         {VmValue::Ref(f.vm.NewStringUtf8(key))})
+                    .ref;
+            REQUIRE(value.IsValid());
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(identity), field, "Ljava/lang/String;");
+            REQUIRE(id.has_value());
+            const auto expected = VmObjectRef(f.model.InstanceSlots(identity)[f.linker.Field(*id).slot].bits);
+            CHECK(f.vm.StringUtf8(value) == f.vm.StringUtf8(expected));
+        }
+        const auto properties = f.Static("Lfixture/PlatformTables;", "properties", "()Ljava/util/Properties;").ref;
+        const auto property_root = f.vm.ProtectReferences(std::array{properties});
+        // This list is extracted independently from the checked-in ROM evidence, not the runtime table.
+        const auto keys = std::array{
+            "android.icu.cldr.version",
+            "android.icu.library.version",
+            "android.icu.unicode.version",
+            "file.encoding",
+            "file.separator",
+            "java.boot.class.path",
+            "java.class.path",
+            "java.class.version",
+            "java.compiler",
+            "java.ext.dirs",
+            "java.home",
+            "java.io.tmpdir",
+            "java.library.path",
+            "java.runtime.name",
+            "java.runtime.version",
+            "java.specification.name",
+            "java.specification.vendor",
+            "java.specification.version",
+            "java.vendor",
+            "java.vendor.url",
+            "java.version",
+            "java.vm.name",
+            "java.vm.specification.name",
+            "java.vm.specification.vendor",
+            "java.vm.specification.version",
+            "java.vm.vendor",
+            "java.vm.vendor.url",
+            "java.vm.version",
+            "line.separator",
+            "os.arch",
+            "os.name",
+            "os.version",
+            "path.separator",
+            "user.home",
+            "user.language",
+            "user.name",
+            "user.region",
+        };
+        for (const auto* key : keys) {
+            INFO(key);
+            CHECK(f.On(properties, "containsKey", "(Ljava/lang/Object;)Z", {VmValue::Ref(f.vm.NewStringUtf8(key))})
+                      .AsInt() == 1);
+        }
+        // getProperties exposes the same live Properties object as get/setProperty.
+        f.On(properties, "setProperty", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+             {VmValue::Ref(f.vm.NewStringUtf8("ogplay.live")), VmValue::Ref(f.vm.NewStringUtf8("updated"))});
+        const auto live = f.Static("Lfixture/PlatformTables;", "property", "(Ljava/lang/String;)Ljava/lang/String;",
+                                   {VmValue::Ref(f.vm.NewStringUtf8("ogplay.live"))})
+                              .ref;
+        CHECK(f.vm.StringUtf8(live) == "updated");
+        static_cast<void>(f.vm.CollectGarbage("platform-properties"));
+        CHECK(f.Static("Lfixture/PlatformTables;", "properties", "()Ljava/util/Properties;").ref == properties);
+    }
+}

@@ -48,6 +48,9 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 
 ## 进程与库加载
 
+- FindLibraryExport 按库身份查询完整的已加载命名空间；缺库或导出返回 optional，
+  不隐式加载。平台属性查询与其他 native 边界遵循同一 VM 锁释放/恢复协议。
+
 - 锁顺序：持有 VM 执行锁时，禁止获取进程 `guest_call_mutex_`、`native_load_mutex_`
   或 DexVM native context 的 `call_mutex`。进入可能等待这些锁或执行 guest 的边界前，
   按完整递归深度 `ReleaseForBlocking`；正常及异常出口均 `ReacquireAfterBlocking`。

@@ -327,6 +327,8 @@ def validate(root: Path) -> None:
         "source_revision": "18668f3b015a110275f5cc9a8722b2f65f3333bf",
         "version": "51.1.0.1",
         "data_version": "51.1",
+        "unicode_version": "6.2",
+        "cldr_version": "23.0",
         "path": ICU_DATA,
         "size": 14146832,
         "sha256":

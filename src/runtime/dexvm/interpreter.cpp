@@ -1662,24 +1662,83 @@ VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
     return clone;
 }
 
-std::optional<std::string> Interpreter::GetSystemProperty(
-    const std::string_view key) const {
-    const auto found = impl_->system_properties.find(std::string(key));
-    if (found == impl_->system_properties.end()) {
-        return std::nullopt;
+namespace {
+VmValue CallProperty(Interpreter& vm, VmObjectRef object, std::string_view name, std::string_view descriptor,
+                     std::vector<VmValue> args) {
+    const auto type = vm.Model().ObjectClass(object);
+    const auto index = vm.Linker().FindVtableIndex(type, std::string(name), std::string(descriptor));
+    if (!index) throw DexVmError(DexVmErrorReason::internal_invariant, "Properties method is missing");
+    args.insert(args.begin(), VmValue::Ref(object));
+    const auto outcome = vm.Call(vm.Linker().Class(type).vtable[*index], args);
+    if (outcome.exception.IsValid()) throw VmJavaThrow{"", "", outcome.exception};
+    return outcome.value;
+}
+}  // namespace
+
+VmObjectRef Interpreter::SystemProperties() {
+    if (impl_->system_properties_object.IsValid()) return impl_->system_properties_object;
+    const auto& identity = Network().Policy().host_identity;
+    if (!identity)
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest host identity is not configured"};
+    for (const auto& entry : kSystemProperties) {
+        if (entry.source == "uname.sysname")
+            impl_->system_properties[std::string(entry.key)] = identity->sysname;
+        else if (entry.source == "uname.machine")
+            impl_->system_properties[std::string(entry.key)] = identity->machine;
+        else if (entry.source == "uname.release")
+            impl_->system_properties[std::string(entry.key)] = identity->release;
     }
-    return found->second;
+    const auto type = Linker().ResolveDescriptor("Ljava/util/Properties;");
+    const auto initialized = EnsureClassInitialized(type);
+    if (initialized.exception.IsValid()) throw VmJavaThrow{"", "", initialized.exception};
+    const auto object = NewIntrinsicInstance("Ljava/util/Properties;");
+    const auto roots = ProtectReferences(std::array{object});
+    const auto constructor = Linker().FindDirectMethod(type, "<init>", "()V");
+    if (!constructor) throw DexVmError(DexVmErrorReason::internal_invariant, "Properties constructor is missing");
+    const auto constructed = Call(*constructor, std::array{VmValue::Ref(object)});
+    if (constructed.exception.IsValid()) throw VmJavaThrow{"", "", constructed.exception};
+    for (const auto& [key, value] : impl_->system_properties) {
+        const auto key_ref = NewStringUtf8(key);
+        const auto key_roots = ProtectReferences(std::array{key_ref});
+        const auto value_ref = NewStringUtf8(value);
+        const auto value_roots = ProtectReferences(std::array{value_ref});
+        static_cast<void>(CallProperty(*this, object, "setProperty",
+                                       "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                                       {VmValue::Ref(key_ref), VmValue::Ref(value_ref)}));
+    }
+    impl_->system_properties_object = object;
+    impl_->system_properties.clear();
+    return object;
 }
 
-std::optional<std::string> Interpreter::SetSystemProperty(
-    std::string key, std::string value) {
-    const auto found = impl_->system_properties.find(key);
-    std::optional<std::string> previous;
-    if (found != impl_->system_properties.end()) {
-        previous = found->second;
+std::optional<std::string> Interpreter::GetSystemProperty(const std::string_view key) {
+    if (!impl_->system_properties_object.IsValid()) {
+        const auto found = impl_->system_properties.find(std::string(key));
+        return found == impl_->system_properties.end() ? std::nullopt : std::optional(found->second);
     }
-    impl_->system_properties[std::move(key)] = std::move(value);
-    return previous;
+    const auto key_ref = NewStringUtf8(key);
+    const auto roots = ProtectReferences(std::array{key_ref});
+    const auto value = CallProperty(*this, impl_->system_properties_object, "getProperty",
+                                    "(Ljava/lang/String;)Ljava/lang/String;", {VmValue::Ref(key_ref)})
+                           .ref;
+    return value.IsValid() ? std::optional(StringUtf8(value)) : std::nullopt;
+}
+
+std::optional<std::string> Interpreter::SetSystemProperty(std::string key, std::string value) {
+    if (!impl_->system_properties_object.IsValid()) {
+        const auto previous = GetSystemProperty(key);
+        impl_->system_properties[std::move(key)] = std::move(value);
+        return previous;
+    }
+    const auto key_ref = NewStringUtf8(key);
+    const auto key_roots = ProtectReferences(std::array{key_ref});
+    const auto value_ref = NewStringUtf8(value);
+    const auto value_roots = ProtectReferences(std::array{value_ref});
+    const auto previous = CallProperty(*this, impl_->system_properties_object, "setProperty",
+                                       "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                                       {VmValue::Ref(key_ref), VmValue::Ref(value_ref)})
+                              .ref;
+    return previous.IsValid() ? std::optional(StringUtf8(previous)) : std::nullopt;
 }
 
 void Interpreter::SetIntrinsicStaticRef(const std::string_view class_descriptor,

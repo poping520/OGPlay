@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "rom_sha256": "ef0deec25b25df68f45ad70c3c56e899cd583050dfb4fb8514066d42c0aabb70",
+  "rom_sha256": "4d31b462e5278c49c7ed10fdb2123998081df509dde975918ecea3de5fcb164b",
   "intrinsic_classes": [
     "Landroid/app/AlarmManager;",
     "Landroid/app/Application;",
@@ -977,6 +977,33 @@
     "C|Ljava/util/zip/ZipInputStream;|reset|()V",
     "C|Ljava/util/zip/ZipInputStream;|skip|(J)J",
     "D|Landroid/app/ProgressDialog;|@superclass|",
-    "D|Landroid/graphics/drawable/PaintDrawable;|@superclass|"
+    "D|Landroid/graphics/drawable/PaintDrawable;|@superclass|",
+    "E1|@system_services|accessibility|",
+    "E1|@system_services|account|",
+    "E1|@system_services|appops|",
+    "E1|@system_services|bluetooth|",
+    "E1|@system_services|camera|",
+    "E1|@system_services|captioning|",
+    "E1|@system_services|clipboard|",
+    "E1|@system_services|consumer_ir|",
+    "E1|@system_services|country_detector|",
+    "E1|@system_services|device_policy|",
+    "E1|@system_services|download|",
+    "E1|@system_services|dropbox|",
+    "E1|@system_services|input|",
+    "E1|@system_services|media_router|",
+    "E1|@system_services|netpolicy|",
+    "E1|@system_services|print|",
+    "E1|@system_services|search|",
+    "E1|@system_services|serial|",
+    "E1|@system_services|servicediscovery|",
+    "E1|@system_services|statusbar|",
+    "E1|@system_services|storage|",
+    "E1|@system_services|textservices|",
+    "E1|@system_services|uimode|",
+    "E1|@system_services|usb|",
+    "E1|@system_services|user|",
+    "E1|@system_services|wallpaper|",
+    "E1|@system_services|wifip2p|"
   ]
 }

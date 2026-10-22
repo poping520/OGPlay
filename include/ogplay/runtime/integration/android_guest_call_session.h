@@ -273,6 +273,9 @@ public:
     void UnregisterAssetManager(memory::GuestAddress manager);
     [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,
                                                        std::string_view name) const;
+    // Query an already-loaded library by identity; does not load missing libraries.
+    [[nodiscard]] std::optional<memory::GuestAddress> FindLibraryExport(std::string_view library,
+                                                                        std::string_view symbol) const;
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
     [[nodiscard]] memory::GuestAddress GuestJavaVm() const noexcept;
     [[nodiscard]] JniEnvironment& Environment() noexcept;

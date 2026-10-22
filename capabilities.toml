@@ -1454,9 +1454,9 @@ test = "tests/dexvm/core_catalog_tests.cpp#dexvm System properties are determini
 note = "API 19 System.<clinit> 经既有 getProperty(line.separator) 冻结 private static final lineSeparator；lineSeparator() 返回同一 String，后续 setProperty 只改变 property，不改变冻结值。"
 
 [dexvm.system_properties]
-status = "complete"
-test = "tests/dexvm/core_catalog_tests.cpp#dexvm System properties are deterministic and mutable; tests/dexvm/file_vfs_tests.cpp#File first-batch path and object semantics match on both backends; tests/runtime/application_startup_tests.cpp#DexVM bridge publishes the guest VFS working directory"
-note = "API 19 初始属性固定提供 guest java.home=/system、java.io.tmpdir=/tmp、user.dir=/；Android bridge 在 Java 执行前以 VFS working directory 覆盖 user.dir，不读取宿主 cwd。System.setProperty 仍允许 guest 后续修改。"
+status = "partial"
+test = "tests/dexvm/core_catalog_tests.cpp#dexvm System properties are deterministic and mutable; tests/dexvm/android_context_services_tests.cpp#DVM-264; tests/runtime/guest_native_values_tests.cpp#DVM-264; tests/dexvm/file_vfs_tests.cpp#File first-batch path and object semantics match on both backends; tests/runtime/application_startup_tests.cpp#DexVM bridge publishes the guest VFS working directory"
+note = "DVM-264：默认键覆盖 API19 initSystemProperties，getProperties/getProperty/setProperty 共用 live BootDex Properties。os.* 与 guest uname 同源，真实 Bionic 提供 passwd；ICU 可用时查询 guest 导出，否则用随附 manifest 元数据。绑定 Application 前以 cacheDir 改写 tmpdir，VFS 提供 user.dir。不支持完整 VM 参数/属性重置；纯 VM 的 passwd 和无环境 library.path 默认值独立出处尚待审计。"
 
 [dexvm.observable]
 status = "complete"
@@ -1880,8 +1880,8 @@ note = "DVM-119/167/ADR-0046：通用/Margin/Frame/Linear/Relative 五类 Layout
 
 [dexvm.display_values_bootdex]
 status = "complete"
-test = "tests/dexvm/android_resources_bitmap_tests.cpp#DVM-118; tests/dexvm/android_resources_bitmap_tests.cpp#DVM118; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/session/profile_entry_scope_tests.cpp"
-note = "DVM-118：DisplayMetrics/TypedValue 原版 Java；Resources.getDisplayMetrics 返回每实例稳定对象，按 managed surface 尺寸/density 刷新，Display.getMetrics/getRealMetrics 同源；getText/getString 复用资源解析与 TypedValue.coerceToString，不可转换值抛 NotFoundException。不支持 styled text、主题与 locale qualifier。"
+test = "tests/dexvm/android_context_services_tests.cpp#DVM-264; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-118; tests/dexvm/android_resources_bitmap_tests.cpp#DVM118; tests/dexvm/network_sqlite_tests.cpp#DVM-198; tests/dexvm/network_sqlite_tests.cpp#DVM-194; tests/session/profile_entry_scope_tests.cpp"
+note = "DVM-118/264：DisplayMetrics/TypedValue 原版 Java；Resources 与 Display 指标同源于 managed surface 尺寸/density。display 服务 getDisplay/getDisplays 复用 WindowManager 同一 Display；未知服务返回 null，注册但不支持的服务记账抛 UOE。资源文本复用 TypedValue.coerceToString。不支持显示监听/虚拟显示、styled text、主题和 locale qualifier。"
 
 [dexvm.math_bootdex]
 status = "partial"

@@ -16,6 +16,39 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCES = ROOT / 'tests/conformance/jni'
 BASELINE = Path(__file__).with_name('jni_baseline.json')
 BACKENDS = ('switch', 'threaded')
+# Destructive probes always get their own process; signatures are fixed source oracles.
+EXPECTED_DEATH = {
+    'exception.FatalError': 'OGPLAY_JNI_FATAL_WU8_1B',
+    'reference.GetObjectRefType.dvm_popped': 'use of deleted local reference',
+    'javavm.DetachCurrentThread.dvm_javaThread': 'detaching thread with interp frames',
+}
+EXPECTED_OUTPUT = {'exception.ExceptionDescribe': 'describe-marker'}
+
+
+def partition_cases(ids):
+    return ([id for id in ids if id not in EXPECTED_DEATH and id not in EXPECTED_OUTPUT],
+            [id for id in ids if id in EXPECTED_DEATH or id in EXPECTED_OUTPUT])
+
+
+def coverage_complete(result):
+    return not result['uncovered']
+
+
+def classify_death(id, output, stderr, code, timed_out, ledger):
+    message = EXPECTED_DEATH[id]
+    printed_pass = bool(re.search(r'^PASS ', output, re.M))
+    if timed_out:
+        outcome, detail = 'fail:timeout', 'expected death timed out'
+    elif code is not None and code != 0 and message in stderr and not printed_pass:
+        outcome, detail = 'pass', 'expected death: nonzero exit, stderr signature, no PASS'
+    elif ledger or re.search(r'unimplemented|not implemented|unbound JNI', output, re.I):
+        outcome, detail = 'fail:unimplemented', output[-2000:]
+    else:
+        outcome = 'fail:assert'
+        detail = f'expected death signature={message!r}, exit={code}, stderr_match={message in stderr}, PASS={printed_pass}\n' + output[-2000:]
+    return {'outcome': outcome, 'detail': detail, 'ledger': ledger, 'expected_death': True,
+            'exit_code': code, 'stderr': stderr[-2000:], 'output': output[-2000:]}
+
 # Scope exclusions are fixed, reviewed facts, never inferred from failed runs.
 EXCLUDED_CASES = {}
 EXCLUDED_FUNCTIONS = {'DestroyJavaVM': 'The tool owns process termination; guest VM destruction is outside run-dex scope.'}
@@ -160,6 +193,8 @@ def classify(ids, stdout, code, timed_out, ledger):
             continue
         detail = match[3] or ''
         outcome = 'pass' if match[1] == 'PASS' else 'fail:assert'
+        if outcome == 'pass' and id in EXPECTED_OUTPUT and EXPECTED_OUTPUT[id] not in stdout:
+            outcome, detail = 'fail:assert', 'required diagnostic output missing: ' + EXPECTED_OUTPUT[id]
         if outcome != 'pass' and (ledger or re.search(r'unimplemented|not implemented|unsupported|unbound', detail, re.I)):
             outcome = 'fail:unimplemented'
         rows[id] = {'outcome': outcome, 'detail': detail, 'output': line, 'ledger': ledger}
@@ -181,12 +216,14 @@ def execute(cli, dex, libraries, backend, args, path, timeout):
            '--native-lib-dir', str(libraries), '--ledger-json', str(ledger_file), '--', *args]
     timed_out = False
     try:
-        done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
-        stdout, code = done.stdout, done.returncode
+        done = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        stdout, stderr, code = done.stdout, done.stderr, done.returncode
     except subprocess.TimeoutExpired as error:
-        stdout, code, timed_out = error.stdout or b'', None, True
-    text = stdout.decode('utf-8', errors='replace')
-    Path(str(path) + '.log').write_bytes(stdout)
+        stdout, stderr, code, timed_out = error.stdout or b'', error.stderr or b'', None, True
+    text = (stdout + stderr).decode('utf-8', errors='replace')
+    Path(str(path) + '.log').write_bytes(stdout + stderr)
+    Path(str(path) + '.stdout.log').write_bytes(stdout)
+    Path(str(path) + '.stderr.log').write_bytes(stderr)
     ledger = json.loads(ledger_file.read_text(encoding='utf-8')).get('unimplemented', []) if ledger_file.exists() else []
     return text, code, timed_out, ledger
 
@@ -259,6 +296,25 @@ def self_test():
         pass
     synthetic = 'struct JNINativeInterface {\n void *reserved0;\n int (*GetVersion)(void*);\n};\nstruct JNIInvokeInterface {\n int (*GetEnv)(void*);\n};'
     assert header_functions(synthetic) == names
+    assert coverage_complete({'uncovered': []})
+    assert not coverage_complete({'uncovered': ['UnregisterNatives']})
+    normal, isolated = partition_cases(['a', 'exception.FatalError', 'exception.ExceptionDescribe', 'b'])
+    assert normal == ['a', 'b'] and isolated == ['exception.FatalError', 'exception.ExceptionDescribe']
+    assert set(EXPECTED_DEATH).isdisjoint(normal)
+    death_id = 'exception.FatalError'
+    marker = EXPECTED_DEATH[death_id]
+    def death(output='', stderr='', code=70, timeout=False, ledger=None):
+        return classify_death(death_id, output, stderr, code, timeout, ledger or [])['outcome']
+    assert death(stderr=marker) == 'pass'
+    assert death(stderr=marker, code=-6) == 'pass'
+    assert death(stderr=marker, code=0) == 'fail:assert'
+    assert death(output=marker) == 'fail:assert'  # stdout is not stderr evidence
+    assert death(output='PASS exception.FatalError', stderr=marker) == 'fail:assert'
+    assert death(stderr='wrong message') == 'fail:assert'
+    assert death(stderr=marker, timeout=True) == 'fail:timeout'
+    assert death(output='unbound JNI guest slot: FatalError') == 'fail:unimplemented'
+    assert classify(['exception.ExceptionDescribe'], 'PASS exception.ExceptionDescribe', 0, False, [])['exception.ExceptionDescribe']['outcome'] == 'fail:assert'
+    assert classify(['exception.ExceptionDescribe'], 'describe-marker\nPASS exception.ExceptionDescribe', 0, False, [])['exception.ExceptionDescribe']['outcome'] == 'pass'
     print('JNI probe self-test passed')
 
 
@@ -272,6 +328,7 @@ def main():
     parser.add_argument('--case', action='append')
     parser.add_argument('--timeout', type=float, default=60)
     parser.add_argument('--coverage', action='store_true')
+    parser.add_argument('--require-full', action='store_true', help='fail if any non-excluded JNI function has no literal call')
     parser.add_argument('--check-baseline', action='store_true')
     parser.add_argument('--update-baseline', action='store_true')
     args = parser.parse_args()
@@ -280,8 +337,11 @@ def main():
         return 0
     args.out = args.out.resolve()
     host = ndk_tools()
-    if args.coverage:
-        coverage(host, args.out)
+    if args.coverage or args.require_full:
+        covered = coverage(host, args.out)
+        if args.require_full and not coverage_complete(covered):
+            print('Full coverage required; uncovered: ' + ', '.join(covered['uncovered']))
+            return 1
     dex, libraries = build(host, args.out)
     backends = args.backend or BACKENDS
     # --list runs before loading the probe library; inventory comes from guest Java.
@@ -299,19 +359,28 @@ def main():
         rows = results[backend] = {}
         for group in sorted({id.split('.')[0] for id in ids}):
             group_ids = [id for id in ids if id.startswith(group + '.')]
-            run_ids = group_ids if args.case else None
-            if run_ids:
-                for id in run_ids:
-                    data = execute(args.cli, dex, libraries, backend, ['--case', id], args.out / backend / id, args.timeout)
-                    rows.update(classify([id], *data))
-            else:
-                data = execute(args.cli, dex, libraries, backend, ['--group', group], args.out / backend / group, args.timeout)
-                group_rows = classify(group_ids, *data)
+            regular, isolated = partition_cases(group_ids)
+            def run_case(id):
+                path = args.out / backend / id
+                data = execute(args.cli, dex, libraries, backend, ['--case', id], path, args.timeout)
+                if id in EXPECTED_DEATH:
+                    stderr = Path(str(path) + '.stderr.log').read_text(encoding='utf-8', errors='replace')
+                    return {id: classify_death(id, data[0], stderr, *data[1:])}
+                return classify([id], *data)
+            if args.case:
+                for id in regular:
+                    rows.update(run_case(id))
+            elif regular:
+                # Mixed groups send ordinary IDs explicitly; deaths and required-output probes are isolated.
+                selection = ['--cases', ','.join(regular)] if isolated else ['--group', group]
+                data = execute(args.cli, dex, libraries, backend, selection, args.out / backend / group, args.timeout)
+                group_rows = classify(regular, *data)
                 if data[2] or data[1]:
-                    for id in group_ids:
-                        isolated = execute(args.cli, dex, libraries, backend, ['--case', id], args.out / backend / id, args.timeout)
-                        group_rows.update(classify([id], *isolated))
+                    for id in regular:
+                        group_rows.update(run_case(id))
                 rows.update(group_rows)
+            for id in isolated:
+                rows.update(run_case(id))
             print(backend, group, dict(Counter(rows[id]['outcome'] for id in group_ids)), flush=True)
         for id, row in rows.items():
             write_json(args.out / backend / (id + '.json'), row)

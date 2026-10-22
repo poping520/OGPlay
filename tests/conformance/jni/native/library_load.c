@@ -6,6 +6,8 @@
  */
 #include "probe.h"
 static jint loads;
+static JavaVM *loaded_vm;
+JavaVM *probe_vm(void) { return loaded_vm; }
 jstring failure(JNIEnv *env, const char *message) {
     /* A pending callback exception is a failed probe, not permission to call
      * NewStringUTF under a pending exception. Retain the named failure. */
@@ -27,6 +29,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     JNIEnv *env = NULL;
     loads++;
+    loaded_vm = vm;
     if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK)
         return JNI_ERR;
     if (register_BoundaryStatic(env) != 0 || register_BoundaryInstance(env) != 0)

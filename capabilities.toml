@@ -1230,8 +1230,8 @@ note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保�
 
 [tools.jni_conformance]
 status = "partial"
-test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --check-baseline"
-note = "DIAG-8/WU8-0：零 AOSP 测试库依赖的 C11/Java JNI 探针；run-dex 应用库走生产加载器，双后端分组及崩溃/超时隔离、分类、只升不降基线与 NDK 头文件覆盖统计。首批边界/调用/版本/库加载各 183/184；DefineClass 未绑定。静态调用覆盖 115/233，排除 DestroyJavaVM；其余 JNI 函数与参数矩阵待 WU8-1。"
+test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --require-full --check-baseline"
+note = "DIAG-8/WU8-1b：独立 C11/Java JNI 探针覆盖边界、数据、引用、异常、反射、monitor/NIO、注册与 JavaVM pthread；双后端分组/隔离、预期死亡、只升不降基线及 --require-full。静态覆盖 233/233（100%），仅排除 DestroyJavaVM；各 321/399。指针语义、Java 异常映射、未绑定槽及具名 attach 仍有缺口；三条 pending 门禁为契约分歧待决策。"
 
 [tools.dex_dependency_survey]
 status = "complete"

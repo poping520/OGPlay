@@ -5,6 +5,7 @@
 #include "ogplay/core/logger.h"
 #include "ogplay/hal/clock.h"
 #include "ogplay/loader/apk.h"
+#include "ogplay/loader/elf.h"
 #include "ogplay/runtime/dexvm/class_linker.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
@@ -22,6 +23,8 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <regex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 
@@ -154,7 +157,10 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
             if (options.backend != "switch" && options.backend != "threaded")
                 throw std::invalid_argument("--backend must be switch or threaded");
         } else if (arg == "--ledger-json") options.ledger_json = std::filesystem::path(value());
-        else if (arg == "--enable-assertions" || arg == "-ea") options.enable_assertions = true;
+        else if (arg == "--native-lib-dir") {
+            options.native_lib_dir = value();
+            if (options.native_lib_dir.empty()) throw std::invalid_argument("--native-lib-dir must not be empty");
+        } else if (arg == "--enable-assertions" || arg == "-ea") options.enable_assertions = true;
         else if (arg.starts_with("--")) throw std::invalid_argument("unknown run-dex option: " + std::string(arg));
         else if (options.input.empty()) options.input = std::filesystem::path(std::string(arg));
         else { break; }
@@ -226,8 +232,32 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
         runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
     auto session = runtime::AndroidGuestCallSession::AdoptProcess(
         runtime::AndroidGuestProcess::Start(request));
-    // Only platform libraries are available: no APK or application .so inventory.
-    loader::ApkNativeLibraryInventory inventory({});
+    std::vector<loader::ApkNativeLibrary> application_libraries;
+    if (!options.native_lib_dir.empty()) {
+        if (!std::filesystem::is_directory(options.native_lib_dir))
+            throw std::invalid_argument("--native-lib-dir is not a directory: " + options.native_lib_dir.string());
+        std::set<std::string> sonames;
+        for (const auto& file : std::filesystem::directory_iterator(options.native_lib_dir)) {
+            const auto name = file.path().filename().string();
+            if (file.path().extension() != ".so") continue;
+            if (!file.is_regular_file() || !std::regex_match(name, std::regex("lib[A-Za-z0-9_+.-]+\\.so")))
+                throw std::invalid_argument("invalid native library filename: " + name);
+            const auto bytes = ReadFile(file.path());
+            std::vector<std::byte> image(bytes.size());
+            std::memcpy(image.data(), bytes.data(), bytes.size());
+            const auto elf = loader::ParseElf32Arm(image);
+            const auto dynamic = loader::ReadElf32DynamicInfo(image, elf);
+            const auto soname = dynamic.soname.value_or(name);
+            if (!sonames.insert(soname).second)
+                throw std::invalid_argument("duplicate native library soname: " + soname);
+            loader::ApkNativeLibrary library;
+            library.entry_name = "lib/armeabi-v7a/" + name;
+            library.basename = name;
+            library.image = std::move(image);
+            application_libraries.push_back(std::move(library));
+        }
+    }
+    loader::ApkNativeLibraryInventory inventory(std::move(application_libraries));
     loader::ApkSelectedNativeLibraries selected(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader native_libraries(session->Process(), selected,
                                                  bionic, system_sources, &logger);

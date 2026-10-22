@@ -33,7 +33,7 @@ constexpr std::string_view kSynopsis =
     "\n"
     "Commands:\n"
     "  dexvm dump-surface [--bootdex <jar>]  Export linked platform JSON\n"
-    "  dexvm run-dex <dex|jar> [--class <name>] [--backend switch|threaded]\n"
+    "  dexvm run-dex <dex|jar> [--class <name>] [--backend switch|threaded] [--native-lib-dir <dir>]\n"
     "        [--enable-assertions] [--ledger-json <file>] [-- args...]\n"
     "                                Run a standalone main like dalvikvm;\n"
     "                                exit 0/1(uncaught)/System.exit, 70 on VM error\n"

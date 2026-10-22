@@ -24,6 +24,9 @@ RunDex（一致性探针，DIAG-7）复用 AndroidGuestProcess 的 rootless API1
 AndroidGuestCallSession、DexVmGuestBridge 与 NativeLibraryLoader，加载生产同源的 guest JNI、
 ICU 数据与 tzdata；JNI 注册、NIO 和 bound core/Android catalog、BootDex、骨架与 APK 路径共用。
 加载单个 dex/jar，经真实 native 入口 `NativeStart.main` 调用 `main(String[])`；无 APK，
-不启动图形或音频呈现，不提供应用 `.so` 来源，`System.load/loadLibrary` 缺库明确抛 UnsatisfiedLinkError。realtime 统一
+不启动图形或音频呈现；可选 `--native-lib-dir` 将目录内合法 `lib*.so` 作为 armeabi-v7a
+应用库，经同一 NativeLibraryLoader 和 application ClassLoader token 加载。目录不存在、
+非法文件名、坏 ELF 或重复 DT_SONAME 明确失败；未指定时仍无应用库，
+`System.load/loadLibrary` 缺库明确抛 UnsatisfiedLinkError。realtime 统一
 Clock 驱动 Android 单调时钟；main 返回后 root 线程死亡、等待包含已创建待运行者的非 daemon 线程，未捕获异常经线程
 handler 或 ThreadGroup 分派（处理器失败写 stderr）。结果只作行为证据，不是兼容结论。

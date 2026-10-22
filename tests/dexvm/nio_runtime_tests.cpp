@@ -24,7 +24,8 @@ JniObjectIdentity Object(std::uint64_t value) {
 }
 
 struct NioVm final {
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     dx::JavaObjectModel model{strings, arrays};

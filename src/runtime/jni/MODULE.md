@@ -111,7 +111,19 @@ VisitAccessRoots 在锁外枚举非零 pin 的数组身份，owner 在 mark/weak
 导入只补未收费的 entry。失败撤销费用、目标增长和 emergency 消耗，再退役 block；删除
 归还同一费用。provider 本身只管理 backing 提交/VAS，不持第二逻辑堆目标。上下文只在
 调用静止时装配/撤销。分配时统计 kind/长度桶、峰值 live 和失败次数；诊断只返回聚合快照。
-String 的存储和借用合同不变。
+StringStore 同样显式注入 provider，entry 只持 UTF-16 handle/长期 typed view，所有读取从同一
+不可变 backing 生成值；无长期 vector 或影子 String.value。公共 char[]、builder 与 substring
+构造继续复制为新 block。通过 const JNI 指针写入 String 是非法使用，不提供写保护或别名验收。
+Chars/Critical 同址直接借用、FALSE，以 String 身份共用跨线程 pin；空串有独立有效地址。
+Release 忽略指针与 Chars/Critical kind，只解除一次 pin；无配对由 guest owner warn/ledger，
+首次 pin>10 告警一次。pin 和 UTF8 lease 分开计数，任一非零时保活 String 及 backing，
+比 Dalvik 仅 pin char[] 更保守；detach 不释放，quiesce/join 后统一退役并诊断残留 pin。
+MUTF-8 编码仍复制、TRUE，token/指针配对与预算不变，UTF-16 不占用 copy arena/预算。
+
+String 创建沿用共享 JavaPayloadAllocationContext；默认收对象头 32 B + payload，绑定已收费
+实例时 Create(include_header=false) 只收 payload。JNI 导入只补尚未收费项；Delete 返回实际
+退还费用，VM sweep 仅扣除仍归实例的原对象头/字段费用，避免重复扣账。provider 失败回滚
+同一 VM 费用/target/emergency，所有读取、hash/equals/intern 键都来自同一 UTF-16 内容。
 
 VM 装配通过 ConfigurePayloadHeap 传 maximum/growth 到 provider 的 backing 策略，
 allocation context 另提供显式 emergency 状态查询；New 在已进入上下文/收费后传给

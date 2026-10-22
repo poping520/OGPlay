@@ -328,7 +328,7 @@ JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.pri
 ## Java payload provider（ADR-0152，阶段 2）
 
 `GuestJavaPayloadProvider` 归 AndroidGuestProcess，显式接收 AddressSpace/ledger/limits 并注入
-primitive store；String/NIO 尚未迁移。小块 8-byte 对齐按尺寸分级，每个 slab 只服务一个
+primitive/String store；NIO 尚未迁移。小块 8-byte 对齐按尺寸分级，每个 slab 只服务一个
 级别；默认 16 KiB slab / 8 KiB 小块阈值共 64 级（至 128 每 8 字节一级，其后每翻倍
 区间 8 级）。直接 class lookup、各级有空位 slab 的侵入链表及空闲槽栈均为 O(1)，
 不遍历全部 slab 或逐位查找；generation 元数据用散列表，插入/删除摊还 O(1)。创建 slab
@@ -377,3 +377,9 @@ ADR-0152 阶段 3：primitive store 以数组身份维护跨线程 pin，Element
 guest payload；GC 在 mark/weak 前枚举非零 pin，长期 view 与不可移动 backing 保证地址稳定。
 process 停止并 join 全部 Java/native 线程及 CPU 后才销毁 store，残留 pin 统一退役并诊断；
 Stop 采样另记 store 的 pin_count/pinned_arrays/pinned_bytes，不与 provider 的独立底层 pin 重复计量。
+
+阶段 4：同一 process-owned provider 同时为 primitive 和不可变 UTF-16 String 分配，
+成员顺序保证 String/array store 均先于 provider 退役。Stop 增加 String 独立 live/peak/fail/pin
+统计与 kind=8 的长度分桶（沿用 0、1..16、17..64、65..256、257..1024、1025..8192、>8192）；
+committed/slab_free/应急池与尺寸级别属于共享 provider，不按 String/array 重复归属。
+UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布；MUTF-8 复制协议不变。

@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <cstdint>
 #include <vector>
 
@@ -7,7 +9,8 @@
 #include "ogplay/runtime/jni/jni_object.h"
 
 TEST_CASE("JNI string objects preserve UTF-16 and modified UTF-8 regions") {
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     const std::vector<ogplay::runtime::JniChar> value{'A', 0, 0x4E2D,
                                                        0xD83D, 0xDE00};
     const auto string = strings.Create(value);
@@ -27,33 +30,51 @@ TEST_CASE("JNI string objects preserve UTF-16 and modified UTF-8 regions") {
     strings.Delete(string);
 }
 
-TEST_CASE("JNI string chars leases require exact object kind and release") {
-    ogplay::runtime::JniStringStore strings;
-    const std::vector<ogplay::runtime::JniChar> text{'o', 'g'};
+TEST_CASE("DVM-260 String direct pins and UTF8 copies have independent lifetimes") {
+    using namespace ogplay::runtime;
+    ogplay::memory::AddressSpace memory;
+    ogplay::core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider{memory, ledger};
+    JniStringStore strings{provider};
+    std::vector<JniChar> text{'A', 0, 0xd83d, 0xde00};
     const auto first = strings.Create(text);
-    const auto second = strings.Create(text);
-    const auto chars =
-        strings.Acquire(first, ogplay::runtime::JniStringAccessKind::chars);
-    CHECK(chars.is_copy);
-    CHECK(chars.chars == text);
-    CHECK_THROWS_AS(strings.Delete(first), ogplay::runtime::JniStringError);
-    CHECK_THROWS_AS(
-        strings.Release(second, chars.token,
-                        ogplay::runtime::JniStringAccessKind::chars),
-        ogplay::runtime::JniStringError);
-    CHECK_THROWS_AS(
-        strings.Release(first, chars.token,
-                        ogplay::runtime::JniStringAccessKind::critical),
-        ogplay::runtime::JniStringError);
-    strings.Release(first, chars.token, chars.kind);
-    CHECK_THROWS_AS(strings.Release(first, chars.token, chars.kind),
-                    ogplay::runtime::JniStringError);
+    text[0] = 'X';
+    auto chars = strings.Acquire(first, JniStringAccessKind::chars);
+    auto critical = strings.Acquire(first, JniStringAccessKind::critical);
+    CHECK_FALSE(chars.is_copy);
+    CHECK(chars.address == critical.address);
+    CHECK(strings.PinCount(first) == 2);
+    CHECK(memory.Read16(chars.address) == 'A');
+    CHECK(memory.Read16(chars.address.Add(2)) == 0);
+    CHECK(memory.Read16(chars.address.Add(4)) == 0xd83d);
+    CHECK(memory.Read16(chars.address.Add(6)) == 0xde00);
+    const auto utf8 = strings.Acquire(first, JniStringAccessKind::modified_utf8);
+    CHECK(utf8.is_copy);
+    CHECK_THROWS_AS(strings.Delete(first), JniStringError);
+    CHECK(strings.Release(first, 0, JniStringAccessKind::critical));
+    CHECK(strings.Release(first, 0, JniStringAccessKind::chars));
+    CHECK_FALSE(strings.Release(first, utf8.token, JniStringAccessKind::chars));
+    CHECK_THROWS_AS(strings.Delete(first), JniStringError);
+    CHECK(strings.Release(first, utf8.token, utf8.kind));
+    CHECK_THROWS_AS(strings.Release(first, utf8.token, utf8.kind), JniStringError);
     strings.Delete(first);
-    strings.Delete(second);
+    const auto empty = strings.Create({});
+    const auto zero = strings.Acquire(empty, JniStringAccessKind::chars);
+    CHECK_FALSE(zero.address.IsNull());
+    strings.Release(empty, 0, JniStringAccessKind::critical);
+    strings.Delete(empty);
+    const std::vector<JniChar> large(1024 * 1024 + 1, 0x1234);
+    const auto long_string = strings.Create(large);
+    auto long_pin = strings.Acquire(long_string, JniStringAccessKind::critical);
+    CHECK(memory.Read16(long_pin.address.Add((large.size() - 1) * 2)) == 0x1234);
+    strings.Release(long_string, 0, JniStringAccessKind::chars);
+    strings.Delete(long_string);
+    CHECK(provider.Statistics().allocated_bytes == 0);
 }
 
 TEST_CASE("JNI string identities publish into the common environment") {
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::JniEnvironment environment;
     environment.AttachThread(3);
     const std::vector<ogplay::runtime::JniChar> text{'J', 'N', 'I'};

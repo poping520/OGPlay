@@ -1601,3 +1601,11 @@ pin 计数归 primitive store，原因是 store 已拥有数组身份、Delete �
 首次计数超过 Dalvik kPinComplainThreshold=10 时每个数组生命周期警告一次。
 停止并 join 全部 guest 线程/CPU 后才统一退役 pin，诊断残留数组数与字节数。
 不增加内存序承诺；显式 host-copy provider 不支持 guest direct borrow，明确失败而无复制回退。
+
+### ADR-0152 阶段 4 实施决定
+
+按用户确认的 Dalvik Jni.cpp:2130–2153、2623–2645，String Chars/Critical 共用 String 身份
+pin；Release 只按 jstr unpin，不校验 chars 指针，也不区分两类 UTF-16 入口。无配对仅 warn
+与 ledger，不中止。这替代原文及阶段 3 实施决定中暂保留的 String kind/pointer 严格配对。
+UTF8 编码复制的 pointer/token 配对、TRUE 和预算保持不变；pin String 对象及 block 的保守
+GC 边界、immutable 快照/私有字段边界仍依 ADR-0057，不实施真实 String.value 布局。

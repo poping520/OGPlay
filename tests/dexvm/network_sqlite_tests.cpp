@@ -158,107 +158,96 @@ struct SqliteSandboxRoot final {
 };
 
 struct NetworkSqliteVm final {
-  JniStringStore strings;
-  ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-  JniPrimitiveArrayStore arrays{arrays_payload};
-  JavaObjectModel model{strings, arrays};
-  DexClassLinker linker;
-  ogplay::core::CapabilityLedger ledger;
-  ogplay::core::Logger logger;
-  SqliteSandboxRoot sandbox_root;
-  std::unique_ptr<SandboxStore> sandbox;
-  VirtualFileSystem vfs;
-  DexVmIoVfsAdapter io_file_system{vfs};
-  std::shared_ptr<DexVmAndroidContext> context{
-      std::make_shared<DexVmAndroidContext>()};
-  Interpreter vm;
-  VmThreadRuntime threads;
-  std::int32_t helper_create_calls{};
-  std::int32_t helper_upgrade_calls{};
-  std::int32_t helper_old_version{};
-  std::int32_t helper_new_version{};
-  bool helper_create_throws{};
-  std::shared_ptr<database::Connection> thread_connection;
-  std::atomic<bool> thread_query_entered{};
-  std::atomic<bool> thread_query_interrupted{};
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
+    JavaObjectModel model{strings, arrays};
+    DexClassLinker linker;
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::core::Logger logger;
+    SqliteSandboxRoot sandbox_root;
+    std::unique_ptr<SandboxStore> sandbox;
+    VirtualFileSystem vfs;
+    DexVmIoVfsAdapter io_file_system{vfs};
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
+    Interpreter vm;
+    VmThreadRuntime threads;
+    std::int32_t helper_create_calls{};
+    std::int32_t helper_upgrade_calls{};
+    std::int32_t helper_old_version{};
+    std::int32_t helper_new_version{};
+    bool helper_create_throws{};
+    std::shared_ptr<database::Connection> thread_connection;
+    std::atomic<bool> thread_query_entered{};
+    std::atomic<bool> thread_query_interrupted{};
 
-  explicit NetworkSqliteVm(
-      const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-      std::vector<std::uint8_t> app_dex = {},
-      std::string package_name = "test.game",
-      const bool sealed_classpath = false)
-      : vm(
-            [this, &app_dex, &package_name, sealed_classpath]() -> DexClassLinker & {
-              ogplay::test::BindBootDexArchive(*context);
-              context->package_name = package_name;
-              context->vfs = &vfs;
-              auto services = sealed_classpath ? AndroidCoreIntrinsicServices(context)
-                                               : CoreIntrinsicServices{};
-              services.current_time_millis = [] { return std::int64_t{1000}; };
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-              linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-              auto helper = IntrinsicClassBuilder::Class(
-                  "Ltest/SqliteOpenHelperFixture;",
-                  "Landroid/database/sqlite/SQLiteOpenHelper;");
-              helper.OverrideMethod(
-                  "onCreate", "(Landroid/database/sqlite/SQLiteDatabase;)V",
-                  [this](IntrinsicContext &) {
-                    ++helper_create_calls;
-                    if (helper_create_throws) {
-                      REQUIRE(context->sqlite_connections.size() == 1);
-                      const auto database =
-                          context->sqlite_connections.begin()->second;
-                      database->Execute("CREATE TABLE callback_partial(value INTEGER)");
-                      throw VmJavaThrow{"Ljava/lang/RuntimeException;",
-                                        "injected onCreate failure"};
-                    }
-                    return VmValue::Void();
+    explicit NetworkSqliteVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                             std::vector<std::uint8_t> app_dex = {}, std::string package_name = "test.game",
+                             const bool sealed_classpath = false)
+        : vm(
+              [this, &app_dex, &package_name, sealed_classpath]() -> DexClassLinker& {
+                  ogplay::test::BindBootDexArchive(*context);
+                  context->package_name = package_name;
+                  context->vfs = &vfs;
+                  auto services = sealed_classpath ? AndroidCoreIntrinsicServices(context) : CoreIntrinsicServices{};
+                  services.current_time_millis = [] { return std::int64_t{1000}; };
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
+                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
+                  auto helper = IntrinsicClassBuilder::Class("Ltest/SqliteOpenHelperFixture;",
+                                                             "Landroid/database/sqlite/SQLiteOpenHelper;");
+                  helper.OverrideMethod(
+                      "onCreate", "(Landroid/database/sqlite/SQLiteDatabase;)V", [this](IntrinsicContext&) {
+                          ++helper_create_calls;
+                          if (helper_create_throws) {
+                              REQUIRE(context->sqlite_connections.size() == 1);
+                              const auto database = context->sqlite_connections.begin()->second;
+                              database->Execute("CREATE TABLE callback_partial(value INTEGER)");
+                              throw VmJavaThrow{"Ljava/lang/RuntimeException;", "injected onCreate failure"};
+                          }
+                          return VmValue::Void();
+                      });
+                  helper.OverrideMethod("onUpgrade", "(Landroid/database/sqlite/SQLiteDatabase;II)V",
+                                        [this](IntrinsicContext& call) {
+                                            ++helper_upgrade_calls;
+                                            helper_old_version = call.arguments[1].AsInt();
+                                            helper_new_version = call.arguments[2].AsInt();
+                                            return VmValue::Void();
+                                        });
+                  auto sqlite_worker = IntrinsicClassBuilder::Class("Ltest/SqliteWorker;", "Ljava/lang/Thread;");
+                  sqlite_worker.OverrideMethod("run", "()V", [this](IntrinsicContext&) {
+                      thread_query_entered = true;
+                      std::this_thread::yield();
+                      try {
+                          static_cast<void>(
+                              thread_connection->Query("WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT "
+                                                       "x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"));
+                      } catch (const std::runtime_error&) {
+                          thread_query_interrupted = true;
+                      }
+                      return VmValue::Void();
                   });
-              helper.OverrideMethod(
-                  "onUpgrade", "(Landroid/database/sqlite/SQLiteDatabase;II)V",
-                  [this](IntrinsicContext &call) {
-                    ++helper_upgrade_calls;
-                    helper_old_version = call.arguments[1].AsInt();
-                    helper_new_version = call.arguments[2].AsInt();
-                    return VmValue::Void();
-                  });
-              auto sqlite_worker = IntrinsicClassBuilder::Class(
-                  "Ltest/SqliteWorker;", "Ljava/lang/Thread;");
-              sqlite_worker.OverrideMethod("run", "()V",
-                                           [this](IntrinsicContext &) {
-                thread_query_entered = true;
-                std::this_thread::yield();
-                try {
-                  static_cast<void>(thread_connection->Query(
-                      "WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT "
-                      "x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"));
-                } catch (const std::runtime_error &) {
-                  thread_query_interrupted = true;
-                }
-                return VmValue::Void();
-              });
-              std::vector<IntrinsicClassDecl> test_catalog;
-              test_catalog.push_back(std::move(helper).Build());
-              test_catalog.push_back(std::move(sqlite_worker).Build());
-              linker.RegisterIntrinsics(test_catalog);
-              ogplay::test::RegisterBootDex(linker);
-              if (!app_dex.empty())
-                linker.RegisterDex(std::move(app_dex));
-              linker.Link();
-              return linker;
-            }(),
-            model, nullptr, ledger, InterpreterConfig{.backend = backend}),
-        threads(vm) {
-    RegisterAndroidDatabaseStateTables(vm, context);
-    vm.IO().SetFileSystem(&io_file_system);
-    vm.SetLogger(&logger);
-    vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
-    sandbox = SandboxStore::Open(sandbox_root.path, context->package_name, context->package_name);
-    const std::vector<std::string> roots{"/data/data/" + context->package_name, "/sdcard"};
-    vfs.AttachSandbox(*sandbox, roots);
-    REQUIRE(vfs.StatVfs("/data").values[0] > 0);
-    vfs.CreateDirectory("/data/data/" + context->package_name + "/databases");
-  }
+                  std::vector<IntrinsicClassDecl> test_catalog;
+                  test_catalog.push_back(std::move(helper).Build());
+                  test_catalog.push_back(std::move(sqlite_worker).Build());
+                  linker.RegisterIntrinsics(test_catalog);
+                  ogplay::test::RegisterBootDex(linker);
+                  if (!app_dex.empty()) linker.RegisterDex(std::move(app_dex));
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, InterpreterConfig{.backend = backend}),
+          threads(vm) {
+        RegisterAndroidDatabaseStateTables(vm, context);
+        vm.IO().SetFileSystem(&io_file_system);
+        vm.SetLogger(&logger);
+        vm.Monitors().SetTimeSource([] { return std::int64_t{1000}; });
+        sandbox = SandboxStore::Open(sandbox_root.path, context->package_name, context->package_name);
+        const std::vector<std::string> roots{"/data/data/" + context->package_name, "/sdcard"};
+        vfs.AttachSandbox(*sandbox, roots);
+        REQUIRE(vfs.StatVfs("/data").values[0] > 0);
+        vfs.CreateDirectory("/data/data/" + context->package_name + "/databases");
+    }
 
   ~NetworkSqliteVm() { ReleaseAndroidDatabaseResources(context); }
 

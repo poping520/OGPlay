@@ -368,3 +368,43 @@ TEST_CASE("WU7-6 guest timezone defaults clone reset and isolate production VM s
         CHECK(vm.Linker().Class(named.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
     }
 }
+
+TEST_CASE("DVM-260 guest String backing preserves char array builder substring and value semantics") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        IcuVm f(backend);
+        auto& vm = f.Vm();
+        auto& model = vm.Model();
+        const auto array =
+            model.NewPrimitiveArray(vm.Linker().ResolveDescriptor("[C"), runtime::JniPrimitiveKind::character, 3);
+        const auto array_root = vm.ProtectReferences(std::array{array});
+        for (runtime::JniSize i = 0; i < 3; ++i)
+            model.SetPrimitiveElement(array, i, static_cast<std::uint64_t>('A' + i));
+        const auto text = f.New("Ljava/lang/String;", "([C)V", {VmValue::Ref(array)});
+        const auto text_root = vm.ProtectReferences(std::array{text});
+        const auto sub = f.On(text, "substring", "(II)Ljava/lang/String;", {VmValue::Int(0), VmValue::Int(2)}).ref;
+        const auto sub_root = vm.ProtectReferences(std::array{sub});
+        const auto builder = f.New("Ljava/lang/StringBuilder;", "()V");
+        const auto builder_root = vm.ProtectReferences(std::array{builder});
+        f.On(builder, "append", "([C)Ljava/lang/StringBuilder;", {VmValue::Ref(array)});
+        const auto snapshot = f.On(builder, "toString", "()Ljava/lang/String;").ref;
+        const auto snapshot_root = vm.ProtectReferences(std::array{snapshot});
+        model.SetPrimitiveElement(array, 0, 'X');
+        f.On(builder, "setCharAt", "(IC)V", {VmValue::Int(0), VmValue::Int('Y')});
+        CHECK(vm.StringUtf8(text) == "ABC");
+        CHECK(vm.StringUtf8(sub) == "AB");
+        CHECK(vm.StringUtf8(snapshot) == "ABC");
+        CHECK(f.On(text, "hashCode", "()I").AsInt() == 64578);
+        CHECK(f.On(text, "equals", "(Ljava/lang/Object;)Z", {VmValue::Ref(snapshot)}).AsInt() == 1);
+        CHECK(f.On(text, "intern", "()Ljava/lang/String;").ref == f.On(snapshot, "intern", "()Ljava/lang/String;").ref);
+        auto& strings = f.app->NativeProcess().Strings();
+        const auto a = strings.Acquire(model.ToIdentity(text), runtime::JniStringAccessKind::chars);
+        const auto b = strings.Acquire(model.ToIdentity(sub), runtime::JniStringAccessKind::critical);
+        const auto c = strings.Acquire(model.ToIdentity(snapshot), runtime::JniStringAccessKind::chars);
+        CHECK(a.address != b.address);
+        CHECK(a.address != c.address);
+        CHECK(b.address != c.address);
+        strings.Release(model.ToIdentity(text), 0, runtime::JniStringAccessKind::chars);
+        strings.Release(model.ToIdentity(sub), 0, runtime::JniStringAccessKind::chars);
+        strings.Release(model.ToIdentity(snapshot), 0, runtime::JniStringAccessKind::critical);
+    }
+}

@@ -46,8 +46,12 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   VM 状态变更前预检。attach 解码 version/name/group，Modified UTF-8 name 传给线程 owner；
   group 为 NULL 使用默认组，非空 group 明确失败并记账；重复 attach 忽略参数。
 - DefineClass 沿用 Dalvik 返回 NULL 且无异常，同时记录可查询的 warn ledger。
-- Get/ReleaseStringCritical 复用 UTF-16 copy lease，access kind 与 StringChars 独立，
-  禁止交叉 release；isCopy 如实返回 TRUE，三种字符串 lease 共用复制预算。
+- GetStringChars/Critical 直接借用 String payload、isCopy=FALSE，两类入口共用按 String 身份
+  计数的 pin，重复获取同址、零长有效；Release 按 Dalvik 忽略 pointer/kind。无配对只 warn 和
+  ledger（String、真实槽、guest LR），不改变状态或中止；首次 pin>10 告警一次。pin 为 GC
+  强根，不绑定线程且 detach 不释放；全部 guest 线程/CPU 停止并 join 后才退役并诊断残留。
+  const 指针写 String 是非法使用，不提供写保护，也不以它测试别名。host-copy 无 guest 地址时
+  明确失败，不保留生产复制回退。UTF-16 不使用 arena 或复制预算；MUTF-8 copy 合同不变。
 - FatalError 读取 r1 的 guest C 字符串，最多扫描 4096 字节（含终止符）；引号、反斜杠及
   非打印 ASCII 字节转义，保留原始字节。空指针、扫描上限、内存故障和地址溢出均保留
   可读前缀及读取状态，附 guest thread、LR/SP、寄存器与消息指针后沿现有宿主致命错误链
@@ -102,17 +106,14 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   DVM-158 按 API 19 非 CheckJNI Dalvik 通用兼容语义，允许 CallObjectMethod/ V / A
   调用 void 实例方法：方法照常执行、结果丢弃并返回 null；不依赖 Profile，其他返回族
   错配继续明确失败。
-- modified UTF-8 访问族与 UTF-16 string 5 槽都解析统一 `JniStringStore`，通过 AddressSpace
-  页账本按需映射 copy buffer，共享默认 16 MiB 页对齐总预算；release 解除映射并归还预算。
-  编码分别受正文预算约束，`isCopy` 明确写 true，lease 以 string identity +
-  pointer + token 配对，owner 不得在析构时反向访问可能已销毁的
-  string store。API 19 Dalvik 的 null modified-UTF8 string 兼容语义保持一致：length 返回 0、
-  chars 返回 null 且不改写 `isCopy`；`ReleaseStringUTFChars` 与 Dalvik 一样忽略 `jstr`，null
-  指针无操作，非空指针只按已发布 lease 身份释放，未知或重复指针继续明确失败。
-  UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
-  在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
-  release 与资源预算耗尽明确失败，分配/复制/发布失败回滚映射、预算与 semantic access；
-  Critical 两槽使用独立 kind/arena，与 StringChars 共用 UTF-16 lease 实现和总预算。
+- modified UTF-8 访问族解析同一 `JniStringStore`，编码从 UTF-16 backing 读取；经 AddressSpace
+  按需映射 copy buffer，默认 16 MiB 页对齐预算仅用于 MUTF-8，Release 解除映射并归还预算。
+  isCopy=TRUE，lease 仍以 string identity/pointer/token 配对；owner 析构不得反向访问已销毁 store。
+  API19 null MUTF-8 string：length=0、chars=null 且不改 isCopy；ReleaseStringUTFChars 忽略 jstr，
+  null 指针无操作，未知/重复非空指针明确失败。MUTF-8 lease 与 UTF-16 pin 互不消耗对方计数。
+  UTF-16 length/Region 以码元计，NewString 先完整预检输入并保留输入长度预算，发布引用失败
+  删除 semantic object。坏引用/Region/输出、UTF8 lease 失配或复制预算耗尽明确失败；
+  分配/编码/发布失败回滚映射、预算与 semantic access，VM 堆/提交失败发布 Java OOME。
 - primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
   semantic mutation 前完整预检。八类 Elements 与 PrimitiveCritical 直接借用唯一 guest payload，

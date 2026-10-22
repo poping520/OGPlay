@@ -20,7 +20,8 @@ using namespace ogplay::runtime::dexvm;
 
 
 struct AndroidValueVm final {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};

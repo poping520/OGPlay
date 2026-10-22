@@ -34,7 +34,8 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex metadata") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
@@ -55,10 +56,10 @@ TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex meta
 }
 
 struct GcVm final {
-    JniStringStore strings;
     ogplay::memory::AddressSpace memory;
     ogplay::core::CapabilityLedger payload_ledger;
     GuestJavaPayloadProvider arrays_payload{memory, payload_ledger};
+    JniStringStore strings{arrays_payload};
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
@@ -267,7 +268,8 @@ TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse
 }
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider primitives_payload;
     JniPrimitiveArrayStore primitives{primitives_payload};
     JniClassRegistry jni_classes;
@@ -744,7 +746,8 @@ TEST_CASE("DVM-260 primitive aget aput Release microbenchmark") {
     if (!std::getenv("OGPLAY_RUN_ARRAY_BENCHMARK")) return;
     using namespace ogplay::runtime;
     using namespace ogplay::runtime::dexvm;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::memory::AddressSpace memory;
     ogplay::core::CapabilityLedger ledger;
     GuestJavaPayloadProvider arrays_payload{memory, ledger};
@@ -802,4 +805,24 @@ TEST_CASE("DVM-260 direct pin is a strong root until final release") {
     static_cast<void>(f.vm.CollectGarbage());
     CHECK_THROWS_AS(static_cast<void>(f.arrays.Length(identity)), JniArrayError);
     CHECK(f.model.InstanceSlots(weak)[referent_slot].bits == 0);
+}
+
+TEST_CASE("DVM-260 direct String pins survive GC until final cross-kind release") {
+    GcVm f;
+    const auto text = f.model.NewString(u"A\0\U0001f600");
+    const auto id = f.model.ToIdentity(text);
+    const auto pin = f.strings.Acquire(id, JniStringAccessKind::chars);
+    f.vm.SetGcIntegration({[&](const auto& visit) { f.strings.VisitAccessRoots(visit); }, {}, {}});
+    for (int round = 0; round < 3; ++round) {
+        static_cast<void>(f.vm.CollectGarbage());
+        REQUIRE(f.strings.Contains(id));
+        auto second = f.strings.Acquire(id, JniStringAccessKind::critical);
+        CHECK(second.address == pin.address);
+        CHECK(f.strings.PinCount(id) == 2);
+        f.strings.Release(id, 0, JniStringAccessKind::chars);
+    }
+    CHECK_FALSE(pin.is_copy);
+    f.strings.Release(id, 0, JniStringAccessKind::critical);
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK_FALSE(f.strings.Contains(id));
 }

@@ -37,7 +37,8 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
     JniInvocationEngine invocations{classes};
     JniEnvironment environment;
     environment.AttachThread(9U);
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     AndroidGuestMovieState movie_state;

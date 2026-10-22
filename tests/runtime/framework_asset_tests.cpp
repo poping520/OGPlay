@@ -37,7 +37,8 @@ TEST_CASE("framework AssetManager streams APK assets through JNI arrays") {
     ogplay::runtime::JniClassRegistry classes;
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::FrameworkLifecycleHle lifecycle(classes, invocations);
@@ -160,7 +161,8 @@ TEST_CASE("framework AssetManager rejects unsafe paths and missing setup") {
     ogplay::runtime::JniClassRegistry missing_classes;
     ogplay::runtime::JniInvocationEngine missing_invocations(missing_classes);
     ogplay::runtime::JniEnvironment environment;
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::VirtualFileSystem vfs;
@@ -240,7 +242,8 @@ TEST_CASE("framework direct asset implementations return bounded JNI bytes") {
          {}});
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::FrameworkDirectAssetHle direct(
@@ -303,7 +306,8 @@ TEST_CASE("framework direct assets reject unsafe ranges and duplicate install") 
          {}});
     ogplay::runtime::JniInvocationEngine invocations(classes);
     ogplay::runtime::JniEnvironment environment;
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::FrameworkDirectAssetHle direct(

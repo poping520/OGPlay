@@ -508,9 +508,8 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return jni_guest_detail::LookupMethod(environment, classes, address_space, frame, true, fields);
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("NewStringUTF"),
-        [&environment, &strings, &address_space, limits,
-         observer = std::move(observer)](const JniGuestCallFrame& frame) {
+        EnvironmentSlot("NewStringUTF"), [&environment, &classes, &strings, &address_space, limits,
+                                          observer = std::move(observer)](const JniGuestCallFrame& frame) {
             if (frame.registers[1] == 0U) {
                 return Reference(JniReference{});
             }
@@ -528,13 +527,17 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 created = true;
                 const auto reference = environment.PublishLocalObject(frame.thread_id, identity);
                 if (observer) {
-                    try { observer(frame, encoded.size(), chars.size()); }
-                    catch (...) { /* diagnostics must not affect the result */ }
+                    try {
+                        observer(frame, encoded.size(), chars.size());
+                    } catch (...) { /* diagnostics must not affect the result */
+                    }
                 }
                 return Reference(reference);
             } catch (const std::bad_alloc&) {
                 if (created) strings.Delete(identity);
-                throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame, "JNI string allocation failed"));
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
+                                                 "string payload allocation failed");
+                return Reference(JniReference{});
             } catch (const JniModifiedUtf8Error& error) {
                 throw JniGuestBindingError(JniCallFailure("NewStringUTF", frame,
                     "invalid Modified UTF-8 at byte=" + std::to_string(error.Offset()) + ": " + error.what()));
@@ -792,7 +795,7 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestArraySlots(dispatcher, context.environment, context.classes, context.strings, context.arrays,
                            context.objects, context.address_space, context.logger);
     BindJniGuestStringSlots(dispatcher, context.environment, context.classes, context.strings, context.address_space,
-                            context.string_limits);
+                            context.string_limits, context.logger);
     if (context.natives != nullptr) {
         BindJniGuestNativeRegistrationSlots(
             dispatcher, context.environment, context.classes,

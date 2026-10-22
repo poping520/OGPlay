@@ -2669,7 +2669,8 @@ void WriteIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
 
 Decl Declare_android_view_Window(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Window;", "Ljava/lang/Object;");
-    static_cast<void>(builder.BoundInstanceField("mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;", dx::kAccPrivate));
+    const auto wu_attributes =
+        builder.BoundInstanceField("mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;", dx::kAccPrivate);
     builder.VirtualMethod("takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V",
         [context](dx::IntrinsicContext& call) {
             SetWindowSurfaceCallback(call.vm, *context, call.arguments[0].ref);
@@ -2874,6 +2875,53 @@ Decl Declare_android_view_Window(const Context& context) {
             }
             return dx::VmValue::Ref(value);
         });
+    const auto wu_mContext =
+        builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
+    const auto wu_mIsActive = builder.BoundInstanceField("mIsActive", "Z", dx::kAccPrivate);
+    const auto wu_mHasChildren = builder.BoundInstanceField("mHasChildren", "Z", dx::kAccPrivate);
+    const auto wu_mCloseOnTouchOutside = builder.BoundInstanceField("mCloseOnTouchOutside", "Z", dx::kAccPrivate);
+    const auto wu_mSetCloseOnTouchOutside = builder.BoundInstanceField("mSetCloseOnTouchOutside", "Z", dx::kAccPrivate);
+    const auto wu_mForcedWindowFlags = builder.BoundInstanceField("mForcedWindowFlags", "I", dx::kAccPrivate);
+    const auto wu_mFeatures = builder.BoundInstanceField("mFeatures", "I", dx::kAccPrivate);
+    const auto wu_mLocalFeatures = builder.BoundInstanceField("mLocalFeatures", "I", dx::kAccPrivate);
+    const auto wu_mHaveWindowFormat = builder.BoundInstanceField("mHaveWindowFormat", "Z", dx::kAccPrivate);
+    const auto wu_mHaveDimAmount = builder.BoundInstanceField("mHaveDimAmount", "Z", dx::kAccPrivate);
+    const auto wu_mDefaultWindowFormat = builder.BoundInstanceField("mDefaultWindowFormat", "I", dx::kAccPrivate);
+    const auto wu_mHasSoftInputMode = builder.BoundInstanceField("mHasSoftInputMode", "Z", dx::kAccPrivate);
+    // AOSP 4.4 ROM line 390.
+    builder.Constructor(
+        "(Landroid/content/Context;)V",
+        [wu_attributes, wu_mContext, wu_mIsActive, wu_mHasChildren, wu_mCloseOnTouchOutside, wu_mSetCloseOnTouchOutside,
+         wu_mForcedWindowFlags, wu_mFeatures, wu_mLocalFeatures, wu_mHaveWindowFormat, wu_mHaveDimAmount,
+         wu_mDefaultWindowFormat, wu_mHasSoftInputMode](dx::IntrinsicContext& c) {
+            const auto attributes = c.vm.NewIntrinsicInstance("Landroid/view/WindowManager$LayoutParams;");
+            const auto root = c.vm.ProtectReferences(std::array{attributes});
+            const auto target = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/view/WindowManager$LayoutParams;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(attributes)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            dx::IntrinsicCall api(c);
+            for (const auto& [field, value] :
+                 std::array<std::pair<dx::IntrinsicFieldHandle, int>, 11>{{{wu_mIsActive, 0},
+                                                                           {wu_mHasChildren, 0},
+                                                                           {wu_mCloseOnTouchOutside, 0},
+                                                                           {wu_mSetCloseOnTouchOutside, 0},
+                                                                           {wu_mForcedWindowFlags, 0},
+                                                                           {wu_mFeatures, 65},
+                                                                           {wu_mLocalFeatures, 65},
+                                                                           {wu_mHaveWindowFormat, 0},
+                                                                           {wu_mHaveDimAmount, 0},
+                                                                           {wu_mDefaultWindowFormat, -1},
+                                                                           {wu_mHasSoftInputMode, 0}}})
+                api.SetInt(field, value);
+            api.SetRef(wu_attributes, attributes);
+            api.SetRef(wu_mContext, c.arguments[0].ref);
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

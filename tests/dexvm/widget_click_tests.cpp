@@ -653,3 +653,68 @@ TEST_CASE("DVM-261 native template methods preserve overrides and default state"
         CHECK(looper_calls == 2);
     }
 }
+
+TEST_CASE("DVM-262 Button constructor uses the ROM three-argument overload and style") {
+    using ogplay::test::android_value::AndroidValueVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, nullptr, true);
+        const auto type = f.linker.ResolveDescriptor("Landroid/widget/Button;");
+        const auto target =
+            f.linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+        REQUIRE(target.has_value());
+        const auto original = f.linker.Method(*target).implementation;
+        int calls = 0;
+        f.linker.MutableMethod(*target).implementation = [original, &calls](IntrinsicContext& c) {
+            ++calls;
+            CHECK(c.arguments[2].AsInt() == 0x1010048);
+            return original(c);
+        };
+        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto button = f.vm.NewIntrinsicInstance("Landroid/widget/Button;");
+        const auto constructor =
+            f.linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+        REQUIRE(constructor.has_value());
+        const auto outcome = f.vm.Call(
+            *constructor, std::array{VmValue::Ref(button), VmValue::Ref(context), VmValue::Ref(VmObjectRef{})});
+        CHECK(calls == 1);
+        // DIAG-9 X: theme/default-style resolution is unsupported. The real target
+        // must receive the ROM style and propagate this failure, not fake success.
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK(outcome.exception_message.find("Landroid/content/Context;.getThemeResId()I") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-262 EditText constructor follows both this and TextView super overloads") {
+    using ogplay::test::android_value::AndroidValueVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, nullptr, true);
+        std::array<int, 2> calls{};
+        const std::array owners{"Landroid/widget/EditText;", "Landroid/widget/TextView;"};
+        for (std::size_t i = 0; i < owners.size(); ++i) {
+            const auto target = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owners[i]), "<init>",
+                                                          "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            REQUIRE(target.has_value());
+            const auto original = f.linker.Method(*target).implementation;
+            f.linker.MutableMethod(*target).implementation = [original, &calls, i](IntrinsicContext& c) {
+                ++calls[i];
+                CHECK(c.arguments[2].AsInt() == 0x101006e);
+                return original(c);
+            };
+        }
+        const auto context = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto edit = f.vm.NewIntrinsicInstance("Landroid/widget/EditText;");
+        const auto constructor = f.linker.FindDirectMethod(f.model.ObjectClass(edit), "<init>",
+                                                           "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+        REQUIRE(constructor.has_value());
+        const auto outcome =
+            f.vm.Call(*constructor, std::array{VmValue::Ref(edit), VmValue::Ref(context), VmValue::Ref(VmObjectRef{})});
+        CHECK(calls == std::array<int, 2>{1, 1});
+        // DIAG-9 X: the original TextView target rejects the existing defStyleAttr
+        // projection. Only this/super forwarding is under test; keep the failure.
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(outcome.exception_message.find("defStyleAttr") != std::string::npos);
+        CHECK(outcome.exception_message.find("registered default-style projection") != std::string::npos);
+    }
+}

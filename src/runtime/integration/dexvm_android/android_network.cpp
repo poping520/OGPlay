@@ -83,12 +83,42 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiInfo;", "Ljava/lang/Object;");
-    builder.VirtualMethod("getMacAddress", "()Ljava/lang/String;", [](dx::IntrinsicContext&) {
-        // AOSP returns the connection record's stored address. OGPlay has
-        // no Wi-Fi radio or connection record, so the honest value is
-        // the field default: null. Never expose a host adapter address.
-        return dx::VmValue::Ref(dx::VmObjectRef{});
+    const auto wu_mMacAddress = builder.BoundInstanceField("mMacAddress", "Ljava/lang/String;", dx::kAccPrivate);
+    builder.VirtualMethod("getMacAddress", "()Ljava/lang/String;", [wu_mMacAddress](dx::IntrinsicContext& c) {
+        return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(wu_mMacAddress));
     });
+    const auto wu_mSupplicantState =
+        builder.BoundInstanceField("mSupplicantState", "Landroid/net/wifi/SupplicantState;", dx::kAccPrivate);
+    const auto wu_mBSSID = builder.BoundInstanceField("mBSSID", "Ljava/lang/String;", dx::kAccPrivate);
+    const auto wu_mWifiSsid = builder.BoundInstanceField("mWifiSsid", "Landroid/net/wifi/WifiSsid;", dx::kAccPrivate);
+    const auto wu_mNetworkId = builder.BoundInstanceField("mNetworkId", "I", dx::kAccPrivate);
+    const auto wu_mHiddenSSID = builder.BoundInstanceField("mHiddenSSID", "Z", dx::kAccPrivate);
+    const auto wu_mRssi = builder.BoundInstanceField("mRssi", "I", dx::kAccPrivate);
+    const auto wu_mLinkSpeed = builder.BoundInstanceField("mLinkSpeed", "I", dx::kAccPrivate);
+    const auto wu_mIpAddress = builder.BoundInstanceField("mIpAddress", "Ljava/net/InetAddress;", dx::kAccPrivate);
+    const auto wu_mMeteredHint = builder.BoundInstanceField("mMeteredHint", "Z", dx::kAccPrivate);
+    // AOSP 4.4 ROM line 96.
+    builder.Constructor(
+        "(Landroid/net/wifi/WifiInfo;)V",
+        [wu_mSupplicantState, wu_mBSSID, wu_mWifiSsid, wu_mNetworkId, wu_mHiddenSSID, wu_mRssi, wu_mLinkSpeed,
+         wu_mIpAddress, wu_mMacAddress, wu_mMeteredHint](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            if (!source.IsValid()) return dx::VmValue::Void();
+            api.SetRef(wu_mSupplicantState, api.GetRef(wu_mSupplicantState, source));
+            api.SetRef(wu_mBSSID, api.GetRef(wu_mBSSID, source));
+            api.SetRef(wu_mWifiSsid, api.GetRef(wu_mWifiSsid, source));
+            api.SetInt(wu_mNetworkId, api.GetInt(wu_mNetworkId, source));
+            api.SetInt(wu_mHiddenSSID, api.GetInt(wu_mHiddenSSID, source));
+            api.SetInt(wu_mRssi, api.GetInt(wu_mRssi, source));
+            api.SetInt(wu_mLinkSpeed, api.GetInt(wu_mLinkSpeed, source));
+            api.SetRef(wu_mIpAddress, api.GetRef(wu_mIpAddress, source));
+            api.SetRef(wu_mMacAddress, api.GetRef(wu_mMacAddress, source));
+            api.SetInt(wu_mMeteredHint, api.GetInt(wu_mMeteredHint, source));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

@@ -2726,6 +2726,20 @@ Decl Declare_android_opengl_GLU(const Context& context) {
             GluWriteVector(call, call.arguments[9].ref, call.arguments[10].AsInt(), output);
             return dx::VmValue::Int(1);
         });
+    // AOSP 4.4 ROM line 26.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -2982,6 +2996,20 @@ Decl Declare_android_opengl_EGL14(const Context& context) {
                 return Bool(NativeEgl(call, context, method, arguments) != 0U);
             });
     }
+    // AOSP 4.4 ROM line 30.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 Decl Declare_android_opengl_GLES30(const Context& context) {
@@ -3061,6 +3089,17 @@ Decl Declare_android_opengl_EGLObjectHandle(const Context& context) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             Egl14WrapperHandle(context->egl, call.receiver)));
     });
+    const auto wu_mHandle = builder.BoundInstanceField("mHandle", "I", dx::kAccPrivate | dx::kAccFinal);
+    // AOSP 4.4 ROM line 27.
+    builder.Constructor(
+        "(I)V",
+        [wu_mHandle](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            api.SetInt(wu_mHandle, c.arguments[0].AsInt());
+            return dx::VmValue::Void();
+        },
+        dx::kAccProtected);
+
     return std::move(builder).Build();
 }
 
@@ -3267,6 +3306,20 @@ Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
             }
             return dx::VmValue::Ref(gl);
         });
+    // AOSP 4.4 ROM line 21.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

@@ -698,3 +698,54 @@ TEST_CASE("AsyncTask preserves background DexVmError and never posts null") {
     CHECK(fixture.async_post.load() == 0);
     CHECK(fixture.ledger.Unimplemented().empty());
 }
+
+#include "android_value_fixture.h"
+
+TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factory") {
+    using namespace ogplay::test::android_value;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, nullptr, true);
+        const auto type = f.linker.ResolveDescriptor("Landroid/os/Message;");
+        const auto initialized = f.vm.EnsureClassInitialized(type);
+        REQUIRE_FALSE(initialized.exception.IsValid());
+        const auto pooled = f.New("Landroid/os/Message;");
+        const auto handler = f.vm.NewIntrinsicInstance("Landroid/os/Handler;");
+        const auto roots = f.vm.ProtectReferences(std::array{pooled, handler});
+        const auto set_pool = [&](const char* name, const char* descriptor, VmValue value) {
+            const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
+            REQUIRE(field.has_value());
+            f.linker.MutableClass(type).static_storage[f.linker.Field(*field).slot] =
+                value.kind == VmValue::Kind::ref ? value.ref.Value() : value.cat1;
+        };
+        set_pool("sPool", "Landroid/os/Message;", VmValue::Ref(pooled));
+        set_pool("sPoolSize", "I", VmValue::Int(1));
+        const auto target = f.linker.FindDirectMethod(type, "obtain", "()Landroid/os/Message;");
+        REQUIRE(target.has_value());
+        const auto original = f.linker.Method(*target).implementation;
+        int calls = 0;
+        f.linker.MutableMethod(*target).implementation = [original, &calls](IntrinsicContext& c) {
+            ++calls;
+            return original(c);
+        };
+        const auto message = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;III)Landroid/os/Message;",
+                                      {VmValue::Ref(handler), VmValue::Int(19), VmValue::Int(23), VmValue::Int(29)})
+                                 .ref;
+        CHECK(calls == 1);
+        CHECK(message == pooled);
+        const auto bits = [&](const char* name, const char* descriptor) {
+            const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
+            REQUIRE(field.has_value());
+            return f.model.InstanceSlots(message)[f.linker.Field(*field).slot].bits;
+        };
+        CHECK(bits("what", "I") == 19);
+        CHECK(bits("arg1", "I") == 23);
+        CHECK(bits("arg2", "I") == 29);
+        CHECK(bits("target", "Landroid/os/Handler;") == handler.Value());
+        CHECK(bits("next", "Landroid/os/Message;") == 0);
+        const auto fresh = f.Static("Landroid/os/Message;", "obtain", "(Landroid/os/Handler;)Landroid/os/Message;",
+                                    {VmValue::Ref(handler)})
+                               .ref;
+        CHECK(calls == 2);
+        CHECK(fresh != pooled);
+    }
+}

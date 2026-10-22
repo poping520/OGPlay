@@ -1542,6 +1542,39 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         call.receiver).endpoint.port);
                 } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
             });
+            // AOSP 4.4 ROM line 60.
+            builder.Constructor(
+                "([BI)V",
+                [](IntrinsicContext& c) {
+                    const auto target = c.vm.Linker().FindDirectMethod(
+                        c.vm.Linker().ResolveDescriptor("Ljava/net/DatagramPacket;"), "<init>", "([BII)V");
+                    const auto result =
+                        c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0],
+                                                                VmValue::Int(0), c.arguments[1]});
+                    if (result.exception.IsValid())
+                        throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                    return result.value;
+                },
+                kAccPublic);
+
+            // AOSP 4.4 ROM line 117.
+            builder.Constructor(
+                "([BILjava/net/InetAddress;I)V",
+                [](IntrinsicContext& c) {
+                    const auto target =
+                        c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/net/DatagramPacket;"),
+                                                       "<init>", "([BIILjava/net/InetAddress;I)V");
+                    const auto result = c.vm.Call(
+                        *target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0], VmValue::Int(0),
+                                                      c.arguments[1], c.arguments[2], c.arguments[3]});
+                    if (result.exception.IsValid())
+                        throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                    return result.value;
+                },
+                kAccPublic);
+
             return std::move(builder).Build();
         }
 
@@ -1612,7 +1645,32 @@ namespace ogplay::runtime::dexvm::intrinsics {
         using namespace detail;
 
         IntrinsicClassDecl DeclareMalformedURLException() {
-            return DeclareSimpleThrowable("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
+            auto builder = IntrinsicClassBuilder::Class("Ljava/net/MalformedURLException;", "Ljava/io/IOException;");
+            builder.Constructor("()V", [](IntrinsicContext& c) {
+                c.vm.InitializeThrowable(c.receiver);
+                return VmValue::Void();
+            });
+            builder.Constructor("(Ljava/lang/String;)V", [](IntrinsicContext& c) {
+                c.vm.InitializeThrowable(c.receiver, c.arguments[0].ref);
+                return VmValue::Void();
+            });
+            // AOSP 4.4 ROM line 50.
+            builder.Constructor(
+                "(Ljava/lang/String;Ljava/lang/Throwable;)V",
+                [](IntrinsicContext& c) {
+                    const auto target =
+                        c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/io/IOException;"),
+                                                       "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V");
+                    const auto result = c.vm.Call(
+                        *target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1]});
+                    if (result.exception.IsValid())
+                        throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                    return result.value;
+                },
+                kAccPublic);
+
+            return std::move(builder).Build();
         }
     } // namespace
 

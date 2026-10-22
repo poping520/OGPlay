@@ -15,6 +15,11 @@ Decl Declare_android_webkit_WebChromeClient(const Context& context) {
     builder.VirtualMethod("onConsoleMessage", "(Landroid/webkit/ConsoleMessage;)Z", NeutralHandler('Z'));
     builder.VirtualMethod("onShowCustomView", "(Landroid/view/View;Landroid/webkit/WebChromeClient$CustomViewCallback;)V", NeutralHandler('V'));
     builder.VirtualMethod("onHideCustomView", "()V", NeutralHandler('V'));
+    // AOSP 4.4 ROM line 94.
+    builder.VirtualMethod(
+        "onShowCustomView", "(Landroid/view/View;ILandroid/webkit/WebChromeClient$CustomViewCallback;)V",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -118,6 +123,20 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
                               dx::IntrinsicCall(call).SetRef(render_priority, call.arguments[0].ref);
                               return dx::VmValue::Void();
                           });
+    // AOSP 4.4 ROM line 179.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccProtected);
+
     return std::move(builder).Build();
 }
 

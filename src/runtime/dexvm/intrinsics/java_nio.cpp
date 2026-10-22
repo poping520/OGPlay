@@ -401,6 +401,34 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
     b.VirtualMethod("put", "(" + type + ")" + type, [](IntrinsicContext& c) {
         c.vm.NIO().Copy(Id(c.vm, c.receiver), Id(c.vm, c.arguments[0].ref)); return Self(c);
     });
+    if (name == "Char") {
+        b.VirtualMethod(
+            "put", "(Ljava/lang/String;)Ljava/nio/CharBuffer;",
+            [](IntrinsicContext& c) {
+                const auto source = IntrinsicCall(c).NonNullRef(0, "src");
+                const auto length = c.vm.Model().StringLength(source);
+                return detail::InvokeGuest(c.vm, c.receiver, "put", "(Ljava/lang/String;II)Ljava/nio/CharBuffer;",
+                                           {c.arguments[0], VmValue::Int(0), VmValue::Int(length)});
+            },
+            kAccPublic | kAccFinal);
+        b.VirtualMethod("put", "(Ljava/lang/String;II)Ljava/nio/CharBuffer;", [](IntrinsicContext& c) {
+            if (detail::InvokeGuest(c.vm, c.receiver, "isReadOnly", "()Z").AsInt())
+                throw VmJavaThrow{"Ljava/nio/ReadOnlyBufferException;", "read-only buffer"};
+            const auto source = IntrinsicCall(c).NonNullRef(0, "src");
+            const auto length = c.vm.Model().StringLength(source);
+            const auto start = c.arguments[1].AsInt(), end = c.arguments[2].AsInt();
+            if (start < 0 || end < start || end > length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "string range"};
+            if (end - start > detail::InvokeGuest(c.vm, c.receiver, "remaining", "()I").AsInt())
+                throw VmJavaThrow{"Ljava/nio/BufferOverflowException;", "string does not fit"};
+            for (int i = start; i < end; ++i) {
+                const auto unit = c.vm.Model().StringRegion(source, i, 1)[0];
+                static_cast<void>(
+                    detail::InvokeGuest(c.vm, c.receiver, "put", "(C)Ljava/nio/CharBuffer;", {VmValue::Int(unit)}));
+            }
+            return VmValue::Ref(c.receiver);
+        });
+    }
     Views(b, type, kind);
     return std::move(b).Build();
 }
@@ -413,6 +441,17 @@ IntrinsicClassDecl Plain(const std::string& descriptor, const std::string& paren
 IntrinsicClassDecl Exception(const std::string& descriptor, const std::string& parent) {
     auto b = IntrinsicClassBuilder::Class(descriptor, parent);
     b.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+    if (descriptor == "Ljava/nio/InvalidMarkException;") {
+        b.Constructor("(Ljava/lang/String;)V", [parent](IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor(parent), "<init>",
+                                                               "(Ljava/lang/String;)V");
+            const auto result = c.vm.Call(*target, std::array{VmValue::Ref(c.receiver), c.arguments[0]});
+            if (result.exception.IsValid())
+                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+            return result.value;
+        });
+    }
     return std::move(b).Build();
 }
 VmValue CharsetCallResult(Interpreter& vm, const VmCallOutcome& result) {
@@ -505,6 +544,11 @@ IntrinsicClassDecl Charset() {
         if (!other.IsValid() || c.vm.Model().ObjectClass(other) != c.vm.Model().ObjectClass(c.receiver)) return VmValue::Int(0);
         return VmValue::Int(c.vm.StringUtf8(IntrinsicCall(c).GetRef(name)) == c.vm.StringUtf8(IntrinsicCall(c).GetRef(name, other)));
     });
+    // AOSP 4.4 ROM line 410.
+    b.VirtualMethod(
+        "displayName", "(Ljava/util/Locale;)Ljava/lang/String;",
+        [name](IntrinsicContext& c) { return VmValue::Ref(IntrinsicCall(c).GetRef(name)); }, kAccPublic);
+
     return std::move(b).Build();
 }
 

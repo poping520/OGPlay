@@ -2644,6 +2644,34 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         }
         return dx::VmValue::Int(*data_match);
       });
+  // AOSP 4.4 ROM line 1198.
+  builder.FinalMethod(
+      "match", "(Landroid/content/ContentResolver;Landroid/content/Intent;ZLjava/lang/String;)I",
+      [](dx::IntrinsicContext& c) {
+          const auto intent = c.arguments[1].ref;
+          const auto type =
+              c.arguments[2].AsInt() != 0
+                  ? CallAndroidMethod(c.vm, intent, "resolveType",
+                                      "(Landroid/content/ContentResolver;)Ljava/lang/String;", {c.arguments[0]})
+                        .ref
+                  : CallAndroidMethod(c.vm, intent, "getType", "()Ljava/lang/String;").ref;
+          const auto type_root = c.vm.ProtectReferences(std::array{type});
+          const auto action = CallAndroidMethod(c.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+          const auto action_root = c.vm.ProtectReferences(std::array{action});
+          const auto scheme = CallAndroidMethod(c.vm, intent, "getScheme", "()Ljava/lang/String;").ref;
+          const auto scheme_root = c.vm.ProtectReferences(std::array{scheme});
+          const auto data = CallAndroidMethod(c.vm, intent, "getData", "()Landroid/net/Uri;").ref;
+          const auto data_root = c.vm.ProtectReferences(std::array{data});
+          const auto categories = CallAndroidMethod(c.vm, intent, "getCategories", "()Ljava/util/Set;").ref;
+          const auto categories_root = c.vm.ProtectReferences(std::array{categories});
+          return CallAndroidMethod(
+              c.vm, c.receiver, "match",
+              "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+              {dx::VmValue::Ref(action), dx::VmValue::Ref(type), dx::VmValue::Ref(scheme), dx::VmValue::Ref(data),
+               dx::VmValue::Ref(categories), c.arguments[3]});
+      },
+      dx::kAccPublic);
+
   return std::move(builder).Build();
 }
 
@@ -3421,6 +3449,20 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                               context->system_features.contains(feature) ? 1
                                                                          : 0);
                         });
+  // AOSP 4.4 ROM line 44.
+  builder.Constructor(
+      "()V",
+      [](dx::IntrinsicContext& c) {
+          const auto target =
+              c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+          const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+          if (result.exception.IsValid())
+              throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                    result.exception};
+          return result.value;
+      },
+      dx::kAccPublic);
+
   return std::move(builder).Build();
 }
 

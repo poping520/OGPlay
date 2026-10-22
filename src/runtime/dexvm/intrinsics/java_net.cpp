@@ -1549,7 +1549,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
             auto builder = IntrinsicClassBuilder::Class(
                 "Ljava/net/DatagramSocket;", "Ljava/lang/Object;");
             builder.Constructor("()V", NoopVoid());
-            builder.FinalMethod("send", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
+            builder.VirtualMethod("send", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {
                     const auto& packet = call.vm.Network().Packet(call.arguments[0].ref);
                     call.vm.Network().SendPacket(call.arguments[0].ref,
@@ -1557,9 +1557,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                                                      packet.array, packet.offset,
                                                      packet.length));
                     return VmValue::Void();
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    ThrowNetwork(error);
+                }
             });
-            builder.FinalMethod("receive", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
+            builder.VirtualMethod("receive", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {
                     auto& packet = call.vm.Network().Packet(call.arguments[0].ref);
                     const auto length = static_cast<std::size_t>(packet.length);
@@ -1570,9 +1572,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
                     packet.length = static_cast<std::int32_t>(amount);
                     packet.endpoint = {datagram.host, {}, datagram.port};
                     return VmValue::Void();
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
+                } catch (const NetworkRuntimeError& error) {
+                    ThrowNetwork(error);
+                }
             });
-            builder.FinalMethod("close", "()V", NoopVoid());
+            builder.VirtualMethod("close", "()V", NoopVoid());
             return std::move(builder).Build();
         }
 

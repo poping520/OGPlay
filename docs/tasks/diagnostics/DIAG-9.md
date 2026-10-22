@@ -21,7 +21,7 @@
 每个偏差键为 `类别|类描述符|成员名|成员描述符`。同一成员同类多个原因合并为一个键；
 类修饰符用 `@class`，层级用 `@superclass` / `@interfaces`，其成员描述符为空。
 
-- **A1 可覆写性**：ROM 非 final、非 static、非 private、非 `<init>/<clinit>` 的方法，
+- **A1 可覆写性**：ROM 非 final 类内非 final、非 static、非 private、非 `<init>/<clinit>` 的方法，
   运行时 overridable=false 或带 final；ROM 非 final 类在运行时为 final 也计入。
 - **A2 其余修饰符**：类、方法、字段的 public/protected/private/static/final/abstract
   与 ROM 不一致。A1 已计入的新增 final 位不重复计入 A2；其他位仍独立比较。
@@ -55,8 +55,9 @@ python3 tools/conformance/framework_contract.py --surface .local/analysis/wu9-0/
 stdout 和 `--report` 均输出每类总数、按包前 15 名、每类最多 10 个样例、私有类清单及 E 状态。
 
 基线保存稳定键、有 ROM 判据的 intrinsic 类清单及 ROM SHA256。
-`--check-baseline` 遇新键失败，偏差减少时提示 `--update-baseline`；
-`--update-baseline` 只在无新键时写入，拒绝扩大基线。
+`--check-baseline` 判断新增偏差时按去掉类别前缀后的 `类|成员|描述符` 比较；
+类别集合变化单列为 reclassified，并输出数量。偏差减少时提示 `--update-baseline`；
+`--update-baseline` 只在无新增成员偏差时写入，允许重分类。
 ROM 哈希变化或已纳入基线的类消失也失败，防止输入替换或不完整盘点掩盖偏差。
 退出码：成功 0，新偏差/类消失 1，输入错误 2。首次无基线只能通过 update 初始化。
 
@@ -85,3 +86,10 @@ ROM 哈希变化或已纳入基线的类消失也失败，防止输入替换或�
 
 证据目录：`.local/analysis/wu9-0/`。WU9-0 原有构建/测试日志保留；
 本次结果、完整逐键原因、报告、阳性、自测、CTest、基线和格式验证日志使用 `wu9-0b-` 前缀。
+
+WU9-1 检查器修正后，174 条 ROM final 类方法从 A1 重分类到 A2，已逐条核对；
+检查器与中间基线 207/558/274/13/74 已提交为 `2181ffec`。上限放宽到 30 后，完整审查
+46 类、207 条真实 A1，修改 28 处内部虚分派；当前工作区基线为 0/542/272/13/74，
+无新增成员偏差，A1 无保留项。DEX 正负回归和 dalvik 零回归；主题测试 13 项失败与
+7bf89836 相同。九场景基点均因 SDL 无显示器启动失败，无法比较帧时间，按停止条件
+停止，六款小游戏未跑；未提交，见 [DVM-261](../dexvm/DVM-261.md)。

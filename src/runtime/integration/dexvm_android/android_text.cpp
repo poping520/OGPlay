@@ -7,9 +7,10 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_Editable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/text/Editable;");
-    builder.FinalMethod("clear", "()V", EditableClearHandler(context));
+    builder.UnimplementedVirtual("clear", "()V", dx::kAccPublic | dx::kAccAbstract);
     builder.FinalMethod("length", "()I", EditableLengthHandler(context));
-    builder.FinalMethod("replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;", EditableReplaceHandler(context));
+    builder.UnimplementedVirtual("replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;",
+                                 dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 

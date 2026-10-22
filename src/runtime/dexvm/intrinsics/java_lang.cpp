@@ -204,28 +204,23 @@ IntrinsicClassDecl Declare_java_lang_Enum() {
     // Erased Comparable bridge. The per-enum cast to E is approximated by
     // the Enum-kind check; non-enum arguments fail like the platform's
     // checkcast bridge does.
-    builder.FinalMethod("compareTo", "(Ljava/lang/Object;)I",
-        [](IntrinsicContext& context) {
-            const auto other = context.arguments[0].ref;
-            if (other.IsValid()) {
-                auto& linker = context.vm.Linker();
-                auto current = context.vm.Model().ObjectClass(other);
-                while (current.IsValid()) {
-                    if (linker.Class(current).descriptor ==
-                        "Ljava/lang/Enum;") {
-                        break;
-                    }
-                    current = linker.Class(current).super.value_or(
-                        DexClassId{});
+    builder.VirtualMethod("compareTo", "(Ljava/lang/Object;)I", [](IntrinsicContext& context) {
+        const auto other = context.arguments[0].ref;
+        if (other.IsValid()) {
+            auto& linker = context.vm.Linker();
+            auto current = context.vm.Model().ObjectClass(other);
+            while (current.IsValid()) {
+                if (linker.Class(current).descriptor == "Ljava/lang/Enum;") {
+                    break;
                 }
-                if (!current.IsValid()) {
-                    throw VmJavaThrow{"Ljava/lang/ClassCastException;",
-                                      "argument is not an enum constant"};
-                }
+                current = linker.Class(current).super.value_or(DexClassId{});
             }
-            return VmValue::Int(
-                CompareOrdinals(context.vm, context.receiver, other));
-        });
+            if (!current.IsValid()) {
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "argument is not an enum constant"};
+            }
+        }
+        return VmValue::Int(CompareOrdinals(context.vm, context.receiver, other));
+    });
     builder.FinalMethod("getDeclaringClass", "()Ljava/lang/Class;",
         [](IntrinsicContext& context) {
             auto& vm = context.vm;
@@ -297,11 +292,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
         IntrinsicClassDecl Declare_java_lang_CharSequence() {
             auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/CharSequence;");
-            builder.FinalMethod("length", "()I", [](IntrinsicContext& context) {
-                return VmValue::Int(static_cast<std::int32_t>(
-                        context.vm.Model().StringValue(context.receiver).size())
-                );
-            });
+            builder.UnimplementedVirtual("length", "()I", kAccPublic | kAccAbstract);
             builder.UnimplementedVirtual("charAt", "(I)C");
             builder.UnimplementedVirtual("subSequence", "(II)Ljava/lang/CharSequence;");
             builder.UnimplementedVirtual("toString", "()Ljava/lang/String;");

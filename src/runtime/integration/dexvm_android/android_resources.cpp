@@ -176,37 +176,27 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
                    call.arguments[1].AsLong(), call.arguments[2].AsLong());
         return dx::VmValue::Void();
       });
-  builder.FinalMethod(
-      "getFileDescriptor", "()Ljava/io/FileDescriptor;",
-      [](dx::IntrinsicContext &call) {
-        const auto pfd = dx::VmObjectRef(
-            call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-        if (!pfd.IsValid())
-          return dx::VmValue::Ref(dx::VmObjectRef{});
-        return dx::VmValue::Ref(
-            dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits));
-      });
-  builder.FinalMethod("getStartOffset", "()J", [](dx::IntrinsicContext &call) {
-    return dx::VmValue::Long(GetWide(call, call.receiver, 1));
+  builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
+      const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+      if (!pfd.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
+      return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits));
   });
-  builder.FinalMethod("getLength", "()J", [](dx::IntrinsicContext &call) {
-    return dx::VmValue::Long(GetWide(call, call.receiver, 3));
-  });
-  builder.FinalMethod("close", "()V", [](dx::IntrinsicContext &call) {
-    const auto pfd =
-        dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-    if (pfd.IsValid()) {
-      const auto fd =
-          dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
-      if (fd.IsValid()) {
-        call.vm.IO().CloseDescriptor(fd);
-        // FileDescriptor.valid() is original Java and reads its descriptor
-        // field, independently of IoRuntime's logical close bookkeeping.
-        static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V",
-            {dx::VmValue::Int(-1)}));
+  builder.VirtualMethod("getStartOffset", "()J",
+                        [](dx::IntrinsicContext& call) { return dx::VmValue::Long(GetWide(call, call.receiver, 1)); });
+  builder.VirtualMethod("getLength", "()J",
+                        [](dx::IntrinsicContext& call) { return dx::VmValue::Long(GetWide(call, call.receiver, 3)); });
+  builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
+      const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+      if (pfd.IsValid()) {
+          const auto fd = dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
+          if (fd.IsValid()) {
+              call.vm.IO().CloseDescriptor(fd);
+              // FileDescriptor.valid() is original Java and reads its descriptor
+              // field, independently of IoRuntime's logical close bookkeeping.
+              static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+          }
       }
-    }
-    return dx::VmValue::Void();
+      return dx::VmValue::Void();
   });
   return std::move(builder).Build();
 }
@@ -755,79 +745,66 @@ Decl Declare_android_content_res_Resources(const Context &context) {
         PopulateAndroidDisplayMetrics(call, context, value);
         return dx::VmValue::Ref(value);
       });
-  builder.FinalMethod(
-      "getConfiguration", "()Landroid/content/res/Configuration;",
-      [context](dx::IntrinsicContext &call) {
-        const auto instance = ConfigurationSingleton(call, context);
-        const auto display = Api19ConfigurationFacts(*context);
-        // The managed desktop surface exposes touch-style pointer input
-        // and an alphabetic host keyboard through the Android input path.
-        SetIntField(call, instance, "touchscreen", 3);        // FINGER
-        SetIntField(call, instance, "keyboard", 2);           // QWERTY
-        SetIntField(call, instance, "keyboardHidden", 1);     // NO
-        SetIntField(call, instance, "hardKeyboardHidden", 1); // NO
-        SetIntField(call, instance, "navigation", 1);         // NONAV
-        SetIntField(call, instance, "navigationHidden", 2);   // YES
-        SetIntField(call, instance, "orientation",
-                    context->surface_width <= context->surface_height
-                        ? 1 // PORTRAIT
-                        : 2 // LANDSCAPE
-        );
-        SetIntField(call, instance, "screenWidthDp", display.width_dp);
-        SetIntField(call, instance, "screenHeightDp", display.height_dp);
-        SetIntField(call, instance, "smallestScreenWidthDp",
-                    std::min(display.width_dp, display.height_dp));
-        SetIntField(call, instance, "densityDpi", display.density_dpi);
-        SetIntField(call, instance, "screenLayout", display.screen_layout);
-        auto locale =
-            GetRefField(call, instance, "locale", "Ljava/util/Locale;");
-        if (!locale.IsValid()) {
-          const auto locale_class =
-              call.vm.Linker().ResolveDescriptor("Ljava/util/Locale;");
-          const auto initialized = call.vm.EnsureClassInitialized(locale_class);
-          if (initialized.exception.IsValid()) {
-            throw dx::VmJavaThrow{
-                call.vm.Linker().Class(initialized.exception_class).descriptor,
-                initialized.exception_message, initialized.exception};
-          }
-          const auto get_default = call.vm.Linker().FindDirectMethod(
-              locale_class, "getDefault", "()Ljava/util/Locale;");
-          if (!get_default.has_value()) {
-            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                 "Locale.getDefault is not linked");
-          }
-          const auto outcome = call.vm.Call(*get_default, {});
-          if (outcome.exception.IsValid()) {
-            throw dx::VmJavaThrow{
-                call.vm.Linker().Class(outcome.exception_class).descriptor,
-                outcome.exception_message, outcome.exception};
-          }
-          locale = outcome.value.ref;
+  builder.VirtualMethod(
+      "getConfiguration", "()Landroid/content/res/Configuration;", [context](dx::IntrinsicContext& call) {
+          const auto instance = ConfigurationSingleton(call, context);
+          const auto display = Api19ConfigurationFacts(*context);
+          // The managed desktop surface exposes touch-style pointer input
+          // and an alphabetic host keyboard through the Android input path.
+          SetIntField(call, instance, "touchscreen", 3);         // FINGER
+          SetIntField(call, instance, "keyboard", 2);            // QWERTY
+          SetIntField(call, instance, "keyboardHidden", 1);      // NO
+          SetIntField(call, instance, "hardKeyboardHidden", 1);  // NO
+          SetIntField(call, instance, "navigation", 1);          // NONAV
+          SetIntField(call, instance, "navigationHidden", 2);    // YES
+          SetIntField(call, instance, "orientation",
+                      context->surface_width <= context->surface_height ? 1  // PORTRAIT
+                                                                        : 2  // LANDSCAPE
+          );
+          SetIntField(call, instance, "screenWidthDp", display.width_dp);
+          SetIntField(call, instance, "screenHeightDp", display.height_dp);
+          SetIntField(call, instance, "smallestScreenWidthDp", std::min(display.width_dp, display.height_dp));
+          SetIntField(call, instance, "densityDpi", display.density_dpi);
+          SetIntField(call, instance, "screenLayout", display.screen_layout);
+          auto locale = GetRefField(call, instance, "locale", "Ljava/util/Locale;");
           if (!locale.IsValid()) {
-            throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                 "Locale.getDefault returned null");
+              const auto locale_class = call.vm.Linker().ResolveDescriptor("Ljava/util/Locale;");
+              const auto initialized = call.vm.EnsureClassInitialized(locale_class);
+              if (initialized.exception.IsValid()) {
+                  throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                        initialized.exception_message, initialized.exception};
+              }
+              const auto get_default =
+                  call.vm.Linker().FindDirectMethod(locale_class, "getDefault", "()Ljava/util/Locale;");
+              if (!get_default.has_value()) {
+                  throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Locale.getDefault is not linked");
+              }
+              const auto outcome = call.vm.Call(*get_default, {});
+              if (outcome.exception.IsValid()) {
+                  throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                        outcome.exception_message, outcome.exception};
+              }
+              locale = outcome.value.ref;
+              if (!locale.IsValid()) {
+                  throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Locale.getDefault returned null");
+              }
+              SetRefField(call, instance, "locale", "Ljava/util/Locale;", locale);
           }
-          SetRefField(call, instance, "locale", "Ljava/util/Locale;", locale);
-        }
-        static_cast<void>(CallAndroidMethod(
-            call.vm, instance, "setLayoutDirection", "(Ljava/util/Locale;)V",
-            {dx::VmValue::Ref(locale)}));
-        return dx::VmValue::Ref(instance);
+          static_cast<void>(CallAndroidMethod(call.vm, instance, "setLayoutDirection", "(Ljava/util/Locale;)V",
+                                              {dx::VmValue::Ref(locale)}));
+          return dx::VmValue::Ref(instance);
       });
-  builder.FinalMethod(
-      "getIdentifier",
-      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
-      [context](dx::IntrinsicContext &call) {
-        if (IsSystemResources(context, call.receiver))
-          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                "system resource names are unavailable"};
-        const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
-        const auto *entry = context->arsc.FindByName(type_name, entry_name);
-        return dx::VmValue::Int(
-            entry == nullptr ? 0
-                             : static_cast<std::int32_t>(entry->resource_id));
-      });
+  builder.VirtualMethod("getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
+                        [context](dx::IntrinsicContext& call) {
+                            if (IsSystemResources(context, call.receiver))
+                                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                      "system resource names are unavailable"};
+                            const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
+                            const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
+                            const auto* entry = context->arsc.FindByName(type_name, entry_name);
+                            return dx::VmValue::Int(entry == nullptr ? 0
+                                                                     : static_cast<std::int32_t>(entry->resource_id));
+                        });
   builder.VirtualMethod(
       "openRawResource", "(I)Ljava/io/InputStream;",
       [](dx::IntrinsicContext& call) {
@@ -861,28 +838,22 @@ Decl Declare_android_content_res_Resources(const Context &context) {
           throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
         }
       });
-  builder.FinalMethod(
-      "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;",
-      [context](dx::IntrinsicContext &call) {
-        if (IsSystemResources(context, call.receiver))
-          throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
-                                "system raw resource is unavailable"};
-        const auto resource_id =
-            static_cast<std::uint32_t>(call.arguments[0].AsInt());
-        const auto *entry = context->arsc.FindById(resource_id);
-        if (entry == nullptr || !entry->string_value.has_value()) {
-          throw dx::VmJavaThrow{
-              "Landroid/content/res/Resources$NotFoundException;",
-              "resource id has no file entry: " + std::to_string(resource_id)};
-        }
-        try {
-          return dx::VmValue::Ref(MakeStoredApkAssetFileDescriptor(
-              call, context, *entry->string_value));
-        } catch (const dx::VmJavaThrow &error) {
-          throw dx::VmJavaThrow{
-              "Landroid/content/res/Resources$NotFoundException;",
-              error.message};
-        }
+  builder.VirtualMethod(
+      "openRawResourceFd", "(I)Landroid/content/res/AssetFileDescriptor;", [context](dx::IntrinsicContext& call) {
+          if (IsSystemResources(context, call.receiver))
+              throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                    "system raw resource is unavailable"};
+          const auto resource_id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+          const auto* entry = context->arsc.FindById(resource_id);
+          if (entry == nullptr || !entry->string_value.has_value()) {
+              throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                    "resource id has no file entry: " + std::to_string(resource_id)};
+          }
+          try {
+              return dx::VmValue::Ref(MakeStoredApkAssetFileDescriptor(call, context, *entry->string_value));
+          } catch (const dx::VmJavaThrow& error) {
+              throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.message};
+          }
       });
   // 按资源 ID 打开编译后的 XML pull parser。
   builder.VirtualMethod(

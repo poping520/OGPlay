@@ -50,39 +50,36 @@ struct EglVm final {
         std::make_shared<DexVmAndroidContext>()};
     Interpreter interpreter;
 
-    explicit EglVm(
-        const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-        AndroidGuestCallSession* session = nullptr,
-        const char* dex_fixture = nullptr,
-        const std::vector<IntrinsicClassDecl>& extras = {})
-        : interpreter([this, dex_fixture, &extras]() -> DexClassLinker& {
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog());
-              auto android = AndroidIntrinsicCatalog(context);
-              android.push_back(std::move(
-                  IntrinsicClassBuilder::Class(
-                      "Lfixture/GlView;", "Landroid/opengl/GLSurfaceView;"))
-                                    .Build());
-              android.push_back(std::move(
-                  IntrinsicClassBuilder::Class(
-                      "Lfixture/EglPolicies;", "Ljava/lang/Object;",
-                      {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
-                       "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
-                                    .Build());
-              linker.RegisterIntrinsics(std::move(android));
-              linker.RegisterIntrinsics(extras);
-              ogplay::test::RegisterBootDex(linker);
-              if (dex_fixture != nullptr) {
-                  const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) +
-                                    "/" + dex_fixture;
-                  std::ifstream stream(path, std::ios::binary);
-                  REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-                  linker.RegisterDex(std::vector<std::uint8_t>(
-                      std::istreambuf_iterator<char>(stream),
-                      std::istreambuf_iterator<char>()));
-              }
-              linker.Link();
-              return linker;
-        }(), model, nullptr, ledger, {.backend = backend}) {
+    explicit EglVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                   AndroidGuestCallSession* session = nullptr, const char* dex_fixture = nullptr,
+                   const std::vector<IntrinsicClassDecl>& extras = {}, const bool include_skeleton = false)
+        : interpreter(
+              [this, dex_fixture, &extras, include_skeleton]() -> DexClassLinker& {
+                  linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+                  auto android = AndroidIntrinsicCatalog(context);
+                  android.push_back(
+                      std::move(IntrinsicClassBuilder::Class("Lfixture/GlView;", "Landroid/opengl/GLSurfaceView;"))
+                          .Build());
+                  android.push_back(
+                      std::move(IntrinsicClassBuilder::Class("Lfixture/EglPolicies;", "Ljava/lang/Object;",
+                                                             {"Landroid/opengl/GLSurfaceView$EGLContextFactory;",
+                                                              "Landroid/opengl/GLSurfaceView$EGLConfigChooser;"}))
+                          .Build());
+                  linker.RegisterIntrinsics(std::move(android));
+                  linker.RegisterIntrinsics(extras);
+                  ogplay::test::RegisterBootDex(linker);
+                  if (include_skeleton) ogplay::test::RegisterBootDexSkeleton(linker);
+                  if (dex_fixture != nullptr) {
+                      const auto path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + dex_fixture;
+                      std::ifstream stream(path, std::ios::binary);
+                      REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
+                      linker.RegisterDex(std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
+                                                                   std::istreambuf_iterator<char>()));
+                  }
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, {.backend = backend}) {
         context->session = session;
         const auto egl10 = linker.ResolveDescriptor(
             "Ljavax/microedition/khronos/egl/EGL10;");
@@ -680,7 +677,7 @@ TEST_CASE("DVM-134 GLSurfaceView stores validated render mode per view") {
 }
 
 TEST_CASE("BND37 GLSurfaceView publishes API19 context config and GL queue entrypoints") {
-    EglVm vm;
+    EglVm vm(InterpreterBackend::switch_dispatch, nullptr, nullptr, {}, true);
     const auto view = vm.interpreter.NewIntrinsicInstance(
         "Landroid/opengl/GLSurfaceView;");
     static_cast<void>(vm.CallOn(

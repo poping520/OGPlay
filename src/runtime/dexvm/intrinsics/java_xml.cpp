@@ -36,12 +36,9 @@ IntrinsicHandler SaxSetContentHandler(
 IntrinsicClassDecl DeclareSaxParser() {
     auto builder = IntrinsicClassBuilder::Class(
         "Ljavax/xml/parsers/SAXParser;", "Ljava/lang/Object;");
-    builder.FinalMethod(
-        "getXMLReader", "()Lorg/xml/sax/XMLReader;",
-        [](IntrinsicContext& call) {
-            return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                "Lorg/xml/sax/XMLReader$Impl;"));
-        });
+    builder.VirtualMethod("getXMLReader", "()Lorg/xml/sax/XMLReader;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewIntrinsicInstance("Lorg/xml/sax/XMLReader$Impl;"));
+    });
     return std::move(builder).Build();
 }
 
@@ -54,12 +51,9 @@ IntrinsicClassDecl DeclareSaxParserFactory() {
             return VmValue::Ref(call.vm.NewIntrinsicInstance(
                 "Ljavax/xml/parsers/SAXParserFactory;"));
         });
-    builder.FinalMethod(
-        "newSAXParser", "()Ljavax/xml/parsers/SAXParser;",
-        [](IntrinsicContext& call) {
-            return VmValue::Ref(call.vm.NewIntrinsicInstance(
-                "Ljavax/xml/parsers/SAXParser;"));
-        });
+    builder.VirtualMethod("newSAXParser", "()Ljavax/xml/parsers/SAXParser;", [](IntrinsicContext& call) {
+        return VmValue::Ref(call.vm.NewIntrinsicInstance("Ljavax/xml/parsers/SAXParser;"));
+    });
     return std::move(builder).Build();
 }
 
@@ -89,15 +83,11 @@ IntrinsicClassDecl DeclareXmlReaderImpl(
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclareXmlReader(
-    const CoreIntrinsicServices& services) {
+IntrinsicClassDecl DeclareXmlReader(const CoreIntrinsicServices&) {
     auto builder =
         IntrinsicClassBuilder::Interface("Lorg/xml/sax/XMLReader;");
-    builder.FinalMethod(
-        "setContentHandler", "(Lorg/xml/sax/ContentHandler;)V",
-        SaxSetContentHandler(services));
-    builder.FinalMethod("parse", "(Lorg/xml/sax/InputSource;)V",
-                        SaxParseUnsupported());
+    builder.UnimplementedVirtual("setContentHandler", "(Lorg/xml/sax/ContentHandler;)V", kAccPublic | kAccAbstract);
+    builder.UnimplementedVirtual("parse", "(Lorg/xml/sax/InputSource;)V", kAccPublic | kAccAbstract);
     return std::move(builder).Build();
 }
 

@@ -159,6 +159,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - `CoreIntrinsicCatalog(services)` 按 family TU 聚合拥有型 handler；非 Android 类只能在 core，
   平台事实只经 `CoreIntrinsicServices` 注入。Builder 只声明 own members，override 必须显式，字段
   经 bound token 访问；flags 统一来自 `access_flags.h`。
+- 手写 intrinsic 的可覆写性必须与 AOSP 4.4 ROM 一致，以 `framework_contract` 的 A1 为门禁；
+  ROM final 类的方法不计 A1。已实现的模板方法对 this 的调用须经既有 VM 虚分派入口，
+  默认被调 handler 保留原有 C++ 行为，应用覆写与 super 调用分别进入覆写和原 handler。
 - 集合、并发、IO/对象流、日期、framework 值类、Throwable、Uri、UUID/JCA、Cipher/证书等普通
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
 - `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；API 19

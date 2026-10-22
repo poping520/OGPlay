@@ -59,6 +59,34 @@ std::shared_ptr<DexVmAndroidContext::GlSurfaceRuntime> GlRuntime(const Context& 
     }
     return state;
 }
+
+// The built-in chooser objects carry the same component request as the existing
+// native config path. Their other skeleton methods remain explicitly unsupported.
+constexpr std::array<const char*, 6> kChooserComponents{"mRedSize",   "mGreenSize", "mBlueSize",
+                                                        "mAlphaSize", "mDepthSize", "mStencilSize"};
+
+auto& ChooserSlot(dx::Interpreter& vm, const dx::VmObjectRef object, const char* name, const char* descriptor) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, descriptor);
+    if (!field)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "built-in EGL chooser field is unavailable");
+    return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
+}
+
+dx::VmObjectRef NewBuiltinChooser(dx::IntrinsicContext& call, const std::array<std::int32_t, 6>& values,
+                                  const bool simple) {
+    const auto descriptor = simple ? "Landroid/opengl/GLSurfaceView$SimpleEGLConfigChooser;"
+                                   : "Landroid/opengl/GLSurfaceView$ComponentSizeChooser;";
+    static_cast<void>(call.vm.Linker().ResolveDescriptor(descriptor));
+    const auto chooser = call.vm.NewIntrinsicInstance(descriptor);
+    const auto roots = call.vm.ProtectReferences(std::array{chooser});
+    for (std::size_t i = 0; i < values.size(); ++i)
+        ChooserSlot(call.vm, chooser, kChooserComponents[i], "I") = {static_cast<std::uint32_t>(values[i]),
+                                                                     dx::SlotTag::cat1};
+    const auto value =
+        call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+    ChooserSlot(call.vm, chooser, "mValue", "[I") = {value.Value(), dx::SlotTag::ref};
+    return chooser;
+}
 }
 
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
@@ -81,69 +109,75 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         [preserve_context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(preserve_context));
         });
-    builder.FinalMethod("setRenderer",
-        "(Landroid/opengl/GLSurfaceView$Renderer;)V",
+    builder.VirtualMethod("setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto state = GlRuntime(context, call);
+                              if (state->renderer.IsValid())
+                                  throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "renderer is already set"};
+                              if (state->owner == context->activity || context->activity_stack.empty()) {
+                                  context->renderer = call.arguments[0].ref;
+                                  context->gl_surface_thread_stopped = false;
+                                  context->gl_surface_renderer_view = call.receiver;
+                                  context->egl_context_factory = state->egl_context_factory;
+                                  context->egl_config_chooser = state->egl_config_chooser;
+                              }
+                              context->gl_surface_render_requests[call.receiver.Value()] = true;
+                              state->renderer = call.arguments[0].ref;
+                              state->stopped = false;
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("setEGLContextFactory", "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              if (context->gl_surface_renderer_view == call.receiver)
+                                  context->egl_context_factory = call.arguments[0].ref;
+                              GlRuntime(context, call)->egl_context_factory = call.arguments[0].ref;
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "setEGLConfigChooser", "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
         [context](dx::IntrinsicContext& call) {
-            const auto state = GlRuntime(context, call);
-            if (state->renderer.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "renderer is already set"};
-            if (state->owner == context->activity || context->activity_stack.empty()) {
-                context->renderer = call.arguments[0].ref;
-                context->gl_surface_thread_stopped = false;
-                context->gl_surface_renderer_view = call.receiver;
-                context->egl_context_factory = state->egl_context_factory;
-                context->egl_config_chooser = state->egl_config_chooser;
-            }
-            context->gl_surface_render_requests[call.receiver.Value()] = true;
-            state->renderer = call.arguments[0].ref;
-            state->stopped = false;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setEGLContextFactory",
-        "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",
-        [context](dx::IntrinsicContext& call) {
-            if (context->gl_surface_renderer_view == call.receiver) context->egl_context_factory = call.arguments[0].ref;
-            GlRuntime(context, call)->egl_context_factory = call.arguments[0].ref;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setEGLConfigChooser",
-        "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V",
-        [context](dx::IntrinsicContext& call) {
-            if (context->gl_surface_renderer_view == call.receiver) context->egl_config_chooser = call.arguments[0].ref;
-            GlRuntime(context, call)->egl_config_chooser = call.arguments[0].ref;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setEGLContextClientVersion", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto version = call.arguments[0].AsInt();
-            if (version < 1 || version > 3) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "unsupported EGL context client version"};
-            }
-            context->gl_surface_client_versions[call.receiver.Value()] = version;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setEGLConfigChooser", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
-            context->gl_surface_config_specs[call.receiver.Value()] =
-                {8, 8, 8, 8, call.arguments[0].AsInt() != 0 ? 16 : 0, 0};
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setEGLConfigChooser", "(IIIIII)V",
-        [context](dx::IntrinsicContext& call) {
-            std::vector<std::int32_t> values;
-            values.reserve(6U);
-            for (const auto& argument : call.arguments) {
-                if (argument.AsInt() < 0) {
-                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                          "negative EGL config component"};
+            auto chooser = call.arguments[0].ref;
+            if (chooser.IsValid()) {
+                const auto& owner = call.vm.Linker().Class(call.vm.Model().ObjectClass(chooser)).descriptor;
+                if (owner == "Landroid/opengl/GLSurfaceView$SimpleEGLConfigChooser;" ||
+                    owner == "Landroid/opengl/GLSurfaceView$ComponentSizeChooser;") {
+                    std::vector<std::int32_t> values;
+                    for (const auto name : kChooserComponents)
+                        values.push_back(static_cast<std::int32_t>(ChooserSlot(call.vm, chooser, name, "I").bits));
+                    context->gl_surface_config_specs[call.receiver.Value()] = std::move(values);
+                    return dx::VmValue::Void();
                 }
-                values.push_back(argument.AsInt());
             }
-            context->gl_surface_config_specs[call.receiver.Value()] =
-                std::move(values);
+            if (context->gl_surface_renderer_view == call.receiver) context->egl_config_chooser = chooser;
+            GlRuntime(context, call)->egl_config_chooser = chooser;
             return dx::VmValue::Void();
         });
+    builder.VirtualMethod("setEGLContextClientVersion", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto version = call.arguments[0].AsInt();
+        if (version < 1 || version > 3) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported EGL context client version"};
+        }
+        context->gl_surface_client_versions[call.receiver.Value()] = version;
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setEGLConfigChooser", "(Z)V", [](dx::IntrinsicContext& call) {
+        const auto chooser = NewBuiltinChooser(call, {8, 8, 8, 8, call.arguments[0].AsInt() != 0 ? 16 : 0, 0}, true);
+        const auto roots = call.vm.ProtectReferences(std::array{chooser});
+        return CallAndroidMethod(call.vm, call.receiver, "setEGLConfigChooser",
+                                 "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V", {dx::VmValue::Ref(chooser)});
+    });
+    builder.VirtualMethod("setEGLConfigChooser", "(IIIIII)V", [](dx::IntrinsicContext& call) {
+        std::array<std::int32_t, 6> values{};
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            values[i] = call.arguments[i].AsInt();
+            if (values[i] < 0)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "negative EGL config component"};
+        }
+        const auto chooser = NewBuiltinChooser(call, values, false);
+        const auto roots = call.vm.ProtectReferences(std::array{chooser});
+        return CallAndroidMethod(call.vm, call.receiver, "setEGLConfigChooser",
+                                 "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V", {dx::VmValue::Ref(chooser)});
+    });
     builder.VirtualMethod("setRenderMode", "(I)V",
         [context](dx::IntrinsicContext& call) {
             const auto mode = call.arguments[0].AsInt();
@@ -162,28 +196,24 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                 ? 1
                 : found->second);
         });
-    builder.FinalMethod("requestRender", "()V",
-        [context](dx::IntrinsicContext& call) {
-            context->gl_surface_render_requests[call.receiver.Value()] = true;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("queueEvent", "(Ljava/lang/Runnable;)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto runnable = call.arguments[0].ref;
-            if (!runnable.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "runnable must not be null"};
-            }
-            std::scoped_lock lock(context->scheduler_mutex);
-            const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
-            if (context->scheduler_shutdown || state == context->gl_surface_runtimes.end() || state->second->stopped) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "GL thread is stopped"};
-            }
-            state->second->events.push_back(runnable);
-            if (state->second->wake) state->second->wake();
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("requestRender", "()V", [context](dx::IntrinsicContext& call) {
+        context->gl_surface_render_requests[call.receiver.Value()] = true;
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("queueEvent", "(Ljava/lang/Runnable;)V", [context](dx::IntrinsicContext& call) {
+        const auto runnable = call.arguments[0].ref;
+        if (!runnable.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "runnable must not be null"};
+        }
+        std::scoped_lock lock(context->scheduler_mutex);
+        const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
+        if (context->scheduler_shutdown || state == context->gl_surface_runtimes.end() || state->second->stopped) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "GL thread is stopped"};
+        }
+        state->second->events.push_back(runnable);
+        if (state->second->wake) state->second->wake();
+        return dx::VmValue::Void();
+    });
     const auto pause = [context](dx::IntrinsicContext& call, const bool paused) {
         const auto state = context->gl_surface_runtimes.find(call.receiver.Value());
         if (state == context->gl_surface_runtimes.end())
@@ -192,8 +222,8 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
         else state->second->paused = paused;
         return dx::VmValue::Void();
     };
-    builder.FinalMethod("onPause", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, true); });
-    builder.FinalMethod("onResume", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, false); });
+    builder.VirtualMethod("onPause", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, true); });
+    builder.VirtualMethod("onResume", "()V", [pause](dx::IntrinsicContext& call) { return pause(call, false); });
     return std::move(builder).Build();
 }
 
@@ -3215,27 +3245,28 @@ Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context) {
         return dx::VmValue::Ref(Singleton(call, context, "egl10_impl", "Ljavax/microedition/khronos/egl/EGL10$Impl;"));
     });
     const auto gl_field = builder.BoundInstanceField("mGLContext", "Lcom/google/android/gles_jni/GLImpl;", dx::kAccPrivate);
-    builder.FinalMethod("getGL", "()Ljavax/microedition/khronos/opengles/GL;", [gl_field](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall bound{call};
-        auto gl = bound.GetRef(gl_field);
-        if (!gl.IsValid()) {
-            auto& vm = call.vm;
-            const auto type = vm.Linker().ResolveDescriptor("Lcom/google/android/gles_jni/GLImpl;");
-            const auto require = [&](const dx::VmCallOutcome& result) {
-                if (result.exception.IsValid())
-                    throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-            };
-            require(vm.EnsureClassInitialized(type));
-            gl = vm.NewIntrinsicInstance("Lcom/google/android/gles_jni/GLImpl;");
-            const auto roots = vm.ProtectReferences(std::array{gl});
-            const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
-            if (!constructor.has_value()) ModelFailure(call, "GLImpl constructor is absent");
-            require(vm.Call(*constructor, std::array{dx::VmValue::Ref(gl)}));
-            bound.SetRef(gl_field, gl);
-        }
-        return dx::VmValue::Ref(gl);
-    });
+    builder.VirtualMethod(
+        "getGL", "()Ljavax/microedition/khronos/opengles/GL;", [gl_field](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall bound{call};
+            auto gl = bound.GetRef(gl_field);
+            if (!gl.IsValid()) {
+                auto& vm = call.vm;
+                const auto type = vm.Linker().ResolveDescriptor("Lcom/google/android/gles_jni/GLImpl;");
+                const auto require = [&](const dx::VmCallOutcome& result) {
+                    if (result.exception.IsValid())
+                        throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor,
+                                              result.exception_message, result.exception};
+                };
+                require(vm.EnsureClassInitialized(type));
+                gl = vm.NewIntrinsicInstance("Lcom/google/android/gles_jni/GLImpl;");
+                const auto roots = vm.ProtectReferences(std::array{gl});
+                const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
+                if (!constructor.has_value()) ModelFailure(call, "GLImpl constructor is absent");
+                require(vm.Call(*constructor, std::array{dx::VmValue::Ref(gl)}));
+                bound.SetRef(gl_field, gl);
+            }
+            return dx::VmValue::Ref(gl);
+        });
     return std::move(builder).Build();
 }
 

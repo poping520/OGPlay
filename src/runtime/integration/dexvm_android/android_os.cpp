@@ -468,27 +468,43 @@ void SetMessageTarget(dx::IntrinsicContext& call,
         call.receiver.Value(), dx::SlotTag::ref};
 }
 
+dx::VmObjectRef MessageCallback(dx::IntrinsicContext& call, const dx::VmObjectRef message) {
+    const auto field =
+        call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(message), "callback", "Ljava/lang/Runnable;");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Message.callback is unavailable");
+    return dx::VmObjectRef(call.vm.Model().InstanceSlots(message)[call.vm.Linker().Field(*field).slot].bits);
+}
+
 bool QueueMessage(dx::IntrinsicContext& call, const Context& context,
                   const dx::VmObjectRef message,
                   const std::int64_t when) {
     SetMessageTarget(call, message);
+    const auto callback = MessageCallback(call, message);
     const auto slots = call.vm.Model().InstanceSlots(message);
-    return EnqueueHandlerWork(
-        context, LooperOf(context, call.receiver), call.receiver, message,
-        slots[3].tag == dx::SlotTag::ref ? dx::VmObjectRef(slots[3].bits)
-                                        : dx::VmObjectRef{},
-        static_cast<std::int32_t>(slots[0].bits), false, when);
+    return EnqueueHandlerWork(context, LooperOf(context, call.receiver), call.receiver,
+                              callback.IsValid() ? callback : message,
+                              slots[3].tag == dx::SlotTag::ref ? dx::VmObjectRef(slots[3].bits) : dx::VmObjectRef{},
+                              static_cast<std::int32_t>(slots[0].bits), callback.IsValid(), when);
 }
 
-bool QueueRunnable(dx::IntrinsicContext& call, const Context& context,
-                   const dx::VmObjectRef runnable,
-                   const dx::VmObjectRef token, const std::int64_t when) {
+dx::VmValue SendAtTime(dx::IntrinsicContext& call, const dx::VmObjectRef message, const std::int64_t when) {
+    return CallAndroidMethod(call.vm, call.receiver, "sendMessageAtTime", "(Landroid/os/Message;J)Z",
+                             {dx::VmValue::Ref(message), dx::VmValue::Long(when)});
+}
+
+dx::VmValue QueueRunnable(dx::IntrinsicContext& call, const Context&, const dx::VmObjectRef runnable,
+                          const dx::VmObjectRef token, const std::int64_t when) {
     if (!runnable.IsValid()) {
         throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
                               "runnable == null"};
     }
-    return EnqueueHandlerWork(context, LooperOf(context, call.receiver),
-                              call.receiver, runnable, token, 0, true, when);
+    const auto message = MakeMessage(call, 0, token, call.receiver);
+    const auto roots = call.vm.ProtectReferences(std::array{message});
+    const auto field =
+        call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(message), "callback", "Ljava/lang/Runnable;");
+    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Message.callback is unavailable");
+    call.vm.Model().InstanceSlots(message)[call.vm.Linker().Field(*field).slot] = {runnable.Value(), dx::SlotTag::ref};
+    return SendAtTime(call, message, when);
 }
 
 }  // namespace
@@ -574,112 +590,73 @@ Decl Declare_android_os_Handler(const Context& context) {
                         dx::SlotTag::cat1};
             return dx::VmValue::Ref(message);
         });
-    builder.FinalMethod("sendMessage", "(Landroid/os/Message;)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueMessage(
-                call, context, call.arguments[0].ref,
-                context->uptime_millis.load()) ? 1 : 0);
-        });
-    builder.FinalMethod("sendMessageDelayed", "(Landroid/os/Message;J)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueMessage(
-                call, context, call.arguments[0].ref,
-                DelayedWhen(context->uptime_millis.load(),
-                            call.arguments[1].AsLong())) ? 1 : 0);
-        });
-    builder.FinalMethod("sendMessageAtTime", "(Landroid/os/Message;J)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueMessage(
-                call, context, call.arguments[0].ref,
-                call.arguments[1].AsLong()) ? 1 : 0);
-        });
-    builder.FinalMethod("sendEmptyMessage", "(I)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto message = MakeMessage(
-                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
-                call.receiver);
-            return dx::VmValue::Int(QueueMessage(
-                call, context, message, context->uptime_millis.load())
-                ? 1 : 0);
-        });
-    builder.FinalMethod("sendEmptyMessageDelayed", "(IJ)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto message = MakeMessage(
-                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
-                call.receiver);
-            return dx::VmValue::Int(QueueMessage(
-                call, context, message,
-                DelayedWhen(context->uptime_millis.load(),
-                            call.arguments[1].AsLong())) ? 1 : 0);
-        });
-    builder.FinalMethod("sendEmptyMessageAtTime", "(IJ)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto message = MakeMessage(
-                call, call.arguments[0].AsInt(), dx::VmObjectRef{},
-                call.receiver);
-            return dx::VmValue::Int(QueueMessage(
-                call, context, message, call.arguments[1].AsLong())
-                ? 1 : 0);
-        });
-    builder.FinalMethod("dispatchMessage", "(Landroid/os/Message;)V",
-        [context](dx::IntrinsicContext& call) {
-            dx::VmObjectRef callback{};
-            {
-                std::scoped_lock lock(context->scheduler_mutex);
-                const auto found = context->handler_callbacks.find(
-                    call.receiver.Value());
-                if (found != context->handler_callbacks.end()) {
-                    callback = found->second;
-                }
+    builder.FinalMethod("sendMessage", "(Landroid/os/Message;)Z", [context](dx::IntrinsicContext& call) {
+        return SendAtTime(call, call.arguments[0].ref, context->uptime_millis.load());
+    });
+    builder.FinalMethod("sendMessageDelayed", "(Landroid/os/Message;J)Z", [context](dx::IntrinsicContext& call) {
+        return SendAtTime(call, call.arguments[0].ref,
+                          DelayedWhen(context->uptime_millis.load(), call.arguments[1].AsLong()));
+    });
+    builder.VirtualMethod("sendMessageAtTime", "(Landroid/os/Message;J)Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(QueueMessage(call, context, call.arguments[0].ref, call.arguments[1].AsLong()) ? 1 : 0);
+    });
+    builder.FinalMethod("sendEmptyMessage", "(I)Z", [context](dx::IntrinsicContext& call) {
+        const auto message = MakeMessage(call, call.arguments[0].AsInt(), dx::VmObjectRef{}, call.receiver);
+        const auto roots = call.vm.ProtectReferences(std::array{message});
+        return SendAtTime(call, message, context->uptime_millis.load());
+    });
+    builder.FinalMethod("sendEmptyMessageDelayed", "(IJ)Z", [context](dx::IntrinsicContext& call) {
+        const auto message = MakeMessage(call, call.arguments[0].AsInt(), dx::VmObjectRef{}, call.receiver);
+        const auto roots = call.vm.ProtectReferences(std::array{message});
+        return SendAtTime(call, message, DelayedWhen(context->uptime_millis.load(), call.arguments[1].AsLong()));
+    });
+    builder.FinalMethod("sendEmptyMessageAtTime", "(IJ)Z", [](dx::IntrinsicContext& call) {
+        const auto message = MakeMessage(call, call.arguments[0].AsInt(), dx::VmObjectRef{}, call.receiver);
+        const auto roots = call.vm.ProtectReferences(std::array{message});
+        return SendAtTime(call, message, call.arguments[1].AsLong());
+    });
+    builder.VirtualMethod("dispatchMessage", "(Landroid/os/Message;)V", [context](dx::IntrinsicContext& call) {
+        dx::VmObjectRef callback{};
+        {
+            std::scoped_lock lock(context->scheduler_mutex);
+            const auto found = context->handler_callbacks.find(call.receiver.Value());
+            if (found != context->handler_callbacks.end()) {
+                callback = found->second;
             }
-            if (callback.IsValid()) {
-                auto& linker = call.vm.Linker();
-                const auto owner = call.vm.Model().ObjectClass(callback);
-                const auto index = linker.FindVtableIndex(
-                    owner, "handleMessage", "(Landroid/os/Message;)Z");
-                if (!index.has_value()) {
-                    throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;",
-                                          "Handler.Callback.handleMessage"};
-                }
-                const auto outcome = call.vm.Call(
-                    linker.Class(owner).vtable[*index],
-                    std::vector<dx::VmValue>{dx::VmValue::Ref(callback),
-                                             call.arguments[0]});
-                if (outcome.exception.IsValid()) {
-                    call.vm.SetPendingException(outcome.exception);
-                    return dx::VmValue::Void();
-                }
-                if (outcome.value.AsInt() != 0) return dx::VmValue::Void();
+        }
+        if (callback.IsValid()) {
+            auto& linker = call.vm.Linker();
+            const auto owner = call.vm.Model().ObjectClass(callback);
+            const auto index = linker.FindVtableIndex(owner, "handleMessage", "(Landroid/os/Message;)Z");
+            if (!index.has_value()) {
+                throw dx::VmJavaThrow{"Ljava/lang/AbstractMethodError;", "Handler.Callback.handleMessage"};
             }
-            DeliverMessage(call, call.receiver, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("post", "(Ljava/lang/Runnable;)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueRunnable(
-                call, context, call.arguments[0].ref, dx::VmObjectRef{},
-                context->uptime_millis.load()) ? 1 : 0);
-        });
-    builder.FinalMethod("postDelayed", "(Ljava/lang/Runnable;J)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueRunnable(
-                call, context, call.arguments[0].ref, dx::VmObjectRef{},
-                DelayedWhen(context->uptime_millis.load(),
-                            call.arguments[1].AsLong()))
-                ? 1 : 0);
-        });
-    builder.FinalMethod("postAtTime", "(Ljava/lang/Runnable;J)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueRunnable(
-                call, context, call.arguments[0].ref, dx::VmObjectRef{},
-                call.arguments[1].AsLong()) ? 1 : 0);
-        });
+            const auto outcome = call.vm.Call(linker.Class(owner).vtable[*index],
+                                              std::vector<dx::VmValue>{dx::VmValue::Ref(callback), call.arguments[0]});
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Void();
+            }
+            if (outcome.value.AsInt() != 0) return dx::VmValue::Void();
+        }
+        DeliverMessage(call, call.receiver, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("post", "(Ljava/lang/Runnable;)Z", [context](dx::IntrinsicContext& call) {
+        return QueueRunnable(call, context, call.arguments[0].ref, dx::VmObjectRef{}, context->uptime_millis.load());
+    });
+    builder.FinalMethod("postDelayed", "(Ljava/lang/Runnable;J)Z", [context](dx::IntrinsicContext& call) {
+        return QueueRunnable(call, context, call.arguments[0].ref, dx::VmObjectRef{},
+                             DelayedWhen(context->uptime_millis.load(), call.arguments[1].AsLong()));
+    });
+    builder.FinalMethod("postAtTime", "(Ljava/lang/Runnable;J)Z", [context](dx::IntrinsicContext& call) {
+        return QueueRunnable(call, context, call.arguments[0].ref, dx::VmObjectRef{}, call.arguments[1].AsLong());
+    });
     builder.FinalMethod("postAtTime", "(Ljava/lang/Runnable;Ljava/lang/Object;J)Z",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(QueueRunnable(
-                call, context, call.arguments[0].ref, call.arguments[1].ref,
-                call.arguments[2].AsLong()) ? 1 : 0);
-        });
+                        [context](dx::IntrinsicContext& call) {
+                            return QueueRunnable(call, context, call.arguments[0].ref, call.arguments[1].ref,
+                                                 call.arguments[2].AsLong());
+                        });
     builder.FinalMethod("removeCallbacks", "(Ljava/lang/Runnable;)V",
         [context](dx::IntrinsicContext& call) {
             RemoveHandlerWork(context, call.receiver, std::nullopt,
@@ -785,24 +762,18 @@ Decl Declare_android_os_HandlerThread(const Context& context) {
         LoopLooper(call, context, looper);
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("getLooper", "()Landroid/os/Looper;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                WaitForHandlerThreadLooper(call, context, call.receiver));
-        });
-    builder.FinalMethod("quit", "()Z", [context](dx::IntrinsicContext& call) {
-        const auto looper = WaitForHandlerThreadLooper(
-            call, context, call.receiver);
+    builder.VirtualMethod("getLooper", "()Landroid/os/Looper;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(WaitForHandlerThreadLooper(call, context, call.receiver));
+    });
+    builder.VirtualMethod("quit", "()Z", [context](dx::IntrinsicContext& call) {
+        const auto looper = CallAndroidMethod(call.vm, call.receiver, "getLooper", "()Landroid/os/Looper;").ref;
         return dx::VmValue::Int(
             looper.IsValid() && QuitLooper(context, looper) ? 1 : 0);
     });
-    builder.FinalMethod("quitSafely", "()Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto looper = WaitForHandlerThreadLooper(
-                call, context, call.receiver);
-            return dx::VmValue::Int(
-                looper.IsValid() && QuitLooper(context, looper) ? 1 : 0);
-        });
+    builder.VirtualMethod("quitSafely", "()Z", [context](dx::IntrinsicContext& call) {
+        const auto looper = CallAndroidMethod(call.vm, call.receiver, "getLooper", "()Landroid/os/Looper;").ref;
+        return dx::VmValue::Int(looper.IsValid() && QuitLooper(context, looper) ? 1 : 0);
+    });
     return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics
@@ -972,6 +943,7 @@ Decl Declare_android_os_Message(const Context& context) {
     const auto arg2 = builder.BoundInstanceField("arg2", "I");
     builder.InstanceField("obj", "Ljava/lang/Object;");
     builder.InstanceField("target", "Landroid/os/Handler;");
+    builder.InstanceField("callback", "Ljava/lang/Runnable;", dx::kAccNone);
     builder.StaticMethod("obtain", "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(MakeMessage(
@@ -1421,12 +1393,10 @@ Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
                 fd.Value(), dx::SlotTag::ref};
             return dx::VmValue::Ref(pfd);
         });
-    builder.FinalMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(dx::VmObjectRef(
-                call.vm.Model().InstanceSlots(call.receiver)[0].bits));
-        });
-    builder.FinalMethod("close", "()V", [](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+    });
+    builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
         const auto fd = dx::VmObjectRef(
             call.vm.Model().InstanceSlots(call.receiver)[0].bits);
         if (fd.IsValid()) call.vm.IO().CloseDescriptor(fd);
@@ -1467,16 +1437,20 @@ Decl Declare_android_os_PowerManager(const Context& context) {
 
 Decl Declare_android_os_Vibrator(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Vibrator;", "Ljava/lang/Object;");
-    builder.FinalMethod("hasVibrator", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    builder.FinalMethod("vibrate", "(J)V", [context](dx::IntrinsicContext& call) {
-        if (call.arguments[0].AsLong() < 0)
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "milliseconds"};
-        context->last_vibration_millis = call.arguments[0].AsLong();
-        return dx::VmValue::Void();
-    }).FinalMethod("cancel", "()V", [context](dx::IntrinsicContext&) {
-        context->last_vibration_millis = 0; return dx::VmValue::Void();
-    });
-    builder.FinalMethod("vibrate", "([JI)V", [](dx::IntrinsicContext&) -> dx::VmValue {
+    builder.VirtualMethod("hasVibrator", "()Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder
+        .VirtualMethod("vibrate", "(J)V",
+                       [context](dx::IntrinsicContext& call) {
+                           if (call.arguments[0].AsLong() < 0)
+                               throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "milliseconds"};
+                           context->last_vibration_millis = call.arguments[0].AsLong();
+                           return dx::VmValue::Void();
+                       })
+        .VirtualMethod("cancel", "()V", [context](dx::IntrinsicContext&) {
+            context->last_vibration_millis = 0;
+            return dx::VmValue::Void();
+        });
+    builder.VirtualMethod("vibrate", "([JI)V", [](dx::IntrinsicContext&) -> dx::VmValue {
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "repeating vibration is not provided"};
     });

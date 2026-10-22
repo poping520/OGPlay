@@ -63,15 +63,12 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_widget_EditText(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
-    builder.FinalMethod("getText", "()Landroid/text/Editable;",
-        [context](dx::IntrinsicContext& call) {
-            const auto key =
-                "editable:" + std::to_string(call.receiver.Value());
-            const auto editable = Singleton(call, context, key,
-                                            "Landroid/text/EditableImpl;");
-            context->editable_owner[editable.Value()] = call.receiver.Value();
-            return dx::VmValue::Ref(editable);
-        });
+    builder.VirtualMethod("getText", "()Landroid/text/Editable;", [context](dx::IntrinsicContext& call) {
+        const auto key = "editable:" + std::to_string(call.receiver.Value());
+        const auto editable = Singleton(call, context, key, "Landroid/text/EditableImpl;");
+        context->editable_owner[editable.Value()] = call.receiver.Value();
+        return dx::VmValue::Ref(editable);
+    });
     return std::move(builder).Build();
 }
 
@@ -200,36 +197,30 @@ Decl Declare_android_widget_ImageView(const Context& context) {
             const auto found = context->ui_view_images.find(call.receiver.Value());
             return dx::VmValue::Ref(found == context->ui_view_images.end() ? dx::VmObjectRef{} : found->second);
         });
-    builder.FinalMethod("setImageResource", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver,
-                UiClassForObject(call.vm, call.receiver));
-            const auto resource_id =
-                static_cast<std::uint32_t>(call.arguments[0].AsInt());
-            if (resource_id == 0U) {
-                BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
-                context->ui_tree.Get(node)->image_resource_id = 0;
-                context->ui_tree.Get(node)->intrinsic = {};
-            } else {
-                std::shared_ptr<const ui::UiBitmap> bitmap;
-                try {
-                    bitmap = ResolveUiDrawable(*context, resource_id);
-                } catch (const std::runtime_error& error) {
-                    throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
-                                          error.what()};
-                }
-                if (context->ui_view_images.contains(call.receiver.Value()))
-                    BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
-                context->ui_tree.Get(node)->image_resource_id = resource_id;
-                context->ui_tree.Get(node)->intrinsic = {bitmap->width,
-                                                         bitmap->height};
+    builder.VirtualMethod("setImageResource", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
+        const auto resource_id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        if (resource_id == 0U) {
+            BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
+            context->ui_tree.Get(node)->image_resource_id = 0;
+            context->ui_tree.Get(node)->intrinsic = {};
+        } else {
+            std::shared_ptr<const ui::UiBitmap> bitmap;
+            try {
+                bitmap = ResolveUiDrawable(*context, resource_id);
+            } catch (const std::runtime_error& error) {
+                throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
             }
-            context->ui_tree.MarkLayoutDirty(node);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setScaleType", "(Landroid/widget/ImageView$ScaleType;)V",
-        [context](dx::IntrinsicContext& call) {
+            if (context->ui_view_images.contains(call.receiver.Value()))
+                BindImageDrawable(call.vm, context, call.receiver, dx::VmObjectRef{});
+            context->ui_tree.Get(node)->image_resource_id = resource_id;
+            context->ui_tree.Get(node)->intrinsic = {bitmap->width, bitmap->height};
+        }
+        context->ui_tree.MarkLayoutDirty(node);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod(
+        "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;
             const auto found = context->ui_image_scale_types.find(value.Value());
             if (!value.IsValid() || found == context->ui_image_scale_types.end()) {
@@ -265,40 +256,27 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V",
                         ViewNullAttributeSetInitHandler(context));
-    builder.FinalMethod("setOrientation", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto value = call.arguments[0].AsInt();
-            if (value != 0 && value != 1) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "LinearLayout orientation must be horizontal or vertical"};
-            }
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver, ui::UiClass::LinearLayout);
-            context->ui_tree.Get(node)->orientation =
-                value == 0 ? ui::Orientation::Horizontal
-                           : ui::Orientation::Vertical;
-            context->ui_tree.MarkLayoutDirty(node);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getOrientation", "()I",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver, ui::UiClass::LinearLayout);
-            return dx::VmValue::Int(
-                context->ui_tree.Get(node)->orientation ==
-                        ui::Orientation::Horizontal
-                    ? 0
-                    : 1);
-        });
-    builder.FinalMethod("setGravity", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver, ui::UiClass::LinearLayout);
-            context->ui_tree.Get(node)->gravity =
-                static_cast<std::uint32_t>(call.arguments[0].AsInt());
-            context->ui_tree.MarkLayoutDirty(node);
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("setOrientation", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto value = call.arguments[0].AsInt();
+        if (value != 0 && value != 1) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                  "LinearLayout orientation must be horizontal or vertical"};
+        }
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::LinearLayout);
+        context->ui_tree.Get(node)->orientation = value == 0 ? ui::Orientation::Horizontal : ui::Orientation::Vertical;
+        context->ui_tree.MarkLayoutDirty(node);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getOrientation", "()I", [context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::LinearLayout);
+        return dx::VmValue::Int(context->ui_tree.Get(node)->orientation == ui::Orientation::Horizontal ? 0 : 1);
+    });
+    builder.VirtualMethod("setGravity", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::LinearLayout);
+        context->ui_tree.Get(node)->gravity = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        context->ui_tree.MarkLayoutDirty(node);
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
@@ -315,8 +293,8 @@ Decl Declare_android_widget_ProgressBar(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ProgressBar;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", ViewInitHandler(context));
-    builder.FinalMethod("setMax", "(I)V", WidgetNoopHandler());
-    builder.FinalMethod("setProgress", "(I)V", WidgetNoopHandler());
+    builder.VirtualMethod("setMax", "(I)V", WidgetNoopHandler());
+    builder.VirtualMethod("setProgress", "(I)V", WidgetNoopHandler());
     return std::move(builder).Build();
 }
 
@@ -693,7 +671,8 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
             auto* state = context->ui_tree.Get(node);
             state->text_size_px = static_cast<float>(size);
             state->text_color = AndroidColorToRgba(0xff000000U);
-            state->gravity = 0x11U;  // center_horizontal | center_vertical
+            static_cast<void>(
+                CallAndroidMethod(call.vm, call.receiver, "setGravity", "(I)V", {dx::VmValue::Int(0x11)}));
             context->ui_tree.SetClickable(node, true);
             context->ui_tree.MarkLayoutDirty(node);
             // The 9-patch button background has no renderer here; the gap
@@ -738,17 +717,14 @@ Decl Declare_android_widget_TextView(const Context& context) {
             context->ui_tree.MarkLayoutDirty(node);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+    builder.VirtualMethod(
+        "setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
         [context](dx::IntrinsicContext& call) {
             const auto buffer = call.arguments[1].ref;
             if (buffer.IsValid() && CallAndroidMethod(call.vm, buffer, "ordinal", "()I").AsInt() != 0) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui_text_widgets", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "TextView BufferType span/editable projection is unavailable"};
             }
-            return CallAndroidMethod(call.vm, call.receiver, "setText", "(Ljava/lang/CharSequence;)V", {call.arguments[0]});
-        });
-    builder.FinalMethod("setText", "(Ljava/lang/CharSequence;)V",
-        [context](dx::IntrinsicContext& call) {
             const auto value = call.arguments[0].ref;
             auto text = value.IsValid() ? call.vm.Model().StringValue(value)
                                         : std::u16string();
@@ -765,12 +741,24 @@ Decl Declare_android_widget_TextView(const Context& context) {
                     context->ui_tree.Get(node)->text.size()), text));
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("getText", "()Ljava/lang/CharSequence;",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = TextNode(call, context);
-            return dx::VmValue::Ref(call.vm.Model().NewString(
-                context->ui_tree.Get(node)->text));
-        });
+    builder.FinalMethod("setText", "(Ljava/lang/CharSequence;)V", [](dx::IntrinsicContext& call) {
+        const auto buffer = call.vm.Linker().ResolveDescriptor("Landroid/widget/TextView$BufferType;");
+        const auto initialized = call.vm.EnsureClassInitialized(buffer);
+        if (initialized.exception.IsValid()) {
+            call.vm.SetPendingException(initialized.exception);
+            return dx::VmValue::Void();
+        }
+        const auto normal =
+            call.vm.Linker().FindFieldRecursive(buffer, "NORMAL", "Landroid/widget/TextView$BufferType;");
+        const auto value = call.vm.Linker().Class(buffer).static_storage[call.vm.Linker().Field(*normal).slot];
+        return CallAndroidMethod(call.vm, call.receiver, "setText",
+                                 "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                                 {call.arguments[0], dx::VmValue::Ref(dx::VmObjectRef(value))});
+    });
+    builder.VirtualMethod("getText", "()Ljava/lang/CharSequence;", [context](dx::IntrinsicContext& call) {
+        const auto node = TextNode(call, context);
+        return dx::VmValue::Ref(call.vm.Model().NewString(context->ui_tree.Get(node)->text));
+    });
     const auto text_colors = builder.BoundInstanceField("mTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto hint_colors = builder.BoundInstanceField("mHintTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto link_colors = builder.BoundInstanceField("mLinkTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
@@ -859,19 +847,17 @@ Decl Declare_android_widget_TextView(const Context& context) {
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     };
-    builder.FinalMethod("setTextSize", "(F)V",
-        [set_text_size](dx::IntrinsicContext& call) {
-            return set_text_size(call, 0);
-        });
-    builder.FinalMethod("setTextSize", "(IF)V",
-        [set_text_size](dx::IntrinsicContext& call) {
-            const auto unit = call.arguments[0].AsInt();
-            if (unit < 0 || unit > 2) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "unsupported TextView dimension unit"};
-            }
-            return set_text_size(call, 1);
-        });
+    builder.VirtualMethod("setTextSize", "(F)V", [](dx::IntrinsicContext& call) {
+        return CallAndroidMethod(call.vm, call.receiver, "setTextSize", "(IF)V",
+                                 {dx::VmValue::Int(2), call.arguments[0]});
+    });
+    builder.VirtualMethod("setTextSize", "(IF)V", [set_text_size](dx::IntrinsicContext& call) {
+        const auto unit = call.arguments[0].AsInt();
+        if (unit < 0 || unit > 2) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported TextView dimension unit"};
+        }
+        return set_text_size(call, 1);
+    });
     const auto one_line = [context](dx::IntrinsicContext& call) {
         if (call.arguments[0].AsInt() != 1) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -881,34 +867,24 @@ Decl Declare_android_widget_TextView(const Context& context) {
         context->ui_tree.Get(node)->max_lines = 1;
         return dx::VmValue::Void();
     };
-    builder.FinalMethod("setLines", "(I)V", one_line);
-    builder.FinalMethod("setMaxLines", "(I)V", one_line);
-    builder.FinalMethod("setSingleLine", "()V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = TextNode(call, context);
-            context->ui_tree.Get(node)->max_lines = 1;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setSingleLine", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
-            if (call.arguments[0].AsInt() == 0) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "multiline TextView is unsupported"};
-            }
-            const auto node = TextNode(call, context);
-            context->ui_tree.Get(node)->max_lines = 1;
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setMaxWidth", "(I)V", WidgetNoopHandler());
-    builder.FinalMethod("setGravity", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = TextNode(call, context);
-            context->ui_tree.Get(node)->gravity =
-                static_cast<std::uint32_t>(call.arguments[0].AsInt());
-            context->ui_tree.MarkLayoutDirty(node);
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("setLines", "(I)V", one_line);
+    builder.VirtualMethod("setMaxLines", "(I)V", one_line);
+    builder.VirtualMethod("setSingleLine", "()V", [](dx::IntrinsicContext& call) {
+        return CallAndroidMethod(call.vm, call.receiver, "setSingleLine", "(Z)V", {dx::VmValue::Int(1)});
+    });
+    builder.VirtualMethod("setSingleLine", "(Z)V", [](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsInt() == 0) {
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "multiline TextView is unsupported"};
+        }
+        return CallAndroidMethod(call.vm, call.receiver, "setLines", "(I)V", {dx::VmValue::Int(1)});
+    });
+    builder.VirtualMethod("setMaxWidth", "(I)V", WidgetNoopHandler());
+    builder.VirtualMethod("setGravity", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto node = TextNode(call, context);
+        context->ui_tree.Get(node)->gravity = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        context->ui_tree.MarkLayoutDirty(node);
+        return dx::VmValue::Void();
+    });
     const auto typeface = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
     builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [typeface](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(typeface));
@@ -1011,20 +987,17 @@ Decl Declare_android_widget_TextView(const Context& context) {
         return family ? CallAndroidMethod(call.vm, call.receiver, "setTypeface", "(Landroid/graphics/Typeface;)V", {dx::VmValue::Ref(face)})
             : CallAndroidMethod(call.vm, call.receiver, "setTypeface", "(Landroid/graphics/Typeface;I)V", {dx::VmValue::Ref(face), dx::VmValue::Int(style)});
     });
-    builder.FinalMethod("getPaint", "()Landroid/text/TextPaint;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                Singleton(call, context, "text_paint",
-                          "Landroid/text/TextPaint;"));
-        });
-    builder.FinalMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto watcher = call.arguments[0].ref;
-            if (watcher.IsValid()) {
-                context->text_watchers[call.receiver.Value()].push_back(watcher);
-            }
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("getPaint", "()Landroid/text/TextPaint;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(Singleton(call, context, "text_paint", "Landroid/text/TextPaint;"));
+    });
+    builder.VirtualMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              const auto watcher = call.arguments[0].ref;
+                              if (watcher.IsValid()) {
+                                  context->text_watchers[call.receiver.Value()].push_back(watcher);
+                              }
+                              return dx::VmValue::Void();
+                          });
     return std::move(builder).Build();
 }
 
@@ -1048,11 +1021,10 @@ Decl Declare_android_widget_Toast(const Context& context) {
             return dx::VmValue::Ref(
                 call.vm.NewIntrinsicInstance("Landroid/widget/Toast;"));
         });
-    builder.FinalMethod("show", "()V",
-        [](dx::IntrinsicContext& call) {
-            GuestLog(call, core::LogLevel::info, "Toast.show()");
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("show", "()V", [](dx::IntrinsicContext& call) {
+        GuestLog(call, core::LogLevel::info, "Toast.show()");
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 

@@ -542,14 +542,10 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Canvas(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;", "Ljava/lang/Object;");
-    builder.FinalMethod("save", "(I)I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(1);
-    });
-    builder.FinalMethod("restore", "()V", GraphicsNoopHandler());
-    builder.FinalMethod("clipRect", "(FFFFLandroid/graphics/Region$Op;)Z",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Int(1);
-        });
+    builder.VirtualMethod("save", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
+    builder.VirtualMethod("restore", "()V", GraphicsNoopHandler());
+    builder.VirtualMethod("clipRect", "(FFFFLandroid/graphics/Region$Op;)Z",
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
     builder.FinalMethod("getClipBounds", "()Landroid/graphics/Rect;",
         [context](dx::IntrinsicContext& call) {
             const auto rect =
@@ -561,21 +557,17 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             slots[3] = {context->surface_height, dx::SlotTag::cat1};
             return dx::VmValue::Ref(rect);
         });
-    builder.FinalMethod("drawColor", "(I)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto found = context->canvases.find(call.receiver.Value());
-            if (found == context->canvases.end() || !found->second.locked) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "Canvas is not locked"};
-            }
-            std::fill(found->second.argb.begin(), found->second.argb.end(),
-                      static_cast<std::uint32_t>(call.arguments[0].AsInt()));
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod(
-        "drawBitmap",
-        "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
-        [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("drawColor", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto found = context->canvases.find(call.receiver.Value());
+        if (found == context->canvases.end() || !found->second.locked) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
+        }
+        std::fill(found->second.argb.begin(), found->second.argb.end(),
+                  static_cast<std::uint32_t>(call.arguments[0].AsInt()));
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod(
+        "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V", [context](dx::IntrinsicContext& call) {
             const auto canvas = context->canvases.find(call.receiver.Value());
             const auto bitmap = context->bitmaps.find(call.arguments[0].ref.Value());
             if (canvas == context->canvases.end() || !canvas->second.locked) {
@@ -617,7 +609,7 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", GraphicsNoopHandler());
+    builder.VirtualMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", GraphicsNoopHandler());
     return std::move(builder).Build();
 }
 
@@ -677,7 +669,7 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
         RefreshAndroidImageDrawables(*context);
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("setBounds", "(IIII)V", [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("setBounds", "(IIII)V", [context](dx::IntrinsicContext& call) {
         const ui::Rect bounds{call.arguments[0].AsInt(), call.arguments[1].AsInt(),
                               call.arguments[2].AsInt(), call.arguments[3].AsInt()};
         if (bounds.right < bounds.left || bounds.bottom < bounds.top) {
@@ -717,7 +709,7 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/PaintDrawable;", "Landroid/graphics/drawable/Drawable;");
     builder.Constructor("(I)V", GraphicsNoopHandler());
-    builder.FinalMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
+    builder.VirtualMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
     return std::move(builder).Build();
 }
 
@@ -749,15 +741,14 @@ Decl Declare_android_graphics_Paint(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
     builder.Constructor("()V", GraphicsNoopHandler());
     builder.Constructor("(I)V", GraphicsNoopHandler());
-    builder.FinalMethod("setColor", "(I)V", GraphicsNoopHandler());
-    builder.FinalMethod("setAntiAlias", "(Z)V", GraphicsNoopHandler());
-    builder.FinalMethod("setTextSize", "(F)V", GraphicsNoopHandler());
-    builder.FinalMethod("setTypeface",
-        "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
-        [](dx::IntrinsicContext& call) {
-            // Returns the typeface that was set, per the platform contract.
-            return dx::VmValue::Ref(call.arguments[0].ref);
-        });
+    builder.VirtualMethod("setColor", "(I)V", GraphicsNoopHandler());
+    builder.VirtualMethod("setAntiAlias", "(Z)V", GraphicsNoopHandler());
+    builder.VirtualMethod("setTextSize", "(F)V", GraphicsNoopHandler());
+    builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+                          [](dx::IntrinsicContext& call) {
+                              // Returns the typeface that was set, per the platform contract.
+                              return dx::VmValue::Ref(call.arguments[0].ref);
+                          });
     return std::move(builder).Build();
 }
 
@@ -872,38 +863,53 @@ Decl Declare_android_graphics_RectF(const Context& context) {
             slots[index] = {std::bit_cast<std::uint32_t>(call.arguments[index].AsFloat()), dx::SlotTag::cat1};
         return dx::VmValue::Void();
     };
-    builder.Constructor("(FFFF)V", set).FinalMethod("set", "(FFFF)V", set);
-    builder.FinalMethod("width", "()F", [](dx::IntrinsicContext& call) {
-        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        return FloatBits(std::bit_cast<float>(slots[2].bits) - std::bit_cast<float>(slots[0].bits));
-    }).FinalMethod("height", "()F", [](dx::IntrinsicContext& call) {
-        const auto slots = call.vm.Model().InstanceSlots(call.receiver);
-        return FloatBits(std::bit_cast<float>(slots[3].bits) - std::bit_cast<float>(slots[1].bits));
-    }).FinalMethod("centerX", "()F", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        return FloatBits((std::bit_cast<float>(s[0].bits) + std::bit_cast<float>(s[2].bits)) * 0.5F);
-    }).FinalMethod("centerY", "()F", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        return FloatBits((std::bit_cast<float>(s[1].bits) + std::bit_cast<float>(s[3].bits)) * 0.5F);
-    }).FinalMethod("isEmpty", "()Z", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        return dx::VmValue::Int(std::bit_cast<float>(s[0].bits) >= std::bit_cast<float>(s[2].bits) ||
-                                std::bit_cast<float>(s[1].bits) >= std::bit_cast<float>(s[3].bits));
-    }).FinalMethod("contains", "(FF)Z", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        const auto x = call.arguments[0].AsFloat();
-        const auto y = call.arguments[1].AsFloat();
-        return dx::VmValue::Int(x >= std::bit_cast<float>(s[0].bits) &&
-            x < std::bit_cast<float>(s[2].bits) && y >= std::bit_cast<float>(s[1].bits) &&
-            y < std::bit_cast<float>(s[3].bits));
-    }).FinalMethod("offset", "(FF)V", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        const auto dxv = call.arguments[0].AsFloat();
-        const auto dyv = call.arguments[1].AsFloat();
-        for (const auto index : {0U, 2U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dxv);
-        for (const auto index : {1U, 3U}) s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dyv);
-        return dx::VmValue::Void();
-    });
+    builder.Constructor("(FFFF)V", set).VirtualMethod("set", "(FFFF)V", set);
+    builder
+        .FinalMethod("width", "()F",
+                     [](dx::IntrinsicContext& call) {
+                         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+                         return FloatBits(std::bit_cast<float>(slots[2].bits) - std::bit_cast<float>(slots[0].bits));
+                     })
+        .FinalMethod("height", "()F",
+                     [](dx::IntrinsicContext& call) {
+                         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
+                         return FloatBits(std::bit_cast<float>(slots[3].bits) - std::bit_cast<float>(slots[1].bits));
+                     })
+        .FinalMethod("centerX", "()F",
+                     [](dx::IntrinsicContext& call) {
+                         const auto s = call.vm.Model().InstanceSlots(call.receiver);
+                         return FloatBits((std::bit_cast<float>(s[0].bits) + std::bit_cast<float>(s[2].bits)) * 0.5F);
+                     })
+        .FinalMethod("centerY", "()F",
+                     [](dx::IntrinsicContext& call) {
+                         const auto s = call.vm.Model().InstanceSlots(call.receiver);
+                         return FloatBits((std::bit_cast<float>(s[1].bits) + std::bit_cast<float>(s[3].bits)) * 0.5F);
+                     })
+        .FinalMethod("isEmpty", "()Z",
+                     [](dx::IntrinsicContext& call) {
+                         const auto s = call.vm.Model().InstanceSlots(call.receiver);
+                         return dx::VmValue::Int(std::bit_cast<float>(s[0].bits) >= std::bit_cast<float>(s[2].bits) ||
+                                                 std::bit_cast<float>(s[1].bits) >= std::bit_cast<float>(s[3].bits));
+                     })
+        .VirtualMethod("contains", "(FF)Z",
+                       [](dx::IntrinsicContext& call) {
+                           const auto s = call.vm.Model().InstanceSlots(call.receiver);
+                           const auto x = call.arguments[0].AsFloat();
+                           const auto y = call.arguments[1].AsFloat();
+                           return dx::VmValue::Int(
+                               x >= std::bit_cast<float>(s[0].bits) && x < std::bit_cast<float>(s[2].bits) &&
+                               y >= std::bit_cast<float>(s[1].bits) && y < std::bit_cast<float>(s[3].bits));
+                       })
+        .VirtualMethod("offset", "(FF)V", [](dx::IntrinsicContext& call) {
+            const auto s = call.vm.Model().InstanceSlots(call.receiver);
+            const auto dxv = call.arguments[0].AsFloat();
+            const auto dyv = call.arguments[1].AsFloat();
+            for (const auto index : {0U, 2U})
+                s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dxv);
+            for (const auto index : {1U, 3U})
+                s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dyv);
+            return dx::VmValue::Void();
+        });
     return std::move(builder).Build();
 }
 
@@ -962,13 +968,20 @@ Decl Declare_android_graphics_Path(const Context& context) {
         context->paths[call.receiver.Value()] = context->paths[call.arguments[0].ref.Value()];
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("reset", "()V", [context](dx::IntrinsicContext& call) {
-        context->paths[call.receiver.Value()].commands.clear(); return dx::VmValue::Void();
-    }).FinalMethod("rewind", "()V", [context](dx::IntrinsicContext& call) {
-        context->paths[call.receiver.Value()].commands.clear(); return dx::VmValue::Void();
-    }).FinalMethod("isEmpty", "()Z", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(context->paths[call.receiver.Value()].commands.empty());
-    });
+    builder
+        .VirtualMethod("reset", "()V",
+                       [context](dx::IntrinsicContext& call) {
+                           context->paths[call.receiver.Value()].commands.clear();
+                           return dx::VmValue::Void();
+                       })
+        .VirtualMethod("rewind", "()V",
+                       [context](dx::IntrinsicContext& call) {
+                           context->paths[call.receiver.Value()].commands.clear();
+                           return dx::VmValue::Void();
+                       })
+        .VirtualMethod("isEmpty", "()Z", [context](dx::IntrinsicContext& call) {
+            return dx::VmValue::Int(context->paths[call.receiver.Value()].commands.empty());
+        });
     const auto point = [context](const auto verb) {
         return dx::IntrinsicHandler([context, verb](dx::IntrinsicContext& call) {
             context->paths[call.receiver.Value()].commands.push_back(
@@ -976,14 +989,16 @@ Decl Declare_android_graphics_Path(const Context& context) {
             return dx::VmValue::Void();
         });
     };
-    builder.FinalMethod("moveTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::move))
-        .FinalMethod("lineTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::line));
-    builder.FinalMethod("close", "()V", [context](dx::IntrinsicContext& call) {
-        context->paths[call.receiver.Value()].commands.push_back(
-            {DexVmAndroidContext::PathState::Verb::close});
-        return dx::VmValue::Void();
-    }).FinalMethod("addRect", "(FFFFLandroid/graphics/Path$Direction;)V",
-        [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("moveTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::move))
+        .VirtualMethod("lineTo", "(FF)V", point(DexVmAndroidContext::PathState::Verb::line));
+    builder
+        .VirtualMethod("close", "()V",
+                       [context](dx::IntrinsicContext& call) {
+                           context->paths[call.receiver.Value()].commands.push_back(
+                               {DexVmAndroidContext::PathState::Verb::close});
+                           return dx::VmValue::Void();
+                       })
+        .VirtualMethod("addRect", "(FFFFLandroid/graphics/Path$Direction;)V", [context](dx::IntrinsicContext& call) {
             if (!call.arguments[4].ref.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "direction"};
             const auto direction =
@@ -1070,8 +1085,13 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
         RefreshAndroidImageDrawables(*context);
         return dx::VmValue::Void();
     };
-    builder.Constructor("(I)V", set).FinalMethod("setColor", "(I)V", set);
-    builder.FinalMethod("getColor", "()I", [](dx::IntrinsicContext& call) {
+    builder
+        .Constructor("(I)V",
+                     [](dx::IntrinsicContext& call) {
+                         return CallAndroidMethod(call.vm, call.receiver, "setColor", "(I)V", {call.arguments[0]});
+                     })
+        .VirtualMethod("setColor", "(I)V", set);
+    builder.VirtualMethod("getColor", "()I", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             call.vm.Model().InstanceSlots(call.receiver)[0].bits));
     });

@@ -1226,7 +1226,12 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock，无 APK 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（085/300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 84/91（92.3%，085 已排除）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock；无 APK，可选 --native-lib-dir 提供 ARM 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（085/300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 84/91（92.3%，085 已排除）。"
+
+[tools.jni_conformance]
+status = "partial"
+test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --check-baseline"
+note = "DIAG-8/WU8-0：零 AOSP 测试库依赖的 C11/Java JNI 探针；run-dex 应用库走生产加载器，双后端分组及崩溃/超时隔离、分类、只升不降基线与 NDK 头文件覆盖统计。首批边界/调用/版本/库加载各 183/184；DefineClass 未绑定。静态调用覆盖 115/233，排除 DestroyJavaVM；其余 JNI 函数与参数矩阵待 WU8-1。"
 
 [tools.dex_dependency_survey]
 status = "complete"

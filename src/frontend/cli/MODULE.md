@@ -10,3 +10,5 @@ dexvm dump-surface [--bootdex <jar>] 输出单份 JSON；缺省使用 bundled Bo
 不依赖旁置 data。只经 app 外观调用，参数/归档失败非零退出；链接缺口作为 JSON 诊断保留。
 dexvm run-dex <dex|jar> 按 dalvikvm 语义运行独立 main：guest System.out/err 原样写 stdout，
 退出码为 main 返回 0、未捕获 1、System.exit(n)；VM/装配错误以 error 块和 70 区分。
+
+run-dex 可选 `--native-lib-dir <dir>` 提供 ARM 应用库目录；未指定时不提供应用库。

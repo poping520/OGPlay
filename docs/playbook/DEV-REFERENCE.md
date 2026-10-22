@@ -114,6 +114,8 @@ AndroidKeyStore 若确有需求，可另做应用隔离的软件密钥底座，�
 语义仍必须兑现。不能用返回成功、跳过验证或伪造硬件保护代替实现。具体方案见
 [信任验证与 TLS](../design/dexvm/14-tls-trust.md)及 [ADR-0066](../adr/dexvm.md#adr-0066)。
 
+JNI 一致性：`python3 tools/conformance/jni_tests.py --coverage --check-baseline`（自测 `--self-test`；见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)）。
+
 ## BootDex、骨架与 dexvm 链接定向回归
 
 改 DexVM/BootDex/intrinsic 语义后，跑全量

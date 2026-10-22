@@ -2,6 +2,7 @@
 #include "ogplay/app/dex_run.h"
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -25,12 +26,14 @@ TEST_CASE("run-dex parses dalvikvm-style options and main arguments") {
                           std::string_view{"a.b.Main"}, std::string_view{"--backend"},
                           std::string_view{"threaded"}, std::string_view{"-ea"},
                           std::string_view{"--ledger-json"}, std::string_view{"l.json"},
+                          std::string_view{"--native-lib-dir"}, std::string_view{"native"},
                           std::string_view{"--"}, std::string_view{"--x"}, std::string_view{"7"}};
     const auto options = ParseDexRunArgs(args);
     CHECK(options.input == "t.jar");
     CHECK(options.main_class == "a.b.Main");
     CHECK(options.backend == "threaded");
     CHECK(options.enable_assertions);
+    CHECK(options.native_lib_dir == "native");
     CHECK(options.ledger_json == "l.json");
     CHECK(options.arguments == std::vector<std::string>{"--x", "7"});
     const std::array bad_backend{std::string_view{"t.dex"}, std::string_view{"--backend"},
@@ -97,4 +100,28 @@ TEST_CASE("run-dex explicitly rejects application native libraries") {
         CHECK(output.find("java.lang.UnsatisfiedLinkError") != std::string::npos);
         CHECK(output.find("rundex_application") != std::string::npos);
     }
+}
+
+TEST_CASE("run-dex validates explicit native library directories and filenames") {
+    const auto root = std::filesystem::temp_directory_path() / "ogplay-run-dex-native-test";
+    std::filesystem::remove_all(root);
+    struct Cleanup { std::filesystem::path root; ~Cleanup() { std::filesystem::remove_all(root); } } cleanup{root};
+    auto options = Options("rundex.Main");
+    options.native_lib_dir = root;
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::app::RunDex(options)),
+                        ("--native-lib-dir is not a directory: " + root.string()).c_str(), std::invalid_argument);
+    std::filesystem::create_directories(root);
+    { std::ofstream file(root / "bad.so"); file << "invalid"; }
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::app::RunDex(options)),
+                        "invalid native library filename: bad.so", std::invalid_argument);
+    std::filesystem::remove(root / "bad.so");
+    const auto libc = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/lib/libc.so";
+    std::filesystem::copy_file(libc, root / "libfirst.so");
+    std::filesystem::copy_file(libc, root / "libsecond.so");
+    CHECK_THROWS_WITH_AS(static_cast<void>(ogplay::app::RunDex(options)),
+                        "duplicate native library soname: libc.so", std::invalid_argument);
+    const std::array missing{std::string_view{"x.dex"}, std::string_view{"--native-lib-dir"}};
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::ParseDexRunArgs(missing)), std::invalid_argument);
+    const std::array empty{std::string_view{"x.dex"}, std::string_view{"--native-lib-dir"}, std::string_view{""}};
+    CHECK_THROWS_AS(static_cast<void>(ogplay::app::ParseDexRunArgs(empty)), std::invalid_argument);
 }

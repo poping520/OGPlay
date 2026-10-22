@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include "ogplay/runtime/dexvm/interpreter.h"
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -55,6 +56,7 @@ public:
         std::uint64_t reserved_bytes{};
         JniPrimitiveKind primitive_kind{JniPrimitiveKind::integer};
         std::uint32_t identity_hash{};
+        std::optional<JniPrimitiveArrayView> primitive_view;
     };
 
     struct ObjectArray final {
@@ -64,6 +66,7 @@ public:
 
     JniStringStore* strings{};
     JniPrimitiveArrayStore* arrays{};
+    VmExecutionLock* allocation_mutex{};
     JavaObjectInterop interop;
     JavaObjectModelConfig config;
     std::function<void(VmObjectRef)> instance_observer;
@@ -123,6 +126,11 @@ public:
         if (record.identity_hash == 0U) {
             record.identity_hash = NextIdentityHash();
         }
+        if (free_records.empty() && records.size() == records.capacity())
+            records.reserve(std::max<std::size_t>(16, records.size() * 2));
+        const auto identity = record.identity;
+        auto [mapping, inserted] = by_identity.emplace(identity, 0);
+        static_cast<void>(inserted);
         std::uint32_t index{};
         if (free_records.empty()) {
             index = static_cast<std::uint32_t>(records.size());
@@ -133,7 +141,7 @@ public:
             records[index] = std::move(record);
         }
         const auto handle = VmObjectRef(index + 1U);
-        by_identity.emplace(records[index].identity, index);
+        mapping->second = index;
         ++object_count;
         return handle;
     }
@@ -239,9 +247,39 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
         throw std::invalid_argument("DexVM target utilization must be in 1..100");
     if (config.min_free_bytes > config.max_free_bytes)
         throw std::invalid_argument("DexVM heap free range is inverted");
+    arrays.SetAllocationContext({[state = impl_.get()]() -> std::shared_ptr<void> {
+                                     return state->allocation_mutex
+                                                ? std::make_shared<VmExecutionLockScope>(*state->allocation_mutex)
+                                                : nullptr;
+                                 },
+                                 [state = impl_.get()](std::uint64_t bytes) -> std::function<void()> {
+                                     const auto target = state->heap_target_bytes;
+                                     const auto emergency = state->emergency_remaining;
+                                     // Prepare rollback before Reserve so its own allocation cannot leak a charge.
+                                     std::function<void()> undo = [state, bytes, target, emergency] {
+                                         state->allocated_bytes -= bytes;
+                                         state->heap_target_bytes = target;
+                                         state->emergency_remaining = emergency;
+                                     };
+                                     try {
+                                         state->Reserve(bytes);
+                                     } catch (const DexVmError& e) {
+                                         if (e.Reason() == DexVmErrorReason::heap_budget_exhausted)
+                                             throw std::bad_alloc();
+                                         throw;
+                                     }
+                                     return undo;
+                                 },
+                                 [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; }});
 }
 
-JavaObjectModel::~JavaObjectModel() = default;
+JavaObjectModel::~JavaObjectModel() {
+    impl_->arrays->SetAllocationContext({});
+}
+
+void JavaObjectModel::SetPrimitiveAllocationMutex(VmExecutionLock& mutex) {
+    impl_->allocation_mutex = &mutex;
+}
 
 void JavaObjectModel::SetCoreClasses(const DexClassId string_class,
                                      const DexClassId class_class) {
@@ -278,6 +316,13 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
         try {
             record.primitive_kind = impl_->arrays->Kind(identity);
             record.kind = VmObjectKind::primitive_array;
+            try {
+                impl_->arrays->EnsureCharged(identity);
+            } catch (const std::bad_alloc&) {
+                Fail(DexVmErrorReason::heap_budget_exhausted, "JNI array import exceeded heap budget");
+            }
+            record.reserved_bytes = EstimatePrimitiveArrayBytes(record.primitive_kind, impl_->arrays->Length(identity));
+            record.primitive_view = impl_->arrays->View(identity);
             if (impl_->interop.resolve_primitive_array_class) {
                 record.java_class = impl_->interop.resolve_primitive_array_class(
                     record.primitive_kind);
@@ -507,7 +552,13 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
                 impl_->strings->Delete(record.identity);
                 break;
             case VmObjectKind::primitive_array:
-                impl_->arrays->Delete(record.identity);
+                record.primitive_view.reset();
+                try {
+                    impl_->arrays->Delete(record.identity);
+                } catch (...) {
+                    record.primitive_view = impl_->arrays->View(record.identity);
+                    throw;
+                }
                 break;
             case VmObjectKind::vm_instance:
                 impl_->instance_storage[record.storage].clear();
@@ -536,7 +587,7 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         impl_->by_identity.erase(record.identity);
         result.freed_bytes += record.reserved_bytes;
         ++result.freed_objects;
-        impl_->allocated_bytes -= record.reserved_bytes;
+        if (record.kind != VmObjectKind::primitive_array) impl_->allocated_bytes -= record.reserved_bytes;
         --impl_->object_count;
         record.occupied = false;
         impl_->free_records.push_back(static_cast<std::uint32_t>(index));
@@ -705,15 +756,25 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class,
     }
     const auto bytes = 32ULL + static_cast<std::uint64_t>(length) *
                                   PrimitiveWidth(kind);
-    impl_->Reserve(bytes);
-    const auto identity = impl_->arrays->New(kind, length);
-    Impl::Record record;
-    record.kind = VmObjectKind::primitive_array;
-    record.identity = identity;
-    record.java_class = array_class;
-    record.primitive_kind = kind;
-    record.reserved_bytes = bytes;
-    return impl_->Register(std::move(record));
+    JniObjectIdentity identity;
+    try {
+        identity = impl_->arrays->New(kind, length);
+    } catch (const std::bad_alloc&) {
+        Fail(DexVmErrorReason::heap_budget_exhausted, "primitive payload allocation failed");
+    }
+    try {
+        Impl::Record record;
+        record.kind = VmObjectKind::primitive_array;
+        record.identity = identity;
+        record.java_class = array_class;
+        record.primitive_kind = kind;
+        record.reserved_bytes = bytes;
+        record.primitive_view = impl_->arrays->View(identity);
+        return impl_->Register(std::move(record));
+    } catch (...) {
+        impl_->arrays->Delete(identity);
+        throw;
+    }
 }
 
 JniPrimitiveKind JavaObjectModel::PrimitiveArrayKind(
@@ -729,71 +790,58 @@ JniPrimitiveKind JavaObjectModel::PrimitiveArrayKind(
 std::uint64_t JavaObjectModel::GetPrimitiveElement(const VmObjectRef ref,
                                                    const JniSize index) const {
     const auto& record = impl_->At(ref);
-    const auto data = impl_->arrays->Region(record.identity, index, 1);
+    if (!record.primitive_view || index < 0 || index >= ArrayLength(ref))
+        throw JniArrayError(JniArrayErrorReason::invalid_region, "primitive array index out of range");
     return std::visit(
-        [](const auto& elements) -> std::uint64_t {
-            using Element = std::decay_t<decltype(elements[0])>;
-            if constexpr (std::is_same_v<Element, JniFloat>) {
-                std::uint32_t bits{};
-                std::memcpy(&bits, &elements[0], sizeof(bits));
-                return bits;
-            } else if constexpr (std::is_same_v<Element, JniDouble>) {
-                std::uint64_t bits{};
-                std::memcpy(&bits, &elements[0], sizeof(bits));
-                return bits;
-            } else {
-                return static_cast<std::uint64_t>(
-                    static_cast<std::make_unsigned_t<
-                        std::conditional_t<std::is_same_v<Element, JniBoolean>,
-                                           std::uint8_t, Element>>>(
-                        elements[0]));
-            }
+        [index](const auto& view) -> std::uint64_t {
+            using T = decltype(view.Read(0));
+            const auto value = view.Read(static_cast<std::size_t>(index));
+            if constexpr (std::is_same_v<T, float>)
+                return std::bit_cast<std::uint32_t>(value);
+            else if constexpr (std::is_same_v<T, double>)
+                return std::bit_cast<std::uint64_t>(value);
+            else
+                return static_cast<std::make_unsigned_t<T>>(value);
         },
-        data);
+        *record.primitive_view);
 }
 
-void JavaObjectModel::SetPrimitiveElement(const VmObjectRef ref,
-                                          const JniSize index,
-                                          const std::uint64_t bits) {
+void JavaObjectModel::SetPrimitiveElement(VmObjectRef ref, JniSize index, std::uint64_t bits) {
     const auto& record = impl_->At(ref);
-    JniPrimitiveArrayData data;
-    switch (record.primitive_kind) {
-        case JniPrimitiveKind::boolean:
-            data = std::vector<JniBoolean>{
-                static_cast<JniBoolean>(bits & 0xffU)};
-            break;
-        case JniPrimitiveKind::byte:
-            data = std::vector<JniByte>{static_cast<JniByte>(bits & 0xffU)};
-            break;
-        case JniPrimitiveKind::character:
-            data = std::vector<JniChar>{static_cast<JniChar>(bits & 0xffffU)};
-            break;
-        case JniPrimitiveKind::short_integer:
-            data = std::vector<JniShort>{
-                static_cast<JniShort>(bits & 0xffffU)};
-            break;
-        case JniPrimitiveKind::integer:
-            data = std::vector<JniInt>{
-                static_cast<JniInt>(static_cast<std::uint32_t>(bits))};
-            break;
-        case JniPrimitiveKind::long_integer:
-            data = std::vector<JniLong>{static_cast<JniLong>(bits)};
-            break;
-        case JniPrimitiveKind::float_value: {
-            const auto narrow = static_cast<std::uint32_t>(bits);
-            JniFloat value{};
-            std::memcpy(&value, &narrow, sizeof(value));
-            data = std::vector<JniFloat>{value};
-            break;
-        }
-        case JniPrimitiveKind::double_value: {
-            JniDouble value{};
-            std::memcpy(&value, &bits, sizeof(value));
-            data = std::vector<JniDouble>{value};
-            break;
-        }
-    }
-    impl_->arrays->SetRegion(record.identity, index, data);
+    if (!record.primitive_view || index < 0 || index >= ArrayLength(ref))
+        throw JniArrayError(JniArrayErrorReason::invalid_region, "primitive array index out of range");
+    std::visit(
+        [index, bits](const auto& view) {
+            using T = decltype(view.Read(0));
+            T value;
+            if constexpr (std::is_same_v<T, float>)
+                value = std::bit_cast<float>(static_cast<std::uint32_t>(bits));
+            else if constexpr (std::is_same_v<T, double>)
+                value = std::bit_cast<double>(bits);
+            else
+                value = static_cast<T>(bits);
+            view.Write(static_cast<std::size_t>(index), value);
+        },
+        *record.primitive_view);
+}
+
+void JavaObjectModel::CopyPrimitiveElements(VmObjectRef source, JniSize from, VmObjectRef target, JniSize to,
+                                            JniSize length) {
+    impl_->arrays->Copy(impl_->At(source).identity, from, impl_->At(target).identity, to, length);
+}
+
+void JavaObjectModel::FillPrimitiveData(VmObjectRef ref, std::span<const std::byte> bytes) {
+    const auto& record = impl_->At(ref);
+    if (!record.primitive_view) Fail(DexVmErrorReason::object_model_failure, "fill requires primitive array");
+    std::visit(
+        [&](const auto& view) {
+            using T = decltype(view.Read(0));
+            if (bytes.size() % sizeof(T) || bytes.size() / sizeof(T) > view.Size())
+                throw JniArrayError(JniArrayErrorReason::invalid_region, "primitive fill exceeds array");
+            // Bulk copy accepts unaligned DEX payload bytes; accessor uses memcpy.
+            view.WriteRegion(0, reinterpret_cast<const T*>(bytes.data()), bytes.size() / sizeof(T));
+        },
+        *record.primitive_view);
 }
 
 VmObjectRef JavaObjectModel::NewObjectArray(const DexClassId array_class,
@@ -924,10 +972,10 @@ void JavaObjectModel::CopyObjectElementsWithin(const VmObjectRef ref, const JniS
 
 JniSize JavaObjectModel::ArrayLength(const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);
-    if (record.kind == VmObjectKind::primitive_array ||
-        record.kind == VmObjectKind::external) {
-        return impl_->arrays->Length(record.identity);
+    if (record.kind == VmObjectKind::primitive_array) {
+        return static_cast<JniSize>(std::visit([](const auto& v) { return v.Size(); }, *record.primitive_view));
     }
+    if (record.kind == VmObjectKind::external) return impl_->arrays->Length(record.identity);
     if (record.kind == VmObjectKind::object_array) {
         return impl_->interop.object_arrays != nullptr
                    ? impl_->interop.object_arrays->Length(record.identity)
@@ -963,9 +1011,7 @@ VmObjectRef JavaObjectModel::CloneObject(const VmObjectRef source) {
             const auto length = impl_->arrays->Length(source_identity);
             const auto clone = NewPrimitiveArray(java_class, kind, length);
             if (length > 0) {
-                const auto data =
-                    impl_->arrays->Region(source_identity, 0, length);
-                impl_->arrays->SetRegion(impl_->At(clone).identity, 0, data);
+                impl_->arrays->Copy(source_identity, 0, impl_->At(clone).identity, 0, length);
             }
             return clone;
         }

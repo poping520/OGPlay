@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "ogplay/runtime/integration/headless_jni_contract.h"
 
 #include <array>
@@ -110,7 +111,8 @@ HeadlessJniContractReport RunHeadlessJniContract(
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
     JniStringStore strings;
-    JniPrimitiveArrayStore primitive_arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider primitive_arrays_payload;
+    JniPrimitiveArrayStore primitive_arrays{primitive_arrays_payload};
     JniFieldStore fields(classes);
     VirtualFileSystem vfs;
     const std::vector<VfsMountEntry> apk{{

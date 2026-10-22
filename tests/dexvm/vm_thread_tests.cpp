@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // Guest Java threads on real host threads (DVM-28, design 04 §3).
 // State transitions follow AOSP vm/Thread.cpp: start publishes a running
@@ -52,7 +53,8 @@ struct StubNativeBridge final : NativeMethodBridge {
 
 struct ThreadedVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

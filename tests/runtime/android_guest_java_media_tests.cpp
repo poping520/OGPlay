@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -37,7 +38,8 @@ TEST_CASE("Android guest media handlers expose resources and exact Java compatib
     JniEnvironment environment;
     environment.AttachThread(9U);
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     AndroidGuestMovieState movie_state;
     AndroidGuestLegacyMediaState media_state;
     BindAndroidGuestJavaMediaHandlers(

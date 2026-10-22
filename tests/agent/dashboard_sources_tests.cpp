@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <doctest/doctest.h>
 #include <future>
 #include "ogplay/agent/dashboard.h"
@@ -7,7 +8,9 @@
 #include "ogplay/hal/clock.h"
 using namespace ogplay;
 TEST_CASE("Dashboard source DexVM busy snapshot never waits for execution lock") {
-    runtime::JniStringStore strings; runtime::JniPrimitiveArrayStore arrays;
+    runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     runtime::dexvm::JavaObjectModel objects(strings, arrays); runtime::dexvm::DexClassLinker linker;
     core::CapabilityLedger ledger; runtime::dexvm::Interpreter vm(linker,objects,nullptr,ledger);
     const auto empty = vm.TrySnapshot(); REQUIRE(empty); CHECK(empty->heap_used == 0); CHECK(empty->heap_maximum > 0);

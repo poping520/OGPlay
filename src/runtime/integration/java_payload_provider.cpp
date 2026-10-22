@@ -1,15 +1,18 @@
 #include "ogplay/runtime/integration/java_payload_provider.h"
 
 #include <algorithm>
+#include <list>
 #include <limits>
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace ogplay::runtime {
 namespace {
 constexpr std::uint64_t kAlignment = 8;
+constexpr std::size_t kLarge = SIZE_MAX;
 constexpr memory::GuestRange kPayloadBounds{memory::GuestAddress{memory::kGuestLowGuardSize},
                                             memory::kGuestAddressSpaceSize - memory::kGuestLowGuardSize};
 
@@ -23,66 +26,142 @@ class GuestJavaPayloadProvider::Impl final {
 public:
     struct Arena final {
         memory::GuestAddress address;
-        std::uint64_t bytes{};
-        bool small{};
-        std::vector<bool> used;
-        std::size_t live{};
+        std::byte* base{};
+        std::uint64_t bytes{}, slot_bytes{};
+        std::size_t class_index{kLarge}, live{};
+        std::vector<std::size_t> free_slots;
+        Arena *available_prev{}, *available_next{}, *empty_prev{}, *empty_next{};
+        bool available{}, empty{};
+        std::list<Arena>::iterator position;
     };
 
+    struct SizeClass final {
+        std::uint64_t slot_bytes{}, slabs{}, live_slots{}, allocation_count{};
+        Arena* available{};
+    };
     struct Allocation final {
         std::shared_ptr<payload_detail::Block> block;
         Arena* arena{};
-        std::size_t unit{}, units{}, pins{};
+        std::size_t slot{}, pins{};
     };
 
     Impl(memory::AddressSpace& space, core::CapabilityLedger& ledger, JavaPayloadLimits limits)
         : space(space), ledger(ledger), limits(limits) {
-        if (!limits.initial_heap_target_bytes || limits.initial_heap_target_bytes > limits.heap_growth_limit_bytes ||
-            limits.heap_growth_limit_bytes > limits.maximum_heap_bytes ||
-            limits.maximum_heap_bytes > memory::kGuestAddressSpaceSize || limits.slab_bytes < space.BackingPageSize() ||
-            limits.slab_bytes % space.BackingPageSize() || (limits.slab_bytes & (limits.slab_bytes - 1)) != 0)
+        if (limits.slab_bytes < space.BackingPageSize() || limits.slab_bytes % space.BackingPageSize() ||
+            (limits.slab_bytes & (limits.slab_bytes - 1)) != 0)
             throw std::invalid_argument("invalid Java payload limits");
-        stats.heap_target_bytes = limits.initial_heap_target_bytes;
+        const auto maximum = limits.slab_bytes / 2;
+        for (std::uint64_t size = 8; size <= std::min<std::uint64_t>(128, maximum); size += 8)
+            classes.push_back(SizeClass{size});
+        for (std::uint64_t lower = 128; lower < maximum; lower *= 2)
+            for (std::uint64_t step = 1; step <= 8; ++step)
+                classes.push_back(SizeClass{lower + step * (lower / 8)});
+        class_lookup.resize(static_cast<std::size_t>(maximum / 8 + 1));
+        std::size_t index{};
+        for (std::size_t unit = 0; unit < class_lookup.size(); ++unit) {
+            while (classes[index].slot_bytes < unit * 8)
+                ++index;
+            class_lookup[unit] = index;
+        }
         owner = space.RegisterProtectedOwner([&ledger](std::string_view operation) {
             ledger.RecordUnimplemented("memory.java_payload.protected." + std::string(operation), 0);
         });
     }
-
     ~Impl() {
-        for (auto& [id, a] : blocks) {
+        for (auto& [id, allocation] : blocks) {
             static_cast<void>(id);
-            a.block->alive.store(false, std::memory_order_relaxed);
+            allocation.block->alive.store(false, std::memory_order_relaxed);
         }
         for (const auto& arena : arenas)
-            space.UnmapProtected(owner, {arena->address, arena->bytes});
+            space.UnmapProtected(owner, {arena.address, arena.bytes});
     }
 
-    std::uint64_t ChargeTarget(std::uint64_t bytes) const {
-        if (bytes > limits.heap_growth_limit_bytes || stats.allocated_bytes > limits.heap_growth_limit_bytes - bytes)
+    void AddAvailable(Arena& arena) noexcept {
+        auto& head = classes[arena.class_index].available;
+        arena.available_prev = nullptr;
+        arena.available_next = head;
+        if (head) head->available_prev = &arena;
+        head = &arena;
+        arena.available = true;
+    }
+
+    void RemoveAvailable(Arena& arena) noexcept {
+        if (!arena.available) return;
+        if (arena.available_prev)
+            arena.available_prev->available_next = arena.available_next;
+        else
+            classes[arena.class_index].available = arena.available_next;
+        if (arena.available_next) arena.available_next->available_prev = arena.available_prev;
+        arena.available_prev = arena.available_next = nullptr;
+        arena.available = false;
+    }
+
+    void AddEmpty(Arena& arena) noexcept {
+        arena.empty_next = empty_head;
+        if (empty_head) empty_head->empty_prev = &arena;
+        empty_head = &arena;
+        arena.empty = true;
+        ++empty_count;
+    }
+
+    void RemoveEmpty(Arena& arena) noexcept {
+        if (!arena.empty) return;
+        if (arena.empty_prev)
+            arena.empty_prev->empty_next = arena.empty_next;
+        else
+            empty_head = arena.empty_next;
+        if (arena.empty_next) arena.empty_next->empty_prev = arena.empty_prev;
+        arena.empty_prev = arena.empty_next = nullptr;
+        arena.empty = false;
+        --empty_count;
+    }
+
+    static std::vector<std::size_t> FreeSlots(std::uint64_t bytes, std::uint64_t slot_bytes) {
+        const auto count = static_cast<std::size_t>(bytes / slot_bytes);
+        std::vector<std::size_t> result(count);
+        for (std::size_t i = 0; i < count; ++i)
+            result[i] = count - i - 1;
+        return result;
+    }
+
+    Arena& NewArena(std::size_t class_index, std::uint64_t physical) {
+        const auto bytes = class_index == kLarge ? Align(physical, space.BackingPageSize()) : limits.slab_bytes;
+        if (bytes > limits.committed_limit_bytes || stats.committed_bytes > limits.committed_limit_bytes - bytes)
             throw std::bad_alloc();
-        const auto required = stats.allocated_bytes + bytes;
-        if (required <= stats.heap_target_bytes) return stats.heap_target_bytes;
-        const auto slop = std::min(limits.max_free_bytes, limits.heap_growth_limit_bytes - required);
-        return required + slop;
-    }
-
-    static std::optional<std::size_t> Find(const Arena& arena, std::size_t units) {
-        std::size_t run{};
-        for (std::size_t i = 0; i < arena.used.size(); ++i) {
-            if (arena.used[i])
-                run = 0;
-            else if (++run == units)
-                return i + 1 - units;
+        auto position = arenas.emplace(arenas.end());
+        auto& arena = *position;
+        arena.position = position;
+        arena.bytes = bytes;
+        arena.class_index = class_index;
+        arena.slot_bytes = class_index == kLarge ? bytes : classes[class_index].slot_bytes;
+        bool mapped{};
+        try {
+            arena.free_slots = FreeSlots(bytes, arena.slot_bytes);
+            try {
+                arena.address = space.MapProtectedAnywhere(owner, kPayloadBounds, bytes);
+            } catch (const std::runtime_error&) {
+                throw std::bad_alloc();
+            }
+            mapped = true;
+            arena.base = space.ResolveProtected(owner, {arena.address, bytes});
+        } catch (...) {
+            if (mapped) space.UnmapProtected(owner, {arena.address, bytes});
+            arenas.erase(position);
+            throw;
         }
-        return std::nullopt;
+        return arena;
     }
 
     memory::AddressSpace& space;
     core::CapabilityLedger& ledger;
     JavaPayloadLimits limits;
     memory::ProtectedMappingOwner owner;
-    std::vector<std::unique_ptr<Arena>> arenas;
-    std::map<std::uint64_t, Allocation> blocks;
+    std::list<Arena> arenas;
+    std::vector<SizeClass> classes;
+    std::vector<std::size_t> class_lookup;
+    Arena* empty_head{};
+    std::size_t empty_count{};
+    std::unordered_map<std::uint64_t, Allocation> blocks;
     std::map<std::uint64_t, std::uint64_t> borrows;
     std::uint64_t next_generation{}, next_borrow{};
     JavaPayloadStatistics stats;
@@ -92,7 +171,6 @@ public:
 GuestJavaPayloadProvider::GuestJavaPayloadProvider(memory::AddressSpace& space, core::CapabilityLedger& ledger,
                                                    JavaPayloadLimits limits)
     : impl_(std::make_shared<Impl>(space, ledger, limits)) {}
-
 GuestJavaPayloadProvider::~GuestJavaPayloadProvider() = default;
 
 const void* GuestJavaPayloadProvider::OwnerIdentity() const noexcept {
@@ -102,10 +180,10 @@ const void* GuestJavaPayloadProvider::OwnerIdentity() const noexcept {
 JavaPayloadHandle GuestJavaPayloadProvider::Allocate(std::size_t bytes) {
     std::scoped_lock lock(impl_->mutex);
     try {
-        const auto target = impl_->ChargeTarget(bytes);
         const auto physical = Align(std::max<std::uint64_t>(bytes, 1), kAlignment);
-        const bool small = physical <= impl_->limits.slab_bytes / 2;
-        const auto units = static_cast<std::size_t>(physical / kAlignment);
+        const auto class_index = physical <= impl_->limits.slab_bytes / 2
+                                     ? impl_->class_lookup[static_cast<std::size_t>(physical / 8)]
+                                     : kLarge;
         auto block = std::make_shared<payload_detail::Block>();
         block->owner_lifetime = impl_;
         block->owner = impl_.get();
@@ -114,61 +192,67 @@ JavaPayloadHandle GuestJavaPayloadProvider::Allocate(std::size_t bytes) {
         auto [entry, inserted] = impl_->blocks.emplace(block->generation, Impl::Allocation{block});
         static_cast<void>(inserted);
         Impl::Arena* selected{};
-        std::size_t unit{};
-        bool new_arena = false;
+        bool fresh{};
         try {
-            if (small)
-                for (const auto& arena : impl_->arenas) {
-                    if (!arena->small) continue;
-                    if (const auto found = Impl::Find(*arena, units)) {
-                        selected = arena.get();
-                        unit = *found;
-                        break;
-                    }
-                }
-            if (!selected) {
-                const auto mapped_bytes =
-                    small ? impl_->limits.slab_bytes : Align(physical, impl_->space.BackingPageSize());
-                if (mapped_bytes > impl_->limits.committed_limit_bytes ||
-                    impl_->stats.committed_bytes > impl_->limits.committed_limit_bytes - mapped_bytes)
-                    throw std::bad_alloc();
-                auto arena = std::make_unique<Impl::Arena>();
-                arena->small = small;
-                arena->bytes = mapped_bytes;
-                arena->used.resize(static_cast<std::size_t>(mapped_bytes / kAlignment), false);
-                impl_->arenas.reserve(impl_->arenas.size() + 1);
-                arena->address = impl_->space.MapProtectedAnywhere(impl_->owner, kPayloadBounds, mapped_bytes);
-                selected = arena.get();
-                impl_->arenas.push_back(std::move(arena));
-                new_arena = true;
+            if (class_index != kLarge) selected = impl_->classes[class_index].available;
+            if (!selected && class_index != kLarge && impl_->empty_head) {
+                // Reclassify an empty cached slab without another map/commit. Prepare
+                // every allocating operation before touching its old class or lists.
+                auto slots = Impl::FreeSlots(impl_->limits.slab_bytes, impl_->classes[class_index].slot_bytes);
+                selected = impl_->empty_head;
+                impl_->RemoveAvailable(*selected);
+                --impl_->classes[selected->class_index].slabs;
+                selected->class_index = class_index;
+                selected->slot_bytes = impl_->classes[class_index].slot_bytes;
+                selected->free_slots = std::move(slots);
+                ++impl_->classes[class_index].slabs;
+                impl_->AddAvailable(*selected);
             }
-            block->address = selected->address.Add(unit * kAlignment);
-            block->base = impl_->space.ResolveProtected(impl_->owner, {block->address, physical});
+            if (!selected) {
+                selected = &impl_->NewArena(class_index, physical);
+                fresh = true;
+            }
+            const auto slot = selected->free_slots.back();
+            const auto offset = slot * selected->slot_bytes;
+            block->address = selected->address.Add(offset);
+            block->base = selected->base + offset;
+            entry->second.arena = selected;
+            entry->second.slot = slot;
+            // All operations below are non-allocating, so failure leaves the block,
+            // mapping, free lists, cache and counters unchanged.
+            if (fresh) {
+                impl_->stats.committed_bytes += selected->bytes;
+                if (class_index != kLarge) {
+                    impl_->stats.slab_free_bytes += selected->bytes;
+                    ++impl_->classes[class_index].slabs;
+                    impl_->AddAvailable(*selected);
+                }
+            }
+            impl_->RemoveEmpty(*selected);
+            selected->free_slots.pop_back();
+            ++selected->live;
+            if (class_index != kLarge) {
+                if (selected->free_slots.empty()) impl_->RemoveAvailable(*selected);
+                auto& size_class = impl_->classes[class_index];
+                ++size_class.live_slots;
+                ++size_class.allocation_count;
+                impl_->stats.slab_free_bytes -= selected->slot_bytes;
+            }
+            std::memset(block->base, 0, static_cast<std::size_t>(selected->slot_bytes));
         } catch (...) {
-            if (new_arena) {
+            if (fresh) {
                 impl_->space.UnmapProtected(impl_->owner, {selected->address, selected->bytes});
-                impl_->arenas.pop_back();
+                impl_->arenas.erase(selected->position);
             }
             impl_->blocks.erase(entry);
             throw;
         }
-        for (std::size_t i = unit; i < unit + units; ++i)
-            selected->used[i] = true;
-        ++selected->live;
-        entry->second.arena = selected;
-        entry->second.unit = unit;
-        entry->second.units = units;
-        std::memset(block->base, 0, static_cast<std::size_t>(physical));
-        if (new_arena) {
-            impl_->stats.committed_bytes += selected->bytes;
-            if (small) impl_->stats.slab_free_bytes += selected->bytes;
-        }
-        if (small) impl_->stats.slab_free_bytes -= physical;
         impl_->stats.allocated_bytes += bytes;
         ++impl_->stats.allocation_count;
-        impl_->stats.heap_target_bytes = target;
+        impl_->stats.peak_live_bytes = std::max(impl_->stats.peak_live_bytes, impl_->stats.allocated_bytes);
         return MakeHandle(std::move(block));
     } catch (const std::bad_alloc&) {
+        ++impl_->stats.allocation_failures;
         impl_->ledger.RecordUnimplemented("runtime.java_payload.budget_exhausted", 0);
         throw;
     }
@@ -181,20 +265,34 @@ void GuestJavaPayloadProvider::Release(const JavaPayloadHandle& handle) {
     if (entry == impl_->blocks.end() || entry->second.pins || block->accessors.load(std::memory_order_relaxed) != 0)
         throw std::invalid_argument("payload is pinned, accessed or retired");
     const auto allocation = entry->second;
-    auto* arena = allocation.arena;
-    if (arena->live == 1) impl_->space.UnmapProtected(impl_->owner, {arena->address, arena->bytes});
+    auto& arena = *allocation.arena;
+    const auto class_index = arena.class_index;
+    const bool unmap =
+        arena.live == 1 && (class_index == kLarge || impl_->empty_count >= impl_->limits.empty_slab_cache_limit);
+    if (unmap) impl_->space.UnmapProtected(impl_->owner, {arena.address, arena.bytes});
     block->alive.store(false, std::memory_order_relaxed);
     impl_->stats.allocated_bytes -= block->bytes;
     --impl_->stats.allocation_count;
-    if (arena->small) impl_->stats.slab_free_bytes += allocation.units * kAlignment;
-    --arena->live;
-    if (!arena->live) {
-        impl_->stats.committed_bytes -= arena->bytes;
-        if (arena->small) impl_->stats.slab_free_bytes -= arena->bytes;
-        std::erase_if(impl_->arenas, [arena](const auto& p) { return p.get() == arena; });
-    } else
-        for (std::size_t i = allocation.unit; i < allocation.unit + allocation.units; ++i)
-            arena->used[i] = false;
+    --arena.live;
+    if (class_index != kLarge) {
+        auto& size_class = impl_->classes[class_index];
+        --size_class.live_slots;
+        impl_->stats.slab_free_bytes += arena.slot_bytes;
+        if (unmap) {
+            impl_->RemoveAvailable(arena);
+            --size_class.slabs;
+            impl_->stats.slab_free_bytes -= arena.bytes;
+        } else {
+            const bool full = arena.free_slots.empty();
+            arena.free_slots.push_back(allocation.slot);  // capacity fixed when slab is prepared
+            if (full) impl_->AddAvailable(arena);
+            if (!arena.live) impl_->AddEmpty(arena);
+        }
+    }
+    if (unmap) {
+        impl_->stats.committed_bytes -= arena.bytes;
+        impl_->arenas.erase(arena.position);
+    }
     impl_->blocks.erase(entry);
 }
 
@@ -208,7 +306,6 @@ JavaPayloadBorrow GuestJavaPayloadProvider::Pin(const JavaPayloadHandle& handle)
     ++impl_->stats.pin_count;
     return MakeBorrow(handle, id);
 }
-
 void GuestJavaPayloadProvider::Unpin(const JavaPayloadBorrow& borrow) {
     std::scoped_lock lock(impl_->mutex);
     const auto& block = Block(BorrowPayload(borrow));
@@ -219,9 +316,19 @@ void GuestJavaPayloadProvider::Unpin(const JavaPayloadBorrow& borrow) {
     --impl_->stats.pin_count;
     impl_->borrows.erase(it);
 }
-
 JavaPayloadStatistics GuestJavaPayloadProvider::Statistics() const {
     std::scoped_lock lock(impl_->mutex);
     return impl_->stats;
+}
+
+std::vector<JavaPayloadSizeClassStatistics> GuestJavaPayloadProvider::SizeClassStatistics() const {
+    std::scoped_lock lock(impl_->mutex);
+    std::vector<JavaPayloadSizeClassStatistics> result;
+    result.reserve(impl_->classes.size());
+    for (const auto& size_class : impl_->classes)
+        result.push_back({size_class.slot_bytes, size_class.slabs,
+                          size_class.slabs * (impl_->limits.slab_bytes / size_class.slot_bytes), size_class.live_slots,
+                          size_class.allocation_count});
+    return result;
 }
 }  // namespace ogplay::runtime

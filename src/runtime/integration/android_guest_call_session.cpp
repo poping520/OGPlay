@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
 
 #include <algorithm>
@@ -1778,6 +1779,35 @@ public:
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
         static_cast<void>(environment_.ShutdownMonitors());
         running_ = false;
+        if (logger_) {
+            const auto allocations = arrays_.AllocationStatistics();
+            const auto backing = array_payload_.Statistics();
+            logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive allocation summary", {},
+                           {{"live_bytes", allocations.live_bytes},
+                            {"peak_live_bytes", allocations.peak_live_bytes},
+                            {"committed_bytes", backing.committed_bytes},
+                            {"slab_free_bytes", backing.slab_free_bytes},
+                            {"allocation_failures", allocations.allocation_failures},
+                            {"provider_failures", backing.allocation_failures}});
+            for (const auto& size_class : array_payload_.SizeClassStatistics())
+                if (size_class.allocation_count)
+                    logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive size class utilization", {},
+                                   {{"slot_bytes", size_class.slot_bytes},
+                                    {"slabs", size_class.slabs},
+                                    {"total_slots", size_class.total_slots},
+                                    {"live_slots", size_class.live_slots},
+                                    {"allocations", size_class.allocation_count}},
+                                   {.mode = core::RateLimitMode::none});
+            for (std::size_t kind = 0; kind < allocations.allocations.size(); ++kind)
+                for (std::size_t bucket = 0; bucket < allocations.allocations[kind].size(); ++bucket)
+                    if (const auto count = allocations.allocations[kind][bucket])
+                        logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive allocation histogram",
+                                       {},
+                                       {{"kind", static_cast<std::uint64_t>(kind)},
+                                        {"length_bucket", static_cast<std::uint64_t>(bucket)},
+                                        {"count", count}},
+                                       {.mode = core::RateLimitMode::none});
+        }
         if (detached != JniStatus::ok && !failure) {
             failure = std::make_exception_ptr(AndroidGuestProcessError(
                 "Android guest root JNI thread detachment failed"));
@@ -2482,7 +2512,8 @@ private:
     JniStringStore strings_;
     AndroidGuestMovieState movie_state_;
     AndroidGuestLegacyMediaState media_state_;
-    JniPrimitiveArrayStore arrays_;
+    GuestJavaPayloadProvider array_payload_{address_space_, ledger_};
+    JniPrimitiveArrayStore arrays_{array_payload_};
     JniNativeRegistry natives_;
     dexvm::NioDirectMemoryAccess direct_memory_access_;
     std::mutex nio_direct_mutex_;

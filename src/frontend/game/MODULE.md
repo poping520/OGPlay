@@ -26,3 +26,8 @@ ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdca
 初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。
 
 启动读取 bundled data/dexvm/api19-skeleton.bin 原始索引数据，随 AndroidAppProcessRequest 下传；前端不解析/生成类，不决定平台行为。
+
+显式诊断环境变量 `OGPLAY_FRAME_BENCHMARK=1` 在 Activity 会话结束输出
+`frontend.frame_timing`：最后至多 4096 个呈现帧的 active wall-time 中位数。统一 Clock
+计时覆盖 step、离线音频混合与 present，累计无呈现的有效 step；不含 MCP 等待、截图、
+启动与循环外 idle sleep。关闭时不读额外时间源，不输出逐帧明细。

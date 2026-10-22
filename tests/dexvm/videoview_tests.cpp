@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // VideoView real-playback semantics against the deterministic Fake backend:
 // frames publish letterboxed to the surface, position follows the shared
@@ -138,7 +139,8 @@ std::vector<std::byte> MakeStoredZip(const std::string_view name,
 
 struct VideoVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

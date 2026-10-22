@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
 // Expected values are recorded with their semantic source: AOSP
@@ -487,7 +488,8 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         linker.RegisterDex(std::move(bytes));
         linker.Link();
         JniStringStore strings;
-        JniPrimitiveArrayStore arrays;
+        ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+        JniPrimitiveArrayStore arrays{arrays_payload};
         JavaObjectModel model(strings, arrays);
         ogplay::core::CapabilityLedger ledger;
         Interpreter vm(linker, model, nullptr, ledger, config);

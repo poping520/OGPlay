@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -1388,7 +1389,8 @@ TEST_CASE("Android guest platform handlers publish facts state and explicit fail
     JniEnvironment environment;
     environment.AttachThread(7U);
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     AndroidGuestPlatformState state;
     BindAndroidGuestJavaPlatformHandlers(
         invocations, environment, strings, arrays, state,

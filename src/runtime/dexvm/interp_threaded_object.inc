@@ -217,30 +217,8 @@
                 goto yield;
             }
             consume_extra_ticks(payload.tick_weight);
-            const auto kind = model->PrimitiveArrayKind(ref);
-            for (std::uint32_t index = 0; index < payload.element_count;
-                 ++index) {
-                std::uint64_t bits{};
-                for (std::uint32_t byte = 0; byte < payload.element_width;
-                     ++byte) {
-                    const auto byte_index = index * payload.element_width + byte;
-                    const auto unit = payload.data_units[byte_index / 2U];
-                    const auto value = static_cast<std::uint8_t>(
-                        unit >> ((byte_index & 1U) * 8U));
-                    bits |= static_cast<std::uint64_t>(value) << (byte * 8U);
-                }
-                if (kind == JniPrimitiveKind::byte) {
-                    bits = static_cast<std::uint32_t>(
-                        static_cast<std::int32_t>(
-                            static_cast<std::int8_t>(bits)));
-                } else if (kind == JniPrimitiveKind::short_integer) {
-                    bits = static_cast<std::uint32_t>(
-                        static_cast<std::int32_t>(
-                            static_cast<std::int16_t>(bits)));
-                }
-                model->SetPrimitiveElement(ref, static_cast<JniSize>(index),
-                                           bits);
-            }
+            model->FillPrimitiveData(ref, {reinterpret_cast<const std::byte*>(payload.data_units.data()),
+                                           static_cast<std::size_t>(payload.element_count) * payload.element_width});
             OGPLAY_DISPATCH_NEXT();
         }
         case 0x27:

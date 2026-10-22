@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <variant>
 #include <vector>
@@ -8,7 +9,8 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 
 TEST_CASE("JNI primitive arrays cover all eight zero-initialized kinds") {
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     constexpr std::array kinds{
         ogplay::runtime::JniPrimitiveKind::boolean,
         ogplay::runtime::JniPrimitiveKind::byte,
@@ -35,7 +37,8 @@ TEST_CASE("JNI primitive arrays cover all eight zero-initialized kinds") {
 }
 
 TEST_CASE("JNI primitive array regions are typed and bounds checked") {
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     const auto array =
         arrays.New(ogplay::runtime::JniPrimitiveKind::integer, 5);
     const ogplay::runtime::JniPrimitiveArrayData replacement =
@@ -54,7 +57,8 @@ TEST_CASE("JNI primitive array regions are typed and bounds checked") {
 }
 
 TEST_CASE("JNI array elements implement commit abort and exact release") {
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniEnvironment environment;
     environment.AttachThread(5);
     const auto array =

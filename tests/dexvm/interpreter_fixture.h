@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 
 #include "boot_dex.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
@@ -50,7 +51,8 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected);
 
 struct Vm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
@@ -72,7 +74,8 @@ struct Vm final {
 
 struct IntrinsicVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

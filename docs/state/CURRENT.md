@@ -25,6 +25,8 @@
 
 ## 未闭合问题
 
+- [DVM-260](../tasks/dexvm/DVM-260.md) 阶段 2 分级分配已解除 096 超时，但 061 双后端递归 OOME 导致 dalvik 83/91；JNI 保持 363/399。按用户要求提交未验收候选；新场景/帧时间/allocator 实景复测因门禁失败停止。
+
 - 退出顺序：除上表外，GC 全周期、直接写入 ABA、直接访存卸载 quiescence 未验收；
   Java-only 线程误交 clone join 已修，MCP shutdown 稳定性待验。
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合

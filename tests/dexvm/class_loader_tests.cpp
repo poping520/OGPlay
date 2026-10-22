@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <cstddef>
 #include <algorithm>
@@ -34,7 +35,8 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 
 struct LoaderVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
@@ -581,7 +583,8 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
             }
         }
         JniStringStore strings;
-        JniPrimitiveArrayStore arrays;
+        ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+        JniPrimitiveArrayStore arrays{arrays_payload};
         JavaObjectModel model(strings, arrays);
         ogplay::core::CapabilityLedger ledger;
         Interpreter vm(linker, model, nullptr, ledger, {.backend = backend});

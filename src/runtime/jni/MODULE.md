@@ -86,11 +86,25 @@ CopyWithin 只移动同一 typed array 的现有元素：在数组锁内检查�
 
 `JniReferenceTable::TrySnapshot` 只 try-lock 复制 local/global/weak_global 与 attached thread 数；不创建引用、不遍历 guest 对象，忙时返回 nullopt。
 
-## 稳定 payload 接口（ADR-0152，阶段 1）
+## 稳定 payload 接口（ADR-0152）
 
 `JavaPayloadProvider` 只定义强类型 block/borrow、typed accessor 与统计接口，不依赖
 AddressSpace 实现、DexVM 或 OS。integration 显式注入 owner；句柄含 generation 和 owner
 身份，typed view 一次验证所有权/字节范围/对齐，每个元素只检查视图边界并访问稳定 backing。
 view 保活 block/provider，活跃 view 或 pin 阻止 Release/reuse；不公开裸宿主指针或 span，
 owner 串行化 view 构造和释放。copy/move view 不撤销保活，pin 计量唯一字节和借用次数。
-跨线程遵循普通 guest 内存同步，未承诺额外内存序。本阶段不接生产 primitive/String store。
+跨线程遵循普通 guest 内存同步，未承诺额外内存序。
+
+primitive store 必须显式注入 provider：生产使用 integration 的 guest provider，独立夹具和
+headless 显式选择 `HostCopyJavaPayloadProvider`（Address 明确失败）。entry 只保存 kind、
+length、handle 和长期 typed view；guest block 是唯一权威字节，Region/clone/arraycopy/fill
+从同一 view 批量搬运，先校验完整区间，CopyWithin 用 memmove 处理重叠。
+Elements/Critical 仍返回复制、isCopy=TRUE，COMMIT 写回并保留借用，ABORT 丢弃副本。
+VisitAccessRoots 在锁外枚举 active borrow 的数组身份，owner 在 mark/weak 处理前纳入强根。
+删除前退役所有 view，再 Release；外部 view 或 borrow 尚存时明确失败，不能吞掉。
+
+显式 allocation context 在 store 锁外进入 VM 执行锁并收费；Java/JNI New 共用一次 Reserve，
+导入只补未收费的 entry。失败撤销费用、目标增长和 emergency 消耗，再退役 block；删除
+归还同一费用。provider 本身只管理 backing 提交/VAS，不持第二逻辑堆目标。上下文只在
+调用静止时装配/撤销。分配时统计 kind/长度桶、峰值 live 和失败次数；诊断只返回聚合快照。
+String 的存储和借用合同不变。

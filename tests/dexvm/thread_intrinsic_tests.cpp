@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // DVM-48 java.lang.Thread integration tests. Observable behavior is mapped
 // to pinned libcore Thread.java/VMThread.java and Dalvik Thread.cpp/Sync.cpp.
@@ -42,7 +43,8 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 
 struct ThreadVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

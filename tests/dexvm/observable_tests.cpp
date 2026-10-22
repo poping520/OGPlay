@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -37,7 +38,8 @@ struct ObserverControl final {
 
 struct ObservableVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

@@ -70,6 +70,12 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   先验证范围，再重叠安全地批量移动既有引用；跨数组仍逐元素校验并保留失败前缀。
   JNI primitive array 导入时通过显式 interop callback 取得 kind 对应的真实数组类，
   不将数组声明成 Object 或按元素宽度合并类型；无 VM interop 的独立 store 不推造类 ID。
+- primitive Record 缓存与 store 共持的长期 typed view；aget/aput 只做 Record/边界检查和
+  下标读写，无 store map/锁、accessor 构造、AddressSpace Read/Write 或单元素 vector。
+  Java 多线程对同一数组允许普通数据竞争，store 不再串行化元素访问；long/double backing
+  至少 8-byte 对齐，发布仍依赖 monitor/volatile/pthread/futex，不承诺多元素一致快照。
+  sweep 先退役 Record view，再由 store 退役 entry view/释放 backing。VM Reserve 是唯一
+  堆账本；native New 创建即收费，import 不重复收费，JNI 导入 String 补计既有 payload。
 - GC 是分配驱动的精确 STW mark-sweep；roots 包括 frame、结果/异常、static、JNI、Thread、
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循

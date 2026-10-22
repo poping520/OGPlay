@@ -32,11 +32,9 @@
 
 namespace ogplay::runtime {
 
-void BindJniGuestArraySlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniStringStore& strings,
-    JniPrimitiveArrayStore& arrays,
-    JniGuestObjectRegistry& objects, memory::AddressSpace& address_space);
+void BindJniGuestArraySlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                            JniStringStore& strings, JniPrimitiveArrayStore& arrays, JniGuestObjectRegistry& objects,
+                            memory::AddressSpace& address_space, core::Logger* logger);
 
 namespace {
 
@@ -791,9 +789,8 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestInstanceFieldSlots(
         dispatcher, context.environment, context.classes, context.fields,
         context.objects, context.address_space);
-    BindJniGuestArraySlots(
-        dispatcher, context.environment, context.classes, context.strings,
-        context.arrays, context.objects, context.address_space);
+    BindJniGuestArraySlots(dispatcher, context.environment, context.classes, context.strings, context.arrays,
+                           context.objects, context.address_space, context.logger);
     BindJniGuestStringSlots(dispatcher, context.environment, context.classes, context.strings, context.address_space,
                             context.string_limits);
     if (context.natives != nullptr) {

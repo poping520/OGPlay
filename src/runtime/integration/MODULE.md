@@ -356,7 +356,7 @@ VM Reserve 仍是唯一账本。预留也耗尽时抛明确 JavaPayloadEmergency
 持 VM 执行锁完成收费事务；New/import 单次收费，失败完整回滚，provider 提交/地址不足
 映射 OOME，沿既有异常 emergency reserve 构造 throwable。
 
-GC 集成同时枚举 environment references、String lease 与数组 copy borrow roots，在 mark/
+GC 集成同时枚举 environment references、String lease 与数组身份 pin roots，在 mark/
 weak 处理前生效。停止/join Java workers、native workers 和 CPU 后才退役 Record/store view，
 再释放 provider；成员顺序保证 store 早于 provider、provider 早于 ledger/AddressSpace 析构。
 独立 headless 契约显式选择 host-copy provider，不作为生产 guest backing 的回退。
@@ -372,3 +372,8 @@ ADR-0153：process 给 guest JNI bindings 注入结构化 logger，warning ledge
 异常类去重；普通 Java 重入不预清 JNI pending。VM 类初始化 post-clinit source 在执行锁内
 按 context token 查显式 guest TID，只在该检查点将原 throwable 交解释器包装/保活，返回结果
 再发布 JNI pending，不吞原异常。owner 停止执行后撤销 source。
+
+ADR-0152 阶段 3：primitive store 以数组身份维护跨线程 pin，Elements/Critical 直接借用
+guest payload；GC 在 mark/weak 前枚举非零 pin，长期 view 与不可移动 backing 保证地址稳定。
+process 停止并 join 全部 Java/native 线程及 CPU 后才销毁 store，残留 pin 统一退役并诊断；
+Stop 采样另记 store 的 pin_count/pinned_arrays/pinned_bytes，不与 provider 的独立底层 pin 重复计量。

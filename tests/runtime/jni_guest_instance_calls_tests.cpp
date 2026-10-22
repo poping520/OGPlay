@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <atomic>
@@ -130,7 +131,7 @@ public:
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
@@ -316,7 +317,7 @@ TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
         "GetIntArrayElements", array.Value(),
         fixture.output.Add(0x20U).Value());
     REQUIRE(elements != 0U);
-    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 1U);
+    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 0U);
     fixture.bus.Write32(ogplay::memory::GuestAddress{elements}.Add(4U), 99U);
     static_cast<void>(fixture.Call(
         "ReleaseIntArrayElements", array.Value(), elements, 1U));
@@ -328,20 +329,12 @@ TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
     static_cast<void>(
         fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
     CHECK(fixture.bus.Read32(fixture.output.Add(0x304U)) == 99U);
-    CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 30U);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.Call(
-            "ReleaseIntArrayElements", array.Value(), elements, 0U)),
-        "ReleaseIntArrayElements pointer does not match an active lease",
-        JniGuestBindingError);
+    CHECK(fixture.bus.Read32(fixture.output.Add(0x308U)) == 77U);
+    CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), elements, 0U)));
 
     const auto second_lease = fixture.Call(
         "GetIntArrayElements", array.Value(), 0U);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.Call(
-            "ReleaseIntArrayElements", array.Value(), second_lease, 3U)),
-        "ReleaseIntArrayElements mode must be 0, JNI_COMMIT or JNI_ABORT",
-        JniGuestBindingError);
+    CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), second_lease, 3U)));
     static_cast<void>(fixture.Call(
         "ReleaseIntArrayElements", array.Value(), second_lease, 2U));
 
@@ -349,19 +342,21 @@ TEST_CASE("guest JNI primitive arrays preserve region and lease semantics") {
         "GetPrimitiveArrayCritical", array.Value(),
         fixture.output.Add(0x20U).Value());
     REQUIRE(critical != 0U);
-    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 1U);
+    CHECK(critical == elements);
+    CHECK(fixture.bus.Read8(fixture.output.Add(0x20U)) == 0U);
     fixture.bus.Write32(ogplay::memory::GuestAddress{critical}, 44U);
-    static_cast<void>(fixture.Call(
-        "ReleasePrimitiveArrayCritical", array.Value(), critical, 0U));
+    static_cast<void>(fixture.Call("ReleaseIntArrayElements", array.Value(), 0xdeadbeefU, 0U));
     fixture.Write64(fixture.output.Add(0x300U).Value());
     static_cast<void>(
         fixture.Call("GetIntArrayRegion", array.Value(), 0U, 3U));
     CHECK(fixture.bus.Read32(fixture.output.Add(0x300U)) == 44U);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.Call(
-            "ReleasePrimitiveArrayCritical", array.Value(), critical, 0U)),
-        "ReleasePrimitiveArrayCritical pointer does not match an active lease",
-        JniGuestBindingError);
+    CHECK_NOTHROW(static_cast<void>(fixture.Call("ReleasePrimitiveArrayCritical", array.Value(), critical, 0U)));
+    const auto warnings = fixture.ledger.Warnings();
+    REQUIRE(warnings.size() == 2);
+    for (const auto& warning : warnings) {
+        CHECK(warning.id.find("runtime.jni.array.unmatched_unpin.Release") == 0);
+        CHECK(warning.first_lr == 0x12345679U);
+    }
 }
 
 TEST_CASE("guest JNI object arrays enforce assignability and null semantics") {

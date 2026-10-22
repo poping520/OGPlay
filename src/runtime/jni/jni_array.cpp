@@ -48,7 +48,16 @@ public:
     explicit Impl(JavaPayloadProvider& value) : provider(value) {}
 
     ~Impl() {
-        // Owner has stopped guest callers. Leases are copy-only; discard them.
+        // Owner has stopped and joined all guest threads and CPUs.
+        std::uint64_t objects{}, bytes{};
+        for (const auto& [id, entry] : arrays_) {
+            static_cast<void>(id);
+            if (entry.active_accesses) {
+                ++objects;
+                bytes += entry.payload.Bytes();
+            }
+        }
+        if (objects && teardown_observer) teardown_observer(objects, bytes);
         for (auto& [id, entry] : arrays_) {
             static_cast<void>(id);
             entry.view.reset();
@@ -63,11 +72,7 @@ public:
         std::optional<JniPrimitiveArrayView> view;
         std::size_t active_accesses{};
         bool charged{};
-    };
-
-    struct AccessEntry final {
-        std::uint64_t array_identity{};
-        JniArrayAccessKind kind{JniArrayAccessKind::elements};
+        bool pin_warned{};
     };
 
     using Iterator = std::map<std::uint64_t, ArrayEntry>::iterator;
@@ -77,8 +82,7 @@ public:
     JniArrayAllocationStatistics stats;
     mutable std::mutex mutex_;
     std::map<std::uint64_t, ArrayEntry> arrays_;
-    std::map<std::uint64_t, AccessEntry> accesses_;
-    std::uint64_t next_token_{1};
+    std::function<void(std::uint64_t, std::uint64_t)> teardown_observer;
 
     static std::size_t Width(JniPrimitiveKind kind) {
         constexpr std::size_t widths[]{1, 1, 2, 2, 4, 8, 4, 8};
@@ -229,33 +233,36 @@ public:
     }
 
     JniArrayAccess Acquire(JniObjectIdentity array, JniArrayAccessKind kind) {
+        const auto guard = context.enter ? context.enter() : nullptr;
         std::scoped_lock lock(mutex_);
         auto& e = Require(array)->second;
-        auto data = Snapshot(e, 0, e.length);
-        if (!next_token_) throw std::length_error("JNI array access token exhausted");
-        const auto token = next_token_++;
-        accesses_.emplace(token, AccessEntry{array.value, kind});
+        static_cast<void>(kind);                   // Elements and Critical share the Dalvik pin table.
+        const auto address = e.payload.Address();  // host-copy is explicitly unsupported.
+        if (e.active_accesses == std::numeric_limits<std::size_t>::max()) throw std::bad_alloc{};
+        if (!e.active_accesses) {
+            ++stats.pinned_arrays;
+            stats.pinned_bytes += e.payload.Bytes();
+        }
         ++e.active_accesses;
-        return {token, kind, std::move(data), true};
+        ++stats.pin_count;
+        const bool warn = e.active_accesses > 10 && !e.pin_warned;
+        if (warn) e.pin_warned = true;
+        return {address, e.active_accesses, warn, false};
     }
 
-    void Release(JniObjectIdentity array, std::uint64_t token, JniArrayAccessKind kind,
-                 const JniPrimitiveArrayData& data, JniArrayReleaseMode mode) {
+    bool Release(JniObjectIdentity array, JniArrayReleaseMode mode) {
+        const auto guard = context.enter ? context.enter() : nullptr;
         std::scoped_lock lock(mutex_);
         auto& e = Require(array)->second;
-        const auto access = accesses_.find(token);
-        if (access == accesses_.end() || access->second.array_identity != array.value)
-            Fail(JniArrayErrorReason::invalid_access, "invalid JNI array access token");
-        if (access->second.kind != kind)
-            Fail(JniArrayErrorReason::access_kind_mismatch, "JNI array access kind mismatch");
-        if (static_cast<std::size_t>(e.kind) != data.index()) TypeMismatch();
-        if (static_cast<std::size_t>(e.length) != DataSize(data))
-            Fail(JniArrayErrorReason::data_size_mismatch, "JNI array release data size changed");
-        if (mode != JniArrayReleaseMode::abort) Write(e, 0, data);
-        if (mode != JniArrayReleaseMode::commit) {
-            accesses_.erase(access);
-            --e.active_accesses;
+        if (mode == JniArrayReleaseMode::commit) return true;
+        if (!e.active_accesses) return false;
+        --e.active_accesses;
+        --stats.pin_count;
+        if (!e.active_accesses) {
+            --stats.pinned_arrays;
+            stats.pinned_bytes -= e.payload.Bytes();
         }
+        return true;
     }
 };
 
@@ -295,11 +302,18 @@ JniArrayAccess JniPrimitiveArrayStore::Acquire(
     const JniObjectIdentity array, const JniArrayAccessKind kind) {
     return impl_->Acquire(array, kind);
 }
-void JniPrimitiveArrayStore::Release(
-    const JniObjectIdentity array, const std::uint64_t token,
-    const JniArrayAccessKind kind, const JniPrimitiveArrayData& data,
-    const JniArrayReleaseMode mode) {
-    impl_->Release(array, token, kind, data, mode);
+
+bool JniPrimitiveArrayStore::Release(JniObjectIdentity array, JniArrayReleaseMode mode) {
+    return impl_->Release(array, mode);
+}
+
+std::size_t JniPrimitiveArrayStore::PinCount(JniObjectIdentity array) const {
+    std::scoped_lock lock(impl_->mutex_);
+    return impl_->Require(array)->second.active_accesses;
+}
+
+void JniPrimitiveArrayStore::SetPinTeardownObserver(std::function<void(std::uint64_t, std::uint64_t)> observer) {
+    impl_->teardown_observer = std::move(observer);
 }
 
 }  // namespace ogplay::runtime

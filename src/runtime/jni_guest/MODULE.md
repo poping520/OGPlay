@@ -115,9 +115,13 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   Critical 两槽使用独立 kind/arena，与 StringChars 共用 UTF-16 lease 实现和总预算。
 - primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
-  semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena,严格实现
-  `0`/`JNI_COMMIT`/`JNI_ABORT`、wrong pointer/double release 与类型配对；Critical 两槽
-  复用相同有界 copy lease，但以独立 access kind 配对，不能与 Elements 交叉 release。
+  semantic mutation 前完整预检。八类 Elements 与 PrimitiveCritical 直接借用唯一 guest payload，
+  isCopy=FALSE；零长也返回有效地址。重复获取同址并增加 store 的数组身份 pin，非零 pin 是 GC 强根。
+  与 Dalvik 一致，不校验 elems 指针，不区分 Elements/Critical；COMMIT 无操作，其余 mode（含非法值）
+  仅解除一次 pin，不复制/写回/回滚。无配对只发布结构化 warn 和 warning ledger，含数组/实际槽/guest LR，
+  不中止且不改变状态；每数组首次超过 10 次 pin 也 warn。pin 不绑定线程，detach 不释放。
+  guest 绑定需要 guest provider，无地址时明确失败，不保留复制回退；String arena/lease 合同不变。
+  全部 guest 线程和 CPU 停止并 join 后统一退役剩余 pin，记录数组数和字节数。
   object array
   3 槽复用会话级 `JniGuestObjectRegistry::ObjectArrays()` 并验证 initial/set
   assignability；该 store 同时注入 DexVM object model，native/解释路径共享 identity

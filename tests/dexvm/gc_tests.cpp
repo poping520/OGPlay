@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <thread>
 #include "ogplay/hal/clock.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
@@ -55,7 +56,9 @@ TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex meta
 
 struct GcVm final {
     JniStringStore strings;
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::memory::AddressSpace memory;
+    ogplay::core::CapabilityLedger payload_ledger;
+    GuestJavaPayloadProvider arrays_payload{memory, payload_ledger};
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
@@ -765,12 +768,15 @@ TEST_CASE("DVM-260 primitive aget aput Release microbenchmark") {
     CHECK(checksum != 0);
 }
 
-TEST_CASE("DVM-260 copy borrow is a strong root until final release") {
+TEST_CASE("DVM-260 direct pin is a strong root until final release") {
     GcVm f;
     const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
     const auto identity = f.model.ToIdentity(array);
     auto access = f.arrays.Acquire(identity, JniArrayAccessKind::elements);
-    REQUIRE(access.is_copy);
+    REQUIRE_FALSE(access.is_copy);
+    std::thread writer([&] { f.memory.Write32(access.address, 123); });
+    writer.join();
+    CHECK(f.model.GetPrimitiveElement(array, 0) == 123);
     f.vm.SetGcIntegration({[&](const auto& visit) { f.arrays.VisitAccessRoots(visit); }, {}, {}});
     const auto weak = f.vm.NewIntrinsicInstance("Ljava/lang/ref/WeakReference;");
     const auto weak_root = f.vm.ProtectReferences(std::array{weak});
@@ -785,10 +791,13 @@ TEST_CASE("DVM-260 copy borrow is a strong root until final release") {
     CHECK(before.IsMarked(array));
     static_cast<void>(f.vm.CollectGarbage());
     CHECK(f.model.ArrayLength(array) == 3);
+    CHECK(f.arrays.Acquire(identity, JniArrayAccessKind::critical).address == access.address);
+    CHECK(f.arrays.PinCount(identity) == 2);
+    f.arrays.Release(identity, JniArrayReleaseMode::abort);
     CHECK(f.model.InstanceSlots(weak)[referent_slot].bits == array.Value());
-    f.arrays.Release(identity, access.token, access.kind, access.data, JniArrayReleaseMode::commit);
+    f.arrays.Release(identity, JniArrayReleaseMode::commit);
     CHECK(f.vm.MarkReachable().IsMarked(array));
-    f.arrays.Release(identity, access.token, access.kind, access.data, JniArrayReleaseMode::abort);
+    f.arrays.Release(identity, JniArrayReleaseMode::abort);
     CHECK_FALSE(f.vm.MarkReachable().IsMarked(array));
     static_cast<void>(f.vm.CollectGarbage());
     CHECK_THROWS_AS(static_cast<void>(f.arrays.Length(identity)), JniArrayError);

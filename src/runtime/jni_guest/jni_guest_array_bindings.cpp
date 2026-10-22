@@ -27,9 +27,6 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr memory::GuestAddress kArrayLeaseBegin{0x71400000U};
-constexpr std::uint64_t kArrayLeaseSize = 4U * 1024U * 1024U;
-
 struct PrimitiveBinding final {
     std::string_view name;
     JniPrimitiveKind kind;
@@ -181,23 +178,10 @@ template <typename T>
 
 class PrimitiveArrayLeases final {
 public:
-    PrimitiveArrayLeases(JniEnvironment& environment,
-                         JniPrimitiveArrayStore& arrays,
-                         memory::AddressSpace& address_space)
-        : environment_(&environment), arrays_(&arrays),
-          address_space_(&address_space) {
-        address_space_->Map(
-            {kArrayLeaseBegin, kArrayLeaseSize},
-            memory::PageProtection::read | memory::PageProtection::write);
-    }
-
-    ~PrimitiveArrayLeases() {
-        std::scoped_lock lock(mutex_);
-        try {
-            address_space_->Unmap({kArrayLeaseBegin, kArrayLeaseSize});
-        } catch (...) {
-        }
-    }
+    PrimitiveArrayLeases(JniEnvironment& environment, JniPrimitiveArrayStore& arrays,
+                         memory::AddressSpace& address_space, JniGuestCallDispatcher& dispatcher, core::Logger* logger)
+        : environment_(&environment), arrays_(&arrays), address_space_(&address_space), dispatcher_(&dispatcher),
+          logger_(logger) {}
 
     [[nodiscard]] std::uint32_t Acquire(
         const JniGuestCallFrame& frame, const JniPrimitiveKind kind,
@@ -250,108 +234,48 @@ private:
             address_space_->Validate(
                 {is_copy, 1U}, memory::AccessType::write, frame.thread_id);
         }
-        auto access = arrays_->Acquire(array, access_kind);
-        const auto bytes = Encode(access.data);
-        std::scoped_lock lock(mutex_);
+        static_cast<void>(kind);
+        static_cast<void>(element_size);
+        const auto access = arrays_->Acquire(array, access_kind);
         try {
-            const auto allocation_size = std::max<std::size_t>(1U, bytes.size());
-            const auto pointer = Allocate(allocation_size, element_size);
-            if (!bytes.empty()) {
-                address_space_->Write(pointer, bytes, frame.thread_id);
-            }
-            if (!is_copy.IsNull()) {
-                address_space_->Write8(is_copy, 1U, frame.thread_id);
-            }
-            leases_.push_back({pointer, allocation_size, bytes.size(), array,
-                               kind, access_kind, element_size, access.token,
-                               std::move(access.data)});
-            return pointer.Value();
+            if (!is_copy.IsNull()) address_space_->Write8(is_copy, 0U, frame.thread_id);
         } catch (...) {
-            arrays_->Release(array, access.token, access_kind, access.data,
-                             JniArrayReleaseMode::abort);
+            arrays_->Release(array, JniArrayReleaseMode::abort);
             throw;
         }
+        if (access.warn_threshold) Warn(frame, array, "pin_threshold", access.pin_count);
+        return access.address.Value();
     }
 
-    void ReleaseResolved(const JniGuestCallFrame& frame,
-                         const JniObjectIdentity array,
-                         const JniPrimitiveKind kind, const char* operation,
-                         const JniArrayAccessKind access_kind) {
-        const auto pointer = memory::GuestAddress{frame.registers[2]};
-        const auto raw_mode = std::bit_cast<JniInt>(frame.registers[3]);
-        JniArrayReleaseMode mode{};
-        switch (raw_mode) {
-        case 0: mode = JniArrayReleaseMode::copy_back_and_release; break;
-        case 1: mode = JniArrayReleaseMode::commit; break;
-        case 2: mode = JniArrayReleaseMode::abort; break;
-        default:
-            throw JniGuestBindingError(
-                std::string(operation) + " mode must be 0, JNI_COMMIT or JNI_ABORT");
-        }
-        std::scoped_lock lock(mutex_);
-        const auto found = std::ranges::find_if(
-            leases_, [pointer, array, kind, access_kind](const Lease& lease) {
-                return lease.pointer == pointer && lease.array == array &&
-                       lease.kind == kind &&
-                       lease.access_kind == access_kind;
-            });
-        if (found == leases_.end()) {
-            throw JniGuestBindingError(
-                std::string(operation) + " pointer does not match an active lease");
-        }
-        auto data = found->original;
-        if (mode != JniArrayReleaseMode::abort) {
-            std::vector<std::byte> bytes(found->byte_size);
-            if (!bytes.empty()) {
-                address_space_->Validate(
-                    {found->pointer, found->byte_size},
-                    memory::AccessType::read, frame.thread_id);
-                address_space_->Read(
-                    found->pointer, bytes, frame.thread_id);
-            }
-            data = Decode(kind, bytes);
-        }
-        arrays_->Release(array, found->token, access_kind, data, mode);
-        if (mode != JniArrayReleaseMode::commit) leases_.erase(found);
+    void Warn(const JniGuestCallFrame& frame, JniObjectIdentity array, std::string_view reason, std::size_t count) {
+        const auto slot = JniSlotName(JniSlot{frame.thunk.slot});
+        dispatcher_->RecordWarning("runtime.jni.array." + std::string(reason) + "." + std::string(slot) + "." +
+                                       std::to_string(array.value),
+                                   frame.link_register);
+        if (logger_)
+            logger_->Write(core::LogLevel::warn, "runtime.jni.array", reason, {.guest_thread = frame.thread_id},
+                           {{"array", array.value},
+                            {"slot", std::string(slot)},
+                            {"guest_lr", core::GuestAddress{frame.link_register}},
+                            {"pin_count", static_cast<std::uint64_t>(count)}},
+                           {.mode = core::RateLimitMode::none});
     }
 
-    struct Lease final {
-        memory::GuestAddress pointer;
-        std::size_t allocation_size{};
-        std::size_t byte_size{};
-        JniObjectIdentity array;
-        JniPrimitiveKind kind{};
-        JniArrayAccessKind access_kind{JniArrayAccessKind::elements};
-        std::size_t element_size{};
-        std::uint64_t token{};
-        JniPrimitiveArrayData original;
-    };
-
-    [[nodiscard]] memory::GuestAddress Allocate(
-        const std::size_t size, const std::size_t alignment) const {
-        auto ordered = leases_;
-        std::ranges::sort(ordered, {}, &Lease::pointer);
-        std::uint64_t offset{};
-        for (const auto& lease : ordered) {
-            offset = (offset + alignment - 1U) & ~(alignment - 1U);
-            const auto lease_offset =
-                lease.pointer.Value() - kArrayLeaseBegin.Value();
-            if (size <= lease_offset - offset) break;
-            offset = lease_offset + lease.allocation_size;
-        }
-        offset = (offset + alignment - 1U) & ~(alignment - 1U);
-        if (offset > kArrayLeaseSize || size > kArrayLeaseSize - offset) {
-            throw JniGuestBindingError(
-                "JNI guest primitive array lease arena is full");
-        }
-        return kArrayLeaseBegin.Add(offset);
+    void ReleaseResolved(const JniGuestCallFrame& frame, JniObjectIdentity array, JniPrimitiveKind kind,
+                         const char* operation, JniArrayAccessKind access_kind) {
+        static_cast<void>(kind);
+        static_cast<void>(operation);
+        static_cast<void>(access_kind);
+        // Dalvik Jni.cpp:2383/2615 checks only COMMIT; elems is deliberately ignored.
+        const auto mode = frame.registers[3] == 1 ? JniArrayReleaseMode::commit : JniArrayReleaseMode::abort;
+        if (!arrays_->Release(array, mode)) Warn(frame, array, "unmatched_unpin", 0);
     }
 
     JniEnvironment* environment_{};
     JniPrimitiveArrayStore* arrays_{};
     memory::AddressSpace* address_space_{};
-    mutable std::mutex mutex_;
-    std::vector<Lease> leases_;
+    JniGuestCallDispatcher* dispatcher_{};
+    core::Logger* logger_{};
 };
 
 [[nodiscard]] std::optional<JniObjectValue> ResolveObjectValue(
@@ -373,13 +297,15 @@ private:
 
 }  // namespace
 
-void BindJniGuestArraySlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniClassRegistry& classes, JniStringStore& strings,
-    JniPrimitiveArrayStore& arrays,
-    JniGuestObjectRegistry& objects, memory::AddressSpace& address_space) {
-    const auto leases = std::make_shared<PrimitiveArrayLeases>(
-        environment, arrays, address_space);
+void BindJniGuestArraySlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                            JniStringStore& strings, JniPrimitiveArrayStore& arrays, JniGuestObjectRegistry& objects,
+                            memory::AddressSpace& address_space, core::Logger* logger) {
+    const auto leases = std::make_shared<PrimitiveArrayLeases>(environment, arrays, address_space, dispatcher, logger);
+    arrays.SetPinTeardownObserver([logger](std::uint64_t count, std::uint64_t bytes) {
+        if (logger)
+            logger->Write(core::LogLevel::warn, "runtime.jni.array", "retiring outstanding pins", {},
+                          {{"arrays", count}, {"bytes", bytes}}, {.mode = core::RateLimitMode::none});
+    });
     auto& object_arrays = objects.ObjectArrays();
 
     dispatcher.BindEnvironment(

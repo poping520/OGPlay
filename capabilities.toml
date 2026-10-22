@@ -431,7 +431,7 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 [runtime.java_payload_backing]
 status = "partial"
 test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/memory/address_space_tests.cpp"
-note = "ADR-0152 / DVM-260：primitive authority 候选接入 guest provider/长期 view，仍 copy borrow；VM 唯一逻辑收费，provider 仅管理 committed/VAS，array borrow roots 保活。受保护映射/restore 拒绝及普通 RW JIT 策略不变。阶段 2 门禁失败未放行：096 双后端超时、Wild Blood 新退出失败；String/NIO 未迁移，Windows 未实跑。"
+note = "ADR-0152 / DVM-260：阶段 2/3 已验收，primitive payload 自创建起使用 guest backing 与长期 view；Elements/Critical 同址直接借用、FALSE，store 按数组身份计数 pin 并纳入 GC 强根。VM 唯一逻辑收费，provider 推导提交上限及显式应急预留；受保护映射/restore 与普通 RW JIT 策略不变。String/NIO 未迁移，Windows 未实跑。"
 
 [memory.soft_mmu]
 status = "complete"
@@ -856,7 +856,7 @@ note = "WU-M8-003、DVM-204：NewString/GetStringLength/GetStringChars/ReleaseSt
 [runtime.jni_guest_arrays]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/runtime/jni_object_array_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "WU-M8-004、LUI-10、DVM-49/111：8 类 primitive 数组 New/Get/SetRegion/Get/ReleaseElements（40 槽）、对象数组 3 槽与 PrimitiveArrayCritical；Elements 使用 4 MiB 有界 arena，严格实现 0/JNI_COMMIT/JNI_ABORT、错误指针与重复释放检测。JNI 与解释器共享 Object[] 身份，赋值兼容性委托 VM 类型关系。"
+note = "ADR-0152 / DVM-260 阶段 3：八类 New/Region/Elements 与 PrimitiveCritical 共用数组 authority；Elements/Critical 直接返回 guest payload、FALSE，数组身份 pin 是跨线程 GC 强根。Release 按 Dalvik 忽略 elems/kind，COMMIT 无操作，其余 mode 解除一次 pin；无配对仅 warn/ledger，>10 首次告警。Object[] 身份与 VM 赋值兼容性不变。"
 
 [runtime.jni_guest_nonvirtual_calls]
 status = "complete"
@@ -1236,7 +1236,7 @@ note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保�
 [tools.jni_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --require-full --check-baseline"
-note = "DIAG-8/WU8-2e：独立 C11/Java JNI 探针覆盖边界、数据、引用、异常、反射、monitor/NIO、注册与 JavaVM pthread；双后端分组/隔离、预期死亡、只升不降基线及 --require-full。静态覆盖 233/233（100%），仅排除 DestroyJavaVM；各 363/399。pending 按 ADR-0153 放行并记 warn，heap capacity 按 Dalvik 4.4；尚缺数组/String 直接指针语义。"
+note = "DIAG-8 / DVM-260 阶段 3：独立 C11/Java JNI 探针双后端分组/隔离、预期死亡、只升不降基线及 --require-full；静态覆盖 233/233（100%），仅排除 DestroyJavaVM。各 397/399，数组直接借用 34 条转 pass，余 String 的 2 条；pending 与 heap capacity 沿用 ADR-0153。"
 
 [tools.dex_dependency_survey]
 status = "complete"

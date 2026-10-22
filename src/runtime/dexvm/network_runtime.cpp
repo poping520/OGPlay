@@ -132,31 +132,13 @@ void NetworkRuntime::Shutdown() noexcept {
     }
     sockets_.clear();
     streams_.clear();
-    packets_.clear();
     policy_ = {};
     transport_ = nullptr;
 }
 
-void NetworkRuntime::SetPacket(const VmObjectRef owner,
-                               DatagramPacket packet) {
-    packets_[owner.Value()] = std::move(packet);
-}
-
-NetworkRuntime::DatagramPacket& NetworkRuntime::Packet(
-    const VmObjectRef owner) {
-    const auto found = packets_.find(owner.Value());
-    if (found == packets_.end())
-        throw NetworkRuntimeError("datagram packet state is unavailable");
-    return found->second;
-}
-
-void NetworkRuntime::SendPacket(const VmObjectRef owner,
-                                const std::span<const std::byte> bytes) {
-    const auto& packet = Packet(owner);
-    RequireAllowed(packet.endpoint.host, false, true);
-    transport_->SendDatagram(
-        {packet.endpoint.host, packet.endpoint.port,
-         std::vector<std::byte>(bytes.begin(), bytes.end())});
+void NetworkRuntime::SendPacket(const Endpoint& endpoint, const std::span<const std::byte> bytes) {
+    RequireAllowed(endpoint.host, false, true);
+    transport_->SendDatagram({endpoint.host, endpoint.port, std::vector<std::byte>(bytes.begin(), bytes.end())});
 }
 
 NetworkDatagram NetworkRuntime::ReceivePacket(const std::size_t maximum) {
@@ -173,15 +155,12 @@ void NetworkRuntime::Trace(const VmObjectRef owner,
                            const std::function<void(VmObjectRef)>& visit) const {
     if (const auto found = streams_.find(owner.Value()); found != streams_.end())
         visit(found->second.socket);
-    if (const auto found = packets_.find(owner.Value()); found != packets_.end())
-        visit(found->second.array);
 }
 
 void NetworkRuntime::Sweep(const VmObjectRef owner) noexcept {
     CloseSocket(owner);
     sockets_.erase(owner.Value());
     streams_.erase(owner.Value());
-    packets_.erase(owner.Value());
 }
 
 }  // namespace ogplay::runtime::dexvm

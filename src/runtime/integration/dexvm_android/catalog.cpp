@@ -155,7 +155,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_content_ContentResolver(context),
       Declare_android_content_Context(context),
       Declare_android_content_ContextWrapper(context),
-      Declare_android_content_IntentFilter(context),
       Declare_android_content_IntentFilter_MalformedMimeTypeException(context),
       Declare_android_content_IntentSender(context),
       Declare_android_content_pm_PackageInfo(context),

@@ -210,6 +210,9 @@ def analyze(surface, rom, platform_reference=None):
         deviations.update(analyze_platform_tables(surface, platform_reference))
     return {
         "deviations": dict(sorted(deviations.items())),
+        # ADR-0154: a class remains accounted for when its owner moves to BootDex.
+        "bootdex_classes": sorted(c["descriptor"] for c in surface["classes"]
+                                  if c["source"] == "bootdex" and c["descriptor"] in rom),
         "intrinsic_classes": sorted(owners),
         "private_classes": sorted(missing_rom),
         "E": E_STATUS,
@@ -236,6 +239,7 @@ def compare_baseline(baseline, current):
         ],
         "missing_classes": sorted(
             set(baseline["intrinsic_classes"]) - set(current["intrinsic_classes"])
+            - set(current.get("bootdex_classes", []))
         ),
     }
 
@@ -500,6 +504,16 @@ def self_test():
         lost["intrinsic_classes"] = []
         assert not save_baseline(path, lost, "rom")
         assert path.read_bytes() == original
+        migrated = copy.deepcopy(lost)
+        migrated["bootdex_classes"] = list(result["intrinsic_classes"])
+        assert not compare_baseline(json.loads(original), migrated)["missing_classes"]
+        assert save_baseline(path, migrated, "rom")
+        path.write_bytes(original)
+        # Skeleton fallback or absent export must still fail (not a migration).
+        fallback = copy.deepcopy(lost)
+        fallback["bootdex_classes"] = []
+        assert compare_baseline(json.loads(original), fallback)["missing_classes"]
+        assert not save_baseline(path, fallback, "rom")
         better = copy.deepcopy(result)
         better["deviations"].pop("C|Ltest/C;|extra|I")
         changes = compare_baseline(json.loads(original), better)

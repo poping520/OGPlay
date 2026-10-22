@@ -50,7 +50,6 @@ Declare_android_database_sqlite_SQLiteGlobal(const Context &context);
 [[nodiscard]] Decl Declare_android_content_Context(const Context &context);
 [[nodiscard]] Decl
 Declare_android_content_ContextWrapper(const Context &context);
-[[nodiscard]] Decl Declare_android_content_IntentFilter(const Context &context);
 [[nodiscard]] Decl
 Declare_android_content_IntentFilter_MalformedMimeTypeException(
     const Context &context);

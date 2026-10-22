@@ -52,6 +52,7 @@
 - [ADR-0151 · finalizer 由原版守护线程执行、堆查询共用真实配置](#adr-0151)
 
 - [ADR-0152 · Java primitive/String payload 使用稳定 guest backing](#adr-0152)
+- [ADR-0154 · 已有 intrinsic 的 ROM Java 类撤换为 BootDex](#adr-0154)
 
 <a id="adr-0017"></a>
 
@@ -1609,3 +1610,38 @@ pin；Release 只按 jstr unpin，不校验 chars 指针，也不区分两类 UT
 与 ledger，不中止。这替代原文及阶段 3 实施决定中暂保留的 String kind/pointer 严格配对。
 UTF8 编码复制的 pointer/token 配对、TRUE 和预算保持不变；pin String 对象及 block 的保守
 GC 边界、immutable 快照/私有字段边界仍依 ADR-0057，不实施真实 String.value 布局。
+
+<a id="adr-0154"></a>
+
+## ADR-0154 · 已有 intrinsic 的 ROM Java 类撤换为 BootDex
+
+- 状态：Accepted（WU9 无人值守编排中决定，待用户复核）
+- 日期：2026-10-23
+- 关联：[ADR-0148](#adr-0148)、[DVM-265 / WU9-5b](../tasks/dexvm/DVM-265.md)
+- 关系：补充 ADR-0148，不取代其默认准入规则。
+
+### 背景
+
+WU9-5a 确认部分已有 intrinsic 的算法本为 ROM 纯 Java；ADR-0148 决定 1、3、6
+未授权撤换这些实现。继续手写会重复维护算法与状态，故提供显式、受审的撤换入口。
+
+### 决定
+
+1. 已有 intrinsic 类满足 ADR-0148 除本类 intrinsic 占用及其待清理交互以外的全部
+   准入规则时，可以显式选择撤换为固定 ROM 原版 BootDex。默认选择行为不变；
+   依赖、父类、初始化闭包、Binder、日期冻结和容量限制继续有效。
+2. 自身 native 只能保留已有、经审的同签名 intrinsic native 绑定作为 overlay，不得新增 native。
+3. 状态所有权整体移交 Java，宿主不得再读写该类私有字段或保存替代状态。
+   确需 VM 访问的字段必须是 ROM 明确约定给 VM 的字段，并逐个列出；首批无此例外。
+4. 删除该类手写声明及普通 handler；其他 C++ 点名要么删除，要么经 VM 调用 Java 方法。
+   必要的 native overlay 与类型签名/接口关系保留，不能据此重建状态或算法。
+5. 每批撤换必须满足 framework_contract 无新增偏差、dalvik 双后端零回归、九场景门禁通过。
+   撤换类原偏差随来源转为 BootDex 消失，不能通过漏导出类或放宽基线隐藏回归。
+6. ThreadGroup、Thread、Context、Handler 等具有生命周期或宿主状态耦合的类不在本次范围，
+   需要单独设计；不引入完整 Android、Binder 或完整 VM。
+
+### 后果
+
+纯 Java 算法、构造器及字段布局以 ROM 为唯一所有者，C++ 仅保留受审 native 边界。
+每批须审查全部宿主耦合并增加 DEX 行为回归；验证失败的类退回 intrinsic 并记录原因。
+首批目标与实际门禁结果见 DVM-265；未经场景门禁不能宣称兼容验收完成。

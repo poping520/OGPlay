@@ -87,13 +87,6 @@ public:
         bool closed{};
         std::int32_t timeout_ms{};
     };
-    struct DatagramPacket final {
-        VmObjectRef array;
-        std::int32_t offset{};
-        std::int32_t length{};
-        Endpoint endpoint;
-    };
-
     void Configure(NetworkPolicy policy, NetworkTransport* transport) noexcept;
     [[nodiscard]] const NetworkPolicy& Policy() const noexcept;
     [[nodiscard]] std::vector<std::string> Resolve(std::string_view host);
@@ -112,9 +105,7 @@ public:
     void CloseSocket(VmObjectRef owner) noexcept;
     void Shutdown() noexcept;
 
-    void SetPacket(VmObjectRef owner, DatagramPacket packet);
-    [[nodiscard]] DatagramPacket& Packet(VmObjectRef owner);
-    void SendPacket(VmObjectRef owner, std::span<const std::byte> bytes);
+    void SendPacket(const Endpoint& endpoint, std::span<const std::byte> bytes);
     [[nodiscard]] NetworkDatagram ReceivePacket(std::size_t maximum);
 
     void Trace(VmObjectRef owner,
@@ -128,7 +119,6 @@ private:
     std::unordered_map<std::uint32_t, Socket> sockets_;
     struct Stream final { VmObjectRef socket; bool output{}; };
     std::unordered_map<std::uint32_t, Stream> streams_;
-    std::unordered_map<std::uint32_t, DatagramPacket> packets_;
 };
 
 }  // namespace ogplay::runtime::dexvm

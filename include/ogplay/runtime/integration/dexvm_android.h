@@ -455,28 +455,6 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, std::unordered_set<std::uint32_t>>
       broadcast_receivers;
 
-  // IntentFilter keeps data schemes in insertion order and de-duplicates
-  // with the framework's case-sensitive String equality.
-  std::unordered_map<std::uint32_t, std::vector<std::string>>
-      intent_filter_actions;
-  std::unordered_map<std::uint32_t, std::vector<std::string>>
-      intent_filter_categories;
-  // Exact MIME strings are retained as-is. API 19 represents "major/*"
-  // internally as "major" and "*/*" as "*"; matching reconstructs that
-  // partial-type rule without a second flag table.
-  std::unordered_map<std::uint32_t, std::vector<std::string>>
-      intent_filter_types;
-  std::unordered_map<std::uint32_t, std::vector<std::string>>
-      intent_filter_schemes;
-  struct IntentFilterAuthority final {
-    std::string original_host;
-    std::string match_host;
-    bool wildcard{};
-    std::int32_t port{-1};
-  };
-  std::unordered_map<std::uint32_t, std::vector<IntentFilterAuthority>>
-      intent_filter_authorities;
-
   // ActivityManager owns this on Android. The bounded process has no
   // Binder, so retain the API19 observable request per Activity identity;
   // -1 is SCREEN_ORIENTATION_UNSPECIFIED.

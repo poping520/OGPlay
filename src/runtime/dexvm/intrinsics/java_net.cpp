@@ -1505,90 +1505,23 @@ namespace ogplay::runtime::dexvm::intrinsics {
             return std::move(builder).Build();
         }
 
-        IntrinsicClassDecl DeclareDatagramPacket() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/net/DatagramPacket;", "Ljava/lang/Object;");
-            builder.Constructor("([BII)V", [](IntrinsicContext& call) {
-                detail::CheckRegion(call.vm.Model().ArrayLength(call.arguments[0].ref),
-                                    call.arguments[1].AsInt(),
-                                    call.arguments[2].AsInt());
-                call.vm.Network().SetPacket(call.receiver,
-                                            {
-                                                call.arguments[0].ref, call.arguments[1].AsInt(),
-                                                call.arguments[2].AsInt(), {}
-                                            });
-                return VmValue::Void();
-            });
-            builder.Constructor("([BIILjava/net/InetAddress;I)V", [](IntrinsicContext& call) {
-                detail::CheckRegion(call.vm.Model().ArrayLength(call.arguments[0].ref),
-                                    call.arguments[1].AsInt(),
-                                    call.arguments[2].AsInt());
-                call.vm.Network().SetPacket(call.receiver,
-                                            {
-                                                call.arguments[0].ref, call.arguments[1].AsInt(),
-                                                call.arguments[2].AsInt(), EndpointFrom(
-                                                    call, call.arguments[3].ref,
-                                                    call.arguments[4].AsInt())
-                                            });
-                return VmValue::Void();
-            });
-            builder.FinalMethod("getLength", "()I", [](IntrinsicContext& call) {
-                try { return VmValue::Int(call.vm.Network().Packet(call.receiver).length); } catch (const
-                    NetworkRuntimeError& error) { ThrowNetwork(error); }
-            });
-            builder.FinalMethod("getPort", "()I", [](IntrinsicContext& call) {
-                try {
-                    return VmValue::Int(call.vm.Network().Packet(
-                        call.receiver).endpoint.port);
-                } catch (const NetworkRuntimeError& error) { ThrowNetwork(error); }
-            });
-            // AOSP 4.4 ROM line 60.
-            builder.Constructor(
-                "([BI)V",
-                [](IntrinsicContext& c) {
-                    const auto target = c.vm.Linker().FindDirectMethod(
-                        c.vm.Linker().ResolveDescriptor("Ljava/net/DatagramPacket;"), "<init>", "([BII)V");
-                    const auto result =
-                        c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0],
-                                                                VmValue::Int(0), c.arguments[1]});
-                    if (result.exception.IsValid())
-                        throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-                    return result.value;
-                },
-                kAccPublic);
-
-            // AOSP 4.4 ROM line 117.
-            builder.Constructor(
-                "([BILjava/net/InetAddress;I)V",
-                [](IntrinsicContext& c) {
-                    const auto target =
-                        c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/net/DatagramPacket;"),
-                                                       "<init>", "([BIILjava/net/InetAddress;I)V");
-                    const auto result = c.vm.Call(
-                        *target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0], VmValue::Int(0),
-                                                      c.arguments[1], c.arguments[2], c.arguments[3]});
-                    if (result.exception.IsValid())
-                        throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-                    return result.value;
-                },
-                kAccPublic);
-
-            return std::move(builder).Build();
-        }
-
         IntrinsicClassDecl DeclareDatagramSocket() {
             auto builder = IntrinsicClassBuilder::Class("Ljava/net/DatagramSocket;", "Ljava/lang/Object;",
                                                         {"Ljava/io/Closeable;"});
             builder.Constructor("()V", NoopVoid());
             builder.VirtualMethod("send", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {
-                    const auto& packet = call.vm.Network().Packet(call.arguments[0].ref);
-                    call.vm.Network().SendPacket(call.arguments[0].ref,
-                                                 call.vm.Model().ReadByteRegion(
-                                                     packet.array, packet.offset,
-                                                     packet.length));
+                    const auto packet = call.arguments[0].ref;
+                    const auto array = detail::InvokeGuest(call.vm, packet, "getData", "()[B").ref;
+                    const auto roots = call.vm.ProtectReferences(std::array{packet, array});
+                    const auto offset = detail::InvokeGuest(call.vm, packet, "getOffset", "()I").AsInt();
+                    const auto length = detail::InvokeGuest(call.vm, packet, "getLength", "()I").AsInt();
+                    const auto address =
+                        detail::InvokeGuest(call.vm, packet, "getAddress", "()Ljava/net/InetAddress;").ref;
+                    const auto address_root = call.vm.ProtectReferences(std::array{address});
+                    const auto port = detail::InvokeGuest(call.vm, packet, "getPort", "()I").AsInt();
+                    call.vm.Network().SendPacket(EndpointFrom(call, address, port),
+                                                 call.vm.Model().ReadByteRegion(array, offset, length));
                     return VmValue::Void();
                 } catch (const NetworkRuntimeError& error) {
                     ThrowNetwork(error);
@@ -1596,14 +1529,26 @@ namespace ogplay::runtime::dexvm::intrinsics {
             });
             builder.VirtualMethod("receive", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {
-                    auto& packet = call.vm.Network().Packet(call.arguments[0].ref);
-                    const auto length = static_cast<std::size_t>(packet.length);
-                    const auto datagram = call.vm.Network().ReceivePacket(length);
-                    const auto amount = std::min<std::size_t>(datagram.payload.size(), length);
-                    call.vm.Model().WriteByteRegion(packet.array, packet.offset,
-                                                    std::span(datagram.payload).first(amount));
-                    packet.length = static_cast<std::int32_t>(amount);
-                    packet.endpoint = {datagram.host, {}, datagram.port};
+                    const auto packet = call.arguments[0].ref;
+                    const auto array = detail::InvokeGuest(call.vm, packet, "getData", "()[B").ref;
+                    const auto roots = call.vm.ProtectReferences(std::array{packet, array});
+                    const auto offset = detail::InvokeGuest(call.vm, packet, "getOffset", "()I").AsInt();
+                    const auto length = detail::InvokeGuest(call.vm, packet, "getLength", "()I").AsInt();
+                    const auto datagram = call.vm.Network().ReceivePacket(static_cast<std::size_t>(length));
+                    const auto amount = std::min(datagram.payload.size(), static_cast<std::size_t>(length));
+                    call.vm.Model().WriteByteRegion(array, offset, std::span(datagram.payload).first(amount));
+                    detail::InvokeGuest(call.vm, packet, "setLength", "(I)V",
+                                        {VmValue::Int(static_cast<std::int32_t>(amount))});
+                    const auto host = call.vm.NewStringUtf8(datagram.host);
+                    const auto host_root = call.vm.ProtectReferences(std::array{host});
+                    const auto address =
+                        InvokeDirect(call.vm, "Ljava/net/InetAddress;", "getByName",
+                                     "(Ljava/lang/String;)Ljava/net/InetAddress;", {VmValue::Ref(host)})
+                            .ref;
+                    const auto address_root = call.vm.ProtectReferences(std::array{address});
+                    detail::InvokeGuest(call.vm, packet, "setAddress", "(Ljava/net/InetAddress;)V",
+                                        {VmValue::Ref(address)});
+                    detail::InvokeGuest(call.vm, packet, "setPort", "(I)V", {VmValue::Int(datagram.port)});
                     return VmValue::Void();
                 } catch (const NetworkRuntimeError& error) {
                     ThrowNetwork(error);
@@ -1688,7 +1633,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         catalog.push_back(DeclareSocketInputStream());
         catalog.push_back(DeclareSocketOutputStream());
         catalog.push_back(DeclareSocket());
-        catalog.push_back(DeclareDatagramPacket());
         catalog.push_back(DeclareDatagramSocket());
         catalog.push_back(DeclareSocketFactory(services));
 

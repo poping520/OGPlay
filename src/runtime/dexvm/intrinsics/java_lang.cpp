@@ -276,14 +276,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
         // Nested types and java.lang.annotation.* are declared by their owning
         // families rather than this top-level interface catalog.
 
-        IntrinsicClassDecl Declare_java_lang_Appendable() {
-            auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/Appendable;");
-            builder.UnimplementedVirtual("append", "(C)Ljava/lang/Appendable;");
-            builder.UnimplementedVirtual("append", "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;");
-            builder.UnimplementedVirtual("append", "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;");
-            return std::move(builder).Build();
-        }
-
         IntrinsicClassDecl Declare_java_lang_AutoCloseable() {
             auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/AutoCloseable;");
             builder.UnimplementedVirtual("close", "()V");
@@ -390,7 +382,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
             }, kAccPublic | kAccNative);
             catalog.push_back(std::move(b).Build());
         }
-        catalog.push_back(Declare_java_lang_Appendable());
         catalog.push_back(Declare_java_lang_AutoCloseable());
         catalog.push_back(Declare_java_lang_CharSequence());
         catalog.push_back(Declare_java_lang_Cloneable());

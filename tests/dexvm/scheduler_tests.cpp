@@ -1,3 +1,5 @@
+#include <fstream>
+#include <iterator>
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -165,6 +167,9 @@ struct SchedulerVm final {
                      &timer_calls, &finishes, &async_background,
                      &async_post));
                  ogplay::test::RegisterBootDex(linker);
+                 std::ifstream stream(std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/rom_java_replacement.dex",
+                                      std::ios::binary);
+                 linker.RegisterDex(std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), {}));
                  linker.Link();
                  return linker;
              }(), model, nullptr, ledger, {.backend = backend}),
@@ -747,5 +752,36 @@ TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factor
                                .ref;
         CHECK(calls == 2);
         CHECK(fresh != pooled);
+    }
+}
+
+TEST_CASE("DVM-265 DEX Timer schedules one callback") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto timer = f.New("Ljava/util/Timer;");
+        f.ConstructAs(timer, "Ljava/util/Timer;", "()V");
+        const auto task = f.New("Ltest/RecordingTimerTask;");
+        const auto roots = f.vm.ProtectReferences(std::array{timer, task});
+        f.ConstructAs(task, "Ljava/util/TimerTask;", "()V");
+        SchedulerVm::RequireOk(f.Direct("Ltest/RomJavaReplacement;", "timer",
+                                        "(Ljava/util/Timer;Ljava/util/TimerTask;)V",
+                                        {VmValue::Ref(timer), VmValue::Ref(task)}));
+        AdvanceAndroidClock(*f.context, 10);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.timer_calls.load() == 1);
+        SchedulerVm::RequireOk(f.Virtual(timer, "cancel", "()V"));
+    }
+}
+
+TEST_CASE("DVM-265 DEX CountDownTimer completes callback") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto timer = f.New("Ltest/RecordingCountDown;");
+        const auto roots = f.vm.ProtectReferences(std::array{timer});
+        f.ConstructAs(timer, "Landroid/os/CountDownTimer;", "(JJ)V", {VmValue::Long(0), VmValue::Long(1)});
+        SchedulerVm::RequireOk(f.Direct("Ltest/RomJavaReplacement;", "countdown", "(Landroid/os/CountDownTimer;)V",
+                                        {VmValue::Ref(timer)}));
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.finishes.load() == 1);
     }
 }

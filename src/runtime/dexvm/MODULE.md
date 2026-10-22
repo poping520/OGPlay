@@ -164,6 +164,11 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   默认被调 handler 保留原有 C++ 行为，应用覆写与 super 调用分别进入覆写和原 handler。
 - 集合、并发、IO/对象流、日期、framework 值类、Throwable、Uri、UUID/JCA、Cipher/证书等普通
   Java 逻辑归 BootDex；字段/数组是唯一状态。native 仅保留受审边界，不得恢复重复 C++ 算法。
+- ADR-0154 允许显式撤换已有 intrinsic：ROM Java 整体拥有字段和普通方法，只保留已有受审
+  native overlay；宿主不得访问私有字段或保留替代状态。Thread/Handler 等生命周期耦合另行设计。
+  DatagramPacket 状态归 Java；DatagramSocket 经 VM 虚派 getter/setter 读取 payload 区间、
+  地址和端口、提交接收长度及来源，NetworkRuntime 只消费一次性的 Endpoint/payload 快照，
+  不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM，SAX 解析边界仍明确失败。
 - `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
   File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享

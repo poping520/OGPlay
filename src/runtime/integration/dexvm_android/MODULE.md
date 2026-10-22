@@ -25,6 +25,9 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
 - 未实现记账并抛可捕获 Java 异常，禁止伪成功；结构化日志保留异常，回调保持身份/代际。
   Clock 唯一时间源，一个 guest 对应一个 host 线程，共用 VM 锁；图形 ANGLE，窗口/输入 SDL3。
 
+IntentFilter 的 actions、categories、MIME、scheme、authority 和 Parcelable 协议归原版 BootDex；
+Context 不持过滤器内容副本。宿主仅登记 receiver 身份，方法/签名中的类型引用使用同一 Java 类。
+
 ## Context、组件与进程
 
 ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的 growth limit，

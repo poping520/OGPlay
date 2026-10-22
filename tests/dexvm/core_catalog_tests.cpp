@@ -1,3 +1,4 @@
+#include "android_value_fixture.h"
 #include "boot_dex.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
 // Expected values are recorded with their semantic source: AOSP
@@ -208,11 +209,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/SecurityException;.<init>(Ljava/lang/Throwable;)V",
         "Ljava/lang/TypeNotPresentException;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
-        "Ljava/lang/Appendable;.append(C)Ljava/lang/Appendable;",
-        "Ljava/lang/Appendable;.append"
-        "(Ljava/lang/CharSequence;)Ljava/lang/Appendable;",
-        "Ljava/lang/Appendable;.append"
-        "(Ljava/lang/CharSequence;II)Ljava/lang/Appendable;",
         "Ljava/lang/AutoCloseable;.close()V",
         "Ljava/io/Closeable;.close()V",
         "Ljava/lang/CharSequence;.charAt(I)C",
@@ -328,9 +324,9 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     ogplay::test::RegisterBootDex(boot_linker);
     boot_linker.Link();
     CHECK(boot_linker.Class(boot_linker.ResolveDescriptor("Ljavax/net/ssl/SSLSocketFactory;")).is_boot_dex);
-    for (const auto* name : {"Ljava/lang/Iterable;", "Ljava/io/DataInput;", "Ljava/io/DataOutput;",
-                             "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;",
-                             "Ljava/io/ObjectStreamConstants;"}) {
+    for (const auto* name :
+         {"Ljava/lang/Appendable;", "Ljava/lang/Iterable;", "Ljava/io/DataInput;", "Ljava/io/DataOutput;",
+          "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;", "Ljava/io/ObjectStreamConstants;"}) {
         CHECK_FALSE(descriptors.contains(name));
         const auto type = boot_linker.ResolveDescriptor(name);
         const auto& linked = boot_linker.Class(type);
@@ -1116,7 +1112,7 @@ TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
     for (const auto& name : inventory) {
         const auto descriptor = "Ljava/lang/" + name + ";";
         CAPTURE(descriptor);
-        if (name == "Iterable") {
+        if (name == "Iterable" || name == "Appendable") {
             CHECK(descriptor_counts[descriptor] == 0U);
             const auto type = linker.ResolveDescriptor(descriptor);
             CHECK(linker.Class(type).is_boot_dex);
@@ -1240,4 +1236,17 @@ TEST_CASE("dexvm System properties are deterministic and mutable") {
             set, std::vector<VmValue>{string("ogplay.null"),
                                       VmValue::Ref(VmObjectRef{})}),
         "Ljava/lang/NullPointerException;");
+}
+
+TEST_CASE("DVM-265 DEX Appendable interface dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto builder = f.New("Ljava/lang/StringBuilder;");
+        const auto roots = f.vm.ProtectReferences(std::array{builder});
+        CHECK(f.Static("Ltest/RomJavaReplacement;", "append", "(Ljava/lang/Appendable;)Ljava/lang/Appendable;",
+                       {VmValue::Ref(builder)})
+                  .ref == builder);
+        CHECK(f.vm.StringUtf8(f.On(builder, "toString", "()Ljava/lang/String;").ref) == "A");
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/Appendable;")).is_boot_dex);
+    }
 }

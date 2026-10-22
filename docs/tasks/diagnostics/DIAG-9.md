@@ -371,3 +371,23 @@ dalvik 双后端各 85/91，回归/新通过/其他变化/oracle migrations 均�
 | user | 用户目录、限制策略及身份切换 |
 | wallpaper | 壁纸存储、绘制生命周期与变更通知 |
 | wifip2p | P2P 发现/组管理/连接及异步事件 |
+
+
+## WU9-5b 首批 intrinsic 撤换
+
+[ADR-0154](../../adr/dexvm.md#adr-0154) 补充 ADR-0148，选择器新增显式撤换入口。
+InputSource、DatagramPacket、IntentFilter、Appendable 四类由 ROM BootDex 拥有；
+IntentFilter 同时纳入 $1/AuthorityEntry，删除宿主过滤器及 packet 状态副本。
+Timer、CountDownTimer 因 Thread/Handler 内部类未准入而退回，Log 因 FastPrintWriter
+所需 Charset.newEncoder 未实现而退回，共三类；未新增 native 或扩大这些生命周期/编码器能力。
+
+契约 A1/A2/B/C/D 从 **0/542/183/13/2** 降至 **0/536/177/13/2**，
+E1/E2/E3 保持 **27/0/0**；A2 减少 6、B 减少 6，C/D 无变化。
+check-baseline 无新增偏差、重分类或类消失，已 update-baseline 收紧。
+检查器只允许导出来源确为 BootDex 的 ROM 类迁移，继续拒绝缺失/骨架，不按类名放宽。
+
+新增六条 DEX 回归双后端 6/6、154 断言通过，其中四条验证撤换类，
+另两条验证退回后 Timer/CountDownTimer 的既有回调。主题基点 190/206、候选 197/212，
+无新增失败；dalvik 双后端各 85/91、零回归。BootDex build/check、改动行格式检查及
+格式化后重建通过，见 [DVM-265](../dexvm/DVM-265.md)；九场景和性能留沙盒外执行。
+证据：`.local/analysis/wu9-5b/`。

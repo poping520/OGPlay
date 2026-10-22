@@ -28,6 +28,11 @@ struct UnimplementedHit {
     std::uint64_t last_lr{};
 };
 
+struct CapabilityWarningHit {
+    std::string id;
+    std::uint64_t count{}, first_lr{}, last_lr{};
+};
+
 struct NullCallHit {
     std::uint64_t link_register{};
     std::string symbol;
@@ -48,6 +53,9 @@ public:
     [[nodiscard]] std::optional<Capability> Find(std::string_view id) const;
     [[nodiscard]] std::vector<Capability> All() const;
 
+    void RecordWarning(std::string_view id, std::uint64_t link_register);
+    [[nodiscard]] std::vector<CapabilityWarningHit> Warnings() const;
+
     void RecordUnimplemented(std::string_view id, std::uint64_t link_register);
     [[nodiscard]] std::vector<UnimplementedHit> Unimplemented() const;
     [[nodiscard]] std::optional<std::vector<UnimplementedHit>> TryUnimplemented(std::size_t limit = 128) const;
@@ -58,6 +66,7 @@ private:
     mutable std::mutex mutex_;
     std::map<std::string, Capability, std::less<>> capabilities_;
     std::map<std::string, UnimplementedHit, std::less<>> hits_;
+    std::map<std::string, CapabilityWarningHit, std::less<>> warnings_;
     std::map<std::pair<std::uint64_t, std::string>, NullCallHit> null_calls_;
 };
 

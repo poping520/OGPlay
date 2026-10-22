@@ -238,15 +238,15 @@ private:
 
 class Utf16Leases final {
 public:
-    Utf16Leases(JniEnvironment& environment, JniStringStore& strings,
-                memory::AddressSpace& address_space, const JniGuestStringLimits limits,
-                std::shared_ptr<GuestStringLeaseArena::Budget> budget)
-        : environment_(&environment), strings_(&strings),
-          address_space_(&address_space), limits_(limits), arena_(address_space, std::move(budget)) {}
+    Utf16Leases(JniEnvironment& environment, JniStringStore& strings, memory::AddressSpace& address_space,
+                const JniGuestStringLimits limits, std::shared_ptr<GuestStringLeaseArena::Budget> budget,
+                JniStringAccessKind kind = JniStringAccessKind::chars)
+        : environment_(&environment), strings_(&strings), address_space_(&address_space), limits_(limits),
+          arena_(address_space, std::move(budget)), kind_(kind) {}
 
     [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame,
-                                          "GetStringChars");
+        const auto string = ResolveString(
+            *environment_, frame, kind_ == JniStringAccessKind::critical ? "GetStringCritical" : "GetStringChars");
         const auto is_copy = memory::GuestAddress{frame.registers[2]};
         if (!is_copy.IsNull()) {
             address_space_->Validate(
@@ -260,7 +260,7 @@ public:
         const auto pointer = arena_.Allocate(requested);
         std::optional<JniStringAccess> access;
         try {
-            access = strings_->Acquire(string, JniStringAccessKind::chars);
+            access = strings_->Acquire(string, kind_);
             const auto bytes = EncodeUtf16(access->chars, true);
             address_space_->Write(pointer, bytes, frame.thread_id);
             if (!is_copy.IsNull()) {
@@ -270,21 +270,21 @@ public:
             return pointer.Value();
         } catch (...) {
             arena_.Discard(pointer, requested);
-            if (access) strings_->Release(string, access->token, JniStringAccessKind::chars);
+            if (access) strings_->Release(string, access->token, kind_);
             throw;
         }
     }
 
     void Release(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(*environment_, frame,
-                                          "ReleaseStringChars");
+        const auto string =
+            ResolveString(*environment_, frame,
+                          kind_ == JniStringAccessKind::critical ? "ReleaseStringCritical" : "ReleaseStringChars");
         const auto pointer = memory::GuestAddress{frame.registers[2]};
         std::scoped_lock lock(mutex_);
         const auto found = arena_.Require(
             pointer, string,
             "ReleaseStringChars pointer does not match an active lease");
-        strings_->Release(found->string, found->token,
-                          JniStringAccessKind::chars);
+        strings_->Release(found->string, found->token, kind_);
         arena_.Erase(found);
     }
 
@@ -295,6 +295,7 @@ private:
     mutable std::mutex mutex_;
     JniGuestStringLimits limits_;
     GuestStringLeaseArena arena_;
+    JniStringAccessKind kind_;
 };
 
 }  // namespace
@@ -348,6 +349,17 @@ void BindJniGuestStringSlots(
         });
     const auto utf16_leases = std::make_shared<Utf16Leases>(
         environment, strings, address_space, limits, budget);
+    // Dalvik Jni.cpp:2623-2645 has distinct Critical acquisition/release entries.
+    // Our guest lease is a copy, so Acquire reports JNI_TRUE until direct pointers are supported.
+    const auto critical_leases = std::make_shared<Utf16Leases>(environment, strings, address_space, limits, budget,
+                                                               JniStringAccessKind::critical);
+    dispatcher.BindEnvironment(Slot("GetStringCritical"), [critical_leases](const JniGuestCallFrame& frame) {
+        return Word(critical_leases->Acquire(frame));
+    });
+    dispatcher.BindEnvironment(Slot("ReleaseStringCritical"), [critical_leases](const JniGuestCallFrame& frame) {
+        critical_leases->Release(frame);
+        return JniGuestCallResult{};
+    });
     dispatcher.BindEnvironment(
         Slot("NewString"),
         [&environment, &strings,

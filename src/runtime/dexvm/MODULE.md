@@ -124,7 +124,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   不返回伪造通知；正常 Java wait/异常仍按原规则恢复 monitor。
 - execution context 进入时验证活动宿主归属；阻塞释放 VM 锁不解除归属，禁止异宿主
   重入或删除活动 context。JNI 附加线程注册既有 context，不创建宿主线程；Thread 身份
-  按需初始化，存活期间进入 GC roots，detach 后终止并唤醒 join。
+  按需初始化并使用 JNI attachment 的可选名称，存活期间进入 GC roots，detach 后终止并唤醒 join。
   root Thread 在 APK 生命周期中存活到 Shutdown；只有独立 run-dex 在 main 返回后调用
   `FinishRootThread`，按 dalvikvm DetachCurrentThread 使 root 死亡并唤醒其 joiner。
   生产 bridge 还将默认 root execution 绑定到创建宿主，空闲时也禁止由后台借用。

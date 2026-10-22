@@ -93,9 +93,13 @@ class JniEnvironment final {
 public:
     explicit JniEnvironment(JniReferenceLimits limits = {});
 
-    void AttachThread(std::uint64_t thread_id,
-                      std::size_t initial_local_capacity = 16, bool daemon = false);
+    void AttachThread(std::uint64_t thread_id, std::size_t initial_local_capacity = 16, bool daemon = false,
+                      std::optional<std::string> name = std::nullopt);
     void DetachThread(std::uint64_t thread_id);
+    [[nodiscard]] std::optional<std::string> AttachedThreadName(std::uint64_t thread) const;
+    void SetThreadDetachGuard(std::function<void(std::uint64_t)> guard);
+    void RequireThreadDetachAllowed(std::uint64_t thread) const;
+    [[nodiscard]] JniInt GetObjectRefType(std::uint64_t thread, JniReference reference) const;
     [[nodiscard]] bool IsThreadAttached(std::uint64_t thread_id) const;
     [[nodiscard]] bool IsDaemonThread(std::uint64_t thread_id) const;
     void ConfigureLegacyLocalReferenceCompatibility(
@@ -169,6 +173,9 @@ public:
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
 private:
+    mutable std::mutex attachment_mutex_;
+    std::map<std::uint64_t, std::string> attachment_names_;
+    std::function<void(std::uint64_t)> thread_detach_guard_;
     mutable std::mutex reflection_hooks_mutex_;
     JniReflectionHooks reflection_hooks_;
     mutable std::mutex object_allocation_mutex_;

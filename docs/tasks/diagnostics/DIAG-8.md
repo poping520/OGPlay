@@ -339,3 +339,80 @@ dvm_pending **0/3**。已有 348 条的分类全部保持，零回归；反射 1
 
 WU8-2 不按报错逐条开单：先按指针 lease、Java 异常映射、共享未绑定槽建立可单次会话
 验收的主题任务；pending 和 NIO 历史语义先作契约决策，再决定是否实施兼容行为。
+
+## WU8-2a：未绑定槽、具名 attach 与 Java 帧 detach 保护（2026-10-22）
+
+### 实现边界与结果
+
+按 Dalvik `Jni.cpp` 接入 DefineClass（1198）、GetSuperclass/IsAssignableFrom（1264–1280）、
+GetObjectRefType（662–679、2683–2685）及 StringCritical（2623–2645）。DefineClass 返回 NULL、
+不挂异常，独立累计 `runtime.jni.DefineClass.dalvik_unsupported` warn 命中；run-dex ledger
+的 `warnings` 数组提供 id、level、count 与首末 LR，未实现数组保持为空。
+引用查询只查表及 handle 类别，不解引用失效 handle；严格模式删除 local 后按 ReportJniError
+退出。Critical 与 Chars 复用 UTF-16 copy lease 实现、共享预算，但 kind/arena 独立，禁止交叉释放。
+当前复制实现如实返回 isCopy=TRUE，直接指针仍留给 WU8-2c。
+
+attach 按 `Jni.cpp:2785–2790、2815–2842` 解码 version/name/group：重复 attach 忽略参数，
+显式 version 只接受 1.2/1.4/1.6，否则 EVERSION；NULL group 使用默认组，非空 group 明确失败并
+记入 `runtime.jni.attach_thread_group`。名称校验后保留 Modified UTF-8 码元，交给 VM 物化
+Thread；具名探针增加重音、编码 NUL 与代理对，经 Java getName/GetStringUTFChars 完整读回，
+判据来自 `Jni.cpp:2831–2842 → Thread.cpp:1868–1871`。
+JavaVM detach 在改动附着状态前，经 owner hook 检查 Java/native frame，按
+`Jni.cpp:2880–2891 → Thread.cpp:2013–2029` 致命退出；环境 teardown 继续走既有清理入口。
+aggregate 精确槽集合现为 226 JNIEnv（注入 NIO 后 229）+ 4 JavaVM，expected-unbound 只剩
+DestroyJavaVM；无 NIO 的单测夹具仍不注入 NIO 三槽。
+
+两后端各 **332/399（83.2%）**，较 WU8-1b 各增加 **11 pass**，既有 321 pass 零回归：
+
+| 后端 | 规范级 | 其他 dvm_ | dvm_pending | 全套 |
+| --- | --- | --- | --- | --- |
+| switch | 322/347（92.8%） | 10/49（20.4%） | 0/3 | 332/399（83.2%） |
+| threaded | 322/347（92.8%） | 10/49（20.4%） | 0/3 | 332/399（83.2%） |
+
+转 pass 清单（两后端相同）：
+
+- `version.DefineClass`
+- `class_object.GetSuperclass`、`class_object.GetSuperclass.root`、`class_object.IsAssignableFrom`
+- `reference.GetObjectRefType`、`reference.GetObjectRefType.dvm_popped`
+- `exception.ExceptionOccurred.localRefType`
+- `string.GetStringCritical`、`string.ReleaseStringCritical`
+- `javavm.AttachCurrentThread.named`、`javavm.DetachCurrentThread.dvm_javaThread`
+
+12 条目标中，11 条转 pass；`string.GetStringCritical.dvm_isCopy` 从未绑定转为断言失败，
+期望 FALSE、实际 TRUE，属于本单允许保留的指针语义差异。两条死亡用例均退出 70，stderr
+分别包含 `use of deleted local reference`、`detaching thread with interp frames`，且没有 PASS。
+全套每后端剩余 **assert 38 / crash 29 / unimplemented 0**；数组与字符串指针语义 36、
+异常输出与 Java 异常映射 25、引用容量 2、NIO 历史语义 1、pending 契约分歧 3；
+调用 ABI、字段、线程与 JavaVM、未绑定槽主题当前均无失败。pending 分歧继续待决策。
+
+### 验证与场景对比
+
+证据根目录：`.local/analysis/wu8-2a/`。
+
+- 仅构建 `ogplay-cli`、`ogplay_tests`；JNI 主题单测 **151/151、10,080 条断言通过**。
+  新增分支检查涵盖接口/父类与 assignability 方向、引用类别/失效/弱引用清除、warn 查询、
+  Critical 交叉释放与重复释放、attach 版本/幂等/Modified UTF-8/非空 group，以及拒绝 detach 后
+  原附着状态仍完整。最终构建与单测日志为 `build-final.log`、`jni-unit-final.log`。
+- 提交前对本次 C/C++ 修改行运行 clang-format（命令存 `format-command.txt`），`git diff --check`。
+- `jni_tests.py --self-test` 通过；全量双后端先以 `--coverage --require-full --check-baseline`
+  检查，再执行带 `--update-baseline` 的最终全量检查，报告为 `check/`、`final/`。
+  **静态调用覆盖 233/233（100%），未覆盖 0**；排除项仅 DestroyJavaVM，理由未变。
+  修改后的具名 Unicode 探针另有 `named/` 双后端通过证据。
+- 使用 WU7-6 原 `run_scenarios_final.py` 的相同 fixtures、选项与两 worker 流程，仅重定向证据
+  输出路径；旧摘要保存为 `scenarios-before.json`，最终证据为 `scenarios-final/`、
+  `scenarios-final-summary.json`，逐项比较存 `scenarios-comparison.json`。
+
+| 场景 | WU7-6 | WU8-2a | 对比 |
+| --- | --- | --- | --- |
+| tml | pass | pass | 无新增失败 |
+| lili | pass | pass | 无新增失败 |
+| wild_blood | pass | pass | 无新增失败 |
+| tales | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| dead_trigger | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| dungeon_hunter | pass | pass | 无新增失败 |
+| asphalt5 | pass | pass | 无新增失败 |
+| pvz | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| angry_birds | pass | pass | 无新增失败 |
+
+最终 **6/9**，与 WU7-6 逐项相同，checkpoint/断言没有新增失败。未跑 dalvik 全量。
+能力状态保持不变，按本单要求不改能力条目；`tools/capabilities.py check` 通过（416 项）。

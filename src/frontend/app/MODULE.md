@@ -30,3 +30,6 @@ ICU 数据与 tzdata；JNI 注册、NIO 和 bound core/Android catalog、BootDex
 `System.load/loadLibrary` 缺库明确抛 UnsatisfiedLinkError。realtime 统一
 Clock 驱动 Android 单调时钟；main 返回后 root 线程死亡、等待包含已创建待运行者的非 daemon 线程，未捕获异常经线程
 handler 或 ThreadGroup 分派（处理器失败写 stderr）。结果只作行为证据，不是兼容结论。
+
+RunDex 的 `--ledger-json` 保留未实现命中，并以独立 `warnings` 数组导出 guest process 的
+warn 级命中（id/count/首末 LR），不将 Dalvik DefineClass 的 NULL 返回当作实现成功。

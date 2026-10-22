@@ -153,12 +153,9 @@ public:
         return {JniStatus::ok, found->second.environment};
     }
 
-    [[nodiscard]] JniJavaVmResult Attach(
-        const std::uint64_t thread_id, const JniInt version,
-        const std::size_t initial_local_capacity, const bool daemon) {
-        if (!IsSupportedVersion(version)) {
-            return {JniStatus::version, JniEnvHandle{}};
-        }
+    [[nodiscard]] JniJavaVmResult Attach(const std::uint64_t thread_id, const JniInt version,
+                                         const std::size_t initial_local_capacity, const bool daemon,
+                                         std::optional<std::string> name) {
         if (thread_id == 0) {
             return {JniStatus::invalid_arguments, JniEnvHandle{}};
         }
@@ -167,10 +164,12 @@ public:
         if (found != threads_.end()) {
             return {JniStatus::ok, found->second.environment};
         }
+        // Dalvik Jni.cpp:2785-2790, 2822: existing attachments ignore args/version.
+        if (!IsSupportedVersion(version) || version == kJniVersion1_1) return {JniStatus::version, JniEnvHandle{}};
         if (next_environment_ == 0) {
             return {JniStatus::no_memory, JniEnvHandle{}};
         }
-        environment_->AttachThread(thread_id, initial_local_capacity, daemon);
+        environment_->AttachThread(thread_id, initial_local_capacity, daemon, std::move(name));
         const JniEnvHandle handle{next_environment_++};
         threads_.emplace(thread_id, ThreadEntry{handle, daemon});
         return {JniStatus::ok, handle};
@@ -178,6 +177,7 @@ public:
 
     [[nodiscard]] JniStatus Detach(const std::uint64_t thread_id) {
         if (thread_id == 0) return JniStatus::invalid_arguments;
+        environment_->RequireThreadDetachAllowed(thread_id);
         std::scoped_lock lock(mutex_);
         const auto found = threads_.find(thread_id);
         if (found == threads_.end()) return JniStatus::detached;
@@ -223,16 +223,16 @@ JniJavaVmResult JniJavaVm::GetEnv(const std::uint64_t thread_id,
     return impl_->GetEnv(thread_id, version);
 }
 
-JniJavaVmResult JniJavaVm::AttachCurrentThread(
-    const std::uint64_t thread_id, const JniInt version,
-    const std::size_t initial_local_capacity) {
-    return impl_->Attach(thread_id, version, initial_local_capacity, false);
+JniJavaVmResult JniJavaVm::AttachCurrentThread(const std::uint64_t thread_id, const JniInt version,
+                                               const std::size_t initial_local_capacity,
+                                               std::optional<std::string> name) {
+    return impl_->Attach(thread_id, version, initial_local_capacity, false, std::move(name));
 }
 
-JniJavaVmResult JniJavaVm::AttachCurrentThreadAsDaemon(
-    const std::uint64_t thread_id, const JniInt version,
-    const std::size_t initial_local_capacity) {
-    return impl_->Attach(thread_id, version, initial_local_capacity, true);
+JniJavaVmResult JniJavaVm::AttachCurrentThreadAsDaemon(const std::uint64_t thread_id, const JniInt version,
+                                                       const std::size_t initial_local_capacity,
+                                                       std::optional<std::string> name) {
+    return impl_->Attach(thread_id, version, initial_local_capacity, true, std::move(name));
 }
 
 JniStatus JniJavaVm::DetachCurrentThread(const std::uint64_t thread_id) {

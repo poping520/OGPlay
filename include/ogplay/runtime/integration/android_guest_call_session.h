@@ -1,4 +1,6 @@
 #pragma once
+
+#include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/common/guest_call_limits.h"
 
 #include "ogplay/runtime/common/guest_cpu_config.h"
@@ -250,6 +252,7 @@ public:
     [[nodiscard]] A32GuestCallResult Invoke(const A32GuestCallFrame& frame);
     // Observe the first native worker failure without entering guest code.
     void RethrowAsyncFailure();
+    [[nodiscard]] std::vector<core::CapabilityWarningHit> CapabilityWarnings() const;
     [[nodiscard]] std::optional<A32GuestCallResult>
     TryInvokeRegisteredNative(
         JniObjectIdentity java_class, std::string_view name,

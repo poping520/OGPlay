@@ -31,14 +31,17 @@ Bionic、syscall、execution 或 integration。
   NewGlobalRef 仍受严格门禁，不以清除异常绕过检查。
 - 已解析方法缺少 implementation handler 时，错误必须携带规范 implementation ID，禁止
   丢失定位所需的注册表身份。
-- guest handle 保持固定宽度，不暴露宿主指针。
+- guest handle 保持固定宽度，不暴露宿主指针。引用 handle 低位编码类别，表项决定存活性；
+  GetObjectRefType 不解引用 handle，严格模式下已删除 local 按 Dalvik ReportJniError 致命失败。
 - JniStringStore.VisitAccessRoots 在锁外枚举仍有 chars/UTF8/critical lease 的字符串身份；
   VM owner 将其纳入 GC roots，直至对应 Release，不因局部引用或线程退役提前删除。
 - 默认严格执行 local reference 生命周期。仅由上层根据 Manifest `targetSdkVersion` 1..13
   显式启用 Dalvik app-bug 兼容：同一对象复用稳定 direct-style handle，失效 handle 可解析但
   不属于 GC roots；首次跨 frame 重发必须通过回调警告，不能静默兼容或取消 frame 清理。
 - AttachCurrentThread/AsDaemon 的 daemon 事实随 attachment 保存，重复 attach 保持原值，
-  detach 后再次 attach 可重新选择；上层可查询而不复制 JavaVM 状态。
+  detach 后再次 attach 可重新选择；可选 Modified UTF-8 名称随 attachment 保存，上层按码元物化 Thread（保留 NUL/代理对）。
+  JavaVM detach 在状态变更前调用 owner 的显式 guard，Java 帧未退出时致命失败；
+  owner 停止调用后撤销 guard，环境 teardown 不走此 JavaVM 入口检查。
 - local frame 的 attach/push 容量是 JNI 保证值而非硬上限；可自动增长到按线程
   `local_per_thread` 总上限，超过总上限仍明确失败。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程

@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -69,12 +70,12 @@ public:
 
     [[nodiscard]] JniJavaVmResult GetEnv(std::uint64_t thread_id,
                                          JniInt version) const;
-    [[nodiscard]] JniJavaVmResult AttachCurrentThread(
-        std::uint64_t thread_id, JniInt version,
-        std::size_t initial_local_capacity = 16);
-    [[nodiscard]] JniJavaVmResult AttachCurrentThreadAsDaemon(
-        std::uint64_t thread_id, JniInt version,
-        std::size_t initial_local_capacity = 16);
+    [[nodiscard]] JniJavaVmResult AttachCurrentThread(std::uint64_t thread_id, JniInt version,
+                                                      std::size_t initial_local_capacity = 16,
+                                                      std::optional<std::string> name = std::nullopt);
+    [[nodiscard]] JniJavaVmResult AttachCurrentThreadAsDaemon(std::uint64_t thread_id, JniInt version,
+                                                              std::size_t initial_local_capacity = 16,
+                                                              std::optional<std::string> name = std::nullopt);
     [[nodiscard]] JniStatus DetachCurrentThread(std::uint64_t thread_id);
     [[nodiscard]] bool IsDaemon(std::uint64_t thread_id) const;
     [[nodiscard]] std::size_t AttachedThreadCount() const;

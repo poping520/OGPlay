@@ -122,7 +122,8 @@ void WaitForNonDaemonThreads(dx::Interpreter& vm, dx::VmThreadRuntime& threads) 
     }
 }
 
-void WriteLedger(const std::filesystem::path& path, const core::CapabilityLedger& ledger) {
+void WriteLedger(const std::filesystem::path& path, const core::CapabilityLedger& ledger,
+                 const std::vector<core::CapabilityWarningHit>& guest_warnings) {
     core::JsonWriter writer;
     const auto root = writer.Object();
     writer.AddInteger(root, "schema", 1);
@@ -134,6 +135,17 @@ void WriteLedger(const std::filesystem::path& path, const core::CapabilityLedger
         writer.Append(hits, item);
     }
     writer.Add(root, "unimplemented", hits);
+    const auto warnings = writer.Array();
+    for (const auto& hit : guest_warnings) {
+        const auto item = writer.Object();
+        writer.AddString(item, "id", hit.id);
+        writer.AddString(item, "level", "warn");
+        writer.AddInteger(item, "count", static_cast<std::int64_t>(hit.count));
+        writer.AddInteger(item, "first_lr", static_cast<std::int64_t>(hit.first_lr));
+        writer.AddInteger(item, "last_lr", static_cast<std::int64_t>(hit.last_lr));
+        writer.Append(warnings, item);
+    }
+    writer.Add(root, "warnings", warnings);
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) throw std::runtime_error("cannot write " + path.string());
     output << writer.Serialize(root) << '\n';
@@ -333,11 +345,12 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
             WriteStderr("ogplay-run-dex: worker failure: " + *failure + "\n");
     } catch (...) {
         threads.Shutdown();
-        if (!options.ledger_json.empty()) WriteLedger(options.ledger_json, ledger);
+        if (!options.ledger_json.empty())
+            WriteLedger(options.ledger_json, ledger, session->Process().CapabilityWarnings());
         throw;
     }
     threads.Shutdown();
-    if (!options.ledger_json.empty()) WriteLedger(options.ledger_json, ledger);
+    if (!options.ledger_json.empty()) WriteLedger(options.ledger_json, ledger, session->Process().CapabilityWarnings());
     if (const auto code = vm.ExitCode()) return *code;
     return status;
 }

@@ -206,3 +206,136 @@ Region 的额外终止符行为。字符串只读，不通过修改 String 存�
   获取未绑定，其字符内容、isCopy 与 Release 的独立行为尚未到达，不能用静态覆盖代替行为证据。
 - 剩余 27 个未覆盖函数属于引用、线程、反射转换、monitor、NIO 等后续主题，见本轮
   `coverage-uncovered.txt`；不提前排除，不在本单修复。
+
+## WU8-1b · JNI 语义族与覆盖收口（2026-10-22）
+
+**不修改 src/，不修复失败，不重建 C++。** 新增 references.c、exceptions.c、reflection.c、
+monitor_nio.c、registration.c、javavm_threads.c，以及对应 Java 分组。补齐 WU8-1a 剩余
+27 个函数的实际探针调用；ExceptionOccurred 从既有辅助入口扩为身份/pending/局部引用判据。
+所有新断言注明 Dalvik `vm/Jni.cpp` 行号，委托实现另列文件/行号，不采用 HotSpot 作为 oracle。
+
+### 判据核对与实现边界
+
+- 引用（Jni.cpp:409–412、1418–1491、2651–2685）：local/global/weak 身份和释放，
+  weak 的 Java 强可达条件，PopLocalFrame 将 result 带回外层，容量 16 成功、513 按
+  Thread.h:74 的 512 上限失败并抛 OOME。只请求容量，不实际填满表触发溢出 abort。
+  GetObjectRefType 独立检查 local/global/weak，避免未绑定辅助槽遮住其他引用探针。
+- 异常（1333–1387）：Throw 保持原 throwable，ExceptionOccurred 连续两次仍返回同一
+  pending 对象；局部引用类型独立成条。ExceptionDescribe 委托 Exception.cpp:564–592，
+  打印时临时清除、结束**恢复原 pending**。除身份断言外，驱动要求日志包含唯一
+  `describe-marker`；该输出探针单独运行，其他 case 的同名异常不能替它满足打印条件。
+- 反射（1285–1327）：Method/Constructor/Field 双向转换；实例/静态方法调用、构造结果、
+  字段读写及反射 Modifier.isStatic 均有 Java 判据，不混用静态与实例 ID。
+- monitor（2525–2549）：持锁时回调 Thread.holdsLock、可重入及逐层退出；非 owner
+  期望 JNI_ERR 与 IllegalMonitorStateException。即使持锁断言失败，也执行配对退出。
+- NIO（2691–2759）：native 静态存储有进程生命周期；Java 写入/native 读取及反向写入
+  可见，direct 地址/容量与原存储一致，heap 地址为 NULL。
+  **源码纠正：非 CheckJNI Dalvik 的 GetDirectBufferCapacity 对 heap buffer 返回实际
+  Buffer.capacity，未返回函数注释和任务描述中的 -1。** 普通用例验证 direct 容量，
+  `.dvm_heapCapacity` 按执行代码 2758–2759 对长度 7 的 heap buffer 断言 7。
+  OGPlay 返回 -1 是与该历史 Dalvik 行为的分歧，不据此宣称 JNI 标准行为错误。
+- 注销（2507–2516 → Native.cpp:516–544）：恢复 dvmResolveNativeMethod；有导出名时
+  从动态实现 29 重新解析为导出实现 17，纯动态方法无导出时抛 UnsatisfiedLinkError。
+  在独立 Target 类上注销，不卸掉 runner 自身的 native 控制入口；两种均通过。
+- JavaVM/pthread（2555–2558、2780–2925）：GetJavaVM 与 JNI_OnLoad 保存的指针一致；
+  未附着 GetEnv=EDETACHED/*env=NULL；NULL attach 的名字由 Java 回调核对为 Thread-<id>，
+  具名 args 为 `{1.6,"OGPlayJNIProbe",NULL}`；重复 attach 保持 JNIEnv 和 daemon 身份，
+  daemon、detach 及 detach 后 GetEnv 均验证。所有创建成功的 worker 都 pthread_join，
+  已附着 worker 在返回前 detach；若错误地自动附着，也尝试清理再报告差异。
+- 附着线程 FindClass（1225–1247）：按 NativeStart/system loader 查找 -cp 应用类并回调
+  appMarker 验证。**run-dex 等同 dalvikvm -cp；APK 进程的 system loader 不等于应用
+  loader，本条不代表 APK native 线程的应用类查找已经支持。**
+
+### 预期死亡、输出检查和覆盖门禁
+
+`jni_tests.py` 增加固定 `EXPECTED_DEATH`，所有死亡 case 独立进程：
+
+| case-id | Dalvik 判据 | stderr 签名 | 本轮结果（两后端一致） |
+| --- | --- | --- | --- |
+| `exception.FatalError` | Jni.cpp:1406–1409 输出传入消息后 ReportJniError | `OGPLAY_JNI_FATAL_WU8_1B` | pass；exit 70、stderr 含消息、无 PASS |
+| `reference.GetObjectRefType.dvm_popped` | 2683–2685 → 663–678 → 324–329，失效 local 查询触发 ReportJniError | `use of deleted local reference` | fail:unimplemented，先命中 GetObjectRefType 未绑定 |
+| `javavm.DetachCurrentThread.dvm_javaThread` | 2880–2891 → Thread.cpp:2013–2029，Java 栈未退出则 abort | `detaching thread with interp frames` | fail:assert；exit 70 但实际是 detach 后 `JNI exception thread is not attached` 清理错误，缺预期签名 |
+
+死亡判定必须同时满足非零退出、**stderr** 包含固定签名、无 PASS；超时不算成功，
+stdout 独有消息也不算成功。不能用“任意 crash”替代预期死亡。失效引用只传给类型查询，
+不在 C 中解引用其 handle；因 Dalvik 查询自身会 abort，使用独立进程观察该结果。
+
+Main 保持既有 list/group/case 和 PASS/FAIL/DONE 协议，新增内部 `--cases <逗号列表>`
+供驱动从普通组进程剔除死亡/输出探针；这两类始终独立运行。原始 stdout/stderr 各存
+`.stdout.log` / `.stderr.log`，合并 `.log` 保持诊断阅读入口；普通分类语义保持不变。
+
+`--coverage --require-full` 在未覆盖列表非空时退出 1。self-test 验证缺覆盖拒绝、普通/隔离
+分区、死亡消息/通道/退出码/无 PASS/超时规则、Describe 输出要求，并保留基线回退拒写、
+所有分类和禁止 token-pasting 的检查。
+
+### 通过数与失败表
+
+本批新增 **51 条：规范级 43、dvm_ 5、dvm_pending 3**。dvm_pending 单列，不与其他
+Dalvik 行为重复计数；旧 case-id 不重命名，下表全体普通名统计沿用既有归类。
+
+| 后端 | 新增规范级 | 新增 dvm_ | 新增 dvm_pending | 新增合计 | 全套 |
+| --- | --- | --- | --- | --- | --- |
+| switch | **38/43（88.4%）** | **0/5** | **0/3** | 38/51 | **321/399（80.5%）** |
+| threaded | **38/43（88.4%）** | **0/5** | **0/3** | 38/51 | **321/399（80.5%）** |
+
+全套按名字分类两后端各：规范级 **313/347（90.2%）**、其他 dvm_ **8/49（16.3%）**、
+dvm_pending **0/3**。已有 348 条的分类全部保持，零回归；反射 10/10、注册 2/2，
+引用 9/13、异常 3/8、monitor 3/4、NIO 4/5、JavaVM 7/9。FatalError 的预期死亡计 pass。
+
+以下为每后端新增失败，ledger 均为空；未实现由输出明确点名，非零宿主错误按既有分类记录。
+
+| 组 | 分类/数量 | 代表用例 | 第一处差异 / 证据 |
+| --- | --- | --- | --- |
+| reference | fail:unimplemented / 2 | `reference.GetObjectRefType` | `unbound JNI guest slot: GetObjectRefType`；popped local 死亡用例也先被此槽阻断 |
+| reference | fail:crash / 2 | `reference.EnsureLocalCapacity.dvm_limit` | 期望 JNI_ERR+OutOfMemoryError，实际 `JNI local reference capacity exceeded` 宿主退出 70；PushLocalFrame 同为宿主容量错误 |
+| exception | fail:unimplemented / 1 | `exception.ExceptionOccurred.localRefType` | 身份/pending 子项通过，类型观察被 GetObjectRefType 未绑定阻断 |
+| exception | fail:assert / 1 | `exception.ExceptionDescribe` | pending 身份恢复通过；独立进程未打印 describe-marker，驱动将 Java PASS 改判为缺诊断输出 |
+| exception | fail:crash / 3 | `exception.GetMethodID.dvm_pending` | 严格门禁拒绝 pending 下的调用；GetMethodID/CallVoidMethod 首错 GetObjectClass，NewStringUTF 首错 NewLocalRef；**契约分歧，待决策** |
+| monitor | fail:crash / 1 | `monitor.MonitorExit.nonOwner` | 期望 JNI_ERR+IllegalMonitorStateException，实际 `JNI monitor exit by non-owner` 宿主退出 70 |
+| nio | fail:assert / 1 | `nio.GetDirectBufferCapacity.dvm_heapCapacity` | Dalvik 执行代码期望 7，实际 -1；历史 Dalvik 与 JNI 标准处理分歧，待兼容策略决定 |
+| javavm | fail:unimplemented / 1 | `javavm.AttachCurrentThread.named` | `non-null JavaVM attach arguments are not implemented`，未走到具名线程回调 |
+| javavm | fail:assert / 1 | `javavm.DetachCurrentThread.dvm_javaThread` | 非零退出但不是 Dalvik 的 Java 栈保护签名；实际 detach 后 JNI exception thread is not attached |
+| **新增合计** | **assert 3 / crash 6 / unimplemented 4** | — | 13 失败；timeout/missing/excluded 均为 0 |
+
+全套每后端：pass 321、fail:assert 38、fail:crash 29、fail:unimplemented 11，其他分类为 0。
+三条 pending 用例保留机器分类供基线比较，但不作为普通兼容缺陷排期；先决定是否维持严格
+门禁、引入可解释的兼容策略或明确不支持，不在本单改变契约。
+
+### 100% 证据、排除项与验证
+
+- NDK 权威头文件共 229 JNIEnv + 5 JavaVM 函数；**调用覆盖 233/233（100%），未覆盖 0**。
+  覆盖被前置失败阻断的源码调用不等于该行为已验证，例如 GetObjectRefType 相关链路；
+  不用静态覆盖宣称 100% 语义通过。函数名均为字面量，没有空调用或伪断言。
+- **仅排除 DestroyJavaVM**：run-dex 的宿主管理进程/VM 生命周期，guest 销毁当前 VM 不在
+  该诊断运行器的生命周期范围。无新增函数排除，无 case 排除。
+- 使用现有 build/release/ogplay-cli；15 秒每组/隔离进程预算，两后端一致。
+  self-test 通过；全量 `--coverage --require-full --check-baseline` 零回归；识别并拆分
+  类型查询的辅助依赖后，新增独立 localRefType case，相关四组定向检查通过基线约束，
+  再全量 `--coverage --require-full --update-baseline`，399 条零回归并写入基线。
+  最后对死亡/输出隔离调度作 self-test 与 exception 组双后端定向复核，不扩大其他测试矩阵。
+- `.local/analysis/wu8-1b/` 根目录为最终 399 条 summary/coverage/逐条日志；`check/` 保留
+  初始 398 条检查轮，`semantic-verification/` 为依赖拆分后的定向证据，
+  `scheduler-verification/` 为最终死亡/输出调度复核；`breakdown.json` 和 `panorama.json`
+  保存分类统计与互斥失败主题。外层日志为 `.local/analysis/wu8-1b-{check,semantic,scheduler,update}.log`。
+- capabilities 检查、差异静态检查通过；未跑 dalvik 全量或游戏场景，未修改 src/。
+
+## WU8 失败全景（WU8-2 排期依据）
+
+以下以**每个后端的 78 个失败 case**为分母，按第一处差异互斥归属，不能把一个未绑定
+辅助槽同时算作引用/异常多个缺陷。两个后端分类和代表差异相同；疑似模块是定位线索，
+不是已经确认的修复方案。优先级先看稳定且通用的判据，再看历史语义/契约选择。
+
+| 主题（建议顺序） | 失败用例数 | 代表用例 | 疑似根因模块 / 后续边界 |
+| --- | --- | --- | --- |
+| 数组与字符串指针语义 | **35** | `array.GetIntArrayElements.dvm_alias`、`string.GetStringChars.dvm_isCopy` | runtime/jni_guest 的数组/字符串 guest-memory lease 与 runtime/jni 存储采用复制缓冲区；核对直指针、isCopy、ABORT/COMMIT 和 GC 固定，不靠取消断言提高通过率 |
+| 异常输出与 Java 异常映射 | **25** | `array.GetBooleanArrayRegion.bounds`、`monitor.MonitorExit.nonOwner`、`exception.ExceptionDescribe` | runtime/jni_guest 的边界/monitor 宿主错误转 pending Java throwable；runtime/jni 的 ExceptionDescribe 日志/guest stack 输出链路。23 个数组/字符串越界 + 1 个 monitor + 1 个 Describe；不是 25 个独立任务 |
+| 未绑定槽 | **10** | `class_object.GetSuperclass`、`reference.GetObjectRefType` | runtime/jni_guest 的 class/reference/string-critical slot 绑定与底层语义；DefineClass 1、GetSuperclass 2、IsAssignableFrom 1、StringCritical 3、GetObjectRefType 链路 3。先补共享槽，再重跑被它阻断的独立行为 |
+| 契约分歧，待决策 | **4** | `exception.CallVoidMethod.dvm_pending`、`nio.GetDirectBufferCapacity.dvm_heapCapacity` | pending 三条为 OGPlay 有意严格门禁；NIO 一条为 Dalvik 非 CheckJNI 的容量历史行为。对应 runtime/jni pending gate、runtime/jni_guest NIO；先定兼容边界，不自动当普通缺陷修 |
+| 引用容量与局部帧 | **2** | `reference.PushLocalFrame.dvm_limit` | runtime/jni reference table 与 guest 绑定的容量错误映射；请求超过 Dalvik 512 上限的明确失败需保留 OOME/JNI_ERR 语义，不测试分配溢出 abort |
+| 线程与 JavaVM | **2** | `javavm.AttachCurrentThread.named`、`javavm.DetachCurrentThread.dvm_javaThread` | runtime/jni_guest JavaVM attach args 解码、runtime/jni attachment 与 DexVM Java 栈/线程生命周期；分别补具名 args、核实 Java 栈存活时拒绝 detach 的策略 |
+| 调用 ABI | **0** | boundary/call 原 176 条全部通过 | 本轮无 ABI 失败证据，不顺带重构调用路径 |
+| 字段 | **0** | field 37/37 | 负数/高位/NaN payload、实例/静态读写均通过，无当前修复项 |
+| 反射与 native 注册 | **0** | reflection 10/10、registration 2/2 | 双向转换及注销后的动态/导出重新解析通过，无当前修复项 |
+
+WU8-2 不按报错逐条开单：先按指针 lease、Java 异常映射、共享未绑定槽建立可单次会话
+验收的主题任务；pending 和 NIO 历史语义先作契约决策，再决定是否实施兼容行为。

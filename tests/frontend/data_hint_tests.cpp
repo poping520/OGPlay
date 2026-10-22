@@ -74,6 +74,32 @@ TEST_CASE("ADR-0146 infers the mount from misses that exist in the data pack") {
     CHECK(two.candidates.at(0).guest_dir == "/sdcard/unrelated");
 }
 
+TEST_CASE("ADR-0146 guesses the mount from where the picked directory sits") {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path / "Downloads" / "Title";
+    CHECK(GuessDataMount(root / "Android" / "data" / "com.example.game") == "/sdcard/Android/data/com.example.game");
+    CHECK(GuessDataMount(root / "android" / "OBB" / "com.example.game") == "/sdcard/Android/obb/com.example.game");
+    CHECK(GuessDataMount(root / "Android" / "data" / "com.example.game" / "files") ==
+          "/sdcard/Android/data/com.example.game/files");
+    CHECK(GuessDataMount(root / "Android") == "/sdcard/Android");
+    CHECK(GuessDataMount(root / "sdcard" / "Vendor" / "Games" / "Title") == "/sdcard/Vendor/Games/Title");
+    CHECK(GuessDataMount(root / "storage" / "emulated" / "0" / "Vendor") == "/sdcard/Vendor");
+    // The innermost marker wins; a folder that merely happens to be called Android does not count.
+    CHECK(GuessDataMount(root / "sdcard" / "Android" / "data" / "pkg") == "/sdcard/Android/data/pkg");
+    CHECK(GuessDataMount(root / "Android" / "games" / "Title") == "/sdcard/Title");
+    CHECK_FALSE(GuessDataMount(root / "sdcard"));
+    // Without a marker the picked directory itself appears below /sdcard, unless it is an sdcard copy.
+    CHECK(GuessDataMount(root) == "/sdcard/Title");
+    std::filesystem::create_directories(root / "Backup" / "android" / "data");
+    CHECK_FALSE(GuessDataMount(root / "Backup"));
+    // A lone package-named directory: Android/obb when it holds .obb files, else Android/data.
+    Write(root / "com.example.game" / "files" / "a.bin", "1");
+    CHECK(GuessDataMount(root / "com.example.game") == "/sdcard/com.example.game");
+    CHECK(GuessDataMount(root / "com.example.game", "com.example.game") == "/sdcard/Android/data/com.example.game");
+    Write(root / "Com.Example.Obb" / "main.1.com.example.obb.OBB", "1");
+    CHECK(GuessDataMount(root / "Com.Example.Obb", "com.example.obb") == "/sdcard/Android/obb/Com.Example.Obb");
+}
+
 TEST_CASE("ADR-0146 without a data pack only says the game may need one") {
     MissingDataReport report;
     report.missing = {"/sdcard/vendor/title/data/a.bin", "/sdcard/vendor/title/data/b/c.bin"};

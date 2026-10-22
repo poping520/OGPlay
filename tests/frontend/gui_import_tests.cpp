@@ -208,5 +208,11 @@ TEST_CASE("GUI RPC describes a data directory for the mount preview") {
     CHECK(entries->Element(0)->Member("name")->String() == "data");
     CHECK(entries->Element(0)->Member("directory")->Bool() == true);
     CHECK(entries->Element(1)->Member("directory")->Bool() == false);
+    CHECK(result->Member("suggested_guest_dir")->String() == "/sdcard/Pack");
     CHECK(handle(data / "missing").Root().Member("error"));
+    const auto nested = temporary.path / "Android" / "data" / "com.example.game";
+    std::filesystem::create_directories(nested);
+    CHECK(handle(temporary.path).Root().Member("result")->Member("suggested_guest_dir")->IsNull());
+    CHECK(handle(nested).Root().Member("result")->Member("suggested_guest_dir")->String() ==
+          "/sdcard/Android/data/com.example.game");
 }

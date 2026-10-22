@@ -1,4 +1,6 @@
 #include "ogplay/app/game_run.h"
+#include "ogplay/core/text.h"
+#include <algorithm>
 #include <charconv>
 #include <stdexcept>
 
@@ -200,6 +202,10 @@ GameRunOptions ParseGameRunArgs(std::span<const std::string_view> args) {
             if (options.missing_data_report.has_value())
                 throw std::invalid_argument("run-apk accepts --missing-data-report only once");
             options.missing_data_report = Utf8Path(args[++index]);
+        } else if (option == "--window-title" && index + 1 < args.size()) {
+            if (options.window_title.has_value())
+                throw std::invalid_argument("run-apk accepts --window-title only once");
+            options.window_title = std::string(args[++index]);
         } else {
             throw std::invalid_argument("unknown or incomplete run-apk option: " +
                                         std::string(option));
@@ -267,6 +273,9 @@ void ValidateGameRunOptions(const GameRunOptions& o) {
     if (o.external_guest_directory) ValidateExternalGuestDirectory(*o.external_guest_directory);
     if (o.installation_id && o.installation_id->empty()) throw std::invalid_argument("installation id is empty");
     if (o.library_root && !o.installation_id) throw std::invalid_argument("--library-root requires --installation-id");
+    if (o.window_title && (o.window_title->empty() || o.window_title->size() > 256 || !core::IsValidUtf8(*o.window_title) ||
+                           std::any_of(o.window_title->begin(), o.window_title->end(), [](unsigned char c) { return c < 0x20 || c == 0x7f; })))
+        throw std::invalid_argument("--window-title requires 1..256 bytes of printable UTF-8");
 }
 
 std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
@@ -304,6 +313,7 @@ std::vector<std::string> FormatGameRunArgs(const GameRunOptions& o) {
     optional_path("--input-config", o.input_config_path);
     optional_path("--survey-gaps", o.survey_gaps_output);
     optional_path("--missing-data-report", o.missing_data_report);
+    if (o.window_title) add("--window-title", *o.window_title);
     return args;
 }
 }  // namespace ogplay::app

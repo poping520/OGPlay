@@ -3,18 +3,18 @@ import { rpc } from './rpc';
 import { describeData, type DataDirectory } from './import';
 
 /** Host listing of a data directory; null while loading, error text on failure. */
-export function useDataDirectory(path: string): { data: DataDirectory | null; error: string } {
+export function useDataDirectory(path: string, pkg = ''): { data: DataDirectory | null; error: string } {
   const [data, setData] = useState<DataDirectory | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     setData(null); setError('');
     if (!path) return;
     let current = true;
-    rpc<DataDirectory>('library.external.inspect', { path })
+    rpc<DataDirectory>('library.external.inspect', { path, ...(pkg ? { package: pkg } : {}) })
       .then(value => { if (current) setData(value); })
       .catch(reason => { if (current) setError(reason instanceof Error ? reason.message : String(reason)); });
     return () => { current = false; };
-  }, [path]);
+  }, [path, pkg]);
   return { data, error };
 }
 

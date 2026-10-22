@@ -65,7 +65,7 @@ function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
     return () => window.clearTimeout(timer);
   }, [leaving]);
   return <div class={`splash ${leaving ? 'leaving' : ''}`} role="status" aria-label="OGPlay 正在启动">
-    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>安卓老游戏兼容层</small><i class="splash-bar" />
+    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>Android 经典游戏兼容层</small><i class="splash-bar" />
   </div>;
 }
 function Clock() {

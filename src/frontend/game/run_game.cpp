@@ -186,7 +186,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
           dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, surface_width, surface_height, cpu_config, mcp_manual_step,
           preflight, survey_gaps_output, sandbox_directory, installation_id,
-          ephemeral_sandbox, input_config_path, library_root, missing_data_report] = std::move(options);
+          ephemeral_sandbox, input_config_path, library_root, missing_data_report, window_title] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
@@ -336,7 +336,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     if (mcp_port.has_value()) mcp_session = std::make_unique<agent::McpSessionControl>();
 
     auto window = hal::CreateSdlWindowInput();
-    const auto base_title = "OGPlay · " + PathUtf8(apk_path.filename());
+    const auto base_title = "OGPlay · " + window_title.value_or(PathUtf8(apk_path.filename()));
     window->Open({.title = base_title + " · FPS --",
                   .width = surface_width,
                   .height = surface_height,

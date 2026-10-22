@@ -26,6 +26,9 @@ InferDataMount 只比对报告缺失路径与数据目录实际文件（ASCII �
 按解释的不同缺失数、再按 r 深度排序；单条且 r 只有一级的巧合与当前挂载点忽略。无数据目录且
 缺失 ≥3 条时为 needs_data（最深共同目录）。SuggestDataMount 读取报告，`data_mount_hint` 关闭、
 报告缺失/损坏或与当前挂载不符时为 none；用户新选目录单独评估。CLI `library data-hint` 同源。
+导入前 GuessDataMount 只看宿主路径：最内层 `Android/data|obb|media`、`sdcard`、`emulated/0`
+之下的部分映射到 /sdcard 下，目录名等于包名时映射 Android/data（含 .obb 为 Android/obb），其余为
+`/sdcard/<目录名>`；顶层含 Android/ 的 sdcard 副本保持 /sdcard。
 
 数据包导入模式（ADR-0144）：copy（默认）把所选目录复制为条目 `data/`，meta 只写
 `external_data = "library"`，加载时 external_dir 解析为该绝对路径并标记 owned；link 只记录

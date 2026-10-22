@@ -76,6 +76,8 @@ constexpr std::string_view kDetails =
     "    --input-config <file>       Control config (input.toml)\n"
     "    --missing-data-report <file>\n"
     "                                Write /sdcard reads that found nothing (JSON)\n"
+    "  Window\n"
+    "    --window-title <name>       Name shown in the window caption (default: APK file name)\n"
     "  Sandbox\n"
     "    --sandbox-dir <host-dir>    Sandbox root directory\n"
     "    --installation-id <id>      Installation instance to run\n"

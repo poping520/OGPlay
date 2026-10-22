@@ -50,6 +50,8 @@ export async function upload(file: File, onJob: (job: string) => void, progress:
 export interface DataDirectory {
   path: string; entries: { name: string; directory: boolean }[];
   entry_count: number; files: number; bytes: number; truncated: boolean;
+  /** Mount implied by where the directory sits (Android/data/<package>, sdcard/…); null keeps /sdcard. */
+  suggested_guest_dir?: string | null;
 }
 /** Mirrors the host rule: /sdcard or a directory below it, no empty/dot segments or control characters. */
 export function guestPathError(value: string): string | null {

@@ -41,6 +41,15 @@
   包含 R/RX；不得用于写入或取指。observer 禁用，两张表使用相同映射发布及恢复边界。
 - `DescribeMappings(maximum_ranges)`：同一锁内按地址合并连续同权限已映射页，仅返回
   range/protection；包含 PROT_NONE，超限明确失败，不复制 guest 内容。
+- `RegisterProtectedOwner/MapProtectedAnywhere/ResolveProtected/UnmapProtected`：显式 owner
+  capability 管理稳定 RW payload 范围；first-fit 复用同一账本，避开全部已占页，不另设固定堆区。
+  owner bootstrap 一次验证完整 RW 范围后取得内部 backing 地址，只供上层封装 typed accessor；
+  不对业务调用者发布裸 span。AddressSpace 不移动且晚于 owner/所有 view 析构。
+  Protect/Unmap/ReplaceAnonymous 在同一映射锁内拒绝任意重叠，失败不改字节/权限/世代；
+  错误通过 `ProtectedMappingError` 明确上报，owner 必须注入不重入内存层的 ledger 回调。
+  owner 活跃（即使尚未分配）时 restore 在准备和提交前均拒绝并记账，保证 reservation base 稳定。
+  payload 与普通 RW 非 X 页一样发布两张直接表，observer 规则不变；typed accessor 的宿主
+  访问只做所属 block 边界检查，不经 Read/Write 锁。跨线程遵守既有 guest HB，不新增保证。
 - `MemorySnapshot`：带版本、4 KiB guest 页尺寸、映射权限与内容的最小内存快照。
 - `CaptureSnapshot/RestoreSnapshot`：合并连续映射并以事务式替换恢复内存状态。
 

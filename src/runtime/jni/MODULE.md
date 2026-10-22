@@ -81,3 +81,12 @@ CopyWithin 只移动同一 typed array 的现有元素：在数组锁内检查�
 保留 null/object/class 身份；不引入外来值、不重新进入 VM assignability 回调。
 
 `JniReferenceTable::TrySnapshot` 只 try-lock 复制 local/global/weak_global 与 attached thread 数；不创建引用、不遍历 guest 对象，忙时返回 nullopt。
+
+## 稳定 payload 接口（ADR-0152，阶段 1）
+
+`JavaPayloadProvider` 只定义强类型 block/borrow、typed accessor 与统计接口，不依赖
+AddressSpace 实现、DexVM 或 OS。integration 显式注入 owner；句柄含 generation 和 owner
+身份，typed view 一次验证所有权/字节范围/对齐，每个元素只检查视图边界并访问稳定 backing。
+view 保活 block/provider，活跃 view 或 pin 阻止 Release/reuse；不公开裸宿主指针或 span，
+owner 串行化 view 构造和释放。copy/move view 不撤销保活，pin 计量唯一字节和借用次数。
+跨线程遵循普通 guest 内存同步，未承诺额外内存序。本阶段不接生产 primitive/String store。

@@ -28,6 +28,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-260](DVM-260.md) | ADR-0152 稳定 Java guest payload：五阶段，I1 基座 | 阶段 1 完成，生产未切换 |
 | [DVM-259](DVM-259.md) | Dalvik 4.4 intrinsic 通用动态代理（WU7-5 拆分） | 待办 |
 | [DVM-258](DVM-258.md) | WU7-4 堆查询、finalization、引用队列与 VMRuntime | 完成 |
 | [DVM-257](DVM-257.md) | WU7-6 guest ICU51 区域/格式/正则/字符集枚举 | 有界完成；070 共享数组仍缺 |

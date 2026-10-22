@@ -25,6 +25,10 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   非固定 hint 仍为可忽略建议；匿名私有 MAP_FIXED 调用 `ReplaceAnonymous` 原子替换，
   长度向上对齐到 4 KiB，成功返回请求地址；未对齐/非法参数返回 EINVAL，低地址 guard
   返回 EPERM，范围溢出或 backing 失败返回 ENOMEM。文件 mmap 与非零页偏移仍未支持。
+- memory 登记的 provider 保护范围：munmap/mprotect 和 MAP_FIXED 任意部分重叠均返回
+  `-EPERM` 并由 owner ledger 记账，整次操作不改映射。mremap 检查原区与 FIXED 目标，
+  命中保护范围同样 EPERM；普通 mremap 仍返回 ENOSYS 并记账，没有扩展通用搬移实现。
+  errno 沿用本模块低地址/策略拒绝 EPERM、非法参数 EINVAL 的约定。
 - `read/write/pread64/pwrite64` 共用 `file_transfer.h`，以 64 KiB 临时缓冲分块，
   不再因请求超过 16 MiB 返回 `-EINVAL`；单次请求截到 `0x7ffff000`。
   短传输即停止，后续块的内存/VFS 错误返回已完成字节，首块错误返回 errno。

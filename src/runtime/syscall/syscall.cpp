@@ -510,6 +510,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                         size, protection(frame.arguments[2])).Value();
                 }
                 return std::bit_cast<std::int32_t>(address);
+            } catch (const memory::ProtectedMappingError&) {
+                return -kEperm;
             } catch (const std::invalid_argument&) {
                 return -kEinval;
             } catch (const std::overflow_error&) {
@@ -527,6 +529,8 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                     {memory::GuestAddress{frame.arguments[0]},
                      aligned_size(frame.arguments[1])});
                 return 0;
+            } catch (const memory::ProtectedMappingError&) {
+                return -kEperm;
             } catch (const std::exception&) {
                 return -kEinval;
             }
@@ -541,10 +545,28 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
                      aligned_size(frame.arguments[1])},
                     protection(frame.arguments[2]));
                 return 0;
+            } catch (const memory::ProtectedMappingError&) {
+                return -kEperm;
             } catch (const std::exception&) {
                 return -kEinval;
             }
         });
+    // General mremap remains unimplemented. Inspect both old and FIXED target
+    // before returning ENOSYS so protected mappings cannot bypass owner policy.
+    dispatcher.Implement(163, [&address_space, aligned_size](const A32SyscallFrame& frame) {
+        try {
+            address_space.RejectProtectedMutation(
+                {memory::GuestAddress{frame.arguments[0]}, aligned_size(frame.arguments[1])}, "mremap");
+            if ((frame.arguments[3] & 2U) != 0)
+                address_space.RejectProtectedMutation(
+                    {memory::GuestAddress{frame.arguments[4]}, aligned_size(frame.arguments[2])}, "mremap");
+            return -kLinuxEnosys;
+        } catch (const memory::ProtectedMappingError&) {
+            return -kEperm;
+        } catch (const std::exception&) {
+            return -kEinval;
+        }
+    });
     dispatcher.Implement(
         220, [&address_space, page_size,
               aligned_size](const A32SyscallFrame& frame) {

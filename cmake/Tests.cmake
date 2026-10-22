@@ -43,6 +43,7 @@ set(OGPLAY_TEST_SOURCES
     tests/golden/golden_frame_tests.cpp
     tests/gles/angle_backend_tests.cpp
     tests/gles/angle_frame_tests.cpp
+    tests/runtime/java_payload_provider_tests.cpp
     tests/runtime/surface_stream_tests.cpp
     tests/gles/egl_lifecycle_tests.cpp
     tests/gles/atc_tests.cpp

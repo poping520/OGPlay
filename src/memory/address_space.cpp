@@ -105,6 +105,8 @@ public:
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
     [[nodiscard]] std::uint64_t PageSize() const noexcept { return page_size_; }
 
+    [[nodiscard]] std::uint64_t BackingPageSize() const noexcept { return host_page_size_; }
+
     std::optional<MemoryStatistics> TrySnapshot() const {
         std::unique_lock lock(mutex_, std::try_to_lock);
         if (!lock.owns_lock()) return std::nullopt;
@@ -131,6 +133,7 @@ public:
             throw std::invalid_argument("low guest address guard cannot be mapped");
         }
         std::scoped_lock lock(mutex_);
+        RejectProtectedLocked(range, "replace");
         ReplaceAnonymousLocked(range, protection);
     }
 
@@ -143,21 +146,101 @@ public:
         }
         if (size > bounds.Size()) throw std::bad_alloc();
         std::scoped_lock lock(mutex_);
+        const auto address = FindFreeLocked(bounds, size);
+        MapLocked({address, size}, protection);
+        return address;
+    }
+
+    GuestAddress FindFreeLocked(const GuestRange& bounds, const std::uint64_t size,
+                                const std::uint64_t alignment = kGuestPageSize) const {
+        if (size == 0 || size % page_size_ != 0 || size > bounds.Size()) throw std::bad_alloc();
         const auto [first, last] = PageIndexes(bounds);
         const auto needed = size / page_size_;
         std::uint64_t run{};
         for (auto page = first; page < last; ++page) {
             if (mapped_[static_cast<std::size_t>(page)] ||
-                static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize) {
+                static_cast<std::uint64_t>(page) * page_size_ < kGuestLowGuardSize)
                 run = 0;
-            } else if (++run == needed) {
-                const GuestAddress address{static_cast<std::uint32_t>(
-                    (static_cast<std::uint64_t>(page) + 1U - needed) * page_size_)};
-                MapLocked({address, size}, protection);
-                return address;
+            else {
+                if (run == 0 && static_cast<std::uint64_t>(page) * page_size_ % alignment != 0) continue;
+                if (++run == needed)
+                    return GuestAddress{
+                        static_cast<std::uint32_t>((static_cast<std::uint64_t>(page) + 1U - needed) * page_size_)};
             }
         }
         throw std::bad_alloc();
+    }
+
+    std::uint64_t RegisterOwner(std::function<void(std::string_view)> diagnostic) {
+        if (!diagnostic) throw std::invalid_argument("protected owner needs diagnostics");
+        std::scoped_lock lock(mutex_);
+        const auto id = ++next_owner_;
+        owners_.emplace(id, std::move(diagnostic));
+        return id;
+    }
+
+    void UnregisterOwner(std::uint64_t id) {
+        std::scoped_lock lock(mutex_);
+        owners_.erase(id);
+    }
+
+    void RejectProtectedLocked(const GuestRange& range, std::string_view operation) const {
+        for (const auto& [address, entry] : protected_) {
+            static_cast<void>(address);
+            if (range.Overlaps(entry.range)) {
+                owners_.at(entry.owner)(operation);
+                throw ProtectedMappingError("protected guest mapping cannot be modified");
+            }
+        }
+    }
+
+    void RejectRestoreLocked() const {
+        if (owners_.empty()) return;
+        for (const auto& [id, diagnostic] : owners_) {
+            static_cast<void>(id);
+            diagnostic("restore");
+        }
+        throw ProtectedMappingError("memory restore forbidden while protected provider is active");
+    }
+
+    void RejectProtectedMutation(const GuestRange& range, std::string_view operation) const {
+        std::scoped_lock lock(mutex_);
+        RejectProtectedLocked(range, operation);
+    }
+
+    GuestAddress MapProtectedAnywhere(std::uint64_t owner, const GuestRange& bounds, std::uint64_t size) {
+        ValidatePageRange(bounds);
+        std::scoped_lock lock(mutex_);
+        if (!owners_.contains(owner)) throw std::invalid_argument("inactive protected owner");
+        const auto address = FindFreeLocked(bounds, size, host_page_size_);
+        protected_.emplace(address.Value(), ProtectedEntry{owner, {address, size}});
+        try {
+            MapLocked({address, size}, PageProtection::read | PageProtection::write);
+        } catch (...) {
+            protected_.erase(address.Value());
+            throw;
+        }
+        return address;
+    }
+
+    void UnmapProtected(std::uint64_t owner, const GuestRange& range) {
+        std::scoped_lock lock(mutex_);
+        auto it = protected_.find(range.Start().Value());
+        if (it == protected_.end() || it->second.owner != owner || it->second.range.Size() != range.Size())
+            throw std::invalid_argument("protected unmap ownership mismatch");
+        UnmapLocked(range);
+        protected_.erase(it);
+    }
+
+    std::byte* ResolveProtected(std::uint64_t owner, const GuestRange& range) {
+        std::scoped_lock lock(mutex_);
+        auto it = protected_.upper_bound(range.Start().Value());
+        if (it == protected_.begin()) throw std::invalid_argument("unowned payload range");
+        --it;
+        if (it->second.owner != owner || range.EndExclusive() > it->second.range.EndExclusive())
+            throw std::invalid_argument("payload crosses protected block");
+        ValidateLocked(range, AccessType::write, 0);
+        return reservation_->Base() + range.Start().Value();
     }
 
     void MapLocked(const GuestRange& range, const PageProtection protection) {
@@ -186,6 +269,7 @@ public:
         ValidateProtection(protection);
         ValidatePageRange(range);
         std::scoped_lock lock(mutex_);
+        RejectProtectedLocked(range, "mprotect");
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
@@ -196,6 +280,11 @@ public:
     void Unmap(const GuestRange& range) {
         ValidatePageRange(range);
         std::scoped_lock lock(mutex_);
+        RejectProtectedLocked(range, "munmap");
+        UnmapLocked(range);
+    }
+
+    void UnmapLocked(const GuestRange& range) {
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
         std::memset(reservation_->Base() + range.Start().Value(), 0,
@@ -435,6 +524,10 @@ public:
     }
 
     void RestoreSnapshot(const MemorySnapshot& snapshot) {
+        {
+            std::scoped_lock lock(mutex_);
+            RejectRestoreLocked();
+        }
         ValidateSnapshot(snapshot);
         auto replacement = hal::ReserveVirtualMemory(kGuestAddressSpaceSize);
         if (replacement->PageSize() != host_page_size_) {
@@ -480,6 +573,7 @@ public:
         }
 
         std::scoped_lock lock(mutex_);
+        RejectRestoreLocked();
         reservation_.swap(replacement);
         pages_.swap(replacement_pages);
         mapped_.swap(replacement_mapped);
@@ -637,6 +731,14 @@ private:
         }
     }
 
+    struct ProtectedEntry {
+        std::uint64_t owner;
+        GuestRange range;
+    };
+
+    std::map<std::uint32_t, ProtectedEntry> protected_;
+    std::map<std::uint64_t, std::function<void(std::string_view)>> owners_;
+    std::uint64_t next_owner_{};
     std::unique_ptr<hal::VirtualMemoryReservation> reservation_;
     std::uint64_t page_size_{};
     std::uint64_t host_page_size_{};
@@ -655,8 +757,18 @@ AddressSpace::~AddressSpace() = default;
 AddressSpace::AddressSpace(AddressSpace&&) noexcept = default;
 AddressSpace& AddressSpace::operator=(AddressSpace&&) noexcept = default;
 
-std::uint64_t AddressSpace::ReservedSize() const noexcept { return impl_->ReservedSize(); }
-std::uint64_t AddressSpace::PageSize() const noexcept { return impl_->PageSize(); }
+std::uint64_t AddressSpace::ReservedSize() const noexcept {
+    return impl_->ReservedSize();
+}
+
+std::uint64_t AddressSpace::PageSize() const noexcept {
+    return impl_->PageSize();
+}
+
+std::uint64_t AddressSpace::BackingPageSize() const noexcept {
+    return impl_->BackingPageSize();
+}
+
 MappingChangeSubscription AddressSpace::ObserveMappingChanges(MappingChangeHandler handler) {
     return impl_->ObserveMappingChanges(std::move(handler));
 }
@@ -674,6 +786,46 @@ GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint
     const auto start = impl_->MapAnywhere(bounds, size, protection);
     impl_->PublishMappingChange({start, size});
     return start;
+}
+
+ProtectedMappingOwner AddressSpace::RegisterProtectedOwner(std::function<void(std::string_view)> diagnostic) {
+    ProtectedMappingOwner result;
+    const auto id = impl_->RegisterOwner(std::move(diagnostic));
+    try {
+        result.lifetime_ = std::shared_ptr<void>(new std::uint64_t{id}, [impl = impl_.get(), id](void* p) {
+            delete static_cast<std::uint64_t*>(p);
+            impl->UnregisterOwner(id);
+        });
+    } catch (...) {
+        impl_->UnregisterOwner(id);
+        throw;
+    }
+    result.space_ = impl_.get();
+    result.id_ = id;
+    return result;
+}
+
+GuestAddress AddressSpace::MapProtectedAnywhere(const ProtectedMappingOwner& owner, const GuestRange& bounds,
+                                                std::uint64_t size) {
+    if (owner.space_ != impl_.get() || !owner.lifetime_) throw std::invalid_argument("foreign protected owner");
+    const auto address = impl_->MapProtectedAnywhere(owner.id_, bounds, size);
+    impl_->PublishMappingChange({address, size});
+    return address;
+}
+
+void AddressSpace::UnmapProtected(const ProtectedMappingOwner& owner, const GuestRange& range) {
+    if (owner.space_ != impl_.get() || !owner.lifetime_) throw std::invalid_argument("foreign protected owner");
+    impl_->UnmapProtected(owner.id_, range);
+    impl_->PublishMappingChange(range);
+}
+
+std::byte* AddressSpace::ResolveProtected(const ProtectedMappingOwner& owner, const GuestRange& range) {
+    if (owner.space_ != impl_.get() || !owner.lifetime_) throw std::invalid_argument("foreign protected owner");
+    return impl_->ResolveProtected(owner.id_, range);
+}
+
+void AddressSpace::RejectProtectedMutation(const GuestRange& range, std::string_view operation) const {
+    impl_->RejectProtectedMutation(range, operation);
 }
 void AddressSpace::Protect(const GuestRange& range, const PageProtection protection) {
     impl_->Protect(range, protection);

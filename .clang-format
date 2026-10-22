@@ -1,0 +1,35 @@
+---
+BasedOnStyle: LLVM
+Standard: c++20
+ColumnLimit: 120
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+IndentCaseLabels: false
+PointerAlignment: Left
+DerivePointerAlignment: false
+ReferenceAlignment: Pointer
+BreakBeforeBraces: Attach
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLambdasOnASingleLine: All
+AlwaysBreakTemplateDeclarations: Yes
+SeparateDefinitionBlocks: Always
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SortIncludes: Never
+ReflowComments: false
+BreakStringLiterals: false
+SpacesBeforeTrailingComments: 2
+InsertNewlineAtEOF: true
+LineEnding: LF
+---
+Language: ObjC
+ObjCBlockIndentWidth: 4
+...

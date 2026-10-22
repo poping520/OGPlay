@@ -34,6 +34,20 @@ TEST_CASE("DIAG-4 surface exports linked intrinsic BootDex constants and missing
         const auto methods = *cls.Member("methods");
         for (std::size_t j = 0; j < methods.Size(); ++j) {
             const auto method = *methods.Element(j);
+            REQUIRE(method.Member("overridable").has_value());
+            CHECK(method.Member("overridable")->Bool().has_value());
+            REQUIRE(method.Member("origin").has_value());
+            const auto origin = method.Member("origin")->String();
+            CHECK((origin == "handwritten" || origin == "skeleton" || origin == "bytecode"));
+            if (name == "Landroid/opengl/GLSurfaceView;" && method.Member("name")->String() == "onPause") {
+                CHECK(origin == "handwritten");
+                CHECK(method.Member("overridable")->Bool() == false);
+            }
+            if (name == "Ljava/lang/ThreadGroup;" && method.Member("name")->String() == "<init>" &&
+                method.Member("descriptor")->String() == "(Ljava/lang/String;)V")
+                CHECK(origin == "skeleton");
+            if (name == "Ljava/util/ArrayList;" && method.Member("name")->String() == "size")
+                CHECK(origin == "bytecode");
             if (name == "Landroid/content/res/XmlResourceParser$Impl;" &&
                 method.Member("name")->String() == "getDepth")
                 ledger = method.Member("status")->String() == "unimplemented-ledger" &&

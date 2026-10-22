@@ -800,6 +800,11 @@ std::string DexClassLinker::DumpSurfaceJson() {
             out.AddString(item, "name", method.name);
             out.AddString(item, "descriptor", method.descriptor);
             out.AddBool(item, "static", method.is_static);
+            out.AddBool(item, "overridable", method.overridable);
+            out.AddString(item, "origin",
+                          method.is_skeleton                     ? "skeleton"
+                          : method.kind == MethodKind::intrinsic ? "handwritten"
+                                                                 : "bytecode");
             out.AddUnsignedInteger(item, "access_flags", method.access_flags);
             const bool dynamic = method.kind == MethodKind::native && !method.implementation;
             const bool implemented = static_cast<bool>(method.implementation) ||

@@ -169,6 +169,7 @@ public:
                                                 JniPrimitiveKind kind,
                                                 JniSize length);
     [[nodiscard]] JniPrimitiveKind PrimitiveArrayKind(VmObjectRef ref) const;
+    [[nodiscard]] memory::GuestAddress PrimitiveArrayAddress(VmObjectRef ref) const;
     [[nodiscard]] std::uint64_t GetPrimitiveElement(VmObjectRef ref,
                                                     JniSize index) const;
     void SetPrimitiveElement(VmObjectRef ref, JniSize index,

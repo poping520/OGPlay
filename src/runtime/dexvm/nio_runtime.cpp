@@ -34,17 +34,6 @@ struct Storage final {
     std::int32_t array_offset{};
     std::optional<memory::GuestAddress> address;
     std::uint32_t byte_capacity{};
-    bool owned{};
-    NioDirectMemoryAccess* access{};
-
-    ~Storage() {
-        if (owned && address.has_value() && access != nullptr && access->release) {
-            try {
-                access->release(*address, byte_capacity);
-            } catch (const std::exception&) {
-            }
-        }
-    }
 };
 
 struct BufferState final {
@@ -222,24 +211,23 @@ void NioRuntime::CreateHeap(const JniObjectIdentity owner, const VmObjectRef arr
                                   {}, 0, array_offset, element, order};
 }
 
-void NioRuntime::CreateDirect(const JniObjectIdentity owner,
-                              const std::int32_t capacity) {
+void NioRuntime::CreateDirect(const JniObjectIdentity owner, const std::int32_t capacity,
+                              const DexClassId byte_array_class) {
     if (capacity < 0) Throw("Ljava/lang/IllegalArgumentException;", "negative capacity");
-    if (!impl_->direct.allocate || !impl_->direct.release || !impl_->direct.read ||
-        !impl_->direct.write) {
-        Throw("Ljava/lang/UnsupportedOperationException;",
-              "direct buffer allocator is unavailable");
+    if (impl_->model == nullptr || !impl_->direct.read || !impl_->direct.write) {
+        Throw("Ljava/lang/UnsupportedOperationException;", "direct buffer memory is unavailable");
     }
     auto storage = std::make_shared<Storage>();
     try {
-        storage->address =
-            impl_->direct.allocate(static_cast<std::uint32_t>(capacity));
+        storage->array = impl_->model->NewPrimitiveArray(byte_array_class, JniPrimitiveKind::byte, capacity);
+    } catch (const DexVmError& error) {
+        if (error.Reason() != DexVmErrorReason::heap_budget_exhausted) throw;
+        Throw("Ljava/lang/OutOfMemoryError;", error.what());
     } catch (const std::bad_alloc&) {
-        Throw("Ljava/lang/OutOfMemoryError;", "direct buffer arena is exhausted");
+        Throw("Ljava/lang/OutOfMemoryError;", "direct buffer allocation failed");
     }
+    storage->address = impl_->model->PrimitiveArrayAddress(storage->array);
     storage->byte_capacity = static_cast<std::uint32_t>(capacity);
-    storage->owned = true;
-    storage->access = &impl_->direct;
     impl_->buffers[owner] = {std::move(storage), capacity, 0, capacity};
 }
 
@@ -254,7 +242,6 @@ void NioRuntime::WrapDirect(const JniObjectIdentity owner,
     auto storage = std::make_shared<Storage>();
     storage->address = address;
     storage->byte_capacity = static_cast<std::uint32_t>(capacity);
-    storage->access = &impl_->direct;
     impl_->buffers[owner] = {std::move(storage), capacity, 0, capacity};
 }
 

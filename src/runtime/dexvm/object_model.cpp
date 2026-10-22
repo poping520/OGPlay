@@ -801,6 +801,11 @@ VmObjectRef JavaObjectModel::NewPrimitiveArray(const DexClassId array_class,
     }
 }
 
+memory::GuestAddress JavaObjectModel::PrimitiveArrayAddress(const VmObjectRef ref) const {
+    static_cast<void>(PrimitiveArrayKind(ref));
+    return impl_->arrays->Address(impl_->At(ref).identity);
+}
+
 JniPrimitiveKind JavaObjectModel::PrimitiveArrayKind(
     const VmObjectRef ref) const {
     const auto& record = impl_->At(ref);

@@ -268,8 +268,8 @@
     "threaded": "pass"
   },
   "070-nio-buffer": {
-    "switch": "fail:output",
-    "threaded": "fail:output"
+    "switch": "pass",
+    "threaded": "pass"
   },
   "071-dexfile": {
     "switch": "excluded:harness",

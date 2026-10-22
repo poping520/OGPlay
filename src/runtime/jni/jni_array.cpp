@@ -362,6 +362,11 @@ void JniPrimitiveArrayStore::VisitAccessRoots(const std::function<void(JniObject
         visit(root);
 }
 
+memory::GuestAddress JniPrimitiveArrayStore::Address(JniObjectIdentity array) const {
+    std::scoped_lock lock(impl_->mutex_);
+    return impl_->Require(array)->second.payload.Address();
+}
+
 JniPrimitiveArrayView JniPrimitiveArrayStore::View(JniObjectIdentity array) const {
     std::scoped_lock lock(impl_->mutex_);
     return *impl_->Require(array)->second.view;

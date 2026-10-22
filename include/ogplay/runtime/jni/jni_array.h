@@ -94,6 +94,8 @@ public:
     void EnsureCharged(JniObjectIdentity array);
     void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const;
     [[nodiscard]] JniPrimitiveArrayView View(JniObjectIdentity array) const;
+    // Does not pin; caller must keep the array reachable until address use ends.
+    [[nodiscard]] memory::GuestAddress Address(JniObjectIdentity array) const;
     [[nodiscard]] JniArrayAllocationStatistics AllocationStatistics() const;
     void Copy(JniObjectIdentity source, JniSize from, JniObjectIdentity target, JniSize to, JniSize length);
     void CopyWithin(JniObjectIdentity array, JniSize from, JniSize to, JniSize length);

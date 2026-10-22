@@ -430,8 +430,13 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 
 [runtime.java_payload_backing]
 status = "partial"
-test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/memory/address_space_tests.cpp"
-note = "ADR-0152 / DVM-260：阶段 1..4 已验收。primitive 与不可变 String 自创建起共用 guest provider/长期 view；数组 Elements/Critical 与 String Chars/Critical 直接借用 FALSE，身份 pin 为 GC 强根，跨线程持有。VM 唯一收费，创建/import/BindString 单次计费、失败回滚及显式应急预留。MUTF8 仍复制/预算；受保护映射/restore/JIT 策略不变。NIO 未迁移，Windows 未实跑。"
+test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/dexvm/nio_runtime_tests.cpp; tests/memory/address_space_tests.cpp"
+note = "ADR-0152 / DVM-260：primitive/不可变 String 共用稳定 guest payload，Elements/Critical 与 Chars/Critical 直接借用 FALSE、身份 pin 为 GC 强根。VM 唯一收费及应急预留；allocateDirect 真实 byte[] 计入 Java 堆，与 direct 地址共用 payload，视图/数组引用保活、GC 单次回收；外部 JNI direct 非拥有。MUTF8 仍复制；对象数组 addressOf 明确失败，Windows 未实跑。"
+
+[dexvm.runtime.address_of_object_array]
+status = "unimplemented"
+test = "tests/dexvm/nio_runtime_tests.cpp#DVM-260 VMRuntime"
+note = "对象数组仅有宿主引用槽，没有 guest payload；VMRuntime.addressOf 记账并抛 UnsupportedOperationException。基本类型数组返回真实 guest 地址；newNonMovableArray 支持基本类型和对象数组。"
 
 [memory.soft_mmu]
 status = "complete"
@@ -1231,7 +1236,7 @@ note = "BND-34 实现 32 个 Context 独立 palette matrix、最多 4 权重、�
 [tools.dalvik_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools.dalvik_tests_self_test"
-note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock；无 APK，可选 --native-lib-dir 提供 ARM 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（085/300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 84/91（92.3%，085 已排除）。"
+note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保留 stdout 字节、dalvikvm 退出码、-ea、realtime Clock；无 APK，可选 --native-lib-dir 提供 ARM 应用 .so。dalvik_tests.py 编译 AOSP 4.4 用例并双后端逐字节分类；基线检查拒绝 pass 回退，更新仅允许无回归及固定 oracle 迁移（085/300）。未接 CTest 全量门禁；libcore/JUnit、src-ex、多 dex 未支持。双后端各 85/91（93.4%，070 已修复，085 已排除）。"
 
 [tools.jni_conformance]
 status = "partial"

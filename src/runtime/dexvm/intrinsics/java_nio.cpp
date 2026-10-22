@@ -313,7 +313,8 @@ IntrinsicClassDecl DeclareByteBuffer() {
     b.StaticMethod("allocate", "(I)Ljava/nio/ByteBuffer;", Allocate("Ljava/nio/HeapByteBuffer;", NioElementKind::byte));
     b.StaticMethod("allocateDirect", "(I)Ljava/nio/ByteBuffer;", [](IntrinsicContext& c) {
         const auto object = c.vm.NewIntrinsicInstance("Ljava/nio/DirectByteBuffer;");
-        c.vm.NIO().CreateDirect(Id(c.vm, object), c.arguments[0].AsInt());
+        const auto roots = c.vm.ProtectReferences(std::array{object});
+        c.vm.NIO().CreateDirect(Id(c.vm, object), c.arguments[0].AsInt(), c.vm.Linker().ResolveDescriptor("[B"));
         return VmValue::Ref(object);
     });
     b.StaticMethod("wrap", "([B)Ljava/nio/ByteBuffer;", Wrap("Ljava/nio/HeapByteBuffer;", NioElementKind::byte, false));

@@ -1585,3 +1585,19 @@ WU8-2c-D 调查只读已有报告，未重跑测试或游戏；宿主页查询�
 
 五阶段之后仍有 NIO heapCapacity 1 条和 pending 契约分歧 3 条，不在本方案消除范围。
 无 Release 的长期使用必须靠 backing 寿命成立，不能只以当前短探针通过宣布长期游戏风险已消失。
+
+### ADR-0152 阶段 3 实施决定
+
+沿用 [ADR-0153](runtime.md#adr-0153) 的原则，以 Dalvik 4.4 非 CheckJNI 实现为行为判据。
+Jni.cpp:2355–2386、2598–2617 直接借用 primitive payload，isCopy=FALSE；
+Release 仅判断 mode 是否为 JNI_COMMIT：等于时无操作，其余值（含 ABORT/非法值）解除一次 pin，
+不复制、不恢复写入。数组身份与类型仍验证，但不校验 elems，不区分 Elements/Critical。
+这替代本 ADR 原数组 object/kind/pointer 配对要求；String 的 kind/pointer 配对保持不变。
+
+pin 计数归 primitive store，原因是 store 已拥有数组身份、Delete 检查及 GC roots 枚举，
+无需 provider 反向理解 VM 对象；长期 view 保活 backing，非零 pin 在 mark/weak 前作强根。
+重复获取返回同一稳定地址，每次计数加一；pin 不绑定线程，detach 不清除。
+无配对 unpin 仅结构化 warn + ledger（数组、真实槽、guest LR），状态不变；
+首次计数超过 Dalvik kPinComplainThreshold=10 时每个数组生命周期警告一次。
+停止并 join 全部 guest 线程/CPU 后才统一退役 pin，诊断残留数组数与字节数。
+不增加内存序承诺；显式 host-copy provider 不支持 guest direct borrow，明确失败而无复制回退。

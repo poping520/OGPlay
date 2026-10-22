@@ -1784,6 +1784,9 @@ public:
             const auto backing = array_payload_.Statistics();
             logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive allocation summary", {},
                            {{"live_bytes", allocations.live_bytes},
+                            {"pin_count", allocations.pin_count},
+                            {"pinned_arrays", allocations.pinned_arrays},
+                            {"pinned_bytes", allocations.pinned_bytes},
                             {"peak_live_bytes", allocations.peak_live_bytes},
                             {"committed_bytes", backing.committed_bytes},
                             {"slab_free_bytes", backing.slab_free_bytes},

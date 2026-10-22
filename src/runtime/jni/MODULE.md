@@ -99,8 +99,12 @@ primitive store 必须显式注入 provider：生产使用 integration 的 guest
 headless 显式选择 `HostCopyJavaPayloadProvider`（Address 明确失败）。entry 只保存 kind、
 length、handle 和长期 typed view；guest block 是唯一权威字节，Region/clone/arraycopy/fill
 从同一 view 批量搬运，先校验完整区间，CopyWithin 用 memmove 处理重叠。
-Elements/Critical 仍返回复制、isCopy=TRUE，COMMIT 写回并保留借用，ABORT 丢弃副本。
-VisitAccessRoots 在锁外枚举 active borrow 的数组身份，owner 在 mark/weak 处理前纳入强根。
+Elements/Critical 直接返回 payload guest 地址、isCopy=FALSE；零长也返回有效地址。
+pin 计数归 store，以数组身份计数、两类入口共用；重复获取同址并加一，不绑定线程，detach 不清除。
+Release 忽略指针和 access kind，COMMIT 无操作，其余 mode 仅减一，不回滚写入；无配对返回诊断结果，
+guest owner 记 warn/ledger 而不中止。每数组首次超过 10 次 pin 告警；停止/join 线程和 CPU 后统一
+退役残留 pin 并诊断数组数/字节数。host-copy provider 无 guest 地址，直接借用明确失败。
+VisitAccessRoots 在锁外枚举非零 pin 的数组身份，owner 在 mark/weak 处理前纳入强根。
 删除前退役所有 view，再 Release；外部 view 或 borrow 尚存时明确失败，不能吞掉。
 
 显式 allocation context 在 store 锁外进入 VM 执行锁并收费；Java/JNI New 共用一次 Reserve，

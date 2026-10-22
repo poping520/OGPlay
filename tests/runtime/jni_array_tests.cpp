@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
+#include <thread>
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <variant>
@@ -56,35 +58,70 @@ TEST_CASE("JNI primitive array regions are typed and bounds checked") {
     arrays.Delete(array);
 }
 
-TEST_CASE("JNI array elements implement commit abort and exact release") {
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
-    ogplay::runtime::JniEnvironment environment;
-    environment.AttachThread(5);
-    const auto array =
-        arrays.New(ogplay::runtime::JniPrimitiveKind::byte, 2);
-    const auto local = environment.PublishLocalObject(5, array);
-    CHECK_FALSE(local.IsNull());
+TEST_CASE("DVM-260 direct array pins preserve writes and cross-thread ownership") {
+    using namespace ogplay::runtime;
+    ogplay::memory::AddressSpace memory;
+    ogplay::core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider{memory, ledger};
+    JniPrimitiveArrayStore arrays{provider};
+    const auto array = arrays.New(JniPrimitiveKind::byte, 2);
+    const auto access = arrays.Acquire(array, JniArrayAccessKind::elements);
+    CHECK_FALSE(access.is_copy);
+    CHECK(arrays.Acquire(array, JniArrayAccessKind::critical).address == access.address);
+    CHECK(arrays.PinCount(array) == 2);
+    std::thread writer([&] {
+        memory.Write8(access.address, 42);
+        CHECK(arrays.Release(array, JniArrayReleaseMode::abort));
+    });
+    writer.join();
+    CHECK(std::get<std::vector<JniByte>>(arrays.Region(array, 0, 2))[0] == 42);
+    CHECK(arrays.PinCount(array) == 1);
+    CHECK(arrays.Release(array, JniArrayReleaseMode::commit));
+    CHECK(arrays.PinCount(array) == 1);
+    CHECK_THROWS_AS(arrays.Delete(array), JniArrayError);
+    memory.Write8(access.address.Add(1), 24);
+    CHECK(arrays.Release(array, JniArrayReleaseMode::abort));
+    CHECK(std::get<std::vector<JniByte>>(arrays.Region(array, 0, 2))[1] == 24);
+    CHECK_FALSE(arrays.Release(array, JniArrayReleaseMode::abort));
+    CHECK(arrays.PinCount(array) == 0);
+    arrays.Delete(array);
+}
 
-    auto access = arrays.Acquire(
-        array, ogplay::runtime::JniArrayAccessKind::elements);
-    std::get<std::vector<ogplay::runtime::JniByte>>(access.data)[0] = 42;
-    arrays.Release(array, access.token, access.kind, access.data,
-                   ogplay::runtime::JniArrayReleaseMode::commit);
-    CHECK_THROWS_AS(arrays.Delete(array), ogplay::runtime::JniArrayError);
-    std::get<std::vector<ogplay::runtime::JniByte>>(access.data)[1] = 24;
-    arrays.Release(array, access.token, access.kind, access.data,
-                   ogplay::runtime::JniArrayReleaseMode::abort);
-    const auto stored = std::get<std::vector<ogplay::runtime::JniByte>>(
-        arrays.Region(array, 0, 2));
-    const std::vector<ogplay::runtime::JniByte> expected{42, 0};
-    CHECK(stored == expected);
-    CHECK_THROWS_AS(
-        arrays.Release(array, access.token, access.kind, access.data,
-                       ogplay::runtime::JniArrayReleaseMode::abort),
-        ogplay::runtime::JniArrayError);
+TEST_CASE("DVM-260 zero length pins threshold and teardown remain bounded") {
+    using namespace ogplay::runtime;
+    ogplay::memory::AddressSpace memory;
+    ogplay::core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider{memory, ledger};
+    std::uint64_t objects{}, bytes{};
+    {
+        JniPrimitiveArrayStore arrays{provider};
+        arrays.SetPinTeardownObserver([&](auto n, auto b) {
+            objects = n;
+            bytes = b;
+        });
+        const auto zero = arrays.New(JniPrimitiveKind::byte, 0);
+        const auto address = arrays.Acquire(zero, JniArrayAccessKind::elements).address;
+        CHECK_FALSE(address.IsNull());
+        const auto other = arrays.New(JniPrimitiveKind::byte, 0);
+        CHECK(arrays.Acquire(other, JniArrayAccessKind::critical).address != address);
+        for (int i = 2; i <= 12; ++i) {
+            const auto pin = arrays.Acquire(zero, JniArrayAccessKind::critical);
+            CHECK(pin.address == address);
+            CHECK(pin.warn_threshold == (i == 11));
+        }
+        CHECK(arrays.PinCount(zero) == 12);
+    }
+    CHECK(objects == 2);
+    CHECK(bytes == 0);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+}
 
-    environment.DeleteLocalRef(5, local);
-    environment.DetachThread(5);
+TEST_CASE("DVM-260 host copy provider explicitly rejects direct borrow") {
+    ogplay::runtime::HostCopyJavaPayloadProvider provider;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{provider};
+    const auto array = arrays.New(ogplay::runtime::JniPrimitiveKind::byte, 0);
+    CHECK_THROWS_AS(static_cast<void>(arrays.Acquire(array, ogplay::runtime::JniArrayAccessKind::elements)),
+                    std::logic_error);
+    CHECK(arrays.PinCount(array) == 0);
     arrays.Delete(array);
 }

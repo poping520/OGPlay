@@ -126,7 +126,7 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniNativeRegistry natives;
     ogplay::runtime::dexvm::NioRuntime nio;

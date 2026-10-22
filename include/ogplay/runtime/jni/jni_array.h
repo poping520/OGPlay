@@ -48,6 +48,7 @@ struct JniArrayAllocationStatistics final {
     // Length buckets: 0, 1..16, 17..64, 65..256, 257..1024, 1025..8192, >8192.
     std::array<std::array<std::uint64_t, 7>, 8> allocations{};
     std::uint64_t live_bytes{}, peak_live_bytes{}, allocation_failures{};
+    std::uint64_t pin_count{}, pinned_arrays{}, pinned_bytes{};
 };
 
 enum class JniArrayAccessKind : std::uint8_t { elements, critical };
@@ -58,10 +59,10 @@ enum class JniArrayReleaseMode : std::uint8_t {
 };
 
 struct JniArrayAccess final {
-    std::uint64_t token{};
-    JniArrayAccessKind kind{JniArrayAccessKind::elements};
-    JniPrimitiveArrayData data;
-    bool is_copy{true};
+    memory::GuestAddress address;
+    std::size_t pin_count{};
+    bool warn_threshold{};
+    bool is_copy{false};
 };
 
 enum class JniArrayErrorReason : std::uint8_t {
@@ -115,9 +116,10 @@ public:
 
     [[nodiscard]] JniArrayAccess Acquire(JniObjectIdentity array,
                                          JniArrayAccessKind kind);
-    void Release(JniObjectIdentity array, std::uint64_t token,
-                 JniArrayAccessKind kind, const JniPrimitiveArrayData& data,
-                 JniArrayReleaseMode mode);
+    // Returns false only for an unmatched unpin. COMMIT is a no-op.
+    bool Release(JniObjectIdentity array, JniArrayReleaseMode mode);
+    [[nodiscard]] std::size_t PinCount(JniObjectIdentity array) const;
+    void SetPinTeardownObserver(std::function<void(std::uint64_t, std::uint64_t)> observer);
 
 private:
     class Impl;

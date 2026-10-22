@@ -38,11 +38,9 @@ Decl Declare_android_webkit_HttpAuthHandler(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/webkit/HttpAuthHandler;", "Ljava/lang/Object;");
-    builder.FinalMethod("cancel", "()V", NeutralHandler('V'));
-    builder.FinalMethod("proceed", "(Ljava/lang/String;Ljava/lang/String;)V",
-                        NeutralHandler('V'));
-    builder.FinalMethod("useHttpAuthUsernamePassword", "()Z",
-                        NeutralHandler('Z'));
+    builder.VirtualMethod("cancel", "()V", NeutralHandler('V'));
+    builder.VirtualMethod("proceed", "(Ljava/lang/String;Ljava/lang/String;)V", NeutralHandler('V'));
+    builder.VirtualMethod("useHttpAuthUsernamePassword", "()Z", NeutralHandler('Z'));
     return std::move(builder).Build();
 }
 
@@ -71,13 +69,12 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
     const auto user_agent = builder.BoundInstanceField("mUserAgent", "Ljava/lang/String;", dx::kAccPrivate);
     const auto render_priority = builder.BoundInstanceField("mRenderPriority", "Landroid/webkit/WebSettings$RenderPriority;", dx::kAccPrivate);
     const auto boolean_setting = [&builder](const char* setter, const char* getter,
-                                            const dx::IntrinsicFieldHandle field,
-                                            const bool default_value) {
-        builder.FinalMethod(setter, "(Z)V", [field](dx::IntrinsicContext& call) {
+                                            const dx::IntrinsicFieldHandle field, const bool default_value) {
+        builder.VirtualMethod(setter, "(Z)V", [field](dx::IntrinsicContext& call) {
             dx::IntrinsicCall(call).SetInt(field, call.arguments[0].AsInt() != 0 ? 2 : 1);
             return dx::VmValue::Void();
         });
-        builder.FinalMethod(getter, "()Z", [field, default_value](dx::IntrinsicContext& call) {
+        builder.VirtualMethod(getter, "()Z", [field, default_value](dx::IntrinsicContext& call) {
             const auto value = dx::IntrinsicCall(call).GetInt(field);
             return dx::VmValue::Int(value == 0 ? (default_value ? 1 : 0)
                                                : (value == 2 ? 1 : 0));
@@ -92,38 +89,35 @@ Decl Declare_android_webkit_WebSettings(const Context& context) {
     boolean_setting("setLoadsImagesAutomatically", "getLoadsImagesAutomatically", load_images, true);
     boolean_setting("setJavaScriptEnabled", "getJavaScriptEnabled", javascript, false);
     boolean_setting("setPluginsEnabled", "getPluginsEnabled", plugins, false);
-    builder.FinalMethod("setCacheMode", "(I)V", [cache_mode](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("setCacheMode", "(I)V", [cache_mode](dx::IntrinsicContext& call) {
         dx::IntrinsicCall(call).SetInt(cache_mode, call.arguments[0].AsInt() + 1);
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("getCacheMode", "()I", [cache_mode](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("getCacheMode", "()I", [cache_mode](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(cache_mode) - 1);
     });
-    const auto string_setting = [&builder](const char* setter, const char* getter,
-                                           const dx::IntrinsicFieldHandle field,
+    const auto string_setting = [&builder](const char* setter, const char* getter, const dx::IntrinsicFieldHandle field,
                                            const char* fallback) {
-        builder.FinalMethod(setter, "(Ljava/lang/String;)V", [field](dx::IntrinsicContext& call) {
+        builder.VirtualMethod(setter, "(Ljava/lang/String;)V", [field](dx::IntrinsicContext& call) {
             dx::IntrinsicCall(call).SetRef(field, call.arguments[0].ref);
             return dx::VmValue::Void();
         });
-        builder.FinalMethod(getter, "()Ljava/lang/String;",
-            [field, fallback](dx::IntrinsicContext& call) {
-                const auto value = dx::IntrinsicCall(call).GetRef(field);
-                return dx::VmValue::Ref(value.IsValid()
-                    ? value : call.vm.NewStringUtf8(fallback));
-            });
+        builder.VirtualMethod(getter, "()Ljava/lang/String;", [field, fallback](dx::IntrinsicContext& call) {
+            const auto value = dx::IntrinsicCall(call).GetRef(field);
+            return dx::VmValue::Ref(value.IsValid() ? value : call.vm.NewStringUtf8(fallback));
+        });
     };
     string_setting("setDefaultTextEncodingName", "getDefaultTextEncodingName",
                    encoding, "Latin-1");
     string_setting("setUserAgentString", "getUserAgentString", user_agent, "");
-    builder.FinalMethod("setRenderPriority", "(Landroid/webkit/WebSettings$RenderPriority;)V",
-        [render_priority](dx::IntrinsicContext& call) {
-            if (!call.arguments[0].ref.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "priority == null"};
-            }
-            dx::IntrinsicCall(call).SetRef(render_priority, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("setRenderPriority", "(Landroid/webkit/WebSettings$RenderPriority;)V",
+                          [render_priority](dx::IntrinsicContext& call) {
+                              if (!call.arguments[0].ref.IsValid()) {
+                                  throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "priority == null"};
+                              }
+                              dx::IntrinsicCall(call).SetRef(render_priority, call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
     return std::move(builder).Build();
 }
 
@@ -312,38 +306,36 @@ Decl Declare_android_webkit_WebView(const Context& context) {
                 call, context, call.receiver, callback, 0));
             return dx::VmValue::Void();
         };
-    builder.FinalMethod("loadUrl", "(Ljava/lang/String;)V",
-        [disabled_load](dx::IntrinsicContext& call) {
-            return disabled_load(call, call.arguments[0].ref, "load");
-        });
-    builder.FinalMethod("getSettings", "()Landroid/webkit/WebSettings;",
-        [check_thread, require_alive, settings](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            auto current = dx::IntrinsicCall(call).GetRef(settings);
-            if (!current.IsValid()) {
-                current = call.vm.NewIntrinsicInstance(
-                    "Landroid/webkit/WebSettings;");
-                dx::IntrinsicCall(call).SetRef(settings, current);
-            }
-            return dx::VmValue::Ref(current);
-        });
-    builder.FinalMethod("setWebViewClient", "(Landroid/webkit/WebViewClient;)V",
-        [check_thread, require_alive, view_client](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            dx::IntrinsicCall(call).SetRef(view_client, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setWebChromeClient", "(Landroid/webkit/WebChromeClient;)V",
-        [check_thread, require_alive, chrome_client](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            dx::IntrinsicCall(call).SetRef(chrome_client, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("addJavascriptInterface",
-                        "(Ljava/lang/Object;Ljava/lang/String;)V",
+    builder.VirtualMethod("loadUrl", "(Ljava/lang/String;)V", [disabled_load](dx::IntrinsicContext& call) {
+        return disabled_load(call, call.arguments[0].ref, "load");
+    });
+    builder.VirtualMethod("getSettings", "()Landroid/webkit/WebSettings;",
+                          [check_thread, require_alive, settings](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              auto current = dx::IntrinsicCall(call).GetRef(settings);
+                              if (!current.IsValid()) {
+                                  current = call.vm.NewIntrinsicInstance("Landroid/webkit/WebSettings;");
+                                  dx::IntrinsicCall(call).SetRef(settings, current);
+                              }
+                              return dx::VmValue::Ref(current);
+                          });
+    builder.VirtualMethod("setWebViewClient", "(Landroid/webkit/WebViewClient;)V",
+                          [check_thread, require_alive, view_client](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              dx::IntrinsicCall(call).SetRef(view_client, call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("setWebChromeClient", "(Landroid/webkit/WebChromeClient;)V",
+                          [check_thread, require_alive, chrome_client](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              dx::IntrinsicCall(call).SetRef(chrome_client, call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "addJavascriptInterface", "(Ljava/lang/Object;Ljava/lang/String;)V",
         [check_thread, require_alive, javascript_interfaces](dx::IntrinsicContext& call) {
             check_thread(call);
             require_alive(call);
@@ -367,52 +359,49 @@ Decl Declare_android_webkit_WebView(const Context& context) {
                  dx::VmValue::Ref(call.arguments[0].ref)}));
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("clearHistory", "()V",
-        [check_thread, require_alive](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            return WidgetNoopHandler()(call);
-        });
+    builder.VirtualMethod("clearHistory", "()V", [check_thread, require_alive](dx::IntrinsicContext& call) {
+        check_thread(call);
+        require_alive(call);
+        return WidgetNoopHandler()(call);
+    });
     const auto no_history =
         [check_thread, require_alive](dx::IntrinsicContext& call) {
             check_thread(call);
             require_alive(call);
             return dx::VmValue::Void();
         };
-    builder.FinalMethod("goBack", "()V", no_history);
-    builder.FinalMethod("reload", "()V", no_history);
-    builder.FinalMethod("stopLoading", "()V",
-        [check_thread, require_alive, pending_load](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            const auto pending = dx::IntrinsicCall(call).GetRef(pending_load);
-            if (pending.IsValid()) {
-                static_cast<void>(CallAndroidMethod(
-                    call.vm, pending, "cancel", "()V"));
-                dx::IntrinsicCall(call).SetRef(pending_load,
-                                                   dx::VmObjectRef{});
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("loadDataWithBaseURL",
+    builder.VirtualMethod("goBack", "()V", no_history);
+    builder.VirtualMethod("reload", "()V", no_history);
+    builder.VirtualMethod("stopLoading", "()V",
+                          [check_thread, require_alive, pending_load](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              const auto pending = dx::IntrinsicCall(call).GetRef(pending_load);
+                              if (pending.IsValid()) {
+                                  static_cast<void>(CallAndroidMethod(call.vm, pending, "cancel", "()V"));
+                                  dx::IntrinsicCall(call).SetRef(pending_load, dx::VmObjectRef{});
+                              }
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod(
+        "loadDataWithBaseURL",
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
         [disabled_load](dx::IntrinsicContext& call) {
             auto url = call.arguments[0].ref;
             if (!url.IsValid()) url = call.vm.NewStringUtf8("about:blank");
             return disabled_load(call, url, "load_data");
         });
-    builder.FinalMethod("canGoBack", "()Z",
-        [check_thread, require_alive](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            return dx::VmValue::Int(0);
-        });
-    builder.FinalMethod("getTitle", "()Ljava/lang/String;",
-        [check_thread, require_alive](dx::IntrinsicContext& call) {
-            check_thread(call);
-            require_alive(call);
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
+    builder.VirtualMethod("canGoBack", "()Z", [check_thread, require_alive](dx::IntrinsicContext& call) {
+        check_thread(call);
+        require_alive(call);
+        return dx::VmValue::Int(0);
+    });
+    builder.VirtualMethod("getTitle", "()Ljava/lang/String;",
+                          [check_thread, require_alive](dx::IntrinsicContext& call) {
+                              check_thread(call);
+                              require_alive(call);
+                              return dx::VmValue::Ref(dx::VmObjectRef{});
+                          });
     return std::move(builder).Build();
 }
 

@@ -32,62 +32,49 @@ private:
 
 Decl Declare_android_media_AudioManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/media/AudioManager;", "Ljava/lang/Object;");
-    builder.FinalMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) {
-        return dx::VmValue::Int(2);
-    });
-    builder.FinalMethod("isMusicActive", "()Z",
-        [context](dx::IntrinsicContext&) {
-            if (context->encoded_music != nullptr &&
-                context->encoded_music->AnyPlaying()) {
-                return dx::VmValue::Int(1);
-            }
-            if (context->encoded_audio_playback != nullptr &&
-                context->encoded_audio_playback->ActiveVoiceCount() > 0U) {
-                return dx::VmValue::Int(1);
-            }
-            if (context->pcm_playback != nullptr) {
-                for (const auto& [_, track] : context->audio_tracks) {
-                    if (context->pcm_playback->PlayState(track.player) ==
-                        audio::OpenSlesPlayState::playing) {
-                        return dx::VmValue::Int(1);
-                    }
+    builder.VirtualMethod("getRingerMode", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(2); });
+    builder.VirtualMethod("isMusicActive", "()Z", [context](dx::IntrinsicContext&) {
+        if (context->encoded_music != nullptr && context->encoded_music->AnyPlaying()) {
+            return dx::VmValue::Int(1);
+        }
+        if (context->encoded_audio_playback != nullptr && context->encoded_audio_playback->ActiveVoiceCount() > 0U) {
+            return dx::VmValue::Int(1);
+        }
+        if (context->pcm_playback != nullptr) {
+            for (const auto& [_, track] : context->audio_tracks) {
+                if (context->pcm_playback->PlayState(track.player) == audio::OpenSlesPlayState::playing) {
+                    return dx::VmValue::Int(1);
                 }
             }
+        }
+        return dx::VmValue::Int(0);
+    });
+    builder.VirtualMethod("getStreamMaxVolume", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
+    builder.VirtualMethod("getStreamVolume", "(I)I", [context](dx::IntrinsicContext& call) {
+        const auto stream = call.arguments[0].AsInt();
+        if (stream < 0 || stream >= 10) return dx::VmValue::Int(0);
+        std::scoped_lock lock(context->audio_policy_mutex);
+        if (context->stream_mute[static_cast<std::size_t>(stream)]) {
             return dx::VmValue::Int(0);
-        });
-    builder.FinalMethod("getStreamMaxVolume", "(I)I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(15); });
-    builder.FinalMethod("getStreamVolume", "(I)I",
-        [context](dx::IntrinsicContext& call) {
-            const auto stream = call.arguments[0].AsInt();
-            if (stream < 0 || stream >= 10) return dx::VmValue::Int(0);
-            std::scoped_lock lock(context->audio_policy_mutex);
-            if (context->stream_mute[static_cast<std::size_t>(stream)]) {
-                return dx::VmValue::Int(0);
-            }
-            return dx::VmValue::Int(
-                context->stream_volume[static_cast<std::size_t>(stream)]);
-        });
-    builder.FinalMethod("setStreamVolume", "(III)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto stream = call.arguments[0].AsInt();
-            if (stream < 0 || stream >= 10) return dx::VmValue::Void();
-            std::scoped_lock lock(context->audio_policy_mutex);
-            context->stream_volume[static_cast<std::size_t>(stream)] =
-                std::clamp(call.arguments[1].AsInt(), 0, 15);
-            ApplyAudioStreamPolicy(*context, stream);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setStreamMute", "(IZ)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto stream = call.arguments[0].AsInt();
-            if (stream < 0 || stream >= 10) return dx::VmValue::Void();
-            std::scoped_lock lock(context->audio_policy_mutex);
-            context->stream_mute[static_cast<std::size_t>(stream)] =
-                call.arguments[1].AsInt() != 0;
-            ApplyAudioStreamPolicy(*context, stream);
-            return dx::VmValue::Void();
-        });
+        }
+        return dx::VmValue::Int(context->stream_volume[static_cast<std::size_t>(stream)]);
+    });
+    builder.VirtualMethod("setStreamVolume", "(III)V", [context](dx::IntrinsicContext& call) {
+        const auto stream = call.arguments[0].AsInt();
+        if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+        std::scoped_lock lock(context->audio_policy_mutex);
+        context->stream_volume[static_cast<std::size_t>(stream)] = std::clamp(call.arguments[1].AsInt(), 0, 15);
+        ApplyAudioStreamPolicy(*context, stream);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setStreamMute", "(IZ)V", [context](dx::IntrinsicContext& call) {
+        const auto stream = call.arguments[0].AsInt();
+        if (stream < 0 || stream >= 10) return dx::VmValue::Void();
+        std::scoped_lock lock(context->audio_policy_mutex);
+        context->stream_mute[static_cast<std::size_t>(stream)] = call.arguments[1].AsInt() != 0;
+        ApplyAudioStreamPolicy(*context, stream);
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 

@@ -33,6 +33,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
 #include "widget_fixture.h"
+#include "android_value_fixture.h"
 
 using namespace ogplay::test::widget;
 using namespace ogplay::runtime;
@@ -503,4 +504,152 @@ TEST_CASE("LUI18 guest View calls enabled listener before virtual onTouchEvent")
     CHECK(vm.CallOn(view, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event)}).AsInt() == 1);
     CHECK(vm.CallStaticInt("getTouches") == 2);
     CHECK(vm.TouchViewValue("getEvents") == 2);
+}
+
+TEST_CASE("DVM-261 DEX framework overrides dispatch and super retains native behavior") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm fixture(backend, {}, false, "framework_override.dex", true);
+        const auto owner = fixture.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto hits = [&](const VmObjectRef object) {
+            const auto field = fixture.linker.FindFieldRecursive(fixture.model.ObjectClass(object), "calls", "I");
+            REQUIRE(field.has_value());
+            return fixture.model.InstanceSlots(object)[fixture.linker.Field(*field).slot].bits;
+        };
+        const auto pause = fixture.New("Lfixture/PauseView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        auto state = std::make_shared<DexVmAndroidContext::GlSurfaceRuntime>();
+        state->view = pause;
+        fixture.context->gl_surface_runtimes[pause.Value()] = state;
+        fixture.Static("Lfixture/FrameworkOverrideProbe;", "pause", "(Landroid/opengl/GLSurfaceView;)V",
+                       {VmValue::Ref(pause)});
+        CHECK(hits(pause) == 1);
+        CHECK(state->paused);
+
+        const auto view = fixture.New("Lfixture/IdView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        fixture.Static("Lfixture/FrameworkOverrideProbe;", "id", "(Landroid/view/View;I)V",
+                       {VmValue::Ref(view), VmValue::Int(261)});
+        CHECK(hits(view) == 1);
+        CHECK(fixture.On(view, "getId", "()I").AsInt() == 261);
+
+        const auto web = fixture.New("Lfixture/ChromeView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto chrome = fixture.New("Landroid/webkit/WebChromeClient;");
+        fixture.Static("Lfixture/FrameworkOverrideProbe;", "chrome",
+                       "(Landroid/webkit/WebView;Landroid/webkit/WebChromeClient;)V",
+                       {VmValue::Ref(web), VmValue::Ref(chrome)});
+        CHECK(hits(web) == 1);
+        const auto field = fixture.linker.FindFieldRecursive(fixture.model.ObjectClass(web), "mWebChromeClient",
+                                                             "Landroid/webkit/WebChromeClient;");
+        REQUIRE(field.has_value());
+        CHECK(fixture.model.InstanceSlots(web)[fixture.linker.Field(*field).slot].bits == chrome.Value());
+
+        const auto handler = fixture.New("Lfixture/AtTimeHandler;");
+        const auto message = fixture.vm.NewIntrinsicInstance("Landroid/os/Message;");
+        CHECK(fixture
+                  .Static("Lfixture/FrameworkOverrideProbe;", "delayed", "(Landroid/os/Handler;Landroid/os/Message;J)Z",
+                          {VmValue::Ref(handler), VmValue::Ref(message), VmValue::Long(10)})
+                  .AsInt() == 1);
+        CHECK(hits(handler) == 1);
+        CHECK_FALSE(fixture.context->scheduled_work.empty());
+    }
+}
+
+TEST_CASE("DVM-261 native template methods preserve overrides and default state") {
+    using ogplay::test::android_value::AndroidValueVm;
+    const auto parent_call = [](IntrinsicContext& call, const char* parent, const char* name, const char* signature) {
+        auto& linker = call.vm.Linker();
+        const auto type = linker.ResolveDescriptor(parent);
+        const auto method = std::string_view(name) == "<init>"
+                                ? *linker.FindDirectMethod(type, name, signature)
+                                : linker.Class(type).vtable[*linker.FindVtableIndex(type, name, signature)];
+        std::vector<VmValue> arguments{VmValue::Ref(call.receiver)};
+        arguments.insert(arguments.end(), call.arguments.begin(), call.arguments.end());
+        const auto outcome = call.vm.Call(method, arguments);
+        if (outcome.exception.IsValid())
+            throw VmJavaThrow{linker.Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+        return outcome.value;
+    };
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int chooser_calls{}, text_calls{}, size_calls{}, single_calls{}, lines_calls{};
+        int indexed_calls{}, params_calls{}, flags_calls{}, color_calls{}, looper_calls{};
+        const auto add_override = [&](IntrinsicClassBuilder& builder, const char* parent, const char* name,
+                                      const char* signature, int& count) {
+            builder.OverrideMethod(name, signature,
+                                   [parent_call, parent, name, signature, &count](IntrinsicContext& call) {
+                                       ++count;
+                                       return parent_call(call, parent, name, signature);
+                                   });
+        };
+        auto gl = IntrinsicClassBuilder::Class("Ltest/TemplateGl;", "Landroid/opengl/GLSurfaceView;");
+        add_override(gl, "Landroid/opengl/GLSurfaceView;", "setEGLConfigChooser",
+                     "(Landroid/opengl/GLSurfaceView$EGLConfigChooser;)V", chooser_calls);
+        auto text = IntrinsicClassBuilder::Class("Ltest/TemplateText;", "Landroid/widget/TextView;");
+        add_override(text, "Landroid/widget/TextView;", "setText",
+                     "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V", text_calls);
+        add_override(text, "Landroid/widget/TextView;", "setTextSize", "(IF)V", size_calls);
+        add_override(text, "Landroid/widget/TextView;", "setSingleLine", "(Z)V", single_calls);
+        add_override(text, "Landroid/widget/TextView;", "setLines", "(I)V", lines_calls);
+        auto group = IntrinsicClassBuilder::Class("Ltest/TemplateGroup;", "Landroid/view/ViewGroup;");
+        add_override(group, "Landroid/view/ViewGroup;", "addView", "(Landroid/view/View;I)V", indexed_calls);
+        add_override(group, "Landroid/view/ViewGroup;", "addView",
+                     "(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V", params_calls);
+        auto window = IntrinsicClassBuilder::Class("Ltest/TemplateWindow;", "Landroid/view/Window;");
+        add_override(window, "Landroid/view/Window;", "setFlags", "(II)V", flags_calls);
+        auto color = IntrinsicClassBuilder::Class("Ltest/TemplateColor;", "Landroid/graphics/drawable/ColorDrawable;");
+        color.Constructor("(I)V", [parent_call](IntrinsicContext& call) {
+            return parent_call(call, "Landroid/graphics/drawable/ColorDrawable;", "<init>", "(I)V");
+        });
+        add_override(color, "Landroid/graphics/drawable/ColorDrawable;", "setColor", "(I)V", color_calls);
+        auto thread = IntrinsicClassBuilder::Class("Ltest/TemplateThread;", "Landroid/os/HandlerThread;");
+        thread.OverrideMethod("getLooper", "()Landroid/os/Looper;", [&looper_calls](IntrinsicContext&) {
+            ++looper_calls;
+            return VmValue::Ref(VmObjectRef{});
+        });
+        AndroidValueVm fixture(backend,
+                               {std::move(gl).Build(), std::move(text).Build(), std::move(group).Build(),
+                                std::move(window).Build(), std::move(color).Build(), std::move(thread).Build()},
+                               false, nullptr, true);
+        const auto view = fixture.vm.NewIntrinsicInstance("Ltest/TemplateGl;");
+        fixture.On(view, "setEGLConfigChooser", "(Z)V", {VmValue::Int(1)});
+        fixture.On(
+            view, "setEGLConfigChooser", "(IIIIII)V",
+            {VmValue::Int(5), VmValue::Int(6), VmValue::Int(5), VmValue::Int(0), VmValue::Int(24), VmValue::Int(8)});
+        CHECK(chooser_calls == 2);
+        CHECK(fixture.context->gl_surface_config_specs.at(view.Value()) ==
+              std::vector<std::int32_t>{5, 6, 5, 0, 24, 8});
+        CHECK_FALSE(fixture.context->gl_surface_runtimes.contains(view.Value()));
+        const auto widget = fixture.vm.NewIntrinsicInstance("Ltest/TemplateText;");
+        fixture.On(widget, "setText", "(Ljava/lang/CharSequence;)V",
+                   {VmValue::Ref(fixture.vm.NewStringUtf8("override"))});
+        fixture.On(widget, "setTextSize", "(F)V", {VmValue::Float(18.0F)});
+        fixture.On(widget, "setSingleLine", "()V");
+        CHECK(text_calls == 1);
+        CHECK(size_calls == 1);
+        CHECK(single_calls == 1);
+        CHECK(lines_calls == 1);
+        CHECK(fixture.vm.StringUtf8(fixture.On(widget, "getText", "()Ljava/lang/CharSequence;").ref) == "override");
+        CHECK(fixture.On(widget, "getTextSize", "()F").AsFloat() == 18.0F);
+        const auto parent = fixture.vm.NewIntrinsicInstance("Ltest/TemplateGroup;");
+        const auto child = fixture.vm.NewIntrinsicInstance("Landroid/view/View;");
+        fixture.On(parent, "addView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        CHECK(indexed_calls == 1);
+        CHECK(params_calls == 1);
+        CHECK(fixture.On(parent, "getChildCount", "()I").AsInt() == 1);
+        fixture.On(parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
+        const auto params =
+            fixture.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V", {VmValue::Int(10), VmValue::Int(20)});
+        fixture.On(parent, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                   {VmValue::Ref(child), VmValue::Ref(params)});
+        CHECK(params_calls == 2);
+        const auto win = fixture.vm.NewIntrinsicInstance("Ltest/TemplateWindow;");
+        fixture.On(win, "addFlags", "(I)V", {VmValue::Int(3)});
+        fixture.On(win, "clearFlags", "(I)V", {VmValue::Int(1)});
+        CHECK(flags_calls == 2);
+        const auto drawable = fixture.New("Ltest/TemplateColor;", "(I)V", {VmValue::Int(0x12345678)});
+        CHECK(color_calls == 1);
+        CHECK(fixture.On(drawable, "getColor", "()I").AsInt() == 0x12345678);
+        const auto worker = fixture.vm.NewIntrinsicInstance("Ltest/TemplateThread;");
+        CHECK(fixture.On(worker, "quit", "()Z").AsInt() == 0);
+        CHECK(fixture.On(worker, "quitSafely", "()Z").AsInt() == 0);
+        CHECK(looper_calls == 2);
+    }
 }

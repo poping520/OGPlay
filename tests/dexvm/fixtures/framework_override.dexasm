@@ -1,0 +1,89 @@
+# Legitimate application DEX overrides of API19 handwritten intrinsic methods.
+.class public Lfixture/PauseView;
+.super Landroid/opengl/GLSurfaceView;
+.field public calls:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/opengl/GLSurfaceView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public onPause()V
+.registers 2
+    const/4 v0, 1
+    iput v0, v1, Lfixture/PauseView;->calls:I
+    invoke-super {v1}, Landroid/opengl/GLSurfaceView;->onPause()V
+    return-void
+.end method
+
+.class public Lfixture/IdView;
+.super Landroid/view/View;
+.field public calls:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public setId(I)V
+.registers 3
+    const/4 v0, 1
+    iput v0, v1, Lfixture/IdView;->calls:I
+    invoke-super {v1, v2}, Landroid/view/View;->setId(I)V
+    return-void
+.end method
+
+.class public Lfixture/ChromeView;
+.super Landroid/webkit/WebView;
+.field public calls:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/webkit/WebView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public setWebChromeClient(Landroid/webkit/WebChromeClient;)V
+.registers 3
+    const/4 v0, 1
+    iput v0, v1, Lfixture/ChromeView;->calls:I
+    invoke-super {v1, v2}, Landroid/webkit/WebView;->setWebChromeClient(Landroid/webkit/WebChromeClient;)V
+    return-void
+.end method
+
+.class public Lfixture/AtTimeHandler;
+.super Landroid/os/Handler;
+.field public calls:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/os/Handler;-><init>()V
+    return-void
+.end method
+.method public sendMessageAtTime(Landroid/os/Message;J)Z
+.registers 5
+    const/4 v0, 1
+    iput v0, v1, Lfixture/AtTimeHandler;->calls:I
+    invoke-super {v1, v2, v3, v4}, Landroid/os/Handler;->sendMessageAtTime(Landroid/os/Message;J)Z
+    move-result v0
+    return v0
+.end method
+
+.class public Lfixture/FrameworkOverrideProbe;
+.super Ljava/lang/Object;
+.method public static pause(Landroid/opengl/GLSurfaceView;)V
+.registers 1
+    invoke-virtual {v0}, Landroid/opengl/GLSurfaceView;->onPause()V
+    return-void
+.end method
+.method public static id(Landroid/view/View;I)V
+.registers 2
+    invoke-virtual {v0, v1}, Landroid/view/View;->setId(I)V
+    return-void
+.end method
+.method public static chrome(Landroid/webkit/WebView;Landroid/webkit/WebChromeClient;)V
+.registers 2
+    invoke-virtual {v0, v1}, Landroid/webkit/WebView;->setWebChromeClient(Landroid/webkit/WebChromeClient;)V
+    return-void
+.end method
+.method public static delayed(Landroid/os/Handler;Landroid/os/Message;J)Z
+.registers 4
+    invoke-virtual {v0, v1, v2, v3}, Landroid/os/Handler;->sendMessageDelayed(Landroid/os/Message;J)Z
+    move-result v0
+    return v0
+.end method

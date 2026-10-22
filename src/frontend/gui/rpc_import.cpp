@@ -1,4 +1,5 @@
 #include "frontend/gui/rpc.h"
+#include "ogplay/app/data_hint.h"
 #include "ogplay/app/encoding.h"
 #include <algorithm>
 #include <chrono>
@@ -140,7 +141,8 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
     // Schema is checked before polling, IO or host interaction.
     if (method == "dialog.pick") Fields(params, {"kind"});
     else if (method == "dialog.poll") Fields(params, {"dialog"});
-    else if (method == "library.analyze" || method == "library.external.inspect") Fields(params, {"path"});
+    else if (method == "library.analyze") Fields(params, {"path"});
+    else if (method == "library.external.inspect") Fields(params, {"path", "package"});
     else if (method == "library.upload.begin") Fields(params, {"name", "size"});
     else if (method == "library.upload.chunk") Fields(params, {"job", "offset", "data"});
     else if (method == "library.import") Fields(params, {"job", "external_dir", "external_guest_dir", "external_mode", "new_instance"});
@@ -165,7 +167,10 @@ app::ConsoleResponse GuiRpcService::ImportRequest(std::string_view method, app::
         writer.AddBool(result, "pending", job.dialog_pending);
         if (job.picked) writer.AddString(result, "path", Text(*job.picked)); else writer.AddNull(result, "path");
     } else if (method == "library.external.inspect") {
-        DescribeDataDirectory(writer, result, Path(String(params, "path")));
+        const auto path = Path(String(params, "path"));
+        DescribeDataDirectory(writer, result, path);
+        const auto guest = app::GuessDataMount(path, params.Member("package") ? String(params, "package") : std::string{});
+        if (guest) writer.AddString(result, "suggested_guest_dir", *guest); else writer.AddNull(result, "suggested_guest_dir");
     } else {
         if (!host_.analyze || !host_.timestamp) throw std::runtime_error("导入服务不可用。");
         if (method == "library.analyze" || method == "library.upload.begin") {

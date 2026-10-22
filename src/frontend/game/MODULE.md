@@ -19,6 +19,9 @@ sandbox 旁的 <installation_id>.input.toml。缺文件为空布局，旧 templa
 子树缺失（去重、512 条上限并标记 truncated），会话结束或析构时剔除已存在路径并原子写 JSON
 （schema 1、external_dir、external_guest_dir、missing、truncated）；写失败只记 warn。preflight 不记录。
 
+`--window-title <name>`：窗口标题为 `OGPlay · <name> · FPS`，缺省用 APK 文件名；限 1～256 字节可打印 UTF-8。
+库启动由 ResolveLaunch 传入游戏库显示名称。
+
 ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdcard 子树约束；
 初始 cwd 由 VFS 建立为 /，之后仅 guest chdir/fchdir 改变，不由挂载配置隐式改变。
 

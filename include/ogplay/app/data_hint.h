@@ -43,6 +43,15 @@ struct DataMountHint final {
     const MissingDataReport& report, const std::optional<std::filesystem::path>& data_dir,
     std::string_view current_guest_dir);
 
+// Mount implied by where a picked host directory sits, before any run: below an
+// Android/data|obb|media, sdcard or emulated/0 component the rest of the path maps under
+// /sdcard; a directory named after the package maps to Android/data (Android/obb when it
+// holds .obb files); any other directory appears as /sdcard/<its name>. nullopt keeps the
+// default /sdcard (a copied sdcard root holding Android/, or a name the guest cannot use).
+// Never reads the APK.
+[[nodiscard]] OGPLAYCORE_API std::optional<std::string> GuessDataMount(
+    const std::filesystem::path& dir, std::string_view package = {});
+
 class LibraryStore;
 
 // A hint for one library entry after its last run, with the mount it applies to.

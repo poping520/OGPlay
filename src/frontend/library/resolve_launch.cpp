@@ -70,6 +70,7 @@ ResolvedLaunch ResolveLaunch(const LibraryStore& store, const LibraryEntry& sour
     // ADR-0146: what the game failed to find, read by the launcher after exit.
     if (mode != LaunchMode::preflight)
         o.missing_data_report = std::filesystem::absolute(entry.directory / "last-run-missing.json").lexically_normal();
+    if (!entry.metadata->display_name.empty()) o.window_title = entry.metadata->display_name;
     ValidateGameRunOptions(o);
     return result;
 }

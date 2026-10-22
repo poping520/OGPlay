@@ -296,13 +296,13 @@
 .iw-host.empty { color: var(--dim); font: 700 12.5px var(--font); }
 .import-wizard .iw-host.empty > span { direction: ltr; }
 .iw-host > span { display: block; }
-.console .import-wizard .iw-pick button { flex: none; height: 34px; padding: 0 14px; border: 0; background: var(--glass2); font-size: 12.5px; }
+.console .import-wizard .iw-pick button { margin: 0; flex: none; height: 34px; padding: 0 14px; border: 0; background: var(--glass2); font-size: 12.5px; }
 .console .import-wizard .iw-pick button:hover:not(:disabled) { background: rgba(255,255,255,.16); }
 .iw-row { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
 .iw-row { flex-wrap: wrap; }
 .iw-row > span { flex: none; width: 64px; color: var(--muted); font-size: 13px; font-weight: 800; }
 .import-wizard .seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: rgba(0,0,0,.28); }
-.console .import-wizard .seg button { height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 13px; line-height: 1; }
+.console .import-wizard .seg button { margin: 0; height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 13px; line-height: 1; }
 .console .import-wizard .seg button:hover:not(:disabled):not(.on) { background: none; color: var(--ink); }
 .console .import-wizard .seg button.on { background: var(--ink); color: var(--bg); }
 .iw-txt { display: flex; flex: 1; align-items: center; height: 40px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px; background: rgba(0,0,0,.28); }

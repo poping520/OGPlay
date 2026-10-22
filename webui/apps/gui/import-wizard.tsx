@@ -21,6 +21,8 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   const [error, setError] = useState('');
   const [external, setExternal] = useState('');
   const [externalGuest, setExternalGuest] = useState('/sdcard');
+  // Typed mount positions win over the one inferred from the picked directory.
+  const [guestEdited, setGuestEdited] = useState(false);
   const [externalMode, setExternalMode] = useState<ExternalMode>('copy');
   const [committing, setCommitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -49,7 +51,7 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
   async function analyze(dropped: File | null) {
     await run(async () => {
       if (activeJob.current) await rpc('library.job.cancel', { job: activeJob.current });
-      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalGuest('/sdcard'); setExternalMode('copy');
+      activeJob.current = ''; setJob(null); setConfirmed(false); setExternal(defaultExternal); setExternalGuest('/sdcard'); setGuestEdited(false); setExternalMode('copy');
       let initial: ImportJob;
       if (dropped) {
         setStage('正在读取拖入的 APK…');
@@ -86,7 +88,9 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
     return () => { disposed.current = true; dialog.current?.close(); };
   }, []);
   // The host lists the chosen directory so the preview shows real guest paths.
-  const { data, error: dataError } = useDataDirectory(external);
+  const { data, error: dataError } = useDataDirectory(external, summary?.package);
+  const suggested = data?.suggested_guest_dir ?? null;
+  useEffect(() => { if (data && !guestEdited) setExternalGuest(suggested ?? '/sdcard'); }, [data, guestEdited]);
   const canImport = summary && job?.state === 'ready' && !guestError && (!summary.existing_instances || confirmed);
   const led = error || job?.state === 'failed' ? 'danger' : committing || busy ? 'running' : summary ? 'ready' : '';
   const mode = MODES.find(item => item.value === externalMode)!;
@@ -123,9 +127,11 @@ export function ImportWizard({ file, defaultExternal = '', onClose, onImported }
           <p class="iw-note">{mode.hint}</p>
           <div class="iw-row"><span>挂载位置</span>
             <label class={guestError ? 'iw-txt bad' : 'iw-txt'}><input aria-label="数据包挂载位置" value={externalGuest} disabled={busy} spellcheck={false}
-              onInput={event => setExternalGuest(event.currentTarget.value)} /></label>
+              onInput={event => { setExternalGuest(event.currentTarget.value); setGuestEdited(true); }} /></label>
           </div>
-          <p class={guestError ? 'iw-note bad' : 'iw-note'}>{guestError ?? '目录内容会出现在此 guest 路径下；按游戏实际读取的位置填写，例如 /sdcard/gameloft/games/<游戏名>。'}</p>
+          <p class={guestError ? 'iw-note bad' : 'iw-note'}>{guestError ?? (suggested && guest === suggested && !guestEdited
+            ? '已按所选目录自动填写；目录内容会出现在此路径下。'
+            : '目录内容会出现在此路径下；位置不对时，游戏退出后会提示修正。')}</p>
           <MountPreview caption={externalMode === 'copy' ? '复制到游戏库后挂载' : '直接挂载原目录'} guest={guest} invalid={!!guestError} data={data} error={dataError} />
         </>}
       </section>

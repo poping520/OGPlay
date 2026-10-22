@@ -147,7 +147,7 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     const auto plan = ogplay::frontend::BuildLaunchPlan(
         cli, temporary.path, Entry(entry_dir, external),
         {.profiles_dir = profiles});
-    REQUIRE(plan.argv.size() == 25);
+    REQUIRE(plan.argv.size() == 27);
     CHECK(plan.argv[1] == "--run-game");
     CHECK(plan.argv[3] == "--profiles-dir");
     CHECK(plan.argv[5] == "--external-dir");
@@ -170,6 +170,9 @@ TEST_CASE("GUI LaunchPlan emits only the documented run-apk arguments") {
     CHECK(plan.argv[21] == "--input-config");
     CHECK(plan.argv[23] == "--missing-data-report");
     CHECK(plan.argv[24] == std::filesystem::absolute(entry_dir / "last-run-missing.json").lexically_normal().generic_string());
+    // The window caption shows the library name, not the stored game.apk.
+    CHECK(plan.argv[25] == "--window-title");
+    CHECK(plan.argv[26] == "Game");
     CHECK(plan.package == "org.example.game");
     CHECK(plan.log_path == std::filesystem::absolute(entry_dir / "last-run.log"));
 }

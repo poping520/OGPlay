@@ -25,8 +25,9 @@
 - `library.data_hint {installation_id, external_dir?}`：SuggestDataMount 的结果（kind none/remount/
   needs_data、候选及示例）；`library.data_mount.apply {installation_id, external_guest_dir, external_dir?}`
   经 PatchGameSettings 写挂载位置，未配置数据包时连同目录（引用方式）。均拒绝未知字段，入库时忙碌。
-- `library.external.inspect {path}`：同步描述候选数据包目录，供挂载预览：目录优先排序的前 8 个
+- `library.external.inspect {path, package?}`：同步描述候选数据包目录，供挂载预览：目录优先排序的前 8 个
   顶层名、顶层总数、文件数与字节；递归统计以 20 万项为上限并标记 truncated，不跟随目录符号链接。
+  `suggested_guest_dir` 为 GuessDataMount 结果或 null；向导在用户未手动编辑挂载位置时采用。
 - LibraryStore、LibraryConfig、SettingDefinitions、GameSettings、APK 检视/图标/Profile、设置继承归
   frontend/library，只经 app 公开头消费。settings.get/set 保存前复用库内 schema/目录校验，
   未知键/损坏配置/过期读取版本拒绝覆盖；后台分析或入库尚未回收时禁止保存。

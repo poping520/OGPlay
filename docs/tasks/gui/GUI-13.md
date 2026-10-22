@@ -11,6 +11,7 @@
 - frontend/game：`--missing-data-report`，收集 `/sdcard` 子树缺失、剔除已存在路径、退出写 JSON。
 - library：ResolveLaunch 传报告路径；推断函数（挂载候选/需要数据包）；游戏设置 `data_mount_hint`。
 - gui/webui：`library.data_hint` RPC；退出后弹窗，挂载并重新启动 / 仅修改 / 忽略。
+- 导入向导：选目录时按宿主路径结构预填挂载位置（如 `…/Android/data/<包名>`），无标记时为 `/sdcard/<目录名>`，不分析 APK。
 
 不做：游戏内实时提示、APK 静态分析、自动应用、obb 单文件挂载建议。
 

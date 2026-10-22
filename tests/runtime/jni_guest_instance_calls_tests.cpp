@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <atomic>
 #include <bit>
@@ -129,7 +130,8 @@ public:
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniJavaVm java_vm;
     const ogplay::memory::GuestAddress output{0x72000000U};
 };

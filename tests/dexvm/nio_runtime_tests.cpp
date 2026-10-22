@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <array>
 #include <bit>
@@ -24,7 +25,8 @@ JniObjectIdentity Object(std::uint64_t value) {
 
 struct NioVm final {
     ogplay::runtime::JniStringStore strings;
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     dx::JavaObjectModel model{strings, arrays};
     dx::DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

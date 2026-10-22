@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // Gap survey mode (diagnostic): unresolved platform surfaces become recorded
 // neutral stubs so one run harvests the whole work queue. Every case here has
@@ -23,7 +24,8 @@ using namespace ogplay::runtime::dexvm;
 
 struct Linked final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

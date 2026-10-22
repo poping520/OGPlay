@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -124,7 +126,8 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
     ogplay::runtime::JniStringStore strings;
-    ogplay::runtime::JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniNativeRegistry natives;
     ogplay::runtime::dexvm::NioRuntime nio;
     ogplay::runtime::JniJavaVm java_vm;
@@ -1522,4 +1525,22 @@ TEST_CASE("ADR-0153 PopLocalFrame underflow replaces pending and republishes res
     CHECK(pending->throwable != object);
     CHECK(f.classes.ClassName(pending->exception_class) == "java/lang/RuntimeException");
     CHECK_FALSE(f.environment.PendingCallDiagnostics().empty());
+}
+
+TEST_CASE("DVM-260 guest JNI provider failure publishes OOME and rolls back") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    JavaPayloadLimits limits;
+    limits.committed_limit_bytes = 0;
+    GuestJavaPayloadProvider provider(f.memory, f.ledger, limits);
+    f.arrays = JniPrimitiveArrayStore{provider};
+    f.Seal();
+    f.environment.AttachThread(504);
+    CHECK(f.CallEnvironment("NewIntArray", 504, 16) == 0);
+    const auto pending = f.environment.PendingExceptionMetadata(504);
+    REQUIRE(pending.has_value());
+    CHECK(f.classes.ClassName(pending->exception_class) == "java/lang/OutOfMemoryError");
+    CHECK(provider.Statistics().allocation_count == 0);
+    CHECK(provider.Statistics().committed_bytes == 0);
+    f.arrays = JniPrimitiveArrayStore{f.arrays_payload};
 }

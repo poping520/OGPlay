@@ -1,3 +1,5 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 
@@ -32,7 +34,8 @@ using namespace ogplay::runtime::dexvm;
 
 TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex metadata") {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     std::vector<IntrinsicClassDecl> catalog;
@@ -52,7 +55,8 @@ TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex meta
 
 struct GcVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
@@ -261,7 +265,8 @@ TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {
     JniStringStore strings;
-    JniPrimitiveArrayStore primitives;
+    ogplay::runtime::HostCopyJavaPayloadProvider primitives_payload;
+    JniPrimitiveArrayStore primitives{primitives_payload};
     JniClassRegistry jni_classes;
     const auto jni_object = jni_classes.RegisterClass({"java/lang/Object"});
     const auto jni_box = jni_classes.RegisterClass(
@@ -730,4 +735,62 @@ TEST_CASE("WU7-4 native close claims its owner before reentrant collection and r
         CHECK(bridge.calls == 3);
         CHECK(f.vm.GuestNativeResourceCount() == 0);
     }
+}
+
+TEST_CASE("DVM-260 primitive aget aput Release microbenchmark") {
+    if (!std::getenv("OGPLAY_RUN_ARRAY_BENCHMARK")) return;
+    using namespace ogplay::runtime;
+    using namespace ogplay::runtime::dexvm;
+    JniStringStore strings;
+    ogplay::memory::AddressSpace memory;
+    ogplay::core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider arrays_payload{memory, ledger};
+    JniPrimitiveArrayStore arrays{arrays_payload};
+    JavaObjectModel model{strings, arrays};
+    const auto array = model.NewPrimitiveArray(DexClassId{1}, JniPrimitiveKind::integer, 65536);
+    std::vector<std::uint64_t> times;
+    std::uint64_t checksum{};
+    for (int round = 0; round < 7; ++round) {
+        const auto start = ogplay::hal::Clock::SteadyTimestampNs();
+        for (std::uint32_t i = 0; i < 1000000; ++i) {
+            const auto index = static_cast<JniSize>(i & 65535U);
+            const auto value = model.GetPrimitiveElement(array, (index + 1) & 65535);
+            model.SetPrimitiveElement(array, index, value + i);
+        }
+        times.push_back(ogplay::hal::Clock::SteadyTimestampNs() - start);
+        checksum += model.GetPrimitiveElement(array, round);
+    }
+    std::sort(times.begin(), times.end());
+    MESSAGE("ARRAY_BENCHMARK median_ns=" << times[3] << " checksum=" << checksum);
+    CHECK(checksum != 0);
+}
+
+TEST_CASE("DVM-260 copy borrow is a strong root until final release") {
+    GcVm f;
+    const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
+    const auto identity = f.model.ToIdentity(array);
+    auto access = f.arrays.Acquire(identity, JniArrayAccessKind::elements);
+    REQUIRE(access.is_copy);
+    f.vm.SetGcIntegration({[&](const auto& visit) { f.arrays.VisitAccessRoots(visit); }, {}, {}});
+    const auto weak = f.vm.NewIntrinsicInstance("Ljava/lang/ref/WeakReference;");
+    const auto weak_root = f.vm.ProtectReferences(std::array{weak});
+    const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(weak), "<init>", "(Ljava/lang/Object;)V");
+    REQUIRE(ctor);
+    const auto constructed = f.vm.Call(*ctor, std::array{VmValue::Ref(weak), VmValue::Ref(array)});
+    REQUIRE_FALSE(constructed.exception.IsValid());
+    const auto referent = f.linker.FindFieldRecursive(f.model.ObjectClass(weak), "referent", "Ljava/lang/Object;");
+    REQUIRE(referent);
+    const auto referent_slot = f.linker.Field(*referent).slot;
+    const auto before = f.vm.MarkReachable();
+    CHECK(before.IsMarked(array));
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK(f.model.ArrayLength(array) == 3);
+    CHECK(f.model.InstanceSlots(weak)[referent_slot].bits == array.Value());
+    f.arrays.Release(identity, access.token, access.kind, access.data, JniArrayReleaseMode::commit);
+    CHECK(f.vm.MarkReachable().IsMarked(array));
+    f.arrays.Release(identity, access.token, access.kind, access.data, JniArrayReleaseMode::abort);
+    CHECK_FALSE(f.vm.MarkReachable().IsMarked(array));
+    static_cast<void>(f.vm.CollectGarbage());
+    CHECK_THROWS_AS(static_cast<void>(f.arrays.Length(identity)), JniArrayError);
+    CHECK(f.model.InstanceSlots(weak)[referent_slot].bits == 0);
 }

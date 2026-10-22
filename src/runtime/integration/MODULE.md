@@ -325,18 +325,32 @@ bridge 可接收固定 API19 骨架字节，在 BootDex 之后、应用 DEX 之�
 JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.printStackTrace()，
 输出沿 Java System.err；Java 打印异常被忽略，pending 的清除、保活与恢复由 JNI 层拥有。
 
-## Java payload provider（ADR-0152，阶段 1）
+## Java payload provider（ADR-0152，阶段 2）
 
-`GuestJavaPayloadProvider` 归 integration owner，显式接收 AddressSpace/ledger/limits；当前仅
-单元夹具调用，不自动安装到 JNI store、DexVM、guest binding 或 NIO。小块 8-byte 对齐放
-可配置 slab，大块独立映射；全部 first-fit 查同一 guest 账本。映射按宿主 backing 粒度对齐，
-按 guest 页退役，不破坏相邻 4 KiB 页。零长块也占独立地址/身份；复用地址更换 generation。
-分配在锁内按 ADR-0060 的 initial target → growth limit 规则计算收费，物理提交另限额，
-映射/元数据失败回滚目标与计数；可查询 allocated/committed/slab free/pin bytes/count。
-此预算当前仅夹具独立使用，阶段 2 必须接入 VM 唯一 charge/GC context，禁止形成第二生产堆账本。
-provider 通过 memory owner capability 保护映射并记录修改/restore 拒绝；AddressSpace 与 ledger
-晚于所有 typed view 析构。view 延长 provider backing 生命周期且阻止 block Release，元素
-访问不走全局内存锁。普通 guest HB 和 CPU quiescence 规则不变，退役前停止使用该地址的 CPU。
+`GuestJavaPayloadProvider` 归 AndroidGuestProcess，显式接收 AddressSpace/ledger/limits 并注入
+primitive store；String/NIO 尚未迁移。小块 8-byte 对齐按尺寸分级，每个 slab 只服务一个
+级别；默认 16 KiB slab / 8 KiB 小块阈值共 64 级（至 128 每 8 字节一级，其后每翻倍
+区间 8 级）。直接 class lookup、各级有空位 slab 的侵入链表及空闲槽栈均为 O(1)，
+不遍历全部 slab 或逐位查找；generation 元数据用散列表，插入/删除摊还 O(1)。创建 slab
+或重分空 slab 的槽表初始化最多 2048 槽；映射慢路径仍 first-fit 查统一 guest 账本。
+大块独立映射。映射按宿主 backing 粒度对齐，按 guest 页退役，不破坏邻页。
+全局最多缓存 64 个空 slab（默认至多 1 MiB），可原址重分给其他级别；超出上限才解除
+映射。cache/级别切换在分配元数据准备后提交，失败不改变已提交计数或空闲槽状态。
+零长块也占独立地址/身份，地址复用更换 generation。provider 仅限 committed/VAS，逻辑
+堆目标/增长/emergency 全归 VM Reserve。model 的显式 allocation context 在 store 锁外
+持 VM 执行锁完成收费事务；New/import 单次收费，失败完整回滚，provider 提交/地址不足
+映射 OOME，沿既有异常 emergency reserve 构造 throwable。
+
+GC 集成同时枚举 environment references、String lease 与数组 copy borrow roots，在 mark/
+weak 处理前生效。停止/join Java workers、native workers 和 CPU 后才退役 Record/store view，
+再释放 provider；成员顺序保证 store 早于 provider、provider 早于 ledger/AddressSpace 析构。
+独立 headless 契约显式选择 host-copy provider，不作为生产 guest backing 的回退。
+
+provider 保护映射并记录修改/restore 拒绝；AddressSpace 与 ledger 晚于所有 view 析构。
+view 保活 backing、阻止 Release，每元素不经全局内存锁。guest HB/CPU quiescence 合同不变。
+Stop 输出结构化 `runtime.java_payload` 聚合：kind/长度分桶计数、峰值 live、committed、
+slab free、分配失败次数及各尺寸级别的 slab/总槽/活跃槽/累计分配数；不输出逐对象明细，
+元素热路径不参与采样。
 
 ADR-0153：process 给 guest JNI bindings 注入结构化 logger，warning ledger 按真实槽/线程/
 异常类去重；普通 Java 重入不预清 JNI pending。VM 类初始化 post-clinit source 在执行锁内

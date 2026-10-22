@@ -20,10 +20,6 @@ constexpr auto rw = memory::PageProtection::read | memory::PageProtection::write
 
 JavaPayloadLimits TinyLimits() {
     JavaPayloadLimits limits;
-    limits.initial_heap_target_bytes = 64;
-    limits.heap_growth_limit_bytes = 131072;
-    limits.maximum_heap_bytes = 262144;
-    limits.max_free_bytes = 128;
     limits.committed_limit_bytes = 131072;
     return limits;
 }
@@ -44,8 +40,8 @@ TEST_CASE("Java payload allocation packs aligned independent zero and small bloc
     auto stats = provider.Statistics();
     CHECK(stats.allocated_bytes == 16);
     CHECK(stats.allocation_count == 3);
-    CHECK(stats.committed_bytes == 16384);
-    CHECK(stats.slab_free_bytes == 16384 - 32);
+    CHECK(stats.committed_bytes == 2 * 16384);
+    CHECK(stats.slab_free_bytes == 2 * 16384 - 32);
     CHECK(provider.Access<std::uint8_t>(a).Read(0) == 0);
     provider.Access<std::uint8_t>(a).Write(0, 255);
     CHECK(provider.Access<std::uint8_t>(b).Read(0) == 0);
@@ -67,7 +63,7 @@ TEST_CASE("Java payload allocation packs aligned independent zero and small bloc
     provider.Release(empty);
     provider.Release(b);
     provider.Release(replacement);
-    CHECK(provider.Statistics().committed_bytes == 0);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
 }
 
 TEST_CASE("Java payload typed views enforce block and view boundaries and bit patterns") {
@@ -116,7 +112,7 @@ TEST_CASE("Java payload allocation threshold and release preserve neighboring gu
     CHECK(space.Read32(memory::GuestAddress{0x10000}) == 0xdeadbeef);
 }
 
-TEST_CASE("Java payload quota growth and failed allocations roll back all charges and mappings") {
+TEST_CASE("Java payload committed budget failures roll back allocations and mappings") {
     memory::AddressSpace space;
     core::CapabilityLedger ledger;
     auto limits = TinyLimits();
@@ -124,19 +120,18 @@ TEST_CASE("Java payload quota growth and failed allocations roll back all charge
     GuestJavaPayloadProvider provider(space, ledger, limits);
     auto a = provider.Allocate(80);
     const auto before = provider.Statistics();
-    CHECK(before.heap_target_bytes == 208);
     const auto mappings = space.DescribeMappings().size();
     CHECK_THROWS_AS(static_cast<void>(provider.Allocate(100000)), std::bad_alloc);  // physical budget
-    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(131073)), std::bad_alloc);  // logical growth limit
+    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(131073)), std::bad_alloc);  // committed limit
     CHECK_THROWS_AS(static_cast<void>(provider.Allocate(SIZE_MAX)), std::bad_alloc);
     auto after = provider.Statistics();
     CHECK(after.allocated_bytes == before.allocated_bytes);
     CHECK(after.committed_bytes == before.committed_bytes);
     CHECK(after.slab_free_bytes == before.slab_free_bytes);
-    CHECK(after.heap_target_bytes == before.heap_target_bytes);
+    CHECK(after.allocation_failures == before.allocation_failures + 3);
     CHECK(after.allocation_count == before.allocation_count);
     CHECK(space.DescribeMappings().size() == mappings);
-    auto b = provider.Allocate(8);  // allocator still usable after rollback
+    auto b = provider.Allocate(80);  // same size class still usable after rollback
     provider.Release(b);
     provider.Release(a);
     CHECK_FALSE(ledger.Unimplemented().empty());
@@ -357,4 +352,180 @@ TEST_CASE("Java payload owner identity survives wrapper address reuse") {
     CHECK_THROWS_AS(static_cast<void>(provider->Access<std::uint64_t>(old)), std::invalid_argument);
     CHECK_THROWS_AS(provider->Release(old), std::invalid_argument);
     CHECK(view.Read(0) == 456);
+}
+
+#include "ogplay/runtime/dexvm/object_model.h"
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
+
+TEST_CASE("DVM-260 guest array authority preserves eight bit patterns and overlap") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider(space, ledger);
+    JniPrimitiveArrayStore arrays{provider};
+    JniStringStore strings;
+    dexvm::JavaObjectModel model{strings, arrays};
+    constexpr std::uint64_t patterns[]{
+        0xff, 0x80, 0xffff, 0x8001, 0x80000001, UINT64_C(0xdeadbeef87654321), 0x7fc12345, UINT64_C(0xfff123456789abcd)};
+    for (std::size_t k = 0; k < 8; ++k) {
+        const auto ref = model.NewPrimitiveArray(dexvm::DexClassId{1}, static_cast<JniPrimitiveKind>(k), 4);
+        model.SetPrimitiveElement(ref, 0, patterns[k]);
+        CHECK(model.GetPrimitiveElement(ref, 0) == patterns[k]);
+        const auto identity = model.ToIdentity(ref);
+        const auto snapshot = arrays.Region(identity, 0, 1);
+        arrays.SetRegion(identity, 1, snapshot);
+        CHECK(model.GetPrimitiveElement(ref, 1) == patterns[k]);
+        const auto clone = model.CloneObject(ref);
+        CHECK(model.GetPrimitiveElement(clone, 0) == patterns[k]);
+        arrays.CopyWithin(identity, 0, 1, 3);
+        CHECK(model.GetPrimitiveElement(ref, 2) == patterns[k]);
+        arrays.CopyWithin(identity, 1, 0, 3);
+        CHECK(model.GetPrimitiveElement(ref, 1) == patterns[k]);
+        CHECK_THROWS_AS(static_cast<void>(model.GetPrimitiveElement(ref, -1)), JniArrayError);
+        CHECK_THROWS_AS(model.SetPrimitiveElement(ref, 4, 1), JniArrayError);
+        CHECK_THROWS_AS(static_cast<void>(arrays.Region(identity, 4, 1)), JniArrayError);
+        CHECK_THROWS_AS(arrays.CopyWithin(identity, 0, 2, 3), JniArrayError);
+    }
+    const auto garbage = model.MarkReachable({}, {});
+    static_cast<void>(model.Sweep(garbage, {}));
+    CHECK(model.AllocatedBytes() == 0);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
+}
+
+TEST_CASE("DVM-260 native create and import charge once and failed provider rolls back") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    auto limits = TinyLimits();
+    limits.committed_limit_bytes = 16384;
+    GuestJavaPayloadProvider provider(space, ledger, limits);
+    JniPrimitiveArrayStore arrays{provider};
+    JniStringStore strings;
+    const auto preexisting = arrays.New(JniPrimitiveKind::integer, 4);
+    dexvm::JavaObjectModel model{strings, arrays, {.initial_heap_target_bytes = 128}};
+    CHECK(model.AllocatedBytes() == 0);
+    const auto imported = model.FromIdentity(preexisting);
+    CHECK(model.AllocatedBytes() == 48);
+    CHECK(model.FromIdentity(preexisting) == imported);
+    CHECK(model.AllocatedBytes() == 48);
+    const auto native = arrays.New(JniPrimitiveKind::long_integer, 2);
+    CHECK(model.AllocatedBytes() == 96);
+    static_cast<void>(model.FromIdentity(native));
+    CHECK(model.AllocatedBytes() == 96);
+    const auto before = provider.Statistics();
+    const auto target_before = model.HeapTargetBytes();
+    CHECK_THROWS_AS(static_cast<void>(model.NewPrimitiveArray(dexvm::DexClassId{1}, JniPrimitiveKind::byte, 100000)),
+                    dexvm::DexVmError);
+    CHECK(model.AllocatedBytes() == 96);
+    CHECK(model.HeapTargetBytes() == target_before);
+    CHECK(provider.Statistics().allocated_bytes == before.allocated_bytes);
+    CHECK(provider.Statistics().allocation_count == before.allocation_count);
+    CHECK(arrays.AllocationStatistics().allocation_failures == 1);
+    auto view = arrays.View(preexisting);
+    CHECK_THROWS_AS(static_cast<void>(model.Sweep(model.MarkReachable({}, {}), {})), std::invalid_argument);
+    CHECK(model.GetPrimitiveElement(imported, 0) == 0);
+    // A live external view must be retired before the next sweep.
+    view = arrays.View(native);
+    CHECK_THROWS_AS(static_cast<void>(model.Sweep(model.MarkReachable({}, {}), {})), std::invalid_argument);
+}
+
+TEST_CASE("DVM-260 explicit host-copy provider rejects guest addresses") {
+    HostCopyJavaPayloadProvider provider;
+    const auto block = provider.Allocate(0);
+    CHECK_THROWS_AS(static_cast<void>(block.Address()), std::logic_error);
+    provider.Release(block);
+}
+
+TEST_CASE("DVM-260 segregated slots bound class rounding and empty slab cache") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    JavaPayloadLimits limits;
+    limits.empty_slab_cache_limit = 2;
+    GuestJavaPayloadProvider provider(space, ledger, limits);
+    std::vector<JavaPayloadHandle> blocks;
+    for (const auto bytes : {1U, 129U, 257U, 4097U}) {
+        auto block = provider.Allocate(bytes);
+        CHECK(block.Address().Value() % 8 == 0);
+        provider.Access<std::uint8_t>(block).Write(0, 0xab);
+        blocks.push_back(block);
+    }
+    auto classes = provider.SizeClassStatistics();
+    REQUIRE(classes.size() == 64);
+    CHECK(classes[0].slot_bytes == 8);
+    CHECK(classes[15].slot_bytes == 128);
+    CHECK(classes[16].slot_bytes == 144);
+    CHECK(classes.back().slot_bytes == 8192);
+    for (std::size_t i = 16; i < classes.size(); ++i)
+        CHECK(classes[i].slot_bytes * 8 <= classes[i - 1].slot_bytes * 9);
+    for (auto block : blocks)
+        provider.Release(block);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+    CHECK(provider.Statistics().committed_bytes == 2 * 16384);
+    CHECK(provider.Statistics().slab_free_bytes == 2 * 16384);
+    const auto before = provider.Statistics().committed_bytes;
+    // Cached slabs can be reassigned to another class even at the commit limit.
+    auto reused = provider.Allocate(33);
+    CHECK(provider.Access<std::uint8_t>(reused).Read(0) == 0);
+    CHECK(provider.Statistics().committed_bytes == before);
+    provider.Release(reused);
+    std::uint64_t live{}, capacity{};
+    for (const auto& c : provider.SizeClassStatistics()) {
+        live += c.live_slots;
+        capacity += c.total_slots;
+    }
+    CHECK(live == 0);
+    CHECK(capacity > 0);
+}
+
+TEST_CASE("DVM-260 segregated allocator scales independently of existing slab count") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider(space, ledger);
+    const auto cycle = [&]() {
+        const auto started = hal::Clock::SteadyTimestampNs();
+        for (std::size_t i = 0; i < 50000; ++i) {
+            const auto block = provider.Allocate(64);
+            provider.Release(block);
+        }
+        return hal::Clock::SteadyTimestampNs() - started;
+    };
+    // Warm metadata/cache, then compare identical 50k allocate/free halves while
+    // 256 additional full slabs of the very same class remain live in between.
+    for (int i = 0; i < 1000; ++i) {
+        auto block = provider.Allocate(64);
+        provider.Release(block);
+    }
+    const auto first = cycle();
+    std::vector<JavaPayloadHandle> live;
+    live.reserve(65536);
+    for (std::size_t i = 0; i < 65536; ++i)
+        live.push_back(provider.Allocate(64));
+    const auto second = cycle();
+    MESSAGE("SLOT_SCALING first_ns=" << first << " second_ns=" << second);
+    // Relative bound tolerates clock noise but rejects a walk through 256 slabs.
+    CHECK(second < first * 3);
+    for (const auto& block : live)
+        provider.Release(block);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
+}
+
+TEST_CASE("DVM-260 cached slab reclassification respects committed quota and rollback") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    JavaPayloadLimits limits;
+    limits.committed_limit_bytes = 16384;
+    GuestJavaPayloadProvider provider(space, ledger, limits);
+    auto first = provider.Allocate(8);
+    const auto before = provider.Statistics();
+    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(129)), std::bad_alloc);
+    CHECK(provider.Statistics().committed_bytes == before.committed_bytes);
+    CHECK(provider.Statistics().allocated_bytes == before.allocated_bytes);
+    CHECK(provider.Statistics().slab_free_bytes == before.slab_free_bytes);
+    const auto address = first.Address();
+    provider.Release(first);
+    auto reclassified = provider.Allocate(129);
+    CHECK(reclassified.Address() == address);
+    CHECK(provider.Statistics().committed_bytes == 16384);
+    CHECK(provider.Access<std::uint8_t>(reclassified).Read(0) == 0);
+    provider.Release(reclassified);
 }

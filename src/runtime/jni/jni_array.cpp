@@ -20,25 +20,6 @@ namespace {
     return std::visit([](const auto& values) { return values.size(); }, data);
 }
 
-[[nodiscard]] JniPrimitiveKind DataKind(const JniPrimitiveArrayData& data) {
-    return static_cast<JniPrimitiveKind>(data.index());
-}
-
-[[nodiscard]] JniPrimitiveArrayData ZeroData(const JniPrimitiveKind kind,
-                                              const std::size_t size) {
-    switch (kind) {
-    case JniPrimitiveKind::boolean: return std::vector<JniBoolean>(size);
-    case JniPrimitiveKind::byte: return std::vector<JniByte>(size);
-    case JniPrimitiveKind::character: return std::vector<JniChar>(size);
-    case JniPrimitiveKind::short_integer: return std::vector<JniShort>(size);
-    case JniPrimitiveKind::integer: return std::vector<JniInt>(size);
-    case JniPrimitiveKind::long_integer: return std::vector<JniLong>(size);
-    case JniPrimitiveKind::float_value: return std::vector<JniFloat>(size);
-    case JniPrimitiveKind::double_value: return std::vector<JniDouble>(size);
-    }
-    throw std::logic_error("unknown JNI primitive array kind");
-}
-
 [[nodiscard]] std::pair<std::size_t, std::size_t> ValidateRegion(
     const std::size_t size, const JniSize start, const JniSize length) {
     if (start < 0 || length < 0) {
@@ -64,131 +45,24 @@ JniArrayErrorReason JniArrayError::Reason() const noexcept { return reason_; }
 
 class JniPrimitiveArrayStore::Impl final {
 public:
-    [[nodiscard]] JniObjectIdentity New(const JniPrimitiveKind kind,
-                                        const JniSize length) {
-        if (length < 0) {
-            Fail(JniArrayErrorReason::invalid_length,
-                 "JNI array length cannot be negative");
-        }
-        const auto identity = AllocateJniHostObjectIdentity();
-        std::scoped_lock lock(mutex_);
-        arrays_.emplace(identity.value,
-                        ArrayEntry{ZeroData(kind,
-                                            static_cast<std::size_t>(length)),
-                                   0});
-        return identity;
-    }
+    explicit Impl(JavaPayloadProvider& value) : provider(value) {}
 
-    void Delete(const JniObjectIdentity array) {
-        std::scoped_lock lock(mutex_);
-        const auto found = Require(array);
-        if (found->second.active_accesses != 0) {
-            Fail(JniArrayErrorReason::access_still_active,
-                 "JNI array still has active elements access");
-        }
-        arrays_.erase(found);
-    }
-
-    [[nodiscard]] JniSize Length(const JniObjectIdentity array) const {
-        std::scoped_lock lock(mutex_);
-        return static_cast<JniSize>(DataSize(Require(array)->second.data));
-    }
-
-    [[nodiscard]] JniPrimitiveKind Kind(
-        const JniObjectIdentity array) const {
-        std::scoped_lock lock(mutex_);
-        return DataKind(Require(array)->second.data);
-    }
-
-    [[nodiscard]] JniPrimitiveArrayData Region(
-        const JniObjectIdentity array, const JniSize start,
-        const JniSize length) const {
-        std::scoped_lock lock(mutex_);
-        const auto& data = Require(array)->second.data;
-        const auto [offset, count] = ValidateRegion(DataSize(data), start, length);
-        return std::visit(
-            [offset, count](const auto& values) -> JniPrimitiveArrayData {
-                using Vector = std::decay_t<decltype(values)>;
-                return Vector(
-                    values.begin() + static_cast<std::ptrdiff_t>(offset),
-                    values.begin() +
-                        static_cast<std::ptrdiff_t>(offset + count));
-            },
-            data);
-    }
-
-    void SetRegion(const JniObjectIdentity array, const JniSize start,
-                   const JniPrimitiveArrayData& source) {
-        std::scoped_lock lock(mutex_);
-        auto& target = Require(array)->second.data;
-        if (target.index() != source.index()) TypeMismatch();
-        const auto count = DataSize(source);
-        if (count >
-            static_cast<std::size_t>(std::numeric_limits<JniSize>::max())) {
-            Fail(JniArrayErrorReason::invalid_region,
-                 "JNI array region exceeds jsize range");
-        }
-        const auto [offset, checked_count] = ValidateRegion(
-            DataSize(target), start, static_cast<JniSize>(count));
-        static_cast<void>(checked_count);
-        std::visit(
-            [offset](auto& values, const auto& replacement) {
-                using Target = std::decay_t<decltype(values)>;
-                using Source = std::decay_t<decltype(replacement)>;
-                if constexpr (std::is_same_v<Target, Source>) {
-                    std::copy(replacement.begin(), replacement.end(),
-                              values.begin() +
-                                  static_cast<std::ptrdiff_t>(offset));
-                }
-            },
-            target, source);
-    }
-
-    [[nodiscard]] JniArrayAccess Acquire(const JniObjectIdentity array,
-                                         const JniArrayAccessKind kind) {
-        std::scoped_lock lock(mutex_);
-        auto found = Require(array);
-        if (next_token_ == 0) {
-            throw std::length_error("JNI array access token space exhausted");
-        }
-        const auto token = next_token_++;
-        accesses_.emplace(token, AccessEntry{array.value, kind});
-        ++found->second.active_accesses;
-        return {token, kind, found->second.data, true};
-    }
-
-    void Release(const JniObjectIdentity array, const std::uint64_t token,
-                 const JniArrayAccessKind kind,
-                 const JniPrimitiveArrayData& data,
-                 const JniArrayReleaseMode mode) {
-        std::scoped_lock lock(mutex_);
-        auto owner = Require(array);
-        const auto access = accesses_.find(token);
-        if (access == accesses_.end() ||
-            access->second.array_identity != array.value) {
-            Fail(JniArrayErrorReason::invalid_access,
-                 "JNI array access token is invalid for this object");
-        }
-        if (access->second.kind != kind) {
-            Fail(JniArrayErrorReason::access_kind_mismatch,
-                 "JNI array release kind does not match acquire");
-        }
-        if (owner->second.data.index() != data.index()) TypeMismatch();
-        if (DataSize(owner->second.data) != DataSize(data)) {
-            Fail(JniArrayErrorReason::data_size_mismatch,
-                 "JNI array release data size changed");
-        }
-        if (mode != JniArrayReleaseMode::abort) owner->second.data = data;
-        if (mode != JniArrayReleaseMode::commit) {
-            accesses_.erase(access);
-            --owner->second.active_accesses;
+    ~Impl() {
+        // Owner has stopped guest callers. Leases are copy-only; discard them.
+        for (auto& [id, entry] : arrays_) {
+            static_cast<void>(id);
+            entry.view.reset();
+            provider.Release(entry.payload);
         }
     }
 
-private:
     struct ArrayEntry final {
-        JniPrimitiveArrayData data;
+        JniPrimitiveKind kind;
+        JniSize length;
+        JavaPayloadHandle payload;
+        std::optional<JniPrimitiveArrayView> view;
         std::size_t active_accesses{};
+        bool charged{};
     };
 
     struct AccessEntry final {
@@ -198,39 +72,195 @@ private:
 
     using Iterator = std::map<std::uint64_t, ArrayEntry>::iterator;
     using ConstIterator = std::map<std::uint64_t, ArrayEntry>::const_iterator;
-
-    [[nodiscard]] Iterator Require(const JniObjectIdentity array) {
-        if (array.domain != JniObjectDomain::host) Unknown();
-        const auto found = arrays_.find(array.value);
-        if (found == arrays_.end()) Unknown();
-        return found;
-    }
-
-    [[nodiscard]] ConstIterator Require(const JniObjectIdentity array) const {
-        if (array.domain != JniObjectDomain::host) Unknown();
-        const auto found = arrays_.find(array.value);
-        if (found == arrays_.end()) Unknown();
-        return found;
-    }
-
-    [[noreturn]] static void Unknown() {
-        Fail(JniArrayErrorReason::unknown_object,
-             "JNI object is not a primitive array in this store");
-    }
-
-    [[noreturn]] static void TypeMismatch() {
-        Fail(JniArrayErrorReason::type_mismatch,
-             "JNI primitive array type does not match the operation");
-    }
-
+    JavaPayloadProvider& provider;
+    JniArrayAllocationContext context;
+    JniArrayAllocationStatistics stats;
     mutable std::mutex mutex_;
     std::map<std::uint64_t, ArrayEntry> arrays_;
     std::map<std::uint64_t, AccessEntry> accesses_;
     std::uint64_t next_token_{1};
+
+    static std::size_t Width(JniPrimitiveKind kind) {
+        constexpr std::size_t widths[]{1, 1, 2, 2, 4, 8, 4, 8};
+        if (static_cast<std::size_t>(kind) >= std::size(widths)) throw std::invalid_argument("invalid primitive kind");
+        return widths[static_cast<std::size_t>(kind)];
+    }
+
+    JniPrimitiveArrayView MakeView(const JavaPayloadHandle& h, JniPrimitiveKind kind) {
+        switch (kind) {
+        case JniPrimitiveKind::boolean: return provider.Access<JniBoolean>(h);
+        case JniPrimitiveKind::byte: return provider.Access<JniByte>(h);
+        case JniPrimitiveKind::character: return provider.Access<JniChar>(h);
+        case JniPrimitiveKind::short_integer: return provider.Access<JniShort>(h);
+        case JniPrimitiveKind::integer: return provider.Access<JniInt>(h);
+        case JniPrimitiveKind::long_integer: return provider.Access<JniLong>(h);
+        case JniPrimitiveKind::float_value: return provider.Access<JniFloat>(h);
+        case JniPrimitiveKind::double_value: return provider.Access<JniDouble>(h);
+        }
+        throw std::invalid_argument("invalid primitive kind");
+    }
+
+    Iterator Require(JniObjectIdentity array) {
+        if (array.domain != JniObjectDomain::host) Unknown();
+        const auto found = arrays_.find(array.value);
+        if (found == arrays_.end()) Unknown();
+        return found;
+    }
+
+    ConstIterator Require(JniObjectIdentity array) const {
+        if (array.domain != JniObjectDomain::host) Unknown();
+        const auto found = arrays_.find(array.value);
+        if (found == arrays_.end()) Unknown();
+        return found;
+    }
+
+    [[noreturn]] static void Unknown() { Fail(JniArrayErrorReason::unknown_object, "unknown JNI primitive array"); }
+
+    [[noreturn]] static void TypeMismatch() {
+        Fail(JniArrayErrorReason::type_mismatch, "JNI primitive array type mismatch");
+    }
+
+    static JniPrimitiveArrayData Snapshot(const ArrayEntry& e, JniSize start, JniSize length) {
+        const auto [offset, count] = ValidateRegion(static_cast<std::size_t>(e.length), start, length);
+        return std::visit(
+            [&](const auto& view) -> JniPrimitiveArrayData {
+                using T = decltype(view.Read(0));
+                std::vector<T> data(count);
+                view.ReadRegion(offset, data.data(), count);
+                return data;
+            },
+            *e.view);
+    }
+
+    static void Write(ArrayEntry& e, JniSize start, const JniPrimitiveArrayData& data) {
+        if (static_cast<std::size_t>(e.kind) != data.index()) TypeMismatch();
+        const auto count = DataSize(data);
+        if (count > static_cast<std::size_t>(INT32_MAX))
+            Fail(JniArrayErrorReason::invalid_region, "JNI region exceeds jsize");
+        const auto [offset, checked] =
+            ValidateRegion(static_cast<std::size_t>(e.length), start, static_cast<JniSize>(count));
+        std::visit(
+            [&](const auto& view) {
+                using T = decltype(view.Read(0));
+                const auto& values = std::get<std::vector<T>>(data);
+                view.WriteRegion(offset, values.data(), checked);
+            },
+            *e.view);
+    }
+
+    JniObjectIdentity New(JniPrimitiveKind kind, JniSize length) {
+        if (length < 0) Fail(JniArrayErrorReason::invalid_length, "JNI array length cannot be negative");
+        const auto bytes = static_cast<std::uint64_t>(length) * Width(kind);
+        const auto guard = context.enter ? context.enter() : nullptr;
+        bool charged = false;
+        std::function<void()> rollback;
+        std::optional<JavaPayloadHandle> payload;
+        try {
+            if (context.reserve) {
+                rollback = context.reserve(32 + bytes);
+                charged = true;
+            }
+            payload = provider.Allocate(static_cast<std::size_t>(bytes));
+            ArrayEntry entry{kind, length, *payload, MakeView(*payload, kind), 0, charged};
+            const auto identity = AllocateJniHostObjectIdentity();
+            std::scoped_lock lock(mutex_);
+            arrays_.emplace(identity.value, std::move(entry));
+            constexpr JniSize bounds[]{0, 16, 64, 256, 1024, 8192};
+            std::size_t bucket{};
+            while (bucket < std::size(bounds) && length > bounds[bucket])
+                ++bucket;
+            ++stats.allocations[static_cast<std::size_t>(kind)][bucket];
+            stats.live_bytes += bytes;
+            stats.peak_live_bytes = std::max(stats.peak_live_bytes, stats.live_bytes);
+            return identity;
+        } catch (...) {
+            if (payload) provider.Release(*payload);
+            if (rollback) rollback();
+            {
+                std::scoped_lock lock(mutex_);
+                ++stats.allocation_failures;
+            }
+            throw;
+        }
+    }
+
+    void Delete(JniObjectIdentity array) {
+        const auto guard = context.enter ? context.enter() : nullptr;
+        std::uint64_t charge{};
+        {
+            std::scoped_lock lock(mutex_);
+            const auto found = Require(array);
+            auto& e = found->second;
+            if (e.active_accesses)
+                Fail(JniArrayErrorReason::access_still_active, "JNI array still has active elements access");
+            const auto bytes = e.payload.Bytes();
+            e.view.reset();
+            try {
+                provider.Release(e.payload);
+            } catch (...) {
+                e.view = MakeView(e.payload, e.kind);
+                throw;
+            }
+            if (e.charged) charge = bytes + 32;
+            stats.live_bytes -= bytes;
+            arrays_.erase(found);
+        }
+        if (charge && context.refund) context.refund(charge);
+    }
+
+    JniSize Length(JniObjectIdentity array) const {
+        std::scoped_lock lock(mutex_);
+        return Require(array)->second.length;
+    }
+
+    JniPrimitiveKind Kind(JniObjectIdentity array) const {
+        std::scoped_lock lock(mutex_);
+        return Require(array)->second.kind;
+    }
+
+    JniPrimitiveArrayData Region(JniObjectIdentity array, JniSize start, JniSize length) const {
+        std::scoped_lock lock(mutex_);
+        return Snapshot(Require(array)->second, start, length);
+    }
+
+    void SetRegion(JniObjectIdentity array, JniSize start, const JniPrimitiveArrayData& data) {
+        std::scoped_lock lock(mutex_);
+        Write(Require(array)->second, start, data);
+    }
+
+    JniArrayAccess Acquire(JniObjectIdentity array, JniArrayAccessKind kind) {
+        std::scoped_lock lock(mutex_);
+        auto& e = Require(array)->second;
+        auto data = Snapshot(e, 0, e.length);
+        if (!next_token_) throw std::length_error("JNI array access token exhausted");
+        const auto token = next_token_++;
+        accesses_.emplace(token, AccessEntry{array.value, kind});
+        ++e.active_accesses;
+        return {token, kind, std::move(data), true};
+    }
+
+    void Release(JniObjectIdentity array, std::uint64_t token, JniArrayAccessKind kind,
+                 const JniPrimitiveArrayData& data, JniArrayReleaseMode mode) {
+        std::scoped_lock lock(mutex_);
+        auto& e = Require(array)->second;
+        const auto access = accesses_.find(token);
+        if (access == accesses_.end() || access->second.array_identity != array.value)
+            Fail(JniArrayErrorReason::invalid_access, "invalid JNI array access token");
+        if (access->second.kind != kind)
+            Fail(JniArrayErrorReason::access_kind_mismatch, "JNI array access kind mismatch");
+        if (static_cast<std::size_t>(e.kind) != data.index()) TypeMismatch();
+        if (static_cast<std::size_t>(e.length) != DataSize(data))
+            Fail(JniArrayErrorReason::data_size_mismatch, "JNI array release data size changed");
+        if (mode != JniArrayReleaseMode::abort) Write(e, 0, data);
+        if (mode != JniArrayReleaseMode::commit) {
+            accesses_.erase(access);
+            --e.active_accesses;
+        }
+    }
 };
 
-JniPrimitiveArrayStore::JniPrimitiveArrayStore()
-    : impl_(std::make_unique<Impl>()) {}
+JniPrimitiveArrayStore::JniPrimitiveArrayStore(JavaPayloadProvider& provider)
+    : impl_(std::make_unique<Impl>(provider)) {}
 JniPrimitiveArrayStore::~JniPrimitiveArrayStore() = default;
 JniPrimitiveArrayStore::JniPrimitiveArrayStore(
     JniPrimitiveArrayStore&&) noexcept = default;
@@ -272,4 +302,80 @@ void JniPrimitiveArrayStore::Release(
     impl_->Release(array, token, kind, data, mode);
 }
 
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void JniPrimitiveArrayStore::SetAllocationContext(JniArrayAllocationContext context) {
+    if (static_cast<bool>(context.reserve) != static_cast<bool>(context.refund))
+        throw std::invalid_argument("incomplete array allocation context");
+    if (impl_->context.reserve && context.reserve) throw std::logic_error("array allocation context already installed");
+    if (!context.reserve) {
+        std::scoped_lock lock(impl_->mutex_);
+        for (auto& [identity, entry] : impl_->arrays_) {
+            static_cast<void>(identity);
+            entry.charged = false;
+        }
+    }
+    impl_->context = std::move(context);
+}
+
+void JniPrimitiveArrayStore::EnsureCharged(JniObjectIdentity array) {
+    const auto guard = impl_->context.enter ? impl_->context.enter() : nullptr;
+    std::uint64_t bytes{};
+    {
+        std::scoped_lock lock(impl_->mutex_);
+        const auto& e = impl_->Require(array)->second;
+        if (e.charged || !impl_->context.reserve) return;
+        bytes = 32 + e.payload.Bytes();
+    }
+    auto rollback = impl_->context.reserve(bytes);
+    std::scoped_lock lock(impl_->mutex_);
+    auto& e = impl_->Require(array)->second;
+    if (e.charged)
+        rollback();
+    else
+        e.charged = true;
+}
+
+void JniPrimitiveArrayStore::VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const {
+    std::vector<JniObjectIdentity> roots;
+    {
+        std::scoped_lock lock(impl_->mutex_);
+        for (const auto& [id, e] : impl_->arrays_)
+            if (e.active_accesses) roots.push_back({JniObjectDomain::host, id});
+    }
+    for (const auto root : roots)
+        visit(root);
+}
+
+JniPrimitiveArrayView JniPrimitiveArrayStore::View(JniObjectIdentity array) const {
+    std::scoped_lock lock(impl_->mutex_);
+    return *impl_->Require(array)->second.view;
+}
+
+JniArrayAllocationStatistics JniPrimitiveArrayStore::AllocationStatistics() const {
+    std::scoped_lock lock(impl_->mutex_);
+    return impl_->stats;
+}
+
+void JniPrimitiveArrayStore::Copy(JniObjectIdentity source, JniSize from, JniObjectIdentity target, JniSize to,
+                                  JniSize length) {
+    std::scoped_lock lock(impl_->mutex_);
+    const auto& s = impl_->Require(source)->second;
+    const auto& t = impl_->Require(target)->second;
+    if (s.kind != t.kind) Impl::TypeMismatch();
+    const auto [src, count] = ValidateRegion(static_cast<std::size_t>(s.length), from, length);
+    const auto [dst, ignored] = ValidateRegion(static_cast<std::size_t>(t.length), to, length);
+    static_cast<void>(ignored);
+    std::visit(
+        [&](const auto& view) {
+            using V = std::decay_t<decltype(view)>;
+            std::get<V>(*t.view).CopyFrom(view, src, dst, count);
+        },
+        *s.view);
+}
+
+void JniPrimitiveArrayStore::CopyWithin(JniObjectIdentity array, JniSize from, JniSize to, JniSize length) {
+    Copy(array, from, array, to, length);
+}
 }  // namespace ogplay::runtime

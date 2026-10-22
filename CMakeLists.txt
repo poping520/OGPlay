@@ -420,6 +420,7 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/jni/jni_field_store.cpp
     src/runtime/jni/jni_environment.cpp
     src/runtime/jni/jni_java_vm.cpp
+    src/runtime/jni/host_copy_payload_provider.cpp
     src/runtime/jni/jni_array.cpp
     src/runtime/jni/jni_class_registry.cpp
     src/runtime/jni/jni_invocation.cpp

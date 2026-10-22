@@ -22,6 +22,7 @@ struct Block final {
     std::weak_ptr<void> owner_lifetime;
     std::byte* base{};
     memory::GuestAddress address;
+    bool guest_address{true};
     std::size_t bytes{};
     std::uint64_t generation{};
     const void* owner{};
@@ -30,7 +31,10 @@ struct Block final {
 
 class JavaPayloadHandle final {
 public:
-    [[nodiscard]] memory::GuestAddress Address() const { return Require().address; }
+    [[nodiscard]] memory::GuestAddress Address() const {
+        if (!Require().guest_address) throw std::logic_error("host-copy payload has no guest address");
+        return Require().address;
+    }
 
     [[nodiscard]] std::size_t Bytes() const { return Require().bytes; }
 
@@ -72,6 +76,22 @@ public:
         std::memcpy(base_ + index * sizeof(T), &value, sizeof(T));
     }
 
+    void ReadRegion(std::size_t offset, T* output, std::size_t count) const {
+        CheckRegion(offset, count);
+        if (count) std::memcpy(output, base_ + offset * sizeof(T), count * sizeof(T));
+    }
+
+    void WriteRegion(std::size_t offset, const T* input, std::size_t count) const {
+        CheckRegion(offset, count);
+        if (count) std::memcpy(base_ + offset * sizeof(T), input, count * sizeof(T));
+    }
+
+    void CopyFrom(const JavaPayloadAccessor& source, std::size_t from, std::size_t to, std::size_t count) const {
+        source.CheckRegion(from, count);
+        CheckRegion(to, count);
+        if (count) std::memmove(base_ + to * sizeof(T), source.base_ + from * sizeof(T), count * sizeof(T));
+    }
+
 private:
     struct Lifetime final {
         explicit Lifetime(std::shared_ptr<payload_detail::Block> value)
@@ -88,6 +108,10 @@ private:
 
     JavaPayloadAccessor(std::shared_ptr<payload_detail::Block> block, std::size_t offset, std::size_t count)
         : lifetime_(std::make_shared<Lifetime>(block)), base_(block->base + offset), count_(count) {}
+
+    void CheckRegion(std::size_t offset, std::size_t count) const {
+        if (offset > count_ || count > count_ - offset) throw std::out_of_range("Java payload region exceeds view");
+    }
 
     void Check(std::size_t index) const {
         if (index >= count_) throw std::out_of_range("Java payload element exceeds block view");
@@ -109,7 +133,7 @@ private:
 
 struct JavaPayloadStatistics final {
     std::uint64_t allocated_bytes{}, committed_bytes{}, slab_free_bytes{};
-    std::uint64_t pinned_bytes{}, pin_count{}, allocation_count{}, heap_target_bytes{};
+    std::uint64_t pinned_bytes{}, pin_count{}, allocation_count{}, peak_live_bytes{}, allocation_failures{};
 };
 
 // Interface only: no AddressSpace implementation, VM or platform dependencies.

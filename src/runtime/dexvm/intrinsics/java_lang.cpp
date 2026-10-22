@@ -2989,15 +2989,7 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                 if (source_kind == VmObjectKind::primitive_array &&
                     target_kind == VmObjectKind::primitive_array &&
                 model.PrimitiveArrayKind(source) == model.PrimitiveArrayKind(target)) {
-                    std::vector<std::uint64_t> staged;
-                    staged.reserve(static_cast<std::size_t>(length));
-                    for (std::int32_t index = 0; index < length; ++index) {
-                staged.push_back(model.GetPrimitiveElement(source, source_pos + index));
-                    }
-                    for (std::int32_t index = 0; index < length; ++index) {
-                        model.SetPrimitiveElement(target, target_pos + index,
-                                          staged[static_cast<std::size_t>(index)]);
-                    }
+                    model.CopyPrimitiveElements(source, source_pos, target, target_pos, length);
                     return VmValue::Void();
                 }
                 throw VmJavaThrow{"Ljava/lang/ArrayStoreException;",

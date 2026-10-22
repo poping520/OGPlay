@@ -1,6 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
+#include <functional>
+#include <optional>
+#include "ogplay/runtime/jni/java_payload.h"
 #include <memory>
 #include <stdexcept>
 #include <variant>
@@ -26,6 +30,24 @@ using JniPrimitiveArrayData =
                  std::vector<JniChar>, std::vector<JniShort>,
                  std::vector<JniInt>, std::vector<JniLong>,
                  std::vector<JniFloat>, std::vector<JniDouble>>;
+
+using JniPrimitiveArrayView =
+    std::variant<JavaPayloadAccessor<JniBoolean>, JavaPayloadAccessor<JniByte>, JavaPayloadAccessor<JniChar>,
+                 JavaPayloadAccessor<JniShort>, JavaPayloadAccessor<JniInt>, JavaPayloadAccessor<JniLong>,
+                 JavaPayloadAccessor<JniFloat>, JavaPayloadAccessor<JniDouble>>;
+
+struct JniArrayAllocationContext final {
+    std::function<std::shared_ptr<void>()> enter;
+    // The returned action rolls back an uncommitted charge while enter is held.
+    std::function<std::function<void()>(std::uint64_t)> reserve;
+    std::function<void(std::uint64_t)> refund;
+};
+
+struct JniArrayAllocationStatistics final {
+    // Length buckets: 0, 1..16, 17..64, 65..256, 257..1024, 1025..8192, >8192.
+    std::array<std::array<std::uint64_t, 7>, 8> allocations{};
+    std::uint64_t live_bytes{}, peak_live_bytes{}, allocation_failures{};
+};
 
 enum class JniArrayAccessKind : std::uint8_t { elements, critical };
 enum class JniArrayReleaseMode : std::uint8_t {
@@ -63,13 +85,21 @@ private:
 
 class JniPrimitiveArrayStore final {
 public:
-    JniPrimitiveArrayStore();
+    explicit JniPrimitiveArrayStore(JavaPayloadProvider& provider);
     ~JniPrimitiveArrayStore();
     JniPrimitiveArrayStore(const JniPrimitiveArrayStore&) = delete;
     JniPrimitiveArrayStore& operator=(const JniPrimitiveArrayStore&) = delete;
     JniPrimitiveArrayStore(JniPrimitiveArrayStore&&) noexcept;
     JniPrimitiveArrayStore& operator=(JniPrimitiveArrayStore&&) noexcept;
 
+    // Context changes only while callers are quiescent; callbacks run outside store locks.
+    void SetAllocationContext(JniArrayAllocationContext context);
+    void EnsureCharged(JniObjectIdentity array);
+    void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const;
+    [[nodiscard]] JniPrimitiveArrayView View(JniObjectIdentity array) const;
+    [[nodiscard]] JniArrayAllocationStatistics AllocationStatistics() const;
+    void Copy(JniObjectIdentity source, JniSize from, JniObjectIdentity target, JniSize to, JniSize length);
+    void CopyWithin(JniObjectIdentity array, JniSize from, JniSize to, JniSize length);
     [[nodiscard]] JniObjectIdentity New(JniPrimitiveKind kind,
                                         JniSize length);
     void Delete(JniObjectIdentity array);

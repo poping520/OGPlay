@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
 #include <array>
@@ -25,7 +26,10 @@ std::vector<std::uint8_t> Surface() {
     for(const auto& [name,body]:records){(void)name;b.insert(b.end(),body.begin(),body.end());}return b;
 }
 struct Vm {
-    JniStringStore strings;JniPrimitiveArrayStore arrays;JavaObjectModel model{strings,arrays};
+    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
+    JavaObjectModel model{strings, arrays};
     DexClassLinker linker;ogplay::core::CapabilityLedger ledger;std::unique_ptr<Interpreter> vm;
     Vm(InterpreterBackend backend,bool skeleton=true,bool handwritten=false) {
         linker.RegisterIntrinsics(CoreIntrinsicCatalog());

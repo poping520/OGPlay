@@ -817,6 +817,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             }
             return did_present;
         };
+        const bool measure_frames = hal::HostEnvironmentValue("OGPLAY_FRAME_BENCHMARK") == "1";
+        std::array<std::uint64_t, 4096> frame_samples{};
+        std::size_t frame_sample_count{};
+        std::uint64_t active_frame_ns{};
         while (!quit && !guest->ExitRequested() &&
                !(dex_context &&
                  runtime::SessionExitRequested(*dex_context))) {
@@ -944,6 +948,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 active_frame = driver.state().frame + 1U;
                 exit_state.frame = active_frame;
                 if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(true);
+                const auto frame_started_ns = measure_frames ? hal::Clock::SteadyTimestampNs() : 0;
                 try { static_cast<void>(driver.step()); }
                 catch (...) {
                     if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
@@ -980,6 +985,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     video_pace_deadline_ns = 0;
                 }
                 frame_presented = present_latest();
+                if (measure_frames) {
+                    active_frame_ns += hal::Clock::SteadyTimestampNs() - frame_started_ns;
+                    if (frame_presented) {
+                        frame_samples[frame_sample_count++ % frame_samples.size()] = active_frame_ns;
+                        active_frame_ns = 0;
+                    }
+                }
                 const auto stats = guest->Stats();
                 LogProfileFrameProgress(
                     logger, stepped.frame, stepped.clock_ticks,
@@ -1003,6 +1015,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (ShouldIdleSleepAfterFrameStep(frame_presented)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
+        }
+        if (measure_frames && frame_sample_count) {
+            const auto count = std::min(frame_sample_count, frame_samples.size());
+            std::sort(frame_samples.begin(), frame_samples.begin() + static_cast<std::ptrdiff_t>(count));
+            logger.Write(core::LogLevel::info, "frontend.frame_timing", "presented active frame timing", {},
+                         {{"samples", static_cast<std::uint64_t>(count)},
+                          {"median_ns", frame_samples[count / 2]},
+                          {"presented_samples", static_cast<std::uint64_t>(frame_sample_count)}},
+                         kUnrestrictedLog);
         }
         // Snapshot guest facts before Stop can add a host teardown request.
         exit_state.frame = driver.state().frame;

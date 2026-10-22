@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <cstdint>
 #include <span>
@@ -27,7 +28,8 @@ TEST_CASE("legacy platform leaves VM-owned framework classes unregistered") {
     JniEnvironment environment;
     environment.AttachThread(kThread, 64U);
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JniFieldStore fields{classes};
     JniGuestObjectRegistry objects{classes};
     AndroidGuestPlatformState state;

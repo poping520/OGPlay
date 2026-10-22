@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 // Monitor wait set across real host threads (DVM-29, design 04 §4).
 // The sequence under test is AOSP vm/Sync.cpp waitMonitor: validate the
@@ -40,7 +41,8 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 
 struct MonitorVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

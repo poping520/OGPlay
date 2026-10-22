@@ -394,23 +394,25 @@ void BindJniGuestArraySlots(
 
     for (const auto binding : kPrimitiveBindings) {
         const auto new_name = "New" + std::string(binding.name) + "Array";
-        dispatcher.BindEnvironment(
-            Slot(new_name),
-            [&environment, &arrays, binding,
-             new_name](const JniGuestCallFrame& frame) {
-                const auto length =
-                    std::bit_cast<JniSize>(frame.registers[1]);
-                static_cast<void>(CheckedByteSize(
-                    length, binding.element_size, new_name.c_str()));
-                const auto identity = arrays.New(binding.kind, length);
-                try {
-                    return Word(environment.PublishLocalObject(
-                        frame.thread_id, identity).Value());
-                } catch (...) {
-                    arrays.Delete(identity);
-                    throw;
-                }
-            });
+        dispatcher.BindEnvironment(Slot(new_name), [&environment, &classes, &arrays, binding,
+                                                    new_name](const JniGuestCallFrame& frame) {
+            const auto length = std::bit_cast<JniSize>(frame.registers[1]);
+            static_cast<void>(CheckedByteSize(length, binding.element_size, new_name.c_str()));
+            JniObjectIdentity identity;
+            try {
+                identity = arrays.New(binding.kind, length);
+            } catch (const std::bad_alloc&) {
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
+                                                 "primitive array payload allocation failed");
+                return Word(0);
+            }
+            try {
+                return Word(environment.PublishLocalObject(frame.thread_id, identity).Value());
+            } catch (...) {
+                arrays.Delete(identity);
+                throw;
+            }
+        });
 
         const auto get_region =
             "Get" + std::string(binding.name) + "ArrayRegion";

@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 
 #include <memory>
 #include <string>
@@ -20,7 +21,8 @@ using namespace ogplay::runtime::dexvm;
 
 struct AndroidValueVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

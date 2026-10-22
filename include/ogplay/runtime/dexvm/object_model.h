@@ -16,6 +16,8 @@
 
 namespace ogplay::runtime::dexvm {
 
+class VmExecutionLock;
+
 // Session-level unified Java object model (02 §6). Four identity forms share
 // one register-width handle space (VmObjectRef; 0 = null):
 //   - VM instances: interpreter-owned field slot boards
@@ -105,6 +107,9 @@ public:
                     JavaObjectModelConfig config = {},
                     JavaObjectInterop interop = {});
     ~JavaObjectModel();
+    void SetPrimitiveAllocationMutex(VmExecutionLock& mutex);
+    void CopyPrimitiveElements(VmObjectRef source, JniSize from, VmObjectRef target, JniSize to, JniSize length);
+    void FillPrimitiveData(VmObjectRef array, std::span<const std::byte> bytes);
     JavaObjectModel(const JavaObjectModel&) = delete;
     JavaObjectModel& operator=(const JavaObjectModel&) = delete;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 
 #include "boot_dex.h"
 // java.io.File through the shared VFS (SBX-5, ADR-0020). Two things matter
@@ -69,7 +70,8 @@ struct TemporaryRoot final {
 
 struct FileVm final {
     JniStringStore strings;
-    JniPrimitiveArrayStore arrays;
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;

@@ -463,27 +463,8 @@ void Interpreter::Impl::Step(InterpreterExecutionState& execution) {
             Tick(execution, count);
             const auto* bytes = reinterpret_cast<const std::uint8_t*>(
                 units.data() + payload_pc + 4);
-            for (std::uint32_t index = 0; index < count; ++index) {
-                std::uint64_t bits{};
-                for (std::uint32_t byte = 0; byte < element_width; ++byte) {
-                    bits |= static_cast<std::uint64_t>(
-                                bytes[index * element_width + byte])
-                            << (byte * 8U);
-                }
-                // Sub-word elements are stored sign-appropriately by kind.
-                const auto kind = model->PrimitiveArrayKind(ref);
-                if (kind == JniPrimitiveKind::byte) {
-                    bits = static_cast<std::uint64_t>(
-                        static_cast<std::uint32_t>(static_cast<std::int32_t>(
-                            static_cast<std::int8_t>(bits))));
-                } else if (kind == JniPrimitiveKind::short_integer) {
-                    bits = static_cast<std::uint64_t>(
-                        static_cast<std::uint32_t>(static_cast<std::int32_t>(
-                            static_cast<std::int16_t>(bits))));
-                }
-                model->SetPrimitiveElement(ref,
-                                           static_cast<JniSize>(index), bits);
-            }
+            model->FillPrimitiveData(
+                ref, {reinterpret_cast<const std::byte*>(bytes), static_cast<std::size_t>(count) * element_width});
             advance();
             return;
         }

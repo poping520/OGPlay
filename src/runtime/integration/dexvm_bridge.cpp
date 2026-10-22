@@ -1658,6 +1658,7 @@ DexVmGuestBridge::DexVmGuestBridge(
 
     impl_->vm = std::make_unique<dx::Interpreter>(
         impl_->linker, *impl_->model, this, ledger, config.interpreter);
+    impl_->model->SetPrimitiveAllocationMutex(impl_->vm->ExecutionLock());
     impl_->vm->BindDefaultExecutionHost();
     impl_->vm->SetNioRuntime(&session.NIO());
     impl_->vm->SetClassInitializationPendingSource([bridge_state]() -> dx::VmObjectRef {
@@ -1924,6 +1925,7 @@ DexVmGuestBridge::DexVmGuestBridge(
         [&session](const std::function<void(JniObjectIdentity)>& visit) {
             session.Environment().VisitReferenceRoots(visit);
             session.Strings().VisitAccessRoots(visit);
+            session.Arrays().VisitAccessRoots(visit);
         },
         [&session, bridge_state](const JniObjectIdentity identity) {
             if (const auto found = bridge_state->asset_managers.find(identity.value);

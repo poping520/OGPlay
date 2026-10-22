@@ -382,14 +382,14 @@ static jstring probe_CallVoidMethod(JNIEnv *env) {
     jmethodID m = (*env)->GetMethodID(env, k, "valueVoid", "()V");
     if (!m)
         return failure(env, "method lookup");
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallVoidMethod(env, obj, m);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallVoidMethod returned wrong value");
@@ -402,14 +402,14 @@ static jstring probe_CallVoidMethodA(JNIEnv *env) {
     if (!m)
         return failure(env, "method lookup");
     jvalue aargs[] = {{.i = 0}};
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallVoidMethodA(env, obj, m, aargs);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallVoidMethodA returned wrong value");
@@ -423,15 +423,15 @@ static jstring probe_CallVoidMethodV(JNIEnv *env, ...) {
         return failure(env, "method lookup");
     va_list ap;
     va_start(ap, env);
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallVoidMethodV(env, obj, m, ap);
     va_end(ap);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallVoidMethodV returned wrong value");
@@ -919,14 +919,14 @@ static jstring probe_CallNonvirtualVoidMethod(JNIEnv *env) {
     jmethodID m = (*env)->GetMethodID(env, k, "valueVoid", "()V");
     if (!m)
         return failure(env, "method lookup");
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallNonvirtualVoidMethod(env, obj, k, m);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallNonvirtualVoidMethod returned wrong value");
@@ -939,14 +939,14 @@ static jstring probe_CallNonvirtualVoidMethodA(JNIEnv *env) {
     if (!m)
         return failure(env, "method lookup");
     jvalue aargs[] = {{.i = 0}};
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallNonvirtualVoidMethodA(env, obj, k, m, aargs);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallNonvirtualVoidMethodA returned wrong value");
@@ -960,15 +960,15 @@ static jstring probe_CallNonvirtualVoidMethodV(JNIEnv *env, ...) {
         return failure(env, "method lookup");
     va_list ap;
     va_start(ap, env);
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallNonvirtualVoidMethodV(env, obj, k, m, ap);
     va_end(ap);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallNonvirtualVoidMethodV returned wrong value");
@@ -1399,14 +1399,14 @@ static jstring probe_CallStaticVoidMethod(JNIEnv *env) {
     jmethodID m = (*env)->GetStaticMethodID(env, k, "valueVoid", "()V");
     if (!m)
         return failure(env, "method lookup");
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallStaticVoidMethod(env, k, m);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallStaticVoidMethod returned wrong value");
@@ -1417,14 +1417,14 @@ static jstring probe_CallStaticVoidMethodA(JNIEnv *env) {
     if (!m)
         return failure(env, "method lookup");
     jvalue aargs[] = {{.i = 0}};
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallStaticVoidMethodA(env, k, m, aargs);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallStaticVoidMethodA returned wrong value");
@@ -1436,15 +1436,15 @@ static jstring probe_CallStaticVoidMethodV(JNIEnv *env, ...) {
         return failure(env, "method lookup");
     va_list ap;
     va_start(ap, env);
-    jclass main = (*env)->FindClass(env, "probe/Main");
+    jclass main = (*env)->FindClass(env, "probe/CallCases");
     (*env)->SetStaticIntField(env, main, (*env)->GetStaticFieldID(env, main, "touched", "I"), 0);
     (*env)->CallStaticVoidMethodV(env, k, m, ap);
     va_end(ap);
     if ((*env)->ExceptionCheck(env))
         return failure(env, "callback exception");
-    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/Main"),
+    return (*env)->GetStaticIntField(env, (*env)->FindClass(env, "probe/CallCases"),
                                      (*env)->GetStaticFieldID(env,
-                                                              (*env)->FindClass(env, "probe/Main"),
+                                                              (*env)->FindClass(env, "probe/CallCases"),
                                                               "touched", "I")) == 42
                ? NULL
                : failure(env, "CallStaticVoidMethodV returned wrong value");

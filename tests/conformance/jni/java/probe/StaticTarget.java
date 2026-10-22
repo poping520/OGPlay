@@ -18,7 +18,7 @@ public class StaticTarget {
     public static float valueFloat() { return 2.5e22f; }
     public static double valueDouble() { return 7.503e100; }
     public static Object valueObject() { return "muffins"; }
-    public static void valueVoid() { Main.touched = 42; }
+    public static void valueVoid() { CallCases.touched = 42; }
     public static boolean takeOneOfEach(double a, float b, long c, int d, char e, short f, byte g,
                                         boolean h, String i) {
         return a == 0 && b == 1 && c == 2 && d == 3 && e == 4 && f == 5 && g == 6 && h &&

@@ -18,7 +18,7 @@ public class Child extends Parent {
     public float valueFloat() { return 0; }
     public double valueDouble() { return 0; }
     public Object valueObject() { return null; }
-    public void valueVoid() { Main.touched = -1; }
+    public void valueVoid() { CallCases.touched = -1; }
 
     @Override
     public boolean takeOneOfEach(double a, float b, long c, int d, char e, short f, byte g,

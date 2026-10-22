@@ -33,27 +33,27 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_ERR;
     return JNI_VERSION_1_6;
 }
-JNIEXPORT jint JNICALL Java_probe_Main_loadCount(JNIEnv *env, jclass k) {
+JNIEXPORT jint JNICALL Java_probe_LibraryCases_loadCount(JNIEnv *env, jclass k) {
     (void)env;
     (void)k;
     return loads;
 }
-JNIEXPORT jint JNICALL Java_probe_Main_shortExport(JNIEnv *env, jclass k) {
+JNIEXPORT jint JNICALL Java_probe_LibraryCases_shortExport(JNIEnv *env, jclass k) {
     (void)env;
     (void)k;
     return 73;
 }
-JNIEXPORT jint JNICALL Java_probe_Main_overloaded__I(JNIEnv *env, jclass k, jint v) {
+JNIEXPORT jint JNICALL Java_probe_LibraryCases_overloaded__I(JNIEnv *env, jclass k, jint v) {
     (void)env;
     (void)k;
     return v + 1;
 }
-JNIEXPORT jlong JNICALL Java_probe_Main_overloaded__J(JNIEnv *env, jclass k, jlong v) {
+JNIEXPORT jlong JNICALL Java_probe_LibraryCases_overloaded__J(JNIEnv *env, jclass k, jlong v) {
     (void)env;
     (void)k;
     return v + 2;
 }
-JNIEXPORT jstring JNICALL Java_probe_Main_runNative(JNIEnv *env, jclass k, jstring name) {
+JNIEXPORT jstring JNICALL Java_probe_NativeSupport_runNative(JNIEnv *env, jclass k, jstring name) {
     (void)k;
     const char *s = (*env)->GetStringUTFChars(env, name, NULL);
     char id[160];

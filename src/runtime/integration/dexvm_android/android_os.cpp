@@ -956,7 +956,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_os_Message(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Message;", "Ljava/lang/Object;");
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/os/Message;", "Ljava/lang/Object;", {"Landroid/os/Parcelable;"});
     const auto wu_what = builder.BoundInstanceField("what", "I");
     const auto arg1 = builder.BoundInstanceField("arg1", "I");
     const auto arg2 = builder.BoundInstanceField("arg2", "I");
@@ -1530,8 +1531,8 @@ Decl Declare_android_os_PowerManager_WakeLock(const Context& context) {
 }
 
 Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/os/ParcelFileDescriptor;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/ParcelFileDescriptor;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;", "Ljava/io/Closeable;"});
     builder.ConstantInt(
         "MODE_READ_ONLY", "I", 0x10000000,
         dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);

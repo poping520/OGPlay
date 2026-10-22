@@ -547,3 +547,29 @@ TEST_CASE("DVM-202 explicit local service bindings share instances and cancel qu
     CHECK(destroyed == 4); CHECK(unbound == 4);
   }
 }
+
+TEST_CASE("DVM-263 component interfaces preserve explicit callback registration failures") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto service = IntrinsicClassBuilder::Class("Ltest/CallbackService;", "Landroid/app/Service;");
+        AndroidValueVm f(backend, {std::move(service).Build()}, false, nullptr, true);
+        const auto app = f.New("Landroid/app/Application;");
+        const auto app_root = f.vm.ProtectReferences(std::array{app});
+        const auto instance = f.vm.NewIntrinsicInstance("Ltest/CallbackService;");
+        const auto instance_root = f.vm.ProtectReferences(std::array{instance});
+        for (const auto receiver : {app, instance}) {
+            for (const auto method : {"registerComponentCallbacks", "unregisterComponentCallbacks"}) {
+                const auto outcome =
+                    f.OnOutcome(receiver, method, "(Landroid/content/ComponentCallbacks;)V", {VmValue::Ref(app)});
+                REQUIRE(outcome.exception.IsValid());
+                CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+                CHECK(outcome.exception_message.find(method) != std::string::npos);
+            }
+        }
+        const auto failures = f.ledger.Unimplemented();
+        for (const auto method : {"registerComponentCallbacks", "unregisterComponentCallbacks"}) {
+            CHECK(std::any_of(failures.begin(), failures.end(), [method](const auto& hit) {
+                return hit.id.find(method) != std::string::npos && hit.count != 0;
+            }));
+        }
+    }
+}

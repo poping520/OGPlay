@@ -82,7 +82,8 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_net_wifi_WifiInfo(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiInfo;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/net/wifi/WifiInfo;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
     const auto wu_mMacAddress = builder.BoundInstanceField("mMacAddress", "Ljava/lang/String;", dx::kAccPrivate);
     builder.VirtualMethod("getMacAddress", "()Ljava/lang/String;", [wu_mMacAddress](dx::IntrinsicContext& c) {
         return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(wu_mMacAddress));

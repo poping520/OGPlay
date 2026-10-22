@@ -164,61 +164,63 @@ dx::VmObjectRef MakeStoredApkAssetFileDescriptor(
 } // namespace
 
 Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
-  auto builder = dx::IntrinsicClassBuilder::Class(
-      "Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;");
-  const auto wu_mFd =
-      builder.BoundInstanceField("mFd", "Landroid/os/ParcelFileDescriptor;", dx::kAccPrivate | dx::kAccFinal);
-  const auto wu_mStartOffset = builder.BoundInstanceField("mStartOffset", "J", dx::kAccPrivate | dx::kAccFinal);
-  const auto wu_mLength = builder.BoundInstanceField("mLength", "J", dx::kAccPrivate | dx::kAccFinal);
-  builder.Constructor(
-      "(Landroid/os/ParcelFileDescriptor;JJ)V", [](dx::IntrinsicContext &call) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;", "Ljava/io/Closeable;"});
+    const auto wu_mFd =
+        builder.BoundInstanceField("mFd", "Landroid/os/ParcelFileDescriptor;", dx::kAccPrivate | dx::kAccFinal);
+    const auto wu_mStartOffset = builder.BoundInstanceField("mStartOffset", "J", dx::kAccPrivate | dx::kAccFinal);
+    const auto wu_mLength = builder.BoundInstanceField("mLength", "J", dx::kAccPrivate | dx::kAccFinal);
+    builder.Constructor("(Landroid/os/ParcelFileDescriptor;JJ)V", [](dx::IntrinsicContext& call) {
         Initialize(call, call.receiver, call.arguments[0].ref,
                    call.arguments[1].AsLong(), call.arguments[2].AsLong());
         return dx::VmValue::Void();
-      });
-  builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
-      const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-      if (!pfd.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
-      return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits));
-  });
-  builder.VirtualMethod("getStartOffset", "()J",
-                        [](dx::IntrinsicContext& call) { return dx::VmValue::Long(GetWide(call, call.receiver, 1)); });
-  builder.VirtualMethod("getLength", "()J",
-                        [](dx::IntrinsicContext& call) { return dx::VmValue::Long(GetWide(call, call.receiver, 3)); });
-  builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
-      const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-      if (pfd.IsValid()) {
-          const auto fd = dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
-          if (fd.IsValid()) {
-              call.vm.IO().CloseDescriptor(fd);
-              // FileDescriptor.valid() is original Java and reads its descriptor
-              // field, independently of IoRuntime's logical close bookkeeping.
-              static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
-          }
-      }
-      return dx::VmValue::Void();
-  });
-  const auto wu_mExtras = builder.BoundInstanceField("mExtras", "Landroid/os/Bundle;", dx::kAccPrivate | dx::kAccFinal);
-  // AOSP 4.4 ROM line 74.
-  builder.Constructor(
-      "(Landroid/os/ParcelFileDescriptor;JJLandroid/os/Bundle;)V",
-      [wu_mFd, wu_mStartOffset, wu_mLength, wu_mExtras](dx::IntrinsicContext& c) {
-          dx::IntrinsicCall api(c);
-          const auto descriptor = api.Ref(0);
-          if (!descriptor.IsValid())
-              throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "fd must not be null"};
-          if (api.Long(2) < 0 && api.Long(1) != 0)
-              throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                    "startOffset must be 0 when using UNKNOWN_LENGTH"};
-          api.SetRef(wu_mFd, descriptor);
-          api.SetLong(wu_mStartOffset, api.Long(1));
-          api.SetLong(wu_mLength, api.Long(2));
-          api.SetRef(wu_mExtras, api.Ref(3));
-          return dx::VmValue::Void();
-      },
-      dx::kAccPublic);
+    });
+    builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
+        const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+        if (!pfd.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
+        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits));
+    });
+    builder.VirtualMethod("getStartOffset", "()J", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(GetWide(call, call.receiver, 1));
+    });
+    builder.VirtualMethod("getLength", "()J", [](dx::IntrinsicContext& call) {
+        return dx::VmValue::Long(GetWide(call, call.receiver, 3));
+    });
+    builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
+        const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
+        if (pfd.IsValid()) {
+            const auto fd = dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
+            if (fd.IsValid()) {
+                call.vm.IO().CloseDescriptor(fd);
+                // FileDescriptor.valid() is original Java and reads its descriptor
+                // field, independently of IoRuntime's logical close bookkeeping.
+                static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+            }
+        }
+        return dx::VmValue::Void();
+    });
+    const auto wu_mExtras =
+        builder.BoundInstanceField("mExtras", "Landroid/os/Bundle;", dx::kAccPrivate | dx::kAccFinal);
+    // AOSP 4.4 ROM line 74.
+    builder.Constructor(
+        "(Landroid/os/ParcelFileDescriptor;JJLandroid/os/Bundle;)V",
+        [wu_mFd, wu_mStartOffset, wu_mLength, wu_mExtras](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto descriptor = api.Ref(0);
+            if (!descriptor.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "fd must not be null"};
+            if (api.Long(2) < 0 && api.Long(1) != 0)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "startOffset must be 0 when using UNKNOWN_LENGTH"};
+            api.SetRef(wu_mFd, descriptor);
+            api.SetLong(wu_mStartOffset, api.Long(1));
+            api.SetLong(wu_mLength, api.Long(2));
+            api.SetRef(wu_mExtras, api.Ref(3));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
 
-  return std::move(builder).Build();
+    return std::move(builder).Build();
 }
 
 } // namespace ogplay::runtime::android_intrinsics

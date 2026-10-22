@@ -375,9 +375,12 @@ IntrinsicClassDecl TypedBuffer(const std::string& name, const std::string& array
                                const std::string& value, NioElementKind kind) {
     const auto type = "Ljava/nio/" + name + "Buffer;";
     const auto concrete = "Ljava/nio/" + name + "ArrayBuffer;";
-    auto b = IntrinsicClassBuilder::Class(type, "Ljava/nio/Buffer;",
-                                          {"Ljava/lang/Comparable;"},
-                                          kAccPublic | kAccAbstract);
+    auto b = IntrinsicClassBuilder::Class(
+        type, "Ljava/nio/Buffer;",
+        name == "Char" ? std::vector<std::string>{"Ljava/lang/Comparable;", "Ljava/lang/CharSequence;",
+                                                  "Ljava/lang/Appendable;", "Ljava/lang/Readable;"}
+                       : std::vector<std::string>{"Ljava/lang/Comparable;"},
+        kAccPublic | kAccAbstract);
     b.StaticMethod("allocate", "(I)" + type, Allocate(concrete, kind));
     b.StaticMethod("wrap", "(" + array + ")" + type, Wrap(concrete, kind, false));
     b.StaticMethod("wrap", "(" + array + "II)" + type, Wrap(concrete, kind, true));

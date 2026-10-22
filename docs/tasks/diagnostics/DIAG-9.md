@@ -118,7 +118,8 @@ B 减少 88。`--check-baseline` 无新增偏差，已执行 `--update-baseline`
 
 ### X 清单
 
-下列 184 条保持原有未实现记账及异常；不通过忽略参数、改调近似重载或空状态伪造成功。
+WU9-2 保留 184 条；WU9-3 消除 HttpAuthHandler 无参构造器后，下列当前 **183 条**保持原有
+未实现记账及异常；不通过忽略参数、改调近似重载或空状态伪造成功。
 各条具体依赖与 ROM 调用指令保存在 classify.json，列表按子系统分组。
 
 ThreadGroup 的 5 条均为 **WU9-4 边界下移候选：ROM 为纯 Java
@@ -206,7 +207,6 @@ ThreadGroup 的 5 条均为 **WU9-4 边界下移候选：ROM 为纯 Java
 | `android/view/WindowManager$LayoutParams` | `<init>(Landroid/os/Parcel;)V` |
 | `android/view/WindowManagerImpl` | `<init>(Landroid/view/Display;)V` |
 | `android/view/inputmethod/InputMethodManager` | `hideSoftInputFromWindow(Landroid/os/IBinder;ILandroid/os/ResultReceiver;)Z`<br>`showSoftInput(Landroid/view/View;ILandroid/os/ResultReceiver;)Z` |
-| `android/webkit/HttpAuthHandler` | `<init>()V` |
 | `android/widget/AbsoluteLayout$LayoutParams` | `<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V` |
 | `android/widget/AbsoluteLayout` | `<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V`<br>`<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V` |
 | `android/widget/FrameLayout` | `<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V`<br>`<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V` |
@@ -286,3 +286,30 @@ ThreadGroup 的 5 条均为 **WU9-4 边界下移候选：ROM 为纯 Java
 | 类 | X 方法 |
 | --- | --- |
 | `libcore/io/Memory` | `peekInt(JZ)I`<br>`peekLong(JZ)J`<br>`peekShort(JZ)S`<br>`pokeInt(JIZ)V`<br>`pokeLong(JJZ)V`<br>`pokeShort(JSZ)V` |
+
+
+## WU9-3 D 类层级收敛
+
+状态：完成本单契约门禁（macOS，2026-10-23），见 [DVM-263](../dexvm/DVM-263.md)。
+基点 `d2e63763`；A1/A2/B/C/D：**0/542/184/13/74 → 0/542/183/13/2**，基线已收紧。
+实际 D=74 包含接口 null/Object 超类误报 34、真实超类偏差 11、直接接口偏差 29；
+已移除误报 34、修复超类 9、对齐接口 29（28 条补充、GenericDeclaration 多余接口移除 1 条）。
+HttpAuthHandler 恢复 Handler 父类并实现无参构造器，额外消除 1 条 B；当前 B 类 X=183。
+
+初次接口注册失败已修：DTDHandler 在 ROM/骨架中，但 Link 的 intrinsic 预解析只查已注册类。
+完整检查 33 个新增层级依赖，通过现有 BootDex 配方准入 7 个原版接口；无新 native 或链接机制。
+检查器新增拒绝 startup_link_error，避免将失败 dump 的缺失成员误认作偏差下降。
+WebView/ScrollView 的已有 Context 路径通过正确父类现有构造器初始化；完整默认样式/三参
+构造链仍属未实现范围。Application/Service 回调注册解析及明确失败行为不变。
+
+| D 类 X | 原因 |
+| --- | --- |
+| ProgressDialog → AlertDialog | 既有 Dialog 主题/getThemeResId 及 helper 缺口，不伪造父初始化 |
+| PaintDrawable → ShapeDrawable | 父构造器均为 skeleton，缺 ShapeState/Paint 初始化 |
+
+D 类 X=2，均保留原层级。七项 DEX 正向回归、Application 接口负对照及继承状态/回调检查通过；
+ZIP 行为用例迁到真实 guest JNI 环境并覆盖双后端资源释放，四项定向共 334 断言通过。
+主题基点 312/340（28 失败）、候选 316/343（27 失败），无新增或增强失败；
+DVM-211 既有并发用例本次通过，不宣称修复。dalvik 双后端各 85/91，零回归。
+证据 `.local/analysis/wu9-3/`；格式化后构建/测试及 BootDex build/check 通过。
+未提交，未运行游戏或 APK，Windows 与场景门禁未验证。

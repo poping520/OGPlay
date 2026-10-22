@@ -1406,9 +1406,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
 namespace ogplay::runtime::dexvm::intrinsics {
 
 IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
-    auto builder = IntrinsicClassBuilder::Interface(
-        "Ljava/lang/reflect/GenericDeclaration;",
-        {"Ljava/lang/reflect/AnnotatedElement;"});
+    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/reflect/GenericDeclaration;", {});
     builder.UnimplementedVirtual(
         "getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;");
     return std::move(builder).Build();

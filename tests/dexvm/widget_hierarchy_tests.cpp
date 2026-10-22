@@ -33,6 +33,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 
 #include "widget_fixture.h"
+#include "android_value_fixture.h"
 
 using namespace ogplay::test::widget;
 using namespace ogplay::runtime;
@@ -563,4 +564,86 @@ TEST_CASE("RelativeLayout TRUE rules behave as absent sibling anchors") {
               {VmValue::Ref(relative)});
     CHECK(vm.CallOn(child, "getLeft", "()I").AsInt() == 0);
     CHECK(vm.CallOn(child, "getTop", "()I").AsInt() == 0);
+}
+
+TEST_CASE("DVM-263 ROM superclass and interface checks execute as DEX instructions") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "framework_override.dex", true);
+        CHECK(f.Static("Lfixture/FrameworkHierarchyProbe;", "catchAndroidException", "()I").AsInt() == 1);
+        for (const auto& [name, owner] : std::array{
+                 std::pair{"motion", "Landroid/view/MotionEvent;"}, std::pair{"scroll", "Landroid/widget/ScrollView;"},
+                 std::pair{"web", "Landroid/webkit/WebView;"}, std::pair{"application", "Landroid/app/Application;"},
+                 std::pair{"parcelable", "Landroid/graphics/PointF;"},
+                 std::pair{"zip", "Ljava/util/zip/ZipInputStream;"}}) {
+            INFO(std::string_view(name));
+            const auto object = f.vm.NewIntrinsicInstance(owner);
+            const auto root = f.vm.ProtectReferences(std::array{object});
+            CHECK(f.Static("Lfixture/FrameworkHierarchyProbe;", name, ("(" + std::string(owner) + ")Z").c_str(),
+                           {VmValue::Ref(object)})
+                      .AsInt() == 1);
+        }
+    }
+}
+
+TEST_CASE("DVM-263 corrected parents initialize inherited state through their real constructors") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, nullptr, true);
+        f.Static("Landroid/os/Looper;", "prepareMainLooper", "()V");
+        std::array<int, 7> calls{};
+        const std::array parents{std::pair{"Landroid/util/AndroidException;", "(Ljava/lang/String;)V"},
+                                 std::pair{"Landroid/view/InputEvent;", "()V"},
+                                 std::pair{"Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V"},
+                                 std::pair{"Landroid/widget/AbsoluteLayout;", "(Landroid/content/Context;)V"},
+                                 std::pair{"Landroid/view/ViewGroup$LayoutParams;", "(II)V"},
+                                 std::pair{"Landroid/widget/LinearLayout;", "(Landroid/content/Context;)V"},
+                                 std::pair{"Landroid/os/Handler;", "()V"}};
+        for (std::size_t i = 0; i < parents.size(); ++i) {
+            const auto& [owner, signature] = parents[i];
+            const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner), "<init>", signature);
+            REQUIRE(method.has_value());
+            const auto original = f.linker.Method(*method).implementation;
+            const auto kind = f.linker.Method(*method).kind;
+            // Wrap native parents without replacing their behavior. BootDex
+            // parents execute bytecode; verify their resulting state below.
+            if (kind == MethodKind::intrinsic) {
+                f.linker.MutableMethod(*method).implementation = [original, &calls, i](IntrinsicContext& c) {
+                    ++calls[i];
+                    return original(c);
+                };
+            }
+        }
+        const auto message = f.vm.NewStringUtf8("missing package");
+        const auto error = f.New("Landroid/content/pm/PackageManager$NameNotFoundException;", "(Ljava/lang/String;)V",
+                                 {VmValue::Ref(message)});
+        CHECK(f.vm.StringUtf8(f.On(error, "getMessage", "()Ljava/lang/String;").ref) == "missing package");
+        const auto first = MakeMotionEvent(f.vm, 0, 10, 20, 0);
+        const auto first_root = f.vm.ProtectReferences(std::array{first});
+        const auto second = MakeMotionEvent(f.vm, 0, 30, 40, 0);
+        CHECK(f.On(first, "getSequenceNumber", "()I").AsInt() != f.On(second, "getSequenceNumber", "()I").AsInt());
+        CHECK(f.On(first, "getX", "()F").AsFloat() == 10.0F);
+        const auto owner = f.vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        for (const auto descriptor : {"Landroid/widget/ScrollView;", "Landroid/webkit/WebView;",
+                                      "Landroid/widget/TableLayout;", "Landroid/widget/TableRow;"}) {
+            const auto object = f.New(descriptor, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            CHECK(f.On(object, "getContext", "()Landroid/content/Context;").ref == owner);
+        }
+        const auto params = f.New("Landroid/widget/AbsoluteLayout$LayoutParams;", "(IIII)V",
+                                  {VmValue::Int(10), VmValue::Int(20), VmValue::Int(30), VmValue::Int(40)});
+        for (const auto& [name, value] :
+             std::array{std::pair{"width", 10}, std::pair{"height", 20}, std::pair{"x", 30}, std::pair{"y", 40}}) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(params), name, "I");
+            REQUIRE(field.has_value());
+            CHECK(f.model.InstanceSlots(params)[f.linker.Field(*field).slot].bits == static_cast<std::uint32_t>(value));
+        }
+        const auto auth = f.New("Landroid/webkit/HttpAuthHandler;");
+        CHECK(f.On(auth, "getLooper", "()Landroid/os/Looper;").ref ==
+              f.Static("Landroid/os/Looper;", "myLooper", "()Landroid/os/Looper;").ref);
+        // Native parents run their real handlers once; the two table classes
+        // share LinearLayout's existing initialization.
+        CHECK(calls[2] == 1);
+        CHECK(calls[3] == 1);
+        CHECK(calls[5] == 2);
+        CHECK(calls[6] == 1);
+    }
 }

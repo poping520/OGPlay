@@ -4,6 +4,7 @@
 #include <set>
 #include "ogplay/runtime/integration/native_activity_runtime.h"
 #include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/dexvm/io_runtime.h"
 #include "runtime/integration/dexvm_android/shared.h"
 #include "../fixtures/bitmap_decode_data.h"
 #include <chrono>
@@ -525,5 +526,144 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         CHECK(vm.GuestNativeResourceCount() == 0);
         invoke(alive, "end", "()V"); // Teardown writes API19's -1 sentinel, not zero.
         expect_exception(invoke_result(alive, "getAdler", "()I", {}), "Ljava/lang/IllegalStateException;");
+    }
+}
+
+// The ZIP constructor now initializes the real Inflater superclass. Keep this
+// behavioral regression in the guest zlib family, with the actual JNI bridge.
+TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operations") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name :
+             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
+              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("android.app.Activity");
+        request.system_libraries = libraries;
+        // Existing minimal APK fixture; compression classes come only from BootDex.
+        request.dex_bytes = ReadDexFixture("crc32.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
+            REQUIRE(method.has_value());
+            return vm.Call(*method, arguments);
+        };
+        const auto invoke_result = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                       std::vector<VmValue> arguments) {
+            const auto slot = linker.FindVtableIndex(vm.Model().ObjectClass(object), name, descriptor);
+            REQUIRE(slot.has_value());
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            return vm.Call(linker.Class(vm.Model().ObjectClass(object)).vtable[*slot], arguments);
+        };
+        const auto invoke = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments = {}) {
+            INFO((std::string{name} + descriptor));
+            const auto outcome = invoke_result(object, name, descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return outcome.value;
+        };
+        const auto construct = [&](const char* owner, const char* descriptor = "()V",
+                                   std::vector<VmValue> arguments = {}) {
+            const auto object = vm.NewIntrinsicInstance(owner);
+            const auto root = vm.ProtectReferences(std::array{object});
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            const auto outcome = direct(owner, "<init>", descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return object;
+        };
+        const auto byte_array = [&](const std::vector<std::byte>& data) {
+            const auto array =
+                vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                                             static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(array, 0, data);
+            return array;
+        };
+        const auto bytes = [&](VmObjectRef array) {
+            return vm.Model().ReadByteRegion(array, 0, vm.Model().ArrayLength(array));
+        };
+        const auto expect_exception = [&](const VmCallOutcome& outcome, const char* type) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == type);
+        };
+
+        // Stored ZIP containing save.dat = "hiok", generated independently.
+        const std::array<unsigned char, 118> archive_bytes{
+            0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0xe7, 0x3f, 0xd5,
+            0xa0, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x73, 0x61, 0x76, 0x65,
+            0x2e, 0x64, 0x61, 0x74, 0x68, 0x69, 0x6f, 0x6b, 0x50, 0x4b, 0x01, 0x02, 0x14, 0x03, 0x14, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x00, 0xe7, 0x3f, 0xd5, 0xa0, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00,
+            0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00,
+            0x00, 0x00, 0x00, 0x73, 0x61, 0x76, 0x65, 0x2e, 0x64, 0x61, 0x74, 0x50, 0x4b, 0x05, 0x06, 0x00, 0x00,
+            0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x36, 0x00, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00};
+        std::vector<std::byte> archive;
+        for (const auto byte : archive_bytes)
+            archive.push_back(static_cast<std::byte>(byte));
+        const auto native_before = vm.GuestNativeResourceCount();
+        const auto source = construct("Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(byte_array(archive))});
+        const auto zip =
+            construct("Ljava/util/zip/ZipInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(source)});
+        const auto zip_root = vm.ProtectReferences(std::array{zip});
+        CHECK(vm.GuestNativeResourceCount() == native_before + 1);
+        CHECK(vm.IO().FindInput(source) == nullptr);
+        const auto entry = invoke(zip, "getNextEntry", "()Ljava/util/zip/ZipEntry;").ref;
+        REQUIRE(entry.IsValid());
+        CHECK(vm.StringUtf8(invoke(entry, "getName", "()Ljava/lang/String;").ref) == "save.dat");
+        CHECK(invoke(zip, "available", "()I").AsInt() == 1);
+        CHECK(invoke(zip, "read", "()I").AsInt() == 'h');
+        CHECK(invoke(zip, "skip", "(J)J", {VmValue::Long(1)}).AsLong() == 1);
+        CHECK(invoke(zip, "markSupported", "()Z").AsInt() == 0);
+        expect_exception(invoke_result(zip, "reset", "()V", {}), "Ljava/io/IOException;");
+        const auto output = byte_array(std::vector<std::byte>(2));
+        CHECK(invoke(zip, "read", "([BII)I", {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(2)}).AsInt() == 2);
+        CHECK(bytes(output) == std::vector<std::byte>{std::byte{'o'}, std::byte{'k'}});
+        CHECK(invoke(zip, "read", "()I").AsInt() == -1);
+        CHECK(invoke(zip, "available", "()I").AsInt() == 0);
+        invoke(zip, "close", "()V");
+        invoke(zip, "close", "()V");
+        CHECK(vm.GuestNativeResourceCount() == native_before);
+        expect_exception(invoke_result(zip, "read", "()I", {}), "Ljava/io/IOException;");
+        filesystem.CreateDirectory("/sdcard");
+        vm.IO().WriteFile("/sdcard/archive.zip", archive);
+        const auto raw = construct("Ljava/io/FileInputStream;", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(vm.NewStringUtf8("/sdcard/archive.zip"))});
+        const auto filezip =
+            construct("Ljava/util/zip/ZipInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(raw)});
+        const auto filezip_root = vm.ProtectReferences(std::array{filezip});
+        static_cast<void>(vm.CollectGarbage("zip-live-inherited-state"));
+        invoke(filezip, "close", "()V");
+        CHECK(invoke_result(raw, "read", "()I", {}).exception.IsValid());
+        CHECK(vm.GuestNativeResourceCount() == native_before);
     }
 }

@@ -694,6 +694,11 @@ dx::VmObjectRef NewMotionEvent(dx::Interpreter& vm, const MotionInit& init) {
     using Layout = MotionSnapshotLayout;
     const auto instance = vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
     const auto root = vm.ProtectReferences(std::array{instance});
+    const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(instance), "<init>", "()V");
+    const auto initialized = vm.Call(*constructor, std::array{dx::VmValue::Ref(instance)});
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor, initialized.exception_message,
+                              initialized.exception};
     const auto count = init.pointers.size();
     const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
         JniPrimitiveKind::long_integer, static_cast<JniSize>(Layout::Sample(count, 1)));
@@ -783,7 +788,23 @@ dx::VmValue ObtainMotionEvent(dx::IntrinsicContext& call, const bool pointer_ids
 Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
     using Layout = MotionSnapshotLayout;
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/MotionEvent;", "Landroid/view/InputEvent;",
+                                                    {"Landroid/os/Parcelable;"});
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/view/InputEvent;"), "<init>", "()V");
+            std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+            const std::vector<dx::VmValue> parameters{};
+            arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+            const auto result = c.vm.Call(*target, arguments);
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPrivate);
     // API19 action constants must also be declared for JNI field lookup.
     for (const auto& [name, value] : std::array{
         std::pair{"ACTION_MASK", 0xff},
@@ -858,10 +879,15 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         {"getAction", Layout::action}, {"getDeviceId", Layout::device}, {"getSource", Layout::source},
         {"getFlags", Layout::flags}, {"getMetaState", Layout::meta}, {"getButtonState", Layout::buttons},
         {"getEdgeFlags", Layout::edges}, {"getPointerCount", Layout::pointer_count}, {"getHistorySize", Layout::history_count}};
-    for (const auto [name, slot] : integers)
-        builder.FinalMethod(name, "()I", [data, slot](dx::IntrinsicContext& call) {
+    for (const auto [name, slot] : integers) {
+        const auto handler = [data, slot](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(MotionSnapshotReader(call, data).Int(slot));
-        });
+        };
+        if (slot == Layout::device || slot == Layout::source)
+            builder.FinalOverrideMethod(name, "()I", handler);
+        else
+            builder.FinalMethod(name, "()I", handler);
+    }
     builder.FinalMethod("getActionMasked", "()I", [data](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(MotionSnapshotReader(call, data).Int(Layout::action) & 0xff);
     });
@@ -885,10 +911,12 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         return dx::VmValue::Long(static_cast<std::int64_t>(MotionSnapshotReader(call, data).Word(Layout::down_time)) / 1000000);
     });
     for (bool nano : {false, true}) {
-        builder.FinalMethod(nano ? "getEventTimeNano" : "getEventTime", "()J", [data, nano](dx::IntrinsicContext& call) {
-            MotionSnapshotReader reader(call, data);
-            return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(0))) / (nano ? 1 : 1000000));
-        });
+        builder.FinalOverrideMethod(
+            nano ? "getEventTimeNano" : "getEventTime", "()J", [data, nano](dx::IntrinsicContext& call) {
+                MotionSnapshotReader reader(call, data);
+                return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(0))) /
+                                         (nano ? 1 : 1000000));
+            });
         builder.FinalMethod(nano ? "getHistoricalEventTimeNano" : "getHistoricalEventTime", "(I)J", [data, nano](dx::IntrinsicContext& call) {
             MotionSnapshotReader reader(call, data);
             const auto sample = reader.History(call.arguments[0].AsInt());
@@ -967,7 +995,7 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         dx::IntrinsicCall(call).SetRef(data, fresh);
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("recycle", "()V", [data](dx::IntrinsicContext& call) {
+    builder.FinalOverrideMethod("recycle", "()V", [data](dx::IntrinsicContext& call) {
         static_cast<void>(MotionSnapshotReader(call, data));
         dx::IntrinsicCall(call).SetRef(data, dx::VmObjectRef{});
         return dx::VmValue::Void();
@@ -1500,7 +1528,10 @@ void DispatchViewFocusChange(dx::Interpreter& vm, const dx::VmObjectRef view,
 }  // namespace
 
 Decl Declare_android_view_View(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/View;", "Ljava/lang/Object;",
+                                                    {"Landroid/graphics/drawable/Drawable$Callback;",
+                                                     "Landroid/view/KeyEvent$Callback;",
+                                                     "Landroid/view/accessibility/AccessibilityEventSource;"});
     builder.VirtualMethod("findViewById", "(I)Landroid/view/View;",
         [context](dx::IntrinsicContext& call) {
             const auto id = call.arguments[0].AsInt();
@@ -2348,9 +2379,8 @@ dx::IntrinsicHandler AddWithDimensionsHandler() {
 }  // namespace
 
 Decl Declare_android_view_ViewGroup(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/view/ViewGroup;", "Landroid/view/View;",
-        {"Landroid/view/ViewParent;"});
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewGroup;", "Landroid/view/View;",
+                                                    {"Landroid/view/ViewParent;", "Landroid/view/ViewManager;"});
     builder.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context,
@@ -2935,7 +2965,9 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManager$LayoutParams;", "Landroid/view/ViewGroup$LayoutParams;");
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManager$LayoutParams;",
+                                         "Landroid/view/ViewGroup$LayoutParams;", {"Landroid/os/Parcelable;"});
     for (const auto& [name, type] : kWindowFields)
         builder.InstanceField(name, type, std::string_view(name) == "mTitle" ? dx::kAccPrivate : dx::kAccPublic);
     for (const auto signature : {"()V", "(I)V", "(II)V", "(III)V", "(IIIII)V", "(IIIIIII)V"}) {
@@ -2966,7 +2998,7 @@ Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManager(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/WindowManager;");
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/WindowManager;", {"Landroid/view/ViewManager;"});
     builder.UnimplementedVirtual("getDefaultDisplay", "()Landroid/view/Display;", dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }

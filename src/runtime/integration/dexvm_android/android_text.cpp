@@ -6,7 +6,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_Editable(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/text/Editable;");
+    auto builder = dx::IntrinsicClassBuilder::Interface(
+        "Landroid/text/Editable;",
+        {"Ljava/lang/CharSequence;", "Landroid/text/GetChars;", "Landroid/text/Spannable;", "Ljava/lang/Appendable;"});
     builder.UnimplementedVirtual("clear", "()V", dx::kAccPublic | dx::kAccAbstract);
     builder.FinalMethod("length", "()I", EditableLengthHandler(context));
     builder.UnimplementedVirtual("replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;",
@@ -125,7 +127,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_text_TextWatcher(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/text/TextWatcher;");
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/text/TextWatcher;", {"Landroid/text/NoCopySpan;"});
     return std::move(builder).Build();
 }
 

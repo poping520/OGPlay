@@ -90,7 +90,8 @@ dx::VmObjectRef NewBuiltinChooser(dx::IntrinsicContext& call, const std::array<s
 }
 
 Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/SurfaceView;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/opengl/GLSurfaceView;", "Landroid/view/SurfaceView;",
+                                                    {"Landroid/view/SurfaceHolder$Callback;"});
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
     builder.Constructor("(Landroid/content/Context;)V",

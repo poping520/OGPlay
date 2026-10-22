@@ -1,7 +1,5 @@
 #include "ogplay/runtime/jni/jni_exception.h"
 
-#include <algorithm>
-#include <array>
 #include <map>
 #include <mutex>
 #include <string>
@@ -9,45 +7,6 @@
 #include <utility>
 
 namespace ogplay::runtime {
-namespace {
-
-constexpr std::array<std::string_view, 25> kPendingExceptionAllowedCalls{
-    "ExceptionOccurred",
-    "ExceptionDescribe",
-    "ExceptionClear",
-    "FatalError",
-    "DeleteGlobalRef",
-    "DeleteLocalRef",
-    "DeleteWeakGlobalRef",
-    "ReleaseStringChars",
-    "ReleaseStringUTFChars",
-    "ReleaseBooleanArrayElements",
-    "ReleaseByteArrayElements",
-    "ReleaseCharArrayElements",
-    "ReleaseShortArrayElements",
-    "ReleaseIntArrayElements",
-    "ReleaseLongArrayElements",
-    "ReleaseFloatArrayElements",
-    "ReleaseDoubleArrayElements",
-    "MonitorExit",
-    "ReleasePrimitiveArrayCritical",
-    "ReleaseStringCritical",
-    "ExceptionCheck",
-    "GetObjectRefType",
-    "GetJavaVM",
-    "PopLocalFrame",
-    "PushLocalFrame",
-};
-
-[[nodiscard]] bool AllowedWithPendingException(const JniSlot slot) {
-    const auto name = JniSlotName(slot);
-    return std::find(kPendingExceptionAllowedCalls.begin(),
-                     kPendingExceptionAllowedCalls.end(), name) !=
-           kPendingExceptionAllowedCalls.end();
-}
-
-}  // namespace
-
 JniExceptionError::JniExceptionError(const JniExceptionErrorReason reason,
                                      std::string message)
     : std::runtime_error(std::move(message)), reason_(reason) {}
@@ -81,10 +40,7 @@ public:
         }
         std::scoped_lock lock(mutex_);
         auto& pending = Thread(thread_id);
-        if (pending.has_value()) {
-            ThrowError(JniExceptionErrorReason::exception_already_pending,
-                       "JNI thread already has a pending exception");
-        }
+        // Dalvik Jni.cpp:1333-1338: explicit Throw replaces the thread exception.
         pending = throwable;
     }
 
@@ -107,16 +63,13 @@ public:
     [[nodiscard]] bool IsCallAllowed(const std::uint64_t thread_id,
                                      const JniSlot slot) const {
         std::scoped_lock lock(mutex_);
-        const auto& pending = Thread(thread_id);
-        return !pending.has_value() || AllowedWithPendingException(slot);
+        static_cast<void>(Thread(thread_id));
+        static_cast<void>(JniSlotName(slot));
+        return true;  // Dalvik non-CheckJNI: ScopedJniThreadState has no pending gate.
     }
 
-    void RequireCallAllowed(const std::uint64_t thread_id,
-                            const JniSlot slot) const {
-        if (IsCallAllowed(thread_id, slot)) return;
-        ThrowError(JniExceptionErrorReason::call_blocked,
-                   "JNI call is blocked by a pending exception: " +
-                       std::string(JniSlotName(slot)));
+    void RequireCallAllowed(const std::uint64_t thread_id, const JniSlot slot) const {
+        static_cast<void>(IsCallAllowed(thread_id, slot));
     }
 
 private:

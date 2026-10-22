@@ -504,7 +504,10 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         const auto occurred = env.ExceptionOccurred(1);
         CHECK_FALSE(occurred.IsNull());
         CHECK(env.PendingExceptionMetadata(1)->throwable == pending->throwable);
-        CHECK_THROWS_AS(static_cast<void>(env.NewGlobalRef(1, occurred)), JniExceptionError);
+        const auto global_pending = env.NewGlobalRef(1, occurred);
+        CHECK_FALSE(global_pending.IsNull());
+        CHECK_FALSE(env.PendingCallDiagnostics().empty());
+        env.DeleteGlobalRef(1, global_pending);
         CHECK(env.PopLocalFrame(1).IsNull());
         CHECK(env.PendingExceptionMetadata(1)->throwable == pending->throwable);
         env.ExceptionClear(1);

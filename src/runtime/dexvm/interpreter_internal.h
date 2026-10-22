@@ -458,6 +458,7 @@ public:
         VmMethodId symbolic_method, InvokeKind kind,
         std::optional<std::uint16_t> vtable_slot, VmObjectRef receiver,
         DexClassId current_class);
+    std::function<VmObjectRef()> class_initialization_pending_source;
     void EnsureInitialized(InterpreterExecutionState& execution,
                            DexClassId java_class);
 

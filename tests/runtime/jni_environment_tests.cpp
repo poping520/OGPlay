@@ -4,7 +4,7 @@
 
 #include "ogplay/runtime/jni/jni_environment.h"
 
-TEST_CASE("DVM-242 JNI allocation hook owns publication and obeys the pending gate") {
+TEST_CASE("DVM-242 JNI allocation hook owns publication and allows pending without skipping allocation") {
     using namespace ogplay::runtime;
     JniEnvironment env;
     env.AttachThread(9);
@@ -24,8 +24,10 @@ TEST_CASE("DVM-242 JNI allocation hook owns publication and obeys the pending ga
     CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, clazz)), std::runtime_error);
     env.SetObjectAllocationHook([&](std::uint64_t, JniReference) { ++calls; return JniReference{}; });
     env.Throw(9, object);
-    CHECK_THROWS_AS(static_cast<void>(env.AllocObject(9, clazz)), JniExceptionError);
-    CHECK(calls == 1); CHECK(env.ExceptionCheck(9));
+    CHECK(env.AllocObject(9, clazz).IsNull());
+    CHECK(calls == 2);
+    CHECK(env.ExceptionCheck(9));
+    CHECK_FALSE(env.PendingCallDiagnostics().empty());
     env.ExceptionClear(9); env.SetObjectAllocationHook({}); env.DetachThread(9);
 }
 
@@ -51,7 +53,7 @@ TEST_CASE("JNI environment closes common reference operations") {
                     ogplay::runtime::JniExceptionError);
 }
 
-TEST_CASE("JNI environment exposes pending exceptions and enforces the gate") {
+TEST_CASE("JNI environment exposes pending exceptions and warns while permitting JNI calls") {
     ogplay::runtime::JniEnvironment environment({8, 4, 4});
     environment.AttachThread(7, 4);
 
@@ -63,16 +65,17 @@ TEST_CASE("JNI environment exposes pending exceptions and enforces the gate") {
     const auto occurred = environment.ExceptionOccurred(7);
     CHECK_FALSE(occurred.IsNull());
     CHECK(occurred != throwable);
-    CHECK_THROWS_AS(static_cast<void>(environment.GetVersion(7)),
-                    ogplay::runtime::JniExceptionError);
+    CHECK(environment.GetVersion(7) == ogplay::runtime::kJniVersion1_6);
     const auto pending = environment.PendingExceptionMetadata(7)->throwable;
     environment.PushLocalFrame(7, 1);
     const auto nested = environment.ExceptionOccurred(7);
     CHECK_FALSE(nested.IsNull());
     CHECK(environment.PopLocalFrame(7).IsNull());
     CHECK(environment.PendingExceptionMetadata(7)->throwable == pending);
-    CHECK_THROWS_AS(static_cast<void>(environment.NewGlobalRef(7, throwable)),
-                    ogplay::runtime::JniExceptionError);
+    const auto global = environment.NewGlobalRef(7, throwable);
+    CHECK_FALSE(global.IsNull());
+    CHECK_FALSE(environment.PendingCallDiagnostics().empty());
+    environment.DeleteGlobalRef(7, global);
     CHECK(environment.PendingExceptionMetadata(7)->throwable == pending);
     environment.ExceptionClear(7);
     CHECK(environment.IsSameObject(7, throwable, occurred));
@@ -115,9 +118,9 @@ TEST_CASE("JNI HLE object resolution is checked and preserves identity") {
     const auto throwable = environment.PublishLocalObject(
         31, {ogplay::runtime::JniObjectDomain::host, 0x55});
     environment.Throw(31, throwable);
-    CHECK_THROWS_AS(
-        static_cast<void>(environment.ResolveObjectForHle(31, reference)),
-        ogplay::runtime::JniExceptionError);
+    CHECK(environment.ResolveObjectForHle(31, reference) == object);
+    CHECK_FALSE(environment.PendingCallDiagnostics().empty());
+    CHECK(environment.PendingExceptionMetadata(31)->throwable.value == 0x55);
     environment.ExceptionClear(31);
     environment.DetachThread(32);
     environment.DetachThread(31);
@@ -139,9 +142,11 @@ TEST_CASE("JNI HLE global object publication crosses attached threads") {
     const auto throwable = environment.PublishLocalObject(
         41, {ogplay::runtime::JniObjectDomain::host, 0x99});
     environment.Throw(41, throwable);
-    CHECK_THROWS_AS(
-        static_cast<void>(environment.PublishGlobalObjectForHle(41, object)),
-        ogplay::runtime::JniExceptionError);
+    const auto pending_global = environment.PublishGlobalObjectForHle(41, object);
+    CHECK(environment.ResolveObjectForHle(42, pending_global) == object);
+    CHECK_FALSE(environment.PendingCallDiagnostics().empty());
+    CHECK(environment.PendingExceptionMetadata(41)->throwable.value == 0x99);
+    environment.DeleteGlobalRef(41, pending_global);
     environment.ExceptionClear(41);
     environment.DetachThread(42);
     environment.DetachThread(41);
@@ -270,4 +275,47 @@ TEST_CASE("JNI request guarantees use Dalvik 512 while actual local usage can gr
     CHECK_THROWS_AS(env.EnsureLocalCapacity(602, 1), JniReferenceError);
     CHECK_THROWS_AS(env.PushLocalFrame(602, 1), JniReferenceError);
     CHECK_NOTHROW(static_cast<void>(env.PublishLocalObject(602, {JniObjectDomain::host, 6999})));
+}
+
+TEST_CASE("ADR-0153 pending diagnostics deduplicate slot thread and class and retain guest LR") {
+    using namespace ogplay::runtime;
+    JniEnvironment env;
+    env.AttachThread(71);
+    env.AttachThread(72);
+    env.SetPendingCallDiagnostics([](const JniThrowableMetadata& value) {
+        return value.throwable.value < 10 ? "java/lang/RuntimeException" : "java/lang/Error";
+    });
+    const auto one = env.PublishLocalObject(71, {JniObjectDomain::host, 1});
+    const auto two = env.PublishLocalObject(72, {JniObjectDomain::host, 2});
+    const auto same_class = env.PublishLocalObject(71, {JniObjectDomain::host, 3});
+    env.Throw(71, one);
+    env.Throw(72, two);
+    const auto slot = FindJniSlot("NewStringUTF").value();
+    env.EnterGuestCall(71, slot, 0x12345678);
+    static_cast<void>(env.GetVersion(71));  // helper must not add a second slot/LR=0 warning
+    env.LeaveGuestCall(71);
+    env.EnterGuestCall(71, slot, 0x87654321);
+    env.LeaveGuestCall(71);
+    env.EnterGuestCall(71, slot, 0x99);
+    env.Throw(71, same_class);  // different identity, same class: still no new warn
+    env.LeaveGuestCall(71);
+    env.EnterGuestCall(72, slot, 0x22);
+    env.LeaveGuestCall(72);
+    auto warnings = env.PendingCallDiagnostics();
+    REQUIRE(warnings.size() == 2);
+    CHECK(warnings[0].guest_thread == 71);
+    CHECK(std::get<std::string>(warnings[0].fields[0].value) == "NewStringUTF");
+    CHECK(std::get<ogplay::core::GuestAddress>(warnings[0].fields[2].value).value == 0x12345678);
+    env.ExceptionClear(71);
+    const auto other = env.PublishLocalObject(71, {JniObjectDomain::host, 20});
+    env.Throw(71, other);
+    env.EnterGuestCall(71, slot, 0x33);
+    env.LeaveGuestCall(71);
+    CHECK(env.PendingCallDiagnostics().size() == 4);
+    CHECK(env.PendingExceptionMetadata(71)->throwable.value == 20);
+    env.ExceptionClear(71);
+    env.Throw(71, one);
+    env.EnterGuestCall(71, slot, 0x44);
+    env.LeaveGuestCall(71);
+    CHECK(env.PendingCallDiagnostics().size() == 5);  // Clear(Error) is new; NewStringUTF(RuntimeException) is deduped
 }

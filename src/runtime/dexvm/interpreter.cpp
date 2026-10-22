@@ -500,6 +500,12 @@ void Interpreter::Impl::EnsureInitialized(
         const auto outcome = Run(execution, frames.size() - 1);
         if (outcome.exception.IsValid()) SetPending(outcome.exception);
     }
+    // Dalvik oo/Class.cpp:4485-4497 checks the same thread exception even if
+    // it predates entry. Transfer it only here, never pre-clear a Java call.
+    if (!pending_exception.IsValid() && class_initialization_pending_source) {
+        const auto external = class_initialization_pending_source();
+        if (external.IsValid()) SetPending(external);
+    }
     if (pending_exception.IsValid()) {
         // AOSP Class.cpp / Exception.cpp: wrap non-Error initialization
         // failures, preserve their identity as cause, and leave Errors intact.
@@ -1301,6 +1307,11 @@ InterpreterExecutionContext Interpreter::ExecutionContext(const std::uint64_t to
     context.token_ = token;
     static_cast<void>(impl_->Execution(context));
     return context;
+}
+
+void Interpreter::SetClassInitializationPendingSource(std::function<VmObjectRef()> source) {
+    VmExecutionLockScope lock(impl_->execution_lock);
+    impl_->class_initialization_pending_source = std::move(source);
 }
 
 VmCallOutcome Interpreter::EnsureClassInitialized(const DexClassId java_class) {

@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-21。
+更新：2026-10-22。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -30,7 +30,7 @@
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）。[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
   测试失败：ogplay_tests 1903/1903、ogplay_app_tests 89/89 通过，0 失败，保留既有 7 skip。
-- 一致性：dalvik/tests 双后端 84/91（92.3%）；035/046 通过，085 oracle 排除；070 缺共享数组，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 359/399（90.0%，WU8-2b：JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。
+- 一致性：dalvik/tests 双后端 84/91（92.3%）；035/046 通过，085 oracle 排除；070 缺共享数组，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 363/399（91.0%，WU8-2e / ADR-0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

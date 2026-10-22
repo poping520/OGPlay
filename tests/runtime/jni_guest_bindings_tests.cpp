@@ -1506,3 +1506,20 @@ TEST_CASE("guest JNI capacity and non-owner monitor failures replace pending onl
     f.environment.MonitorExit(502, ref);
     f.environment.MonitorExit(502, ref);
 }
+
+TEST_CASE("ADR-0153 PopLocalFrame underflow replaces pending and republishes result") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    f.environment.AttachThread(507);
+    const JniObjectIdentity object{JniObjectDomain::host, 5071};
+    const auto ref = f.environment.PublishLocalObject(507, object);
+    f.environment.Throw(507, ref);
+    const auto result = JniReference{f.CallEnvironment("PopLocalFrame", 507, ref.Value())};
+    CHECK(f.environment.ResolveObjectForHle(507, result) == object);
+    const auto pending = f.environment.PendingExceptionMetadata(507);
+    REQUIRE(pending);
+    CHECK(pending->throwable != object);
+    CHECK(f.classes.ClassName(pending->exception_class) == "java/lang/RuntimeException");
+    CHECK_FALSE(f.environment.PendingCallDiagnostics().empty());
+}

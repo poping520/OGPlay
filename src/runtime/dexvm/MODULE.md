@@ -77,7 +77,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
   资源清理保存并 root VM 原异常/结果，通过 NativeMethodBridge 清理 scope 隔离 native
-  pending，退出恢复原状态；失败及未尝试资源回队列，不放宽正常 JNI 调用。
+  pending，退出恢复原状态；失败及未尝试资源回队列，普通 JNI pending 行为另见 ADR-0153。
   外部宿主 GC 遇到绑定到其他宿主的默认 execution 时只扫堆，将 guest 清理留队，
   由合法 execution 所有者的后续 GC/退出释放，不借用活动 Java 栈。
 - System.gc/Runtime.gc 显式调用同一 STW 收集器，普通回收保留 SoftReference、压力回收清软引用。
@@ -284,3 +284,8 @@ JNI/反射查询与枚举复用真实 own-member 表面和修饰符；存在但�
 JNI 缺成员挂起 NoSuchMethodError/NoSuchFieldError，反射查询抛对应 NoSuch*Exception；
 Method.invoke/Constructor.newInstance 将未实现目标的 UnsatisfiedLinkError 包为 InvocationTargetException。
 这些语义不代表骨架行为已支持；Unsafe/序列化等其余字段访问通道不在此项验收范围。
+
+ADR-0153：类初始化的 post-clinit 检查可经显式 owner pending source 交接同线程 JNI
+throwable，按 Dalvik Class.cpp:4485–4497 将类标 failed，非 Error 包装并保留 cause、Error
+保留身份；已初始化类不消费外部 pending。回调只在检查点调用，停止执行后撤销，不引入
+JNI 环境反向依赖。普通 Call/NewObject 不预先清除 JNI pending。

@@ -105,6 +105,13 @@ bool JniGuestCallDispatcher::IsJavaVmBound(
     return java_vm_[JavaVmIndex(slot)].has_value();
 }
 
+void JniGuestCallDispatcher::SetEnvironmentCallHooks(std::function<void(const JniGuestCallFrame&)> enter,
+                                                     std::function<void(const JniGuestCallFrame&)> leave) {
+    if (sealed_ || !enter || !leave) throw std::logic_error("invalid JNI call hooks");
+    enter_ = std::move(enter);
+    leave_ = std::move(leave);
+}
+
 void JniGuestCallDispatcher::Seal() {
     if (sealed_) {
         throw std::logic_error("JNI guest dispatcher is already sealed");
@@ -238,6 +245,19 @@ void JniGuestCallDispatcher::Dispatch(
     for (std::size_t index = 0; index < frame.registers.size(); ++index) {
         frame.registers[index] = registers[index];
     }
+
+    struct Scope final {
+        const JniGuestCallFrame& frame;
+        const std::function<void(const JniGuestCallFrame&)>* leave;
+
+        ~Scope() {
+            if (leave) (*leave)(frame);
+        }
+    };
+
+    const auto observed = !thunk.java_vm && static_cast<bool>(enter_);
+    if (observed) enter_(frame);
+    const Scope scope{frame, observed ? &leave_ : nullptr};
     const auto result = (*handler)(frame);
     if (result.width != JniGuestReturnWidth::none) {
         registers[0] = result.words[0];

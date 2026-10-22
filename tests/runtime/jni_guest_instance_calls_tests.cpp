@@ -995,7 +995,7 @@ TEST_CASE("guest JNI monitor bindings expose real recursion state") {
     fixture.environment.ExceptionClear(InstanceFixture::thread_id);
 }
 
-TEST_CASE("DVM-254 JNI lookup misses pend Java errors and preserve strict gates") {
+TEST_CASE("DVM-254 JNI lookup misses pend Java errors and allow pending with diagnostics") {
     using namespace ogplay::runtime;
     InstanceFixture f;
     f.environment.AttachThread(InstanceFixture::thread_id);
@@ -1027,11 +1027,17 @@ TEST_CASE("DVM-254 JNI lookup misses pend Java errors and preserve strict gates"
                 (field ? "java/lang/NoSuchFieldError" : "java/lang/NoSuchMethodError"));
             resolved = false;
             f.WriteString(0x200, "fixture/NotLoaded");
-            CHECK_THROWS_AS(static_cast<void>(f.Call("FindClass", f.output.Add(0x200).Value())), JniExceptionError);
-            CHECK_FALSE(resolved);
+            CHECK(f.Call("FindClass", f.output.Add(0x200).Value()) == 0U);
+            CHECK(resolved);
+            CHECK(f.classes.ClassName(
+                      f.environment.PendingExceptionMetadata(InstanceFixture::thread_id)->exception_class) ==
+                  "java/lang/NoClassDefFoundError");
+            CHECK_FALSE(f.environment.PendingCallDiagnostics().empty());
             const auto throwable = f.Call("ExceptionOccurred");
             CHECK(throwable != 0U);
-            CHECK_THROWS_AS(lookup(slot, good, field ? "I" : "()V"), JniExceptionError);
+            const auto original = f.environment.PendingExceptionMetadata(InstanceFixture::thread_id)->throwable;
+            CHECK(lookup(slot, good, field ? "I" : "()V") != 0U);
+            CHECK(f.environment.PendingExceptionMetadata(InstanceFixture::thread_id)->throwable == original);
             CHECK(f.Call("ExceptionOccurred") != 0U);
             static_cast<void>(f.Call("ExceptionClear"));
             CHECK(lookup(slot, good, field ? "I" : "()V") != 0U);

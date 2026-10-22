@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <set>
+#include <tuple>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -89,6 +91,13 @@ struct JniReflectionHooks final {
     std::function<JniReference(std::uint64_t, JniReference, JniFieldId, bool)> to_field;
 };
 
+struct JniPendingCallWarning final {
+    JniSlot slot;
+    std::uint64_t thread{};
+    std::string exception_class;
+    std::uint32_t guest_lr{};
+};
+
 class JniEnvironment final {
 public:
     explicit JniEnvironment(JniReferenceLimits limits = {});
@@ -172,6 +181,12 @@ public:
                                                JniFieldId id, bool is_static);
 
     // ABI owners check before resolution can materialize metadata or run code.
+    using PendingClassResolver = std::function<std::string(const JniThrowableMetadata&)>;
+    using PendingWarningObserver = std::function<void(const JniPendingCallWarning&)>;
+    void SetPendingCallDiagnostics(PendingClassResolver resolver, PendingWarningObserver observer = {});
+    void EnterGuestCall(std::uint64_t thread, JniSlot slot, std::uint32_t lr);
+    void LeaveGuestCall(std::uint64_t thread);
+    [[nodiscard]] std::vector<core::LogRecord> PendingCallDiagnostics() const;
     void RequireAllowed(std::uint64_t thread_id, const char* slot_name) const;
 
 private:
@@ -193,6 +208,13 @@ private:
     mutable std::mutex throwable_mutex_;
     std::map<std::uint64_t, JniThrowableMetadata> throwables_;
     core::Logger exception_logger_;
+    mutable core::Logger pending_logger_;
+    mutable std::mutex pending_diagnostics_mutex_;
+    PendingClassResolver pending_class_resolver_;
+    PendingWarningObserver pending_warning_observer_;
+    std::map<std::uint64_t, std::size_t> guest_call_depth_;
+    mutable std::set<std::tuple<std::uint16_t, std::uint64_t, std::string>> pending_warned_;
+    void ReportPendingCall(std::uint64_t thread, JniSlot slot, std::uint32_t lr) const;
 };
 
 }  // namespace ogplay::runtime

@@ -14,17 +14,13 @@ enum class JniExceptionErrorReason : std::uint8_t {
     invalid_thread,
     duplicate_thread,
     invalid_throwable,
-    exception_already_pending,
-    call_blocked,
 };
 
 class JniExceptionError final : public std::runtime_error {
 public:
     JniExceptionError(JniExceptionErrorReason reason, std::string message);
 
-    [[nodiscard]] JniExceptionErrorReason Reason() const noexcept {
-        return reason_;
-    }
+    [[nodiscard]] JniExceptionErrorReason Reason() const noexcept { return reason_; }
 
 private:
     JniExceptionErrorReason reason_;
@@ -45,12 +41,10 @@ public:
 
     void Throw(std::uint64_t thread_id, JniObjectIdentity throwable);
     [[nodiscard]] bool HasPending(std::uint64_t thread_id) const;
-    [[nodiscard]] std::optional<JniObjectIdentity> Occurred(
-        std::uint64_t thread_id) const;
+    [[nodiscard]] std::optional<JniObjectIdentity> Occurred(std::uint64_t thread_id) const;
     void Clear(std::uint64_t thread_id);
 
-    [[nodiscard]] bool IsCallAllowed(std::uint64_t thread_id,
-                                     JniSlot slot) const;
+    [[nodiscard]] bool IsCallAllowed(std::uint64_t thread_id, JniSlot slot) const;
     void RequireCallAllowed(std::uint64_t thread_id, JniSlot slot) const;
 
 private:

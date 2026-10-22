@@ -56,8 +56,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JniEnvironment 的显式反射 hooks；Method 同时支持 Constructor。无 VM 后端时明确失败，
   不创建假 ID 或空 wrapper。返回 local reference 的发布由 VM owner 在执行锁内完成。
 - `NewDirectByteBuffer`（DVM-82）先验证 capacity 与完整 guest read/write range，再登记
-  `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，non-direct 分别
-  返回 null/-1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
+  `DirectByteBuffer` identity；地址/容量查询只消费同一 NIO side state，heap buffer 的地址返回 null、容量按 Dalvik 4.4 返回 Buffer.capacity（ADR-0153）。
+  非 Buffer 的容量仍明确返回 -1。非法地址、未知引用或发布失败不得留下 object/state 半提交。
 - `GetMethodID`/`GetStaticMethodID` 共用精确 registry 查找与 owner 类初始化；`NewStringUTF` 使用受检 guest C
   string、M3 Modified UTF-8 解码与统一 string store 后发布 local reference；遵循 API 19
   Dalvik，null C 指针直接返回 null `jstring`。非空输入读取失败必须按层级排版保留 slot、
@@ -147,3 +147,8 @@ WU8-2b：primitive Region、对象元素与 string Region 越界在 buffer 访�
 发布 Dalvik 类型/消息并返回 void/NULL；非法 handle、类型或内存故障不做笼统转换。
 MonitorExit 仅将 non-owner 映射为 JNI_ERR + IllegalMonitorStateException，失败不改变锁状态；
 Ensure/Push 请求容量失败映射为 JNI_ERR + OOME，Push 与失败 MonitorExit 按 Dalvik 替换 pending。
+
+ADR-0153：JNI fast/slow 分派通过显式 enter/leave hooks 将实际槽、guest 线程及 LR 交给
+runtime/jni 做 pending 诊断，guest binding 不另加 pending 拦截；helper 不重复记报。
+GetDirectBufferCapacity 按 Dalvik 4.4 Jni.cpp:2758–2759 对 heap Buffer 也返回 capacity，
+这是历史实现差异（JNI 规范与后续 ART 为 -1）；heap GetDirectBufferAddress 仍 NULL。

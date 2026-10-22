@@ -641,8 +641,10 @@ void BindJniGuestClassAndInstanceSlots(
             const auto name = ReadGuestCString(
                 address_space, memory::GuestAddress{frame.registers[1]},
                 frame.thread_id, "class name");
+            const auto before = environment.PendingExceptionMetadata(frame.thread_id);
             const auto java_class = classes.ResolveClass(name);
-            if (environment.ExceptionCheck(frame.thread_id))
+            const auto after = environment.PendingExceptionMetadata(frame.thread_id);
+            if (after && (!before || after->throwable != before->throwable))
                 return JniGuestCallResult{JniGuestReturnWidth::word, {0U, 0U}};
             if (!java_class.has_value()) {
                 jni_guest_detail::ThrowLookupError(environment, classes, frame.thread_id,

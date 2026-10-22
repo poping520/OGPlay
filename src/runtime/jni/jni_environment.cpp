@@ -663,9 +663,66 @@ void JniEnvironment::SetMonitorHooks(JniMonitorHooks hooks) {
     monitor_hooks_ = std::move(hooks);
 }
 
-void JniEnvironment::RequireAllowed(const std::uint64_t thread_id,
-                                    const char* slot_name) const {
-    exceptions_.RequireCallAllowed(thread_id, RequiredSlot(slot_name));
+void JniEnvironment::SetPendingCallDiagnostics(PendingClassResolver resolver, PendingWarningObserver observer) {
+    std::scoped_lock lock(pending_diagnostics_mutex_);
+    pending_class_resolver_ = std::move(resolver);
+    pending_warning_observer_ = std::move(observer);
+}
+
+void JniEnvironment::ReportPendingCall(std::uint64_t thread, JniSlot slot, std::uint32_t lr) const {
+    const auto pending = PendingExceptionMetadata(thread);
+    if (!pending) return;
+    PendingClassResolver resolver;
+    PendingWarningObserver observer;
+    {
+        std::scoped_lock lock(pending_diagnostics_mutex_);
+        resolver = pending_class_resolver_;
+        observer = pending_warning_observer_;
+    }
+    const auto name =
+        resolver ? resolver(*pending)
+                 : "unresolved-class:" + std::to_string(static_cast<unsigned>(pending->exception_class.domain)) + ":" +
+                       std::to_string(pending->exception_class.value);
+    {
+        std::scoped_lock lock(pending_diagnostics_mutex_);
+        if (!pending_warned_.emplace(slot.Value(), thread, name).second) return;
+    }
+    const JniPendingCallWarning warning{slot, thread, name, lr};
+    pending_logger_.Write(core::LogLevel::warn, "runtime.jni.pending", "JNI call with pending exception allowed",
+                          {.guest_thread = thread},
+                          {{"slot", std::string(JniSlotName(slot))},
+                           {"exception_class", name},
+                           {"guest_lr", core::GuestAddress{lr}},
+                           {"guest_thread", thread}},
+                          {.mode = core::RateLimitMode::none});
+    if (observer) observer(warning);
+}
+
+void JniEnvironment::EnterGuestCall(std::uint64_t thread, JniSlot slot, std::uint32_t lr) {
+    exceptions_.RequireCallAllowed(thread, slot);
+    ReportPendingCall(thread, slot, lr);
+    std::scoped_lock lock(pending_diagnostics_mutex_);
+    ++guest_call_depth_[thread];
+}
+
+void JniEnvironment::LeaveGuestCall(std::uint64_t thread) {
+    std::scoped_lock lock(pending_diagnostics_mutex_);
+    auto it = guest_call_depth_.find(thread);
+    if (it == guest_call_depth_.end()) throw std::logic_error("unbalanced JNI call scope");
+    if (--it->second == 0) guest_call_depth_.erase(it);
+}
+
+std::vector<core::LogRecord> JniEnvironment::PendingCallDiagnostics() const {
+    return pending_logger_.Snapshot(core::LogLevel::warn, "runtime.jni.pending");
+}
+
+void JniEnvironment::RequireAllowed(std::uint64_t thread, const char* name) const {
+    if (!exceptions_.HasPending(thread)) return;
+    {
+        std::scoped_lock lock(pending_diagnostics_mutex_);
+        if (guest_call_depth_.contains(thread)) return;
+    }
+    ReportPendingCall(thread, RequiredSlot(name), 0);
 }
 
 }  // namespace ogplay::runtime

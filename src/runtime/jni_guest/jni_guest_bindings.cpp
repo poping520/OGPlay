@@ -183,11 +183,11 @@ void BindDirectBufferSlots(JniGuestCallDispatcher& dispatcher,
         [&environment, &nio](const JniGuestCallFrame& frame) -> JniGuestCallResult {
             const auto object = environment.ResolveObjectForHle(
                 frame.thread_id, JniReference{frame.registers[1]});
-            if (!object.has_value() || !nio.Contains(*object) ||
-                !nio.Snapshot(*object).direct) {
+            if (!object.has_value() || !nio.Contains(*object)) {
                 return {JniGuestReturnWidth::double_word,
                         {UINT32_MAX, UINT32_MAX}};
             }
+            // Dalvik Jni.cpp:2758-2759 reads Buffer.capacity even for heap buffers.
             const auto capacity = static_cast<std::uint64_t>(
                 nio.Snapshot(*object).capacity);
             return {JniGuestReturnWidth::double_word,
@@ -385,11 +385,19 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("PopLocalFrame"),
-        [&environment](const JniGuestCallFrame& frame) {
-            return Reference(environment.PopLocalFrame(
-                frame.thread_id,
-                JniReference{frame.registers[1]}));
+        EnvironmentSlot("PopLocalFrame"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            try {
+                return Reference(environment.PopLocalFrame(frame.thread_id, JniReference{frame.registers[1]}));
+            } catch (const JniReferenceError& error) {
+                if (error.Reason() != JniReferenceErrorReason::frame_underflow) throw;
+                // Dalvik Jni.cpp:1435-1445: decode result, replace pending with
+                // RuntimeException, and return a local result even on underflow.
+                const auto result = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
+                environment.ExceptionClear(frame.thread_id);
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/RuntimeException",
+                                                 "too many PopLocalFrame calls");
+                return Reference(result ? environment.PublishLocalObject(frame.thread_id, *result) : JniReference{});
+            }
         });
     dispatcher.BindEnvironment(
         EnvironmentSlot("NewGlobalRef"),
@@ -723,6 +731,33 @@ A32GuestCallFrame ResolveJniRegisteredNativeCall(
 void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
                        JniGuestBindingContext& context) {
     ValidateJniGuestStringLimits(context.string_limits);
+    context.environment.SetPendingCallDiagnostics(
+        [&classes = context.classes, &objects = context.objects](const JniThrowableMetadata& pending) {
+            if (pending.exception_class.value) return classes.ClassName(pending.exception_class);
+            try {
+                return classes.ClassName(objects.ClassOf(pending.throwable));
+            } catch (const JniGuestBindingError&) {
+                return std::string{"unresolved-class"};
+            }
+        },
+        [&dispatcher, logger = context.logger](const JniPendingCallWarning& w) {
+            dispatcher.RecordWarning("runtime.jni.pending." + std::string(JniSlotName(w.slot)) + "." +
+                                         std::to_string(w.thread) + "." + w.exception_class,
+                                     w.guest_lr);
+            if (logger)
+                logger->Write(core::LogLevel::warn, "runtime.jni.pending", "JNI call with pending exception allowed",
+                              {.guest_thread = w.thread},
+                              {{"slot", std::string(JniSlotName(w.slot))},
+                               {"exception_class", w.exception_class},
+                               {"guest_lr", core::GuestAddress{w.guest_lr}},
+                               {"guest_thread", w.thread}},
+                              {.mode = core::RateLimitMode::none});
+        });
+    dispatcher.SetEnvironmentCallHooks(
+        [&env = context.environment](const JniGuestCallFrame& f) {
+            env.EnterGuestCall(f.thread_id, JniSlot{f.thunk.slot}, f.link_register);
+        },
+        [&env = context.environment](const JniGuestCallFrame& f) { env.LeaveGuestCall(f.thread_id); });
     dispatcher.BindEnvironment(EnvironmentSlot("FromReflectedMethod"),
         [&env = context.environment](const JniGuestCallFrame& frame) {
             return Word(env.FromReflectedMethod(frame.thread_id, JniReference{frame.registers[1]}).Value());

@@ -870,7 +870,10 @@ TEST_CASE("DVM-254 JNI lazily publishes skeleton members and rejects unsupported
         }
         CHECK(lookup("GetMethodID", owner, "absent", "()V") == 0U);
         const auto missing = JniReference{call("ExceptionOccurred")};
-        CHECK_THROWS_AS(static_cast<void>(call("GetObjectClass", missing.Value())), JniExceptionError);
+        const auto pending_identity = env.PendingExceptionMetadata(1)->throwable;
+        CHECK(call("GetObjectClass", missing.Value()) != 0U);
+        CHECK(env.PendingExceptionMetadata(1)->throwable == pending_identity);
+        CHECK_FALSE(env.PendingCallDiagnostics().empty());
         env.ExceptionClear(1);
         const auto error_type = JniReference{call("GetObjectClass", missing.Value())};
         CHECK(linker.Class(f.bridge->Model().ClassOfClassObject(f.bridge->FromReference(error_type))).descriptor ==

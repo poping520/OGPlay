@@ -1,3 +1,4 @@
+#include "android_value_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include <doctest/doctest.h>
@@ -90,10 +91,9 @@ public:
     last_datagram = datagram;
   }
   NetworkDatagram ReceiveDatagram(std::size_t maximum) override {
-    NetworkDatagram result{"game.test", 9000, {std::byte{'o'}, std::byte{'k'}}};
-    if (result.payload.size() > maximum)
-      result.payload.resize(maximum);
-    return result;
+      NetworkDatagram result{"203.0.113.7", 9000, {std::byte{'o'}, std::byte{'k'}}};
+      if (result.payload.size() > maximum) result.payload.resize(maximum);
+      return result;
   }
   std::string resolved;
   std::string connected;
@@ -1998,4 +1998,42 @@ TEST_CASE("DVM164 offline HTTP objects configure and disconnect after failed I/O
       CHECK(transport.close_count == 0);
     }
   }
+}
+
+TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto array = f.Bytes("abcd");
+        const auto roots = f.vm.ProtectReferences(std::array{array});
+        CHECK(f.Static("Ltest/RomJavaReplacement;", "packet", "([B)I", {VmValue::Ref(array)}).AsInt() == 2);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/net/DatagramPacket;")).is_boot_dex);
+        FakeNetwork transport;
+        f.vm.Network().Configure(
+            {.enabled = true, .allow_datagram = true, .allowed_hosts = {"game.test", "203.0.113.7"}}, &transport);
+        const auto host = f.vm.NewStringUtf8("game.test");
+        const auto raw_address = f.Bytes(std::string("\xcb\0\x71\x07", 4));
+        const auto raw_root = f.vm.ProtectReferences(std::array{raw_address});
+        const auto address =
+            f.Static("Ljava/net/InetAddress;", "getByAddress", "(Ljava/lang/String;[B)Ljava/net/InetAddress;",
+                     {VmValue::Ref(host), VmValue::Ref(raw_address)})
+                .ref;
+        const auto address_root = f.vm.ProtectReferences(std::array{address});
+        const auto packet =
+            f.New("Ljava/net/DatagramPacket;", "([BIILjava/net/InetAddress;I)V",
+                  {VmValue::Ref(array), VmValue::Int(1), VmValue::Int(2), VmValue::Ref(address), VmValue::Int(9000)});
+        const auto socket = f.New("Ljava/net/DatagramSocket;");
+        const auto packet_roots = f.vm.ProtectReferences(std::array{packet, socket});
+        f.On(socket, "send", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(packet)});
+        CHECK(transport.last_datagram.host == "game.test");
+        CHECK(transport.last_datagram.port == 9000);
+        CHECK(transport.last_datagram.payload == std::vector<std::byte>{std::byte{'b'}, std::byte{'c'}});
+        f.On(socket, "receive", "(Ljava/net/DatagramPacket;)V", {VmValue::Ref(packet)});
+        CHECK(f.BytesOf(array) == "aokd");
+        CHECK(f.On(packet, "getLength", "()I").AsInt() == 2);
+        CHECK(f.On(packet, "getOffset", "()I").AsInt() == 1);
+        CHECK(f.On(packet, "getPort", "()I").AsInt() == 9000);
+        const auto received_address = f.On(packet, "getAddress", "()Ljava/net/InetAddress;").ref;
+        CHECK(f.vm.StringUtf8(f.On(received_address, "getHostAddress", "()Ljava/lang/String;").ref) == "203.0.113.7");
+        f.vm.Network().Shutdown();
+    }
 }

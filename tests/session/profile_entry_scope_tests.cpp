@@ -217,11 +217,9 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
   CHECK(has_method("Landroid/content/ContextWrapper;", "getObbDir",
                    "()Ljava/io/File;"));
   CHECK(method_count("Landroid/view/ContextThemeWrapper;") == 0); // Java methods belong to BootDex.
-  CHECK(method_count("Landroid/content/IntentFilter;") == 24);
-  CHECK(has_method(
-      "Landroid/content/IntentFilter;", "match",
-      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-      "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I"));
+  CHECK_FALSE(descriptors.contains("Landroid/content/IntentFilter;"));
+  AndroidVm rom;
+  CHECK(rom.linker.Class(rom.linker.ResolveDescriptor("Landroid/content/IntentFilter;")).is_boot_dex);
   CHECK_FALSE(descriptors.contains("Landroid/os/Bundle;"));
   CHECK_FALSE(descriptors.contains("Landroid/os/IBinder;"));
   CHECK_FALSE(descriptors.contains("Landroid/os/ResultReceiver;"));
@@ -1671,10 +1669,17 @@ TEST_CASE("IntentFilter retains distinct case-sensitive data schemes") {
   REQUIRE_FALSE(add(first, http).exception.IsValid());
   REQUIRE_FALSE(add(first, upper_http).exception.IsValid());
   REQUIRE_FALSE(add(second, upper_http).exception.IsValid());
-  CHECK(vm.context->intent_filter_schemes.at(first.Value()) ==
-        std::vector<std::string>{"http", "HTTP"});
-  CHECK(vm.context->intent_filter_schemes.at(second.Value()) ==
-        std::vector<std::string>{"HTTP"});
+  const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataSchemes", "()I");
+  const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataScheme", "(I)Ljava/lang/String;");
+  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
+  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
+  const auto scheme = [&](VmObjectRef filter, std::int32_t index) {
+      return vm.interpreter.StringUtf8(
+          vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref);
+  };
+  CHECK(scheme(first, 0) == "http");
+  CHECK(scheme(first, 1) == "HTTP");
+  CHECK(scheme(second, 0) == "HTTP");
 
   const auto null_outcome = add(first, VmObjectRef{});
   REQUIRE(null_outcome.exception.IsValid());
@@ -1705,19 +1710,24 @@ TEST_CASE("IntentFilter retains API19 data authority metadata") {
   REQUIRE_FALSE(add(first, wildcard, port).exception.IsValid());
   REQUIRE_FALSE(add(second, plain, VmObjectRef{}).exception.IsValid());
 
-  const auto& first_entries =
-      vm.context->intent_filter_authorities.at(first.Value());
-  REQUIRE(first_entries.size() == 2);
-  CHECK(first_entries[0].original_host == "*.example.com");
-  CHECK(first_entries[0].match_host == ".example.com");
-  CHECK(first_entries[0].wildcard);
-  CHECK(first_entries[0].port == 443);
-  CHECK(first_entries[1].original_host == first_entries[0].original_host);
-  const auto& second_entry =
-      vm.context->intent_filter_authorities.at(second.Value()).front();
-  CHECK_FALSE(second_entry.wildcard);
-  CHECK(second_entry.match_host == "example.org");
-  CHECK(second_entry.port == -1);
+  const auto count = vm.Virtual("Landroid/content/IntentFilter;", "countDataAuthorities", "()I");
+  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(first)}).value.AsInt() == 2);
+  CHECK(vm.interpreter.Call(count, std::vector<VmValue>{VmValue::Ref(second)}).value.AsInt() == 1);
+  const auto get = vm.Virtual("Landroid/content/IntentFilter;", "getDataAuthority",
+                              "(I)Landroid/content/IntentFilter$AuthorityEntry;");
+  const auto get_host = vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getHost", "()Ljava/lang/String;");
+  const auto get_port = vm.Virtual("Landroid/content/IntentFilter$AuthorityEntry;", "getPort", "()I");
+  const auto verify = [&](VmObjectRef filter, std::int32_t index, const char* expected_host,
+                          std::int32_t expected_port) {
+      const auto entry =
+          vm.interpreter.Call(get, std::vector<VmValue>{VmValue::Ref(filter), VmValue::Int(index)}).value.ref;
+      CHECK(vm.interpreter.StringUtf8(
+                vm.interpreter.Call(get_host, std::vector<VmValue>{VmValue::Ref(entry)}).value.ref) == expected_host);
+      CHECK(vm.interpreter.Call(get_port, std::vector<VmValue>{VmValue::Ref(entry)}).value.AsInt() == expected_port);
+  };
+  verify(first, 0, "*.example.com", 443);
+  verify(first, 1, "*.example.com", 443);
+  verify(second, 0, "example.org", -1);
 
   auto outcome = add(first, VmObjectRef{}, VmObjectRef{});
   REQUIRE(outcome.exception.IsValid());

@@ -20,6 +20,7 @@ import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_bootdex as builder
+from api19_skeleton import unpack
 
 JARS = ('core.jar', 'framework.jar', 'framework2.jar', 'ext.jar')
 ACC_PRIVATE, ACC_STATIC, ACC_FINAL, ACC_NATIVE, ACC_ABSTRACT, ACC_INTERFACE = 0x2, 0x8, 0x10, 0x100, 0x400, 0x200
@@ -115,7 +116,10 @@ class Analyzer:
 
     def __init__(self, surface: list[dict], smali: dict[str, dict], jar_of: dict[str, str],
                  recipe_classes: set[str], guest: set[str], reserved: set[str],
-                 source_tokens: set[str] | None = None, cha_precise: bool = False):
+                 source_tokens: set[str] | None = None, cha_precise: bool = False,
+                 replacements: set[str] | None = None, native_bindings: set[tuple] | None = None):
+        self.replacements = replacements or set()
+        self.native_bindings = native_bindings or set()
         self.cls = {c['descriptor']: c for c in surface}
         self.smali, self.jar_of, self.cha_precise = smali, jar_of, cha_precise
         self.recipe_classes, self.guest, self.reserved = recipe_classes, guest, reserved
@@ -173,6 +177,8 @@ class Analyzer:
     def method_kind(self, owner, key):
         """candidate | bytecode | intrinsic | abstract | unimpl for an existing own method."""
         m = self.meth[owner][key]
+        if (owner, *key) in self.native_bindings:
+            return 'intrinsic'
         if owner in self.cand_set:
             flags = m['access_flags']
             return 'abstract' if flags & ACC_ABSTRACT else 'native' if flags & ACC_NATIVE else 'candidate'
@@ -391,6 +397,9 @@ class Analyzer:
         return index
 
     def interaction_reason(self, desc):
+        # ADR-0154: these interactions require manual removal/review in the same batch.
+        if desc in self.replacements:
+            return None
         if desc in self.interaction:
             return 'intrinsic-signature: ' + self.interaction[desc]
         inner = desc[1:-1]
@@ -414,7 +423,8 @@ class Analyzer:
         for d in self.candidates:
             reasons = []
             flags = self.cls[d]['methods']
-            if any(m['access_flags'] & ACC_NATIVE for m in flags):
+            if any(m['access_flags'] & ACC_NATIVE and
+                   (d, m['name'], m['descriptor']) not in self.native_bindings for m in flags):
                 reasons.append(('native-method', ', '.join(sorted(m['name'] for m in flags if m['access_flags'] & ACC_NATIVE))))
             c = self.cls[d]
             for ref in [c.get('superclass')] + list(c.get('interfaces', [])):
@@ -557,10 +567,44 @@ def frequencies(scan_dir: Path, surface_sha: str) -> dict:
     return dict(apks=count, classes=classes, members=members)
 
 
+def replacement_surface(surface, rom, replacements):
+    """Use pinned ROM members, retaining only previously reviewed native endpoints.
+
+    Source/signature coupling is an explicit migration obligation, not proof of safety.
+    No replacement request can authorize a new native binding or a frozen date class.
+    """
+    by = {c['descriptor']: c for c in surface}
+    bindings = set()
+    for d in replacements:
+        if d not in by or by[d]['source'] != 'intrinsic' or d not in rom:
+            raise ValueError('replacement must be a current intrinsic in pinned ROM: ' + d)
+        old = by[d]
+        parent, interfaces, flags, methods, fields = rom[d]
+        existing = {(m['name'], m['descriptor']) for m in old['methods']
+                    if m['status'] == 'implemented' and m['binding'] == 'intrinsic'
+                    and m.get('origin') == 'handwritten'}
+        bindings.update((d, n, t) for n, t, f in methods if f & ACC_NATIVE and (n, t) in existing)
+        by[d] = dict(descriptor=d, source='skeleton', superclass=parent, interfaces=interfaces,
+                     access_flags=flags, link_error='',
+                     methods=[dict(name=n, descriptor=t, access_flags=f,
+                                   status='implemented' if f & ACC_ABSTRACT else 'unimplemented-ledger',
+                                   binding='abstract-contract' if f & ACC_ABSTRACT else 'intrinsic')
+                              for n, t, f in methods],
+                     fields=[dict(name=n, descriptor=t, access_flags=f, has_constant=bool(k),
+                                  status='implemented' if k else 'unimplemented-ledger')
+                             for n, t, f, k, v in fields])
+    return list(by.values()), bindings
+
+
 def run(args) -> int:
     recipe = json.loads(builder.RECIPE.read_text(encoding='utf-8'))
     builder.verify_inputs(builder.load_recipe(recipe))
     surface = json.loads(args.surface.read_text(encoding='utf-8'))['classes']
+    replacements = set(args.replace_intrinsic or ())
+    native_bindings = set()
+    if replacements:
+        surface, native_bindings = replacement_surface(
+            surface, unpack((builder.ROOT / 'data/dexvm/api19-skeleton.bin').read_bytes()), replacements)
     # Frozen DVM-102 audit: every class it classifies as something other than boot_dex stays out.
     reserved = {d for cat, values in recipe['date_family_audit']['classifications'].items()
                 if cat != 'boot_dex' for d in values}
@@ -576,9 +620,12 @@ def run(args) -> int:
     for d, (jar, _) in texts.items():
         if jar is None:
             jar_of.pop(d, None)
+    if replacements & reserved:
+        raise ValueError('replacement conflicts with frozen date audit: ' + str(sorted(replacements & reserved)))
     recipe_classes = {x for v in recipe['classes'].values() for x in v}
     analyzer = Analyzer(surface, smali, jar_of, recipe_classes, guest_descriptors(), reserved,
-                        source_tokens(builder.ROOT), cha_precise=args.cha_precise)
+                        source_tokens(builder.ROOT), cha_precise=args.cha_precise,
+                        replacements=replacements, native_bindings=native_bindings)
     for d in sorted(reserved & set(analyzer.candidates)):
         analyzer.cand_set.discard(d)
     analyzer.candidates = [d for d in analyzer.candidates if d not in reserved]
@@ -606,7 +653,8 @@ def run(args) -> int:
     estimate = estimate_for(admitted) if freq else collections.Counter()
     ranked = sorted(admitted, key=lambda d: (-(freq['classes'][d] if freq else 0), d))
     report = dict(
-        schema=1, policy='ADR-0148 rule-based admission',
+        schema=1, policy='ADR-0154 explicit replacement' if replacements else 'ADR-0148 rule-based admission',
+        replacements=sorted(replacements), retained_native_bindings=sorted(native_bindings),
         runtime_classes=dict(owner_runtime), skeleton_classes=skeleton_total,
         candidates=len(analyzer.candidates), admitted=len(admitted), rejected=len(analyzer.rejected),
         rejection_by_primary=dict(by_primary.most_common()),
@@ -629,13 +677,17 @@ def run(args) -> int:
         report['estimate_selected_total'] = sum(selected_estimate.values())
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
-    if args.only:
-        missing = [d for d in args.only if d not in admitted]
+    requested = replacements or set(args.only or ())
+    if requested:
+        missing = [d for d in sorted(requested) if d not in admitted]
         for d in missing:
             print(f'REJECTED {d}: {analyzer.rejected.get(d, "not a candidate")}', file=sys.stderr)
         if missing:
             return 2
-        chosen = sorted(args.only)
+        chosen = sorted(analyzer.closure_of(requested)) if replacements else sorted(args.only)
+    report['selected'] = len(chosen)
+    report['selected_classes'] = chosen
+    args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
     if args.apply:
         for d in chosen:
             group = recipe['classes'].setdefault(jar_of[d], [])
@@ -752,6 +804,49 @@ def self_test():
     precise = Analyzer(classes, smali, jar_of, set(), set(), set(), cha_precise=True)
     precise.analyze()
     assert 'Ltest/ViaUniqueChain;' in precise.admitted and 'Ltest/ViaVirtualChain;' in precise.admitted
+    # ADR-0154: explicit only, ROM members replace handwritten shape; no new native.
+    target = 'Ltest/Replacement;'
+    add(target, 'intrinsic', [_method('old', '()V')])
+    classes[-1]['methods'][0]['origin'] = 'handwritten'
+    native = _method('endpoint', '()V', ACC_NATIVE | ACC_STATIC | 1, 'implemented')
+    native['origin'] = 'handwritten'
+    classes[-1]['methods'].append(native)
+    rom = {target: ('Ljava/lang/Object;', [], 1,
+                   [('endpoint', '()V', ACC_NATIVE | ACC_STATIC | 1), ('newEndpoint', '()V', ACC_NATIVE | 1)], [])}
+    migrated, bindings = replacement_surface(classes, rom, {target})
+    assert bindings == {(target, 'endpoint', '()V')}
+    assert 'old' not in {m['name'] for c in migrated if c['descriptor'] == target for m in c['methods']}
+    smali[target] = parse_smali_class(_smali(target))
+    jar_of[target] = 'core.jar'
+    replacement = Analyzer(migrated, smali, jar_of, set(), set(), set(),
+                           source_tokens={'test/Replacement'}, replacements={target}, native_bindings=bindings)
+    replacement.analyze()
+    assert 'native-method' in [r[0] for r in replacement.rejected[target]]
+    rom[target] = ('Ljava/lang/Object;', [], 1, [('endpoint', '()V', ACC_NATIVE | ACC_STATIC | 1)], [])
+    migrated, bindings = replacement_surface(classes, rom, {target})
+    replacement = Analyzer(migrated, smali, jar_of, set(), set(), set(),
+                           source_tokens={'test/Replacement'}, replacements={target}, native_bindings=bindings)
+    replacement.analyze()
+    assert target in replacement.admitted
+    # Explicit replacement must not waive the intrinsic-parent or Binder rules.
+    rom[target] = ('Landroid/os/Handler;', [], 1, [], [])
+    migrated, bindings = replacement_surface(classes, rom, {target})
+    parent = Analyzer(migrated, smali, jar_of, set(), set(), set(), replacements={target})
+    parent.analyze()
+    assert 'parent-not-admitted' in [r[0] for r in parent.rejected[target]]
+    rom[target] = ('Ljava/lang/Object;', [], 1, [('<clinit>', '()V', ACC_STATIC)], [])
+    migrated, bindings = replacement_surface(classes, rom, {target})
+    smali[target] = parse_smali_class(_smali(target, methods=clinit(' new-instance v0, Landroid/os/Binder;\n')))
+    binder = Analyzer(migrated, smali, jar_of, set(), set(), set(), replacements={target})
+    binder.analyze()
+    assert 'binder-in-clinit' in [r[0] for r in binder.rejected[target]]
+    default = Analyzer(classes, smali, jar_of, set(), set(), set())
+    assert target not in default.cand_set
+    try:
+        replacement_surface(classes, rom, {'Ltest/Plain;'})
+        assert False, 'skeleton must not be accepted as an intrinsic replacement'
+    except ValueError:
+        pass
     print('select_rom_java self-test passed (admit, native, intrinsic parent, unimplemented target, '
           'binder, indirect virtual chain, CHA uniqueness, cascade, interaction, cycles)')
 
@@ -763,6 +858,8 @@ def main():
     p.add_argument('--report', type=Path)
     p.add_argument('--cache', type=Path, default=builder.ROOT / '.local/analysis/preflight/wu2a/smali')
     p.add_argument('--only', nargs='*', help='apply only these classes; they must all be admitted by the rules')
+    p.add_argument('--replace-intrinsic', nargs='+', metavar='DESCRIPTOR',
+                   help='ADR-0154 explicit migration; includes admitted initialization dependencies')
     p.add_argument('--cha-precise', action='store_true', help='sensitivity only: accept non-unique targets that are all implemented')
     p.add_argument('--scope', choices=('all', 'referenced'), default='all',
                    help='all: every admitted class; referenced: classes the sample library uses plus their '
@@ -775,6 +872,8 @@ def main():
         return 0
     if not (args.surface and args.report):
         p.error('--surface and --report required')
+    if args.replace_intrinsic and (args.only or args.cha_precise):
+        p.error('--replace-intrinsic cannot be combined with --only or --cha-precise')
     return run(args)
 
 

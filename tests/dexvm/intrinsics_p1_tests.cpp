@@ -1,3 +1,4 @@
+#include "android_value_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -738,5 +739,17 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
                           .vtable[*size_slot],
                       receiver),
                   2);
+    }
+}
+
+TEST_CASE("DVM-265 DEX InputSource getters and setters") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto text = f.vm.NewStringUtf8("file:///rom.xml");
+        const auto roots = f.vm.ProtectReferences(std::array{text});
+        CHECK(f.Static("Ltest/RomJavaReplacement;", "input", "(Ljava/lang/String;)Ljava/lang/String;",
+                       {VmValue::Ref(text)})
+                  .ref == text);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Lorg/xml/sax/InputSource;")).is_boot_dex);
     }
 }

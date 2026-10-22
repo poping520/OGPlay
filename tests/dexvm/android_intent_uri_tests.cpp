@@ -822,3 +822,15 @@ TEST_CASE("disabled web policy intercepts only external HTTP ACTION_VIEW") {
               "Ljava/lang/UnsupportedOperationException;");
     }
 }
+
+TEST_CASE("DVM-265 DEX IntentFilter actions survive Parcelable dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto action = f.vm.NewStringUtf8("test.ROM");
+        const auto roots = f.vm.ProtectReferences(std::array{action});
+        CHECK(
+            f.Static("Ltest/RomJavaReplacement;", "filter", "(Ljava/lang/String;)Z", {VmValue::Ref(action)}).AsInt() ==
+            1);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/content/IntentFilter;")).is_boot_dex);
+    }
+}

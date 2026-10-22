@@ -1,0 +1,71 @@
+# DVM-265: call sites execute as DEX, including interface and Parcelable dispatch.
+.class public Ltest/RomJavaReplacement;
+.super Ljava/lang/Object;
+
+.method public static input(Ljava/lang/String;)Ljava/lang/String;
+.registers 2
+    new-instance v0, Lorg/xml/sax/InputSource;
+    invoke-direct {v0}, Lorg/xml/sax/InputSource;-><init>()V
+    invoke-virtual {v0, v1}, Lorg/xml/sax/InputSource;->setSystemId(Ljava/lang/String;)V
+    invoke-virtual {v0}, Lorg/xml/sax/InputSource;->getSystemId()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static packet([B)I
+.registers 5
+    new-instance v0, Ljava/net/DatagramPacket;
+    const/4 v1, 0
+    invoke-direct {v0, v4, v1}, Ljava/net/DatagramPacket;-><init>([BI)V
+    const/4 v2, 1
+    const/4 v3, 2
+    invoke-virtual {v0, v4, v2, v3}, Ljava/net/DatagramPacket;->setData([BII)V
+    invoke-virtual {v0}, Ljava/net/DatagramPacket;->getLength()I
+    move-result v0
+    return v0
+.end method
+
+.method public static filter(Ljava/lang/String;)Z
+.registers 6
+    new-instance v0, Landroid/content/IntentFilter;
+    invoke-direct {v0}, Landroid/content/IntentFilter;-><init>()V
+    invoke-virtual {v0, v5}, Landroid/content/IntentFilter;->addAction(Ljava/lang/String;)V
+    invoke-virtual {v0, v5}, Landroid/content/IntentFilter;->matchAction(Ljava/lang/String;)Z
+    move-result v1
+    if-eqz v1, :done
+    invoke-static {}, Landroid/os/Parcel;->obtain()Landroid/os/Parcel;
+    move-result-object v2
+    const/4 v3, 0
+    invoke-interface {v0, v2, v3}, Landroid/os/Parcelable;->writeToParcel(Landroid/os/Parcel;I)V
+    invoke-virtual {v2, v3}, Landroid/os/Parcel;->setDataPosition(I)V
+    sget-object v4, Landroid/content/IntentFilter;->CREATOR:Landroid/os/Parcelable$Creator;
+    invoke-interface {v4, v2}, Landroid/os/Parcelable$Creator;->createFromParcel(Landroid/os/Parcel;)Ljava/lang/Object;
+    move-result-object v0
+    check-cast v0, Landroid/content/IntentFilter;
+    invoke-virtual {v0, v5}, Landroid/content/IntentFilter;->matchAction(Ljava/lang/String;)Z
+    move-result v1
+    invoke-virtual {v2}, Landroid/os/Parcel;->recycle()V
+    :done
+    return v1
+.end method
+
+.method public static append(Ljava/lang/Appendable;)Ljava/lang/Appendable;
+.registers 2
+    const/16 v0, 65
+    invoke-interface {v1, v0}, Ljava/lang/Appendable;->append(C)Ljava/lang/Appendable;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static timer(Ljava/util/Timer;Ljava/util/TimerTask;)V
+.registers 4
+    const-wide/16 v0, 10
+    invoke-virtual {v2, v3, v0, v1}, Ljava/util/Timer;->schedule(Ljava/util/TimerTask;J)V
+    return-void
+.end method
+
+.method public static countdown(Landroid/os/CountDownTimer;)V
+.registers 1
+    invoke-virtual {v0}, Landroid/os/CountDownTimer;->start()Landroid/os/CountDownTimer;
+    return-void
+.end method

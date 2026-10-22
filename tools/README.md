@@ -89,6 +89,12 @@ python3 tools/bootdex/select_shapes.py --surface <dump-surface.json> --scan-dir 
 不接受构造器、枚举、计算式初始化或其他行为代码。依赖包括签名/注解中的类型；
 未引用的依赖不自动纳入。报告/反汇编缓存留 `.local/`，边界见 [DVM-252](../docs/tasks/dexvm/DVM-252.md)。
 
+`select_rom_java.py --replace-intrinsic <descriptor...>` 是 ADR-0154 的显式撤换入口，
+需同时提供 `--surface` 与 `--report`；默认只出报告，`--apply` 写入目标及其准入初始化闭包。
+仅允许已有同签名 native 绑定；其他规则不放宽。源码/签名交互需在同批删除或改经 Java 调用，
+选择通过不能代替状态所有权审计与回归门禁。默认 ADR-0148 筛选保持原行为。
+首批撤换及退回原因、基点与回归证据见 [DVM-265](../docs/tasks/dexvm/DVM-265.md)。
+
 输入默认位于 `.local/aosp` 和 `.local/tools`；换 ROM 时应使用同一来源配套的输入 JAR。
 JAR 哈希记录于 manifest 供追溯，不作为固定来源准入条件；工具下载仍校验固定 SHA-256。
 新增类时修改 recipe 对应源 jar 的有序列表，运行时仍全量加载生成物中的 class_def。

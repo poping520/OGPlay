@@ -8,10 +8,6 @@ namespace ogplay::runtime::dexvm::intrinsics {
 
 namespace {
 
-IntrinsicHandler NoopVoid() {
-    return [](IntrinsicContext&) { return VmValue::Void(); };
-}
-
 IntrinsicHandler SaxParseUnsupported() {
     return [](IntrinsicContext&) -> VmValue {
         throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -90,27 +86,6 @@ IntrinsicClassDecl DeclareContentHandler() {
         .Build();
 }
 
-IntrinsicClassDecl DeclareInputSource() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Lorg/xml/sax/InputSource;", "Ljava/lang/Object;");
-    builder.Constructor("(Ljava/io/InputStream;)V", NoopVoid());
-    // AOSP 4.4 ROM line 72.
-    builder.Constructor(
-        "()V",
-        [](IntrinsicContext& c) {
-            const auto target =
-                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
-            const auto result = c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(c.receiver)});
-            if (result.exception.IsValid())
-                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-            return result.value;
-        },
-        kAccPublic);
-
-    return std::move(builder).Build();
-}
-
 IntrinsicClassDecl DeclareXmlReaderImpl(
     const CoreIntrinsicServices& services) {
     auto builder = IntrinsicClassBuilder::Class(
@@ -148,7 +123,6 @@ void AppendJavaXml(std::vector<IntrinsicClassDecl>& catalog,
     catalog.push_back(DeclareSaxParser());
     catalog.push_back(DeclareSaxParserFactory());
     catalog.push_back(DeclareContentHandler());
-    catalog.push_back(DeclareInputSource());
     catalog.push_back(DeclareXmlReaderImpl(services));
     catalog.push_back(DeclareXmlReader(services));
     catalog.push_back(DeclareDefaultHandler());

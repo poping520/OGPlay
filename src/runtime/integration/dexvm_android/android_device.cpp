@@ -74,6 +74,35 @@ Decl Declare_android_location_Criteria(const Context& context) {
         "Landroid/location/Criteria;", "Ljava/lang/Object;",
         {"Landroid/os/Parcelable;"});
     builder.Constructor("()V", NeutralHandler('V'));
+    const auto wu_mHorizontalAccuracy = builder.BoundInstanceField("mHorizontalAccuracy", "I", dx::kAccPrivate);
+    const auto wu_mVerticalAccuracy = builder.BoundInstanceField("mVerticalAccuracy", "I", dx::kAccPrivate);
+    const auto wu_mSpeedAccuracy = builder.BoundInstanceField("mSpeedAccuracy", "I", dx::kAccPrivate);
+    const auto wu_mBearingAccuracy = builder.BoundInstanceField("mBearingAccuracy", "I", dx::kAccPrivate);
+    const auto wu_mPowerRequirement = builder.BoundInstanceField("mPowerRequirement", "I", dx::kAccPrivate);
+    const auto wu_mAltitudeRequired = builder.BoundInstanceField("mAltitudeRequired", "Z", dx::kAccPrivate);
+    const auto wu_mBearingRequired = builder.BoundInstanceField("mBearingRequired", "Z", dx::kAccPrivate);
+    const auto wu_mSpeedRequired = builder.BoundInstanceField("mSpeedRequired", "Z", dx::kAccPrivate);
+    const auto wu_mCostAllowed = builder.BoundInstanceField("mCostAllowed", "Z", dx::kAccPrivate);
+    // AOSP 4.4 ROM line 105.
+    builder.Constructor(
+        "(Landroid/location/Criteria;)V",
+        [wu_mHorizontalAccuracy, wu_mVerticalAccuracy, wu_mSpeedAccuracy, wu_mBearingAccuracy, wu_mPowerRequirement,
+         wu_mAltitudeRequired, wu_mBearingRequired, wu_mSpeedRequired, wu_mCostAllowed](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            api.SetInt(wu_mHorizontalAccuracy, api.GetInt(wu_mHorizontalAccuracy, source));
+            api.SetInt(wu_mVerticalAccuracy, api.GetInt(wu_mVerticalAccuracy, source));
+            api.SetInt(wu_mSpeedAccuracy, api.GetInt(wu_mSpeedAccuracy, source));
+            api.SetInt(wu_mBearingAccuracy, api.GetInt(wu_mBearingAccuracy, source));
+            api.SetInt(wu_mPowerRequirement, api.GetInt(wu_mPowerRequirement, source));
+            api.SetInt(wu_mAltitudeRequired, api.GetInt(wu_mAltitudeRequired, source));
+            api.SetInt(wu_mBearingRequired, api.GetInt(wu_mBearingRequired, source));
+            api.SetInt(wu_mSpeedRequired, api.GetInt(wu_mSpeedRequired, source));
+            api.SetInt(wu_mCostAllowed, api.GetInt(wu_mCostAllowed, source));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

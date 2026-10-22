@@ -17,6 +17,22 @@ Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) 
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout$LayoutParams;", "Ljava/lang/Object;");
     builder.Constructor("(IIII)V", GraphicsNoopHandler());
+    // AOSP 4.4 ROM line 213.
+    builder.Constructor(
+        "(Landroid/view/ViewGroup$LayoutParams;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup$LayoutParams;"),
+                                               "<init>", "(Landroid/view/ViewGroup$LayoutParams;)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -49,6 +65,23 @@ Decl Declare_android_widget_Button(const Context& context) {
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
                         ViewDefaultStyleInitHandler(context));
+    // AOSP 4.4 ROM line 103.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/Button;"), "<init>",
+                                               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
+                                                            c.arguments[1], dx::VmValue::Int(0x1010048)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -69,6 +102,40 @@ Decl Declare_android_widget_EditText(const Context& context) {
         context->editable_owner[editable.Value()] = call.receiver.Value();
         return dx::VmValue::Ref(editable);
     });
+    // AOSP 4.4 ROM line 56.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/EditText;"), "<init>",
+                                               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
+                                                            c.arguments[1], dx::VmValue::Int(0x101006e)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 60.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/TextView;"), "<init>",
+                                               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
+                                                            c.arguments[1], c.arguments[2]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -89,6 +156,25 @@ Decl Declare_android_widget_FrameLayout(const Context& context) {
                 "Landroid/widget/FrameLayout$LayoutParams;", -1, -1));
         }, dx::kAccProtected);
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    // AOSP 4.4 ROM line 211.
+    builder.VirtualMethod(
+        "generateDefaultLayoutParams", "()Landroid/widget/FrameLayout$LayoutParams;",
+        [](dx::IntrinsicContext& c) {
+            const auto width = -1;
+            const auto object = c.vm.NewIntrinsicInstance("Landroid/widget/FrameLayout$LayoutParams;");
+            const auto root = c.vm.ProtectReferences(std::array{object});
+            const auto target = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout$LayoutParams;"), "<init>", "(II)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(object), dx::VmValue::Int(width),
+                                                            dx::VmValue::Int(-1)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return dx::VmValue::Ref(object);
+        },
+        dx::kAccProtected);
+
     return std::move(builder).Build();
 }
 
@@ -277,6 +363,27 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     });
+    // AOSP 4.4 ROM line 1802.
+    builder.VirtualMethod(
+        "generateDefaultLayoutParams", "()Landroid/widget/LinearLayout$LayoutParams;",
+        [](dx::IntrinsicContext& c) {
+            const auto orientation = CallAndroidMethod(c.vm, c.receiver, "getOrientation", "()I").AsInt();
+            if (orientation != 0 && orientation != 1) return dx::VmValue::Ref(dx::VmObjectRef{});
+            const auto width = orientation == 0 ? -2 : -1;
+            const auto object = c.vm.NewIntrinsicInstance("Landroid/widget/LinearLayout$LayoutParams;");
+            const auto root = c.vm.ProtectReferences(std::array{object});
+            const auto target = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout$LayoutParams;"), "<init>", "(II)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(object), dx::VmValue::Int(width),
+                                                            dx::VmValue::Int(-2)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return dx::VmValue::Ref(object);
+        },
+        dx::kAccProtected);
+
     return std::move(builder).Build();
 }
 
@@ -295,6 +402,23 @@ Decl Declare_android_widget_ProgressBar(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", ViewInitHandler(context));
     builder.VirtualMethod("setMax", "(I)V", WidgetNoopHandler());
     builder.VirtualMethod("setProgress", "(I)V", WidgetNoopHandler());
+    // AOSP 4.4 ROM line 242.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/ProgressBar;"),
+                                               "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
+                                                            c.arguments[1], dx::VmValue::Int(0x1010077)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -998,6 +1122,58 @@ Decl Declare_android_widget_TextView(const Context& context) {
                               }
                               return dx::VmValue::Void();
                           });
+    // AOSP 4.4 ROM line 618.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/widget/TextView;"), "<init>",
+                                               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0],
+                                                            c.arguments[1], dx::VmValue::Int(0x1010084)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 3888.
+    builder.FinalMethod(
+        "setText", "(I)V",
+        [](dx::IntrinsicContext& c) {
+            const auto owner = CallAndroidMethod(c.vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
+            const auto owner_root = c.vm.ProtectReferences(std::array{owner});
+            const auto resources =
+                CallAndroidMethod(c.vm, owner, "getResources", "()Landroid/content/res/Resources;").ref;
+            const auto resource_root = c.vm.ProtectReferences(std::array{resources});
+            const auto text =
+                CallAndroidMethod(c.vm, resources, "getText", "(I)Ljava/lang/CharSequence;", {c.arguments[0]}).ref;
+            const auto text_root = c.vm.ProtectReferences(std::array{text});
+            return CallAndroidMethod(c.vm, c.receiver, "setText", "(Ljava/lang/CharSequence;)V",
+                                     {dx::VmValue::Ref(text)});
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 3892.
+    builder.FinalMethod(
+        "setText", "(ILandroid/widget/TextView$BufferType;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto owner = CallAndroidMethod(c.vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
+            const auto owner_root = c.vm.ProtectReferences(std::array{owner});
+            const auto resources =
+                CallAndroidMethod(c.vm, owner, "getResources", "()Landroid/content/res/Resources;").ref;
+            const auto resource_root = c.vm.ProtectReferences(std::array{resources});
+            const auto text =
+                CallAndroidMethod(c.vm, resources, "getText", "(I)Ljava/lang/CharSequence;", {c.arguments[0]}).ref;
+            const auto text_root = c.vm.ProtectReferences(std::array{text});
+            return CallAndroidMethod(c.vm, c.receiver, "setText",
+                                     "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                                     {dx::VmValue::Ref(text), c.arguments[1]});
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -1025,6 +1201,28 @@ Decl Declare_android_widget_Toast(const Context& context) {
         GuestLog(call, core::LogLevel::info, "Toast.show()");
         return dx::VmValue::Void();
     });
+    // AOSP 4.4 ROM line 268.
+    builder.StaticMethod(
+        "makeText", "(Landroid/content/Context;II)Landroid/widget/Toast;",
+        [](dx::IntrinsicContext& c) {
+            const auto resources =
+                CallAndroidMethod(c.vm, c.arguments[0].ref, "getResources", "()Landroid/content/res/Resources;").ref;
+            const auto resource_root = c.vm.ProtectReferences(std::array{resources});
+            const auto text =
+                CallAndroidMethod(c.vm, resources, "getText", "(I)Ljava/lang/CharSequence;", {c.arguments[1]}).ref;
+            const auto text_root = c.vm.ProtectReferences(std::array{text});
+            const auto target = c.vm.Linker().FindDirectMethod(
+                c.vm.Linker().ResolveDescriptor("Landroid/widget/Toast;"), "makeText",
+                "(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;");
+            const auto result =
+                c.vm.Call(*target, std::vector<dx::VmValue>{c.arguments[0], dx::VmValue::Ref(text), c.arguments[2]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

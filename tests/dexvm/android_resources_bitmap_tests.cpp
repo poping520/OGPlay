@@ -588,3 +588,35 @@ TEST_CASE("DVM118 getString dispatches getText and CharSequence toString through
         CHECK(f.linker.Class(failure.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
     }
 }
+
+TEST_CASE("DVM-262 Canvas integer pixels forward virtually to the ROM float overload") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int calls = 0;
+        auto canvas = IntrinsicClassBuilder::Class("Ltest/OverloadCanvas;", "Landroid/graphics/Canvas;");
+        canvas.OverrideMethod("drawBitmap", "([IIIFFIIZLandroid/graphics/Paint;)V", [&calls](IntrinsicContext& c) {
+            ++calls;
+            CHECK(c.arguments[1].AsInt() == 2);
+            CHECK(c.arguments[2].AsInt() == 8);
+            CHECK(c.arguments[3].AsFloat() == 7.0F);
+            CHECK(c.arguments[4].AsFloat() == -4.0F);
+            CHECK(c.arguments[5].AsInt() == 3);
+            CHECK(c.arguments[6].AsInt() == 5);
+            CHECK(c.arguments[7].AsInt() == 1);
+            return VmValue::Void();
+        });
+        AndroidValueVm f(backend, {std::move(canvas).Build()}, false, nullptr, true);
+        const auto receiver = f.vm.NewIntrinsicInstance("Ltest/OverloadCanvas;");
+        const auto colors = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 64);
+        const auto roots = f.vm.ProtectReferences(std::array{receiver, colors});
+        const std::vector<VmValue> args{VmValue::Ref(colors), VmValue::Int(2),  VmValue::Int(8),
+                                        VmValue::Int(7),      VmValue::Int(-4), VmValue::Int(3),
+                                        VmValue::Int(5),      VmValue::Int(1),  VmValue::Ref(VmObjectRef{})};
+        f.On(receiver, "drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", args);
+        CHECK(calls == 1);
+        // The base float/native renderer remains X; the wrapper must not fake success.
+        const auto base = f.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
+        const auto unsupported = f.OnOutcome(base, "drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", args);
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+    }
+}

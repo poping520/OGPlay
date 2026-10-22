@@ -46,6 +46,60 @@ ZipEntryDeclaration DeclareZipEntry() {
       const auto value = context.vm.StringUtf8(call.GetRef(name));
       return VmValue::Int(!value.empty() && value.back() == '/');
   });
+  const auto wu_comment = builder.BoundInstanceField("comment", "Ljava/lang/String;", kAccNone);
+  const auto wu_time = builder.BoundInstanceField("time", "I", kAccNone);
+  const auto wu_size = builder.BoundInstanceField("size", "J", kAccNone);
+  const auto wu_compressedSize = builder.BoundInstanceField("compressedSize", "J", kAccNone);
+  const auto wu_crc = builder.BoundInstanceField("crc", "J", kAccNone);
+  const auto wu_compressionMethod = builder.BoundInstanceField("compressionMethod", "I", kAccNone);
+  const auto wu_modDate = builder.BoundInstanceField("modDate", "I", kAccNone);
+  const auto wu_extra = builder.BoundInstanceField("extra", "[B", kAccNone);
+  const auto wu_nameLength = builder.BoundInstanceField("nameLength", "I", kAccNone);
+  const auto wu_localHeaderRelOffset = builder.BoundInstanceField("localHeaderRelOffset", "J", kAccNone);
+  // AOSP 4.4 ROM line 307.
+  builder.Constructor(
+      "(Ljava/util/zip/ZipEntry;)V",
+      [name, wu_comment, wu_time, wu_size, wu_compressedSize, wu_crc, wu_compressionMethod, wu_modDate, wu_extra,
+       wu_nameLength, wu_localHeaderRelOffset](IntrinsicContext& c) {
+          IntrinsicCall api(c);
+          const auto source = c.arguments[0].ref;
+          api.SetRef(name, api.GetRef(name, source));
+          api.SetRef(wu_comment, api.GetRef(wu_comment, source));
+          api.SetInt(wu_time, api.GetInt(wu_time, source));
+          api.SetLong(wu_size, api.GetLong(wu_size, source));
+          api.SetLong(wu_compressedSize, api.GetLong(wu_compressedSize, source));
+          api.SetLong(wu_crc, api.GetLong(wu_crc, source));
+          api.SetInt(wu_compressionMethod, api.GetInt(wu_compressionMethod, source));
+          api.SetInt(wu_modDate, api.GetInt(wu_modDate, source));
+          api.SetRef(wu_extra, api.GetRef(wu_extra, source));
+          api.SetInt(wu_nameLength, api.GetInt(wu_nameLength, source));
+          api.SetLong(wu_localHeaderRelOffset, api.GetLong(wu_localHeaderRelOffset, source));
+          return VmValue::Void();
+      },
+      kAccPublic);
+
+  // AOSP 4.4 ROM line 74.
+  builder.Constructor(
+      "(Ljava/lang/String;)V",
+      [wu_crc, wu_compressedSize, wu_size, wu_compressionMethod, wu_time, wu_modDate, wu_nameLength,
+       wu_localHeaderRelOffset, name](IntrinsicContext& c) {
+          IntrinsicCall api(c);
+          api.SetLong(wu_crc, -1);
+          api.SetLong(wu_compressedSize, -1);
+          api.SetLong(wu_size, -1);
+          api.SetInt(wu_compressionMethod, -1);
+          api.SetInt(wu_time, -1);
+          api.SetInt(wu_modDate, -1);
+          api.SetInt(wu_nameLength, -1);
+          api.SetLong(wu_localHeaderRelOffset, -1);
+          const auto value = api.NonNullRef(0, "name");
+          if (c.vm.Model().StringValue(value).size() > 0xffffU)
+              throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Name too long"};
+          api.SetRef(name, value);
+          return VmValue::Void();
+      },
+      kAccPublic);
+
   return {std::move(builder).Build(), name};
 }
 

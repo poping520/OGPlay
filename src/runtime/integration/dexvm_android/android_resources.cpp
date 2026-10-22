@@ -166,10 +166,10 @@ dx::VmObjectRef MakeStoredApkAssetFileDescriptor(
 Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
   auto builder = dx::IntrinsicClassBuilder::Class(
       "Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;");
-  builder.InstanceField("mFd", "Landroid/os/ParcelFileDescriptor;",
-                        dx::kAccPrivate | dx::kAccFinal);
-  builder.InstanceField("mStartOffset", "J", dx::kAccPrivate | dx::kAccFinal);
-  builder.InstanceField("mLength", "J", dx::kAccPrivate | dx::kAccFinal);
+  const auto wu_mFd =
+      builder.BoundInstanceField("mFd", "Landroid/os/ParcelFileDescriptor;", dx::kAccPrivate | dx::kAccFinal);
+  const auto wu_mStartOffset = builder.BoundInstanceField("mStartOffset", "J", dx::kAccPrivate | dx::kAccFinal);
+  const auto wu_mLength = builder.BoundInstanceField("mLength", "J", dx::kAccPrivate | dx::kAccFinal);
   builder.Constructor(
       "(Landroid/os/ParcelFileDescriptor;JJ)V", [](dx::IntrinsicContext &call) {
         Initialize(call, call.receiver, call.arguments[0].ref,
@@ -198,6 +198,26 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
       }
       return dx::VmValue::Void();
   });
+  const auto wu_mExtras = builder.BoundInstanceField("mExtras", "Landroid/os/Bundle;", dx::kAccPrivate | dx::kAccFinal);
+  // AOSP 4.4 ROM line 74.
+  builder.Constructor(
+      "(Landroid/os/ParcelFileDescriptor;JJLandroid/os/Bundle;)V",
+      [wu_mFd, wu_mStartOffset, wu_mLength, wu_mExtras](dx::IntrinsicContext& c) {
+          dx::IntrinsicCall api(c);
+          const auto descriptor = api.Ref(0);
+          if (!descriptor.IsValid())
+              throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "fd must not be null"};
+          if (api.Long(2) < 0 && api.Long(1) != 0)
+              throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                    "startOffset must be 0 when using UNKNOWN_LENGTH"};
+          api.SetRef(wu_mFd, descriptor);
+          api.SetLong(wu_mStartOffset, api.Long(1));
+          api.SetLong(wu_mLength, api.Long(2));
+          api.SetRef(wu_mExtras, api.Ref(3));
+          return dx::VmValue::Void();
+      },
+      dx::kAccPublic);
+
   return std::move(builder).Build();
 }
 

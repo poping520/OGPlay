@@ -609,7 +609,13 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             }
             return dx::VmValue::Void();
         });
-    builder.VirtualMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", GraphicsNoopHandler());
+    builder.VirtualMethod("drawBitmap", "([IIIIIIIZLandroid/graphics/Paint;)V", [](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, c.receiver, "drawBitmap", "([IIIFFIIZLandroid/graphics/Paint;)V",
+                                 {c.arguments[0], c.arguments[1], c.arguments[2],
+                                  dx::VmValue::Float(static_cast<float>(c.arguments[3].AsInt())),
+                                  dx::VmValue::Float(static_cast<float>(c.arguments[4].AsInt())), c.arguments[5],
+                                  c.arguments[6], c.arguments[7], c.arguments[8]});
+    });
     return std::move(builder).Build();
 }
 
@@ -694,6 +700,22 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
         }
         return dx::VmValue::Void();
     });
+    // AOSP 4.4 ROM line 165.
+    builder.VirtualMethod(
+        "setBounds", "(Landroid/graphics/Rect;)V",
+        [](dx::IntrinsicContext& c) {
+            const auto rect = c.arguments[0].ref;
+            if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "bounds == null"};
+            std::vector<dx::VmValue> args;
+            for (const auto name : {"left", "top", "right", "bottom"}) {
+                const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(rect), name, "I");
+                args.push_back(dx::VmValue::Int(static_cast<std::int32_t>(
+                    c.vm.Model().InstanceSlots(rect)[c.vm.Linker().Field(*field).slot].bits)));
+            }
+            return CallAndroidMethod(c.vm, c.receiver, "setBounds", "(IIII)V", args);
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -848,14 +870,27 @@ Decl Declare_android_graphics_Color(const Context& context) {
         return dx::VmValue::Int(static_cast<std::int32_t>(
             ParseColorValue(call.vm.StringUtf8(call.arguments[0].ref))));
     });
+    // AOSP 4.4 ROM line 37.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
 Decl Declare_android_graphics_RectF(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/RectF;", "Ljava/lang/Object;");
-    builder.InstanceField("left", "F").InstanceField("top", "F")
-        .InstanceField("right", "F").InstanceField("bottom", "F");
+
     builder.Constructor("()V", GraphicsNoopHandler());
     const auto set = [](dx::IntrinsicContext& call) {
         const auto slots = call.vm.Model().InstanceSlots(call.receiver);
@@ -910,13 +945,140 @@ Decl Declare_android_graphics_RectF(const Context& context) {
                 s[index].bits = std::bit_cast<std::uint32_t>(std::bit_cast<float>(s[index].bits) + dyv);
             return dx::VmValue::Void();
         });
+    const auto wu_left = builder.BoundInstanceField("left", "F");
+    const auto wu_top = builder.BoundInstanceField("top", "F");
+    const auto wu_right = builder.BoundInstanceField("right", "F");
+    const auto wu_bottom = builder.BoundInstanceField("bottom", "F");
+    // AOSP 4.4 ROM line 79.
+    builder.Constructor(
+        "(Landroid/graphics/Rect;)V",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            if (!source.IsValid()) {
+                api.SetFloat(wu_left, 0.0F);
+                api.SetFloat(wu_top, 0.0F);
+                api.SetFloat(wu_right, 0.0F);
+                api.SetFloat(wu_bottom, 0.0F);
+                return dx::VmValue::Void();
+            }
+            if (!source.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "source == null"};
+            const auto left_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "left", "I");
+            api.SetFloat(wu_left, static_cast<float>(static_cast<std::int32_t>(
+                                      c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*left_field).slot].bits)));
+            const auto top_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "top", "I");
+            api.SetFloat(wu_top, static_cast<float>(static_cast<std::int32_t>(
+                                     c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*top_field).slot].bits)));
+            const auto right_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "right", "I");
+            api.SetFloat(wu_right,
+                         static_cast<float>(static_cast<std::int32_t>(
+                             c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*right_field).slot].bits)));
+            const auto bottom_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "bottom", "I");
+            api.SetFloat(wu_bottom,
+                         static_cast<float>(static_cast<std::int32_t>(
+                             c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*bottom_field).slot].bits)));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 68.
+    builder.Constructor(
+        "(Landroid/graphics/RectF;)V",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            if (!source.IsValid()) {
+                api.SetFloat(wu_left, 0.0F);
+                api.SetFloat(wu_top, 0.0F);
+                api.SetFloat(wu_right, 0.0F);
+                api.SetFloat(wu_bottom, 0.0F);
+                return dx::VmValue::Void();
+            }
+            api.SetFloat(wu_left, api.GetFloat(wu_left, source));
+            api.SetFloat(wu_top, api.GetFloat(wu_top, source));
+            api.SetFloat(wu_right, api.GetFloat(wu_right, source));
+            api.SetFloat(wu_bottom, api.GetFloat(wu_bottom, source));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 225.
+    builder.VirtualMethod(
+        "set", "(Landroid/graphics/Rect;)V",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            if (!source.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "source == null"};
+            const auto left_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "left", "I");
+            api.SetFloat(wu_left, static_cast<float>(static_cast<std::int32_t>(
+                                      c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*left_field).slot].bits)));
+            const auto top_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "top", "I");
+            api.SetFloat(wu_top, static_cast<float>(static_cast<std::int32_t>(
+                                     c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*top_field).slot].bits)));
+            const auto right_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "right", "I");
+            api.SetFloat(wu_right,
+                         static_cast<float>(static_cast<std::int32_t>(
+                             c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*right_field).slot].bits)));
+            const auto bottom_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "bottom", "I");
+            api.SetFloat(wu_bottom,
+                         static_cast<float>(static_cast<std::int32_t>(
+                             c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*bottom_field).slot].bits)));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 212.
+    builder.VirtualMethod(
+        "set", "(Landroid/graphics/RectF;)V",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            api.SetFloat(wu_left, api.GetFloat(wu_left, source));
+            api.SetFloat(wu_top, api.GetFloat(wu_top, source));
+            api.SetFloat(wu_right, api.GetFloat(wu_right, source));
+            api.SetFloat(wu_bottom, api.GetFloat(wu_bottom, source));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 305.
+    builder.VirtualMethod(
+        "contains", "(FFFF)Z",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto left = api.GetFloat(wu_left);
+            const auto top = api.GetFloat(wu_top);
+            const auto right = api.GetFloat(wu_right);
+            const auto bottom = api.GetFloat(wu_bottom);
+            return dx::VmValue::Int(left < right && top < bottom && left <= c.arguments[0].AsFloat() &&
+                                    top <= c.arguments[1].AsFloat() && right >= c.arguments[2].AsFloat() &&
+                                    bottom >= c.arguments[3].AsFloat());
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 321.
+    builder.VirtualMethod(
+        "contains", "(Landroid/graphics/RectF;)Z",
+        [wu_left, wu_top, wu_right, wu_bottom](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto left = api.GetFloat(wu_left);
+            const auto top = api.GetFloat(wu_top);
+            const auto right = api.GetFloat(wu_right);
+            const auto bottom = api.GetFloat(wu_bottom);
+            return dx::VmValue::Int(left < right && top < bottom && left <= api.GetFloat(wu_left, c.arguments[0].ref) &&
+                                    top <= api.GetFloat(wu_top, c.arguments[0].ref) &&
+                                    right >= api.GetFloat(wu_right, c.arguments[0].ref) &&
+                                    bottom >= api.GetFloat(wu_bottom, c.arguments[0].ref));
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
 Decl Declare_android_graphics_PointF(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PointF;", "Ljava/lang/Object;");
-    builder.InstanceField("x", "F").InstanceField("y", "F");
+
     builder.Constructor("()V", GraphicsNoopHandler());
     const auto set = [](dx::IntrinsicContext& call) {
         const auto s = call.vm.Model().InstanceSlots(call.receiver);
@@ -931,6 +1093,37 @@ Decl Declare_android_graphics_PointF(const Context& context) {
     }).StaticMethod("length", "(FF)F", [](dx::IntrinsicContext& call) {
         return FloatBits(std::hypot(call.arguments[0].AsFloat(), call.arguments[1].AsFloat()));
     });
+    const auto wu_x = builder.BoundInstanceField("x", "F");
+    const auto wu_y = builder.BoundInstanceField("y", "F");
+    // AOSP 4.4 ROM line 38.
+    builder.Constructor(
+        "(Landroid/graphics/Point;)V",
+        [wu_x, wu_y](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            if (!source.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "source == null"};
+            const auto x_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "x", "I");
+            api.SetFloat(wu_x, static_cast<float>(static_cast<std::int32_t>(
+                                   c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*x_field).slot].bits)));
+            const auto y_field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(source), "y", "I");
+            api.SetFloat(wu_y, static_cast<float>(static_cast<std::int32_t>(
+                                   c.vm.Model().InstanceSlots(source)[c.vm.Linker().Field(*y_field).slot].bits)));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 55.
+    builder.FinalMethod(
+        "set", "(Landroid/graphics/PointF;)V",
+        [wu_x, wu_y](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto source = c.arguments[0].ref;
+            api.SetFloat(wu_x, api.GetFloat(wu_x, source));
+            api.SetFloat(wu_y, api.GetFloat(wu_y, source));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

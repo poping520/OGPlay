@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/vm_monitors.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 #include "ogplay/runtime/dexvm/io_runtime.h"
@@ -196,6 +197,10 @@ Decl Declare_android_os_AsyncTask(const Context& context) {
             return dx::VmValue::Ref(
                 context->async_tasks[call.receiver.Value()].result);
         });
+    // AOSP 4.4 ROM line 421.
+    builder.VirtualMethod(
+        "onCancelled", "()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); }, dx::kAccProtected);
+
     return std::move(builder).Build();
 }
 
@@ -404,6 +409,20 @@ Decl Declare_android_os_Environment(const Context& context) {
             // startup, so MEDIA_MOUNTED is the truthful state.
             return MakeString(call, kMediaMounted);
         });
+    // AOSP 4.4 ROM line 36.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -938,12 +957,12 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_os_Message(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Message;", "Ljava/lang/Object;");
-    builder.InstanceField("what", "I");
+    const auto wu_what = builder.BoundInstanceField("what", "I");
     const auto arg1 = builder.BoundInstanceField("arg1", "I");
     const auto arg2 = builder.BoundInstanceField("arg2", "I");
-    builder.InstanceField("obj", "Ljava/lang/Object;");
-    builder.InstanceField("target", "Landroid/os/Handler;");
-    builder.InstanceField("callback", "Ljava/lang/Runnable;", dx::kAccNone);
+    const auto wu_obj = builder.BoundInstanceField("obj", "Ljava/lang/Object;");
+    const auto wu_target = builder.BoundInstanceField("target", "Landroid/os/Handler;");
+    const auto wu_callback = builder.BoundInstanceField("callback", "Ljava/lang/Runnable;", dx::kAccNone);
     builder.StaticMethod("obtain", "(Landroid/os/Handler;ILjava/lang/Object;)Landroid/os/Message;",
         [](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(MakeMessage(
@@ -984,6 +1003,157 @@ Decl Declare_android_os_Message(const Context& context) {
         }
         return dx::VmValue::Void();
     });
+    // AOSP 4.4 ROM line 428.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
+    const auto wu_replyTo = builder.BoundInstanceField("replyTo", "Landroid/os/Messenger;", dx::kAccPublic);
+    const auto wu_data = builder.BoundInstanceField("data", "Landroid/os/Bundle;", dx::kAccNone);
+    const auto wu_next = builder.BoundInstanceField("next", "Landroid/os/Message;", dx::kAccNone);
+    const auto wu_sPool = builder.BoundStaticField("sPool", "Landroid/os/Message;", dx::kAccPrivate | dx::kAccStatic);
+    const auto wu_sPoolSize = builder.BoundStaticField("sPoolSize", "I", dx::kAccPrivate | dx::kAccStatic);
+    const auto wu_sPoolSync =
+        builder.BoundStaticField("sPoolSync", "Ljava/lang/Object;", dx::kAccPrivate | dx::kAccStatic | dx::kAccFinal);
+    builder.ClassInitializer([wu_sPoolSync](dx::IntrinsicContext& c) {
+        dx::IntrinsicCall(c).SetRef(wu_sPoolSync, c.vm.NewIntrinsicInstance("Ljava/lang/Object;"));
+        return dx::VmValue::Void();
+    });
+    // AOSP 4.4 ROM line 107.
+    builder.StaticMethod(
+        "obtain", "()Landroid/os/Message;",
+        [wu_sPoolSync, wu_sPool, wu_sPoolSize, wu_next](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            const auto monitor = api.GetRef(wu_sPoolSync);
+            const auto token = c.vm.CurrentContextToken();
+            c.vm.Monitors().Enter(monitor, token);
+            const auto message = api.GetRef(wu_sPool);
+            if (message.IsValid()) {
+                api.SetRef(wu_sPool, api.GetRef(wu_next, message));
+                api.SetRef(wu_next, message, dx::VmObjectRef{});
+                api.SetInt(wu_sPoolSize, api.GetInt(wu_sPoolSize) - 1);
+            }
+            c.vm.Monitors().Exit(monitor, token);
+            if (message.IsValid()) return dx::VmValue::Ref(message);
+            const auto fresh = c.vm.NewIntrinsicInstance("Landroid/os/Message;");
+            const auto root = c.vm.ProtectReferences(std::array{fresh});
+            const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(fresh), "<init>", "()V");
+            const auto result = c.vm.Call(*ctor, std::array{dx::VmValue::Ref(fresh)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return dx::VmValue::Ref(fresh);
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 147.
+    builder.StaticMethod(
+        "obtain", "(Landroid/os/Handler;)Landroid/os/Message;",
+        [wu_target](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Message;"),
+                                                               "obtain", "()Landroid/os/Message;");
+            const auto result = c.vm.Call(*target, {});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            const auto message = result.value.ref;
+            dx::IntrinsicCall api(c);
+            api.SetRef(wu_target, message, c.arguments[0].ref);
+            return dx::VmValue::Ref(message);
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 176.
+    builder.StaticMethod(
+        "obtain", "(Landroid/os/Handler;I)Landroid/os/Message;",
+        [wu_target, wu_what](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Message;"),
+                                                               "obtain", "()Landroid/os/Message;");
+            const auto result = c.vm.Call(*target, {});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            const auto message = result.value.ref;
+            dx::IntrinsicCall api(c);
+            api.SetRef(wu_target, message, c.arguments[0].ref);
+            api.SetInt(wu_what, message, c.arguments[1].AsInt());
+            return dx::VmValue::Ref(message);
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 211.
+    builder.StaticMethod(
+        "obtain", "(Landroid/os/Handler;III)Landroid/os/Message;",
+        [wu_target, wu_what, arg1, arg2](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Message;"),
+                                                               "obtain", "()Landroid/os/Message;");
+            const auto result = c.vm.Call(*target, {});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            const auto message = result.value.ref;
+            dx::IntrinsicCall api(c);
+            api.SetRef(wu_target, message, c.arguments[0].ref);
+            api.SetInt(wu_what, message, c.arguments[1].AsInt());
+            api.SetInt(arg1, message, c.arguments[2].AsInt());
+            api.SetInt(arg2, message, c.arguments[3].AsInt());
+            return dx::VmValue::Ref(message);
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 161.
+    builder.StaticMethod(
+        "obtain", "(Landroid/os/Handler;Ljava/lang/Runnable;)Landroid/os/Message;",
+        [wu_target, wu_callback](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Message;"),
+                                                               "obtain", "()Landroid/os/Message;");
+            const auto result = c.vm.Call(*target, {});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            const auto message = result.value.ref;
+            dx::IntrinsicCall api(c);
+            api.SetRef(wu_target, message, c.arguments[0].ref);
+            api.SetRef(wu_callback, message, c.arguments[1].ref);
+            return dx::VmValue::Ref(message);
+        },
+        dx::kAccPublic);
+
+    // AOSP 4.4 ROM line 126.
+    builder.StaticMethod(
+        "obtain", "(Landroid/os/Message;)Landroid/os/Message;",
+        [wu_what, arg1, arg2, wu_obj, wu_replyTo, wu_target, wu_callback, wu_data](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Message;"),
+                                                               "obtain", "()Landroid/os/Message;");
+            const auto result = c.vm.Call(*target, {});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            const auto message = result.value.ref;
+            const auto root = c.vm.ProtectReferences(std::array{message});
+            dx::IntrinsicCall api(c);
+            api.SetInt(wu_what, message, api.GetInt(wu_what, c.arguments[0].ref));
+            api.SetInt(arg1, message, api.GetInt(arg1, c.arguments[0].ref));
+            api.SetInt(arg2, message, api.GetInt(arg2, c.arguments[0].ref));
+            api.SetRef(wu_obj, message, api.GetRef(wu_obj, c.arguments[0].ref));
+            api.SetRef(wu_replyTo, message, api.GetRef(wu_replyTo, c.arguments[0].ref));
+            api.SetRef(wu_target, message, api.GetRef(wu_target, c.arguments[0].ref));
+            api.SetRef(wu_callback, message, api.GetRef(wu_callback, c.arguments[0].ref));
+            const auto data = api.GetRef(wu_data, c.arguments[0].ref);
+            if (data.IsValid()) api.SetRef(wu_data, message, NewAndroidBundle(c.vm, data));
+            return dx::VmValue::Ref(message);
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -1432,6 +1602,21 @@ Decl Declare_android_os_PowerManager(const Context& context) {
     builder.FinalMethod("isScreenOn", "()Z", [](dx::IntrinsicContext&) {
         return dx::VmValue::Int(1);
     });
+    const auto wu_mContext = builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccFinal);
+    const auto wu_mService = builder.BoundInstanceField("mService", "Landroid/os/IPowerManager;", dx::kAccFinal);
+    const auto wu_mHandler = builder.BoundInstanceField("mHandler", "Landroid/os/Handler;", dx::kAccFinal);
+    // AOSP 4.4 ROM line 326.
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/os/IPowerManager;Landroid/os/Handler;)V",
+        [wu_mContext, wu_mService, wu_mHandler](dx::IntrinsicContext& c) {
+            dx::IntrinsicCall api(c);
+            api.SetRef(wu_mContext, c.arguments[0].ref);
+            api.SetRef(wu_mService, c.arguments[1].ref);
+            api.SetRef(wu_mHandler, c.arguments[2].ref);
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -1454,6 +1639,20 @@ Decl Declare_android_os_Vibrator(const Context& context) {
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "repeating vibration is not provided"};
     });
+    // AOSP 4.4 ROM line 34.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -1487,6 +1686,20 @@ Decl Declare_android_os_Process(const Context& context) {
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "priority"};
             return dx::VmValue::Void();
         });
+    // AOSP 4.4 ROM line 45.
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target =
+                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

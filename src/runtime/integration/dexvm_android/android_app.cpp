@@ -536,6 +536,22 @@ Decl Declare_android_app_IntentService(const Context& context) {
                 "Ljava/lang/UnsupportedOperationException;",
                 "IntentService.onHandleIntent must be overridden"};
         }, dx::kAccProtected | dx::kAccAbstract);
+    const auto wu_name = builder.BoundInstanceField("mName", "Ljava/lang/String;", dx::kAccPrivate);
+    // AOSP 4.4 ROM line 76.
+    builder.Constructor(
+        "(Ljava/lang/String;)V",
+        [wu_name](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/app/Service;"),
+                                                               "<init>", "()V");
+            const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            dx::IntrinsicCall(c).SetRef(wu_name, c.arguments[0].ref);
+            return dx::VmValue::Void();
+        },
+        dx::kAccPublic);
+
     return std::move(builder).Build();
 }
 

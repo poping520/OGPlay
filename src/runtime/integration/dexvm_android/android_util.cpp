@@ -150,6 +150,69 @@ Decl Declare_android_util_Log(const Context &context) {
             priority == 4 ? core::LogLevel::info : core::LogLevel::debug, tag + ": " + message);
         return dx::VmValue::Int(static_cast<std::int32_t>(tag.size() + message.size() + 3U));
       }, dx::kAccPublic | dx::kAccStatic | dx::kAccNative);
+  // AOSP 4.4 ROM line 171.
+  builder.StaticMethod(
+      "i", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I",
+      [](dx::IntrinsicContext& c) {
+          const auto trace = LogGetStackTraceString(c.vm, c.arguments[2].ref);
+          const auto trace_root = c.vm.ProtectReferences(std::array{trace});
+          const auto message =
+              c.vm.NewStringUtf8((c.arguments[1].ref.IsValid() ? c.vm.StringUtf8(c.arguments[1].ref) : "null") + "\n" +
+                                 c.vm.StringUtf8(trace));
+          const auto message_root = c.vm.ProtectReferences(std::array{message});
+          const auto target =
+              c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/util/Log;"), "println_native",
+                                             "(IILjava/lang/String;Ljava/lang/String;)I");
+          const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Int(0), dx::VmValue::Int(4),
+                                                                          c.arguments[0], dx::VmValue::Ref(message)});
+          if (result.exception.IsValid())
+              throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                    result.exception};
+          return result.value;
+      },
+      dx::kAccPublic);
+
+  // AOSP 4.4 ROM line 129.
+  builder.StaticMethod(
+      "v", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I",
+      [](dx::IntrinsicContext& c) {
+          const auto trace = LogGetStackTraceString(c.vm, c.arguments[2].ref);
+          const auto trace_root = c.vm.ProtectReferences(std::array{trace});
+          const auto message =
+              c.vm.NewStringUtf8((c.arguments[1].ref.IsValid() ? c.vm.StringUtf8(c.arguments[1].ref) : "null") + "\n" +
+                                 c.vm.StringUtf8(trace));
+          const auto message_root = c.vm.ProtectReferences(std::array{message});
+          const auto target =
+              c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/util/Log;"), "println_native",
+                                             "(IILjava/lang/String;Ljava/lang/String;)I");
+          const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Int(0), dx::VmValue::Int(2),
+                                                                          c.arguments[0], dx::VmValue::Ref(message)});
+          if (result.exception.IsValid())
+              throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                    result.exception};
+          return result.value;
+      },
+      dx::kAccPublic);
+
+  // AOSP 4.4 ROM line 222.
+  builder.StaticMethod(
+      "w", "(Ljava/lang/String;Ljava/lang/Throwable;)I",
+      [](dx::IntrinsicContext& c) {
+          const auto trace = LogGetStackTraceString(c.vm, c.arguments[1].ref);
+          const auto trace_root = c.vm.ProtectReferences(std::array{trace});
+          const auto message = trace;
+          const auto target =
+              c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/util/Log;"), "println_native",
+                                             "(IILjava/lang/String;Ljava/lang/String;)I");
+          const auto result = c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Int(0), dx::VmValue::Int(5),
+                                                                          c.arguments[0], dx::VmValue::Ref(message)});
+          if (result.exception.IsValid())
+              throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                    result.exception};
+          return result.value;
+      },
+      dx::kAccPublic);
+
   return std::move(builder).Build();
 }
 

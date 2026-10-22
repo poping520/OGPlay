@@ -1265,6 +1265,18 @@ IntrinsicClassDecl Declare_java_lang_Byte() {
         return Make(c, Widen(text));
     });
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Byte;", "B"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 25.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Byte;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Byte;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1280,6 +1292,18 @@ IntrinsicClassDecl Declare_java_lang_Short() {
         const auto v = static_cast<std::uint16_t>(c.arguments[0].AsInt());
         return VmValue::Int(static_cast<std::int16_t>(ByteSwap(v))); });
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Short;", "S"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 26.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Short;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Short;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1456,6 +1480,18 @@ IntrinsicClassDecl Declare_java_lang_Integer() {
     AddTypeField(builder);
     AddWideIntegralCommon<std::int32_t, std::uint32_t>(builder, "Ljava/lang/Integer;", "I", "parseInt", "getInteger", 32);
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Integer;", "I"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 32.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Integer;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Integer;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1467,6 +1503,18 @@ IntrinsicClassDecl Declare_java_lang_Long() {
     AddTypeField(builder);
     AddWideIntegralCommon<std::int64_t, std::uint64_t>(builder, "Ljava/lang/Long;", "J", "parseLong", "getLong", 64);
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Long;", "J"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 32.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Long;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Long;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1506,6 +1554,18 @@ IntrinsicClassDecl Declare_java_lang_Boolean() {
         c.vm.SetIntrinsicStaticRef("Ljava/lang/Boolean;", "TRUE", "Ljava/lang/Boolean;", MakeBoxed(c, "Ljava/lang/Boolean;", 1, false).ref);
         c.vm.SetIntrinsicStaticRef("Ljava/lang/Boolean;", "FALSE", "Ljava/lang/Boolean;", MakeBoxed(c, "Ljava/lang/Boolean;", 0, false).ref);
         return VmValue::Void(); });
+    // AOSP 4.4 ROM line 27.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Boolean;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Boolean;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1554,6 +1614,18 @@ IntrinsicClassDecl Declare_java_lang_Float() {
            .ConstantInt("SIZE", "I", 32);
     AddFloatingCommon<float, std::uint32_t>(builder, "Ljava/lang/Float;", "F", "parseFloat", "floatToIntBits", "floatToRawIntBits", "intBitsToFloat");
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Float;", "F"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 26.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Float;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Float;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1571,6 +1643,18 @@ IntrinsicClassDecl Declare_java_lang_Double() {
            .ConstantInt("SIZE", "I", 64);
     AddFloatingCommon<double, std::uint64_t>(builder, "Ljava/lang/Double;", "D", "parseDouble", "doubleToLongBits", "doubleToRawLongBits", "longBitsToDouble");
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Double;", "D"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 26.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Double;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Double;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
     return std::move(builder).Build();
 }
 
@@ -1724,6 +1808,182 @@ IntrinsicClassDecl Declare_java_lang_Character() {
         return VmValue::Int(start + index);
     });
     builder.ClassInitializer([](IntrinsicContext& c) { InitializeType(c, "Ljava/lang/Character;", "C"); return VmValue::Void(); });
+    // AOSP 4.4 ROM line 99.
+    builder.VirtualMethod(
+        "compareTo", "(Ljava/lang/Object;)I",
+        [](IntrinsicContext& c) {
+            const auto other = c.arguments[0].ref;
+            if (other.IsValid() && !c.vm.Linker().IsAssignable(c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;"),
+                                                               c.vm.Model().ObjectClass(other)))
+                throw VmJavaThrow{"Ljava/lang/ClassCastException;", "compareTo type"};
+            return InvokeGuest(c.vm, c.receiver, "compareTo", "(Ljava/lang/Character;)I", {c.arguments[0]});
+        },
+        kAccPublic | kAccBridge | kAccSynthetic);
+
+    // AOSP 4.4 ROM line 1758.
+    builder.StaticMethod(
+        "codePointAt", "(Ljava/lang/CharSequence;I)I",
+        [pair](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
+            auto index = c.arguments[1].AsInt();
+            if (index < 0 || index >= length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
+            const auto at = [&](int n) {
+                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
+            };
+            const auto high = at(index++);
+            if (index < length) {
+                const auto low = at(index);
+                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
+            }
+            return VmValue::Int(high);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 1800.
+    builder.StaticMethod(
+        "codePointAt", "([CI)I",
+        [pair](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = c.vm.Model().ArrayLength(seq);
+            auto index = c.arguments[1].AsInt();
+            if (index < 0 || index >= length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
+            const auto at = [&](int n) { return static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(seq, n)); };
+            const auto high = at(index++);
+            if (index < length) {
+                const auto low = at(index);
+                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
+            }
+            return VmValue::Int(high);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 1883.
+    builder.StaticMethod(
+        "codePointBefore", "(Ljava/lang/CharSequence;I)I",
+        [pair](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
+            auto index = c.arguments[1].AsInt();
+            const auto start = 0;
+            if (index <= start || index > length || start < 0 || start >= length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
+            const auto at = [&](int n) {
+                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
+            };
+            const auto low = at(--index);
+            if (--index >= start) {
+                const auto high = at(index);
+                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
+            }
+            return VmValue::Int(low);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 1972.
+    builder.StaticMethod(
+        "codePointBefore", "([CII)I",
+        [pair](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = c.vm.Model().ArrayLength(seq);
+            auto index = c.arguments[1].AsInt();
+            const auto start = c.arguments[2].AsInt();
+            if (index <= start || index > length || start < 0 || start >= length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
+            const auto at = [&](int n) { return static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(seq, n)); };
+            const auto low = at(--index);
+            if (--index >= start) {
+                const auto high = at(index);
+                if (pair(high, low)) return VmValue::Int(0x10000 + ((high - 0xd800) << 10) + low - 0xdc00);
+            }
+            return VmValue::Int(low);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 2086.
+    builder.StaticMethod(
+        "codePointCount", "(Ljava/lang/CharSequence;II)I",
+        [](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
+            auto index = c.arguments[1].AsInt();
+            const auto end = c.arguments[2].AsInt();
+            if (index < 0 || end > length || index > end)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point range"};
+            const auto at = [&](int n) {
+                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
+            };
+            int count = 0;
+            while (index < end) {
+                const auto high = at(index++);
+                if (high >= 0xd800 && high <= 0xdbff && index < end) {
+                    const auto low = at(index);
+                    if (low >= 0xdc00 && low <= 0xdfff) ++index;
+                }
+                ++count;
+            }
+            return VmValue::Int(count);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 2175.
+    builder.StaticMethod(
+        "offsetByCodePoints", "(Ljava/lang/CharSequence;II)I",
+        [](IntrinsicContext& c) {
+            const auto seq = IntrinsicCall(c).NonNullRef(0, "seq");
+            const auto length = InvokeGuest(c.vm, seq, "length", "()I").AsInt();
+            auto index = c.arguments[1].AsInt();
+            auto offset = c.arguments[2].AsInt();
+            if (index < 0 || index > length)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point index"};
+            const auto at = [&](int n) {
+                return static_cast<char16_t>(InvokeGuest(c.vm, seq, "charAt", "(I)C", {VmValue::Int(n)}).AsInt());
+            };
+            while (offset > 0 && index < length) {
+                const auto high = at(index++);
+                if (high >= 0xd800 && high <= 0xdbff && index < length) {
+                    const auto low = at(index);
+                    if (low >= 0xdc00 && low <= 0xdfff) ++index;
+                }
+                --offset;
+            }
+            while (offset < 0 && index > 0) {
+                const auto low = at(--index);
+                if (low >= 0xdc00 && low <= 0xdfff && index > 0) {
+                    const auto high = at(index - 1);
+                    if (high >= 0xd800 && high <= 0xdbff) --index;
+                }
+                ++offset;
+            }
+            if (offset != 0) throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point offset"};
+            return VmValue::Int(index);
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 2014.
+    builder.StaticMethod(
+        "toChars", "(I[CI)I",
+        [](IntrinsicContext& c) {
+            const auto cp = c.arguments[0].AsInt();
+            if (cp < 0 || cp > 0x10ffff)
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid code point"};
+            const auto dst = IntrinsicCall(c).NonNullRef(1, "dst");
+            const auto offset = c.arguments[2].AsInt();
+            const auto length = c.vm.Model().ArrayLength(dst);
+            const auto count = cp < 0x10000 ? 1 : 2;
+            if (offset < 0 || offset >= length || count > length - offset)
+                throw VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "code point output"};
+            c.vm.Model().SetPrimitiveElement(
+                dst, offset, static_cast<std::uint16_t>(count == 1 ? cp : 0xd800 | ((cp - 0x10000) >> 10)));
+            if (count == 2)
+                c.vm.Model().SetPrimitiveElement(dst, offset + 1,
+                                                 static_cast<std::uint16_t>(0xdc00 | ((cp - 0x10000) & 0x3ff)));
+            return VmValue::Int(count);
+        },
+        kAccPublic);
+
     return std::move(builder).Build();
 }
 
@@ -2718,6 +2978,174 @@ IntrinsicClassDecl Declare_java_lang_String() {
                 }
                 return InvokeGuest(context.vm, argument, "toString", "()Ljava/lang/String;");
             });
+    // AOSP 4.4 ROM line 494.
+    builder.Constructor(
+        "(Ljava/lang/StringBuffer;)V",
+        [](IntrinsicContext& c) {
+            const auto source = IntrinsicCall(c).NonNullRef(0, "buffer");
+            const auto token = c.vm.CurrentContextToken();
+            c.vm.Monitors().Enter(source, token);
+            try {
+                const auto chars = InvokeGuest(c.vm, source, "shareValue", "()[C").ref;
+                const auto root = c.vm.ProtectReferences(std::array{chars});
+                const auto length = InvokeGuest(c.vm, source, "length", "()I").AsInt();
+                c.vm.Model().BindString(c.receiver, CharsValue(c, chars, 0, length));
+            } catch (...) {
+                c.vm.Monitors().Exit(source, token);
+                throw;
+            }
+            c.vm.Monitors().Exit(source, token);
+            return VmValue::Void();
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 540.
+    builder.Constructor(
+        "(Ljava/lang/StringBuilder;)V",
+        [](IntrinsicContext& c) {
+            const auto source = IntrinsicCall(c).NonNullRef(0, "stringBuilder");
+            const auto length = InvokeGuest(c.vm, source, "length", "()I").AsInt();
+            const auto chars = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[C"),
+                                                              JniPrimitiveKind::character, length);
+            const auto root = c.vm.ProtectReferences(std::array{chars});
+            static_cast<void>(
+                InvokeGuest(c.vm, source, "getChars", "(II[CI)V",
+                            {VmValue::Int(0), VmValue::Int(length), VmValue::Ref(chars), VmValue::Int(0)}));
+            c.vm.Model().BindString(c.receiver, CharsValue(c, chars, 0, length));
+            return VmValue::Void();
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 186.
+    builder.Constructor(
+        "([BIII)V",
+        [](IntrinsicContext& c) {
+            const auto array = IntrinsicCall(c).NonNullRef(0, "bytes");
+            const auto start = c.arguments[2].AsInt(), count = c.arguments[3].AsInt();
+            const auto length = c.vm.Model().ArrayLength(array);
+            if (start < 0 || count < 0 || start > length || count > length - start)
+                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "byte range"};
+            const auto bytes = c.vm.Model().ReadByteRegion(array, start, count);
+            const auto high = static_cast<std::uint32_t>(c.arguments[1].AsInt()) << 8U;
+            std::u16string text;
+            text.reserve(static_cast<std::size_t>(count));
+            for (const auto byte : bytes)
+                text.push_back(static_cast<char16_t>(high + std::to_integer<std::uint8_t>(byte)));
+            c.vm.Model().BindString(c.receiver, text);
+            return VmValue::Void();
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 158.
+    builder.Constructor(
+        "([BI)V",
+        [](IntrinsicContext& c) {
+            const auto bytes = IntrinsicCall(c).NonNullRef(0, "bytes");
+            const auto length = c.vm.Model().ArrayLength(bytes);
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
+                                                               "<init>", "([BIII)V");
+            const auto result =
+                c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1],
+                                                        VmValue::Int(0), VmValue::Int(length)});
+            if (result.exception.IsValid())
+                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+            return result.value;
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 515.
+    builder.Constructor(
+        "([III)V",
+        [](IntrinsicContext& c) {
+            const auto points = IntrinsicCall(c).NonNullRef(0, "codePoints");
+            const auto start = c.arguments[1].AsInt(), count = c.arguments[2].AsInt();
+            const auto length = c.vm.Model().ArrayLength(points);
+            if (start < 0 || count < 0 || start > length || count > length - start)
+                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "code point range"};
+            if (count > INT32_MAX / 2) throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "code point output"};
+            const auto chars = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[C"),
+                                                              JniPrimitiveKind::character, count * 2);
+            const auto root = c.vm.ProtectReferences(std::array{chars});
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/Character;"),
+                                                               "toChars", "(I[CI)I");
+            int written = 0;
+            for (int i = 0; i < count; ++i) {
+                const auto result =
+                    c.vm.Call(*target, std::array{VmValue::Int(static_cast<std::int32_t>(
+                                                      c.vm.Model().GetPrimitiveElement(points, start + i))),
+                                                  VmValue::Ref(chars), VmValue::Int(written)});
+                if (result.exception.IsValid())
+                    throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+                written += result.value.AsInt();
+            }
+            c.vm.Model().BindString(c.receiver, CharsValue(c, chars, 0, written));
+            return VmValue::Void();
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 804.
+    builder.VirtualMethod(
+        "getBytes", "(II[BI)V",
+        [](IntrinsicContext& c) {
+            const auto text = Value(c, c.receiver);
+            const auto start = c.arguments[0].AsInt(), end = c.arguments[1].AsInt();
+            if (start < 0 || end < start || static_cast<std::size_t>(end) > text.size())
+                throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "string range"};
+            for (int i = start; i < end; ++i) {
+                const auto dst = IntrinsicCall(c).NonNullRef(2, "dst");
+                const auto index = static_cast<std::int64_t>(c.arguments[3].AsInt()) + i - start;
+                if (index < 0 || index >= c.vm.Model().ArrayLength(dst))
+                    throw VmJavaThrow{"Ljava/lang/StringIndexOutOfBoundsException;", "destination range"};
+                c.vm.Model().SetPrimitiveElement(dst, static_cast<JniSize>(index),
+                                                 static_cast<std::uint8_t>(text[static_cast<std::size_t>(i)]));
+            }
+            return VmValue::Void();
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 1175.
+    builder.VirtualMethod(
+        "lastIndexOf", "(Ljava/lang/String;I)I",
+        [](IntrinsicContext& c) {
+            const auto needle = Value(c, c.arguments[0].ref);
+            const auto text = Value(c, c.receiver);
+            auto from = c.arguments[1].AsInt();
+            if (needle.size() > text.size() || from < 0) return VmValue::Int(-1);
+            if (needle.empty()) return VmValue::Int(std::min(from, static_cast<int>(text.size())));
+            from = std::min(from, static_cast<int>(text.size() - needle.size()));
+            for (;;) {
+                const auto index =
+                    InvokeGuest(c.vm, c.receiver, "lastIndexOf", "(II)I", {VmValue::Int(needle[0]), VmValue::Int(from)})
+                        .AsInt();
+                if (index < 0) return VmValue::Int(-1);
+                if (text.compare(static_cast<std::size_t>(index), needle.size(), needle) == 0)
+                    return VmValue::Int(index);
+                from = index - 1;
+            }
+        },
+        kAccPublic);
+
+    // AOSP 4.4 ROM line 1585.
+    builder.StaticMethod(
+        "valueOf", "([C)Ljava/lang/String;",
+        [](IntrinsicContext& c) {
+            const auto array = IntrinsicCall(c).NonNullRef(0, "chars");
+            const auto length = c.vm.Model().ArrayLength(array);
+            const auto object = c.vm.NewIntrinsicInstance("Ljava/lang/String;");
+            const auto root = c.vm.ProtectReferences(std::array{object});
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Ljava/lang/String;"),
+                                                               "<init>", "([CII)V");
+            const auto result = c.vm.Call(*target, std::vector<VmValue>{VmValue::Ref(object), c.arguments[0],
+                                                                        VmValue::Int(0), VmValue::Int(length)});
+            if (result.exception.IsValid())
+                throw VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+            return VmValue::Ref(object);
+        },
+        kAccPublic);
+
     auto result = std::move(builder).Build();
     return result;
 }

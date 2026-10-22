@@ -509,6 +509,12 @@ add_test(
 set_tests_properties(tools.api19_skeleton_self_test PROPERTIES LABELS tools)
 
 add_test(
+    NAME tools.framework_contract_self_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/framework_contract.py --self-test
+)
+set_tests_properties(tools.framework_contract_self_test PROPERTIES LABELS tools)
+
+add_test(
     NAME tools.title_preflight_self_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/title_preflight.py --self-test
 )

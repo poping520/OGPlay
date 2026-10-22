@@ -18,6 +18,34 @@ def pack(records):
   name=owner.encode();body=json.dumps(record,ensure_ascii=True,separators=(',',':'),allow_nan=False).encode()
   index+=struct.pack('<H',len(name))+name+struct.pack('<II',len(payload),len(body));payload+=body
  return bytes(index+payload)
+def unpack(data):
+ """Read the OGSK19-v1 index and own-member records (skeleton_surface.cpp)."""
+ if len(data)<12 or data[:8]!=MAGIC:raise ValueError('invalid API19 skeleton header')
+ count=struct.unpack_from('<I',data,8)[0]
+ if count>20000:raise ValueError('invalid API19 skeleton count')
+ cursor=12;index={};previous=''
+ def integer(width):
+  nonlocal cursor
+  if cursor+width>len(data):raise ValueError('truncated API19 skeleton index')
+  value=int.from_bytes(data[cursor:cursor+width],'little');cursor+=width
+  return value
+ for _ in range(count):
+  length=integer(2)
+  if not length or cursor+length>len(data):raise ValueError('invalid skeleton name')
+  name=data[cursor:cursor+length].decode('utf-8');cursor+=length
+  offset,size=integer(4),integer(4)
+  if name<=previous or not name.startswith('L') or not name.endswith(';'):raise ValueError('invalid skeleton ordering/name')
+  previous=name;index[name]=(offset,size)
+ records={};end=cursor
+ for name,(offset,size) in index.items():
+  start=cursor+offset;stop=start+size
+  if stop>len(data):raise ValueError('invalid skeleton record range')
+  record=json.loads(data[start:stop])
+  if not isinstance(record,list) or len(record)!=5:raise ValueError('invalid skeleton record')
+  records[name]=record;end=max(end,stop)
+ if end!=len(data):raise ValueError('trailing skeleton bytes')
+ return records
+
 def clinit_writes(data,code,catalog):
  units=struct.unpack_from('<%dH'%code.insns_size,data,code.insns_offset);pc=0;writes=set()
  while pc<len(units):

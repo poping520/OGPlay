@@ -1243,6 +1243,11 @@ status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --require-full --check-baseline"
 note = "DIAG-8 / DVM-260：独立 C11/Java JNI 探针双后端分组/隔离、预期死亡、只升不降基线及 --require-full，静态覆盖 233/233，仅排除 DestroyJavaVM；双后端及基线各 399/399。数组与 String UTF16 直接借用已验收，MUTF8 保持复制；pending 与 heap capacity 沿用 ADR-0153。"
 
+[tools.framework_contract]
+status = "partial"
+test = "tests/frontend/surface_export_tests.cpp; tools.framework_contract_self_test"
+note = "DIAG-9/WU9-0b：固定 API19 ROM own-member 契约对 intrinsic 做 A1 可覆写性、A2 其余修饰符、B 同族/构造器缺口、C 多余成员、D 层级差分；稳定键基线只降不升。首轮 381/384/274/13/74，30 个 ROM 外私有类排除；E 纯 Java 清单未测，不代表语义或游戏兼容验收。"
+
 [tools.dex_dependency_survey]
 status = "complete"
 test = "tools.dex_dependency_survey_self_test"

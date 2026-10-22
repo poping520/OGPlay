@@ -1,3 +1,4 @@
+#include "ogplay/runtime/integration/java_payload_provider.h"
 #include "boot_dex.h"
 // DexVM stage-1 interpreter conformance over dexasm fixtures.
 // Expected values are recorded with their semantic source: AOSP
@@ -647,5 +648,32 @@ TEST_CASE("DVM-234 idle production root cannot be borrowed for foreign GC cleanu
         vm.ReleaseGuestNativeResources();
         CHECK(cleaned == 1);
         CHECK(vm.GuestNativeResourceCount() == 0);
+    });
+}
+
+TEST_CASE("DVM-260 provider exhaustion still constructs catchable OOME from protected reserve") {
+    WithEachBackend([](InterpreterConfig config) {
+        ogplay::memory::AddressSpace memory;
+        ogplay::core::CapabilityLedger ledger;
+        JavaPayloadLimits limits;
+        limits.committed_limit_bytes = 16384;
+        GuestJavaPayloadProvider provider(memory, ledger, limits);
+        Vm vm(config, {}, {}, {}, &provider);
+        // Keep one normal slab full from the backing policy's perspective.
+        const auto occupied = provider.Allocate(8192);
+        ExpectInt(vm.CallStatic("LPayloadOom;", "caught", "()I"), 1);
+        const auto used = provider.Statistics();
+        CHECK(used.emergency_uses > 0);
+        CHECK(used.emergency_peak_bytes > 0);
+        MESSAGE("OOME_RESERVE peak_bytes=" << used.emergency_peak_bytes << " uses=" << used.emergency_uses);
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        const auto retained = provider.Statistics().emergency_live_bytes;
+        CHECK(retained < used.emergency_peak_bytes);
+        // BootDex class-initialization arrays may remain permanent roots. A
+        // second exception must reuse reclaimed capacity, not accumulate leases.
+        ExpectInt(vm.CallStatic("LPayloadOom;", "caught", "()I"), 1);
+        static_cast<void>(vm.interpreter.CollectGarbage());
+        CHECK(provider.Statistics().emergency_live_bytes == retained);
+        provider.Release(occupied);
     });
 }

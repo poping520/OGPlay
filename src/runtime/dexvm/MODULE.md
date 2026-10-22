@@ -79,7 +79,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - GC 是分配驱动的精确 STW mark-sweep；roots 包括 frame、结果/异常、static、JNI、Thread、
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循
-  API 19；异常构造有 64 KiB 应急区。
+  API 19；异常构造有 64 KiB 应急区。allocation context 在 VM 执行锁内显式查询 emergency
+  状态，primitive store 将该事实传给 provider，允许使用预提交 backing 应急池；不靠
+  全局/TLS 推断 owner。provider 应急池耗尽明确失败，不再次构造 OOME。
 - guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
   资源清理保存并 root VM 原异常/结果，通过 NativeMethodBridge 清理 scope 隔离 native

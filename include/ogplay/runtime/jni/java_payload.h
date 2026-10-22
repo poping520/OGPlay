@@ -131,9 +131,15 @@ private:
     friend class JavaPayloadProvider;
 };
 
+class JavaPayloadEmergencyExhausted final : public std::runtime_error {
+public:
+    JavaPayloadEmergencyExhausted() : std::runtime_error("Java payload emergency reserve exhausted") {}
+};
+
 struct JavaPayloadStatistics final {
     std::uint64_t allocated_bytes{}, committed_bytes{}, slab_free_bytes{};
     std::uint64_t pinned_bytes{}, pin_count{}, allocation_count{}, peak_live_bytes{}, allocation_failures{};
+    std::uint64_t emergency_uses{}, emergency_live_bytes{}, emergency_peak_bytes{}, emergency_reserved_bytes{};
 };
 
 // Interface only: no AddressSpace implementation, VM or platform dependencies.
@@ -142,6 +148,17 @@ class JavaPayloadProvider {
 public:
     virtual ~JavaPayloadProvider() = default;
     [[nodiscard]] virtual JavaPayloadHandle Allocate(std::size_t bytes) = 0;
+
+    [[nodiscard]] virtual JavaPayloadHandle Allocate(std::size_t bytes, bool emergency) {
+        static_cast<void>(emergency);
+        return Allocate(bytes);
+    }
+
+    // Physical backing policy only; VM remains the sole logical charge ledger.
+    virtual void ConfigureHeap(std::uint64_t maximum, std::uint64_t growth) {
+        static_cast<void>(maximum);
+        static_cast<void>(growth);
+    }
     virtual void Release(const JavaPayloadHandle& handle) = 0;
     [[nodiscard]] virtual JavaPayloadBorrow Pin(const JavaPayloadHandle& handle) = 0;
     virtual void Unpin(const JavaPayloadBorrow& borrow) = 0;

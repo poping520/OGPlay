@@ -336,8 +336,23 @@ primitive store；String/NIO 尚未迁移。小块 8-byte 对齐按尺寸分级�
 大块独立映射。映射按宿主 backing 粒度对齐，按 guest 页退役，不破坏邻页。
 全局最多缓存 64 个空 slab（默认至多 1 MiB），可原址重分给其他级别；超出上限才解除
 映射。cache/级别切换在分配元数据准备后提交，失败不改变已提交计数或空闲槽状态。
-零长块也占独立地址/身份，地址复用更换 generation。provider 仅限 committed/VAS，逻辑
-堆目标/增长/emergency 全归 VM Reserve。model 的显式 allocation context 在 store 锁外
+零长块也占独立地址/身份，地址复用更换 generation。provider 只管理 committed/VAS，逻辑
+堆目标/增长/emergency 费用全归 VM Reserve。VM 装配时经 store.ConfigurePayloadHeap 显式
+传 maximum/growth（0 < growth ≤ maximum ≤ 4 GiB），不另设生产堆目标或 512 MiB 提交限额。
+普通提交上界推导为 min(VAS − E, F × maximum + C × S)，用饱和运算避免溢出：
+S=slab bytes，C=空 slab 缓存上限，E=按宿主页对齐的 emergency reserve，
+F=max(3, ceil(S/32))。3 覆盖级别取整、尾部及大块页对齐；ceil(S/32) 还覆盖一个 slab
+仅存活一个零长数组（VM header 收费 32 B）的最坏稀疏碎片。默认 F=512，结果饱和到
+可映射 VAS；这只是 backing 安全上界，不预提交该空间、不增加逻辑堆预算。maximum
+而非当前 growth 用于计算，以允许 clearGrowthLimit；guest 映射/VAS 或 OS 提交仍可能先失败。
+夹具可显式覆写 committed 限额以验证这一失败路径，生产默认无独立覆写。
+
+ConfigureHeap 提前提交 E=256 KiB 独立受保护映射，只允许 allocation context 显式传来的
+VM emergency 状态使用；普通分配始终不可借用。先尝试普通路径，bad_alloc 时应急分配
+才回退到预留池。预留按 8 B 对齐分割、合并归还范围，普通 GC 释放异常/栈数组时补回；
+不得因离开 emergency 强行释放仍存活的对象，静态根所持数组继续计费/保活。
+VM Reserve 仍是唯一账本。预留也耗尽时抛明确 JavaPayloadEmergencyExhausted，绕过
+可再次构造 OOME 的 bad_alloc/heap_budget_exhausted 转换，不递归制造异常。model 的显式 allocation context 在 store 锁外
 持 VM 执行锁完成收费事务；New/import 单次收费，失败完整回滚，provider 提交/地址不足
 映射 OOME，沿既有异常 emergency reserve 构造 throwable。
 
@@ -350,7 +365,8 @@ provider 保护映射并记录修改/restore 拒绝；AddressSpace 与 ledger �
 view 保活 backing、阻止 Release，每元素不经全局内存锁。guest HB/CPU quiescence 合同不变。
 Stop 输出结构化 `runtime.java_payload` 聚合：kind/长度分桶计数、峰值 live、committed、
 slab free、分配失败次数及各尺寸级别的 slab/总槽/活跃槽/累计分配数；不输出逐对象明细，
-元素热路径不参与采样。
+元素热路径不参与采样。emergency_reserved_bytes 纳入 committed，单列 emergency_uses、
+emergency_live_bytes、emergency_peak_bytes；slab_free 仍只统计普通 slab，不包含预留池。
 
 ADR-0153：process 给 guest JNI bindings 注入结构化 logger，warning ledger 按真实槽/线程/
 异常类去重；普通 Java 重入不预清 JNI pending。VM 类初始化 post-clinit source 在执行锁内

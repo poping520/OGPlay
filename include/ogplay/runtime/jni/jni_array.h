@@ -41,6 +41,7 @@ struct JniArrayAllocationContext final {
     // The returned action rolls back an uncommitted charge while enter is held.
     std::function<std::function<void()>(std::uint64_t)> reserve;
     std::function<void(std::uint64_t)> refund;
+    std::function<bool()> emergency;
 };
 
 struct JniArrayAllocationStatistics final {
@@ -94,6 +95,7 @@ public:
 
     // Context changes only while callers are quiescent; callbacks run outside store locks.
     void SetAllocationContext(JniArrayAllocationContext context);
+    void ConfigurePayloadHeap(std::uint64_t maximum, std::uint64_t growth);
     void EnsureCharged(JniObjectIdentity array);
     void VisitAccessRoots(const std::function<void(JniObjectIdentity)>& visit) const;
     [[nodiscard]] JniPrimitiveArrayView View(JniObjectIdentity array) const;

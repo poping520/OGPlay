@@ -43,6 +43,7 @@ public:
         std::shared_ptr<payload_detail::Block> block;
         Arena* arena{};
         std::size_t slot{}, pins{};
+        std::uint64_t emergency_bytes{};
     };
 
     Impl(memory::AddressSpace& space, core::CapabilityLedger& ledger, JavaPayloadLimits limits)
@@ -50,6 +51,7 @@ public:
         if (limits.slab_bytes < space.BackingPageSize() || limits.slab_bytes % space.BackingPageSize() ||
             (limits.slab_bytes & (limits.slab_bytes - 1)) != 0)
             throw std::invalid_argument("invalid Java payload limits");
+        committed_limit = limits.committed_limit_bytes.value_or(kPayloadBounds.Size());
         const auto maximum = limits.slab_bytes / 2;
         for (std::uint64_t size = 8; size <= std::min<std::uint64_t>(128, maximum); size += 8)
             classes.push_back(SizeClass{size});
@@ -74,6 +76,7 @@ public:
         }
         for (const auto& arena : arenas)
             space.UnmapProtected(owner, {arena.address, arena.bytes});
+        if (emergency_base) space.UnmapProtected(owner, {emergency_address, stats.emergency_reserved_bytes});
     }
 
     void AddAvailable(Arena& arena) noexcept {
@@ -126,8 +129,8 @@ public:
 
     Arena& NewArena(std::size_t class_index, std::uint64_t physical) {
         const auto bytes = class_index == kLarge ? Align(physical, space.BackingPageSize()) : limits.slab_bytes;
-        if (bytes > limits.committed_limit_bytes || stats.committed_bytes > limits.committed_limit_bytes - bytes)
-            throw std::bad_alloc();
+        const auto normal_committed = stats.committed_bytes - stats.emergency_reserved_bytes;
+        if (bytes > committed_limit || normal_committed > committed_limit - bytes) throw std::bad_alloc();
         auto position = arenas.emplace(arenas.end());
         auto& arena = *position;
         arena.position = position;
@@ -165,6 +168,15 @@ public:
     std::map<std::uint64_t, std::uint64_t> borrows;
     std::uint64_t next_generation{}, next_borrow{};
     JavaPayloadStatistics stats;
+    std::uint64_t committed_limit{kPayloadBounds.Size()};
+    memory::GuestAddress emergency_address;
+    std::byte* emergency_base{};
+
+    struct FreeRange {
+        std::uint64_t offset{}, bytes{};
+    };
+
+    std::vector<FreeRange> emergency_free;
     mutable std::mutex mutex;
 };
 
@@ -258,6 +270,90 @@ JavaPayloadHandle GuestJavaPayloadProvider::Allocate(std::size_t bytes) {
     }
 }
 
+std::uint64_t GuestJavaPayloadProvider::DerivedCommittedLimit(std::uint64_t maximum, std::uint64_t growth,
+                                                              std::uint64_t slab_bytes,
+                                                              std::uint64_t backing_page_bytes,
+                                                              std::size_t cached_slabs) {
+    if (!growth || growth > maximum || maximum > memory::kGuestAddressSpaceSize || slab_bytes < backing_page_bytes ||
+        !backing_page_bytes || (slab_bytes & (slab_bytes - 1)) || (backing_page_bytes & (backing_page_bytes - 1)))
+        throw std::invalid_argument("invalid VM payload heap limits");
+    // A nonempty slab can retain only one zero-length object (VM header charge
+    // 32 B). This conservative bound covers adversarial fragmentation too, not
+    // merely 12.5% size rounding or a densely packed allocation trace.
+    const auto factor = std::max<std::uint64_t>(3, (slab_bytes + 31) / 32);
+    const auto capacity = kPayloadBounds.Size();
+    if (maximum > capacity / factor || cached_slabs > capacity / slab_bytes) return capacity;
+    const auto occupied = maximum * factor;
+    const auto cache = static_cast<std::uint64_t>(cached_slabs) * slab_bytes;
+    return occupied > capacity - cache ? capacity : occupied + cache;
+}
+
+void GuestJavaPayloadProvider::ConfigureHeap(std::uint64_t maximum, std::uint64_t growth) {
+    std::scoped_lock lock(impl_->mutex);
+    const auto derived = DerivedCommittedLimit(maximum, growth, impl_->limits.slab_bytes,
+                                               impl_->space.BackingPageSize(), impl_->limits.empty_slab_cache_limit);
+    const auto reserve = Align(impl_->limits.emergency_reserve_bytes, impl_->space.BackingPageSize());
+    if (!reserve || reserve >= kPayloadBounds.Size()) throw std::invalid_argument("invalid payload emergency reserve");
+    if (!impl_->emergency_base) {
+        std::vector<Impl::FreeRange> free;
+        free.reserve(static_cast<std::size_t>(reserve / 8 + 1));
+        free.push_back({0, reserve});
+        const auto address = impl_->space.MapProtectedAnywhere(impl_->owner, kPayloadBounds, reserve);
+        std::byte* base;
+        try {
+            base = impl_->space.ResolveProtected(impl_->owner, {address, reserve});
+        } catch (...) {
+            impl_->space.UnmapProtected(impl_->owner, {address, reserve});
+            throw;
+        }
+        impl_->emergency_free = std::move(free);
+        impl_->emergency_address = address;
+        impl_->emergency_base = base;
+        impl_->stats.emergency_reserved_bytes = reserve;
+        impl_->stats.committed_bytes += reserve;
+    }
+    impl_->committed_limit =
+        impl_->limits.committed_limit_bytes.value_or(std::min(derived, kPayloadBounds.Size() - reserve));
+}
+
+JavaPayloadHandle GuestJavaPayloadProvider::Allocate(std::size_t bytes, bool emergency) {
+    try {
+        return Allocate(bytes);
+    } catch (const std::bad_alloc&) {
+        if (!emergency) throw;
+    }
+    std::scoped_lock lock(impl_->mutex);
+    try {
+        const auto physical = Align(std::max<std::uint64_t>(1, bytes), 8);
+        auto found = std::find_if(impl_->emergency_free.begin(), impl_->emergency_free.end(),
+                                  [physical](const auto& range) { return range.bytes >= physical; });
+        if (!impl_->emergency_base || found == impl_->emergency_free.end()) throw JavaPayloadEmergencyExhausted();
+        auto block = std::make_shared<payload_detail::Block>();
+        block->owner_lifetime = impl_;
+        block->owner = impl_.get();
+        block->bytes = bytes;
+        block->generation = ++impl_->next_generation;
+        block->address = impl_->emergency_address.Add(found->offset);
+        block->base = impl_->emergency_base + found->offset;
+        impl_->blocks.emplace(block->generation,
+                              Impl::Allocation{block, nullptr, static_cast<std::size_t>(found->offset), 0, physical});
+        found->offset += physical;
+        found->bytes -= physical;
+        if (!found->bytes) impl_->emergency_free.erase(found);
+        std::memset(block->base, 0, static_cast<std::size_t>(physical));
+        impl_->stats.allocated_bytes += bytes;
+        ++impl_->stats.allocation_count;
+        impl_->stats.peak_live_bytes = std::max(impl_->stats.peak_live_bytes, impl_->stats.allocated_bytes);
+        ++impl_->stats.emergency_uses;
+        impl_->stats.emergency_live_bytes += physical;
+        impl_->stats.emergency_peak_bytes =
+            std::max(impl_->stats.emergency_peak_bytes, impl_->stats.emergency_live_bytes);
+        return MakeHandle(std::move(block));
+    } catch (const std::bad_alloc&) {
+        throw JavaPayloadEmergencyExhausted();
+    }
+}
+
 void GuestJavaPayloadProvider::Release(const JavaPayloadHandle& handle) {
     std::scoped_lock lock(impl_->mutex);
     const auto& block = Block(handle);
@@ -265,6 +361,29 @@ void GuestJavaPayloadProvider::Release(const JavaPayloadHandle& handle) {
     if (entry == impl_->blocks.end() || entry->second.pins || block->accessors.load(std::memory_order_relaxed) != 0)
         throw std::invalid_argument("payload is pinned, accessed or retired");
     const auto allocation = entry->second;
+    if (allocation.emergency_bytes) {
+        const auto offset = static_cast<std::uint64_t>(allocation.slot);
+        auto next = std::lower_bound(impl_->emergency_free.begin(), impl_->emergency_free.end(), offset,
+                                     [](const auto& range, auto value) { return range.offset < value; });
+        next = impl_->emergency_free.insert(next, {offset, allocation.emergency_bytes});
+        if (next != impl_->emergency_free.begin()) {
+            auto previous = next - 1;
+            if (previous->offset + previous->bytes == next->offset) {
+                previous->bytes += next->bytes;
+                next = impl_->emergency_free.erase(next) - 1;
+            }
+        }
+        if (next + 1 != impl_->emergency_free.end() && next->offset + next->bytes == (next + 1)->offset) {
+            next->bytes += (next + 1)->bytes;
+            impl_->emergency_free.erase(next + 1);
+        }
+        impl_->stats.emergency_live_bytes -= allocation.emergency_bytes;
+        impl_->stats.allocated_bytes -= block->bytes;
+        --impl_->stats.allocation_count;
+        block->alive.store(false, std::memory_order_relaxed);
+        impl_->blocks.erase(entry);
+        return;
+    }
     auto& arena = *allocation.arena;
     const auto class_index = arena.class_index;
     const bool unmap =

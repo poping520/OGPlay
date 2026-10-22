@@ -60,12 +60,10 @@ void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
     CHECK(outcome.value.AsInt() == expected);
 }
 
-Vm::Vm(const InterpreterConfig config,
-            const JavaObjectModelConfig model_config,
-            std::vector<IntrinsicClassDecl> extra_catalog,
-            const std::string& extra_fixture)
-    : model(strings, arrays, model_config),
-      linker(),
+Vm::Vm(const InterpreterConfig config, const JavaObjectModelConfig model_config,
+       std::vector<IntrinsicClassDecl> extra_catalog, const std::string& extra_fixture,
+       JavaPayloadProvider* payload_provider)
+    : arrays(payload_provider ? *payload_provider : arrays_payload), model(strings, arrays, model_config), linker(),
       interpreter(
           [this, &extra_catalog, &extra_fixture]() -> DexClassLinker& {
               auto catalog = CoreIntrinsicCatalog();

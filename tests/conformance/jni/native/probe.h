@@ -7,3 +7,4 @@ jstring run_call(JNIEnv *env, const char *id);
 int register_BoundaryStatic(JNIEnv *env);
 int register_BoundaryInstance(JNIEnv *env);
 jstring run_version(JNIEnv *env, const char *id);
+jstring expect_exception(JNIEnv *env, const char *type);

@@ -18,7 +18,7 @@ public class Parent {
     public float valueFloat() { return 2.5e22f; }
     public double valueDouble() { return 7.503e100; }
     public Object valueObject() { return "muffins"; }
-    public void valueVoid() { Main.touched = 42; }
+    public void valueVoid() { CallCases.touched = 42; }
     public boolean takeOneOfEach(double a, float b, long c, int d, char e, short f, byte g,
                                  boolean h, String i) {
         return a == 0 && b == 1 && c == 2 && d == 3 && e == 4 && f == 5 && g == 6 && h &&

@@ -13,7 +13,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     loads++;
     return JNI_VERSION_1_4;
 }
-JNIEXPORT jint JNICALL Java_probe_Main_loadCount14(JNIEnv *env, jclass k) {
+JNIEXPORT jint JNICALL Java_probe_LibraryCases_loadCount14(JNIEnv *env, jclass k) {
     (void)env;
     (void)k;
     return loads;

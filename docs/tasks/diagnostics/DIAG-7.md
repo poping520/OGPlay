@@ -398,3 +398,5 @@ VMRuntime 的利用率、growth limit、native allocation 记账共用 JavaObjec
 ## 剩余
 
 - libcore/JUnit 测试、src-ex 二级 dex（068/071）、多 dex 不在本单。
+
+- 070-nio-buffer 已由 DVM-260 阶段 5 修复，双后端 pass。

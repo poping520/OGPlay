@@ -1554,3 +1554,36 @@ TEST_CASE("DVM-260 guest JNI provider failure publishes OOME and rolls back") {
     CHECK(provider.Statistics().committed_bytes == 0);
     f.arrays = JniPrimitiveArrayStore{f.arrays_payload};
 }
+
+TEST_CASE("DVM-260 guest JNI direct address aliases the managed array payload") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture fixture(true);
+    dexvm::JavaObjectModel model(fixture.strings, fixture.arrays);
+    fixture.nio.SetObjectModel(&model);
+    REQUIRE(fixture.java_vm.AttachCurrentThread(260U, kJniVersion1_6).status == JniStatus::ok);
+    fixture.Seal();
+    const auto reference = fixture.CallEnvironment("NewDirectByteBuffer", 260U, fixture.output.Value(), 16U, 0U);
+    REQUIRE(reference != 0);
+    const auto owner = fixture.environment.ResolveObjectForHle(260U, JniReference{reference});
+    REQUIRE(owner);
+    CHECK_FALSE(fixture.nio.Snapshot(*owner).array.IsValid());
+    fixture.nio.CreateDirect(*owner, 16, dexvm::DexClassId(0));
+    const auto state = fixture.nio.Snapshot(*owner);
+    REQUIRE(state.array.IsValid());
+    const auto address =
+        ogplay::memory::GuestAddress(fixture.CallEnvironment("GetDirectBufferAddress", 260U, reference));
+    CHECK(address == model.PrimitiveArrayAddress(state.array));
+    CHECK(fixture.CallEnvironment("GetDirectBufferCapacity", 260U, reference) == 16);
+    model.SetPrimitiveElement(state.array, 0, 0xab);
+    CHECK(fixture.memory.Read8(address) == 0xab);
+    CHECK(fixture.nio.Get(*owner, 0) == 0xab);
+    fixture.nio.Put(*owner, 1, 0xcd);
+    CHECK(fixture.memory.Read8(address.Add(1)) == 0xcd);
+    CHECK(model.GetPrimitiveElement(state.array, 1) == 0xcd);
+    fixture.memory.Write8(address.Add(2), 0xef);
+    CHECK(model.GetPrimitiveElement(state.array, 2) == 0xef);
+    CHECK(fixture.nio.Get(*owner, 2) == 0xef);
+    fixture.nio.Sweep(*owner);
+    CHECK(model.GetPrimitiveElement(state.array, 2) == 0xef);
+    fixture.nio.SetObjectModel(nullptr);
+}

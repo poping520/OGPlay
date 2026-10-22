@@ -60,7 +60,7 @@ public:
     void CreateHeap(JniObjectIdentity owner, VmObjectRef array,
                     std::int32_t array_offset, std::int32_t capacity,
                     NioElementKind element);
-    void CreateDirect(JniObjectIdentity owner, std::int32_t capacity);
+    void CreateDirect(JniObjectIdentity owner, std::int32_t capacity, DexClassId byte_array_class);
     void WrapDirect(JniObjectIdentity owner, memory::GuestAddress address,
                     std::int32_t capacity);
     void CreateView(JniObjectIdentity owner, JniObjectIdentity source,

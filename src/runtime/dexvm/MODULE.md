@@ -189,7 +189,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - API 19 初始 property 固定提供 guest `java.home`、`java.io.tmpdir` 与 `user.dir`；Android
   bridge 在执行任何 Java 代码前以 VFS working directory 覆盖 `user.dir`，禁止读取宿主 cwd。
 - `NioRuntime` 以对象 identity 保存 Buffer backing/cursor；heap/direct/view 共用 storage，backing
-  array 是 GC 强边。direct memory 只经强类型 guest-address 接口，临时映射始终释放。
+  array 是 GC 强边。allocateDirect 创建真实 byte[]，容量计入 Java 堆；direct 地址与数组 payload
+  相同，GC 是唯一回收方，任一视图或单独数组引用都可保活。JNI WrapDirect 仍非拥有、无数组。
+  direct memory 只经强类型 guest-address 接口，临时映射始终释放。
 - `UnsafeRuntime` 使用逻辑字段令牌；访问校验类型/对齐/边界，CAS 要求执行锁，引用写入保留
   GC tag/assignability。令牌不是地址或 GC root。
 - guest ICU 固定为 ICU4C 51 与 `/system/usr/icu/icudt51l.dat`；令牌在 guest SO，teardown 关闭。

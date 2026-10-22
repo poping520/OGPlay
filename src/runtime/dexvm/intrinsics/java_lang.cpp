@@ -336,16 +336,44 @@ namespace ogplay::runtime::dexvm::intrinsics {
         {
             auto b = IntrinsicClassBuilder::Class("Ldalvik/system/VMRuntime;");
             for (const auto& [name, signature] : std::array{
-                std::pair{"addressOf", "(Ljava/lang/Object;)J"},
                 std::pair{"bootClassPath", "()Ljava/lang/String;"},
                 std::pair{"classPath", "()Ljava/lang/String;"},
-                std::pair{"newNonMovableArray", "(Ljava/lang/Class;I)Ljava/lang/Object;"},
                 std::pair{"preloadDexCaches", "()V"},
                 std::pair{"properties", "()[Ljava/lang/String;"},
                 std::pair{"setTargetSdkVersion", "(I)V"},
                 std::pair{"vmLibrary", "()Ljava/lang/String;"},
                 std::pair{"vmVersion", "()Ljava/lang/String;"}})
                 b.UnimplementedVirtual(name, signature, kAccPublic | kAccNative);
+            b.VirtualMethod(
+                "newNonMovableArray", "(Ljava/lang/Class;I)Ljava/lang/Object;",
+                [](IntrinsicContext& c) {
+                    const auto element = c.arguments[0].ref;
+                    const auto length = c.arguments[1].AsInt();
+                    if (!element.IsValid())
+                        throw VmJavaThrow{"Ljava/lang/NullPointerException;", "elementClass == null"};
+                    if (length < 0)
+                        throw VmJavaThrow{"Ljava/lang/NegativeArraySizeException;", "negative array length"};
+                    const auto element_class = c.vm.Model().ClassOfClassObject(element);
+                    const auto descriptor = c.vm.Linker().Class(element_class).descriptor;
+                    return VmValue::Ref(BuildReflectArray(c.vm, descriptor, std::array{length}));
+                },
+                kAccPublic | kAccNative);
+            b.VirtualMethod(
+                "addressOf", "(Ljava/lang/Object;)J",
+                [](IntrinsicContext& c) {
+                    const auto array = c.arguments[0].ref;
+                    if (!array.IsValid() || (c.vm.Model().Kind(array) != VmObjectKind::primitive_array &&
+                                             c.vm.Model().Kind(array) != VmObjectKind::object_array))
+                        throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an array"};
+                    if (c.vm.Model().Kind(array) == VmObjectKind::object_array) {
+                        if (auto* ledger = c.vm.Ledger())
+                            ledger->RecordUnimplemented("dexvm.runtime.address_of_object_array", 0);
+                        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "object arrays have no guest payload"};
+                    }
+                    return VmValue::Long(static_cast<std::int64_t>(c.vm.Model().PrimitiveArrayAddress(array).Value()));
+                },
+                kAccPublic | kAccNative);
             b.VirtualMethod("getTargetHeapUtilization", "()F", [](IntrinsicContext& c) { return VmValue::Float(c.vm.Model().TargetHeapUtilization()); }, kAccPublic | kAccNative);
             b.UnimplementedDirect("nativeSetTargetHeapConcurrentStart", "(I)I", kAccPrivate | kAccNative);
             b.UnimplementedDirect("nativeSetTargetHeapMinFree", "(I)I", kAccPrivate | kAccNative);

@@ -99,6 +99,7 @@ primitive store 必须显式注入 provider：生产使用 integration 的 guest
 headless 显式选择 `HostCopyJavaPayloadProvider`（Address 明确失败）。entry 只保存 kind、
 length、handle 和长期 typed view；guest block 是唯一权威字节，Region/clone/arraycopy/fill
 从同一 view 批量搬运，先校验完整区间，CopyWithin 用 memmove 处理重叠。
+Address 只查询 payload guest 地址、不 pin，调用方须维持数组可达；host-copy 明确失败。
 Elements/Critical 直接返回 payload guest 地址、isCopy=FALSE；零长也返回有效地址。
 pin 计数归 store，以数组身份计数、两类入口共用；重复获取同址并加一，不绑定线程，detach 不清除。
 Release 忽略指针和 access kind，COMMIT 无操作，其余 mode 仅减一，不回滚写入；无配对返回诊断结果，

@@ -59,7 +59,10 @@
 - System.gc 显式请求普通 STW；runFinalization 等待当前 finalizer 批次。VMRuntime 普通单例、
   参数校验与已退役 external-allocation 协议执行原版 Java；利用率与 native allocation/free
   更新 JavaObjectModel 的真实配置/计数。无 JIT 的 start/disable 与 4.4 无 JIT 构建相同。
-  addressOf、newNonMovableArray、SDK 重配、缓存预加载/VM 标识查询等未接通 native 明确失败。
+  newNonMovableArray 走统一基本类型/对象数组分配；null 抛 NPE、负长度抛 NegativeArraySizeException。
+  addressOf 不检查 non-movable 标记，基本类型数组返回 payload 的 32 位 guest 地址并零扩展为 long；
+  非数组抛 IllegalArgumentException，对象数组无 guest payload，记账并抛 UnsupportedOperationException。
+  SDK 重配、缓存预加载/VM 标识查询等未接通 native 明确失败。
 - System 属性共用 per-VM 表，默认只发布三个 separator，参数按 Java 校验；getenv 只读取
   注入的 guest Bionic environ，无参版本返回原版不可修改快照。getSecurityManager 固定 null，
   不安装宿主权限系统；nanoTime 只用统一 Clock。Class.desiredAssertionStatus 默认 false，仅独立 run-dex 的 `--enable-assertions` 全局开启（无逐类规则）；ClassLoader.setDefaultAssertionStatus 按 API19 原版为空操作。

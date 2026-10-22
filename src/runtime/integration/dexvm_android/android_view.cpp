@@ -133,6 +133,36 @@ Decl Declare_android_util_DisplayMetrics(const Context& context) {
     return std::move(builder).Build();
 }
 
+Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/display/DisplayManager;", "Ljava/lang/Object;",
+                                                    {}, dx::kAccPublic | dx::kAccFinal);
+    const auto owner =
+        builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
+    builder.Constructor("(Landroid/content/Context;)V", [owner](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall(call).SetRef(owner, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getDisplay", "(I)Landroid/view/Display;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(call.arguments[0].AsInt() == 0
+                                    ? Singleton(call, context, "display", "Landroid/view/Display;")
+                                    : dx::VmObjectRef{});
+    });
+    const auto displays = [context](dx::IntrinsicContext& call) {
+        const bool all = call.arguments.empty() || !call.arguments[0].ref.IsValid();
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/Display;");
+        const auto array = call.vm.Model().NewObjectArray(call.vm.Linker().ResolveDescriptor("[Landroid/view/Display;"),
+                                                          type, all ? 1 : 0);
+        const auto roots = call.vm.ProtectReferences(std::array{array});
+        if (all)
+            call.vm.Model().SetObjectElement(array, 0, Singleton(call, context, "display", "Landroid/view/Display;"));
+        return dx::VmValue::Ref(array);
+    };
+    builder.VirtualMethod("getDisplays", "()[Landroid/view/Display;", displays);
+    builder.VirtualMethod("getDisplays", "(Ljava/lang/String;)[Landroid/view/Display;", displays);
+    // The sole managed display is not a presentation/external display.
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_view_Display(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Display;", "Ljava/lang/Object;");
     builder.FinalMethod("getWidth", "()I",

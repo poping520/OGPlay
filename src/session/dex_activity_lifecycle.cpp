@@ -4,6 +4,7 @@
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/debug/stall_diagnostics.h"
 
+#include <array>
 #include <exception>
 #include <algorithm>
 #include <limits>
@@ -142,6 +143,24 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (!java_class.has_value()) {
             Fail("Application class is not linked: " + application_descriptor);
         }
+        const auto base_context = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        const auto base_root = vm.ProtectReferences(std::array{base_context});
+        const auto context_class = vm.Model().ObjectClass(base_context);
+        const auto cache_method = linker.FindVtableIndex(context_class, "getCacheDir", "()Ljava/io/File;");
+        if (!cache_method) Fail("Context has no cache directory method");
+        const auto cache =
+            vm.Call(linker.Class(context_class).vtable[*cache_method], std::array{dx::VmValue::Ref(base_context)});
+        RequireOutcome(vm, cache, "application cache directory");
+        if (cache.value.ref.IsValid()) {
+            const auto cache_root = vm.ProtectReferences(std::array{cache.value.ref});
+            const auto file_class = vm.Model().ObjectClass(cache.value.ref);
+            const auto path_method = linker.FindVtableIndex(file_class, "getAbsolutePath", "()Ljava/lang/String;");
+            if (!path_method) Fail("File has no absolute path method");
+            const auto path =
+                vm.Call(linker.Class(file_class).vtable[*path_method], std::array{dx::VmValue::Ref(cache.value.ref)});
+            RequireOutcome(vm, path, "application cache path");
+            static_cast<void>(vm.SetSystemProperty("java.io.tmpdir", vm.StringUtf8(path.value.ref)));
+        }
         RequireOutcome(vm, vm.EnsureClassInitialized(*java_class),
                        "Application <clinit>");
         const auto init = linker.FindDirectMethod(*java_class, "<init>", "()V");
@@ -151,8 +170,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         const auto application = vm.Model().NewInstance(
             *java_class, linker.Class(*java_class).instance_slots);
-        const auto base_context =
-                vm.NewIntrinsicInstance("Landroid/content/Context;");
         context->application = application;
         context->application_base_context = base_context;
         try {

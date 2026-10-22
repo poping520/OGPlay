@@ -527,8 +527,8 @@ public:
     // Per-VM guest java.lang.System properties. These never consult the host
     // process environment and are shared by System and wrapper helpers such
     // as Boolean.getBoolean/Integer.getInteger/Long.getLong.
-    [[nodiscard]] std::optional<std::string> GetSystemProperty(
-        std::string_view key) const;
+    [[nodiscard]] std::optional<std::string> GetSystemProperty(std::string_view key);
+    [[nodiscard]] VmObjectRef SystemProperties();
     [[nodiscard]] std::optional<std::string> SetSystemProperty(
         std::string key, std::string value);
 

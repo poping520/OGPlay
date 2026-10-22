@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/platform_tables.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from android_content_BroadcastReceiver.cpp ----
@@ -1718,81 +1719,40 @@ Decl Declare_android_content_Context(const Context &context) {
       "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
       [context, inflater](dx::IntrinsicContext &call) {
         const auto name = call.vm.StringUtf8(call.arguments[0].ref);
-        if (name == "layout_inflater") {
-          dx::IntrinsicCall fields(call);
-          auto value = fields.GetRef(inflater);
-          if (!value.IsValid()) {
-            const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LayoutInflater;");
-            const auto factory = call.vm.Linker().FindDirectMethod(type, "createLocal",
-                "(Landroid/content/Context;)Landroid/view/LayoutInflater;");
-            if (!factory) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "LayoutInflater factory is missing"};
-            const auto result = call.vm.Call(*factory, std::array{dx::VmValue::Ref(call.receiver)});
-            if (result.exception.IsValid()) { call.vm.SetPendingException(result.exception); return dx::VmValue::Ref(dx::VmObjectRef{}); }
-            value = result.value.ref;
-            fields.SetRef(inflater, value);
-          }
-          return dx::VmValue::Ref(value);
+        const auto service = std::ranges::find(dx::kSystemServices, name, &dx::PlatformService::name);
+        if (service == dx::kSystemServices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
+        switch (service->factory) {
+        case dx::ServiceFactory::singleton:
+            return dx::VmValue::Ref(
+                Singleton(call, context, std::string(service->singleton_key), service->descriptor.data()));
+        case dx::ServiceFactory::inflater: {
+            dx::IntrinsicCall fields(call);
+            auto value = fields.GetRef(inflater);
+            if (!value.IsValid()) {
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LayoutInflater;");
+                const auto factory = call.vm.Linker().FindDirectMethod(
+                    type, "createLocal", "(Landroid/content/Context;)Landroid/view/LayoutInflater;");
+                if (!factory)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "LayoutInflater factory is missing"};
+                const auto result = call.vm.Call(*factory, std::array{dx::VmValue::Ref(call.receiver)});
+                if (result.exception.IsValid()) {
+                    call.vm.SetPendingException(result.exception);
+                    return dx::VmValue::Ref(dx::VmObjectRef{});
+                }
+                value = result.value.ref;
+                fields.SetRef(inflater, value);
+            }
+            return dx::VmValue::Ref(value);
         }
-        if (name == "activity") {
-          return dx::VmValue::Ref(ActivityManagerForContext(call, context));
+        case dx::ServiceFactory::activity: return dx::VmValue::Ref(ActivityManagerForContext(call, context));
+        case dx::ServiceFactory::sensor: return dx::VmValue::Ref(SensorManagerForContext(call, context));
+        case dx::ServiceFactory::nfc: return dx::VmValue::Ref(NfcManagerForContext(call, context));
+        case dx::ServiceFactory::notification: return dx::VmValue::Ref(NotificationManagerForContext(call, context));
+        case dx::ServiceFactory::keyguard:
+            return dx::VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/app/KeyguardManager;"));
+        case dx::ServiceFactory::unsupported: break;
         }
-        if (name == "alarm") {
-          return dx::VmValue::Ref(Singleton(
-              call, context, "alarm", "Landroid/app/AlarmManager;"));
-        }
-        if (name == "phone") {
-          return dx::VmValue::Ref(Singleton(
-              call, context, "phone", "Landroid/telephony/TelephonyManager;"));
-        }
-        if (name == "audio") {
-          return dx::VmValue::Ref(Singleton(call, context, "audio",
-                                            "Landroid/media/AudioManager;"));
-        }
-        if (name == "wifi") {
-          return dx::VmValue::Ref(Singleton(call, context, "wifi",
-                                            "Landroid/net/wifi/WifiManager;"));
-        }
-        if (name == "sensor") {
-          return dx::VmValue::Ref(SensorManagerForContext(call, context));
-        }
-        if (name == "nfc") {
-          return dx::VmValue::Ref(NfcManagerForContext(call, context));
-        }
-        if (name == "notification") {
-          return dx::VmValue::Ref(NotificationManagerForContext(call, context));
-        }
-        if (name == "location") {
-          return dx::VmValue::Ref(Singleton(
-              call, context, "location", "Landroid/location/LocationManager;"));
-        }
-        if (name == "connectivity") {
-          return dx::VmValue::Ref(
-              Singleton(call, context, "connectivity",
-                        "Landroid/net/ConnectivityManager;"));
-        }
-        if (name == "input_method") {
-          return dx::VmValue::Ref(
-              Singleton(call, context, "input_method",
-                        "Landroid/view/inputmethod/InputMethodManager;"));
-        }
-        if (name == "window") {
-          return dx::VmValue::Ref(
-              Singleton(call, context, "window_manager",
-                        "Landroid/view/WindowManagerImpl;"));
-        }
-        if (name == "power") {
-          return dx::VmValue::Ref(
-              Singleton(call, context, "power", "Landroid/os/PowerManager;"));
-        }
-        if (name == "vibrator") {
-          return dx::VmValue::Ref(
-              Singleton(call, context, "vibrator", "Landroid/os/Vibrator;"));
-        }
-        if (name == "keyguard") {
-          // API 19 ContextImpl intentionally does not cache this facade.
-          return dx::VmValue::Ref(
-              call.vm.NewIntrinsicInstance("Landroid/app/KeyguardManager;"));
-        }
+        if (call.vm.Ledger()) call.vm.Ledger()->RecordUnimplemented("dexvm.system_service." + name, 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "system service is not provided: " + name};
       });

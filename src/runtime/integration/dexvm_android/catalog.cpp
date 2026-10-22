@@ -15,6 +15,9 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
   services.secure_random = hal::FillSecureRandom;
   if (context == nullptr)
     return services;
+  services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
+      android_intrinsics::InitializeAndroidSystemProperties(vm, context);
+  };
   services.language = context->language;
   services.iso3_language = context->iso3_language;
   services.iso3_country = context->iso3_country;
@@ -127,10 +130,11 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
   std::vector<dx::IntrinsicFieldHandle> bitmap_options;
   auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
   return {
-      std::move(debug_memory_info), std::move(debug),
+      std::move(debug_memory_info),
+      std::move(debug),
       Declare_android_app_NativeActivity(context),
       Declare_android_view_InputQueue(context),
-        Declare_android_view_Surface(context),
+      Declare_android_view_Surface(context),
       Declare_android_graphics_SurfaceTexture(context),
       Declare_android_app_Activity(context),
       Declare_android_app_Notification(context),
@@ -172,7 +176,8 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_database_sqlite_SQLiteGlobal(context),
       Declare_android_graphics_Bitmap_Config(context),
       Declare_android_graphics_Bitmap(context),
-      std::move(options_decl), Declare_android_graphics_BitmapFactory(context, bitmap_options),
+      std::move(options_decl),
+      Declare_android_graphics_BitmapFactory(context, bitmap_options),
       Declare_android_graphics_Canvas(context),
       Declare_android_graphics_Matrix(context),
       Declare_android_graphics_Paint(context),
@@ -231,7 +236,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_os_Handler_Callback(context),
       Declare_android_os_HandlerThread(context),
       Declare_android_os_Looper(context),
-        Declare_android_os_MessageQueue(context),
+      Declare_android_os_MessageQueue(context),
       Declare_android_os_Message(context),
       Declare_android_os_SystemClock(context),
       Declare_android_os_Parcel(context),
@@ -256,6 +261,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_util_Base64(context),
       Declare_android_util_DisplayMetrics(context),
       Declare_android_view_Display(context),
+      Declare_android_hardware_display_DisplayManager(context),
       Declare_android_view_ContextThemeWrapper(context),
       Declare_android_view_LayoutInflater(context),
       Declare_android_view_KeyEvent(context),

@@ -33,7 +33,7 @@
   在 ROM own members 中不存在。ROM 没有对应类的 intrinsic 归“OGPlay 私有类”清单，
   不参与任何偏差类别，也不进入基线类清单。
 - **D 层级**：超类不同或直接接口集合不同；接口顺序不计差异。
-- **E 信息项**：原版为纯 Java 的 intrinsic 类清单**未测**。
+- **独立信息项**：原版为纯 Java 的 intrinsic 类清单**未测**。
   select_rom_java 的纯 Java 准入判定耦合候选集、smali 和调用闭包，没有可直接复用的独立入口。
 
 不推断缺失 own member 的调用可达性，不将 implemented 等同于完整语义支持；
@@ -313,3 +313,61 @@ ZIP 行为用例迁到真实 guest JNI 环境并覆盖双后端资源释放，�
 DVM-211 既有并发用例本次通过，不宣称修复。dalvik 双后端各 85/91，零回归。
 证据 `.local/analysis/wu9-3/`；格式化后构建/测试及 BootDex build/check 通过。
 未提交，未运行游戏或 APK，Windows 与场景门禁未验证。
+
+## WU9-4 E 类平台数据表
+
+状态：完成本单契约及回归门禁；fallback 来源审计缺口见 [DVM-264](../dexvm/DVM-264.md)。
+原来的纯 Java intrinsic 信息项独立保留，不再占用 E 分类；E1=ROM 注册但未提供服务，
+E2=缺失 ROM 属性键，E3=属性常量值/来源规则明显矛盾。
+判据为入库 tools/conformance/api19_platform_tables.json，记录固定 AOSP 源路径和 SHA256，
+检查不依赖 .local；实际为 44 个服务、37 个 initSystemProperties 键。
+E 稳定键为 `E1|@system_services|name|`、`E2/E3|@system_properties|key|`。
+来源以 `source: ...` 导出，声明本身不代替运行验证。
+
+先按原行为建立首轮 E 基线 **28/32/0**，明确为本轮新增类别的预期新增键，旧 A–D 不变；
+最终 **27/0/0**，A–D=0/542/183/13/2。check-baseline 无新增，随后 update-baseline 已收紧。
+新增 display，复用既有 Display；未知服务名返回 null，注册但不支持的 X 仍记账并抛 UOE。
+ICU 已加载时查询 guest 导出，无导出时取 manifest 的 ICU/Unicode/CLDR 独立语义版本。
+两条路径、Application 初始化前的缓存目录改写及其他 DEX 回归均已通过。
+
+仅构建 ogplay-cli、ogplay_tests；改动行/新头文件格式化与 dry-run --Werror 通过，
+格式化后定向 5/5、452 断言通过，os.name 负对照按预期失败并恢复。
+主题基点 94/108、候选 99/113，相同 14 个既有失败，无新增失败或失败断言增加。
+dalvik 双后端各 85/91，回归/新通过/其他变化/oracle migrations 均为 0，未改 dalvik 基线。
+证据 .local/analysis/wu9-4/；未运行游戏场景或真实 APK，未提交。
+首轮 native ICU 导出解析失败的停止记录保留追溯，已由本单最终门禁取代。
+
+### E1 的 X 清单（27）
+
+这些服务尚无可直接复用的完整进程内承载路径；保留明确失败。display 的只读查询只复用
+既有 managed Display，不提供显示监听、虚拟显示或外接显示控制。
+
+| 服务 | 仍需要的能力 |
+| --- | --- |
+| accessibility | 辅助功能状态、节点/事件订阅与分发 |
+| account | 账户存储、认证器与授权流程 |
+| appops | 操作权限策略、审计与 owner 身份，不能一律返回允许 |
+| bluetooth | 蓝牙适配器、设备发现与连接后端 |
+| camera | 相机设备、捕获会话与图像生产者 |
+| captioning | 字幕配置事实源与变更监听 |
+| clipboard | ClipData 所有权、进程剪贴板状态与主剪贴板监听；现有值类不足以承担服务 |
+| consumer_ir | 红外设备、频率能力与发送后端 |
+| country_detector | 国家代码来源、检测策略及监听 |
+| device_policy | 管理员与设备策略来源和执行 |
+| download | 下载任务、持久队列、网络传输及查询/取消；现有 VFS 不等于 DownloadProvider |
+| dropbox | 带时间戳/配额的条目存储与检索 |
+| input | InputManager 设备变更/监听与控制桥；现有 InputDevice 查询不能代替该 manager 协议 |
+| media_router | 媒体路由目录、选择与变更事件 |
+| netpolicy | 网络策略存储、执行与变更源 |
+| print | 打印任务、文档适配器生命周期和输出后端 |
+| search | 搜索元数据、提供者与启动流程 |
+| serial | 串口枚举、权限及 I/O 后端 |
+| servicediscovery | 服务发现/解析/发布及异步事件 |
+| statusbar | 状态栏呈现和通知面板控制 |
+| storage | 卷目录、挂载状态及监听；当前 VFS/StatFs 不提供 Android 卷管理协议 |
+| textservices | 拼写检查会话、服务选择及回调 |
+| uimode | dock/car/night 的进程模式事实源、变更和资源配置联动；固定 Configuration 不能代替控制服务 |
+| usb | USB 设备目录、授权、连接和端点 I/O |
+| user | 用户目录、限制策略及身份切换 |
+| wallpaper | 壁纸存储、绘制生命周期与变更通知 |
+| wifip2p | P2P 发现/组管理/连接及异步事件 |

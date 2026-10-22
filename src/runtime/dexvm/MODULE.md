@@ -309,3 +309,7 @@ builder 与 substring 保持独立复制快照。StringStore 共享 VM allocatio
 创建统一收费一次，导入补未收费项，已有实例 BindString 只增收 payload；失败回滚，sweep
 由 store 退还自身费用并扣除实例剩余费用。String pin 与 UTF8 lease 均为 mark/weak 前强根；
 Chars/Critical 按 String 身份跨线程计数并忽略 release 指针/kind；不增加内存序承诺。
+
+平台默认属性由 platform_tables.h 定义；物化后以单一 live BootDex Properties 为权威，
+VM 持有 GC 根，get/setProperty 与 getProperties 共用对象。CoreIntrinsicServices 提供
+显式来源初始化回调；guest uname、passwd、ICU 与随附元数据为默认属性来源。

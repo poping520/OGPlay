@@ -521,6 +521,7 @@ void Interpreter::VisitRoots(const VmRootVisitor& visitor) {
             visitor(VmObjectRef(linked.static_storage[slot]));
         }
     }
+    visitor(impl_->system_properties_object);
     for (const auto& [_, array] : impl_->enum_constant_arrays) visitor(array);
     impl_->model->VisitPermanentRoots(visitor);
     impl_->class_loaders->VisitRoots(visitor);

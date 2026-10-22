@@ -1,3 +1,4 @@
+#include "ogplay/runtime/dexvm/platform_tables.h"
 #include "ogplay/app/diagnostics.h"
 #include "ogplay/app/host.h"
 #include "ogplay/core/json.h"
@@ -42,6 +43,19 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     writer.Add(root, "classes", writer.Copy(*surface->Root().Member("classes")));
     writer.Add(root, "startup_link_error", writer.Copy(*surface->Root().Member("startup_link_error")));
     writer.Add(root, "native_exports", writer.Copy(native->Root()));
+    const auto tables = writer.Object();
+    const auto services = writer.Object();
+    for (const auto& entry : runtime::dexvm::kSystemServices) {
+        writer.AddString(services, entry.name, entry.Provided() ? "provided" : "unsupported");
+    }
+    writer.Add(tables, "system_services", services);
+    const auto properties = writer.Object();
+    for (const auto& entry : runtime::dexvm::kSystemProperties) {
+        writer.AddString(properties, entry.key,
+                         entry.source.empty() ? std::string(entry.value) : "source: " + std::string(entry.source));
+    }
+    writer.Add(tables, "system_properties", properties);
+    writer.Add(root, "platform_tables", tables);
     return writer.Serialize(root);
 }
 }

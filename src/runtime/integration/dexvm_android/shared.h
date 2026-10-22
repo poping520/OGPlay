@@ -12,6 +12,7 @@ namespace dx = dexvm;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context,
     dx::IntrinsicFieldHandle generation);
 void DismissAndroidDialog(DexVmAndroidContext& context, dx::VmObjectRef dialog);

@@ -24,6 +24,9 @@ CATEGORIES = {
     "B": "同族/构造器缺口",
     "C": "多余成员",
     "D": "层级",
+    "E1": "未提供的注册服务",
+    "E2": "缺失系统属性",
+    "E3": "系统属性来源矛盾",
 }
 E_STATUS = "未测：select_rom_java.py 的纯 Java 准入判定耦合候选集、smali 和调用闭包，无独立可直接复用入口。"
 
@@ -40,7 +43,37 @@ def member_index(rows):
     return result
 
 
-def analyze(surface, rom):
+PLATFORM_TABLES = Path(__file__).with_name("api19_platform_tables.json")
+
+
+def analyze_platform_tables(surface, reference):
+    tables = surface.get("platform_tables")
+    if not isinstance(tables, dict):
+        raise ValueError("missing platform_tables in dump-surface")
+    services, properties = tables["system_services"], tables["system_properties"]
+    if not isinstance(services, dict) or not isinstance(properties, dict):
+        raise ValueError("invalid platform_tables")
+    if any(value not in ("provided", "unsupported") for value in services.values()):
+        raise ValueError("invalid system service status")
+    result = {}
+    for name in reference["system_services"]:
+        if services.get(name) != "provided":
+            result[f"E1|@system_services|{name}|"] = ["ROM registers service; OGPlay does not provide it"]
+    for key, rule in reference["system_properties"].items():
+        if key not in properties:
+            result[f"E2|@system_properties|{key}|"] = ["ROM initSystemProperties key is missing"]
+            continue
+        actual = properties[key]
+        if not isinstance(actual, str):
+            raise ValueError("invalid system property value/source")
+        expected = rule.get("value", "source: " + rule.get("source", ""))
+        # Binding is not represented by this pre-application defaults dump.
+        if actual != expected and not ("fallback" in rule and actual == rule["fallback"]):
+            result[f"E3|@system_properties|{key}|"] = [f"ROM rule {expected!r}, runtime {actual!r}"]
+    return result
+
+
+def analyze(surface, rom, platform_reference=None):
     if surface.get("startup_link_error"):
         raise ValueError("dump-surface startup linking failed: " + surface["startup_link_error"])
     if surface["schema"] != 1 or not surface["classes"]:
@@ -173,6 +206,8 @@ def analyze(surface, rom):
                         )
     if not owners and not missing_rom:
         raise ValueError("no intrinsic classes in surface")
+    if platform_reference is not None:
+        deviations.update(analyze_platform_tables(surface, platform_reference))
     return {
         "deviations": dict(sorted(deviations.items())),
         "intrinsic_classes": sorted(owners),
@@ -244,8 +279,8 @@ def render(result):
         "",
         "## 按包前 15 名",
         "",
-        "| 包 | A1 | A2 | B | C | D | 合计 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 包 | " + " | ".join(CATEGORIES) + " | 合计 |",
+        "| --- | " + " | ".join("---:" for _ in CATEGORIES) + " | ---: |",
     ]
     packages = {}
     for key in rows:
@@ -268,7 +303,7 @@ def render(result):
         text += [f"- `{key}`：" + "; ".join(rows[key]) for key in samples] or ["无。"]
     text += [
         "",
-        "## E 纯 Java intrinsic",
+        "## 纯 Java intrinsic（独立信息项，非 E 类）",
         "",
         result["E"],
         "",
@@ -281,6 +316,21 @@ def render(result):
 
 
 def self_test():
+    reference = {"system_services": {"display": "DISPLAY_SERVICE", "account": "ACCOUNT_SERVICE"},
+                 "system_properties": {"os.name": {"source": "uname.sysname"},
+                                       "java.version": {"value": "0"}, "file.encoding": {"value": "UTF-8"}}}
+    tables = {"platform_tables": {"system_services": {"display": "provided", "account": "unsupported"},
+                                  "system_properties": {"os.name": "source: uname.sysname", "java.version": "17"}}}
+    assert set(analyze_platform_tables(tables, reference)) == {
+        "E1|@system_services|account|", "E2|@system_properties|file.encoding|", "E3|@system_properties|java.version|"}
+    tables["platform_tables"]["system_properties"]["os.name"] = "Darwin"
+    assert "E3|@system_properties|os.name|" in analyze_platform_tables(tables, reference)
+    try:
+        analyze_platform_tables({}, reference)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("missing platform inventory accepted")
     def method(
         name,
         desc="()V",
@@ -492,8 +542,10 @@ def main():
     raw = args.skeleton.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     result = analyze(
-        json.loads(args.surface.read_text(encoding="utf-8")), skeleton.unpack(raw)
-    )
+        json.loads(args.surface.read_text(encoding="utf-8")), skeleton.unpack(raw),
+        json.loads(PLATFORM_TABLES.read_text(encoding="utf-8")))
+    # Bind the frozen platform evidence into the existing ROM identity.
+    digest = hashlib.sha256(raw + PLATFORM_TABLES.read_bytes()).hexdigest()
     report = render(result)
     print(report, end="")
     if args.report:

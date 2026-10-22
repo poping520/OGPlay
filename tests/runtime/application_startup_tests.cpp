@@ -397,3 +397,24 @@ TEST_CASE("VFS-09 session and native process share the finite guest call watchdo
     CHECK(call.maximum_ticks_per_call == process.maximum_ticks_per_call);
     CHECK(app.maximum_ticks_per_call == UINT64_C(10000000000));
 }
+
+TEST_CASE("DVM-264 application binding publishes tmpdir before Application class initialization") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess fixture(backend, "/data/game", "platform_tables.dex");
+        fixture.context->package_name = "fixture.platform";
+        auto& vm = fixture.bridge->Vm();
+        REQUIRE(vm.GetSystemProperty("java.io.tmpdir") == "/tmp");
+        static_cast<void>(
+            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/PlatformApplication;"));
+        const auto type = vm.Linker().ResolveDescriptor("Lfixture/PlatformApplication;");
+        const auto method = vm.Linker().FindDirectMethod(type, "initial", "()Ljava/lang/String;");
+        REQUIRE(method.has_value());
+        const auto outcome = vm.Call(*method, {});
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        CHECK(vm.StringUtf8(outcome.value.ref) == "/data/data/fixture.platform/cache");
+        CHECK(vm.GetSystemProperty("java.io.tmpdir") == "/data/data/fixture.platform/cache");
+        CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
+    }
+}

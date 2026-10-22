@@ -181,6 +181,7 @@ Declare_android_telephony_TelephonyManager(const Context &context);
 [[nodiscard]] Decl Declare_android_util_AttributeSet(const Context &context);
 [[nodiscard]] Decl Declare_android_util_Base64(const Context &context);
 [[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context &context);
+[[nodiscard]] Decl Declare_android_hardware_display_DisplayManager(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Display(const Context &context);
 [[nodiscard]] Decl
 Declare_android_view_ContextThemeWrapper(const Context &context);

@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "api": 19,
+  "reference": "AOSP android-4.4.4_r2.0.1",
+  "sources": {
+    "context": {
+      "path": "framework/base/core/java/android/content/Context.java",
+      "sha256": "a24c9e482d1865c7c9c78856b202e6de7d182545f52180c08427cc86e10bee36"
+    },
+    "registry": {
+      "path": "framework/base/core/java/android/app/ContextImpl.java",
+      "sha256": "bc14c3f5f02d240b89e740aae65cffd2218d89eb05a176e49bad9cf39d7cfa02"
+    },
+    "system": {
+      "path": "libcore/luni/src/main/java/java/lang/System.java",
+      "sha256": "e33317ed3f12f510c35884a42df4feb34c38854e3aeb096e3ff8138e61f9e80a"
+    },
+    "binding": {
+      "path": "framework/base/core/java/android/app/ActivityThread.java",
+      "sha256": "4373bb6a1b9097c136ddab729cafc9884f9c5a70fdf41b43bfd4ba7b083229ae"
+    }
+  },
+  "system_services": {
+    "accessibility": "ACCESSIBILITY_SERVICE",
+    "account": "ACCOUNT_SERVICE",
+    "activity": "ACTIVITY_SERVICE",
+    "alarm": "ALARM_SERVICE",
+    "appops": "APP_OPS_SERVICE",
+    "audio": "AUDIO_SERVICE",
+    "bluetooth": "BLUETOOTH_SERVICE",
+    "camera": "CAMERA_SERVICE",
+    "captioning": "CAPTIONING_SERVICE",
+    "clipboard": "CLIPBOARD_SERVICE",
+    "connectivity": "CONNECTIVITY_SERVICE",
+    "consumer_ir": "CONSUMER_IR_SERVICE",
+    "country_detector": "COUNTRY_DETECTOR",
+    "device_policy": "DEVICE_POLICY_SERVICE",
+    "display": "DISPLAY_SERVICE",
+    "download": "DOWNLOAD_SERVICE",
+    "dropbox": "DROPBOX_SERVICE",
+    "input": "INPUT_SERVICE",
+    "input_method": "INPUT_METHOD_SERVICE",
+    "keyguard": "KEYGUARD_SERVICE",
+    "layout_inflater": "LAYOUT_INFLATER_SERVICE",
+    "location": "LOCATION_SERVICE",
+    "media_router": "MEDIA_ROUTER_SERVICE",
+    "netpolicy": "NETWORK_POLICY_SERVICE",
+    "nfc": "NFC_SERVICE",
+    "notification": "NOTIFICATION_SERVICE",
+    "phone": "TELEPHONY_SERVICE",
+    "power": "POWER_SERVICE",
+    "print": "PRINT_SERVICE",
+    "search": "SEARCH_SERVICE",
+    "sensor": "SENSOR_SERVICE",
+    "serial": "SERIAL_SERVICE",
+    "servicediscovery": "NSD_SERVICE",
+    "statusbar": "STATUS_BAR_SERVICE",
+    "storage": "STORAGE_SERVICE",
+    "textservices": "TEXT_SERVICES_MANAGER_SERVICE",
+    "uimode": "UI_MODE_SERVICE",
+    "usb": "USB_SERVICE",
+    "user": "USER_SERVICE",
+    "vibrator": "VIBRATOR_SERVICE",
+    "wallpaper": "WALLPAPER_SERVICE",
+    "wifi": "WIFI_SERVICE",
+    "wifip2p": "WIFI_P2P_SERVICE",
+    "window": "WINDOW_SERVICE"
+  },
+  "system_properties": {
+    "android.icu.cldr.version": {
+      "expression": "ICU.getCldrVersion()",
+      "source": "ICU.getCldrVersion()"
+    },
+    "android.icu.library.version": {
+      "expression": "ICU.getIcuVersion()",
+      "source": "ICU.getIcuVersion()"
+    },
+    "android.icu.unicode.version": {
+      "expression": "ICU.getUnicodeVersion()",
+      "source": "ICU.getUnicodeVersion()"
+    },
+    "file.encoding": {
+      "expression": "\"UTF-8\"",
+      "value": "UTF-8"
+    },
+    "file.separator": {
+      "expression": "\"/\"",
+      "value": "/"
+    },
+    "java.boot.class.path": {
+      "expression": "runtime.bootClassPath()",
+      "source": "runtime.bootClassPath()"
+    },
+    "java.class.path": {
+      "expression": "runtime.classPath()",
+      "source": "runtime.classPath()"
+    },
+    "java.class.version": {
+      "expression": "\"50.0\"",
+      "value": "50.0"
+    },
+    "java.compiler": {
+      "expression": "\"\"",
+      "value": ""
+    },
+    "java.ext.dirs": {
+      "expression": "\"\"",
+      "value": ""
+    },
+    "java.home": {
+      "expression": "javaHome",
+      "source": "getenv.JAVA_HOME",
+      "fallback": "/system"
+    },
+    "java.io.tmpdir": {
+      "expression": "\"/tmp\"",
+      "value": "/tmp",
+      "application_binding": "Context.getCacheDir().getAbsolutePath()"
+    },
+    "java.library.path": {
+      "expression": "ldLibraryPath",
+      "source": "getenv.LD_LIBRARY_PATH",
+      "conditional": true
+    },
+    "java.runtime.name": {
+      "expression": "\"Android Runtime\"",
+      "value": "Android Runtime"
+    },
+    "java.runtime.version": {
+      "expression": "\"0.9\"",
+      "value": "0.9"
+    },
+    "java.specification.name": {
+      "expression": "\"Dalvik Core Library\"",
+      "value": "Dalvik Core Library"
+    },
+    "java.specification.vendor": {
+      "expression": "projectName",
+      "value": "The Android Project"
+    },
+    "java.specification.version": {
+      "expression": "\"0.9\"",
+      "value": "0.9"
+    },
+    "java.vendor": {
+      "expression": "projectName",
+      "value": "The Android Project"
+    },
+    "java.vendor.url": {
+      "expression": "projectUrl",
+      "value": "http://www.android.com/"
+    },
+    "java.version": {
+      "expression": "\"0\"",
+      "value": "0"
+    },
+    "java.vm.name": {
+      "expression": "\"Dalvik\"",
+      "value": "Dalvik"
+    },
+    "java.vm.specification.name": {
+      "expression": "\"Dalvik Virtual Machine Specification\"",
+      "value": "Dalvik Virtual Machine Specification"
+    },
+    "java.vm.specification.vendor": {
+      "expression": "projectName",
+      "value": "The Android Project"
+    },
+    "java.vm.specification.version": {
+      "expression": "\"0.9\"",
+      "value": "0.9"
+    },
+    "java.vm.vendor": {
+      "expression": "projectName",
+      "value": "The Android Project"
+    },
+    "java.vm.vendor.url": {
+      "expression": "projectUrl",
+      "value": "http://www.android.com/"
+    },
+    "java.vm.version": {
+      "expression": "runtime.vmVersion()",
+      "source": "runtime.vmVersion()"
+    },
+    "line.separator": {
+      "expression": "\"\\n\"",
+      "value": "\n"
+    },
+    "os.arch": {
+      "expression": "info.machine",
+      "source": "uname.machine"
+    },
+    "os.name": {
+      "expression": "info.sysname",
+      "source": "uname.sysname"
+    },
+    "os.version": {
+      "expression": "info.release",
+      "source": "uname.release"
+    },
+    "path.separator": {
+      "expression": "\":\"",
+      "value": ":"
+    },
+    "user.home": {
+      "expression": "passwd.pw_dir",
+      "source": "passwd.pw_dir"
+    },
+    "user.language": {
+      "expression": "\"en\"",
+      "value": "en"
+    },
+    "user.name": {
+      "expression": "passwd.pw_name",
+      "source": "passwd.pw_name"
+    },
+    "user.region": {
+      "expression": "\"US\"",
+      "value": "US"
+    }
+  }
+}

@@ -1,3 +1,6 @@
+#include "ogplay/loader/link_namespace.h"
+#include "ogplay/runtime/dexvm/nio_runtime.h"
+#include "ogplay/runtime/integration/android_guest_call_session.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
 // ---- migrated from shared_handlers.cpp ----
@@ -17,6 +20,106 @@
 #include "ogplay/runtime/integration/native_library_loader.h"
 
 namespace ogplay::runtime::android_intrinsics {
+
+void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context) {
+    if (!context->session) return;
+    auto& process = context->session->Process();
+    const auto memory = process.GuestMemoryAccess();
+    const auto invoke = [&](memory::GuestAddress target, std::array<std::uint32_t, 4> args) {
+        A32GuestCallFrame frame;
+        frame.target = target;
+        frame.registers = args;
+        frame.context_token = vm.CurrentContextToken();
+        frame.thread_id =
+            context->native_thread_for_context ? context->native_thread_for_context(vm.CurrentContextToken()) : 1;
+        auto& execution_lock = vm.ExecutionLock();
+        const auto depth = execution_lock.ReleaseForBlocking();
+        std::uint32_t value{};
+        try {
+            value = process.Invoke(frame).return_value;
+        } catch (...) {
+            execution_lock.ReacquireAfterBlocking(depth);
+            throw;
+        }
+        execution_lock.ReacquireAfterBlocking(depth);
+        return value;
+    };
+    const auto word = [&](memory::GuestAddress address) {
+        std::array<std::byte, 4> bytes{};
+        memory.read(address, bytes);
+        std::uint32_t value{};
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            value |= std::to_integer<std::uint32_t>(bytes[i]) << (8U * i);
+        return value;
+    };
+    const auto string = [&](memory::GuestAddress address) {
+        if (address.Value() == 0) throw std::runtime_error("null platform property source");
+        std::string result;
+        for (std::uint32_t i = 0; i < 4096; ++i) {
+            std::array<std::byte, 1> byte{};
+            memory.read(address.Add(i), byte);
+            const auto c = static_cast<char>(std::to_integer<unsigned char>(byte[0]));
+            if (c == '\0') return result;
+            result.push_back(c);
+        }
+        throw std::runtime_error("unterminated platform property source");
+    };
+    const auto getuid = process.FindLibraryExport("libc.so", "getuid");
+    const auto getpwuid = process.FindLibraryExport("libc.so", "getpwuid");
+    if (getuid && getpwuid) {
+        const auto uid = invoke(*getuid, {});
+        const memory::GuestAddress passwd{invoke(*getpwuid, {uid, 0, 0, 0})};
+        if (passwd.Value() == 0) throw dx::VmJavaThrow{"Ljava/lang/AssertionError;", "guest getpwuid failed"};
+        // Pinned Bionic ARM struct passwd: name, passwd, uid, gid, dir, shell.
+        static_cast<void>(vm.SetSystemProperty("user.name", string(memory::GuestAddress{word(passwd)})));
+        static_cast<void>(vm.SetSystemProperty("user.home", string(memory::GuestAddress{word(passwd.Add(16))})));
+    }
+    const auto storage = memory.allocate(8);
+
+    struct Release final {
+        dx::NioDirectMemoryAccess memory;
+        memory::GuestAddress address;
+
+        ~Release() { memory.release(address, 8); }
+    } release{memory, storage};
+
+    const auto version = [&](memory::GuestAddress function, const char* key, bool status) {
+        const std::array<std::byte, 8> zero{};
+        memory.write(storage, zero);
+        static_cast<void>(invoke(function, {storage.Value(), status ? storage.Add(4).Value() : 0, 0, 0}));
+        if (status && static_cast<std::int32_t>(word(storage.Add(4))) > 0)
+            throw std::runtime_error("ICU version query failed");
+        std::array<std::byte, 4> bytes{};
+        memory.read(storage, bytes);
+        std::size_t end = 4;
+        while (end > 2 && bytes[end - 1] == std::byte{})
+            --end;
+        std::string value;
+        for (std::size_t i = 0; i < end; ++i) {
+            if (i) value += '.';
+            value += std::to_string(std::to_integer<unsigned>(bytes[i]));
+        }
+        static_cast<void>(vm.SetSystemProperty(key, value));
+    };
+    // Missing exports retain manifest-derived defaults. Resolve the full loaded
+    // namespace by library identity, including modules loaded after process creation.
+    for (const auto& source :
+         std::array{std::tuple{"libicuuc.so", "u_getVersion_51", "android.icu.library.version", false},
+                    std::tuple{"libicuuc.so", "u_getUnicodeVersion_51", "android.icu.unicode.version", false},
+                    std::tuple{"libicui18n.so", "ulocdata_getCLDRVersion_51", "android.icu.cldr.version", true}}) {
+        const auto& [library, symbol, key, status] = source;
+        if (const auto address = process.FindLibraryExport(library, symbol)) version(*address, key, status);
+    }
+    // Synthetic native shells may have no Bionic environment source either.
+    if (process.FindLibraryExport("libc.so", "environ")) {
+        for (const auto& [environment, key] :
+             std::array{std::pair{"JAVA_HOME", "java.home"}, std::pair{"LD_LIBRARY_PATH", "java.library.path"}}) {
+            if (const auto value = process.ProcessEnvironmentValue(environment))
+                static_cast<void>(vm.SetSystemProperty(key, *value));
+        }
+    }
+    static_cast<void>(vm.SetSystemProperty("java.class.path", context->package_resource_path));
+}
 
 namespace {
 

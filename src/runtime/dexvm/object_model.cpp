@@ -247,6 +247,7 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
         throw std::invalid_argument("DexVM target utilization must be in 1..100");
     if (config.min_free_bytes > config.max_free_bytes)
         throw std::invalid_argument("DexVM heap free range is inverted");
+    arrays.ConfigurePayloadHeap(config.maximum_heap_bytes, config.heap_growth_limit_bytes);
     arrays.SetAllocationContext({[state = impl_.get()]() -> std::shared_ptr<void> {
                                      return state->allocation_mutex
                                                 ? std::make_shared<VmExecutionLockScope>(*state->allocation_mutex)
@@ -270,7 +271,8 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
                                      }
                                      return undo;
                                  },
-                                 [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; }});
+                                 [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; },
+                                 [state = impl_.get()] { return state->emergency_reserve; }});
 }
 
 JavaObjectModel::~JavaObjectModel() {

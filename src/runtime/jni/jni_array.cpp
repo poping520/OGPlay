@@ -160,7 +160,7 @@ public:
                 rollback = context.reserve(32 + bytes);
                 charged = true;
             }
-            payload = provider.Allocate(static_cast<std::size_t>(bytes));
+            payload = provider.Allocate(static_cast<std::size_t>(bytes), context.emergency && context.emergency());
             ArrayEntry entry{kind, length, *payload, MakeView(*payload, kind), 0, charged};
             const auto identity = AllocateJniHostObjectIdentity();
             std::scoped_lock lock(mutex_);
@@ -377,5 +377,11 @@ void JniPrimitiveArrayStore::Copy(JniObjectIdentity source, JniSize from, JniObj
 
 void JniPrimitiveArrayStore::CopyWithin(JniObjectIdentity array, JniSize from, JniSize to, JniSize length) {
     Copy(array, from, array, to, length);
+}
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void JniPrimitiveArrayStore::ConfigurePayloadHeap(std::uint64_t maximum, std::uint64_t growth) {
+    impl_->provider.ConfigureHeap(maximum, growth);
 }
 }  // namespace ogplay::runtime

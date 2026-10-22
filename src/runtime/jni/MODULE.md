@@ -108,3 +108,8 @@ VisitAccessRoots 在锁外枚举 active borrow 的数组身份，owner 在 mark/
 归还同一费用。provider 本身只管理 backing 提交/VAS，不持第二逻辑堆目标。上下文只在
 调用静止时装配/撤销。分配时统计 kind/长度桶、峰值 live 和失败次数；诊断只返回聚合快照。
 String 的存储和借用合同不变。
+
+VM 装配通过 ConfigurePayloadHeap 传 maximum/growth 到 provider 的 backing 策略，
+allocation context 另提供显式 emergency 状态查询；New 在已进入上下文/收费后传给
+provider.Allocate(bytes, emergency)。host-copy 默认忽略 backing 策略，仍只收 VM 一份费用。
+provider 的应急统计与普通 committed/slab_free 分开表示，应急池耗尽明确失败。

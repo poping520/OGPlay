@@ -1945,3 +1945,21 @@
     const/16 v0, 99
     return v0
 .end method
+
+# DVM-260: provider exhaustion is translated to catchable Java OOME.
+.class public LPayloadOom;
+.super Ljava/lang/Object;
+.method static public caught()I
+.registers 2
+    :start
+    const/16 v0, 8193
+    new-array v0, v0, [B
+    :end
+    const/4 v0, 0
+    return v0
+    :handler
+    move-exception v1
+    const/4 v0, 1
+    return v0
+    .catch Ljava/lang/OutOfMemoryError; :start :end :handler
+.end method

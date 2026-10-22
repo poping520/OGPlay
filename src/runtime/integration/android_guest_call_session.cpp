@@ -1788,7 +1788,11 @@ public:
                             {"committed_bytes", backing.committed_bytes},
                             {"slab_free_bytes", backing.slab_free_bytes},
                             {"allocation_failures", allocations.allocation_failures},
-                            {"provider_failures", backing.allocation_failures}});
+                            {"provider_failures", backing.allocation_failures},
+                            {"emergency_reserved_bytes", backing.emergency_reserved_bytes},
+                            {"emergency_uses", backing.emergency_uses},
+                            {"emergency_live_bytes", backing.emergency_live_bytes},
+                            {"emergency_peak_bytes", backing.emergency_peak_bytes}});
             for (const auto& size_class : array_payload_.SizeClassStatistics())
                 if (size_class.allocation_count)
                     logger_->Write(core::LogLevel::info, "runtime.java_payload", "primitive size class utilization", {},

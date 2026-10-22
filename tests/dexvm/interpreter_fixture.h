@@ -58,10 +58,9 @@ struct Vm final {
     ogplay::core::CapabilityLedger ledger;
     Interpreter interpreter;
 
-    explicit Vm(const InterpreterConfig config = {},
-                const JavaObjectModelConfig model_config = {},
-                std::vector<IntrinsicClassDecl> extra_catalog = {},
-                const std::string& extra_fixture = {});
+    explicit Vm(const InterpreterConfig config = {}, const JavaObjectModelConfig model_config = {},
+                std::vector<IntrinsicClassDecl> extra_catalog = {}, const std::string& extra_fixture = {},
+                JavaPayloadProvider* payload_provider = nullptr);
 
     [[nodiscard]] VmMethodId Static(const std::string& class_descriptor,
                                     const std::string& name,

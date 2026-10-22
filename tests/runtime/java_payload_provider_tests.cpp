@@ -63,7 +63,7 @@ TEST_CASE("Java payload allocation packs aligned independent zero and small bloc
     provider.Release(empty);
     provider.Release(b);
     provider.Release(replacement);
-    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384 + provider.Statistics().emergency_reserved_bytes);
 }
 
 TEST_CASE("Java payload typed views enforce block and view boundaries and bit patterns") {
@@ -389,7 +389,7 @@ TEST_CASE("DVM-260 guest array authority preserves eight bit patterns and overla
     static_cast<void>(model.Sweep(garbage, {}));
     CHECK(model.AllocatedBytes() == 0);
     CHECK(provider.Statistics().allocated_bytes == 0);
-    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384 + provider.Statistics().emergency_reserved_bytes);
 }
 
 TEST_CASE("DVM-260 native create and import charge once and failed provider rolls back") {
@@ -506,7 +506,7 @@ TEST_CASE("DVM-260 segregated allocator scales independently of existing slab co
     for (const auto& block : live)
         provider.Release(block);
     CHECK(provider.Statistics().allocated_bytes == 0);
-    CHECK(provider.Statistics().committed_bytes <= 64 * 16384);
+    CHECK(provider.Statistics().committed_bytes <= 64 * 16384 + provider.Statistics().emergency_reserved_bytes);
 }
 
 TEST_CASE("DVM-260 cached slab reclassification respects committed quota and rollback") {
@@ -528,4 +528,42 @@ TEST_CASE("DVM-260 cached slab reclassification respects committed quota and rol
     CHECK(provider.Statistics().committed_bytes == 16384);
     CHECK(provider.Access<std::uint8_t>(reclassified).Read(0) == 0);
     provider.Release(reclassified);
+}
+
+TEST_CASE("DVM-260 backing limit derives from VM maximum and covers fragmented slabs") {
+    using P = GuestJavaPayloadProvider;
+    CHECK(P::DerivedCommittedLimit(1024, 512, 16384, 16384, 0) == 512 * 1024);
+    CHECK(P::DerivedCommittedLimit(1024, 1024, 16384, 16384, 2) == 512 * 1024 + 32768);
+    CHECK(P::DerivedCommittedLimit(1ULL << 30, 512ULL << 20, 16384, 16384, 64) ==
+          memory::kGuestAddressSpaceSize - memory::kGuestLowGuardSize);
+    CHECK_THROWS_AS(static_cast<void>(P::DerivedCommittedLimit(100, 101, 16384, 16384, 0)), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(P::DerivedCommittedLimit(100, 0, 16384, 16384, 0)), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(P::DerivedCommittedLimit(UINT64_MAX, 1, 16384, 16384, 0)), std::invalid_argument);
+    CHECK_THROWS_AS(static_cast<void>(P::DerivedCommittedLimit(1024, 512, 8192, 16384, 0)), std::invalid_argument);
+    CHECK(P::DerivedCommittedLimit(1024, 512, 16384, 16384, SIZE_MAX) ==
+          memory::kGuestAddressSpaceSize - memory::kGuestLowGuardSize);
+}
+
+TEST_CASE("DVM-260 emergency backing is isolated bounded and replenished when objects retire") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    JavaPayloadLimits limits;
+    limits.committed_limit_bytes = 0;
+    limits.emergency_reserve_bytes = 16384;
+    GuestJavaPayloadProvider provider(space, ledger, limits);
+    provider.ConfigureHeap(65536, 65536);
+    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(8)), std::bad_alloc);
+    const auto first = provider.Allocate(8, true);
+    const auto second = provider.Allocate(16376, true);
+    CHECK(provider.Statistics().emergency_uses == 2);
+    CHECK(provider.Statistics().emergency_peak_bytes == 16384);
+    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(1, true)), JavaPayloadEmergencyExhausted);
+    provider.Release(first);
+    provider.Release(second);
+    CHECK(provider.Statistics().emergency_live_bytes == 0);
+    CHECK_THROWS_AS(static_cast<void>(provider.Allocate(8, false)), std::bad_alloc);
+    const auto replenished = provider.Allocate(16384, true);
+    CHECK(provider.Access<std::uint8_t>(replenished).Read(0) == 0);
+    provider.Release(replenished);
+    CHECK(provider.Statistics().emergency_live_bytes == 0);
 }

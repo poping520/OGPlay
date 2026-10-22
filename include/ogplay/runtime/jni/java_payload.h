@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <functional>
 #include <stdexcept>
 #include <type_traits>
 
@@ -129,6 +130,13 @@ private:
     JavaPayloadHandle payload_;
     std::uint64_t id_{};
     friend class JavaPayloadProvider;
+};
+
+struct JavaPayloadAllocationContext final {
+    std::function<std::shared_ptr<void>()> enter;
+    std::function<std::function<void()>(std::uint64_t)> reserve;
+    std::function<void(std::uint64_t)> refund;
+    std::function<bool()> emergency;
 };
 
 class JavaPayloadEmergencyExhausted final : public std::runtime_error {

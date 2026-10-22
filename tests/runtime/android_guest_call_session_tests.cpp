@@ -1388,7 +1388,8 @@ TEST_CASE("Android guest platform handlers publish facts state and explicit fail
     JniInvocationEngine invocations{classes};
     JniEnvironment environment;
     environment.AttachThread(7U);
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     AndroidGuestPlatformState state;
@@ -1543,7 +1544,8 @@ TEST_CASE("Android guest Java movie handler publishes the exact request") {
 
     ogplay::runtime::JniEnvironment environment;
     environment.AttachThread(7U);
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    ogplay::runtime::JniStringStore strings{strings_payload};
     const std::array<ogplay::runtime::JniChar, 9> name{
         'i', 'n', 't', 'r', 'o', '.', 'm', 'p', '4'};
     const auto identity = strings.Create(name);

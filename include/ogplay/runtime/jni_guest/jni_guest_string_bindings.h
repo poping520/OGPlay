@@ -14,6 +14,6 @@ class JniStringStore;
 
 void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
                              JniStringStore& strings, memory::AddressSpace& address_space,
-                             JniGuestStringLimits limits = {});
+                             JniGuestStringLimits limits = {}, core::Logger* logger = nullptr);
 
 }  // namespace ogplay::runtime

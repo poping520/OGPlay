@@ -80,7 +80,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   intern/Class 与 integration roots。持 guest ref 的 intrinsic 状态用具名 state table trace/sweep；
   嵌套调用的新引用用 `RootScope`。Weak/SoftReference、JNI weak、intern 与 identity hash 遵循
   API 19；异常构造有 64 KiB 应急区。allocation context 在 VM 执行锁内显式查询 emergency
-  状态，primitive store 将该事实传给 provider，允许使用预提交 backing 应急池；不靠
+  状态，primitive/String store 将该事实传给 provider，允许使用预提交 backing 应急池；不靠
   全局/TLS 推断 owner。provider 应急池耗尽明确失败，不再次构造 OOME。
 - guest native 资源字段回收规则显式指定无效 token（默认 0，API19 ZIP streamHandle 为 -1）；
   未初始化的 0 不登记资源，GC/teardown 清字段时写回对应关闭标记并调用静态释放入口。
@@ -297,3 +297,10 @@ ADR-0153：类初始化的 post-clinit 检查可经显式 owner pending source �
 throwable，按 Dalvik Class.cpp:4485–4497 将类标 failed，非 Error 包装并保留 cause、Error
 保留身份；已初始化类不消费外部 pending。回调只在检查点调用，停止执行后撤销，不引入
 JNI 环境反向依赖。普通 Call/NewObject 不预先清除 JNI pending。
+
+ADR-0152 阶段 4：String 内容自创建起由显式 provider 的不可变 UTF-16 block/view 唯一持有，
+Region/MUTF-8/hash/equals/intern 键从同一内容读取；无影子 value/offset/count 字段。公开 char[]、
+builder 与 substring 保持独立复制快照。StringStore 共享 VM allocation context：NewString/JNI
+创建统一收费一次，导入补未收费项，已有实例 BindString 只增收 payload；失败回滚，sweep
+由 store 退还自身费用并扣除实例剩余费用。String pin 与 UTF8 lease 均为 mark/weak 前强根；
+Chars/Critical 按 String 身份跨线程计数并忽略 release 指针/kind；不增加内存序承诺。

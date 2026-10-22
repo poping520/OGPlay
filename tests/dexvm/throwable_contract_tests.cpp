@@ -487,7 +487,8 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         ogplay::test::RegisterBootDex(linker);
         linker.RegisterDex(std::move(bytes));
         linker.Link();
-        JniStringStore strings;
+        ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+        JniStringStore strings{strings_payload};
         ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
         JniPrimitiveArrayStore arrays{arrays_payload};
         JavaObjectModel model(strings, arrays);

@@ -36,13 +36,7 @@ using JniPrimitiveArrayView =
                  JavaPayloadAccessor<JniShort>, JavaPayloadAccessor<JniInt>, JavaPayloadAccessor<JniLong>,
                  JavaPayloadAccessor<JniFloat>, JavaPayloadAccessor<JniDouble>>;
 
-struct JniArrayAllocationContext final {
-    std::function<std::shared_ptr<void>()> enter;
-    // The returned action rolls back an uncommitted charge while enter is held.
-    std::function<std::function<void()>(std::uint64_t)> reserve;
-    std::function<void(std::uint64_t)> refund;
-    std::function<bool()> emergency;
-};
+using JniArrayAllocationContext = JavaPayloadAllocationContext;
 
 struct JniArrayAllocationStatistics final {
     // Length buckets: 0, 1..16, 17..64, 65..256, 257..1024, 1025..8192, >8192.

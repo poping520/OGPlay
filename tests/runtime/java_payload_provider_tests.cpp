@@ -362,7 +362,8 @@ TEST_CASE("DVM-260 guest array authority preserves eight bit patterns and overla
     core::CapabilityLedger ledger;
     GuestJavaPayloadProvider provider(space, ledger);
     JniPrimitiveArrayStore arrays{provider};
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     dexvm::JavaObjectModel model{strings, arrays};
     constexpr std::uint64_t patterns[]{
         0xff, 0x80, 0xffff, 0x8001, 0x80000001, UINT64_C(0xdeadbeef87654321), 0x7fc12345, UINT64_C(0xfff123456789abcd)};
@@ -399,7 +400,8 @@ TEST_CASE("DVM-260 native create and import charge once and failed provider roll
     limits.committed_limit_bytes = 16384;
     GuestJavaPayloadProvider provider(space, ledger, limits);
     JniPrimitiveArrayStore arrays{provider};
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     const auto preexisting = arrays.New(JniPrimitiveKind::integer, 4);
     dexvm::JavaObjectModel model{strings, arrays, {.initial_heap_target_bytes = 128}};
     CHECK(model.AllocatedBytes() == 0);
@@ -566,4 +568,54 @@ TEST_CASE("DVM-260 emergency backing is isolated bounded and replenished when ob
     CHECK(provider.Access<std::uint8_t>(replenished).Read(0) == 0);
     provider.Release(replenished);
     CHECK(provider.Statistics().emergency_live_bytes == 0);
+}
+
+TEST_CASE("DVM-260 String create import and bound instance charge exactly once") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    GuestJavaPayloadProvider provider(space, ledger);
+    JniStringStore strings{provider};
+    JniPrimitiveArrayStore arrays{provider};
+    const std::array<JniChar, 3> text{'A', 0, 0xd800};
+    const auto old = strings.Create(text);
+    dexvm::JavaObjectModel model{strings, arrays};
+    CHECK(model.AllocatedBytes() == 0);
+    const auto imported = model.FromIdentity(old);
+    CHECK(model.AllocatedBytes() == 38);
+    CHECK(model.FromIdentity(old) == imported);
+    CHECK(model.AllocatedBytes() == 38);
+    const auto native = strings.Create(text);
+    CHECK(model.AllocatedBytes() == 76);
+    static_cast<void>(model.FromIdentity(native));
+    CHECK(model.AllocatedBytes() == 76);
+    const auto java = model.NewString(u"abc");
+    CHECK(model.AllocatedBytes() == 114);
+    CHECK(model.StringValue(java) == u"abc");
+    model.SetCoreClasses(dexvm::DexClassId{1}, dexvm::DexClassId{2});
+    const auto bound = model.NewInstance(dexvm::DexClassId{1}, 0);
+    CHECK(model.AllocatedBytes() == 146);
+    model.BindString(bound, u"xy");
+    CHECK(model.AllocatedBytes() == 150);
+    CHECK(model.StringValue(bound) == u"xy");
+    static_cast<void>(model.Sweep(model.MarkReachable({}, {}), {}));
+    CHECK(model.AllocatedBytes() == 0);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+}
+
+TEST_CASE("DVM-260 String provider failure rolls back VM charge and target") {
+    memory::AddressSpace space;
+    core::CapabilityLedger ledger;
+    auto limits = TinyLimits();
+    limits.committed_limit_bytes = 16384;
+    GuestJavaPayloadProvider provider(space, ledger, limits);
+    JniStringStore strings{provider};
+    JniPrimitiveArrayStore arrays{provider};
+    dexvm::JavaObjectModel model{strings, arrays, {.initial_heap_target_bytes = 128}};
+    const auto before = model.HeapTargetBytes();
+    const std::u16string huge(50000, u'x');
+    CHECK_THROWS_AS(static_cast<void>(model.NewString(huge)), dexvm::DexVmError);
+    CHECK(model.AllocatedBytes() == 0);
+    CHECK(model.HeapTargetBytes() == before);
+    CHECK(provider.Statistics().allocated_bytes == 0);
+    CHECK(strings.AllocationStatistics().allocation_failures == 1);
 }

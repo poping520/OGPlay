@@ -45,7 +45,8 @@ using namespace ogplay::runtime::dexvm;
     const std::uint8_t type, const std::uint32_t data);
 
 struct ClickVm final {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;

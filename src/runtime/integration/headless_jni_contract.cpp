@@ -110,7 +110,8 @@ HeadlessJniContractReport RunHeadlessJniContract(
     JniInvocationEngine invocations(classes);
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider primitive_arrays_payload;
     JniPrimitiveArrayStore primitive_arrays{primitive_arrays_payload};
     JniFieldStore fields(classes);

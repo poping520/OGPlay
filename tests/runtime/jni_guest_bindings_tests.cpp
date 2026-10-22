@@ -125,7 +125,8 @@ struct GuestBindingsFixture final {
     ogplay::runtime::JniInvocationEngine invocations;
     ogplay::runtime::JniFieldStore fields;
     ogplay::runtime::JniGuestObjectRegistry objects;
-    ogplay::runtime::JniStringStore strings;
+    ogplay::runtime::GuestJavaPayloadProvider strings_payload{memory, ledger};
+    ogplay::runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::GuestJavaPayloadProvider arrays_payload{memory, ledger};
     ogplay::runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     ogplay::runtime::JniNativeRegistry natives;
@@ -620,7 +621,7 @@ TEST_CASE("guest JNI long strings round trip beyond both former copy arenas") {
     std::vector<std::byte> copied(size + 1U);
     fixture.memory.Read(utf8, copied);
     CHECK(copied == bytes);
-    std::vector<std::byte> wide((size + 1U) * 2U);
+    std::vector<std::byte> wide(size * 2U);
     fixture.memory.Read(utf16, wide);
     std::vector<std::byte> expected(wide.size());
     for (std::size_t index = 0; index < size; ++index) expected[index * 2U] = std::byte{'A'};
@@ -630,7 +631,7 @@ TEST_CASE("guest JNI long strings round trip beyond both former copy arenas") {
     static_cast<void>(fixture.CallEnvironment("ReleaseStringUTFChars", 402U, reference, utf8.Value()));
     static_cast<void>(fixture.CallEnvironment("ReleaseStringChars", 402U, reference, utf16.Value()));
     CHECK_THROWS_AS(static_cast<void>(fixture.memory.Read8(utf8)), ogplay::memory::MemoryFault);
-    CHECK_THROWS_AS(static_cast<void>(fixture.memory.Read8(utf16)), ogplay::memory::MemoryFault);
+    CHECK(fixture.memory.Read16(utf16) == 'A');
 }
 
 TEST_CASE("guest JNI string copy budget is shared released and failed outputs do not leak") {
@@ -651,9 +652,12 @@ TEST_CASE("guest JNI string copy budget is shared released and failed outputs do
     }
     const auto first = fixture.CallEnvironment("GetStringUTFChars", 402U, reference);
     REQUIRE(first != 0U);
-    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("GetStringChars", 402U, reference)),
-        "JNI string copy resource budget exhausted: requested_bytes=4096 used_bytes=4096 budget=4096",
-        ogplay::runtime::JniGuestBindingError);
+    const auto direct = fixture.CallEnvironment("GetStringChars", 402U, reference);
+    CHECK(direct != 0);
+    CHECK_THROWS_WITH_AS(static_cast<void>(fixture.CallEnvironment("GetStringUTFChars", 402U, reference)),
+                         "JNI string copy resource budget exhausted: requested_bytes=4096 used_bytes=4096 budget=4096",
+                         ogplay::runtime::JniGuestBindingError);
+    static_cast<void>(fixture.CallEnvironment("ReleaseStringCritical", 402U, reference, 0xdeadbeefU));
     static_cast<void>(fixture.CallEnvironment("ReleaseStringUTFChars", 402U, reference, first));
     const auto second = fixture.CallEnvironment("GetStringChars", 402U, reference);
     REQUIRE(second != 0U);
@@ -1381,7 +1385,7 @@ TEST_CASE("guest JNI class hierarchy references and DefineClass warning") {
     CHECK(f.CallEnvironment("GetObjectRefType", 401, weak.Value()) == 0U);
 }
 
-TEST_CASE("guest JNI Critical string leases keep distinct release kinds") {
+TEST_CASE("guest JNI Critical String pins share identity and unmatched releases only warn") {
     using namespace ogplay::runtime;
     GuestBindingsFixture f;
     f.Seal();
@@ -1389,13 +1393,19 @@ TEST_CASE("guest JNI Critical string leases keep distinct release kinds") {
     f.WriteString(64, "critical");
     const auto string = f.CallEnvironment("NewStringUTF", 402, f.output.Add(64).Value());
     const auto critical = f.CallEnvironment("GetStringCritical", 402, string, f.output.Value());
-    CHECK(f.memory.Read8(f.output) == 1U);
+    CHECK(f.memory.Read8(f.output) == 0);
     const auto chars = f.CallEnvironment("GetStringChars", 402, string);
-    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringChars", 402, string, critical)));
-    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, chars)));
+    CHECK(chars == critical);
+    const auto identity = *f.environment.ResolveObjectForHle(402, JniReference{string});
+    CHECK(f.strings.PinCount(identity) == 2);
+    CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringChars", 402, string, 0xdeadbeef)));
+    CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, 0)));
+    CHECK(f.strings.PinCount(identity) == 0);
     CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, critical)));
-    CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringChars", 402, string, chars)));
-    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, critical)));
+    const auto warnings = f.ledger.Warnings();
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].id.find("runtime.jni.string.unmatched_unpin.ReleaseStringCritical.") == 0);
+    CHECK(warnings[0].count == 1);
 }
 
 TEST_CASE("guest JavaVM attach decodes named arguments and preserves state on refused detach") {

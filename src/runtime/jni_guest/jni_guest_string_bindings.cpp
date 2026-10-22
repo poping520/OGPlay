@@ -249,63 +249,52 @@ private:
 
 class Utf16Leases final {
 public:
-    Utf16Leases(JniEnvironment& environment, JniStringStore& strings, memory::AddressSpace& address_space,
-                const JniGuestStringLimits limits, std::shared_ptr<GuestStringLeaseArena::Budget> budget,
+    Utf16Leases(JniEnvironment& environment, JniStringStore& strings, memory::AddressSpace& space,
+                JniGuestCallDispatcher& dispatcher, core::Logger* logger,
                 JniStringAccessKind kind = JniStringAccessKind::chars)
-        : environment_(&environment), strings_(&strings), address_space_(&address_space), limits_(limits),
-          arena_(address_space, std::move(budget)), kind_(kind) {}
+        : environment_(&environment), strings_(&strings), space_(&space), dispatcher_(&dispatcher), logger_(logger),
+          kind_(kind) {}
 
-    [[nodiscard]] std::uint32_t Acquire(const JniGuestCallFrame& frame) {
-        const auto string = ResolveString(
-            *environment_, frame, kind_ == JniStringAccessKind::critical ? "GetStringCritical" : "GetStringChars");
-        const auto is_copy = memory::GuestAddress{frame.registers[2]};
-        if (!is_copy.IsNull()) {
-            address_space_->Validate(
-                {is_copy, 1U}, memory::AccessType::write, frame.thread_id);
-        }
-        const auto length = static_cast<std::size_t>(strings_->Length(string));
-        if (length > limits_.maximum_utf16_code_units)
-            throw JniGuestBindingError("JNI string UTF-16 resource budget exceeded");
-        std::scoped_lock lock(mutex_);
-        const auto requested = (length + 1U) * sizeof(JniChar);
-        const auto pointer = arena_.Allocate(requested);
-        std::optional<JniStringAccess> access;
+    std::uint32_t Acquire(const JniGuestCallFrame& frame) {
+        const auto string = ResolveString(*environment_, frame,
+                                          kind_ == JniStringAccessKind::chars ? "GetStringChars" : "GetStringCritical");
+        const memory::GuestAddress is_copy{frame.registers[2]};
+        if (!is_copy.IsNull()) space_->Validate({is_copy, 1}, memory::AccessType::write, frame.thread_id);
+        auto access = strings_->Acquire(string, kind_);
         try {
-            access = strings_->Acquire(string, kind_);
-            const auto bytes = EncodeUtf16(access->chars, true);
-            address_space_->Write(pointer, bytes, frame.thread_id);
-            if (!is_copy.IsNull()) {
-                address_space_->Write8(is_copy, 1U, frame.thread_id);
-            }
-            arena_.Publish(pointer, requested, string, access->token);
-            return pointer.Value();
+            if (!is_copy.IsNull()) space_->Write8(is_copy, 0, frame.thread_id);
         } catch (...) {
-            arena_.Discard(pointer, requested);
-            if (access) strings_->Release(string, access->token, kind_);
+            strings_->Release(string, 0, kind_);
             throw;
         }
+        if (access.warn_threshold) Warn(frame, string, "pin_threshold", access.pin_count);
+        return access.address.Value();
     }
-
     void Release(const JniGuestCallFrame& frame) {
-        const auto string =
-            ResolveString(*environment_, frame,
-                          kind_ == JniStringAccessKind::critical ? "ReleaseStringCritical" : "ReleaseStringChars");
-        const auto pointer = memory::GuestAddress{frame.registers[2]};
-        std::scoped_lock lock(mutex_);
-        const auto found = arena_.Require(
-            pointer, string,
-            "ReleaseStringChars pointer does not match an active lease");
-        strings_->Release(found->string, found->token, kind_);
-        arena_.Erase(found);
+        const auto string = ResolveString(
+            *environment_, frame, kind_ == JniStringAccessKind::chars ? "ReleaseStringChars" : "ReleaseStringCritical");
+        if (!strings_->Release(string, 0, kind_)) Warn(frame, string, "unmatched_unpin", 0);
+    }
+private:
+    void Warn(const JniGuestCallFrame& frame, JniObjectIdentity string, std::string_view reason, std::size_t count) {
+        const auto slot = JniSlotName(JniSlot{frame.thunk.slot});
+        dispatcher_->RecordWarning("runtime.jni.string." + std::string(reason) + "." + std::string(slot) + "." +
+                                       std::to_string(string.value),
+                                   frame.link_register);
+        if (logger_)
+            logger_->Write(core::LogLevel::warn, "runtime.jni.string", reason, {.guest_thread = frame.thread_id},
+                           {{"string", string.value},
+                            {"slot", std::string(slot)},
+                            {"guest_lr", core::GuestAddress{frame.link_register}},
+                            {"pin_count", static_cast<std::uint64_t>(count)}},
+                           {.mode = core::RateLimitMode::none});
     }
 
-private:
-    JniEnvironment* environment_{};
-    JniStringStore* strings_{};
-    memory::AddressSpace* address_space_{};
-    mutable std::mutex mutex_;
-    JniGuestStringLimits limits_;
-    GuestStringLeaseArena arena_;
+    JniEnvironment* environment_;
+    JniStringStore* strings_;
+    memory::AddressSpace* space_;
+    JniGuestCallDispatcher* dispatcher_;
+    core::Logger* logger_;
     JniStringAccessKind kind_;
 };
 
@@ -313,11 +302,16 @@ private:
 
 void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
                              JniStringStore& strings, memory::AddressSpace& address_space,
-                             const JniGuestStringLimits limits) {
+                             const JniGuestStringLimits limits, core::Logger* logger) {
     ValidateJniGuestStringLimits(limits);
     const auto budget = std::make_shared<GuestStringLeaseArena::Budget>(limits.maximum_copy_bytes);
     const auto leases = std::make_shared<ModifiedUtf8Leases>(
         environment, strings, address_space, limits, budget);
+    strings.SetPinTeardownObserver([logger](std::uint64_t count, std::uint64_t bytes) {
+        if (logger)
+            logger->Write(core::LogLevel::warn, "runtime.jni.string", "retiring outstanding pins", {},
+                          {{"strings", count}, {"bytes", bytes}}, {.mode = core::RateLimitMode::none});
+    });
     dispatcher.BindEnvironment(
         Slot("GetStringUTFLength"),
         [&environment, &strings](const JniGuestCallFrame& frame) {
@@ -357,11 +351,9 @@ void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment&
                 destination, std::as_bytes(std::span{bytes}), frame.thread_id);
             return JniGuestCallResult{};
         });
-    const auto utf16_leases = std::make_shared<Utf16Leases>(
-        environment, strings, address_space, limits, budget);
-    // Dalvik Jni.cpp:2623-2645 has distinct Critical acquisition/release entries.
-    // Our guest lease is a copy, so Acquire reports JNI_TRUE until direct pointers are supported.
-    const auto critical_leases = std::make_shared<Utf16Leases>(environment, strings, address_space, limits, budget,
+    const auto utf16_leases = std::make_shared<Utf16Leases>(environment, strings, address_space, dispatcher, logger);
+    // Dalvik UTF-16 entries share the String pin counter.
+    const auto critical_leases = std::make_shared<Utf16Leases>(environment, strings, address_space, dispatcher, logger,
                                                                JniStringAccessKind::critical);
     dispatcher.BindEnvironment(Slot("GetStringCritical"), [critical_leases](const JniGuestCallFrame& frame) {
         return Word(critical_leases->Acquire(frame));
@@ -371,9 +363,7 @@ void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment&
         return JniGuestCallResult{};
     });
     dispatcher.BindEnvironment(
-        Slot("NewString"),
-        [&environment, &strings,
-         &address_space, limits](const JniGuestCallFrame& frame) {
+        Slot("NewString"), [&environment, &classes, &strings, &address_space, limits](const JniGuestCallFrame& frame) {
             const auto length = std::bit_cast<JniSize>(frame.registers[2]);
             if (length < 0) throw JniGuestBindingError("NewString length is invalid");
             if (static_cast<std::size_t>(length) > limits.maximum_utf16_code_units)
@@ -400,7 +390,14 @@ void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment&
                          bytes[index * 2U + 1U])
                      << 8U));
             }
-            const auto identity = strings.Create(chars);
+            JniObjectIdentity identity;
+            try {
+                identity = strings.Create(chars);
+            } catch (const std::bad_alloc&) {
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
+                                                 "string payload allocation failed");
+                return Word(0);
+            }
             try {
                 const auto reference = environment.PublishLocalObject(
                     frame.thread_id, identity);

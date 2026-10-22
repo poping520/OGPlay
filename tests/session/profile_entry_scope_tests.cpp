@@ -37,31 +37,34 @@ std::vector<std::uint8_t> ReadInterpreterFixture() {
 }
 
 struct AndroidVm final {
-  JniStringStore strings;
-  ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-  JniPrimitiveArrayStore arrays{arrays_payload};
-  JavaObjectModel model{strings, arrays};
-  DexClassLinker linker;
-  std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
-      std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
-  ogplay::core::CapabilityLedger ledger;
-  Interpreter interpreter;
-  VmThreadRuntime threads;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
+    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
+    JniPrimitiveArrayStore arrays{arrays_payload};
+    JavaObjectModel model{strings, arrays};
+    DexClassLinker linker;
+    std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
+        std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
+    ogplay::core::CapabilityLedger ledger;
+    Interpreter interpreter;
+    VmThreadRuntime threads;
 
-  explicit AndroidVm(InterpreterConfig config = {})
-      : interpreter(
-            [this]() -> DexClassLinker & {
-              auto catalog = CoreIntrinsicCatalog(
-                  AndroidCoreIntrinsicServices(context));
-              const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
-              catalog.insert(catalog.end(), android.begin(), android.end());
-              linker.RegisterIntrinsics(catalog);
-              ogplay::test::RegisterBootDex(linker);
-              linker.RegisterDex(ReadInterpreterFixture());
-              linker.Link();
-              return linker;
-            }(),
-            model, nullptr, ledger, config), threads(interpreter) { context->threads = &threads; }
+    explicit AndroidVm(InterpreterConfig config = {})
+        : interpreter(
+              [this]() -> DexClassLinker& {
+                  auto catalog = CoreIntrinsicCatalog(AndroidCoreIntrinsicServices(context));
+                  const auto android = ogplay::runtime::AndroidIntrinsicCatalog(context);
+                  catalog.insert(catalog.end(), android.begin(), android.end());
+                  linker.RegisterIntrinsics(catalog);
+                  ogplay::test::RegisterBootDex(linker);
+                  linker.RegisterDex(ReadInterpreterFixture());
+                  linker.Link();
+                  return linker;
+              }(),
+              model, nullptr, ledger, config),
+          threads(interpreter) {
+        context->threads = &threads;
+    }
 
   [[nodiscard]] VmMethodId Virtual(const std::string_view descriptor,
                                    const std::string_view name,
@@ -983,7 +986,8 @@ TEST_CASE("Configuration derives API19 screen layout from injected metrics") {
 }  // namespace
 
 TEST_CASE("AudioManager reports the deterministic external music fact") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1013,7 +1017,8 @@ TEST_CASE("AudioManager reports the deterministic external music fact") {
 }
 
 TEST_CASE("TelephonyManager records and cancels offline listeners") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1067,7 +1072,8 @@ TEST_CASE("TelephonyManager records and cancels offline listeners") {
 }
 
 TEST_CASE("SurfaceView owns a stable holder and callback identity") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1116,7 +1122,8 @@ TEST_CASE("SurfaceView owns a stable holder and callback identity") {
 }
 
 TEST_CASE("managed surface delivers holder callbacks to every registration") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1216,7 +1223,8 @@ TEST_CASE("managed surface delivers holder callbacks to every registration") {
 }
 
 TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1402,7 +1410,8 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
 }
 
 TEST_CASE("Thread priority validates and records the guest fact") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1476,7 +1485,8 @@ TEST_CASE("Thread priority validates and records the guest fact") {
 }
 
 TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);
@@ -1524,7 +1534,8 @@ TEST_CASE("ViewTreeObserver retains stable observer and listener identity") {
 }
 
 TEST_CASE("URLEncoder applies UTF-8 form encoding") {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model(strings, arrays);

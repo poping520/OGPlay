@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -40,7 +41,8 @@ TEST_CASE("framework SharedPreferences commits typed values by name") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
     FrameworkPreferencesHle preferences_hle(classes, invocations, environment,
@@ -143,7 +145,8 @@ TEST_CASE("framework SharedPreferences applies remove clear and type checks") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
     FrameworkPreferencesHle preferences_hle(classes, invocations, environment,

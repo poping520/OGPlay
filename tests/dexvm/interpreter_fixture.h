@@ -50,7 +50,8 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name);
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected);
 
 struct Vm final {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;
@@ -72,7 +73,8 @@ struct Vm final {
 };
 
 struct IntrinsicVm final {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model;

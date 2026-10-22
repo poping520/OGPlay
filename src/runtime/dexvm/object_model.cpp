@@ -248,35 +248,37 @@ JavaObjectModel::JavaObjectModel(JniStringStore& strings,
     if (config.min_free_bytes > config.max_free_bytes)
         throw std::invalid_argument("DexVM heap free range is inverted");
     arrays.ConfigurePayloadHeap(config.maximum_heap_bytes, config.heap_growth_limit_bytes);
-    arrays.SetAllocationContext({[state = impl_.get()]() -> std::shared_ptr<void> {
-                                     return state->allocation_mutex
-                                                ? std::make_shared<VmExecutionLockScope>(*state->allocation_mutex)
-                                                : nullptr;
-                                 },
-                                 [state = impl_.get()](std::uint64_t bytes) -> std::function<void()> {
-                                     const auto target = state->heap_target_bytes;
-                                     const auto emergency = state->emergency_remaining;
-                                     // Prepare rollback before Reserve so its own allocation cannot leak a charge.
-                                     std::function<void()> undo = [state, bytes, target, emergency] {
-                                         state->allocated_bytes -= bytes;
-                                         state->heap_target_bytes = target;
-                                         state->emergency_remaining = emergency;
-                                     };
-                                     try {
-                                         state->Reserve(bytes);
-                                     } catch (const DexVmError& e) {
-                                         if (e.Reason() == DexVmErrorReason::heap_budget_exhausted)
-                                             throw std::bad_alloc();
-                                         throw;
-                                     }
-                                     return undo;
-                                 },
-                                 [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; },
-                                 [state = impl_.get()] { return state->emergency_reserve; }});
+    JavaPayloadAllocationContext allocation_context{
+        [state = impl_.get()]() -> std::shared_ptr<void> {
+            return state->allocation_mutex ? std::make_shared<VmExecutionLockScope>(*state->allocation_mutex) : nullptr;
+        },
+        [state = impl_.get()](std::uint64_t bytes) -> std::function<void()> {
+            const auto target = state->heap_target_bytes;
+            const auto emergency = state->emergency_remaining;
+            // Prepare rollback before Reserve so its own allocation cannot leak a charge.
+            std::function<void()> undo = [state, bytes, target, emergency] {
+                state->allocated_bytes -= bytes;
+                state->heap_target_bytes = target;
+                state->emergency_remaining = emergency;
+            };
+            try {
+                state->Reserve(bytes);
+            } catch (const DexVmError& e) {
+                if (e.Reason() == DexVmErrorReason::heap_budget_exhausted) throw std::bad_alloc();
+                throw;
+            }
+            return undo;
+        },
+        [state = impl_.get()](std::uint64_t bytes) { state->allocated_bytes -= bytes; },
+        [state = impl_.get()] { return state->emergency_reserve; }};
+    strings.ConfigurePayloadHeap(config.maximum_heap_bytes, config.heap_growth_limit_bytes);
+    arrays.SetAllocationContext(allocation_context);
+    strings.SetAllocationContext(std::move(allocation_context));
 }
 
 JavaObjectModel::~JavaObjectModel() {
     impl_->arrays->SetAllocationContext({});
+    impl_->strings->SetAllocationContext({});
 }
 
 void JavaObjectModel::SetPrimitiveAllocationMutex(VmExecutionLock& mutex) {
@@ -314,6 +316,12 @@ VmObjectRef JavaObjectModel::FromIdentity(const JniObjectIdentity identity) {
         static_cast<void>(impl_->strings->Length(identity));
         record.kind = VmObjectKind::string;
         record.java_class = impl_->string_class;
+        try {
+            impl_->strings->EnsureCharged(identity);
+        } catch (const std::bad_alloc&) {
+            Fail(DexVmErrorReason::heap_budget_exhausted, "JNI string import exceeded heap budget");
+        }
+        record.reserved_bytes = EstimateStringBytes(static_cast<std::size_t>(impl_->strings->Length(identity)));
     } catch (const JniStringError&) {
         try {
             record.primitive_kind = impl_->arrays->Kind(identity);
@@ -551,7 +559,7 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         }
         switch (record.kind) {
             case VmObjectKind::string:
-                impl_->strings->Delete(record.identity);
+                impl_->allocated_bytes -= record.reserved_bytes - impl_->strings->Delete(record.identity);
                 break;
             case VmObjectKind::primitive_array:
                 record.primitive_view.reset();
@@ -589,7 +597,8 @@ GcSweepResult JavaObjectModel::Sweep(const GcMarkResult& mark,
         impl_->by_identity.erase(record.identity);
         result.freed_bytes += record.reserved_bytes;
         ++result.freed_objects;
-        if (record.kind != VmObjectKind::primitive_array) impl_->allocated_bytes -= record.reserved_bytes;
+        if (record.kind != VmObjectKind::primitive_array && record.kind != VmObjectKind::string)
+            impl_->allocated_bytes -= record.reserved_bytes;
         --impl_->object_count;
         record.occupied = false;
         impl_->free_records.push_back(static_cast<std::uint32_t>(index));
@@ -669,15 +678,24 @@ void JavaObjectModel::SetHostState(const VmObjectRef ref,
 
 VmObjectRef JavaObjectModel::NewString(const std::u16string_view value) {
     const auto bytes = 32ULL + value.size() * 2ULL;
-    impl_->Reserve(bytes);
     std::vector<JniChar> units(value.begin(), value.end());
-    const auto identity = impl_->strings->Create(units);
-    Impl::Record record;
-    record.kind = VmObjectKind::string;
-    record.identity = identity;
-    record.java_class = impl_->string_class;
-    record.reserved_bytes = bytes;
-    return impl_->Register(std::move(record));
+    JniObjectIdentity identity;
+    try {
+        identity = impl_->strings->Create(units);
+    } catch (const std::bad_alloc&) {
+        Fail(DexVmErrorReason::heap_budget_exhausted, "string payload allocation failed");
+    }
+    try {
+        Impl::Record record;
+        record.kind = VmObjectKind::string;
+        record.identity = identity;
+        record.java_class = impl_->string_class;
+        record.reserved_bytes = bytes;
+        return impl_->Register(std::move(record));
+    } catch (...) {
+        impl_->strings->Delete(identity);
+        throw;
+    }
 }
 
 VmObjectRef JavaObjectModel::InternString(const std::u16string_view value) {
@@ -707,9 +725,13 @@ void JavaObjectModel::BindString(const VmObjectRef ref,
              "string constructor receiver is not an unbound string "
              "instance");
     }
-    impl_->Reserve(value.size() * 2ULL);
     std::vector<JniChar> units(value.begin(), value.end());
-    const auto identity = impl_->strings->Create(units);
+    JniObjectIdentity identity;
+    try {
+        identity = impl_->strings->Create(units, false);
+    } catch (const std::bad_alloc&) {
+        Fail(DexVmErrorReason::heap_budget_exhausted, "string constructor payload allocation failed");
+    }
     impl_->by_identity.erase(record.identity);
     impl_->by_identity.emplace(
         identity, static_cast<std::uint32_t>(ref.Value() - 1));

@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <cstdint>
 #include <vector>
 
@@ -31,7 +32,8 @@ TEST_CASE("framework Locale exposes one deterministic injected default") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     FrameworkLifecycleHle lifecycle(classes, invocations);
     static_cast<void>(lifecycle.Install());
     FrameworkLocaleHle locale_hle(classes, invocations, environment, strings,
@@ -72,7 +74,8 @@ TEST_CASE("framework Locale rejects invalid config and reference scope") {
     JniClassRegistry invalid_classes;
     JniInvocationEngine invalid_invocations(invalid_classes);
     JniEnvironment invalid_environment;
-    JniStringStore invalid_strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider invalid_strings_payload;
+    JniStringStore invalid_strings{invalid_strings_payload};
     FrameworkLifecycleHle invalid_lifecycle(invalid_classes,
                                             invalid_invocations);
     static_cast<void>(invalid_lifecycle.Install());
@@ -85,7 +88,8 @@ TEST_CASE("framework Locale rejects invalid config and reference scope") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     FrameworkLifecycleHle lifecycle(classes, invocations);
     static_cast<void>(lifecycle.Install());
     FrameworkLocaleHle locale_hle(classes, invocations, environment, strings,

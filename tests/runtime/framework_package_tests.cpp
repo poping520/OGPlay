@@ -1,3 +1,4 @@
+#include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -27,7 +28,8 @@ TEST_CASE("framework PackageManager returns current package version fields") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     JniFieldStore fields(classes);
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();
@@ -86,7 +88,8 @@ TEST_CASE("framework PackageManager rejects unsupported queries and config") {
     JniClassRegistry invalid_classes;
     JniInvocationEngine invalid_invocations(invalid_classes);
     JniEnvironment invalid_environment;
-    JniStringStore invalid_strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider invalid_strings_payload;
+    JniStringStore invalid_strings{invalid_strings_payload};
     JniFieldStore invalid_fields(invalid_classes);
     FrameworkLifecycleHle invalid_lifecycle(invalid_classes,
                                             invalid_invocations);
@@ -100,7 +103,8 @@ TEST_CASE("framework PackageManager rejects unsupported queries and config") {
     JniClassRegistry classes;
     JniInvocationEngine invocations(classes);
     JniEnvironment environment;
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     JniFieldStore fields(classes);
     FrameworkLifecycleHle lifecycle(classes, invocations);
     const auto framework = lifecycle.Install();

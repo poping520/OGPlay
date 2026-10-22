@@ -8,7 +8,8 @@
 #include "ogplay/hal/clock.h"
 using namespace ogplay;
 TEST_CASE("Dashboard source DexVM busy snapshot never waits for execution lock") {
-    runtime::JniStringStore strings;
+    runtime::HostCopyJavaPayloadProvider strings_payload;
+    runtime::JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     runtime::JniPrimitiveArrayStore arrays{arrays_payload};
     runtime::dexvm::JavaObjectModel objects(strings, arrays); runtime::dexvm::DexClassLinker linker;

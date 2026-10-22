@@ -431,7 +431,7 @@ note = "M1 预留 4 GiB；M2 固定 4 KiB Android guest 页并在 4/16 KiB 宿�
 [runtime.java_payload_backing]
 status = "partial"
 test = "tests/runtime/java_payload_provider_tests.cpp; tests/runtime/jni_array_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp; tests/dexvm/gc_tests.cpp; tests/memory/address_space_tests.cpp"
-note = "ADR-0152 / DVM-260：阶段 2/3 已验收，primitive payload 自创建起使用 guest backing 与长期 view；Elements/Critical 同址直接借用、FALSE，store 按数组身份计数 pin 并纳入 GC 强根。VM 唯一逻辑收费，provider 推导提交上限及显式应急预留；受保护映射/restore 与普通 RW JIT 策略不变。String/NIO 未迁移，Windows 未实跑。"
+note = "ADR-0152 / DVM-260：阶段 1..4 已验收。primitive 与不可变 String 自创建起共用 guest provider/长期 view；数组 Elements/Critical 与 String Chars/Critical 直接借用 FALSE，身份 pin 为 GC 强根，跨线程持有。VM 唯一收费，创建/import/BindString 单次计费、失败回滚及显式应急预留。MUTF8 仍复制/预算；受保护映射/restore/JIT 策略不变。NIO 未迁移，Windows 未实跑。"
 
 [memory.soft_mmu]
 status = "complete"
@@ -851,7 +851,7 @@ note = "DVM-200：From/ToReflectedMethod/Field 四槽复用 ReflectionRuntime �
 [runtime.jni_guest_utf16_strings]
 status = "complete"
 test = "tests/runtime/jni_guest_instance_calls_tests.cpp; tests/runtime/jni_guest_bindings_tests.cpp"
-note = "WU-M8-003、DVM-204：NewString/GetStringLength/GetStringChars/ReleaseStringChars/GetStringRegion 五槽，按 UTF-16 code unit 计；chars 映射 copy buffer，共享默认 16 MiB 预算（UTF-16 最多 1 Mi 单元、MUTF-8 最多 3 MiB），isCopy 写 JNI_TRUE，失败回滚。GetStringCritical/ReleaseStringCritical 不支持。"
+note = "ADR-0152 / DVM-260 阶段 4 已验收：NewString/Length/Region 保留码元和输入预检；Chars/Critical 返回不可变 guest payload、FALSE，零长有效；按 String 身份计数 pin，Release 忽略 pointer/kind，无配对仅 warn/ledger。UTF16 不占 copy arena；MUTF8 仍复制/TRUE/独立 lease 和预算。JNI 双后端 399/399，实景 String unpin warn 为零；const 指针写入不支持。"
 
 [runtime.jni_guest_arrays]
 status = "complete"
@@ -1236,7 +1236,7 @@ note = "DIAG-7/WU7-H：run-dex 复用生产 guest 进程、平台 JNI/NIO；保�
 [tools.jni_conformance]
 status = "partial"
 test = "tests/frontend/run_dex_tests.cpp; tools/conformance/jni_tests.py --self-test; tools/conformance/jni_tests.py --coverage --require-full --check-baseline"
-note = "DIAG-8 / DVM-260 阶段 3：独立 C11/Java JNI 探针双后端分组/隔离、预期死亡、只升不降基线及 --require-full；静态覆盖 233/233（100%），仅排除 DestroyJavaVM。各 397/399，数组直接借用 34 条转 pass，余 String 的 2 条；pending 与 heap capacity 沿用 ADR-0153。"
+note = "DIAG-8 / DVM-260：独立 C11/Java JNI 探针双后端分组/隔离、预期死亡、只升不降基线及 --require-full，静态覆盖 233/233，仅排除 DestroyJavaVM；双后端及基线各 399/399。数组与 String UTF16 直接借用已验收，MUTF8 保持复制；pending 与 heap capacity 沿用 ADR-0153。"
 
 [tools.dex_dependency_survey]
 status = "complete"

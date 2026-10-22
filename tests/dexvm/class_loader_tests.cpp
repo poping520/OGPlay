@@ -34,7 +34,8 @@ std::vector<std::uint8_t> ReadFixture(const std::string& name) {
 }
 
 struct LoaderVm final {
-    JniStringStore strings;
+    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+    JniStringStore strings{strings_payload};
     ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
     JniPrimitiveArrayStore arrays{arrays_payload};
     JavaObjectModel model{strings, arrays};
@@ -582,7 +583,8 @@ TEST_CASE("ClassLoader parent-first registration preserves bootstrap identity an
                 CHECK_THROWS_AS(static_cast<void>(linker.ResolveMethodIndex(app, i, InvokeKind::static_call)), JavaLinkageError);
             }
         }
-        JniStringStore strings;
+        ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
+        JniStringStore strings{strings_payload};
         ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
         JniPrimitiveArrayStore arrays{arrays_payload};
         JavaObjectModel model(strings, arrays);

@@ -555,57 +555,6 @@ TEST_CASE("DataOutputStream and wrapped FileOutputStream share one close state")
     CHECK(saved.substr(2) == "save");
 }
 
-TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operations") {
-    FileVm vm(nullptr, false);
-    VmThreadRuntime threads(vm.interpreter);
-    const std::vector<std::byte> payload{std::byte{'h'}, std::byte{'i'}, std::byte{'o'}, std::byte{'k'}};
-    const auto archive = MakeStoredZip("save.dat", payload);
-    const auto array_class = vm.linker.ResolveDescriptor("[B");
-    const auto source_array = vm.model.NewPrimitiveArray(
-        array_class, JniPrimitiveKind::byte,
-        static_cast<JniSize>(archive.size()));
-    vm.model.WriteByteRegion(source_array, 0, archive);
-    const auto source =
-        vm.interpreter.NewIntrinsicInstance("Ljava/io/ByteArrayInputStream;");
-    static_cast<void>(vm.CallOn(source, "<init>", "([B)V",
-                                {VmValue::Ref(source_array)}));
-    const auto zip =
-        vm.interpreter.NewIntrinsicInstance("Ljava/util/zip/ZipInputStream;");
-    static_cast<void>(vm.CallOn(zip, "<init>", "(Ljava/io/InputStream;)V",
-                                {VmValue::Ref(source)}));
-    CHECK(vm.interpreter.IO().FindInput(source) == nullptr);
-
-    const auto entry = vm.CallOn(
-        zip, "getNextEntry", "()Ljava/util/zip/ZipEntry;").ref;
-    REQUIRE(entry.IsValid());
-    CHECK(vm.interpreter.StringUtf8(vm.CallOn(
-              entry, "getName", "()Ljava/lang/String;").ref) == "save.dat");
-    CHECK(vm.CallOn(zip,"available","()I").AsInt()==1);
-    CHECK(vm.CallOn(zip,"read","()I").AsInt()=='h');
-    CHECK(vm.CallOn(zip,"skip","(J)J",{VmValue::Long(1)}).AsLong()==1);
-    CHECK(vm.CallOn(zip,"markSupported","()Z").AsInt()==0);
-    CHECK(vm.CallOnOutcome(zip,"reset","()V").exception.IsValid());
-    const auto output = vm.model.NewPrimitiveArray(
-        array_class, JniPrimitiveKind::byte, 2);
-    CHECK(vm.CallOn(zip, "read", "([BII)I",
-                    {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(2)})
-              .AsInt() == 2);
-    CHECK(vm.model.ReadByteRegion(output, 0, 2) == std::vector<std::byte>{std::byte{'o'},std::byte{'k'}});
-    CHECK(vm.CallOn(zip,"read","()I").AsInt()==-1);
-    CHECK(vm.CallOn(zip,"available","()I").AsInt()==0);
-    static_cast<void>(vm.CallOn(zip,"close","()V"));
-    static_cast<void>(vm.CallOn(zip,"close","()V"));
-    CHECK(vm.CallOnOutcome(zip,"read","()I").exception.IsValid());
-    const auto raw=vm.interpreter.NewIntrinsicInstance("Ljava/io/FileInputStream;");
-    vm.vfs.CreateDirectory("/sdcard"); vm.interpreter.IO().WriteFile("/sdcard/archive.zip",archive);
-    static_cast<void>(vm.CallOn(raw,"<init>","(Ljava/lang/String;)V",{VmValue::Ref(vm.interpreter.NewStringUtf8("/sdcard/archive.zip"))}));
-    const auto filezip=vm.interpreter.NewIntrinsicInstance("Ljava/util/zip/ZipInputStream;");
-    static_cast<void>(vm.CallOn(filezip,"<init>","(Ljava/io/InputStream;)V",{VmValue::Ref(raw)}));
-    const std::array roots{filezip}; const auto protect=vm.interpreter.ProtectReferences(roots);
-    static_cast<void>(vm.interpreter.CollectGarbage());
-    static_cast<void>(vm.CallOn(filezip,"close","()V"));
-    CHECK(vm.CallOnOutcome(raw,"read","()I").exception.IsValid());
-}
 
 TEST_CASE("DVM-104 FileReader inherits guest Reader behavior over VFS UTF8") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {

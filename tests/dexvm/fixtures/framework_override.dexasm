@@ -87,3 +87,51 @@
     move-result v0
     return v0
 .end method
+
+# DVM-263: execute type checks and catch matching in the guest interpreter.
+.class public Lfixture/FrameworkHierarchyProbe;
+.super Ljava/lang/Object;
+.method public static catchAndroidException()I
+.registers 2
+    new-instance v0, Landroid/content/pm/PackageManager$NameNotFoundException;
+    const-string v1, "missing"
+    invoke-direct {v0, v1}, Landroid/content/pm/PackageManager$NameNotFoundException;-><init>(Ljava/lang/String;)V
+    :try_start
+    throw v0
+    :try_end
+    :caught
+    move-exception v0
+    const/4 v1, 1
+    return v1
+    .catch Landroid/util/AndroidException; :try_start :try_end :caught
+.end method
+.method public static motion(Landroid/view/MotionEvent;)Z
+.registers 2
+    instance-of v0, v1, Landroid/view/InputEvent;
+    return v0
+.end method
+.method public static scroll(Landroid/widget/ScrollView;)Z
+.registers 2
+    instance-of v0, v1, Landroid/widget/FrameLayout;
+    return v0
+.end method
+.method public static web(Landroid/webkit/WebView;)Z
+.registers 2
+    instance-of v0, v1, Landroid/widget/AbsoluteLayout;
+    return v0
+.end method
+.method public static application(Landroid/app/Application;)Z
+.registers 2
+    instance-of v0, v1, Landroid/content/ComponentCallbacks2;
+    return v0
+.end method
+.method public static parcelable(Landroid/graphics/PointF;)Z
+.registers 2
+    instance-of v0, v1, Landroid/os/Parcelable;
+    return v0
+.end method
+.method public static zip(Ljava/util/zip/ZipInputStream;)Z
+.registers 2
+    instance-of v0, v1, Ljava/util/zip/InflaterInputStream;
+    return v0
+.end method

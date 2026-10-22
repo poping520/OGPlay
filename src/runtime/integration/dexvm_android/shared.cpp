@@ -2140,6 +2140,11 @@ dx::VmObjectRef MakeMotionEvent(dx::Interpreter& vm, const AndroidBoundaryInput&
         throw std::invalid_argument("MotionEvent requires a motion snapshot");
     const auto instance = vm.NewIntrinsicInstance("Landroid/view/MotionEvent;");
     const auto root = vm.ProtectReferences(std::array{instance});
+    const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(instance), "<init>", "()V");
+    const auto initialized = vm.Call(*constructor, std::array{dx::VmValue::Ref(instance)});
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor, initialized.exception_message,
+                              initialized.exception};
     const auto count = snapshot.pointers.size();
     const auto length = Layout::Sample(count, snapshot.history.size() + 1);
     const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),

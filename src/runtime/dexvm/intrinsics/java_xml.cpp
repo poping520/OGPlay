@@ -133,8 +133,9 @@ IntrinsicClassDecl DeclareXmlReader(const CoreIntrinsicServices&) {
 }
 
 IntrinsicClassDecl DeclareDefaultHandler() {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Lorg/xml/sax/helpers/DefaultHandler;", "Ljava/lang/Object;");
+    auto builder = IntrinsicClassBuilder::Class("Lorg/xml/sax/helpers/DefaultHandler;", "Ljava/lang/Object;",
+                                                {"Lorg/xml/sax/EntityResolver;", "Lorg/xml/sax/DTDHandler;",
+                                                 "Lorg/xml/sax/ContentHandler;", "Lorg/xml/sax/ErrorHandler;"});
     builder.Constructor("()V",
                         [](IntrinsicContext&) { return VmValue::Void(); });
     return std::move(builder).Build();

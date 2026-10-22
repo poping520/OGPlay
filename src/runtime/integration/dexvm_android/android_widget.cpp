@@ -15,8 +15,22 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout$LayoutParams;", "Ljava/lang/Object;");
-    builder.Constructor("(IIII)V", GraphicsNoopHandler());
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout$LayoutParams;",
+                                                    "Landroid/view/ViewGroup$LayoutParams;");
+    const auto x = builder.BoundInstanceField("x", "I");
+    const auto y = builder.BoundInstanceField("y", "I");
+    builder.Constructor("(IIII)V", [x, y](dx::IntrinsicContext& c) {
+        const auto target = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup$LayoutParams;"), "<init>", "(II)V");
+        const auto result =
+            c.vm.Call(*target, std::array{dx::VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        dx::IntrinsicCall(c).SetInt(x, c.arguments[2].AsInt());
+        dx::IntrinsicCall(c).SetInt(y, c.arguments[3].AsInt());
+        return dx::VmValue::Void();
+    });
     // AOSP 4.4 ROM line 213.
     builder.Constructor(
         "(Landroid/view/ViewGroup$LayoutParams;)V",
@@ -479,8 +493,17 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ScrollView(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ScrollView;", "Landroid/view/ViewGroup;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ScrollView;", "Landroid/widget/FrameLayout;");
+    builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
+        const auto target =
+            call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;"),
+                                              "<init>", "(Landroid/content/Context;)V");
+        const auto result = call.vm.Call(*target, std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
     return std::move(builder).Build();
 }
 
@@ -494,8 +517,19 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_TableLayout(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TableLayout;", "Landroid/view/ViewGroup;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TableLayout;", "Landroid/widget/LinearLayout;");
+    builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& c) {
+        const auto target = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;"), "<init>", "(Landroid/content/Context;)V");
+        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+        const std::vector<dx::VmValue> parameters{c.arguments[0]};
+        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+        const auto result = c.vm.Call(*target, arguments);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
     return std::move(builder).Build();
 }
 
@@ -509,8 +543,19 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_TableRow(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TableRow;", "Landroid/view/ViewGroup;");
-    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TableRow;", "Landroid/widget/LinearLayout;");
+    builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& c) {
+        const auto target = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;"), "<init>", "(Landroid/content/Context;)V");
+        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+        const std::vector<dx::VmValue> parameters{c.arguments[0]};
+        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+        const auto result = c.vm.Call(*target, arguments);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
     return std::move(builder).Build();
 }
 
@@ -810,7 +855,8 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
 }
 
 Decl Declare_android_widget_TextView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;",
+                                                    {"Landroid/view/ViewTreeObserver$OnPreDrawListener;"});
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V",

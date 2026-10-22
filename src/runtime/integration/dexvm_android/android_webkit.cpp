@@ -41,8 +41,22 @@ Decl Declare_android_webkit_ConsoleMessage(const Context& context) {
 
 Decl Declare_android_webkit_HttpAuthHandler(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/webkit/HttpAuthHandler;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/HttpAuthHandler;", "Landroid/os/Handler;");
+    builder.Constructor(
+        "()V",
+        [](dx::IntrinsicContext& c) {
+            const auto target = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/os/Handler;"),
+                                                               "<init>", "()V");
+            std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+            const std::vector<dx::VmValue> parameters{};
+            arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+            const auto result = c.vm.Call(*target, arguments);
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        },
+        dx::kAccPublic);
     builder.VirtualMethod("cancel", "()V", NeutralHandler('V'));
     builder.VirtualMethod("proceed", "(Ljava/lang/String;Ljava/lang/String;)V", NeutralHandler('V'));
     builder.VirtualMethod("useHttpAuthUsernamePassword", "()Z", NeutralHandler('Z'));
@@ -208,7 +222,10 @@ Decl Declare_android_webkit_WebView_DisabledLoadCallback(
 }
 
 Decl Declare_android_webkit_WebView(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView;", "Landroid/view/ViewGroup;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/webkit/WebView;", "Landroid/widget/AbsoluteLayout;",
+                                                    {"Landroid/view/ViewTreeObserver$OnGlobalFocusChangeListener;",
+                                                     "Landroid/view/ViewGroup$OnHierarchyChangeListener;",
+                                                     "Landroid/view/ViewDebug$HierarchyHandler;"});
     const auto webview_thread = builder.BoundInstanceField(
         "mWebViewThread", "Landroid/os/Looper;", dx::kAccPrivate);
     const auto destroyed = builder.BoundInstanceField(
@@ -243,19 +260,21 @@ Decl Declare_android_webkit_WebView(const Context& context) {
                                   "WebView already destroyed"};
         }
     };
-    builder.Constructor("(Landroid/content/Context;)V",
-        [context, webview_thread](dx::IntrinsicContext& call) {
-            const auto result = ViewInitHandler(context)(call);
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver, ui::UiClass::View);
-            auto* state = context->ui_tree.Get(node);
-            state->focusable = true;
-            state->focusable_in_touch_mode = true;
-            dx::IntrinsicCall(call).SetRef(
-                webview_thread,
-                CurrentLooper(context, call.vm.CurrentContextToken()));
-            return result;
-        });
+    builder.Constructor("(Landroid/content/Context;)V", [context, webview_thread](dx::IntrinsicContext& call) {
+        const auto target =
+            call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/widget/AbsoluteLayout;"),
+                                              "<init>", "(Landroid/content/Context;)V");
+        const auto result = call.vm.Call(*target, std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
+        auto* state = context->ui_tree.Get(node);
+        state->focusable = true;
+        state->focusable_in_touch_mode = true;
+        dx::IntrinsicCall(call).SetRef(webview_thread, CurrentLooper(context, call.vm.CurrentContextToken()));
+        return result.value;
+    });
     builder.VirtualMethod("destroy", "()V",
         [check_thread, destroyed, settings, view_client, chrome_client,
          javascript_interfaces, pending_load](dx::IntrinsicContext& call) {

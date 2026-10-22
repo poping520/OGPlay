@@ -2198,241 +2198,185 @@ Decl Declare_android_content_IntentFilter_MalformedMimeTypeException(
 }
 
 Decl Declare_android_content_IntentFilter(const Context &context) {
-  auto builder = dx::IntrinsicClassBuilder::Class(
-      "Landroid/content/IntentFilter;", "Ljava/lang/Object;");
-  const auto reset = [context](const dx::VmObjectRef filter) {
-    const auto key = filter.Value();
-    context->intent_filter_actions.erase(key);
-    context->intent_filter_categories.erase(key);
-    context->intent_filter_types.erase(key);
-    context->intent_filter_schemes.erase(key);
-    context->intent_filter_authorities.erase(key);
-  };
-  const auto add_action = [context](dx::IntrinsicContext &call,
-                                    const dx::VmObjectRef value) {
-    if (!value.IsValid()) {
-      throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                            "IntentFilter action is null"};
-    }
-    AddUnique(context->intent_filter_actions[call.receiver.Value()],
-              call.vm.StringUtf8(value));
-  };
-  const auto add_type = [context](dx::IntrinsicContext &call,
-                                  const dx::VmObjectRef value) {
-    if (!value.IsValid()) {
-      throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                            "IntentFilter MIME type is null"};
-    }
-    const auto mime = call.vm.StringUtf8(value);
-    const auto slash = mime.find('/');
-    if (slash == std::string::npos || slash == 0U || mime.size() < slash + 2U) {
-      throw dx::VmJavaThrow{
-          "Landroid/content/IntentFilter$MalformedMimeTypeException;", mime};
-    }
-    AddUnique(context->intent_filter_types[call.receiver.Value()],
-              mime.substr(slash + 1U) == "*" ? mime.substr(0, slash) : mime);
-  };
-  const auto filter_values =
-      [context](
-          const auto &table,
-          const dx::VmObjectRef filter) -> const std::vector<std::string> & {
-    static const std::vector<std::string> empty;
-    const auto found = table.find(filter.Value());
-    return found == table.end() ? empty : found->second;
-  };
-  const auto snapshot_categories = [](dx::IntrinsicContext &call,
-                                      const dx::VmObjectRef categories)
-      -> std::optional<std::vector<dx::VmObjectRef>> {
-    if (!categories.IsValid())
-      return std::vector<dx::VmObjectRef>{};
-    const auto iterator = InvokeAndroidVirtual(call, categories, "iterator",
-                                               "()Ljava/util/Iterator;");
-    if (!iterator.has_value())
-      return std::nullopt;
-    const std::array iterator_roots{categories, iterator->ref};
-    [[maybe_unused]] const auto roots =
-        call.vm.ProtectReferences(iterator_roots);
-    std::vector<dx::VmObjectRef> result;
-    for (;;) {
-      const auto has_next =
-          InvokeAndroidVirtual(call, iterator->ref, "hasNext", "()Z");
-      if (!has_next.has_value())
-        return std::nullopt;
-      if (has_next->AsInt() == 0)
-        return result;
-      const auto next = InvokeAndroidVirtual(call, iterator->ref, "next",
-                                             "()Ljava/lang/Object;");
-      if (!next.has_value())
-        return std::nullopt;
-      result.push_back(next->ref);
-    }
-  };
-  const auto match_data =
-      [context](dx::IntrinsicContext &call,
-                const std::optional<std::string> &type,
-                const std::optional<std::string> &scheme,
-                const dx::VmObjectRef data) -> std::optional<std::int32_t> {
-    const auto key = call.receiver.Value();
-    const auto types_it = context->intent_filter_types.find(key);
-    const auto schemes_it = context->intent_filter_schemes.find(key);
-    const auto has_types = types_it != context->intent_filter_types.end();
-    const auto has_schemes = schemes_it != context->intent_filter_schemes.end();
-    auto match = kMatchCategoryEmpty;
-    if (!has_types && !has_schemes) {
-      return !type.has_value() && !data.IsValid()
-                 ? kMatchCategoryEmpty + kMatchAdjustmentNormal
-                 : kNoMatchData;
-    }
-    if (has_schemes) {
-      const auto requested = scheme.value_or("");
-      if (std::find(schemes_it->second.begin(), schemes_it->second.end(),
-                    requested) == schemes_it->second.end()) {
-        return kNoMatchData;
-      }
-      match = kMatchCategoryScheme;
-      const auto authorities = context->intent_filter_authorities.find(key);
-      if (authorities != context->intent_filter_authorities.end()) {
-        if (!data.IsValid())
-          return kNoMatchData;
-        const auto host =
-            InvokeAndroidVirtual(call, data, "getHost", "()Ljava/lang/String;");
-        const auto port = InvokeAndroidVirtual(call, data, "getPort", "()I");
-        if (!host.has_value() || !port.has_value())
-          return std::nullopt;
-        if (!host->ref.IsValid())
-          return kNoMatchData;
-        const auto requested_host = call.vm.StringUtf8(host->ref);
-        bool authority_matched{};
-        for (const auto &authority : authorities->second) {
-          const auto host_matches =
-              authority.wildcard
-                  ? AsciiEndsWithIgnoreCase(requested_host,
-                                            authority.match_host)
-                  : AsciiEqualIgnoreCase(requested_host, authority.match_host);
-          if (!host_matches)
-            continue;
-          if (authority.port >= 0) {
-            if (port->AsInt() != authority.port)
-              continue;
-            match = kMatchCategoryPort;
-          } else {
-            match = kMatchCategoryHost;
-          }
-          authority_matched = true;
-          break;
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/IntentFilter;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
+    const auto reset = [context](const dx::VmObjectRef filter) {
+        const auto key = filter.Value();
+        context->intent_filter_actions.erase(key);
+        context->intent_filter_categories.erase(key);
+        context->intent_filter_types.erase(key);
+        context->intent_filter_schemes.erase(key);
+        context->intent_filter_authorities.erase(key);
+    };
+    const auto add_action = [context](dx::IntrinsicContext& call, const dx::VmObjectRef value) {
+        if (!value.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "IntentFilter action is null"};
         }
-        if (!authority_matched)
-          return kNoMatchData;
-      }
-    } else if (scheme.has_value() && !scheme->empty() && *scheme != "content" &&
-               *scheme != "file") {
-      return kNoMatchData;
-    }
-    if (has_types) {
-      if (!type.has_value() || !FindMimeType(types_it->second, *type)) {
-        return kNoMatchType;
-      }
-      match = kMatchCategoryType;
-    } else if (type.has_value()) {
-      return kNoMatchType;
-    }
-    return match + kMatchAdjustmentNormal;
-  };
-  const auto string_argument =
-      [](dx::IntrinsicContext &call,
-         const std::size_t index) -> std::optional<std::string> {
-    const auto value = call.arguments[index].ref;
-    if (!value.IsValid())
-      return std::nullopt;
-    return call.vm.StringUtf8(value);
-  };
-  const auto category_mismatch =
-      [context, snapshot_categories](dx::IntrinsicContext &call,
-                                     const dx::VmObjectRef values)
-      -> std::optional<std::optional<dx::VmObjectRef>> {
-    const auto snapshot = snapshot_categories(call, values);
-    if (!snapshot.has_value())
-      return std::nullopt;
-    const auto found =
-        context->intent_filter_categories.find(call.receiver.Value());
-    for (const auto category : *snapshot) {
-      const auto name = call.vm.StringUtf8(category);
-      if (found == context->intent_filter_categories.end() ||
-          !FilterContains(found->second, name)) {
-        return std::optional<dx::VmObjectRef>{category};
-      }
-    }
-    return std::optional<dx::VmObjectRef>{};
-  };
-  builder
-      .ConstantInt("MATCH_CATEGORY_MASK", "I", 0x0fff0000,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_ADJUSTMENT_NORMAL", "I", kMatchAdjustmentNormal,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_CATEGORY_EMPTY", "I", kMatchCategoryEmpty,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_CATEGORY_SCHEME", "I", kMatchCategoryScheme,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_CATEGORY_HOST", "I", kMatchCategoryHost,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_CATEGORY_PORT", "I", kMatchCategoryPort,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("MATCH_CATEGORY_TYPE", "I", kMatchCategoryType,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("NO_MATCH_TYPE", "I", kNoMatchType,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("NO_MATCH_DATA", "I", kNoMatchData,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("NO_MATCH_ACTION", "I", kNoMatchAction,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
-      .ConstantInt("NO_MATCH_CATEGORY", "I", kNoMatchCategory,
-                   dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-  builder.Constructor("(Ljava/lang/String;)V",
-                      [reset, add_action](dx::IntrinsicContext &call) {
-                        reset(call.receiver);
-                        add_action(call, call.arguments[0].ref);
-                        return dx::VmValue::Void();
-                      });
-  builder.Constructor("()V", [reset](dx::IntrinsicContext &call) {
-    reset(call.receiver);
-    return dx::VmValue::Void();
-  });
-  builder.Constructor(
-      "(Ljava/lang/String;Ljava/lang/String;)V",
-      [reset, add_action, add_type](dx::IntrinsicContext &call) {
+        AddUnique(context->intent_filter_actions[call.receiver.Value()], call.vm.StringUtf8(value));
+    };
+    const auto add_type = [context](dx::IntrinsicContext& call, const dx::VmObjectRef value) {
+        if (!value.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "IntentFilter MIME type is null"};
+        }
+        const auto mime = call.vm.StringUtf8(value);
+        const auto slash = mime.find('/');
+        if (slash == std::string::npos || slash == 0U || mime.size() < slash + 2U) {
+            throw dx::VmJavaThrow{"Landroid/content/IntentFilter$MalformedMimeTypeException;", mime};
+        }
+        AddUnique(context->intent_filter_types[call.receiver.Value()],
+                  mime.substr(slash + 1U) == "*" ? mime.substr(0, slash) : mime);
+    };
+    const auto filter_values = [context](const auto& table,
+                                         const dx::VmObjectRef filter) -> const std::vector<std::string>& {
+        static const std::vector<std::string> empty;
+        const auto found = table.find(filter.Value());
+        return found == table.end() ? empty : found->second;
+    };
+    const auto snapshot_categories =
+        [](dx::IntrinsicContext& call,
+           const dx::VmObjectRef categories) -> std::optional<std::vector<dx::VmObjectRef>> {
+        if (!categories.IsValid()) return std::vector<dx::VmObjectRef>{};
+        const auto iterator = InvokeAndroidVirtual(call, categories, "iterator", "()Ljava/util/Iterator;");
+        if (!iterator.has_value()) return std::nullopt;
+        const std::array iterator_roots{categories, iterator->ref};
+        [[maybe_unused]] const auto roots = call.vm.ProtectReferences(iterator_roots);
+        std::vector<dx::VmObjectRef> result;
+        for (;;) {
+            const auto has_next = InvokeAndroidVirtual(call, iterator->ref, "hasNext", "()Z");
+            if (!has_next.has_value()) return std::nullopt;
+            if (has_next->AsInt() == 0) return result;
+            const auto next = InvokeAndroidVirtual(call, iterator->ref, "next", "()Ljava/lang/Object;");
+            if (!next.has_value()) return std::nullopt;
+            result.push_back(next->ref);
+        }
+    };
+    const auto match_data = [context](dx::IntrinsicContext& call, const std::optional<std::string>& type,
+                                      const std::optional<std::string>& scheme,
+                                      const dx::VmObjectRef data) -> std::optional<std::int32_t> {
+        const auto key = call.receiver.Value();
+        const auto types_it = context->intent_filter_types.find(key);
+        const auto schemes_it = context->intent_filter_schemes.find(key);
+        const auto has_types = types_it != context->intent_filter_types.end();
+        const auto has_schemes = schemes_it != context->intent_filter_schemes.end();
+        auto match = kMatchCategoryEmpty;
+        if (!has_types && !has_schemes) {
+            return !type.has_value() && !data.IsValid() ? kMatchCategoryEmpty + kMatchAdjustmentNormal : kNoMatchData;
+        }
+        if (has_schemes) {
+            const auto requested = scheme.value_or("");
+            if (std::find(schemes_it->second.begin(), schemes_it->second.end(), requested) ==
+                schemes_it->second.end()) {
+                return kNoMatchData;
+            }
+            match = kMatchCategoryScheme;
+            const auto authorities = context->intent_filter_authorities.find(key);
+            if (authorities != context->intent_filter_authorities.end()) {
+                if (!data.IsValid()) return kNoMatchData;
+                const auto host = InvokeAndroidVirtual(call, data, "getHost", "()Ljava/lang/String;");
+                const auto port = InvokeAndroidVirtual(call, data, "getPort", "()I");
+                if (!host.has_value() || !port.has_value()) return std::nullopt;
+                if (!host->ref.IsValid()) return kNoMatchData;
+                const auto requested_host = call.vm.StringUtf8(host->ref);
+                bool authority_matched{};
+                for (const auto& authority : authorities->second) {
+                    const auto host_matches = authority.wildcard
+                                                  ? AsciiEndsWithIgnoreCase(requested_host, authority.match_host)
+                                                  : AsciiEqualIgnoreCase(requested_host, authority.match_host);
+                    if (!host_matches) continue;
+                    if (authority.port >= 0) {
+                        if (port->AsInt() != authority.port) continue;
+                        match = kMatchCategoryPort;
+                    } else {
+                        match = kMatchCategoryHost;
+                    }
+                    authority_matched = true;
+                    break;
+                }
+                if (!authority_matched) return kNoMatchData;
+            }
+        } else if (scheme.has_value() && !scheme->empty() && *scheme != "content" && *scheme != "file") {
+            return kNoMatchData;
+        }
+        if (has_types) {
+            if (!type.has_value() || !FindMimeType(types_it->second, *type)) {
+                return kNoMatchType;
+            }
+            match = kMatchCategoryType;
+        } else if (type.has_value()) {
+            return kNoMatchType;
+        }
+        return match + kMatchAdjustmentNormal;
+    };
+    const auto string_argument = [](dx::IntrinsicContext& call, const std::size_t index) -> std::optional<std::string> {
+        const auto value = call.arguments[index].ref;
+        if (!value.IsValid()) return std::nullopt;
+        return call.vm.StringUtf8(value);
+    };
+    const auto category_mismatch =
+        [context, snapshot_categories](dx::IntrinsicContext& call,
+                                       const dx::VmObjectRef values) -> std::optional<std::optional<dx::VmObjectRef>> {
+        const auto snapshot = snapshot_categories(call, values);
+        if (!snapshot.has_value()) return std::nullopt;
+        const auto found = context->intent_filter_categories.find(call.receiver.Value());
+        for (const auto category : *snapshot) {
+            const auto name = call.vm.StringUtf8(category);
+            if (found == context->intent_filter_categories.end() || !FilterContains(found->second, name)) {
+                return std::optional<dx::VmObjectRef>{category};
+            }
+        }
+        return std::optional<dx::VmObjectRef>{};
+    };
+    builder.ConstantInt("MATCH_CATEGORY_MASK", "I", 0x0fff0000, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_ADJUSTMENT_NORMAL", "I", kMatchAdjustmentNormal,
+                     dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_CATEGORY_EMPTY", "I", kMatchCategoryEmpty, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_CATEGORY_SCHEME", "I", kMatchCategoryScheme,
+                     dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_CATEGORY_HOST", "I", kMatchCategoryHost, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_CATEGORY_PORT", "I", kMatchCategoryPort, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("MATCH_CATEGORY_TYPE", "I", kMatchCategoryType, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("NO_MATCH_TYPE", "I", kNoMatchType, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("NO_MATCH_DATA", "I", kNoMatchData, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("NO_MATCH_ACTION", "I", kNoMatchAction, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("NO_MATCH_CATEGORY", "I", kNoMatchCategory, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
+    builder.Constructor("(Ljava/lang/String;)V", [reset, add_action](dx::IntrinsicContext& call) {
         reset(call.receiver);
         add_action(call, call.arguments[0].ref);
-        add_type(call, call.arguments[1].ref);
         return dx::VmValue::Void();
-      });
-  builder.FinalMethod("addAction", "(Ljava/lang/String;)V",
-                      [add_action](dx::IntrinsicContext &call) {
-                        add_action(call, call.arguments[0].ref);
-                        return dx::VmValue::Void();
-                      });
-  builder.FinalMethod(
-      "countActions", "()I", [context](dx::IntrinsicContext &call) {
+    });
+    builder.Constructor("()V", [reset](dx::IntrinsicContext& call) {
+        reset(call.receiver);
+        return dx::VmValue::Void();
+    });
+    builder.Constructor("(Ljava/lang/String;Ljava/lang/String;)V",
+                        [reset, add_action, add_type](dx::IntrinsicContext& call) {
+                            reset(call.receiver);
+                            add_action(call, call.arguments[0].ref);
+                            add_type(call, call.arguments[1].ref);
+                            return dx::VmValue::Void();
+                        });
+    builder.FinalMethod("addAction", "(Ljava/lang/String;)V", [add_action](dx::IntrinsicContext& call) {
+        add_action(call, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("countActions", "()I", [context](dx::IntrinsicContext& call) {
         const auto found =
             context->intent_filter_actions.find(call.receiver.Value());
         return dx::VmValue::Int(static_cast<std::int32_t>(
             found == context->intent_filter_actions.end()
                 ? 0U
                 : found->second.size()));
-      });
-  builder.FinalMethod(
-      "getAction", "(I)Ljava/lang/String;",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("getAction", "(I)Ljava/lang/String;", [context, filter_values](dx::IntrinsicContext& call) {
         const auto &values =
             filter_values(context->intent_filter_actions, call.receiver);
         const auto index = call.arguments[0].AsInt();
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
-          BadFilterIndex(index, values.size());
+            BadFilterIndex(index, values.size());
         }
         return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
-      });
-  builder.FinalMethod(
-      "hasAction", "(Ljava/lang/String;)Z",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("hasAction", "(Ljava/lang/String;)Z", [context, filter_values](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid())
           return dx::VmValue::Int(0);
         const auto action = call.vm.StringUtf8(call.arguments[0].ref);
@@ -2440,10 +2384,8 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
             filter_values(context->intent_filter_actions, call.receiver);
         return dx::VmValue::Int(
             std::find(values.begin(), values.end(), action) != values.end());
-      });
-  builder.FinalMethod(
-      "matchAction", "(Ljava/lang/String;)Z",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("matchAction", "(Ljava/lang/String;)Z", [context, filter_values](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid())
           return dx::VmValue::Int(0);
         const auto action = call.vm.StringUtf8(call.arguments[0].ref);
@@ -2451,79 +2393,63 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
             filter_values(context->intent_filter_actions, call.receiver);
         return dx::VmValue::Int(
             std::find(values.begin(), values.end(), action) != values.end());
-      });
-  builder.FinalMethod("addDataType", "(Ljava/lang/String;)V",
-                      [add_type](dx::IntrinsicContext &call) {
-                        add_type(call, call.arguments[0].ref);
-                        return dx::VmValue::Void();
-                      });
-  builder.FinalMethod(
-      "countDataTypes", "()I", [context](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("addDataType", "(Ljava/lang/String;)V", [add_type](dx::IntrinsicContext& call) {
+        add_type(call, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("countDataTypes", "()I", [context](dx::IntrinsicContext& call) {
         const auto found =
             context->intent_filter_types.find(call.receiver.Value());
         return dx::VmValue::Int(static_cast<std::int32_t>(
             found == context->intent_filter_types.end()
                 ? 0U
                 : found->second.size()));
-      });
-  builder.FinalMethod(
-      "getDataType", "(I)Ljava/lang/String;",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("getDataType", "(I)Ljava/lang/String;", [context, filter_values](dx::IntrinsicContext& call) {
         const auto &values =
             filter_values(context->intent_filter_types, call.receiver);
         const auto index = call.arguments[0].AsInt();
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
-          BadFilterIndex(index, values.size());
+            BadFilterIndex(index, values.size());
         }
         return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
-      });
-  builder.FinalMethod("hasDataType", "(Ljava/lang/String;)Z",
-                      [context, filter_values](dx::IntrinsicContext &call) {
-                        if (!call.arguments[0].ref.IsValid())
-                          return dx::VmValue::Int(0);
-                        const auto &values = filter_values(
-                            context->intent_filter_types, call.receiver);
-                        return dx::VmValue::Int(FindMimeType(
-                            values, call.vm.StringUtf8(call.arguments[0].ref)));
-                      });
-  builder.FinalMethod(
-      "addDataScheme", "(Ljava/lang/String;)V",
-      [context](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("hasDataType", "(Ljava/lang/String;)Z", [context, filter_values](dx::IntrinsicContext& call) {
+        if (!call.arguments[0].ref.IsValid()) return dx::VmValue::Int(0);
+        const auto& values = filter_values(context->intent_filter_types, call.receiver);
+        return dx::VmValue::Int(FindMimeType(values, call.vm.StringUtf8(call.arguments[0].ref)));
+    });
+    builder.FinalMethod("addDataScheme", "(Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid()) {
-          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                "IntentFilter data scheme is null"};
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "IntentFilter data scheme is null"};
         }
         const auto scheme = call.vm.StringUtf8(call.arguments[0].ref);
         auto &schemes = context->intent_filter_schemes[call.receiver.Value()];
         if (std::find(schemes.begin(), schemes.end(), scheme) ==
             schemes.end()) {
-          schemes.push_back(scheme);
+            schemes.push_back(scheme);
         }
         return dx::VmValue::Void();
-      });
-  builder.FinalMethod(
-      "countDataSchemes", "()I", [context](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("countDataSchemes", "()I", [context](dx::IntrinsicContext& call) {
         const auto found =
             context->intent_filter_schemes.find(call.receiver.Value());
         return dx::VmValue::Int(static_cast<std::int32_t>(
             found == context->intent_filter_schemes.end()
                 ? 0U
                 : found->second.size()));
-      });
-  builder.FinalMethod(
-      "getDataScheme", "(I)Ljava/lang/String;",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("getDataScheme", "(I)Ljava/lang/String;", [context, filter_values](dx::IntrinsicContext& call) {
         const auto &values =
             filter_values(context->intent_filter_schemes, call.receiver);
         const auto index = call.arguments[0].AsInt();
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
-          BadFilterIndex(index, values.size());
+            BadFilterIndex(index, values.size());
         }
         return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
-      });
-  builder.FinalMethod(
-      "hasDataScheme", "(Ljava/lang/String;)Z",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("hasDataScheme", "(Ljava/lang/String;)Z", [context, filter_values](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid())
           return dx::VmValue::Int(0);
         const auto &values =
@@ -2531,63 +2457,51 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         const auto scheme = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Int(
             std::find(values.begin(), values.end(), scheme) != values.end());
-      });
-  builder.FinalMethod(
-      "addDataAuthority", "(Ljava/lang/String;Ljava/lang/String;)V",
-      [context](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod(
+        "addDataAuthority", "(Ljava/lang/String;Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
+            if (!call.arguments[0].ref.IsValid()) {
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "IntentFilter authority host is null"};
+            }
+            auto host = call.vm.StringUtf8(call.arguments[0].ref);
+            const auto port =
+                call.arguments[1].ref.IsValid() ? ParseJavaInt(call.vm.StringUtf8(call.arguments[1].ref)) : -1;
+            const auto wildcard = !host.empty() && host.front() == '*';
+            context->intent_filter_authorities[call.receiver.Value()].push_back(
+                DexVmAndroidContext::IntentFilterAuthority{
+                    .original_host = host,
+                    .match_host = wildcard ? host.substr(1) : std::move(host),
+                    .wildcard = wildcard,
+                    .port = port,
+                });
+            return dx::VmValue::Void();
+        });
+    builder.FinalMethod("addCategory", "(Ljava/lang/String;)V", [context](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid()) {
-          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                "IntentFilter authority host is null"};
-        }
-        auto host = call.vm.StringUtf8(call.arguments[0].ref);
-        const auto port =
-            call.arguments[1].ref.IsValid()
-                ? ParseJavaInt(call.vm.StringUtf8(call.arguments[1].ref))
-                : -1;
-        const auto wildcard = !host.empty() && host.front() == '*';
-        context->intent_filter_authorities[call.receiver.Value()].push_back(
-            DexVmAndroidContext::IntentFilterAuthority{
-                .original_host = host,
-                .match_host = wildcard ? host.substr(1) : std::move(host),
-                .wildcard = wildcard,
-                .port = port,
-            });
-        return dx::VmValue::Void();
-      });
-  builder.FinalMethod(
-      "addCategory", "(Ljava/lang/String;)V",
-      [context](dx::IntrinsicContext &call) {
-        if (!call.arguments[0].ref.IsValid()) {
-          throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                "IntentFilter category is null"};
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "IntentFilter category is null"};
         }
         AddUnique(context->intent_filter_categories[call.receiver.Value()],
                   call.vm.StringUtf8(call.arguments[0].ref));
         return dx::VmValue::Void();
-      });
-  builder.FinalMethod(
-      "countCategories", "()I", [context](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("countCategories", "()I", [context](dx::IntrinsicContext& call) {
         const auto found =
             context->intent_filter_categories.find(call.receiver.Value());
         return dx::VmValue::Int(static_cast<std::int32_t>(
             found == context->intent_filter_categories.end()
                 ? 0U
                 : found->second.size()));
-      });
-  builder.FinalMethod(
-      "getCategory", "(I)Ljava/lang/String;",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("getCategory", "(I)Ljava/lang/String;", [context, filter_values](dx::IntrinsicContext& call) {
         const auto &values =
             filter_values(context->intent_filter_categories, call.receiver);
         const auto index = call.arguments[0].AsInt();
         if (index < 0 || static_cast<std::size_t>(index) >= values.size()) {
-          BadFilterIndex(index, values.size());
+            BadFilterIndex(index, values.size());
         }
         return dx::VmValue::Ref(call.vm.NewStringUtf8(values[static_cast<std::size_t>(index)]));
-      });
-  builder.FinalMethod(
-      "hasCategory", "(Ljava/lang/String;)Z",
-      [context, filter_values](dx::IntrinsicContext &call) {
+    });
+    builder.FinalMethod("hasCategory", "(Ljava/lang/String;)Z", [context, filter_values](dx::IntrinsicContext& call) {
         if (!call.arguments[0].ref.IsValid())
           return dx::VmValue::Int(0);
         const auto &values =
@@ -2595,84 +2509,77 @@ Decl Declare_android_content_IntentFilter(const Context &context) {
         const auto category = call.vm.StringUtf8(call.arguments[0].ref);
         return dx::VmValue::Int(
             std::find(values.begin(), values.end(), category) != values.end());
-      });
-  builder.FinalMethod("matchCategories", "(Ljava/util/Set;)Ljava/lang/String;",
-                      [category_mismatch](dx::IntrinsicContext &call) {
-                        const auto mismatch =
-                            category_mismatch(call, call.arguments[0].ref);
-                        if (!mismatch.has_value() || !mismatch->has_value()) {
-                          return dx::VmValue::Ref(dx::VmObjectRef{});
-                        }
-                        return dx::VmValue::Ref(**mismatch);
-                      });
-  builder.FinalMethod(
-      "matchData", "(Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;)I",
-      [match_data, string_argument](dx::IntrinsicContext &call) {
-        const auto result =
-            match_data(call, string_argument(call, 0), string_argument(call, 1),
-                       call.arguments[2].ref);
-        return dx::VmValue::Int(result.value_or(kNoMatchData));
-      });
-  builder.FinalMethod(
-      "match",
-      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-      "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
-      [context, filter_values, match_data, string_argument,
-       category_mismatch](dx::IntrinsicContext &call) {
-        const auto action = string_argument(call, 0);
-        if (action.has_value()) {
-          const auto &actions =
-              filter_values(context->intent_filter_actions, call.receiver);
-          if (!FilterContains(actions, *action)) {
-            return dx::VmValue::Int(kNoMatchAction);
-          }
-        }
-        const auto data_match =
-            match_data(call, string_argument(call, 1), string_argument(call, 2),
-                       call.arguments[3].ref);
-        if (!data_match.has_value()) {
-          return dx::VmValue::Int(kNoMatchData);
-        }
-        if (*data_match < 0)
-          return dx::VmValue::Int(*data_match);
-        const auto mismatch = category_mismatch(call, call.arguments[4].ref);
-        if (!mismatch.has_value()) {
-          return dx::VmValue::Int(kNoMatchCategory);
-        }
-        if (mismatch->has_value()) {
-          return dx::VmValue::Int(kNoMatchCategory);
-        }
-        return dx::VmValue::Int(*data_match);
-      });
-  // AOSP 4.4 ROM line 1198.
-  builder.FinalMethod(
-      "match", "(Landroid/content/ContentResolver;Landroid/content/Intent;ZLjava/lang/String;)I",
-      [](dx::IntrinsicContext& c) {
-          const auto intent = c.arguments[1].ref;
-          const auto type =
-              c.arguments[2].AsInt() != 0
-                  ? CallAndroidMethod(c.vm, intent, "resolveType",
-                                      "(Landroid/content/ContentResolver;)Ljava/lang/String;", {c.arguments[0]})
-                        .ref
-                  : CallAndroidMethod(c.vm, intent, "getType", "()Ljava/lang/String;").ref;
-          const auto type_root = c.vm.ProtectReferences(std::array{type});
-          const auto action = CallAndroidMethod(c.vm, intent, "getAction", "()Ljava/lang/String;").ref;
-          const auto action_root = c.vm.ProtectReferences(std::array{action});
-          const auto scheme = CallAndroidMethod(c.vm, intent, "getScheme", "()Ljava/lang/String;").ref;
-          const auto scheme_root = c.vm.ProtectReferences(std::array{scheme});
-          const auto data = CallAndroidMethod(c.vm, intent, "getData", "()Landroid/net/Uri;").ref;
-          const auto data_root = c.vm.ProtectReferences(std::array{data});
-          const auto categories = CallAndroidMethod(c.vm, intent, "getCategories", "()Ljava/util/Set;").ref;
-          const auto categories_root = c.vm.ProtectReferences(std::array{categories});
-          return CallAndroidMethod(
-              c.vm, c.receiver, "match",
-              "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
-              {dx::VmValue::Ref(action), dx::VmValue::Ref(type), dx::VmValue::Ref(scheme), dx::VmValue::Ref(data),
-               dx::VmValue::Ref(categories), c.arguments[3]});
-      },
-      dx::kAccPublic);
+    });
+    builder.FinalMethod("matchCategories", "(Ljava/util/Set;)Ljava/lang/String;",
+                        [category_mismatch](dx::IntrinsicContext& call) {
+                            const auto mismatch = category_mismatch(call, call.arguments[0].ref);
+                            if (!mismatch.has_value() || !mismatch->has_value()) {
+                                return dx::VmValue::Ref(dx::VmObjectRef{});
+                            }
+                            return dx::VmValue::Ref(**mismatch);
+                        });
+    builder.FinalMethod("matchData", "(Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;)I",
+                        [match_data, string_argument](dx::IntrinsicContext& call) {
+                            const auto result = match_data(call, string_argument(call, 0), string_argument(call, 1),
+                                                           call.arguments[2].ref);
+                            return dx::VmValue::Int(result.value_or(kNoMatchData));
+                        });
+    builder.FinalMethod(
+        "match",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+        "Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+        [context, filter_values, match_data, string_argument, category_mismatch](dx::IntrinsicContext& call) {
+            const auto action = string_argument(call, 0);
+            if (action.has_value()) {
+                const auto& actions = filter_values(context->intent_filter_actions, call.receiver);
+                if (!FilterContains(actions, *action)) {
+                    return dx::VmValue::Int(kNoMatchAction);
+                }
+            }
+            const auto data_match =
+                match_data(call, string_argument(call, 1), string_argument(call, 2), call.arguments[3].ref);
+            if (!data_match.has_value()) {
+                return dx::VmValue::Int(kNoMatchData);
+            }
+            if (*data_match < 0) return dx::VmValue::Int(*data_match);
+            const auto mismatch = category_mismatch(call, call.arguments[4].ref);
+            if (!mismatch.has_value()) {
+                return dx::VmValue::Int(kNoMatchCategory);
+            }
+            if (mismatch->has_value()) {
+                return dx::VmValue::Int(kNoMatchCategory);
+            }
+            return dx::VmValue::Int(*data_match);
+        });
+    // AOSP 4.4 ROM line 1198.
+    builder.FinalMethod(
+        "match", "(Landroid/content/ContentResolver;Landroid/content/Intent;ZLjava/lang/String;)I",
+        [](dx::IntrinsicContext& c) {
+            const auto intent = c.arguments[1].ref;
+            const auto type =
+                c.arguments[2].AsInt() != 0
+                    ? CallAndroidMethod(c.vm, intent, "resolveType",
+                                        "(Landroid/content/ContentResolver;)Ljava/lang/String;", {c.arguments[0]})
+                          .ref
+                    : CallAndroidMethod(c.vm, intent, "getType", "()Ljava/lang/String;").ref;
+            const auto type_root = c.vm.ProtectReferences(std::array{type});
+            const auto action = CallAndroidMethod(c.vm, intent, "getAction", "()Ljava/lang/String;").ref;
+            const auto action_root = c.vm.ProtectReferences(std::array{action});
+            const auto scheme = CallAndroidMethod(c.vm, intent, "getScheme", "()Ljava/lang/String;").ref;
+            const auto scheme_root = c.vm.ProtectReferences(std::array{scheme});
+            const auto data = CallAndroidMethod(c.vm, intent, "getData", "()Landroid/net/Uri;").ref;
+            const auto data_root = c.vm.ProtectReferences(std::array{data});
+            const auto categories = CallAndroidMethod(c.vm, intent, "getCategories", "()Ljava/util/Set;").ref;
+            const auto categories_root = c.vm.ProtectReferences(std::array{categories});
+            return CallAndroidMethod(
+                c.vm, c.receiver, "match",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;Ljava/util/Set;Ljava/lang/String;)I",
+                {dx::VmValue::Ref(action), dx::VmValue::Ref(type), dx::VmValue::Ref(scheme), dx::VmValue::Ref(data),
+                 dx::VmValue::Ref(categories), c.arguments[3]});
+        },
+        dx::kAccPublic);
 
-  return std::move(builder).Build();
+    return std::move(builder).Build();
 }
 
 } // namespace ogplay::runtime::android_intrinsics
@@ -3164,32 +3071,48 @@ MakeActivityInfoArray(dx::IntrinsicContext &call, const Context &context,
 } // namespace
 
 Decl Declare_android_content_pm_PackageInfo(const Context &) {
-  auto builder = dx::IntrinsicClassBuilder::Class(
-      "Landroid/content/pm/PackageInfo;", "Ljava/lang/Object;");
-  builder.Constructor(
-      "()V", [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  builder.InstanceField("packageName", "Ljava/lang/String;")
-      .InstanceField("versionCode", "I")
-      .InstanceField("versionName", "Ljava/lang/String;")
-      .InstanceField("firstInstallTime", "J")
-      .InstanceField("lastUpdateTime", "J")
-      .InstanceField("applicationInfo", "Landroid/content/pm/ApplicationInfo;")
-      .InstanceField("requestedPermissions", "[Ljava/lang/String;")
-      .InstanceField("activities", "[Landroid/content/pm/ActivityInfo;");
-  return std::move(builder).Build();
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/pm/PackageInfo;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
+    builder.Constructor("()V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    builder.InstanceField("packageName", "Ljava/lang/String;")
+        .InstanceField("versionCode", "I")
+        .InstanceField("versionName", "Ljava/lang/String;")
+        .InstanceField("firstInstallTime", "J")
+        .InstanceField("lastUpdateTime", "J")
+        .InstanceField("applicationInfo", "Landroid/content/pm/ApplicationInfo;")
+        .InstanceField("requestedPermissions", "[Ljava/lang/String;")
+        .InstanceField("activities", "[Landroid/content/pm/ActivityInfo;");
+    return std::move(builder).Build();
 }
 
-Decl Declare_android_content_pm_PackageManager_NameNotFoundException(
-    const Context &) {
-  auto builder = dx::IntrinsicClassBuilder::Class(
-      "Landroid/content/pm/PackageManager$NameNotFoundException;",
-      "Ljava/lang/Exception;");
-  builder.Constructor(
-      "()V", [](dx::IntrinsicContext &) { return dx::VmValue::Void(); });
-  builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext &) {
-    return dx::VmValue::Void();
-  });
-  return std::move(builder).Build();
+Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/pm/PackageManager$NameNotFoundException;",
+                                                    "Landroid/util/AndroidException;");
+    builder.Constructor("()V", [](dx::IntrinsicContext& c) {
+        const auto target = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor("Landroid/util/AndroidException;"), "<init>", "()V");
+        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+        const std::vector<dx::VmValue> parameters{};
+        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+        const auto result = c.vm.Call(*target, arguments);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
+    builder.Constructor("(Ljava/lang/String;)V", [](dx::IntrinsicContext& c) {
+        const auto target = c.vm.Linker().FindDirectMethod(
+            c.vm.Linker().ResolveDescriptor("Landroid/util/AndroidException;"), "<init>", "(Ljava/lang/String;)V");
+        std::vector<dx::VmValue> arguments{dx::VmValue::Ref(c.receiver)};
+        const std::vector<dx::VmValue> parameters{c.arguments[0]};
+        arguments.insert(arguments.end(), parameters.begin(), parameters.end());
+        const auto result = c.vm.Call(*target, arguments);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
+    return std::move(builder).Build();
 }
 
 Decl Declare_android_content_pm_PackageManager(const Context &context) {

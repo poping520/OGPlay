@@ -41,6 +41,8 @@ def member_index(rows):
 
 
 def analyze(surface, rom):
+    if surface.get("startup_link_error"):
+        raise ValueError("dump-surface startup linking failed: " + surface["startup_link_error"])
     if surface["schema"] != 1 or not surface["classes"]:
         raise ValueError("expected nonempty dump-surface schema 1")
     deviations = {}
@@ -86,7 +88,11 @@ def analyze(surface, rom):
                 "",
                 f'class flags runtime=0x{cls["access_flags"] & class_mask:x}, ROM=0x{flags & class_mask:x}',
             )
-        if cls["superclass"] != parent:
+        # DEX encodes Object as an interface's superclass; reflection reports null.
+        interface_object_null = bool(flags & 0x200) and {
+            cls["superclass"], parent
+        } == {None, "Ljava/lang/Object;"}
+        if cls["superclass"] != parent and not interface_object_null:
             add(
                 "D",
                 owner,
@@ -333,6 +339,13 @@ def self_test():
         ],
     )
     surface = dict(schema=1, classes=[cls])
+    broken_startup = dict(surface, startup_link_error="unresolved hierarchy")
+    try:
+        analyze(broken_startup, rom)
+    except ValueError as error:
+        assert "startup linking failed" in str(error)
+    else:
+        raise AssertionError("unlinked surface accepted")
     # Exercise the shared binary reader rather than a second format parser.
     assert skeleton.unpack(skeleton.pack(rom)) == rom
     result = analyze(surface, rom)
@@ -358,6 +371,21 @@ def self_test():
     for m in no_family["classes"][0]["methods"]:
         m["origin"] = "bytecode"
     assert not any(k.startswith("B|") for k in analyze(no_family, rom)["deviations"])
+    # Only null/Object on an interface is equivalent, in either direction.
+    interface = dict(descriptor="Ltest/I;", source="intrinsic", access_flags=0x601,
+                     superclass=None, interfaces=[], methods=[], fields=[])
+    interface_rom = {"Ltest/I;": ["Ljava/lang/Object;", [], 0x601, [], []]}
+    interface_surface = dict(schema=1, classes=[interface])
+    assert not analyze(interface_surface, interface_rom)["deviations"]
+    interface["superclass"] = "Ljava/lang/Object;"
+    interface_rom["Ltest/I;"][0] = None
+    assert not analyze(interface_surface, interface_rom)["deviations"]
+    interface["superclass"] = "Ltest/Other;"
+    assert "D|Ltest/I;|@superclass|" in analyze(interface_surface, interface_rom)["deviations"]
+    interface["superclass"] = None
+    interface["access_flags"] = interface_rom["Ltest/I;"][2] = 1
+    interface_rom["Ltest/I;"][0] = "Ljava/lang/Object;"
+    assert "D|Ltest/I;|@superclass|" in analyze(interface_surface, interface_rom)["deviations"]
     # Overridability alone must count, without a final flag mismatch.
     only_override = copy.deepcopy(surface)
     only_override["classes"][0]["methods"][0]["access_flags"] = 1

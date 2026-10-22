@@ -221,7 +221,8 @@ namespace {
 }  // namespace
 
 Decl Declare_android_graphics_Bitmap(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
     builder.StaticMethod("createBitmap",
         "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
         [context](dx::IntrinsicContext& call) {
@@ -889,7 +890,8 @@ Decl Declare_android_graphics_Color(const Context& context) {
 
 Decl Declare_android_graphics_RectF(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/RectF;", "Ljava/lang/Object;");
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/graphics/RectF;", "Ljava/lang/Object;", {"Landroid/os/Parcelable;"});
 
     builder.Constructor("()V", GraphicsNoopHandler());
     const auto set = [](dx::IntrinsicContext& call) {
@@ -1077,7 +1079,8 @@ Decl Declare_android_graphics_RectF(const Context& context) {
 
 Decl Declare_android_graphics_PointF(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PointF;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/PointF;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
 
     builder.Constructor("()V", GraphicsNoopHandler());
     const auto set = [](dx::IntrinsicContext& call) {

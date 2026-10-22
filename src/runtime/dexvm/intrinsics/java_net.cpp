@@ -1408,8 +1408,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
         }
 
         IntrinsicClassDecl DeclareSocket() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/net/Socket;", "Ljava/lang/Object;");
+            auto builder =
+                IntrinsicClassBuilder::Class("Ljava/net/Socket;", "Ljava/lang/Object;", {"Ljava/io/Closeable;"});
             const auto connect_owner = [](IntrinsicContext& call, NetworkRuntime::Endpoint endpoint) {
                 const auto depth = call.vm.ExecutionLock().ReleaseForBlocking();
                 try {
@@ -1579,8 +1579,8 @@ namespace ogplay::runtime::dexvm::intrinsics {
         }
 
         IntrinsicClassDecl DeclareDatagramSocket() {
-            auto builder = IntrinsicClassBuilder::Class(
-                "Ljava/net/DatagramSocket;", "Ljava/lang/Object;");
+            auto builder = IntrinsicClassBuilder::Class("Ljava/net/DatagramSocket;", "Ljava/lang/Object;",
+                                                        {"Ljava/io/Closeable;"});
             builder.Constructor("()V", NoopVoid());
             builder.VirtualMethod("send", "(Ljava/net/DatagramPacket;)V", [](IntrinsicContext& call) {
                 try {

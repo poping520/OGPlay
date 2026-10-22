@@ -201,8 +201,8 @@ Decl Declare_android_app_backup_BackupManager(const Context&) {
 
 Decl Declare_android_app_Application(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/app/Application;", "Landroid/content/ContextWrapper;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/Application;", "Landroid/content/ContextWrapper;",
+                                                    {"Landroid/content/ComponentCallbacks2;"});
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -561,9 +561,9 @@ Decl Declare_android_app_IntentService(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_app_Service(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/app/Service;", "Landroid/content/ContextWrapper;", {},
-        dx::kAccPublic | dx::kAccAbstract);
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/app/Service;", "Landroid/content/ContextWrapper;",
+                                         {"Landroid/content/ComponentCallbacks2;"}, dx::kAccPublic | dx::kAccAbstract);
     builder.Constructor("()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     });
@@ -734,7 +734,8 @@ constexpr std::int32_t kIntentFillFlags = 0xff; // API19 FILL_IN_*.
 } // namespace
 
 Decl Declare_android_app_PendingIntent(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/PendingIntent;", "Ljava/lang/Object;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/PendingIntent;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
     constexpr auto signature = "(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;";
     builder.StaticMethod("getService", signature,
         [context](dx::IntrinsicContext& call) { return GetPendingIntent(call, context, 4); });

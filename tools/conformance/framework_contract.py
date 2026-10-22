@@ -129,6 +129,7 @@ def analyze(surface, rom):
                     continue
                 can_override = (
                     kind == "method"
+                    and not flags & 0x10
                     and name not in ("<init>", "<clinit>")
                     and not rom_flags & (0x2 | 0x8 | 0x10)
                 )
@@ -176,9 +177,22 @@ def analyze(surface, rom):
 
 def compare_baseline(baseline, current):
     before, after = set(baseline["keys"]), set(current["deviations"])
+    def categories(keys):
+        result = {}
+        for key in keys:
+            category, member = key.split("|", 1)
+            result.setdefault(member, set()).add(category)
+        return result
+
+    old, new = categories(before), categories(after)
     return {
-        "new": sorted(after - before),
+        "new": sorted(key for key in after - before if key.split("|", 1)[1] not in old),
         "removed": sorted(before - after),
+        "reclassified": [
+            {"member": member, "before": sorted(old[member]), "after": sorted(new[member])}
+            for member in sorted(old.keys() & new.keys())
+            if old[member] != new[member]
+        ],
         "missing_classes": sorted(
             set(baseline["intrinsic_classes"]) - set(current["intrinsic_classes"])
         ),
@@ -353,6 +367,12 @@ def self_test():
     only_final["classes"][0]["methods"][0]["overridable"] = True
     split = analyze(only_final, rom)["deviations"]
     assert "A1|Ltest/C;|m|()V" in split and "A2|Ltest/C;|m|()V" not in split
+    # A final ROM class cannot be subclassed; method flags still belong to A2.
+    final_class_rom = copy.deepcopy(rom)
+    final_class_rom[owner][2] |= 0x10
+    split = analyze(surface, final_class_rom)["deviations"]
+    assert not any(key.startswith("A1|") for key in split)
+    assert "A2|Ltest/C;|m|()V" in split
     both = copy.deepcopy(surface)
     both["classes"][0]["methods"][0]["access_flags"] = 20
     both["classes"][0]["access_flags"] = 20
@@ -387,6 +407,12 @@ def self_test():
         path = Path(temp) / "baseline.json"
         assert save_baseline(path, result, "rom")
         original = path.read_bytes()
+        reclassified = copy.deepcopy(result)
+        reclassified["deviations"]["A2|Ltest/C;|m|()V"] = reclassified["deviations"].pop("A1|Ltest/C;|m|()V")
+        changes = compare_baseline(json.loads(original), reclassified)
+        assert not changes["new"] and len(changes["reclassified"]) == 1
+        assert save_baseline(path, reclassified, "rom")
+        path.write_bytes(original)
         assert save_baseline(path, result, "rom")
         assert not save_baseline(path, result, "other-rom")
         worse = copy.deepcopy(result)
@@ -452,6 +478,7 @@ def main():
                 raise ValueError("baseline schema / ROM hash mismatch")
             changes = compare_baseline(baseline, result)
             print("Baseline changes: " + json.dumps(changes, ensure_ascii=False))
+            print(f'Reclassified members: {len(changes["reclassified"])}')
             if changes["new"] or changes["missing_classes"]:
                 return 1
             if changes["removed"]:

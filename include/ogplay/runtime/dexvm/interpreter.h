@@ -478,8 +478,8 @@ public:
     // Optional raw console for System.out/err (dexvm run-dex). When set,
     // committed text goes here byte-for-byte instead of the structured log.
     using ConsoleSink = std::function<void(std::string_view)>;
-    void SetConsoleSink(ConsoleSink sink);
-    [[nodiscard]] const ConsoleSink& Console() const noexcept;
+    void SetConsoleSink(ConsoleSink sink, ConsoleSink error_sink = {});
+    [[nodiscard]] const ConsoleSink& Console(bool error = false) const noexcept;
 
     // Object.clone: model-level shallow copy plus intrinsic side tables
     // (resource) keyed by the source handle.

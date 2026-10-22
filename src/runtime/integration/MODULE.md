@@ -321,3 +321,6 @@ async pending 替换不重发事件；acquire 将待上传帧独立持有，comm
 DumpAndroidBoundarySurfaceJson 读取同一 API19 boundary 导出目录，不创建进程/窗口或执行 guest。
 
 bridge 可接收固定 API19 骨架字节，在 BootDex 之后、应用 DEX 之前交给 linker 建索引；不在 integration 合成成员或引入新的 JNI 查找规则。
+
+JNI ExceptionDescribe owner hook 在调用线程 context 内虚派 Throwable.printStackTrace()，
+输出沿 Java System.err；Java 打印异常被忽略，pending 的清除、保活与恢复由 JNI 层拥有。

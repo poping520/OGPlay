@@ -3147,10 +3147,10 @@ IntrinsicClassDecl Declare_java_lang_System(const CoreIntrinsicServices& service
                                      "Ljava/io/PrintStream;",
                     InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
                                       "()Ljava/io/PrintStream;", {}).ref);
-            vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err",
-                                     "Ljava/io/PrintStream;",
-                    InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createPrintStream",
-                                      "()Ljava/io/PrintStream;", {}).ref);
+            vm.SetIntrinsicStaticRef("Ljava/lang/System;", "err", "Ljava/io/PrintStream;",
+                                     InvokeGuestDirect(vm, "Lorg/ogplay/io/LogOutputStream;", "createErrorPrintStream",
+                                                       "()Ljava/io/PrintStream;", {})
+                                         .ref);
             const auto key = vm.NewStringUtf8("line.separator");
             const auto roots = vm.ProtectReferences(std::array{key});
             const auto value = InvokeGuestDirect(

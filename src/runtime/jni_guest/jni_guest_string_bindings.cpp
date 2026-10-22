@@ -19,6 +19,7 @@
 #include "ogplay/runtime/jni/jni.h"
 #include "ogplay/runtime/jni/jni_environment.h"
 #include "jni_guest_memory.h"
+#include "jni_guest_lookup.h"
 #include "ogplay/runtime/jni/jni_object.h"
 
 namespace ogplay::runtime {
@@ -161,6 +162,16 @@ private:
     std::vector<GuestStringLease> leases_;
 };
 
+bool ValidateStringRegion(JniEnvironment& env, JniClassRegistry& classes, const JniGuestCallFrame& frame, JniSize total,
+                          JniSize start, JniSize length) {
+    if (start >= 0 && length >= 0 && start <= total && length <= total - start) return true;
+    // Dalvik Jni.cpp:2564-2587 -> Exception.cpp:1419-1424.
+    jni_guest_detail::ThrowJavaError(env, classes, frame.thread_id, "java/lang/StringIndexOutOfBoundsException",
+                                     "length=" + std::to_string(total) + "; regionStart=" + std::to_string(start) +
+                                         "; regionLength=" + std::to_string(length));
+    return false;
+}
+
 class ModifiedUtf8Leases final {
 public:
     ModifiedUtf8Leases(JniEnvironment& environment, JniStringStore& strings,
@@ -300,10 +311,9 @@ private:
 
 }  // namespace
 
-void BindJniGuestStringSlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space,
-    const JniGuestStringLimits limits) {
+void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                             JniStringStore& strings, memory::AddressSpace& address_space,
+                             const JniGuestStringLimits limits) {
     ValidateJniGuestStringLimits(limits);
     const auto budget = std::make_shared<GuestStringLeaseArena::Budget>(limits.maximum_copy_bytes);
     const auto leases = std::make_shared<ModifiedUtf8Leases>(
@@ -328,13 +338,13 @@ void BindJniGuestStringSlots(
             return JniGuestCallResult{};
         });
     dispatcher.BindEnvironment(
-        Slot("GetStringUTFRegion"),
-        [&environment, &strings,
-         &address_space](const JniGuestCallFrame& frame) {
+        Slot("GetStringUTFRegion"), [&environment, &classes, &strings, &address_space](const JniGuestCallFrame& frame) {
             const auto string = ResolveString(
                 environment, frame, "GetStringUTFRegion");
             const auto start = std::bit_cast<JniSize>(frame.registers[2]);
             const auto length = std::bit_cast<JniSize>(frame.registers[3]);
+            if (!ValidateStringRegion(environment, classes, frame, strings.Length(string), start, length))
+                return JniGuestCallResult{};
             const auto bytes = strings.ModifiedUtf8Region(
                 string, start, length);
             const auto destination = memory::GuestAddress{
@@ -418,15 +428,12 @@ void BindJniGuestStringSlots(
             return JniGuestCallResult{};
         });
     dispatcher.BindEnvironment(
-        Slot("GetStringRegion"),
-        [&environment, &strings,
-         &address_space](const JniGuestCallFrame& frame) {
+        Slot("GetStringRegion"), [&environment, &classes, &strings, &address_space](const JniGuestCallFrame& frame) {
             const auto start = std::bit_cast<JniSize>(frame.registers[2]);
             const auto length = std::bit_cast<JniSize>(frame.registers[3]);
-            if (start < 0 || length < 0) {
-                throw JniGuestBindingError(
-                    "GetStringRegion range is invalid");
-            }
+            const auto string = ResolveString(environment, frame, "GetStringRegion");
+            if (!ValidateStringRegion(environment, classes, frame, strings.Length(string), start, length))
+                return JniGuestCallResult{};
             const auto byte_size =
                 static_cast<std::size_t>(length) * sizeof(JniChar);
             const auto destination = memory::GuestAddress{
@@ -440,9 +447,7 @@ void BindJniGuestStringSlots(
                     {destination, byte_size}, memory::AccessType::write,
                     frame.thread_id);
             }
-            const auto chars = strings.Region(
-                ResolveString(environment, frame, "GetStringRegion"),
-                start, length);
+            const auto chars = strings.Region(string, start, length);
             if (!chars.empty()) {
                 address_space.Write(
                     destination, EncodeUtf16(chars, false), frame.thread_id);

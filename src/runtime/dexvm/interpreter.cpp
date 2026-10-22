@@ -1625,10 +1625,23 @@ void Interpreter::SetLogger(core::Logger* logger) {
     impl_->logger = logger;
     impl_->linker->SetLogger(logger);
 }
-core::Logger* Interpreter::Log() const noexcept { return impl_->logger; }
-const InterpreterConfig& Interpreter::Config() const noexcept { return impl_->config; }
-void Interpreter::SetConsoleSink(ConsoleSink sink) { impl_->console = std::move(sink); }
-const Interpreter::ConsoleSink& Interpreter::Console() const noexcept { return impl_->console; }
+
+core::Logger* Interpreter::Log() const noexcept {
+    return impl_->logger;
+}
+
+const InterpreterConfig& Interpreter::Config() const noexcept {
+    return impl_->config;
+}
+
+void Interpreter::SetConsoleSink(ConsoleSink sink, ConsoleSink error_sink) {
+    impl_->console = std::move(sink);
+    impl_->error_console = std::move(error_sink);
+}
+
+const Interpreter::ConsoleSink& Interpreter::Console(const bool error) const noexcept {
+    return error && impl_->error_console ? impl_->error_console : impl_->console;
+}
 
 VmObjectRef Interpreter::CloneObject(const VmObjectRef source) {
     const auto clone = impl_->model->CloneObject(source);

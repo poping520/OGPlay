@@ -416,3 +416,102 @@ DestroyJavaVM；无 NIO 的单测夹具仍不注入 NIO 三槽。
 
 最终 **6/9**，与 WU7-6 逐项相同，checkpoint/断言没有新增失败。未跑 dalvik 全量。
 能力状态保持不变，按本单要求不改能力条目；`tools/capabilities.py check` 通过（416 项）。
+
+## WU8-2b：宿主错误映射到 Dalvik Java 异常（2026-10-22）
+
+### 实现与判据
+
+只转换明确的 Java 异常路径，非法 handle、类型、guest 内存故障及 Dalvik abort 路径仍为
+宿主致命错误，不笼统捕获宿主异常。
+
+- 八种 primitive Get/SetArrayRegion（`Jni.cpp:2388–2432`）在任何 buffer 读写前校验完整
+  范围，失败经现有 ThrowableFactory 挂 ArrayIndexOutOfBoundsException，返回 void。
+  消息为 `<descriptor> offset=<start> length=<len> src.length=<n>` 或 `dst.length=<n>`。
+- GetObjectArrayElement（`Jni.cpp:2271–2294 → Exception.cpp:1205–1209`）失败挂
+  ArrayIndexOutOfBoundsException、返回 NULL，消息为 `length=<n>; index=<i>`。
+- GetStringRegion/GetStringUTFRegion（`Jni.cpp:2564–2587 → Exception.cpp:1419–1424`）
+  失败挂 StringIndexOutOfBoundsException、返回 void，消息为
+  `length=<n>; regionStart=<start>; regionLength=<len>`，不写 guest buffer。
+- MonitorExit（`Jni.cpp:2534–2549`）仅将 non-owner 转为 JNI_ERR +
+  IllegalMonitorStateException；失败保留原锁 owner/递归深度，按 Dalvik 替换原 pending。
+- EnsureLocalCapacity/PushLocalFrame 的请求按 `Jni.cpp:409–412 / Thread.h:74` 使用
+  512 上限并扣除当前 local 使用量；实际 local 仍可自动增长到配置的 local_per_thread
+  总上限。请求失败映射为 JNI_ERR + OOME；Ensure 消息为
+  `can't ensure local reference capacity`（1485–1491），Push 先清 pending，消息为
+  `out of stack in JNI PushLocalFrame`（1418–1428），不压入失败帧。
+- ExceptionDescribe（`Jni.cpp:1383–1387 → Exception.cpp:564–592`）暂清 pending，
+  通过 VM owner 的显式 hook 在原线程 context 虚派 Java printStackTrace()。原 throwable
+  在打印期间是 GC 强根，Java 打印异常被忽略，原 pending 身份恢复；宿主致命错误恢复原
+  pending 后继续上报。结构化 diagnostic 保留，未被用来替代 Java 输出。
+
+### System.err 与 harness 的必要收口
+
+复核独立 stderr 文件发现 run-dex 原先将 Java out/err 都送到 stdout；只恢复 Java 调用仍
+不足以满足 Describe 的 stderr 判据。本单给 Java LogOutputStream 的 native emit 增加显式
+out/err 通道事实（不按文本或调用栈猜测），默认 run-dex 分别输出到宿主 stdout/stderr。
+普通 PrintStream 的目标、编码、刷新、错误及 System.setOut/setErr 仍归 Java；显式传入
+DexConsole 的调用继续合并两路字节，保持公共回调契约。BootDex 已重新生成并通过 check，
+更新 manifest 中的机器生成摘要，没有改配方类集合或引入依赖。
+
+AOSP `dalvik/tests/run-test:203、210、221` 按 `2>&1` 比较 expected.txt。因此增加显式
+`run-dex --merge-console`，dalvik_tests.py 用它按提交顺序合并 **Java** out/err；宿主结构化
+诊断继续独立在 stderr。没有改 AOSP 源码、expected.txt、分类规则、排除项或 dalvik 基线。
+JNI Describe 继续单进程运行，驱动现在要求 marker 真正在 stderr；self-test 同时验证
+stdout-only marker 失败、stderr marker 成功。Describe 探针另验证 Java override 被调用一次、
+override 抛出的第二个异常被忽略，native 观察到的仍是原 pending 对象。
+
+### 结果与验证
+
+每后端 **359/399（90.0%）**，比 WU8-2a 各新增 **27 pass**、零回归：
+
+| 后端 | 规范级 | 其他 dvm_ | dvm_pending | 全套 |
+| --- | --- | --- | --- | --- |
+| switch | 347/347（100%） | 12/49（24.5%） | 0/3 | 359/399（90.0%） |
+| threaded | 347/347（100%） | 12/49（24.5%） | 0/3 | 359/399（90.0%） |
+
+转 pass 清单按族计数（两后端相同，逐条 case-id 见报告 baseline_changes）：
+
+| 目标 | 条数 | 转 pass 范围 |
+| --- | --- | --- |
+| primitive Region | 16 | 八种 Get/Set<Type>ArrayRegion.bounds |
+| object array | 1 | array.GetObjectArrayElement.bounds |
+| string Region | 6 | UTF16/UTF8 各 negativeStart、negativeLength、pastEnd |
+| monitor | 1 | monitor.MonitorExit.nonOwner |
+| Describe | 1 | exception.ExceptionDescribe |
+| local capacity | 2 | reference.EnsureLocalCapacity.dvm_limit、reference.PushLocalFrame.dvm_limit |
+
+剩余每后端 **assert 37 / crash 3**：数组与字符串指针语义 36、NIO 历史语义 1、pending
+契约分歧 3；本单未放宽 pending 门禁。无 unimplemented/timeout/missing 新分类。
+静态覆盖 **233/233（100%）**，未覆盖 0，排除项仍仅 DestroyJavaVM。
+
+证据目录 `.local/analysis/wu8-2b/`：
+
+- 仅构建 C++ 目标 ogplay-cli、ogplay_tests；JNI 主题 **155/155、10,131 断言通过**，
+  PrintStream/Throwable 定向 **15/15、1,276 断言通过**。新检查验证越界 buffer/数组不被
+  部分改写、消息格式、异常替换规则、锁状态、512 请求边界与实际超过 512 的自动增长，
+  以及 Describe 的保活、无 pending 时无操作、打印后原异常恢复和 out/err 分流。
+- BootDex build/check、两个一致性工具 self-test 通过；C/C++ 修改行已 clang-format，
+  `git diff --check` 通过。构建与单测最终日志为 `build-final-verified.log`、
+  `unit-verified.log`、`printstream-throwable.log`。
+- JNI 全量双后端先 `--coverage --require-full --check-baseline`，再 `--update-baseline`；
+  最终报告 `jni-final-check/`、`baseline-updated/`，两个后端均增加 27 pass，无回退。
+- dalvik_tests.py 全量双后端 `--check-baseline`：各 **84/91（92.3%）**，零回归、
+  分类不变，最终报告 `dalvik-final/`；用于检查异常边界对既有平台 JNI 路径的回归，
+  不声称平台族已完整兼容。
+- 9 基础场景使用 WU8-2a 相同 fixtures/选项和两 worker，输出另存 `scenarios-verified/`，
+  摘要 `scenarios-verified-summary.json`，与保存的 `scenarios-before.json` 逐项比较。
+
+| 场景 | WU8-2a | WU8-2b | 比较 |
+| --- | --- | --- | --- |
+| tml | pass | pass | 无新增失败 |
+| lili | pass | pass | 无新增失败 |
+| wild_blood | pass | pass | 无新增失败 |
+| tales | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| dead_trigger | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| dungeon_hunter | pass | pass | 无新增失败 |
+| asphalt5 | pass | pass | 无新增失败 |
+| pvz | shutdown fail | shutdown fail | checkpoint 全过，仍为退出码 1 |
+| angry_birds | pass | pass | 无新增失败 |
+
+场景 **6/9**，通过数不减、原失败没有新增 checkpoint/断言失败；逐项证据存
+`scenarios-comparison.json`。能力状态未变，`tools/capabilities.py check` 通过（416 项）。

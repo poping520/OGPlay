@@ -22,6 +22,7 @@
 #include "ogplay/runtime/jni/jni_object.h"
 #include "ogplay/runtime/jni/jni_object_array.h"
 #include "jni_guest_memory.h"
+#include "jni_guest_lookup.h"
 
 namespace ogplay::runtime {
 namespace {
@@ -103,13 +104,16 @@ constexpr std::array<PrimitiveBinding, 8> kPrimitiveBindings{{
     return count * element_size;
 }
 
-void ValidateRegion(const JniSize array_length, const JniSize start,
-                    const JniSize length, const char* operation) {
-    if (start < 0 || length < 0 || start > array_length ||
-        length > array_length - start) {
-        throw JniGuestBindingError(
-            std::string(operation) + " range is outside the array");
-    }
+bool ValidateRegion(JniEnvironment& env, JniClassRegistry& classes, const JniGuestCallFrame& frame,
+                    JniSize array_length, JniSize start, JniSize length, JniPrimitiveKind kind, const char* direction) {
+    if (start >= 0 && length >= 0 && start <= array_length && length <= array_length - start) return true;
+    // Dalvik Jni.cpp:2388-2395: exception precedes every buffer access/write.
+    const std::string descriptor = std::string("[") + "ZBCSIJFD"[static_cast<std::size_t>(kind)];
+    jni_guest_detail::ThrowJavaError(env, classes, frame.thread_id, "java/lang/ArrayIndexOutOfBoundsException",
+                                     descriptor + " offset=" + std::to_string(start) +
+                                         " length=" + std::to_string(length) + " " + direction +
+                                         ".length=" + std::to_string(array_length));
+    return false;
 }
 
 template <typename T>
@@ -410,72 +414,51 @@ void BindJniGuestArraySlots(
 
         const auto get_region =
             "Get" + std::string(binding.name) + "ArrayRegion";
-        dispatcher.BindEnvironment(
-            Slot(get_region),
-            [&environment, &arrays, &address_space, binding,
-             get_region](const JniGuestCallFrame& frame) {
-                const auto array = ResolvePrimitive(
-                    environment, arrays, frame, binding.kind,
-                    get_region.c_str());
-                const auto start =
-                    std::bit_cast<JniSize>(frame.registers[2]);
-                const auto length =
-                    std::bit_cast<JniSize>(frame.registers[3]);
-                ValidateRegion(
-                    arrays.Length(array), start, length, get_region.c_str());
-                const auto byte_size = CheckedByteSize(
-                    length, binding.element_size, get_region.c_str());
-                const auto destination = memory::GuestAddress{ReadGuest32(
-                    address_space, frame.stack_pointer, frame.thread_id)};
-                if (byte_size != 0U) {
-                    if (destination.IsNull()) {
-                        throw JniGuestBindingError(
-                            get_region + " requires a non-null output buffer");
-                    }
-                    address_space.Validate(
-                        {destination, byte_size}, memory::AccessType::write,
-                        frame.thread_id);
-                }
-                const auto bytes = Encode(arrays.Region(array, start, length));
-                if (!bytes.empty()) {
-                    address_space.Write(destination, bytes, frame.thread_id);
-                }
+        dispatcher.BindEnvironment(Slot(get_region), [&environment, &classes, &arrays, &address_space, binding,
+                                                      get_region](const JniGuestCallFrame& frame) {
+            const auto array = ResolvePrimitive(environment, arrays, frame, binding.kind, get_region.c_str());
+            const auto start = std::bit_cast<JniSize>(frame.registers[2]);
+            const auto length = std::bit_cast<JniSize>(frame.registers[3]);
+            if (!ValidateRegion(environment, classes, frame, arrays.Length(array), start, length, binding.kind, "src"))
                 return JniGuestCallResult{};
-            });
+            const auto byte_size = CheckedByteSize(length, binding.element_size, get_region.c_str());
+            const auto destination =
+                memory::GuestAddress{ReadGuest32(address_space, frame.stack_pointer, frame.thread_id)};
+            if (byte_size != 0U) {
+                if (destination.IsNull()) {
+                    throw JniGuestBindingError(get_region + " requires a non-null output buffer");
+                }
+                address_space.Validate({destination, byte_size}, memory::AccessType::write, frame.thread_id);
+            }
+            const auto bytes = Encode(arrays.Region(array, start, length));
+            if (!bytes.empty()) {
+                address_space.Write(destination, bytes, frame.thread_id);
+            }
+            return JniGuestCallResult{};
+        });
 
         const auto set_region =
             "Set" + std::string(binding.name) + "ArrayRegion";
-        dispatcher.BindEnvironment(
-            Slot(set_region),
-            [&environment, &arrays, &address_space, binding,
-             set_region](const JniGuestCallFrame& frame) {
-                const auto array = ResolvePrimitive(
-                    environment, arrays, frame, binding.kind,
-                    set_region.c_str());
-                const auto start =
-                    std::bit_cast<JniSize>(frame.registers[2]);
-                const auto length =
-                    std::bit_cast<JniSize>(frame.registers[3]);
-                ValidateRegion(
-                    arrays.Length(array), start, length, set_region.c_str());
-                const auto byte_size = CheckedByteSize(
-                    length, binding.element_size, set_region.c_str());
-                const auto source = memory::GuestAddress{ReadGuest32(
-                    address_space, frame.stack_pointer, frame.thread_id)};
-                std::vector<std::byte> bytes(byte_size);
-                if (!bytes.empty()) {
-                    if (source.IsNull()) {
-                        throw JniGuestBindingError(
-                            set_region + " requires a non-null input buffer");
-                    }
-                    address_space.Validate(
-                        {source, byte_size}, memory::AccessType::read,
-                        frame.thread_id);
-                    address_space.Read(source, bytes, frame.thread_id);
-                }
-                arrays.SetRegion(array, start, Decode(binding.kind, bytes));
+        dispatcher.BindEnvironment(Slot(set_region), [&environment, &classes, &arrays, &address_space, binding,
+                                                      set_region](const JniGuestCallFrame& frame) {
+            const auto array = ResolvePrimitive(environment, arrays, frame, binding.kind, set_region.c_str());
+            const auto start = std::bit_cast<JniSize>(frame.registers[2]);
+            const auto length = std::bit_cast<JniSize>(frame.registers[3]);
+            if (!ValidateRegion(environment, classes, frame, arrays.Length(array), start, length, binding.kind, "dst"))
                 return JniGuestCallResult{};
-            });
+            const auto byte_size = CheckedByteSize(length, binding.element_size, set_region.c_str());
+            const auto source = memory::GuestAddress{ReadGuest32(address_space, frame.stack_pointer, frame.thread_id)};
+            std::vector<std::byte> bytes(byte_size);
+            if (!bytes.empty()) {
+                if (source.IsNull()) {
+                    throw JniGuestBindingError(set_region + " requires a non-null input buffer");
+                }
+                address_space.Validate({source, byte_size}, memory::AccessType::read, frame.thread_id);
+                address_space.Read(source, bytes, frame.thread_id);
+            }
+            arrays.SetRegion(array, start, Decode(binding.kind, bytes));
+            return JniGuestCallResult{};
+        });
 
         const auto get_elements =
             "Get" + std::string(binding.name) + "ArrayElements";
@@ -535,22 +518,24 @@ void BindJniGuestArraySlots(
                 throw;
             }
         });
-    dispatcher.BindEnvironment(
-        Slot("GetObjectArrayElement"),
-        [&environment, &object_arrays, &objects](const JniGuestCallFrame& frame) {
-            const auto array = Resolve(
-                environment, frame, frame.registers[1],
-                "GetObjectArrayElement");
-            const auto value = object_arrays.Get(
-                array, std::bit_cast<JniSize>(frame.registers[2]));
-            if (value.has_value()) {
-                objects.EnsureRegistered(value->object, value->java_class);
-            }
-            return Word(value.has_value()
-                            ? environment.PublishLocalObject(
-                                  frame.thread_id, value->object).Value()
-                            : 0U);
-        });
+    dispatcher.BindEnvironment(Slot("GetObjectArrayElement"), [&environment, &classes, &object_arrays,
+                                                               &objects](const JniGuestCallFrame& frame) {
+        const auto array = Resolve(environment, frame, frame.registers[1], "GetObjectArrayElement");
+        const auto index = std::bit_cast<JniSize>(frame.registers[2]);
+        const auto length = object_arrays.Length(array);
+        // Dalvik Jni.cpp:2271-2294 -> Exception.cpp:1205-1209.
+        if (index < 0 || index >= length) {
+            jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id,
+                                             "java/lang/ArrayIndexOutOfBoundsException",
+                                             "length=" + std::to_string(length) + "; index=" + std::to_string(index));
+            return Word(0U);
+        }
+        const auto value = object_arrays.Get(array, index);
+        if (value.has_value()) {
+            objects.EnsureRegistered(value->object, value->java_class);
+        }
+        return Word(value.has_value() ? environment.PublishLocalObject(frame.thread_id, value->object).Value() : 0U);
+    });
     dispatcher.BindEnvironment(
         Slot("SetObjectArrayElement"),
         [&environment, &classes, &strings, &objects,

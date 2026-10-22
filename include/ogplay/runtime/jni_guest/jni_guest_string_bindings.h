@@ -12,9 +12,8 @@ class JniEnvironment;
 class JniGuestCallDispatcher;
 class JniStringStore;
 
-void BindJniGuestStringSlots(
-    JniGuestCallDispatcher& dispatcher, JniEnvironment& environment,
-    JniStringStore& strings, memory::AddressSpace& address_space,
-    JniGuestStringLimits limits = {});
+void BindJniGuestStringSlots(JniGuestCallDispatcher& dispatcher, JniEnvironment& environment, JniClassRegistry& classes,
+                             JniStringStore& strings, memory::AddressSpace& address_space,
+                             JniGuestStringLimits limits = {});
 
 }  // namespace ogplay::runtime

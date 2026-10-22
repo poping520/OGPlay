@@ -221,3 +221,53 @@ TEST_CASE("JNI pending metadata preserves ThrowNew class and message without cle
     environment.ExceptionClear(11);
     environment.DetachThread(11);
 }
+
+TEST_CASE("JNI Describe roots the original exception across printing and restores pending") {
+    using namespace ogplay::runtime;
+    JniEnvironment env;
+    env.AttachThread(601);
+    const JniObjectIdentity original{JniObjectDomain::host, 6011};
+    const auto ref = env.PublishLocalObject(601, original);
+    env.Throw(601, ref);
+    env.DeleteLocalRef(601, ref);
+    int called = 0;
+    env.SetExceptionDescriber([&](std::uint64_t thread, JniObjectIdentity throwable) {
+        ++called;
+        CHECK(throwable == original);
+        CHECK_FALSE(env.ExceptionCheck(thread));
+        bool rooted = false;
+        env.VisitReferenceRoots([&](auto root) {
+            if (root == original) rooted = true;
+        });
+        CHECK(rooted);
+        const auto secondary = env.PublishLocalObject(thread, {JniObjectDomain::host, 6012});
+        env.Throw(thread, secondary);
+        env.DeleteLocalRef(thread, secondary);
+    });
+    env.ExceptionDescribe(601);
+    CHECK(called == 1);
+    CHECK(env.PendingExceptionMetadata(601)->throwable == original);
+    env.ExceptionClear(601);
+    bool retained = false;
+    env.VisitReferenceRoots([&](auto root) {
+        if (root == original) retained = true;
+    });
+    CHECK_FALSE(retained);
+    env.ExceptionDescribe(601);
+    CHECK(called == 1);
+}
+
+TEST_CASE("JNI request guarantees use Dalvik 512 while actual local usage can grow further") {
+    using namespace ogplay::runtime;
+    JniEnvironment env({1024, 16, 16});
+    env.AttachThread(602);
+    static_cast<void>(env.PublishLocalObject(602, {JniObjectDomain::host, 6021}));
+    CHECK_NOTHROW(env.EnsureLocalCapacity(602, 511));
+    CHECK_THROWS_AS(env.EnsureLocalCapacity(602, 512), JniReferenceError);
+    CHECK_THROWS_AS(env.PushLocalFrame(602, 512), JniReferenceError);
+    for (std::size_t i = 0; i < 512; ++i)
+        static_cast<void>(env.PublishLocalObject(602, {JniObjectDomain::host, 6022 + i}));
+    CHECK_THROWS_AS(env.EnsureLocalCapacity(602, 1), JniReferenceError);
+    CHECK_THROWS_AS(env.PushLocalFrame(602, 1), JniReferenceError);
+    CHECK_NOTHROW(static_cast<void>(env.PublishLocalObject(602, {JniObjectDomain::host, 6999})));
+}

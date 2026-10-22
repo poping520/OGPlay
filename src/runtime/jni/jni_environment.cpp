@@ -1,5 +1,6 @@
 #include "ogplay/runtime/jni/jni_environment.h"
 
+#include <algorithm>
 #include <condition_variable>
 #include <limits>
 #include <map>
@@ -289,6 +290,13 @@ std::size_t JniEnvironment::GlobalReferenceCount() const {
 void JniEnvironment::VisitReferenceRoots(
     const JniReferenceTable::RootVisitor& visitor) const {
     references_.VisitRoots(visitor);
+    std::vector<JniObjectIdentity> describing;
+    {
+        const std::scoped_lock lock(throwable_mutex_);
+        describing = describing_roots_;
+    }
+    for (const auto object : describing)
+        visitor(object);
 }
 
 void JniEnvironment::ClearWeakReferencesTo(const JniObjectIdentity object) {
@@ -309,12 +317,20 @@ void JniEnvironment::ConfigureLegacyLocalReferenceCompatibility(
 void JniEnvironment::EnsureLocalCapacity(
     const std::uint64_t thread_id, const std::size_t additional_capacity) {
     RequireAllowed(thread_id, "EnsureLocalCapacity");
+    // Dalvik Jni.cpp:409-412 / Thread.h:74: request guarantee is bounded by 512.
+    const auto used = references_.LocalCount(thread_id);
+    if (used > 512U || additional_capacity > 512U - used)
+        throw JniReferenceError(JniReferenceErrorReason::capacity_exceeded, "JNI local reference capacity exceeded");
     references_.EnsureLocalCapacity(thread_id, additional_capacity);
 }
 
 void JniEnvironment::PushLocalFrame(const std::uint64_t thread_id,
                                     const std::size_t capacity) {
     RequireAllowed(thread_id, "PushLocalFrame");
+    // Dalvik Jni.cpp:409-412 / Thread.h:74: request guarantee is bounded by 512.
+    const auto used = references_.LocalCount(thread_id);
+    if (used > 512U || capacity > 512U - used)
+        throw JniReferenceError(JniReferenceErrorReason::capacity_exceeded, "JNI local reference capacity exceeded");
     references_.PushLocalFrame(thread_id, capacity);
 }
 
@@ -453,6 +469,11 @@ std::optional<JniThrowableMetadata> JniEnvironment::PendingExceptionMetadata(con
     return found != throwables_.end() ? found->second : JniThrowableMetadata{*pending, {}, {}};
 }
 
+void JniEnvironment::SetExceptionDescriber(ExceptionDescriber describer) {
+    const std::scoped_lock lock(throwable_mutex_);
+    exception_describer_ = std::move(describer);
+}
+
 void JniEnvironment::ExceptionDescribe(const std::uint64_t thread_id) {
     RequireAllowed(thread_id, "ExceptionDescribe");
     const auto pending = exceptions_.Occurred(thread_id);
@@ -471,6 +492,29 @@ void JniEnvironment::ExceptionDescribe(const std::uint64_t thread_id) {
          {"exception_class", metadata.exception_class.value},
          {"message", metadata.modified_utf8_message}},
         {.mode = core::RateLimitMode::none});
+    ExceptionDescriber describe;
+    {
+        const std::scoped_lock lock(throwable_mutex_);
+        describe = exception_describer_;
+        if (describe) describing_roots_.push_back(*pending);
+    }
+    if (!describe) return;  // Standalone JNI retains its structured diagnostic.
+    // Jni.cpp:1383-1387 -> Exception.cpp:564-592: clear temporarily, print via Java,
+    // discard the printing exception, and restore the original throwable.
+    const auto restore = [&] {
+        exceptions_.Clear(thread_id);
+        exceptions_.Throw(thread_id, *pending);
+        const std::scoped_lock lock(throwable_mutex_);
+        describing_roots_.erase(std::find(describing_roots_.begin(), describing_roots_.end(), *pending));
+    };
+    exceptions_.Clear(thread_id);
+    try {
+        describe(thread_id, *pending);
+    } catch (...) {
+        restore();
+        throw;
+    }  // Host fatal errors are not Java printing exceptions.
+    restore();
 }
 
 void JniEnvironment::ExceptionClear(const std::uint64_t thread_id) {

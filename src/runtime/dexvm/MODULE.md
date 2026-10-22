@@ -138,6 +138,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 
 - System.out/err 经 LogOutputStream 提交文本与“是否行尾”事实：默认写结构化日志（空片段不记），
   设置 `SetConsoleSink` 时按原字节（含空行、无行尾片段）交给宿主控制台，仅 run-dex 使用。
+  可选 error sink 接收 Java System.err；未注入时继续汇入原 console sink。通道归 Java 日志流实例，
+  不按文本或调用栈猜测，System.setOut/setErr 与自定义 PrintStream 仍由 Java 决定目标。
   `InterpreterConfig::enable_assertions` 只对应 dalvikvm `-ea` 全局开关，APK 运行保持关闭。
 
 ### Core intrinsic 与专用 runtime

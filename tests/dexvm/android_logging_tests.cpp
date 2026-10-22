@@ -435,6 +435,14 @@ TEST_CASE("DVM226 PrintStream owns error and autoFlush semantics and System stre
         REQUIRE(logs.size() == 2);
         CHECK(logs[0].message == "stdout 中文");
         CHECK(logs[1].message == "stderr");
+        std::string stdout_bytes, stderr_bytes;
+        f.vm.SetConsoleSink([&](std::string_view bytes) { stdout_bytes += bytes; },
+                            [&](std::string_view bytes) { stderr_bytes += bytes; });
+        f.On(stdout_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("out"))});
+        f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("err"))});
+        CHECK(stdout_bytes == "out\n");
+        CHECK(stderr_bytes == "err\n");
+        f.vm.SetConsoleSink({});
         f.On(stdout_stream, "close", "()V");
         f.On(stderr_stream, "println", "(Ljava/lang/String;)V", {VmValue::Ref(f.vm.NewStringUtf8("still-open"))});
         logs = f.logger.Snapshot();

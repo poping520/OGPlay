@@ -181,7 +181,7 @@ def build(host, out):
     return dex, libraries
 
 
-def classify(ids, stdout, code, timed_out, ledger):
+def classify(ids, stdout, code, timed_out, ledger, stderr=""):
     rows = {}
     for line in stdout.splitlines():
         match = re.fullmatch(r'(PASS|FAIL) ([\w.]+)(?:: (.*))?', line)
@@ -193,8 +193,8 @@ def classify(ids, stdout, code, timed_out, ledger):
             continue
         detail = match[3] or ''
         outcome = 'pass' if match[1] == 'PASS' else 'fail:assert'
-        if outcome == 'pass' and id in EXPECTED_OUTPUT and EXPECTED_OUTPUT[id] not in stdout:
-            outcome, detail = 'fail:assert', 'required diagnostic output missing: ' + EXPECTED_OUTPUT[id]
+        if outcome == 'pass' and id in EXPECTED_OUTPUT and EXPECTED_OUTPUT[id] not in stderr:
+            outcome, detail = 'fail:assert', 'required stderr diagnostic missing: ' + EXPECTED_OUTPUT[id]
         if outcome != 'pass' and (ledger or re.search(r'unimplemented|not implemented|unsupported|unbound', detail, re.I)):
             outcome = 'fail:unimplemented'
         rows[id] = {'outcome': outcome, 'detail': detail, 'output': line, 'ledger': ledger}
@@ -314,7 +314,8 @@ def self_test():
     assert death(stderr=marker, timeout=True) == 'fail:timeout'
     assert death(output='unbound JNI guest slot: FatalError') == 'fail:unimplemented'
     assert classify(['exception.ExceptionDescribe'], 'PASS exception.ExceptionDescribe', 0, False, [])['exception.ExceptionDescribe']['outcome'] == 'fail:assert'
-    assert classify(['exception.ExceptionDescribe'], 'describe-marker\nPASS exception.ExceptionDescribe', 0, False, [])['exception.ExceptionDescribe']['outcome'] == 'pass'
+    assert classify(['exception.ExceptionDescribe'], 'describe-marker\nPASS exception.ExceptionDescribe', 0, False, [])['exception.ExceptionDescribe']['outcome'] == 'fail:assert'
+    assert classify(['exception.ExceptionDescribe'], 'PASS exception.ExceptionDescribe', 0, False, [], stderr='describe-marker')['exception.ExceptionDescribe']['outcome'] == 'pass'
     print('JNI probe self-test passed')
 
 
@@ -366,7 +367,8 @@ def main():
                 if id in EXPECTED_DEATH:
                     stderr = Path(str(path) + '.stderr.log').read_text(encoding='utf-8', errors='replace')
                     return {id: classify_death(id, data[0], stderr, *data[1:])}
-                return classify([id], *data)
+                stderr = Path(str(path) + '.stderr.log').read_text(encoding='utf-8', errors='replace')
+                return classify([id], *data, stderr=stderr)
             if args.case:
                 for id in regular:
                     rows.update(run_case(id))

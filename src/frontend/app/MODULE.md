@@ -33,3 +33,8 @@ handler 或 ThreadGroup 分派（处理器失败写 stderr）。结果只作行�
 
 RunDex 的 `--ledger-json` 保留未实现命中，并以独立 `warnings` 数组导出 guest process 的
 warn 级命中（id/count/首末 LR），不将 Dalvik DefineClass 的 NULL 返回当作实现成功。
+
+RunDex 默认将 Java out/err 分别输出到宿主 stdout/stderr；显式传入 DexConsole 时仍按原
+公共契约合并两路字节，诊断/未捕获异常的宿主报告继续使用 stderr。
+一致性工具可显式使用 `--merge-console`，按 AOSP run-test 的 `2>&1` 约定将 Java 两路字节
+按提交顺序并入 stdout；宿主结构化诊断仍在 stderr，不能污染 Java expected.txt。

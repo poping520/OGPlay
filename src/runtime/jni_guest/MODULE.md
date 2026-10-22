@@ -142,3 +142,8 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
 对应 `tests/runtime/` 下的 `jni_guest_abi_tests.cpp`、`jni_guest_bindings_tests.cpp`、
 `jni_guest_instance_calls_tests.cpp`、`jni_guest_library_lifecycle_tests.cpp` 与
 `jni_native_registry_tests.cpp`。
+
+WU8-2b：primitive Region、对象元素与 string Region 越界在 buffer 访问前经 ThrowableFactory
+发布 Dalvik 类型/消息并返回 void/NULL；非法 handle、类型或内存故障不做笼统转换。
+MonitorExit 仅将 non-owner 映射为 JNI_ERR + IllegalMonitorStateException，失败不改变锁状态；
+Ensure/Push 请求容量失败映射为 JNI_ERR + OOME，Push 与失败 MonitorExit 按 Dalvik 替换 pending。

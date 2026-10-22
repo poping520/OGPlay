@@ -32,7 +32,7 @@ namespace ogplay::app {
 namespace {
 namespace dx = runtime::dexvm;
 
-void WriteStderr(const std::string& text) {
+void WriteStderr(const std::string_view text) {
     static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stderr));
     static_cast<void>(std::fflush(stderr));
 }
@@ -173,6 +173,8 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
             options.native_lib_dir = value();
             if (options.native_lib_dir.empty()) throw std::invalid_argument("--native-lib-dir must not be empty");
         } else if (arg == "--enable-assertions" || arg == "-ea") options.enable_assertions = true;
+        else if (arg == "--merge-console")
+            options.merge_console = true;
         else if (arg.starts_with("--")) throw std::invalid_argument("unknown run-dex option: " + std::string(arg));
         else if (options.input.empty()) options.input = std::filesystem::path(std::string(arg));
         else { break; }
@@ -289,9 +291,12 @@ int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto& model = bridge.Model();
     auto& threads = bridge.Threads();
     vm.SetConsoleSink(console ? console : DexConsole([](const std::string_view bytes) {
-        static_cast<void>(std::fwrite(bytes.data(), sizeof(char), bytes.size(), stdout));
-        static_cast<void>(std::fflush(stdout));
-    }));
+                          static_cast<void>(std::fwrite(bytes.data(), sizeof(char), bytes.size(), stdout));
+                          static_cast<void>(std::fflush(stdout));
+                      }),
+                      console || options.merge_console ? DexConsole{} : DexConsole([](const std::string_view bytes) {
+                          WriteStderr(bytes);
+                      }));
     // A standalone run has no frame pump: a realtime unified Clock drives the
     // single Android monotonic clock that Thread.sleep/wait and System time read.
     vm.Monitors().SetClockAdvance({});

@@ -6,6 +6,6 @@ LogOutputStream 是 System.out/err 的独立 UTF-8 日志端点；两个普通 P
 
 pending ByteArrayOutputStream、关闭标记和同步归 Java，GC 沿字段追踪。换行提交该行
 （含空行），flush/close 只提交非空片段；每条提交只经 private static native
-`emit(String, boolean lineEnd)`。日志端忽略空片段；宿主控制台（run-dex）按行尾事实还原字节。
+`emit(String, boolean lineEnd, boolean error)`。日志端忽略空片段；Java 实例保存 out/err 通道，宿主控制台（run-dex）按通道及行尾事实还原字节。
 write 范围/关闭受检，close 幂等；显式 flush 的不完整 UTF-8 沿现有解码替换语义。
 原始任意二进制终端或逐字节日志保真不在此结构化诊断端点范围内。

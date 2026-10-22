@@ -5,6 +5,15 @@ package probe;
 import static probe.NativeSupport.*;
 final class ExceptionsCases implements CaseGroup {
     int calls;
+    static int describeCalls;
+    static final class Described extends IllegalStateException {
+        // Jni.cpp:1383-1387 -> Exception.cpp:564-592 invokes the override and ignores its Java throw.
+        public void printStackTrace() {
+            describeCalls++;
+            System.err.println("describe-marker override");
+            throw new IllegalArgumentException("printing-secondary");
+        }
+    }
     public void callback() { calls++; }
     private static native void throwSame(Throwable original) throws Throwable;
     private static native String probe(int mode, Throwable original, Object receiver);
@@ -42,6 +51,9 @@ final class ExceptionsCases implements CaseGroup {
         if (id.equals("exception.ExceptionDescribe")) {
             ExceptionsCases receiver = new ExceptionsCases();
             check(probe(1, new IllegalStateException("describe-marker"), receiver));
+            describeCalls = 0;
+            check(probe(1, new Described(), receiver));
+            require(describeCalls == 1);
             return;
         }
         // Jni.cpp:1333-1387;1625-1668;1909-1973;2161-2170

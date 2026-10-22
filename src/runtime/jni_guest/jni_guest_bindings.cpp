@@ -371,11 +371,17 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             throw JniGuestBindingError(FatalErrorDiagnostic(address_space, frame));
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("PushLocalFrame"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.PushLocalFrame(
-                frame.thread_id,
-                Capacity(frame.registers[1], "PushLocalFrame"));
+        EnvironmentSlot("PushLocalFrame"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            try {
+                environment.PushLocalFrame(frame.thread_id, Capacity(frame.registers[1], "PushLocalFrame"));
+            } catch (const JniReferenceError& error) {
+                if (error.Reason() != JniReferenceErrorReason::capacity_exceeded) throw;
+                // Dalvik Jni.cpp:1418-1428.
+                environment.ExceptionClear(frame.thread_id);
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
+                                                 "out of stack in JNI PushLocalFrame");
+                return Int(static_cast<JniInt>(JniStatus::error));
+            }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
@@ -426,11 +432,16 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                 JniReference{frame.registers[1]}));
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("EnsureLocalCapacity"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.EnsureLocalCapacity(
-                frame.thread_id,
-                Capacity(frame.registers[1], "EnsureLocalCapacity"));
+        EnvironmentSlot("EnsureLocalCapacity"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            try {
+                environment.EnsureLocalCapacity(frame.thread_id, Capacity(frame.registers[1], "EnsureLocalCapacity"));
+            } catch (const JniReferenceError& error) {
+                if (error.Reason() != JniReferenceErrorReason::capacity_exceeded) throw;
+                // Dalvik Jni.cpp:1485-1491.
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id, "java/lang/OutOfMemoryError",
+                                                 "can't ensure local reference capacity");
+                return Int(static_cast<JniInt>(JniStatus::error));
+            }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
@@ -471,10 +482,17 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
-        EnvironmentSlot("MonitorExit"),
-        [&environment](const JniGuestCallFrame& frame) {
-            environment.MonitorExit(
-                frame.thread_id, JniReference{frame.registers[1]});
+        EnvironmentSlot("MonitorExit"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            try {
+                environment.MonitorExit(frame.thread_id, JniReference{frame.registers[1]});
+            } catch (const JniMonitorError& error) {
+                if (error.Reason() != JniMonitorErrorReason::not_owner) throw;
+                // Dalvik Jni.cpp:2534-2549: failed exit replaces any pending exception.
+                environment.ExceptionClear(frame.thread_id);
+                jni_guest_detail::ThrowJavaError(environment, classes, frame.thread_id,
+                                                 "java/lang/IllegalMonitorStateException", error.what());
+                return Int(static_cast<JniInt>(JniStatus::error));
+            }
             return Int(static_cast<JniInt>(JniStatus::ok));
         });
     dispatcher.BindEnvironment(
@@ -741,9 +759,8 @@ void BindJniGuestSlots(JniGuestCallDispatcher& dispatcher,
     BindJniGuestArraySlots(
         dispatcher, context.environment, context.classes, context.strings,
         context.arrays, context.objects, context.address_space);
-    BindJniGuestStringSlots(
-        dispatcher, context.environment, context.strings,
-        context.address_space, context.string_limits);
+    BindJniGuestStringSlots(dispatcher, context.environment, context.classes, context.strings, context.address_space,
+                            context.string_limits);
     if (context.natives != nullptr) {
         BindJniGuestNativeRegistrationSlots(
             dispatcher, context.environment, context.classes,

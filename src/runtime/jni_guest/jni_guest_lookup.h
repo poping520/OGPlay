@@ -7,17 +7,21 @@
 
 namespace ogplay::runtime::jni_guest_detail {
 
-// Only resolution misses use Java exceptions. Invalid handles/descriptors and
-// pending-exception violations still propagate through their strict boundaries.
-inline void ThrowLookupError(JniEnvironment& environment, JniClassRegistry& classes,
-                             std::uint64_t thread, const std::string& type,
-                             const std::string& message) {
+// Expected Dalvik Java error paths share ThrowableFactory publication. Invalid
+// handles/descriptors and unrelated host faults keep their strict boundaries.
+inline void ThrowJavaError(JniEnvironment& environment, JniClassRegistry& classes, std::uint64_t thread,
+                           const std::string& type, const std::string& message) {
     auto error_class = classes.ResolveClass(type);
     if (!error_class) {
         // Standalone JNI owns host exception metadata, without a VM backend.
         error_class = classes.RegisterClass(JniClassDeclaration{.name = type});
     }
     environment.ThrowNew(thread, *error_class, message);
+}
+
+inline void ThrowLookupError(JniEnvironment& environment, JniClassRegistry& classes, std::uint64_t thread,
+                             const std::string& type, const std::string& message) {
+    ThrowJavaError(environment, classes, thread, type, message);
 }
 
 inline JniGuestCallResult LookupMethod(

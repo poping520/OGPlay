@@ -147,6 +147,8 @@ public:
     [[nodiscard]] JniReference ExceptionOccurred(std::uint64_t thread_id);
     [[nodiscard]] bool ExceptionCheck(std::uint64_t thread_id) const;
     [[nodiscard]] std::optional<JniThrowableMetadata> PendingExceptionMetadata(std::uint64_t thread_id) const;
+    using ExceptionDescriber = std::function<void(std::uint64_t, JniObjectIdentity)>;
+    void SetExceptionDescriber(ExceptionDescriber describer);
     void ExceptionDescribe(std::uint64_t thread_id);
     void ExceptionClear(std::uint64_t thread_id);
     [[nodiscard]] std::vector<core::LogRecord> ExceptionDiagnostics() const;
@@ -186,6 +188,8 @@ private:
     mutable std::mutex monitor_hooks_mutex_;
     JniMonitorHooks monitor_hooks_;
     ThrowableFactory throwable_factory_;
+    ExceptionDescriber exception_describer_;
+    std::vector<JniObjectIdentity> describing_roots_;
     mutable std::mutex throwable_mutex_;
     std::map<std::uint64_t, JniThrowableMetadata> throwables_;
     core::Logger exception_logger_;

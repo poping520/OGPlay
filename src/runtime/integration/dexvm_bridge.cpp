@@ -1992,6 +1992,23 @@ DexVmGuestBridge::DexVmGuestBridge(
         };
     }
 
+    session.Environment().SetExceptionDescriber([bridge_state](std::uint64_t thread, JniObjectIdentity identity) {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        const auto context = bridge_state->ContextForJniThread(thread);
+        bridge_state->vm->RunInExecutionContext(context, [&] {
+            const auto object = bridge_state->model->FromIdentity(identity);
+            const auto root = bridge_state->vm->ProtectReferences(std::array{object});
+            const auto type = bridge_state->model->ObjectClass(object);
+            const auto slot = bridge_state->linker.FindVtableIndex(type, "printStackTrace", "()V");
+            if (!slot) return;
+            // Dalvik Exception.cpp:564-592 invokes the override and ignores Java exceptions.
+            try {
+                static_cast<void>(bridge_state->vm->Call(context, bridge_state->linker.Class(type).vtable[*slot],
+                                                         std::array{dx::VmValue::Ref(object)}));
+            } catch (const dx::VmJavaThrow&) {
+            }
+        });
+    });
     session.Environment().SetThrowableFactory([bridge_state](std::uint64_t thread,
         JniObjectIdentity type, const std::string& message) {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
@@ -2117,6 +2134,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Environment().SetObjectAllocationHook({});
         impl_->session->Classes().SetClassResolver({});
+        impl_->session->Environment().SetExceptionDescriber({});
         impl_->session->Environment().SetThrowableFactory({});
         impl_->session->Objects().ObjectArrays().SetAssignability({});
         impl_->session->Objects().SetRuntimeClassResolver({});

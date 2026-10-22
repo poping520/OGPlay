@@ -789,12 +789,13 @@ TEST_CASE("guest JNI byte array region copies checked bytes to guest memory") {
             destination.Value())),
         "GetByteArrayRegion received the wrong array type",
         ogplay::runtime::JniGuestBindingError);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.CallEnvironment(
-            "GetByteArrayRegion", 405U, array.Value(),
-            std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-1}), 1U,
-            destination.Value())),
-        ogplay::runtime::JniGuestBindingError);
+    static_cast<void>(fixture.CallEnvironment("GetByteArrayRegion", 405U, array.Value(),
+                                              std::bit_cast<std::uint32_t>(ogplay::runtime::JniInt{-1}), 1U,
+                                              destination.Value()));
+    REQUIRE(fixture.environment.ExceptionCheck(405U));
+    CHECK(fixture.environment.PendingExceptionMetadata(405U)->modified_utf8_message ==
+          "[B offset=-1 length=1 src.length=4");
+    fixture.environment.ExceptionClear(405U);
     CHECK_THROWS_WITH_AS(
         static_cast<void>(fixture.CallEnvironment(
             "GetByteArrayRegion", 405U, array.Value(), 0U, 1U, 0U)),
@@ -1432,4 +1433,76 @@ TEST_CASE("guest JavaVM attach decodes named arguments and preserves state on re
     CHECK(f.java_vm.IsDaemon(411));
     CHECK(f.environment.AttachedThreadName(411) == "worker-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80");
     CHECK(f.CallJavaVm("DetachCurrentThread", 411) == StatusWord(JniStatus::ok));
+}
+
+TEST_CASE("guest JNI region failures publish Dalvik exceptions before touching buffers") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    f.environment.AttachThread(501);
+    const auto array = f.CallEnvironment("NewIntArray", 501, 3);
+    f.bus.Write32(f.output, 0x12345678U);
+    const auto negative = std::bit_cast<std::uint32_t>(JniInt{-1});
+    for (const auto name : {"GetIntArrayRegion", "SetIntArrayRegion"}) {
+        static_cast<void>(f.CallEnvironment(name, 501, array, 2, 2, f.output.Value()));
+        const auto metadata = f.environment.PendingExceptionMetadata(501);
+        REQUIRE(metadata.has_value());
+        CHECK(f.classes.ClassName(metadata->exception_class) == "java/lang/ArrayIndexOutOfBoundsException");
+        CHECK(metadata->modified_utf8_message ==
+              std::string("[I offset=2 length=2 ") + (name[0] == 'G' ? "src" : "dst") + ".length=3");
+        f.environment.ExceptionClear(501);
+        CHECK(f.ReadOutput() == 0x12345678U);
+    }
+    // Invalid range takes precedence over an unmapped input buffer as in Jni.cpp:2414-2432.
+    static_cast<void>(f.CallEnvironment("SetIntArrayRegion", 501, array, negative, 1, 0xffffffffU));
+    CHECK(f.environment.ExceptionCheck(501));
+    f.environment.ExceptionClear(501);
+    static_cast<void>(f.CallEnvironment("GetIntArrayRegion", 501, array, 0, 1, f.output.Value()));
+    CHECK(f.ReadOutput() == 0U);
+    f.WriteString(64, "abc");
+    const auto string = f.CallEnvironment("NewStringUTF", 501, f.output.Add(64).Value());
+    for (const auto name : {"GetStringRegion", "GetStringUTFRegion"}) {
+        f.bus.Write32(f.output, 0x12345678U);
+        static_cast<void>(f.CallEnvironment(name, 501, string, negative, 2, f.output.Value()));
+        const auto metadata = f.environment.PendingExceptionMetadata(501);
+        REQUIRE(metadata.has_value());
+        CHECK(f.classes.ClassName(metadata->exception_class) == "java/lang/StringIndexOutOfBoundsException");
+        CHECK(metadata->modified_utf8_message == "length=3; regionStart=-1; regionLength=2");
+        f.environment.ExceptionClear(501);
+        CHECK(f.ReadOutput() == 0x12345678U);
+    }
+}
+
+TEST_CASE("guest JNI capacity and non-owner monitor failures replace pending only when required") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    f.environment.AttachThread(502);
+    f.environment.AttachThread(503);
+    const JniObjectIdentity object{JniObjectDomain::host, 5001};
+    const auto ref = f.environment.PublishLocalObject(502, object);
+    const auto other = f.environment.PublishLocalObject(503, object);
+    f.environment.MonitorEnter(502, ref);
+    f.environment.MonitorEnter(502, ref);
+    for (const auto name : {"EnsureLocalCapacity", "PushLocalFrame"}) {
+        if (name[0] == 'P') f.environment.Throw(502, ref);
+        CHECK(f.CallEnvironment(name, 502, 513) == StatusWord(JniStatus::error));
+        const auto metadata = f.environment.PendingExceptionMetadata(502);
+        REQUIRE(metadata.has_value());
+        CHECK(f.classes.ClassName(metadata->exception_class) == "java/lang/OutOfMemoryError");
+        CHECK(metadata->throwable != object);
+        f.environment.ExceptionClear(502);
+    }
+    CHECK_THROWS_AS(static_cast<void>(f.environment.PopLocalFrame(502)), JniReferenceError);
+    f.environment.Throw(503, other);
+    CHECK(f.CallEnvironment("MonitorExit", 503, other.Value()) == StatusWord(JniStatus::error));
+    const auto metadata = f.environment.PendingExceptionMetadata(503);
+    REQUIRE(metadata.has_value());
+    CHECK(f.classes.ClassName(metadata->exception_class) == "java/lang/IllegalMonitorStateException");
+    CHECK(metadata->throwable != object);
+    f.environment.ExceptionClear(503);
+    CHECK(f.environment.MonitorSnapshot(object).owner_thread == 502);
+    CHECK(f.environment.MonitorSnapshot(object).recursion == 2);
+    f.environment.MonitorExit(502, ref);
+    f.environment.MonitorExit(502, ref);
 }

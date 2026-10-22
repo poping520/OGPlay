@@ -4,7 +4,7 @@
 Each test is copied into a work directory, compiled with javac (source/target
 1.7 against the pinned API 19 android.jar) and dx --debug as etc/default-build
 does (d8 1.5 strips javac assertion code and has no switch to keep it), run on
-both interpreter backends, and its stdout compared byte-for-byte with the
+both interpreter backends, and merged Java stdout/stderr compared byte-for-byte with the
 test's expected.txt (the 4.4 dalvikvm output; trailing CR stripped as run-test
 does). The AOSP tree stays read-only. javac/android.jar resolution is shared
 with tools/bootdex/build_bootdex.py; dx.jar sits next to its d8.jar, extracted
@@ -197,9 +197,11 @@ def run_one(cli: Path, dex: Path, expected: bytes, out: Path, backend: str, time
     started = time.monotonic()
     timed_out, exit_code = False, None
     try:
-        # run-test passes -ea to dalvikvm for every test.
+        # AOSP run-test:203,210,221 captures ./run 2>&1. Merge Java console
+        # streams in call order; keep OGPlay host diagnostics on separate stderr.
+        # run-test also passes -ea to dalvikvm for every test.
         done = subprocess.run([str(cli), "dexvm", "run-dex", str(dex), "--backend", backend,
-                               "--enable-assertions", "--ledger-json", str(ledger)],
+                               "--enable-assertions", "--merge-console", "--ledger-json", str(ledger)],
                               capture_output=True, timeout=timeout)
         stdout, stderr, exit_code = done.stdout, done.stderr, done.returncode
     except subprocess.TimeoutExpired as expired:

@@ -42,8 +42,12 @@ Bionic、syscall、execution 或 integration。
   detach 后再次 attach 可重新选择；可选 Modified UTF-8 名称随 attachment 保存，上层按码元物化 Thread（保留 NUL/代理对）。
   JavaVM detach 在状态变更前调用 owner 的显式 guard，Java 帧未退出时致命失败；
   owner 停止调用后撤销 guard，环境 teardown 不走此 JavaVM 入口检查。
-- local frame 的 attach/push 容量是 JNI 保证值而非硬上限；可自动增长到按线程
-  `local_per_thread` 总上限，超过总上限仍明确失败。
+- EnsureLocalCapacity/PushLocalFrame 的请求语义按 Dalvik 512（扣除当前 local 使用量），
+  实际使用量仍自动增长到 `local_per_thread` 总上限；请求失败由 guest ABI 发布 OOME，
+  Push 失败先清除 pending，成功保留 pending；实际分配超过总上限仍明确失败。
+- ExceptionDescribe 经 owner 的显式 describer 调用 Java printStackTrace，暂清 pending；
+  原 throwable 在调用期间作为 GC 强根，忽略打印的 Java 异常并恢复原身份。hook 在锁外调用，
+  owner 停止调用后撤销；宿主致命故障恢复原 pending 后继续上报。独立 JNI 保留结构化诊断。
 - JNI monitor 按强类型 object identity 隔离 owner guest thread、recursion 与 waiters；同线程
   可重入，非 owner exit 明确失败。thread detach 释放其全部 ownership。
 - `JniEnvironment::SetMonitorHooks` 可由拥有 Java 对象模型的上层安装唯一 monitor

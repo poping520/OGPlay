@@ -786,10 +786,11 @@ TEST_CASE("guest JNI UTF-16 strings own checked code-unit leases") {
         static_cast<void>(fixture.Call(
             "NewString", 0xfffffff0U, 16U)),
         std::exception);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call(
-            "GetStringRegion", string.Value(), 3U, 2U)),
-        JniStringError);
+    static_cast<void>(fixture.Call("GetStringRegion", string.Value(), 3U, 2U));
+    const auto region_error = fixture.environment.PendingExceptionMetadata(InstanceFixture::thread_id);
+    REQUIRE(region_error.has_value());
+    CHECK(fixture.classes.ClassName(region_error->exception_class) == "java/lang/StringIndexOutOfBoundsException");
+    fixture.environment.ExceptionClear(InstanceFixture::thread_id);
 }
 
 namespace {
@@ -986,9 +987,12 @@ TEST_CASE("guest JNI monitor bindings expose real recursion state") {
     CHECK(fixture.environment.MonitorSnapshot(object).recursion == 1U);
     CHECK(fixture.Call("MonitorExit", reference.Value()) == 0U);
     CHECK(fixture.environment.MonitorSnapshot(object).owner_thread == 0U);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.Call("MonitorExit", reference.Value())),
-        JniMonitorError);
+    CHECK(fixture.Call("MonitorExit", reference.Value()) == std::bit_cast<std::uint32_t>(JniInt{-1}));
+    const auto exit_error = fixture.environment.PendingExceptionMetadata(InstanceFixture::thread_id);
+    REQUIRE(exit_error.has_value());
+    CHECK(fixture.classes.ClassName(exit_error->exception_class) == "java/lang/IllegalMonitorStateException");
+    CHECK(fixture.environment.MonitorSnapshot(object).owner_thread == 0U);
+    fixture.environment.ExceptionClear(InstanceFixture::thread_id);
 }
 
 TEST_CASE("DVM-254 JNI lookup misses pend Java errors and preserve strict gates") {

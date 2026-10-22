@@ -241,11 +241,39 @@ void WriteEnvironmentResult(memory::AddressSpace& address_space,
             frame.thread_id);
 }
 
-void RequireNullAttachArguments(const JniGuestCallFrame& frame) {
+JniJavaVmResult AttachGuestThread(JniGuestCallDispatcher& dispatcher, JniJavaVm& vm, memory::AddressSpace& space,
+                                  const JniGuestCallFrame& frame, bool daemon) {
+    ValidateOutput(space, memory::GuestAddress{frame.registers[1]}, frame.thread_id);
+    // Dalvik Jni.cpp:2785-2790: repeated attach ignores all arguments.
+    const auto existing = vm.GetEnv(frame.thread_id, kJniVersion1_6);
+    if (existing.status == JniStatus::ok) return existing;
+    auto version = kJniVersion1_2;  // Dalvik Jni.cpp:2815-2820: NULL arguments use 1.2.
+    std::optional<std::string> name;
     if (frame.registers[2] != 0U) {
-        throw JniGuestBindingError(
-            "non-null JavaVM attach arguments are not implemented");
+        const auto args = memory::GuestAddress{frame.registers[2]};
+        version = std::bit_cast<JniInt>(ReadGuest32(space, args, frame.thread_id));
+        // Dalvik Jni.cpp:2822-2826, 288-296: attach excludes JNI 1.1.
+        if (version != kJniVersion1_2 && version != kJniVersion1_4 && version != kJniVersion1_6)
+            return {JniStatus::version, JniEnvHandle{}};
+        const auto name_pointer = ReadGuest32(space, args.Add(4U), frame.thread_id);
+        const auto group = ReadGuest32(space, args.Add(8U), frame.thread_id);
+        // Dalvik Jni.cpp:2831-2842 resolves the supplied group; no silent fallback.
+        if (group != 0U) {
+            dispatcher.RecordUnimplemented("runtime.jni.attach_thread_group", frame.link_register);
+            throw JniGuestBindingError("non-null JavaVM attach ThreadGroup is not implemented");
+        }
+        if (name_pointer != 0U) {
+            const auto encoded =
+                ReadGuestCString(space, memory::GuestAddress{name_pointer}, frame.thread_id, "thread name");
+            const std::vector<std::uint8_t> bytes(encoded.begin(), encoded.end());
+            // Jni.cpp:2831-2842 -> Thread.cpp:1868-1871 creates Java UTF-16 from MUTF-8.
+            // Preserve code units (including unpaired surrogates), not canonical UTF-8.
+            static_cast<void>(DecodeJniModifiedUtf8(bytes));
+            name = encoded;
+        }
     }
+    return daemon ? vm.AttachCurrentThreadAsDaemon(frame.thread_id, version, 16, name)
+                  : vm.AttachCurrentThread(frame.thread_id, version, 16, name);
 }
 
 }  // namespace
@@ -259,6 +287,33 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
                            const JniGuestStringLimits limits,
                            JniGuestStringObserver observer, JniFieldStore* fields) {
     ValidateJniGuestStringLimits(limits);
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("DefineClass"), [&environment, &dispatcher](const JniGuestCallFrame& frame) {
+            environment.RequireAllowed(frame.thread_id, "DefineClass");
+            // Dalvik Jni.cpp:1198: unsupported DefineClass returns NULL without an exception.
+            dispatcher.RecordWarning("runtime.jni.DefineClass.dalvik_unsupported", frame.link_register);
+            return Reference(JniReference{});
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("GetSuperclass"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            // Dalvik Jni.cpp:1264-1279 returns the stored superclass (NULL for Object).
+            const auto type = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
+            if (!type) throw JniGuestBindingError("GetSuperclass requires a class");
+            const auto parent = classes.GetSuperclass(*type);
+            return Reference(parent ? environment.PublishLocalObject(frame.thread_id, *parent) : JniReference{});
+        });
+    dispatcher.BindEnvironment(
+        EnvironmentSlot("IsAssignableFrom"), [&environment, &classes](const JniGuestCallFrame& frame) {
+            // Dalvik Jni.cpp:1275-1280: clazz1 is the source, clazz2 the destination.
+            const auto source = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[1]});
+            const auto target = environment.ResolveObjectForHle(frame.thread_id, JniReference{frame.registers[2]});
+            if (!source || !target) throw JniGuestBindingError("IsAssignableFrom requires classes");
+            return Int(classes.IsAssignableFrom(*target, *source) ? 1 : 0);
+        });
+    dispatcher.BindEnvironment(EnvironmentSlot("GetObjectRefType"), [&environment](const JniGuestCallFrame& frame) {
+        // Dalvik Jni.cpp:662-679, 2683-2685 validates reference-table membership without dereferencing handles.
+        return Int(environment.GetObjectRefType(frame.thread_id, JniReference{frame.registers[1]}));
+    });
     dispatcher.BindEnvironment(
         EnvironmentSlot("GetVersion"),
         [&environment](const JniGuestCallFrame& frame) {
@@ -476,19 +531,12 @@ void BindJniGuestCoreSlots(JniGuestCallDispatcher& dispatcher,
 void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
                              JniJavaVm& java_vm,
                              memory::AddressSpace& address_space) {
-    dispatcher.BindJavaVm(
-        JavaVmSlot("AttachCurrentThread"),
-        [&java_vm, &address_space](const JniGuestCallFrame& frame) {
-            RequireNullAttachArguments(frame);
-            ValidateOutput(
-                address_space,
-                memory::GuestAddress{frame.registers[1]},
-                frame.thread_id);
-            const auto result = java_vm.AttachCurrentThread(
-                frame.thread_id, kJniVersion1_6);
-            WriteEnvironmentResult(address_space, frame, result);
-            return Int(static_cast<JniInt>(result.status));
-        });
+    dispatcher.BindJavaVm(JavaVmSlot("AttachCurrentThread"),
+                          [&dispatcher, &java_vm, &address_space](const JniGuestCallFrame& frame) {
+                              const auto result = AttachGuestThread(dispatcher, java_vm, address_space, frame, false);
+                              WriteEnvironmentResult(address_space, frame, result);
+                              return Int(static_cast<JniInt>(result.status));
+                          });
     dispatcher.BindJavaVm(
         JavaVmSlot("DetachCurrentThread"),
         [&java_vm](const JniGuestCallFrame& frame) {
@@ -508,19 +556,12 @@ void BindJniGuestJavaVmSlots(JniGuestCallDispatcher& dispatcher,
             WriteEnvironmentResult(address_space, frame, result);
             return Int(static_cast<JniInt>(result.status));
         });
-    dispatcher.BindJavaVm(
-        JavaVmSlot("AttachCurrentThreadAsDaemon"),
-        [&java_vm, &address_space](const JniGuestCallFrame& frame) {
-            RequireNullAttachArguments(frame);
-            ValidateOutput(
-                address_space,
-                memory::GuestAddress{frame.registers[1]},
-                frame.thread_id);
-            const auto result = java_vm.AttachCurrentThreadAsDaemon(
-                frame.thread_id, kJniVersion1_6);
-            WriteEnvironmentResult(address_space, frame, result);
-            return Int(static_cast<JniInt>(result.status));
-        });
+    dispatcher.BindJavaVm(JavaVmSlot("AttachCurrentThreadAsDaemon"),
+                          [&dispatcher, &java_vm, &address_space](const JniGuestCallFrame& frame) {
+                              const auto result = AttachGuestThread(dispatcher, java_vm, address_space, frame, true);
+                              WriteEnvironmentResult(address_space, frame, result);
+                              return Int(static_cast<JniInt>(result.status));
+                          });
 }
 
 void BindJniGuestNativeRegistrationSlots(

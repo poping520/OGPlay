@@ -6,6 +6,10 @@
 #include <pthread.h>
 #include <stdint.h>
 
+/* Jni.cpp:2831-2842 -> Thread.cpp:1868-1871: MUTF-8 name is a Java string,
+ * including encoded NUL and UTF-16 surrogate pairs. */
+static const char kAttachName[] = "OGPlayJNIProbe-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80";
+
 typedef struct {
     int mode;
     const char *error;
@@ -32,8 +36,7 @@ static const char *thread_identity(JNIEnv *env, int named, int daemon) {
     const char *utf = (*env)->GetStringUTFChars(env, name, NULL);
     if (!utf)
         return "getName UTF conversion failed";
-    int correct_name = named ? strcmp(utf, "OGPlayJNIProbe") == 0
-                             : strncmp(utf, "Thread-", 7) == 0 && utf[7] != '\0';
+    int correct_name = named ? strcmp(utf, kAttachName) == 0 : strncmp(utf, "Thread-", 7) == 0 && utf[7] != '\0';
     (*env)->ReleaseStringUTFChars(env, name, utf);
     jboolean actual_daemon = (*env)->CallBooleanMethod(env, thread, is_daemon);
     if ((*env)->ExceptionCheck(env))
@@ -58,7 +61,7 @@ static void *worker(void *arg) {
     }
     if (probe->mode == 0)
         return NULL;
-    JavaVMAttachArgs args = {JNI_VERSION_1_6, "OGPlayJNIProbe", NULL};
+    JavaVMAttachArgs args = {JNI_VERSION_1_6, kAttachName, NULL};
     /* Jni.cpp:2785-2790,2813-2849; NULL args and explicit name both defined. */
     jint status = probe->mode == 3
                       ? (*vm)->AttachCurrentThreadAsDaemon(vm, &env, NULL)

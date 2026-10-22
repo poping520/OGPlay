@@ -212,11 +212,20 @@ JniMonitorSnapshot JniMonitorTable::Snapshot(
 JniEnvironment::JniEnvironment(const JniReferenceLimits limits)
     : references_(limits) {}
 
-void JniEnvironment::AttachThread(const std::uint64_t thread_id,
-                                  const std::size_t initial_local_capacity, const bool daemon) {
+void JniEnvironment::AttachThread(const std::uint64_t thread_id, const std::size_t initial_local_capacity,
+                                  const bool daemon, std::optional<std::string> name) {
     exceptions_.AttachThread(thread_id);
     try {
         references_.AttachThread(thread_id, initial_local_capacity, daemon);
+        if (name) {
+            try {
+                const std::scoped_lock lock(attachment_mutex_);
+                attachment_names_.emplace(thread_id, std::move(*name));
+            } catch (...) {
+                references_.DetachThread(thread_id);
+                throw;
+            }
+        }
     } catch (...) {
         exceptions_.DetachThread(thread_id);
         throw;
@@ -233,6 +242,35 @@ void JniEnvironment::DetachThread(const std::uint64_t thread_id) {
                               : monitors_.ReleaseThread(thread_id));
     references_.DetachThread(thread_id);
     exceptions_.DetachThread(thread_id);
+    const std::scoped_lock lock(attachment_mutex_);
+    attachment_names_.erase(thread_id);
+}
+
+std::optional<std::string> JniEnvironment::AttachedThreadName(const std::uint64_t thread) const {
+    const std::scoped_lock lock(attachment_mutex_);
+    const auto found = attachment_names_.find(thread);
+    return found == attachment_names_.end() ? std::nullopt : std::optional(found->second);
+}
+
+void JniEnvironment::SetThreadDetachGuard(std::function<void(std::uint64_t)> guard) {
+    const std::scoped_lock lock(attachment_mutex_);
+    thread_detach_guard_ = std::move(guard);
+}
+
+void JniEnvironment::RequireThreadDetachAllowed(const std::uint64_t thread) const {
+    std::function<void(std::uint64_t)> guard;
+    {
+        const std::scoped_lock lock(attachment_mutex_);
+        guard = thread_detach_guard_;
+    }
+    if (guard) guard(thread);
+}
+
+JniInt JniEnvironment::GetObjectRefType(const std::uint64_t thread, const JniReference reference) const {
+    RequireAllowed(thread, "GetObjectRefType");
+    const auto kind = references_.Kind(thread, reference);
+    // Jni.cpp:2683-2685: JNI local/global/weak enums are 1/2/3; null is invalid.
+    return kind ? static_cast<JniInt>(*kind) + 1 : 0;
 }
 
 bool JniEnvironment::IsThreadAttached(const std::uint64_t thread_id) const {

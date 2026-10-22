@@ -53,6 +53,8 @@ public:
     void BindJavaVm(JniInvokeSlot slot, JniGuestCallHandler handler);
     [[nodiscard]] bool IsEnvironmentBound(JniSlot slot) const;
     [[nodiscard]] bool IsJavaVmBound(JniInvokeSlot slot) const;
+    void RecordWarning(std::string_view id, std::uint64_t lr) const;
+    void RecordUnimplemented(std::string_view id, std::uint64_t lr) const;
     void Seal();
     [[nodiscard]] bool IsSealed() const noexcept { return sealed_; }
 

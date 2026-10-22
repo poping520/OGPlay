@@ -464,6 +464,25 @@ public:
         return ResolveLocked(thread_id, left) == ResolveLocked(thread_id, right);
     }
 
+    [[nodiscard]] std::optional<JniReferenceKind> Kind(const std::uint64_t thread, const JniReference reference) const {
+        std::scoped_lock lock(mutex_);
+        static_cast<void>(Thread(thread));
+        if (reference.IsNull()) return std::nullopt;
+        const auto found = entries_.find(reference.Value());
+        if (found != entries_.end()) {
+            if (found->second.kind == JniReferenceKind::local && found->second.owner_thread != thread)
+                return std::nullopt;
+            return found->second.kind;
+        }
+        if (legacy_local_compatibility_ && legacy_direct_objects_.contains(reference.Value())) return std::nullopt;
+        // Dalvik Jni.cpp:663-678 -> 324-329: querying a deleted local is fatal.
+        // The tag identifies kind only; liveness always comes from the table.
+        if ((reference.Value() & 3U) == 1U && (reference.Value() >> 2U) > 0U &&
+            (reference.Value() >> 2U) < next_handle_)
+            throw std::runtime_error("JNI ReportJniError: use of deleted local reference");
+        return std::nullopt;
+    }
+
     void ClearWeakReferencesTo(const JniObjectIdentity object) {
         ValidateObject(object);
         std::scoped_lock lock(mutex_);
@@ -590,17 +609,18 @@ private:
         return found;
     }
 
-    [[nodiscard]] JniReference AllocateHandle() {
-        if (next_handle_ > std::numeric_limits<std::uint32_t>::max()) {
+    [[nodiscard]] JniReference AllocateHandle(const JniReferenceKind kind = JniReferenceKind::local) {
+        if (next_handle_ > (std::numeric_limits<std::uint32_t>::max() >> 2U)) {
             Capacity("JNI reference handle space exhausted");
         }
-        return JniReference{static_cast<std::uint32_t>(next_handle_++)};
+        return JniReference{(static_cast<std::uint32_t>(next_handle_++) << 2U) |
+                            (static_cast<std::uint32_t>(kind) + 1U)};
     }
 
     [[nodiscard]] JniReference AddEntry(const JniReferenceKind kind,
                                         const JniObjectIdentity object,
                                         const std::uint64_t owner_thread) {
-        const auto reference = AllocateHandle();
+        const auto reference = AllocateHandle(kind);
         entries_.emplace(reference.Value(), Entry{kind, object, owner_thread});
         return reference;
     }
@@ -780,6 +800,11 @@ bool JniReferenceTable::IsSameObject(const std::uint64_t thread_id,
                                      const JniReference left,
                                      const JniReference right) const {
     return impl_->IsSameObject(thread_id, left, right);
+}
+
+std::optional<JniReferenceKind> JniReferenceTable::Kind(const std::uint64_t thread,
+                                                        const JniReference reference) const {
+    return impl_->Kind(thread, reference);
 }
 
 void JniReferenceTable::ClearWeakReferencesTo(const JniObjectIdentity object) {

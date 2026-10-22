@@ -185,22 +185,66 @@ constexpr std::string_view kArrayTypes[]{
     "Boolean", "Byte", "Char", "Short", "Int", "Long", "Float", "Double"};
 
 [[nodiscard]] std::set<std::string> ExpectedEnvironmentSlots() {
-    std::set<std::string> names{
-        "FromReflectedMethod", "FromReflectedField", "ToReflectedMethod", "ToReflectedField",
-        "GetVersion", "Throw", "ThrowNew", "ExceptionOccurred",
-        "ExceptionDescribe", "ExceptionClear", "ExceptionCheck", "FatalError",
-        "PushLocalFrame", "PopLocalFrame", "NewGlobalRef", "DeleteGlobalRef",
-        "DeleteLocalRef", "IsSameObject", "NewLocalRef", "EnsureLocalCapacity",
-        "GetJavaVM", "NewWeakGlobalRef", "DeleteWeakGlobalRef",
-        "MonitorEnter", "MonitorExit", "FindClass", "GetMethodID",
-        "GetStaticMethodID", "GetObjectClass", "IsInstanceOf", "AllocObject", "NewObject",
-        "NewObjectV", "NewObjectA", "RegisterNatives", "UnregisterNatives",
-        "GetFieldID", "GetStaticFieldID", "NewStringUTF", "GetStringUTFLength",
-        "GetStringUTFChars", "ReleaseStringUTFChars", "GetStringUTFRegion",
-        "NewString", "GetStringLength", "GetStringChars", "ReleaseStringChars",
-        "GetStringRegion", "GetArrayLength", "NewObjectArray",
-        "GetObjectArrayElement", "SetObjectArrayElement",
-        "GetPrimitiveArrayCritical", "ReleasePrimitiveArrayCritical"};
+    std::set<std::string> names{"DefineClass",
+                                "GetSuperclass",
+                                "IsAssignableFrom",
+                                "GetObjectRefType",
+                                "GetStringCritical",
+                                "ReleaseStringCritical",
+                                "FromReflectedMethod",
+                                "FromReflectedField",
+                                "ToReflectedMethod",
+                                "ToReflectedField",
+                                "GetVersion",
+                                "Throw",
+                                "ThrowNew",
+                                "ExceptionOccurred",
+                                "ExceptionDescribe",
+                                "ExceptionClear",
+                                "ExceptionCheck",
+                                "FatalError",
+                                "PushLocalFrame",
+                                "PopLocalFrame",
+                                "NewGlobalRef",
+                                "DeleteGlobalRef",
+                                "DeleteLocalRef",
+                                "IsSameObject",
+                                "NewLocalRef",
+                                "EnsureLocalCapacity",
+                                "GetJavaVM",
+                                "NewWeakGlobalRef",
+                                "DeleteWeakGlobalRef",
+                                "MonitorEnter",
+                                "MonitorExit",
+                                "FindClass",
+                                "GetMethodID",
+                                "GetStaticMethodID",
+                                "GetObjectClass",
+                                "IsInstanceOf",
+                                "AllocObject",
+                                "NewObject",
+                                "NewObjectV",
+                                "NewObjectA",
+                                "RegisterNatives",
+                                "UnregisterNatives",
+                                "GetFieldID",
+                                "GetStaticFieldID",
+                                "NewStringUTF",
+                                "GetStringUTFLength",
+                                "GetStringUTFChars",
+                                "ReleaseStringUTFChars",
+                                "GetStringUTFRegion",
+                                "NewString",
+                                "GetStringLength",
+                                "GetStringChars",
+                                "ReleaseStringChars",
+                                "GetStringRegion",
+                                "GetArrayLength",
+                                "NewObjectArray",
+                                "GetObjectArrayElement",
+                                "SetObjectArrayElement",
+                                "GetPrimitiveArrayCritical",
+                                "ReleasePrimitiveArrayCritical"};
     for (const auto type : kCallTypes) {
         for (const auto variant : kCallVariants) {
             const auto suffix =
@@ -323,7 +367,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(Missing(expected_environment, bound_environment).empty());
     CHECK(Missing(bound_environment, expected_environment).empty());
     CHECK(bound_environment == expected_environment);
-    CHECK(bound_environment.size() == 220U);
+    CHECK(bound_environment.size() == 226U);
 
     const std::set<std::string> expected_java_vm{
         "AttachCurrentThread", "AttachCurrentThreadAsDaemon",
@@ -334,9 +378,7 @@ TEST_CASE("guest JNI aggregate binds the exact behavior-backed slot sets") {
     CHECK(bound_java_vm == expected_java_vm);
     CHECK(bound_java_vm.size() == 4U);
 
-    for (const auto name : {"GetStringCritical", "ReleaseStringCritical",
-                            "NewDirectByteBuffer", "GetDirectBufferAddress",
-                            "GetDirectBufferCapacity"}) {
+    for (const auto name : {"NewDirectByteBuffer", "GetDirectBufferAddress", "GetDirectBufferCapacity"}) {
         CAPTURE(name);
         CHECK_FALSE(expected_environment.contains(name));
         CHECK_FALSE(fixture.dispatcher.IsEnvironmentBound(
@@ -1277,15 +1319,117 @@ TEST_CASE("guest JavaVM bindings attach query detach and reject unknown args") {
               fixture.output.Value()) ==
           StatusWord(ogplay::runtime::JniStatus::ok));
     CHECK(fixture.java_vm.IsDaemon(302U));
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(fixture.CallJavaVm(
-            "AttachCurrentThread", 303U, fixture.output.Value(),
-            0x72000100U)),
-        "non-null JavaVM attach arguments are not implemented",
-        ogplay::runtime::JniGuestBindingError);
+    CHECK(fixture.CallJavaVm("AttachCurrentThread", 303U, fixture.output.Value(), 0x72000100U) ==
+          StatusWord(ogplay::runtime::JniStatus::version));
+    CHECK(fixture.ReadOutput() == 0U);
+    CHECK_FALSE(fixture.environment.IsThreadAttached(303U));
     CHECK_THROWS_AS(
         static_cast<void>(fixture.CallJavaVm(
             "AttachCurrentThread", 304U, 0x73000000U)),
         ogplay::memory::MemoryFault);
     CHECK_FALSE(fixture.environment.IsThreadAttached(304U));
+}
+
+TEST_CASE("guest JNI class hierarchy references and DefineClass warning") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    f.environment.AttachThread(401);
+    const auto object = f.classes.RegisterClass({"java/lang/Object", std::nullopt, {}, {}});
+    const auto parent = f.classes.RegisterClass({"test/Parent", "java/lang/Object", {}, {}});
+    const auto child = f.classes.RegisterClass({"test/Child", "test/Parent", {}, {}});
+    const auto iface = f.classes.RegisterClass({"test/Interface", "java/lang/Object", {}, {}, {}, true});
+    static_cast<void>(f.classes.RegisterClass({"test/Impl", "java/lang/Object", {}, {}, {"test/Interface"}}));
+    const auto iface_ref = f.environment.PublishLocalObject(401, iface);
+    const auto impl_ref = f.environment.PublishLocalObject(401, *f.classes.FindClass("test/Impl"));
+    // Dalvik Jni.cpp:1264-1279 uses the stored parent and interface closure.
+    const auto iface_parent = JniReference{f.CallEnvironment("GetSuperclass", 401, iface_ref.Value())};
+    CHECK(f.environment.ResolveObjectForHle(401, iface_parent) == object);
+    CHECK(f.CallEnvironment("IsAssignableFrom", 401, impl_ref.Value(), iface_ref.Value()) == 1U);
+    const auto local = f.environment.PublishLocalObject(401, child);
+    const auto root = f.environment.PublishLocalObject(401, object);
+    const auto superclass = JniReference{f.CallEnvironment("GetSuperclass", 401, local.Value())};
+    CHECK(f.environment.ResolveObjectForHle(401, superclass) == parent);
+    CHECK(f.CallEnvironment("GetSuperclass", 401, root.Value()) == 0U);
+    CHECK(f.CallEnvironment("IsAssignableFrom", 401, local.Value(), root.Value()) == 1U);
+    CHECK(f.CallEnvironment("IsAssignableFrom", 401, root.Value(), local.Value()) == 0U);
+    CHECK(f.CallEnvironment("DefineClass", 401) == 0U);
+    CHECK_FALSE(f.environment.ExceptionCheck(401));
+    REQUIRE(f.ledger.Warnings().size() == 1U);
+    CHECK(f.ledger.Warnings()[0].id == "runtime.jni.DefineClass.dalvik_unsupported");
+    CHECK(f.ledger.Warnings()[0].count == 1U);
+    CHECK(f.ledger.Unimplemented().empty());
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, local.Value()) == 1U);
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, 0) == 0U);
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, 0xfffffffcU) == 0U);
+    const auto global = JniReference{f.CallEnvironment("NewGlobalRef", 401, local.Value())};
+    const auto weak = JniReference{f.CallEnvironment("NewWeakGlobalRef", 401, local.Value())};
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, global.Value()) == 2U);
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, weak.Value()) == 3U);
+    static_cast<void>(f.CallEnvironment("DeleteGlobalRef", 401, global.Value()));
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, global.Value()) == 0U);
+    static_cast<void>(f.CallEnvironment("DeleteLocalRef", 401, local.Value()));
+    CHECK_THROWS_WITH(static_cast<void>(f.CallEnvironment("GetObjectRefType", 401, local.Value())),
+                      "JNI ReportJniError: use of deleted local reference");
+    f.environment.ClearWeakReferencesTo(child);
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, weak.Value()) == 3U);
+    static_cast<void>(f.CallEnvironment("DeleteWeakGlobalRef", 401, weak.Value()));
+    CHECK(f.CallEnvironment("GetObjectRefType", 401, weak.Value()) == 0U);
+}
+
+TEST_CASE("guest JNI Critical string leases keep distinct release kinds") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    f.environment.AttachThread(402);
+    f.WriteString(64, "critical");
+    const auto string = f.CallEnvironment("NewStringUTF", 402, f.output.Add(64).Value());
+    const auto critical = f.CallEnvironment("GetStringCritical", 402, string, f.output.Value());
+    CHECK(f.memory.Read8(f.output) == 1U);
+    const auto chars = f.CallEnvironment("GetStringChars", 402, string);
+    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringChars", 402, string, critical)));
+    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, chars)));
+    CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, critical)));
+    CHECK_NOTHROW(static_cast<void>(f.CallEnvironment("ReleaseStringChars", 402, string, chars)));
+    CHECK_THROWS(static_cast<void>(f.CallEnvironment("ReleaseStringCritical", 402, string, critical)));
+}
+
+TEST_CASE("guest JavaVM attach decodes named arguments and preserves state on refused detach") {
+    using namespace ogplay::runtime;
+    GuestBindingsFixture f;
+    f.Seal();
+    const auto args = f.output.Add(128);
+    f.WriteString(160, "worker-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80");
+    f.bus.Write32(args, kJniVersion1_6);
+    f.bus.Write32(args.Add(4), f.output.Add(160).Value());
+    f.bus.Write32(args.Add(8), 0);
+    CHECK(f.CallJavaVm("AttachCurrentThread", 410, f.output.Value(), args.Value()) == StatusWord(JniStatus::ok));
+    CHECK(f.environment.AttachedThreadName(410) == "worker-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80");
+    CHECK(f.CallJavaVm("AttachCurrentThreadAsDaemon", 410, f.output.Value(), 0xffffffffU) == StatusWord(JniStatus::ok));
+    CHECK_FALSE(f.java_vm.IsDaemon(410));
+    CHECK(f.environment.AttachedThreadName(410) == "worker-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80");
+    f.environment.SetThreadDetachGuard(
+        [](std::uint64_t) { throw std::runtime_error("detaching thread with interp frames"); });
+    CHECK_THROWS_WITH(static_cast<void>(f.CallJavaVm("DetachCurrentThread", 410)),
+                      "detaching thread with interp frames");
+    CHECK(f.environment.IsThreadAttached(410));
+    CHECK(f.java_vm.GetEnv(410, kJniVersion1_6).status == JniStatus::ok);
+    f.environment.SetThreadDetachGuard({});
+    CHECK(f.CallJavaVm("DetachCurrentThread", 410) == StatusWord(JniStatus::ok));
+    f.bus.Write32(args, kJniVersion1_1);
+    CHECK(f.CallJavaVm("AttachCurrentThread", 411, f.output.Value(), args.Value()) == StatusWord(JniStatus::version));
+    CHECK(f.ReadOutput() == 0U);
+    f.bus.Write32(args, kJniVersion1_6);
+    f.bus.Write32(args.Add(8), 1);
+    CHECK_THROWS_WITH(static_cast<void>(f.CallJavaVm("AttachCurrentThread", 411, f.output.Value(), args.Value())),
+                      "non-null JavaVM attach ThreadGroup is not implemented");
+    CHECK_FALSE(f.environment.IsThreadAttached(411));
+    REQUIRE(f.ledger.Unimplemented().size() == 1U);
+    CHECK(f.ledger.Unimplemented()[0].id == "runtime.jni.attach_thread_group");
+    f.bus.Write32(args.Add(8), 0);
+    CHECK(f.CallJavaVm("AttachCurrentThreadAsDaemon", 411, f.output.Value(), args.Value()) ==
+          StatusWord(JniStatus::ok));
+    CHECK(f.java_vm.IsDaemon(411));
+    CHECK(f.environment.AttachedThreadName(411) == "worker-\xc3\xa9\xc0\x80\xed\xa0\xbd\xed\xb8\x80");
+    CHECK(f.CallJavaVm("DetachCurrentThread", 411) == StatusWord(JniStatus::ok));
 }

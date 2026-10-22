@@ -2356,8 +2356,10 @@ public:
     std::optional<memory::MemoryStatistics> TryMemorySnapshot() const { return address_space_.TrySnapshot(); }
     std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const { return execution_context_->TrySnapshot(); }
     core::GpuStats Stats() const { return boundary_.Stats(); }
-    std::vector<core::GpuRenderTarget> RenderTargets() const {
-        return boundary_.RenderTargets(); }
+
+    std::vector<core::GpuRenderTarget> RenderTargets() const { return boundary_.RenderTargets(); }
+
+    std::vector<core::CapabilityWarningHit> CapabilityWarnings() const { return ledger_.Warnings(); }
     core::GpuCapabilities Capabilities() const { return boundary_.Capabilities(); }
     std::vector<core::GpuTraceEntry> Trace(
         const std::string_view filter, const std::size_t limit) const {
@@ -2827,9 +2829,20 @@ AndroidGuestProcess::InitializeExplicitJniLibrary(
     }
 }
 std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
-std::shared_ptr<debug::DiagnosticState> AndroidGuestProcess::Diagnostics() const { return impl_->Diagnostics(); }
-core::GpuStats AndroidGuestProcess::Stats() const { return impl_->Stats(); }
-std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const { return impl_->RenderTargets(); }
+std::shared_ptr<debug::DiagnosticState> AndroidGuestProcess::Diagnostics() const { return impl_->Diagnostics();
+}
+
+core::GpuStats AndroidGuestProcess::Stats() const {
+    return impl_->Stats();
+}
+
+std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const {
+    return impl_->RenderTargets();
+}
+
+std::vector<core::CapabilityWarningHit> AndroidGuestProcess::CapabilityWarnings() const {
+    return impl_->CapabilityWarnings();
+}
 core::GpuCapabilities AndroidGuestProcess::Capabilities() const { return impl_->Capabilities(); }
 std::vector<core::GpuTraceEntry> AndroidGuestProcess::Trace(
     const std::string_view filter, const std::size_t limit) const { return impl_->Trace(filter, limit); }

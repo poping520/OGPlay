@@ -701,8 +701,13 @@ public:
                 throw DexVmBridgeError("native JNI execution context limit exceeded");
             const auto context = vm->CreateExecutionContext();
             token = context.Token();
-            try { threads->RegisterNativeContext(context, session->Environment().IsDaemonThread(thread)); }
-            catch (...) { vm->DiscardExecutionContext(context); throw; }
+            try {
+                threads->RegisterNativeContext(context, session->Environment().IsDaemonThread(thread),
+                                               session->Environment().AttachedThreadName(thread));
+            } catch (...) {
+                vm->DiscardExecutionContext(context);
+                throw;
+            }
             const std::scoped_lock lock(thread_contexts_mutex);
             native_attachments.emplace(thread, context);
             process_thread_to_token.emplace(thread, token);
@@ -1801,6 +1806,20 @@ DexVmGuestBridge::DexVmGuestBridge(
                    !pacer->surface_retired;
         });
     }
+    session.Environment().SetThreadDetachGuard([bridge_state](const std::uint64_t thread) {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        std::uint64_t token{};
+        {
+            const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
+            const auto found = bridge_state->process_thread_to_token.find(thread);
+            if (found != bridge_state->process_thread_to_token.end()) token = found->second;
+        }
+        if (token == 0U) return;
+        const auto snapshot = bridge_state->vm->ExecutionSnapshot(bridge_state->vm->ExecutionContext(token));
+        // Dalvik Jni.cpp:2880-2891 / Thread.cpp:2013-2029: reject before detaching.
+        if (snapshot.frame_depth != 0U || snapshot.native_depth != 0U)
+            throw DexVmBridgeError("detaching thread with interp frames");
+    });
     session.Environment().SetMonitorHooks(JniMonitorHooks{
         [bridge_state](const JniObjectIdentity identity,
                        const std::uint64_t thread) {
@@ -2093,6 +2112,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->native_thread_for_context = {};
     }
     if (impl_->session) {
+        impl_->session->Environment().SetThreadDetachGuard({});
         impl_->session->Environment().SetMonitorHooks({});
         impl_->session->Environment().SetReflectionHooks({});
         impl_->session->Environment().SetObjectAllocationHook({});

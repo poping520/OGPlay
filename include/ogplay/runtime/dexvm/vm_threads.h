@@ -63,7 +63,9 @@ public:
 
     // JNI attachment borrows an existing native host thread/CPU. No host spawn
     // or Java run() is performed. Thread identity is initialized on first use.
-    void RegisterNativeContext(const InterpreterExecutionContext& context, bool daemon);
+    void RegisterNativeContext(const InterpreterExecutionContext& context, bool daemon,
+                               std::optional<std::string> name = std::nullopt);
+    [[nodiscard]] std::optional<std::string> NativeContextName(std::uint64_t token) const;
     [[nodiscard]] std::optional<bool> NativeContextDaemon(std::uint64_t token) const;
     [[nodiscard]] std::uint64_t SetNativeThreadObject(std::uint64_t token, VmObjectRef object);
     void DetachNativeContext(std::uint64_t token);

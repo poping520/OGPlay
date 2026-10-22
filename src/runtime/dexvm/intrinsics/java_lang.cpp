@@ -3321,11 +3321,10 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 vm.Linker().Class(linked_group.owner)
                     .static_storage[linked_group.slot]};
             InitializeFields(call, fields, object, VmObjectRef{},
-                             vm.NewStringUtf8(native_daemon.has_value()
-                                 ? "Thread-" + std::to_string(id) : "main"),
+                             vm.NewStringUtf8(runtime.NativeContextName(token).value_or(
+                                 native_daemon.has_value() ? "Thread-" + std::to_string(id) : "main")),
                              static_cast<std::int64_t>(id), 5,
-                             native_daemon.has_value() ? VmObjectRef{}
-                                 : vm.ClassLoaders().ApplicationLoader(), group);
+                             native_daemon.has_value() ? VmObjectRef{} : vm.ClassLoaders().ApplicationLoader(), group);
             call.SetInt(fields.has_been_started, object, 1);
             call.SetInt(fields.daemon, object, native_daemon.value_or(false) ? 1 : 0);
             return object;

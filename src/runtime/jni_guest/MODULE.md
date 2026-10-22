@@ -38,12 +38,16 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JIT 后必须由 dispatcher 恢复原 exception type/message，不得退化为 generic fault。
 - production 只通过 `BindJniGuestSlots` 的统一 context 显式组合 Core、Class/Instance、
   Static Call、Static/Instance Field、String、Array 与 JavaVM family,随后封口 dispatcher;
-  aggregate contract 以精确 slot 集合等价(基础 220 个 JNIEnv、注入 NIO 后 223 个，及
+  aggregate contract 以精确 slot 集合等价(基础 226 个 JNIEnv、注入 NIO 后 229 个，及
   4 个 JavaVM)机器验证，数量本身只是辅助诊断；DVM-82 的 DirectByteBuffer 三槽仅在
-  显式注入共享 `NioRuntime` 时绑定；Critical string 与
-  DestroyJavaVM 属于显式 expected-unbound 清单,不得为提高覆盖率注册假 handler。Core
+  显式注入共享 `NioRuntime` 时绑定；
+  DestroyJavaVM 是唯一 expected-unbound 槽,不得为提高覆盖率注册假 handler。Core
   binder 不得再隐式注册其他 family。引用、异常和线程状态复用同一环境,guest 输出指针在
-  VM 状态变更前预检;非空 attach arguments 在实现其结构前明确失败。
+  VM 状态变更前预检。attach 解码 version/name/group，Modified UTF-8 name 传给线程 owner；
+  group 为 NULL 使用默认组，非空 group 明确失败并记账；重复 attach 忽略参数。
+- DefineClass 沿用 Dalvik 返回 NULL 且无异常，同时记录可查询的 warn ledger。
+- Get/ReleaseStringCritical 复用 UTF-16 copy lease，access kind 与 StringChars 独立，
+  禁止交叉 release；isCopy 如实返回 TRUE，三种字符串 lease 共用复制预算。
 - FatalError 读取 r1 的 guest C 字符串，最多扫描 4096 字节（含终止符）；引号、反斜杠及
   非打印 ASCII 字节转义，保留原始字节。空指针、扫描上限、内存故障和地址溢出均保留
   可读前缀及读取状态，附 guest thread、LR/SP、寄存器与消息指针后沿现有宿主致命错误链
@@ -108,7 +112,7 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   UTF-16 长度与 region 以 code unit 计,NewString 完整预检 guest input 并
   在 reference 发布失败时删除 semantic object;坏引用/range/输出、wrong-string/double
   release 与资源预算耗尽明确失败，分配/复制/发布失败回滚映射、预算与 semantic access；
-  Critical 两槽继续 unbound。两个编码共用 lease 分配、发布、配对与回收实现。
+  Critical 两槽使用独立 kind/arena，与 StringChars 共用 UTF-16 lease 实现和总预算。
 - primitive array 42 槽由统一 binder 批量接入 `JniPrimitiveArrayStore`;8 类 New/Region/
   Elements 都按 little-endian ARM32 ABI 搬运,第五个 region buffer 从 guest 栈读取并在
   semantic mutation 前完整预检。Elements 使用独立 4 MiB 有界 guest arena,严格实现

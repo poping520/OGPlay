@@ -201,6 +201,7 @@ public:
     [[nodiscard]] bool IsSameObject(std::uint64_t thread_id,
                                     JniReference left,
                                     JniReference right) const;
+    [[nodiscard]] std::optional<JniReferenceKind> Kind(std::uint64_t thread_id, JniReference reference) const;
     void ClearWeakReferencesTo(JniObjectIdentity object);
     // Enumerates strong JNI roots. Local references from every attached
     // thread and process-global references are roots; weak globals are not.

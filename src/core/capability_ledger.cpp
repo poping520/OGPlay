@@ -74,6 +74,7 @@ CapabilityLedger::CapabilityLedger(CapabilityLedger&& other) noexcept {
     std::scoped_lock lock(other.mutex_);
     capabilities_ = std::move(other.capabilities_);
     hits_ = std::move(other.hits_);
+    warnings_ = std::move(other.warnings_);
     null_calls_ = std::move(other.null_calls_);
 }
 
@@ -82,6 +83,7 @@ CapabilityLedger& CapabilityLedger::operator=(CapabilityLedger&& other) noexcept
         std::scoped_lock lock(mutex_, other.mutex_);
         capabilities_ = std::move(other.capabilities_);
         hits_ = std::move(other.hits_);
+        warnings_ = std::move(other.warnings_);
         null_calls_ = std::move(other.null_calls_);
     }
     return *this;
@@ -112,6 +114,28 @@ std::vector<Capability> CapabilityLedger::All() const {
     for (const auto& [id, capability] : capabilities_) {
         static_cast<void>(id);
         result.push_back(capability);
+    }
+    return result;
+}
+
+void CapabilityLedger::RecordWarning(const std::string_view id, const std::uint64_t lr) {
+    std::scoped_lock lock(mutex_);
+    auto [item, inserted] = warnings_.try_emplace(std::string(id));
+    auto& hit = item->second;
+    if (inserted) {
+        hit.id = id;
+        hit.first_lr = lr;
+    }
+    ++hit.count;
+    hit.last_lr = lr;
+}
+
+std::vector<CapabilityWarningHit> CapabilityLedger::Warnings() const {
+    std::scoped_lock lock(mutex_);
+    std::vector<CapabilityWarningHit> result;
+    for (const auto& [id, hit] : warnings_) {
+        static_cast<void>(id);
+        result.push_back(hit);
     }
     return result;
 }

@@ -60,7 +60,12 @@ public:
     std::condition_variable changed;
     std::unordered_map<std::uint32_t, std::unique_ptr<VmThreadRecord>> records;
     std::vector<std::unique_ptr<VmThreadRecord>> retired_records;
-    struct NativeContext final { InterpreterExecutionContext context; bool daemon; };
+
+    struct NativeContext final {
+        InterpreterExecutionContext context;
+        bool daemon;
+        std::optional<std::string> name;
+    };
     std::unordered_map<std::uint64_t, NativeContext> native_contexts;
     VmObjectRef root_object;
     std::string root_name{"main"};
@@ -272,13 +277,19 @@ void VmThreadRuntime::SetRootThreadObject(const VmObjectRef thread_object) {
     impl_->root_object = thread_object;
 }
 
-void VmThreadRuntime::RegisterNativeContext(
-    const InterpreterExecutionContext& context, const bool daemon) {
+void VmThreadRuntime::RegisterNativeContext(const InterpreterExecutionContext& context, const bool daemon,
+                                            std::optional<std::string> name) {
     const std::lock_guard guard(impl_->mutex);
     if (!context.BelongsTo(impl_->vm) || context.Token() <= 1 || impl_->shutting_down)
         throw DexVmError(DexVmErrorReason::invalid_operand, "invalid native attachment context");
-    if (!impl_->native_contexts.emplace(context.Token(), Impl::NativeContext{context, daemon}).second)
+    if (!impl_->native_contexts.emplace(context.Token(), Impl::NativeContext{context, daemon, std::move(name)}).second)
         throw DexVmError(DexVmErrorReason::internal_invariant, "native context registered twice");
+}
+
+std::optional<std::string> VmThreadRuntime::NativeContextName(const std::uint64_t token) const {
+    const std::lock_guard guard(impl_->mutex);
+    const auto found = impl_->native_contexts.find(token);
+    return found == impl_->native_contexts.end() ? std::nullopt : found->second.name;
 }
 
 std::optional<bool> VmThreadRuntime::NativeContextDaemon(const std::uint64_t token) const {
@@ -304,7 +315,7 @@ std::uint64_t VmThreadRuntime::SetNativeThreadObject(
     record->object_identity = impl_->vm->Model().ToIdentity(object);
     record->context = found->second.context;
     record->status = VmThreadStatus::running;
-    record->name = "Thread-" + std::to_string(record->id);
+    record->name = found->second.name.value_or("Thread-" + std::to_string(record->id));
     const auto id = record->id;
     impl_->records.emplace(object.Value(), std::move(record));
     return id;

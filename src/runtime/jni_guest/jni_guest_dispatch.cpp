@@ -53,6 +53,14 @@ JniGuestCallDispatcher::JniGuestCallDispatcher(
     core::CapabilityLedger& ledger) noexcept
     : ledger_(&ledger) {}
 
+void JniGuestCallDispatcher::RecordWarning(const std::string_view id, const std::uint64_t lr) const {
+    ledger_->RecordWarning(id, lr);
+}
+
+void JniGuestCallDispatcher::RecordUnimplemented(const std::string_view id, const std::uint64_t lr) const {
+    ledger_->RecordUnimplemented(id, lr);
+}
+
 void JniGuestCallDispatcher::BindEnvironment(
     const JniSlot slot, JniGuestCallHandler handler) {
     if (sealed_) {

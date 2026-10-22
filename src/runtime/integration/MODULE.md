@@ -188,7 +188,10 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   64 个存活附加 context；复用原生 clone CPU/SP/TLS 进行 Java→native 重入，不另起线程。
   Thread 身份/daemon 归 VM runtime 与 JNI attachment，detach 要求 context 已空闲，再释放
   monitor、context 映射、local refs/pending exception；未 attach 的调用明确失败。
-  尚未执行 Java 的纯 native attachment 可直接 detach。附加参数 name/group 仍不支持。
+  尚未执行 Java 的纯 native attachment 可直接 detach；显式 JavaVM detach 在任何状态变更前
+  检查 Java/native frame，拒绝签名为 `detaching thread with interp frames`。
+  附加名称传入 VM Thread；非空 group 仍明确失败并记账。
+  process 暴露 warnings 只读快照，run-dex ledger 保留 warn 级命中。
 - clone 宿主异常通过显式通知启动等待取消，native 调用入口、安全点及异常出口优先上报
   保存的原始子线程错误，不让后续 teardown/退出错误覆盖首错。
 - Manifest `targetSdkVersion` 为 1..13 时，DexVM bridge 按 KitKat

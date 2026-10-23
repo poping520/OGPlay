@@ -54,6 +54,39 @@
 
 using namespace ogplay::test::native_library;
 
+TEST_CASE("VD-01 ComposePresentedFrame resolves dirty geometry without guest callbacks") {
+    using namespace ogplay;
+    namespace dx = runtime::dexvm;
+    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
+        // Create the fixture VM without starting its graphics-backed Activity.
+        OrchestratedApp fixture("fixture.HandshakeActivity", true, false, {}, {}, true, backend);
+        auto& vm = fixture.app->DexVm().Vm();
+        auto& context = *fixture.context;
+        const auto view = vm.NewIntrinsicInstance("Lfixture/HandshakeView;");
+        const auto node = context.ui_tree.CreateNode(runtime::ui::UiClass::View);
+        runtime::BindViewToUiNode(context, view, node);
+        auto* state = context.ui_tree.Get(node);
+        state->layout.width = {runtime::ui::SizeMode::MatchParent, 0};
+        state->layout.height = {runtime::ui::SizeMode::MatchParent, 0};
+        state->background_color = 0x123456ffU;
+        context.ui_tree.Attach(context.ui_tree.Root(), node);
+        const auto callbacks = fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount");
+        const auto notified = context.ui_notified_view_sizes;
+        const auto composed = fixture.app->ActivityLifecycle().ComposePresentedFrame(
+            {.width = 64, .height = 36, .rgba8 = std::vector<std::uint8_t>(64 * 36 * 4)});
+        CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount") == callbacks);
+        CHECK(context.ui_notified_view_sizes == notified);
+        CHECK_FALSE(context.ui_tree.Get(context.ui_tree.Root())->layout_dirty);
+        CHECK(state->screen_frame == runtime::ui::Rect{0, 0, 64, 36});
+        REQUIRE(composed.rgba8.size() == 64 * 36 * 4);
+        CHECK(composed.rgba8[0] == 0x12);
+        CHECK(composed.rgba8[1] == 0x34);
+        CHECK(composed.rgba8[2] == 0x56);
+        CHECK(runtime::DispatchAndroidViewSizes(vm, context));
+        CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount") == callbacks + 1);
+    }
+}
+
 TEST_CASE("DVM-89 initial traversal waits until an existing worker parks") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LateParkActivity", true, false);

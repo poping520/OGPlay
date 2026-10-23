@@ -1026,13 +1026,13 @@ CaptureDescriptorAudioWindow(DexVmAndroidContext &context,
 
 // Widget click dispatch uses the UiTree's resolved geometry and refreshes a
 // dirty traversal before hit-test. The full gesture contract lands in LUI-9.
-[[nodiscard]] std::optional<std::uint64_t>
-FindClickableViewAt(DexVmAndroidContext &context, float x, float y);
+[[nodiscard]] std::optional<std::uint64_t> FindClickableViewAt(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                               float x, float y);
 
 // Visible, enabled, attached View receivers under a point in Android touch
 // traversal order: reverse child Z, deepest first, then the parent.
-[[nodiscard]] std::vector<std::uint64_t>
-FindTouchReceiversAt(DexVmAndroidContext &context, float x, float y);
+[[nodiscard]] std::vector<std::uint64_t> FindTouchReceiversAt(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                              float x, float y);
 
 struct DeepTouchDispatchResult final {
   bool handled{};
@@ -1091,8 +1091,8 @@ bool ApplyTextEdit(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).
-[[nodiscard]] bool ViewContainsPoint(DexVmAndroidContext &context,
-                                     std::uint64_t handle, float x, float y);
+[[nodiscard]] bool ViewContainsPoint(dexvm::Interpreter& vm, DexVmAndroidContext& context, std::uint64_t handle,
+                                     float x, float y);
 
 struct ViewTouchResult final {
   bool handled{};
@@ -1127,12 +1127,22 @@ DispatchViewGestureEvent(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                   std::uint64_t handle);
 
-// SurfaceHolder.Callback delivery for guest-implemented SurfaceViews. A
-// title that brings its own GLSurfaceView registers itself on the holder in
-// its constructor and then waits for these callbacks before it will touch
-// EGL, so the managed surface lifecycle has to deliver them. There is one
-// managed surface, so every registered holder callback gets the same event.
-// Returns a rendered message when a guest callback raised.
+// Legacy traversal scheduling. ResolveOnly never dispatches guest size callbacks;
+// only GeometryRead refreshes Java LayoutParams. viewport preserves presentation metrics.
+enum class AndroidUiTraversalReason : std::uint8_t {
+    GeometryRead,
+    BeforeInput,
+    OwnerTick,
+    BeforeSurfaceCallbacks,
+    BeforePresent,
+    HostDialog
+};
+enum class AndroidUiTraversalPhase : std::uint8_t { ResolveOnly, ResolveAndNotifySizes };
+// Returns whether layout resolved or a size notification was delivered.
+bool EnsureAndroidUiTraversal(dexvm::Interpreter&, DexVmAndroidContext&, AndroidUiTraversalReason,
+                              AndroidUiTraversalPhase, std::optional<ui::Size> viewport = std::nullopt);
+
+// Compatibility wrapper for BeforeSurfaceCallbacks / ResolveAndNotifySizes.
 bool DispatchAndroidViewSizes(dexvm::Interpreter&, DexVmAndroidContext&);
 void DispatchAndroidGlobalLayout(dexvm::Interpreter&, DexVmAndroidContext&);
 void SetWindowSurfaceCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
@@ -1141,6 +1151,7 @@ void DispatchWindowInputQueue(dexvm::Interpreter&, DexVmAndroidContext&, bool cr
 
 enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
 
+// SurfaceHolder callbacks follow size delivery; failures return a rendered guest message.
 [[nodiscard]] std::optional<std::string>
 DispatchSurfaceHolderCallbacks(dexvm::Interpreter &vm,
                                DexVmAndroidContext &context,

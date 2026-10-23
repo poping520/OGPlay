@@ -1659,6 +1659,100 @@ TEST_CASE("View size callback subtree replacement never notifies detached snapsh
     }
 }
 
+TEST_CASE("VD-01 resolve phases preserve dirty geometry and input render agreement") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        int callbacks{};
+        auto view = IntrinsicClassBuilder::Class("Ltest/TraversalView;", "Landroid/view/View;");
+        view.OverrideMethod("onSizeChanged", "(IIII)V", [&](IntrinsicContext&) {
+            ++callbacks;
+            return VmValue::Void();
+        });
+        EglVm vm(backend, nullptr, nullptr, {std::move(view).Build()});
+        auto& c = *vm.context;
+        c.surface_width = 120;
+        c.surface_height = 80;
+        const auto object = vm.interpreter.NewIntrinsicInstance("Ltest/TraversalView;");
+        const auto node = c.ui_tree.CreateNode(ui::UiClass::View);
+        BindViewToUiNode(c, object, node);
+        auto* state = c.ui_tree.Get(node);
+        state->layout.width = {ui::SizeMode::MatchParent, 0};
+        state->layout.height = {ui::SizeMode::MatchParent, 0};
+        state->background_color = 0x123456ffU;
+        state->clickable = true;
+        c.ui_tree.Attach(c.ui_tree.Root(), node);
+        for (const auto reason : {AndroidUiTraversalReason::GeometryRead, AndroidUiTraversalReason::BeforeInput,
+                                  AndroidUiTraversalReason::OwnerTick, AndroidUiTraversalReason::HostDialog}) {
+            c.ui_tree.MarkLayoutDirty(node);
+            CHECK(EnsureAndroidUiTraversal(vm.interpreter, c, reason, AndroidUiTraversalPhase::ResolveOnly));
+            CHECK_FALSE(c.ui_tree.Get(c.ui_tree.Root())->layout_dirty);
+            CHECK(c.ui_tree.Get(c.ui_tree.Root())->draw_dirty);
+            CHECK(callbacks == 0);
+            const auto frame = state->screen_frame;
+            CHECK_FALSE(EnsureAndroidUiTraversal(vm.interpreter, c, reason, AndroidUiTraversalPhase::ResolveOnly));
+            CHECK(state->screen_frame == frame);
+        }
+        // Preserve the old present viewport, even when managed dimensions differ.
+        c.ui_tree.MarkLayoutDirty(node);
+        CHECK(EnsureAndroidUiTraversal(vm.interpreter, c, AndroidUiTraversalReason::BeforePresent,
+                                       AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 90}));
+        CHECK(state->screen_frame == ui::Rect{0, 0, 160, 90});
+        CHECK(FindTouchReceiversAt(vm.interpreter, c, 159, 89) == std::vector<std::uint64_t>{object.Value()});
+        CHECK(ViewContainsPoint(vm.interpreter, c, object.Value(), 159, 89));
+        CHECK_FALSE(ViewContainsPoint(vm.interpreter, c, object.Value(), 160, 90));
+        const auto commands = ui::BuildUiRenderList(c.ui_tree, c.ui_bitmaps);
+        bool found{};
+        for (const auto& command : commands) {
+            if (const auto* solid = std::get_if<ui::DrawSolidRect>(&command); solid && solid->rgba == 0x123456ffU) {
+                CHECK(solid->rect == state->screen_frame);
+                found = true;
+            }
+        }
+        CHECK(found);
+        CHECK(callbacks == 0);
+        CHECK(DispatchAndroidViewSizes(vm.interpreter, c));
+        CHECK(callbacks == 1);
+        CHECK_FALSE(DispatchAndroidViewSizes(vm.interpreter, c));
+        CHECK(callbacks == 1);
+    }
+}
+
+TEST_CASE("VD-01 size callback reentry and exceptions preserve dispatch state and identity") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        auto context = std::make_shared<DexVmAndroidContext>();
+        VmObjectRef exception;
+        int callbacks{};
+        auto view = IntrinsicClassBuilder::Class("Ltest/ReentrantTraversalView;", "Landroid/view/View;");
+        view.OverrideMethod("onSizeChanged", "(IIII)V", [&](IntrinsicContext& call) {
+            ++callbacks;
+            CHECK_FALSE(DispatchAndroidViewSizes(call.vm, *context));
+            CHECK_FALSE(EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::GeometryRead,
+                                                 AndroidUiTraversalPhase::ResolveOnly));
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "traversal identity", exception};
+            return VmValue::Void();
+        });
+        EglVm vm(backend, nullptr, nullptr, {std::move(view).Build()});
+        context = vm.context;
+        context->surface_width = 120;
+        context->surface_height = 80;
+        exception = vm.interpreter.NewIntrinsicInstance("Ljava/lang/IllegalStateException;");
+        const auto object = vm.interpreter.NewIntrinsicInstance("Ltest/ReentrantTraversalView;");
+        const auto node = context->ui_tree.CreateNode(ui::UiClass::View);
+        BindViewToUiNode(*context, object, node);
+        context->ui_tree.Get(node)->layout.width = {ui::SizeMode::MatchParent, 0};
+        context->ui_tree.Get(node)->layout.height = {ui::SizeMode::MatchParent, 0};
+        context->ui_tree.Attach(context->ui_tree.Root(), node);
+        try {
+            DispatchAndroidViewSizes(vm.interpreter, *context);
+            FAIL("size callback must propagate its exception");
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.existing == exception);
+        }
+        CHECK(callbacks == 1);
+        CHECK_FALSE(context->ui_layout_dispatching);
+        CHECK_FALSE(DispatchAndroidViewSizes(vm.interpreter, *context));
+    }
+}
+
 TEST_CASE("SurfaceTexture original Java connects a Surface producer to real external pixels and events") {
 #if OGPLAY_ANGLE_HAS_SWIFTSHADER
     using namespace ogplay::gles;

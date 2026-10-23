@@ -725,3 +725,17 @@ TEST_CASE("DVM-151 builders retain constructor null array and bridge contracts")
         }
     }
 }
+
+TEST_CASE("DVM-266 ContentValues clinit constructs the ROM Parcelable creator") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto creator =
+            f.Static("Lfixture/PlatformTables;", "contentValuesCreator", "()Landroid/os/Parcelable$Creator;").ref;
+        REQUIRE(creator.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(creator)).descriptor == "Landroid/content/ContentValues$1;");
+        CHECK(f.linker.Class(f.model.ObjectClass(creator)).is_boot_dex);
+        CHECK(f.Static("Lfixture/PlatformTables;", "contentValuesCreator", "()Landroid/os/Parcelable$Creator;").ref ==
+              creator);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

@@ -1100,3 +1100,23 @@ TEST_CASE("DVM-264 DEX System properties include the frozen ROM keys and match g
         CHECK(f.Static("Lfixture/PlatformTables;", "properties", "()Ljava/util/Properties;").ref == properties);
     }
 }
+
+TEST_CASE("DVM-266 AppGlobals keeps the ROM ActivityThread dependency explicit") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto app = f.linker.ResolveDescriptor("Landroid/app/AppGlobals;");
+        CHECK(f.linker.Class(app).is_boot_dex);
+        const auto result = f.StaticOutcome("Lfixture/PlatformTables;", "coreSetting", "(Ljava/lang/String;I)I",
+                                            {VmValue::Ref(f.vm.NewStringUtf8("missing")), VmValue::Int(37)});
+        // AOSP returns the default only after currentActivityThread() returns null.
+        // That method is still a skeleton; do not invent an absent-thread result.
+        REQUIRE(result.exception.IsValid());
+        CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id ==
+                       "dexvm.intrinsic.Landroid/app/ActivityThread;.currentActivityThread()Landroid/app/ActivityThread;" &&
+                   hit.count == 1;
+        }));
+    }
+}

@@ -2100,5 +2100,5 @@ note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既
 
 [dexvm.bootdex_rom_java]
 status = "partial"
-test = "tools/bootdex/select_rom_java.py --self-test; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265"
-note = "DVM-255/265、ADR-0148/0154：固定ROM规则筛选，默认排除native/intrinsic交互；父类、初始化闭包、Binder与日期冻结受检。--replace-intrinsic只处理显式类，仅保留已有native绑定；宿主状态须移交Java。已撤换InputSource、DatagramPacket、IntentFilter、Appendable；Log受Charset编码器阻塞，Timer/CountDownTimer的Thread/Handler内部类未准入。默认报告，--apply写配方；单dex64K，九场景外部门禁待验。"
+test = "tools/bootdex/select_rom_java.py --self-test; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265; tests/dexvm/android_value_tests.cpp#DVM-266; tests/dexvm/android_context_services_tests.cpp#DVM-266"
+note = "DVM-255/265/266、ADR-0148/0154/0155：固定ROM规则准入，closure按BootDex方法体与intrinsic声明引用补全；referenced仅作诊断。native、Binder、intrinsic交互、父类、初始化唯一目标及日期冻结不变。显式撤换仅保留已有native绑定；宿主状态须移交Java。单dex索引预算60000，--check-closure强制零准入缺口；闭包清零，加载退化33.6%未过门禁（DVM-266）；场景由外部验收。"

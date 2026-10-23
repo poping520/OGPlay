@@ -342,11 +342,30 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
     bind_environment_set("glTexEnviv", 'i', true);
     bind_environment_set("glTexEnvx", 'x', false);
     bind_environment_set("glTexEnvxv", 'x', true);
-    const auto bind_texture_parameter_set =
-        [&dispatch, &core, &address_space,
-         require_frame](const std::string_view name, const char input_kind, const bool vector) {
-            dispatch.Bind(name, [&core, &address_space, require_frame, name, input_kind,
-                                 vector](const auto a, const auto thread) {
+    const auto bind_texture_parameter_set = [&dispatch, &core, &address_space, require_frame](
+                                                const std::string_view name, const char input_kind, const bool vector) {
+        dispatch.Bind(
+            name, [&core, &address_space, require_frame, name, input_kind, vector](const auto a, const auto thread) {
+                if (a[1] == 0x8B9DU && vector) {
+                    if (a[0] != 0x0DE1U) throw gles::GlesApiError(name, 0x0500U);
+                    const auto words = ReadWords(address_space, a[2], 4U, thread);
+                    std::array<std::int32_t, 4> crop{};
+                    for (std::size_t i = 0; i < crop.size(); ++i) {
+                        if (input_kind == 'i')
+                            crop[i] = Signed(words[i]);
+                        else {
+                            const auto value = input_kind == 'f' ? std::bit_cast<float>(words[i]) : Fixed(words[i]);
+                            if (!std::isfinite(value) ||
+                                static_cast<double>(value) < (std::numeric_limits<std::int32_t>::min)() ||
+                                static_cast<double>(value) > (std::numeric_limits<std::int32_t>::max)())
+                                throw gles::GlesApiError(name, 0x0501U);
+                            crop[i] = static_cast<std::int32_t>(value);
+                        }
+                    }
+                    static_cast<void>(require_frame(name));
+                    core.Shared().SetTextureCrop(a[0], crop);
+                    return 0U;
+                }
                 const auto word = vector ? ReadWords(address_space, a[2], 1U, thread)[0] : a[2];
                 if (a[1] == kGenerateMipmap) {
                     const auto enabled = input_kind == 'f'   ? std::bit_cast<float>(word) != 0.0F
@@ -365,7 +384,7 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
                     frame.TextureParameter(a[0], a[1], Signed(word));
                 return 0U;
             });
-        };
+    };
     bind_texture_parameter_set("glTexParameterfv", 'f', true);
     bind_texture_parameter_set("glTexParameteriv", 'i', true);
     bind_texture_parameter_set("glTexParameterx", 'x', false);
@@ -376,6 +395,22 @@ void BindAndroidBoundaryGles1Remaining(gles::GlesDispatchTable& dispatch,
         dispatch.Bind(name, [&core, &address_space, require_frame, name,
                              output_kind](const auto a, const auto thread) {
             auto& frame = require_frame(name);
+            if (a[1] == 0x8B9DU) {
+                if (a[0] != 0x0DE1U) throw gles::GlesApiError(name, 0x0500U);
+                const auto crop = core.Shared().TextureCrop(core.ActiveTexture());
+                if (output_kind == 'f') {
+                    std::array<float, 4> values{};
+                    std::ranges::transform(crop, values.begin(), [](const auto x) { return static_cast<float>(x); });
+                    WriteWords(address_space, a[2], std::span<const float>(values), thread);
+                } else {
+                    auto values = crop;
+                    if (output_kind == 'x')
+                        std::ranges::transform(crop, values.begin(),
+                                               [](const auto x) { return ToFixed(static_cast<float>(x)); });
+                    WriteWords(address_space, a[2], std::span<const std::int32_t>(values), thread);
+                }
+                return 0U;
+            }
             if (a[1] == kGenerateMipmap) {
                 const auto enabled = core.GenerateMipmapEnabled(a[0]);
                 const std::array value{output_kind == 'x' ? (enabled ? 65536 : 0)

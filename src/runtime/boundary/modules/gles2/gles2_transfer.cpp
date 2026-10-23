@@ -83,8 +83,10 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
     if (graphics_.gl_context.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
         graphics_.RequireFrame("glCompressedTexImage2D").TransferPixelBuffer(
             gles::AngleFrame::PixelBufferOperation::compressed2d, arguments);
-        if (Signed(arguments[1]) == 0)
+        if (Signed(arguments[1]) == 0) {
             graphics_.gl_context.Shared().SetTextureBaseFormat(arguments[0], arguments[2]);
+            graphics_.gl_context.Shared().SetTextureSize(arguments[0], Signed(arguments[3]), Signed(arguments[4]));
+        }
         return 0U;
     }
     auto prepared = Prepare(calls_, graphics_, 21U, call);
@@ -94,6 +96,7 @@ std::uint32_t Gles2Module::CompressedTexImage2D(const A32CallFrame& call) {
                                   OnlyPointer(prepared).Bytes());
     if (Signed(arguments[1]) == 0) {
         graphics_.gl_context.Shared().SetTextureBaseFormat(arguments[0], arguments[2]);
+        graphics_.gl_context.Shared().SetTextureSize(arguments[0], Signed(arguments[3]), Signed(arguments[4]));
     }
     return 0U;
 }
@@ -125,6 +128,7 @@ std::uint32_t Gles2Module::CopyTexImage2D(const A32CallFrame& call) {
                             Signed(arguments[7]));
     if (Signed(arguments[1]) == 0) {
         graphics_.gl_context.Shared().SetTextureBaseFormat(arguments[0], arguments[2]);
+        graphics_.gl_context.Shared().SetTextureSize(arguments[0], Signed(arguments[5]), Signed(arguments[6]));
     }
     return 0U;
 }

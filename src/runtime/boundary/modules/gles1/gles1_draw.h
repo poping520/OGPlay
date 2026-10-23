@@ -64,6 +64,8 @@ public:
                     memory::AddressSpace& address_space, std::uint32_t mode,
                     std::int32_t first, std::int32_t count,
                     std::uint64_t thread_id);
+    void DrawTexture(gles::AngleFrame& frame, const AndroidBoundaryGles1State& core,
+                     const AndroidBoundaryGles1LegacyState& legacy, const std::array<float, 5>& rectangle);
     void DrawElements(gles::AngleFrame& frame,
                       const AndroidBoundaryGles1State& core,
                       const AndroidBoundaryGles1LegacyState& legacy,
@@ -93,13 +95,10 @@ private:
                        std::uint32_t maximum_index, std::uint64_t thread_id,
                        std::span<const std::uint32_t> flat_vertices = {},
                        std::span<const std::uint32_t> flat_provoking = {});
-    void ApplyUniforms(gles::AngleFrame& frame, const Program& program,
-                       const AndroidBoundaryGles1State& core,
-                       const AndroidBoundaryGles1LegacyState& legacy,
-                       std::span<const std::uint32_t> texture_units,
-                       const std::array<std::uint32_t,
-                                        kGles1MaximumDrawTextureUnits>&
-                           sampled_targets);
+    void ApplyUniforms(gles::AngleFrame& frame, const Program& program, const AndroidBoundaryGles1State& core,
+                       const AndroidBoundaryGles1LegacyState& legacy, std::span<const std::uint32_t> texture_units,
+                       const std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>& sampled_targets,
+                       std::optional<float> draw_depth = std::nullopt);
 
     std::map<std::uint64_t, Gles1ClientArray> arrays_;
     // Fixed-function programs are specialized per stage sampler type: a cube

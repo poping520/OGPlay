@@ -48,6 +48,10 @@ struct SharedGlState final {
         std::uint32_t target) const;
     [[nodiscard]] std::optional<std::uint32_t> TextureBaseFormat(
         std::uint32_t texture_unit, std::uint32_t target) const;
+    void SetTextureSize(std::uint32_t target, std::int32_t width, std::int32_t height);
+    [[nodiscard]] std::array<std::int32_t, 2> TextureSize(std::uint32_t unit) const;
+    void SetTextureCrop(std::uint32_t target, std::array<std::int32_t, 4> crop);
+    [[nodiscard]] std::array<std::int32_t, 4> TextureCrop(std::uint32_t unit) const;
     void SetGenerateMipmap(std::uint32_t target, bool enabled);
     [[nodiscard]] bool GenerateMipmapEnabled(std::uint32_t target) const;
     void ValidateFramebufferTarget(std::uint32_t target) const;
@@ -88,6 +92,8 @@ private:
     struct ObjectMetadata {
         std::map<TextureObjectKey, std::uint32_t> texture_base_formats;
         std::map<TextureObjectKey, bool> generate_mipmap;
+        std::map<TextureObjectKey, std::array<std::int32_t, 2>> texture_sizes;
+        std::map<TextureObjectKey, std::array<std::int32_t, 4>> texture_crops;
     };
     std::shared_ptr<ObjectMetadata> objects_{std::make_shared<ObjectMetadata>()};
     std::uint32_t framebuffer_{};

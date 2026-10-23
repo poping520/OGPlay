@@ -780,6 +780,8 @@ void BindAndroidBoundaryGles1Textures(
                                     SignedTextureValue(arguments[1]));
             if (SignedTextureValue(arguments[1]) == 0) {
                 state.SetTextureBaseFormat(arguments[0], arguments[2]);
+                state.Shared().SetTextureSize(arguments[0], SignedTextureValue(arguments[3]),
+                                              SignedTextureValue(arguments[4]));
             }
             return 0U;
         });
@@ -798,6 +800,8 @@ void BindAndroidBoundaryGles1Textures(
                                     SignedTextureValue(arguments[1]));
             if (SignedTextureValue(arguments[1]) == 0) {
                 state.SetTextureBaseFormat(arguments[0], arguments[2]);
+                state.Shared().SetTextureSize(arguments[0], SignedTextureValue(arguments[5]),
+                                              SignedTextureValue(arguments[6]));
             }
             return 0U;
         });
@@ -826,6 +830,8 @@ void BindAndroidBoundaryGles1Textures(
                 state.SetTextureBaseFormat(
                     arguments[0], static_cast<std::uint32_t>(
                                       SignedTextureValue(arguments[2])));
+                state.Shared().SetTextureSize(arguments[0], SignedTextureValue(arguments[3]),
+                                              SignedTextureValue(arguments[4]));
             }
             return 0U;
         });

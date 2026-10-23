@@ -6,13 +6,14 @@
 #include <span>
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/boundary/boundary_symbol.h"
 
 namespace ogplay::runtime {
 struct GraphicsBoundaryContext;
 struct BoundaryCallServices;
 class A32CallFrame;
-inline constexpr std::uint32_t kBufferMapArenaBegin = 0x72000000U;
-inline constexpr std::uint32_t kBufferMapArenaBytes = 0x02000000U;
+inline constexpr auto kBufferMapArenaBegin = kBoundaryBufferMaps.Start().Value();
+inline constexpr auto kBufferMapArenaBytes = static_cast<std::uint32_t>(kBoundaryBufferMaps.Size());
 
 // Serialized by the current graphics execution lock. All guest APIs use this
 // registry; host-private readback mappings remain outside the guest ABI.

@@ -27,6 +27,9 @@ TryTrace 只短锁复制有界记录，busy 不等待 graphics 线程。跨线�
   synthetic SO 首次发布完整 active dynsym，动态装载不得补写。无导出模块只可作为显式
   loader scaffold，不能分配伪 thunk；历史 Profile 不构成能力声明。
 - thunk 从 kBionicHleThunkBegin 起按 4 字节 dense slot 排列；arena 按页分配并封为 RX。
+  `boundary_symbol.h` 集中定义 thunk 上限与固定数据保留区；所有保留区两两不相交，
+  catalog 分槽与 arena 映射均须在地址计算/映射前拒绝超限，页舍入不得越过 thunk 上限。
+  固定数据映射不得超过其保留区；新增导出不能占用字符串、日志或音频数据区。
   seal 一次生成 `{export-specific fn, concrete module*}`；fast/slow 共用 handler，热路径
   仅 `PC → slot → binding`，不再按 SONAME/local id/HleRoute 分发或使用共享 mutable PC。
   导出实现在 concrete module，不转发到 façade 的 Invoke*；libc override 同样遵守此约束。
@@ -93,6 +96,9 @@ Display/config 是进程事实，Context/Surface 使用单调句柄，保存版�
 ## GLES 支持边界
 
 完整导出以生成 catalog 为准，core/extension 独立记账；不得误用同名其他 API handler。
+API19 桩库要求的 GLES ELF 入口始终可解析；缺后端能力时按 4.4 gl_unimplemented
+记账并输出 error 日志后返回零，不消费 guest 指针或修改状态。此规则只补齐 GL 导出
+表，不增加 GL_EXTENSIONS；EGL 使用各入口的校验、错误及返回 ABI，不共用该回退。
 细节见 [GLES1](modules/gles1/MODULE.md)、[GLES2](modules/gles2/MODULE.md)、
 [GLES3](modules/gles3/MODULE.md)。
 

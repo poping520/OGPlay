@@ -1,10 +1,12 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "ogplay/runtime/integration/android_link_preflight.h"
+#include "runtime/boundary/core/boundary_symbols.h"
 
 namespace {
 
@@ -157,4 +159,32 @@ TEST_CASE("APS-11 preflight uses NEEDED scopes SONAME aliases system sources and
     CHECK(missing.gaps[0].symbol == "provided");
     // Same symbol rules as actual loading; a missing dependency remains a hard error.
     CHECK_THROWS(static_cast<void>(runtime::AuditAndroidNativeImports(selected, runtime::SelectBionicProfile(19), {})));
+}
+
+TEST_CASE("DVM271 API19 GLES imports resolve from a guest ELF and removing either export fails") {
+    using namespace ogplay;
+    const auto bytes =
+        ImportModule("surface.so", {"libGLESv1_CM.so"}, {{"glDrawTexfOES", 1}, {"glBlendEquationOES", 1}});
+    const loader::Elf32ModuleInput input{"surface.so", bytes, memory::GuestAddress{0x10000000U}};
+    const auto report = runtime::PreflightAndroidGuestLink({19, "surface.so", std::span{&input, 1}});
+    CHECK(report.guest_modules == 1U);
+    CHECK(report.boundary_modules == 1U);
+    const auto image = loader::ParseElf32Arm(bytes);
+    loader::Elf32LinkModule module;
+    module.name = "surface.so";
+    module.load_bias = input.load_bias;
+    module.dynamic = loader::ReadElf32DynamicInfo(bytes, image);
+    module.symbols = loader::ReadElf32SymbolTable(bytes, image);
+    for (const auto removed : {"glDrawTexfOES", "glBlendEquationOES"}) {
+        CAPTURE(removed);
+        auto symbols = runtime::detail::BuildAndroidBoundarySymbols(runtime::AndroidApi::api19);
+        std::erase_if(symbols, [removed](const auto& symbol) {
+            return symbol.library == "libGLESv1_CM.so" && symbol.symbol == removed;
+        });
+        const runtime::BionicHleSymbolProvider provider(symbols);
+        const auto ns = runtime::BuildBionicLinkNamespace(runtime::SelectBionicProfile(19), "surface.so",
+                                                          std::span{&module, 1}, provider);
+        CHECK_THROWS_WITH_AS(static_cast<void>(loader::ResolveElf32Symbols(ns, 0U)),
+                             (std::string("strong ELF symbol is unresolved: ") + removed).c_str(), loader::LinkError);
+    }
 }

@@ -29,3 +29,6 @@ guest access 身份仍为 WRITE-only，保证局部修改不会覆盖未修改�
 UNSYNCHRONIZED 保持合法 host flags，必要旧数据在映射前预取；不读取 write-only host 地址。
 
 扩展数量、glGetString、glGetStringi 共用受检发布清单，禁止透传整个 ANGLE extension list。
+
+API19 GLES1/2 的 ABI 相同 OES 别名可直接绑定此模块；仅在 current client version=3
+执行相应核心 handler，其他 Context 走显式 gl_unimplemented 记账回退，不扩充扩展串。

@@ -18,3 +18,10 @@ GL_OES_framebuffer_object 的 15 个独立 OES ABI 入口复用唯一 ANGLE 对�
 
 压缩格式计数、数组与 boolean/float/integer 查询共用下层实际上传能力；ATC 格式
 元数据沿现有 share-group 保存，禁止的子图更新在 guest 搬运前返回 GL error。
+
+API19 OES/IMG 的 ABI 相同核心别名复用原 handler；blend OES 直接执行 ANGLE。
+draw-texture 的八入口复用固定 shader 与 ANGLE 三角形绘制，支持共享纹理对象的
+level-zero 尺寸及 crop 矩形、负 crop 翻转；忽略矩阵/数组/lighting/clip/cull，
+保留当前颜色、纹理环境、零距离 fog、深度及片元操作，绘制后恢复可编程状态。
+仍限现有两个 2D 纹理 stage，超限明确失败，不因此发布 GL_OES_draw_texture。
+其余未支持入口遵守父级 API19 gl_unimplemented 规则。

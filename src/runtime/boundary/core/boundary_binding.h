@@ -9,6 +9,11 @@
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_fault.h"
 
+namespace ogplay::core {
+class Logger;
+class CapabilityLedger;
+}  // namespace ogplay::core
+
 namespace ogplay::runtime {
 
 struct BoundaryCallServices final {
@@ -17,6 +22,9 @@ struct BoundaryCallServices final {
     void* gpu_owner{};
     void (*record_gpu_call)(void*, std::size_t,
                             const std::array<std::uint32_t, 4>&, bool, std::uint32_t){};
+
+    core::Logger* logger{};
+    core::CapabilityLedger* ledger{};
 
     void RecordFastFault(
         const cpu::A32HostCallContext& context) const noexcept {

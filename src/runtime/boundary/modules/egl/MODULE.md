@@ -23,3 +23,10 @@ Surface 图像导入探测可为 D24S8（否则 D0/S0），GLES1 compatibility/G
 每个 native/managed Context 的 GL_DITHER 初始启用；创建时继承进程已冻结的压缩纹理策略；share 参数不覆盖策略。
 首次合法绑定可生成并记录能力快照，切换线程、Surface 或重建 Context 不改变策略。
 窗口表面属性最多读取 64 words，仅支持 EGL_RENDER_BUFFER=EGL_BACK_BUFFER；NULL/空表沿用默认双缓冲，single buffer、其他属性/值或未终止表返回 EGL_BAD_ATTRIBUTE 并记账。
+
+API19 lock/unlock surface 校验 display、初始化和 surface；无 ANGLE lock backing 时
+返回 FALSE/EGL_BAD_DISPLAY 并记账，不读取属性指针。NV system-time 两入口无驱动
+支持时按 4.4 返回 64 位零并设置 EGL_BAD_DISPLAY，不用宿主时间伪装 NV 时钟。
+presentation-time 校验后保存 surface 的有符号 64 位生产者时间戳并返回 TRUE，
+与 4.4 wrapper 忽略 native-window setter 返回码一致；不改变时钟/调度，未发布该扩展。
+这些入口不适用 GL gl_unimplemented 的错误模型。

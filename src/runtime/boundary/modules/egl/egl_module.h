@@ -54,7 +54,13 @@ public:
     OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_DECLARE_EGL)
 #undef OGPLAY_DECLARE_EGL
 
+#define OGPLAY_DECLARE_EGL_API19(name, id, count, method) BoundaryResult method(const A32CallFrame& call);
+    OGPLAY_EGL_API19_EXPORTS(OGPLAY_DECLARE_EGL_API19)
+#undef OGPLAY_DECLARE_EGL_API19
+
 private:
+    BoundaryResult SurfaceExtension(const A32CallFrame& call, bool presentation);
+    BoundaryResult UnsupportedClock(const A32CallFrame& call);
     struct ThreadState final {
         std::uint32_t error{0x3000U};
         std::uint32_t bound_api{0x30A0U};
@@ -99,6 +105,7 @@ private:
         bool mipmap{};
         std::uint32_t mipmap_level{};
         memory::GuestAddress native_window{};
+        std::optional<std::int64_t> presentation_time_ns{};
     };
 
     template <std::uint16_t FunctionId>

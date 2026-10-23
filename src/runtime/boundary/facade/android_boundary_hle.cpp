@@ -74,55 +74,60 @@ constexpr std::size_t kMaximumShaderSourceBytes = 4U * 1024U * 1024U;
 
 class AndroidBoundaryHle::Impl final {
 public:
-    Impl(memory::AddressSpace& address_space, const gles::AngleBackend backend,
-         const std::uint32_t width, const std::uint32_t height,
-         const std::uint32_t supersample_factor,
-         const AndroidBoundaryOptions options)
+    Impl(memory::AddressSpace& address_space, const gles::AngleBackend backend, const std::uint32_t width,
+         const std::uint32_t height, const std::uint32_t supersample_factor, const AndroidBoundaryOptions options)
         : address_space_(address_space), backend_(backend),
           layout_(gles::MakeSupersampleLayout(width, height, supersample_factor)),
           symbols_(detail::BuildAndroidBoundarySymbols()),
-          descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)),
-          provider_(symbols_),
+          descriptors_(detail::BuildAndroidBoundaryDescriptors(symbols_)), provider_(symbols_),
           thunk_arena_(address_space_), fast_router_(thunk_arena_),
           frame_service_(layout_, descriptors_, options.async_present_readback),
-          gles_dispatch_(address_space, gl_context_),
-          gles1_state_(gl_context_.Shared()),
-          gles1_draw_state_(
-              options.allow_gles1_single_stage_texcoord_fallback),
-          call_services_{address_space_, fault_store_, this,
-                         &ServiceRecordGpuCall},
-          android_services_{address_space_},
-          graphics_context_{
-              backend_, layout_, gl_context_, api_routing_, gles_dispatch_,
-              angle_frame_, gl_owner_,
-              managed_surface_, frame_service_, graphics_execution_mutex_,
-              this, &ServiceRequireFrame, &ServiceInitializeGuestGlDefaults,
-              &ServiceReleaseManagedSurface, &ServicePublishFrame,
-              &ServiceResetGuestGraphics,
-              &ServiceWrite32, &ServiceWriteRequired32,
-              &ServiceReadCString, &ServiceReadShaderSources,
-              &ServiceCurrentFrame, &ServiceActivateContext},
-          egl_context_{graphics_context_, api_routing_, symbols_, descriptors_,
-                       gles1_state_, gles1_draw_state_, gles1_legacy_state_, this,
+          gles_dispatch_(address_space, gl_context_), gles1_state_(gl_context_.Shared()),
+          gles1_draw_state_(options.allow_gles1_single_stage_texcoord_fallback),
+          call_services_{address_space_, fault_store_, this, &ServiceRecordGpuCall, options.logger, options.ledger},
+          android_services_{address_space_}, graphics_context_{backend_,
+                                                               layout_,
+                                                               gl_context_,
+                                                               api_routing_,
+                                                               gles_dispatch_,
+                                                               angle_frame_,
+                                                               gl_owner_,
+                                                               managed_surface_,
+                                                               frame_service_,
+                                                               graphics_execution_mutex_,
+                                                               this,
+                                                               &ServiceRequireFrame,
+                                                               &ServiceInitializeGuestGlDefaults,
+                                                               &ServiceReleaseManagedSurface,
+                                                               &ServicePublishFrame,
+                                                               &ServiceResetGuestGraphics,
+                                                               &ServiceWrite32,
+                                                               &ServiceWriteRequired32,
+                                                               &ServiceReadCString,
+                                                               &ServiceReadShaderSources,
+                                                               &ServiceCurrentFrame,
+                                                               &ServiceActivateContext},
+          egl_context_{graphics_context_,
+                       api_routing_,
+                       symbols_,
+                       descriptors_,
+                       gles1_state_,
+                       gles1_draw_state_,
+                       gles1_legacy_state_,
+                       this,
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowIsCurrent(window);
-                       }, options.ledger},
+                       },
+                       options.ledger},
           android_module_(call_services_, android_services_, options.loopers, options.logger, options.ledger),
-          bitmap_module_(call_services_),
-          egl_module_(call_services_, egl_context_),
-          gles1_module_(call_services_, graphics_context_, gles1_state_,
-                        gles1_legacy_state_, gles1_draw_state_,
+          bitmap_module_(call_services_), egl_module_(call_services_, egl_context_),
+          gles1_module_(call_services_, graphics_context_, gles1_state_, gles1_legacy_state_, gles1_draw_state_,
                         gles1_dispatch_, gles1_extensions_dispatch_),
-          gles2_module_(call_services_, graphics_context_),
-          gles3_module_(call_services_, graphics_context_),
-          log_context_{address_space_, options.logger, this,
-                       &ServiceRecordFastFault, options.guest_file_owner,
-                       options.read_guest_file},
-          log_module_(log_context_),
-          open_sles_module_(call_services_, open_sles_mixer_,
-                            options.open_sles_callbacks),
-          libc_override_module_(call_services_),
-          libdl_override_module_(call_services_, options.dynamic_link) {
+          gles2_module_(call_services_, graphics_context_), gles3_module_(call_services_, graphics_context_),
+          log_context_{address_space_,          options.logger,           this,
+                       &ServiceRecordFastFault, options.guest_file_owner, options.read_guest_file},
+          log_module_(log_context_), open_sles_module_(call_services_, open_sles_mixer_, options.open_sles_callbacks),
+          libc_override_module_(call_services_), libdl_override_module_(call_services_, options.dynamic_link) {
         graphics_context_.compressed_texture_family = options.compressed_texture_family;
         graphics_context_.logger = options.logger;
         detail::BindAndroidBoundaryGles1Core(
@@ -710,16 +715,24 @@ private:
                           gles1_module_), ...);
     }
 
+    template <std::size_t Index>
+    void BindGles1Extension(const BoundaryModuleDescriptor& descriptor) {
+        constexpr auto function = gles::generated::gles1_extensions::kFunctions[Index];
+        constexpr auto alias =
+            Index >= 22U ? GlesCoreAlias(function.name, gles::generated::gles3::kFunctions) : kNoGlesAlias;
+        if constexpr (alias != kNoGlesAlias) {
+            static_assert(function.abi_word_count == gles::generated::gles3::kFunctions[alias].abi_word_count);
+            BindExport<Gles3Module, &Gles3Module::template InvokeAlias<alias, gles::GlesApi::gles1_extensions, Index>,
+                       function.abi_word_count, true>(descriptor, function.name, gles3_module_);
+        } else {
+            BindExport<Gles1Module, &Gles1Module::template Invoke<gles::GlesApi::gles1_extensions, Index>,
+                       function.abi_word_count, true>(descriptor, function.name, gles1_module_);
+        }
+    }
+
     template <std::size_t... Index>
-    void BindGles1Extensions(const BoundaryModuleDescriptor& descriptor,
-                             std::index_sequence<Index...>) {
-        (BindExport<Gles1Module,
-                    &Gles1Module::template Invoke<gles::GlesApi::gles1_extensions,
-                                                  static_cast<gles::GlesThunkId>(Index)>,
-                    gles::generated::gles1_extensions::kFunctions[Index].parameter_count,
-                    true>(descriptor,
-                          gles::generated::gles1_extensions::kFunctions[Index].name,
-                          gles1_module_), ...);
+    void BindGles1Extensions(const BoundaryModuleDescriptor& descriptor, std::index_sequence<Index...>) {
+        (BindGles1Extension<Index>(descriptor), ...);
     }
 
     template <std::size_t... Index>
@@ -733,12 +746,23 @@ private:
                           gles2_module_), ...);
     }
 
+    template <std::size_t Index>
+    void BindGles2Extension(const BoundaryModuleDescriptor& descriptor) {
+        constexpr auto function = gles::generated::gles2_extensions::kFunctions[Index];
+        constexpr auto alias =
+            Index >= 3U ? GlesCoreAlias(function.name, gles::generated::gles3::kFunctions) : kNoGlesAlias;
+        if constexpr (alias != kNoGlesAlias) {
+            static_assert(function.abi_word_count == gles::generated::gles3::kFunctions[alias].abi_word_count);
+            BindExport<Gles3Module, &Gles3Module::template InvokeAlias<alias, gles::GlesApi::gles2_extensions, Index>,
+                       function.abi_word_count, true>(descriptor, function.name, gles3_module_);
+        } else {
+            BindExport<Gles2Module, &Gles2Module::template InvokeExtension<Index>, function.abi_word_count, true>(
+                descriptor, function.name, gles2_module_);
+        }
+    }
     template <std::size_t... Index>
     void BindGles2Extensions(const BoundaryModuleDescriptor& descriptor, std::index_sequence<Index...>) {
-        (BindExport<Gles2Module,
-            &Gles2Module::template InvokeExtension<static_cast<gles::GlesThunkId>(Index)>,
-            gles::generated::gles2_extensions::kFunctions[Index].abi_word_count, true>(descriptor,
-            gles::generated::gles2_extensions::kFunctions[Index].name, gles2_module_), ...);
+        (BindGles2Extension<Index>(descriptor), ...);
     }
 
     template <std::size_t... Index>
@@ -779,6 +803,7 @@ private:
         BindExport<EglModule, &EglModule::method, count, true>(                 \
             egl, name, egl_module_);
         OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_BIND_EGL)
+        OGPLAY_EGL_API19_EXPORTS(OGPLAY_BIND_EGL)
 #undef OGPLAY_BIND_EGL
 #define OGPLAY_BIND_IMAGE(name, id, count, method) \
         BindExport<EglModule, &EglModule::method, count, true>(require("libGLESv1_CM.so"), name, egl_module_); \

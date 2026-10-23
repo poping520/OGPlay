@@ -253,3 +253,23 @@ TEST_CASE("GLES1 fixed shaders consume the complete core lighting and texture mo
     CHECK(fragment.find("fogDenominator < 0.0 ? -0.00001 : 0.00001") !=
           std::string_view::npos);
 }
+
+TEST_CASE("DVM271 texture crop and dimensions belong to shared texture objects") {
+    ogplay::runtime::SharedGlState first;
+    first.BindTexture(0x0DE1U, 7U);
+    CHECK(first.TextureCrop(0x84C0U) == std::array<std::int32_t, 4>{});
+    first.SetTextureSize(0x0DE1U, 8, 4);
+    first.SetTextureCrop(0x0DE1U, {8, 0, -8, 4});
+    ogplay::runtime::SharedGlState shared;
+    shared.ShareObjectsFrom(first);
+    shared.BindTexture(0x0DE1U, 7U);
+    CHECK(shared.TextureSize(0x84C0U) == std::array<std::int32_t, 2>{8, 4});
+    CHECK(shared.TextureCrop(0x84C0U) == std::array<std::int32_t, 4>{8, 0, -8, 4});
+    shared.SetActiveTexture(0x84C1U);
+    shared.BindTexture(0x0DE1U, 9U);
+    CHECK(shared.TextureSize(0x84C1U) == std::array<std::int32_t, 2>{});
+    const std::array deleted{7U};
+    first.DeleteTextures(deleted);
+    CHECK(shared.TextureSize(0x84C0U) == std::array<std::int32_t, 2>{});
+    CHECK(shared.TextureCrop(0x84C0U) == std::array<std::int32_t, 4>{});
+}

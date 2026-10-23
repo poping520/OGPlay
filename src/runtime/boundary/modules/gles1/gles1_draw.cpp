@@ -730,19 +730,17 @@ void AndroidBoundaryGles1DrawState::PrepareArrays(
 }
 
 void AndroidBoundaryGles1DrawState::ApplyUniforms(
-    gles::AngleFrame& frame, const Program& program,
-    const AndroidBoundaryGles1State& core,
-    const AndroidBoundaryGles1LegacyState& legacy,
-    const std::span<const std::uint32_t> texture_units,
-    const std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>&
-        sampled_targets) {
-    const auto modelview = core.Capability(0x8840U) ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Modelview);
-    const auto projection = MatrixFor(core, kGles1Projection);
-    const auto normal = core.Capability(0x0B50U)
-        ? NormalMatrix(modelview)
-        : std::array<float, 9>{1.0F, 0.0F, 0.0F,
-                               0.0F, 1.0F, 0.0F,
-                               0.0F, 0.0F, 1.0F};
+    gles::AngleFrame& frame, const Program& program, const AndroidBoundaryGles1State& core,
+    const AndroidBoundaryGles1LegacyState& legacy, const std::span<const std::uint32_t> texture_units,
+    const std::array<std::uint32_t, kGles1MaximumDrawTextureUnits>& sampled_targets,
+    const std::optional<float> draw_depth) {
+    const auto modelview =
+        (draw_depth.has_value() || core.Capability(0x8840U)) ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Modelview);
+    auto projection = draw_depth.has_value() ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Projection);
+    if (draw_depth.has_value()) projection[14] = *draw_depth;
+    const auto normal = !draw_depth.has_value() && core.Capability(0x0B50U)
+                            ? NormalMatrix(modelview)
+                            : std::array<float, 9>{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 1.0F};
     const auto uniform = [&program](const std::string_view name) {
         return program.uniforms.at(std::string{name});
     };
@@ -758,8 +756,8 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
     set_matrix("u_modelview", modelview);
     set_matrix("u_projection", projection);
     frame.UniformMatrix3(uniform("u_normal_matrix"), 1, false, normal);
-    const bool normalize = core.Capability(0x0BA1U);
-    const bool rescale = core.Capability(0x803AU);
+    const bool normalize = !draw_depth.has_value() && core.Capability(0x0BA1U);
+    const bool rescale = !draw_depth.has_value() && core.Capability(0x803AU);
     frame.Uniform1f(uniform("u_normalize_normal"), normalize ? 1.0F : 0.0F);
     const float rescale_factor = rescale
         ? std::sqrt(modelview[2] * modelview[2] +
@@ -828,13 +826,14 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                                          : std::cos(cutoff * std::numbers::pi_v<float> / 180.0F));
     }
     frame.Uniform1f(uniform("u_has_color"),
-                    Array(kGles1ColorArray, kTexture0).enabled ? 1.0F : 0.0F);
-    frame.Uniform1f(uniform("u_has_normal"),
-                    (core.Capability(0x8840U) || Array(kGles1NormalArray, kTexture0).enabled) ? 1.0F : 0.0F);
+                    (!draw_depth.has_value() && Array(kGles1ColorArray, kTexture0).enabled) ? 1.0F : 0.0F);
+    frame.Uniform1f(uniform("u_has_normal"), (!draw_depth.has_value() &&
+                                              (core.Capability(0x8840U) || Array(kGles1NormalArray, kTexture0).enabled))
+                                                 ? 1.0F
+                                                 : 0.0F);
     frame.Uniform1f(uniform("u_has_point_size"),
-                    Array(kGles1PointSizeArray, kTexture0).enabled ? 1.0F : 0.0F);
-    frame.Uniform1f(uniform("u_lighting"),
-                    core.Capability(0x0B50U) ? 1.0F : 0.0F);
+                    (!draw_depth.has_value() && Array(kGles1PointSizeArray, kTexture0).enabled) ? 1.0F : 0.0F);
+    frame.Uniform1f(uniform("u_lighting"), (!draw_depth.has_value() && core.Capability(0x0B50U)) ? 1.0F : 0.0F);
     frame.Uniform1f(uniform("u_point_size"), fixed.PointSize());
     frame.Uniform1f(uniform("u_point_size_min"),
                     fixed.PointParameter(0x8126U));
@@ -849,10 +848,9 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
                                              static_cast<std::uint32_t>(index));
         frame.Uniform4f(uniform("u_clip_plane" + suffix), plane[0], plane[1],
                         plane[2], plane[3]);
-        frame.Uniform1f(uniform("u_clip_enabled" + suffix),
-                        core.Capability(0x3000U +
-                                        static_cast<std::uint32_t>(index))
-                            ? 1.0F : 0.0F);
+        frame.Uniform1f(
+            uniform("u_clip_enabled" + suffix),
+            (!draw_depth.has_value() && core.Capability(0x3000U + static_cast<std::uint32_t>(index))) ? 1.0F : 0.0F);
     }
     for (std::size_t stage = 0; stage < kGles1MaximumDrawTextureUnits; ++stage) {
         const auto suffix = std::to_string(stage);
@@ -873,7 +871,7 @@ void AndroidBoundaryGles1DrawState::ApplyUniforms(
         if (stage >= texture_units.size()) continue;
         const auto texture = texture_units[stage];
         set_matrix(std::string{"u_texture"} + suffix + "_matrix",
-                   MatrixFor(core, kGles1Texture, texture));
+                   draw_depth.has_value() ? Gles1IdentityMatrix() : MatrixFor(core, kGles1Texture, texture));
         const auto environment = static_cast<std::uint32_t>(
             legacy.TextureEnvironment(
                 texture, kGles1TextureEnvironmentMode)[0]);

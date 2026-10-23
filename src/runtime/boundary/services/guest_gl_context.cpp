@@ -97,6 +97,8 @@ void SharedGlState::DeleteTextures(
         std::erase_if(objects_->texture_base_formats, [texture](const auto& entry) {
             return entry.first.texture == texture;
         });
+        std::erase_if(objects_->texture_sizes, [texture](const auto& entry) { return entry.first.texture == texture; });
+        std::erase_if(objects_->texture_crops, [texture](const auto& entry) { return entry.first.texture == texture; });
         for (auto& [binding, bound] : bound_textures_) {
             static_cast<void>(binding);
             if (bound == texture) bound = 0U;
@@ -123,6 +125,26 @@ std::optional<std::uint32_t> SharedGlState::TextureBaseFormat(
         {BoundTexture(texture_unit, binding_target), binding_target});
     if (found == objects_->texture_base_formats.end()) return std::nullopt;
     return found->second;
+}
+
+void SharedGlState::SetTextureSize(const std::uint32_t target, const std::int32_t width, const std::int32_t height) {
+    const auto binding = TextureBindingTargetForMetadata(target);
+    objects_->texture_sizes[{BoundTexture(binding), binding}] = {width, height};
+}
+
+std::array<std::int32_t, 2> SharedGlState::TextureSize(const std::uint32_t unit) const {
+    const auto found = objects_->texture_sizes.find({BoundTexture(unit, 0x0DE1U), 0x0DE1U});
+    return found == objects_->texture_sizes.end() ? std::array<std::int32_t, 2>{} : found->second;
+}
+
+void SharedGlState::SetTextureCrop(const std::uint32_t target, const std::array<std::int32_t, 4> crop) {
+    ValidateTextureTarget(target);
+    objects_->texture_crops[{BoundTexture(target), target}] = crop;
+}
+
+std::array<std::int32_t, 4> SharedGlState::TextureCrop(const std::uint32_t unit) const {
+    const auto found = objects_->texture_crops.find({BoundTexture(unit, 0x0DE1U), 0x0DE1U});
+    return found == objects_->texture_crops.end() ? std::array<std::int32_t, 4>{} : found->second;
 }
 
 void SharedGlState::SetGenerateMipmap(const std::uint32_t target,

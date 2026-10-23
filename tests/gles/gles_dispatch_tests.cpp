@@ -49,7 +49,7 @@ TEST_CASE("generated GLES3 delta catalog matches API 19 core additions") {
 TEST_CASE("DVM-238 GLES2 OES catalog preserves core and pointer ABI") {
     using namespace ogplay::gles;
     CHECK(GlesFunctionCount(GlesApi::gles2) == 142);
-    CHECK(GlesFunctionCount(GlesApi::gles2_extensions) == 3);
+    CHECK(GlesFunctionCount(GlesApi::gles2_extensions) == 58);
     const auto map = FindGlesFunction(GlesApi::gles2_extensions, "glMapBufferOES");
     REQUIRE(map.has_value());
     CHECK(DescribeGlesFunction(GlesApi::gles2_extensions, *map).return_type == "void*");

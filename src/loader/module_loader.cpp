@@ -44,6 +44,16 @@ struct ParsedModuleSet final {
     return result;
 }
 
+// Only completed load plans own mappings here. LoadElf32Arm rolls back its
+// own partial plan before throwing; pre-existing mappings are never ours.
+void UnmapLoadedModules(const std::span<const Elf32LoadedModule> modules, memory::AddressSpace& address_space) {
+    for (auto module = modules.rbegin(); module != modules.rend(); ++module) {
+        for (auto region = module->load_plan.regions.rbegin(); region != module->load_plan.regions.rend(); ++region) {
+            address_space.Unmap(region->range);
+        }
+    }
+}
+
 }  // namespace
 
 Elf32LoadedNamespace LoadElf32ModuleNamespace(
@@ -70,7 +80,6 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
         }
     }
 
-    const auto snapshot = address_space.CaptureSnapshot();
     try {
         for (const auto index : result.link_namespace.load_order) {
             if (index >= inputs.size()) continue;
@@ -94,7 +103,7 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
                 address_space);
         }
     } catch (...) {
-        address_space.RestoreSnapshot(snapshot);
+        UnmapLoadedModules(result.modules, address_space);
         throw;
     }
     return result;
@@ -132,7 +141,6 @@ Elf32LoadedModuleExtension ExtendElf32ModuleNamespace(
         }
     }
 
-    const auto snapshot = address_space.CaptureSnapshot();
     try {
         for (const auto namespace_index : extension.scope.load_order) {
             if (namespace_index < old_size ||
@@ -165,7 +173,7 @@ Elf32LoadedModuleExtension ExtendElf32ModuleNamespace(
                 parsed.loaded[input_index].load_plan, address_space);
         }
     } catch (...) {
-        address_space.RestoreSnapshot(snapshot);
+        UnmapLoadedModules(parsed.loaded, address_space);
         throw;
     }
     return {std::move(extension), std::move(parsed.loaded)};

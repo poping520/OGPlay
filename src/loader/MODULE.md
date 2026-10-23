@@ -135,10 +135,10 @@
   同一活跃命名空间实现 `dladdr` 的模块、load base 和最近 dynsym 反查。
 - `LoadElf32ModuleNamespace`：一次完成多模块事实解析、依赖排序、映射、版本化符号解析与
   ARM REL 应用；可注入 builder 追加只参与查找的绝对 HLE 边界模块，且不得删除、替换
-  或重排 guest 身份；任一阶段失败都恢复调用前完整 guest 地址空间。
+  或重排 guest 身份；失败只撤销本次成功新增的映射，不恢复或修改既有映射及受保护 payload。
 - `ExtendElf32ModuleNamespace`：在 process-lifetime namespace 上事务追加 guest modules，
   为动态 root 建立独立 scope，并只映射/重定位本次 guest 输入；extender 可在其后追加
-  HLE-only module，但不得重排/替换输入。失败恢复完整地址空间，成功保留既有索引。
+  HLE-only module，但不得重排/替换输入。失败只撤销本次新增映射并保留原始错误，成功保留既有索引。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
   对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，

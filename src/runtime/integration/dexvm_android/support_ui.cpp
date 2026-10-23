@@ -71,6 +71,17 @@ void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
     }
     dexvm::IntrinsicContext call{vm, view, {}};
     dexvm::IntrinsicCall(call).SetRef(*context.view_context_field, view, owner);
+    // API19 View.java:3453-3463. The sealed process target SDK is the
+    // ApplicationInfo fact exposed by this bounded Context implementation.
+    if (owner.IsValid() && context.view_compatibility_fields) {
+        dexvm::IntrinsicCall fields(call);
+        const auto& handles = *context.view_compatibility_fields;
+        if (fields.GetInt(handles[0]) == 0) {
+            fields.SetInt(handles[1], context.target_sdk_version <= 17U);
+            fields.SetInt(handles[2], context.target_sdk_version < 19U);
+            fields.SetInt(handles[0], 1);
+        }
+    }
 }
 
 void BindViewToUiNode(DexVmAndroidContext& context,

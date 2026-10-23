@@ -762,6 +762,13 @@ struct DexVmAndroidContext final {
   // Guest LayoutParams objects retain their typed host value independently
   // of attachment. A View points at its current params object; attaching or
   // updateViewLayout copies that value into the UiTree's sole layout fact.
+  // Temporary legacy adapter references; never part of the ROM View shape.
+  // Traced from the owning View and swept with it, including detached Views.
+  struct ViewAdapterReferences final {
+      dexvm::VmObjectRef window_owner, focus_listener, system_ui_listener;
+  };
+
+  std::unordered_map<std::uint32_t, ViewAdapterReferences> view_adapter_references;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> ui_view_layout_params;
   std::unordered_map<std::uint32_t, ui::ImageScaleType> ui_image_scale_types;
   struct UiDrawableState final {
@@ -820,6 +827,7 @@ struct DexVmAndroidContext final {
   // Bound View.mContext token. Guest object identity lives in the field slot
   // and is traced by GC; this is not a host-side Context table.
   std::optional<dexvm::IntrinsicFieldHandle> view_context_field;
+  std::optional<std::array<dexvm::IntrinsicFieldHandle, 3>> view_compatibility_fields;
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
 };

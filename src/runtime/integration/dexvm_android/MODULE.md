@@ -160,6 +160,14 @@ reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutPara
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
 HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
 
+View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
+未迁移、仍由宿主维护的 ROM 实例字段在 guest 访问时明确失败；integration 的受审 adapter
+可访问自身绑定槽，不以这些槽宣称 Java 已拥有整组状态。mContext 由构造/inflation 写入；
+SDK 兼容静态 flags 从注入的当前进程 targetSdk 按 API19 条件初始化。
+非 ROM decor owner、focus/system-UI listener 由 integration 的 owner-attached 引用表保存，
+从 View trace、随 View sweep，脱离 UiTree 后仍保持引用；不向 View 添加额外字段。
+ui 不读取 Java 字段；本阶段宿主布局与几何权威尚未迁移。
+
 live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
 Java 字段修改不自动 traversal，getContext 是构造/inflation 的 mContext。addView(width,height)
 虚派默认 LayoutParams、写原 Java 字段再统一 attach，不复制参数。

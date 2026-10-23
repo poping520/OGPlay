@@ -1,6 +1,7 @@
 .class public Ltest/MemberComposition;
 .super Ljava/lang/Object;
 .field public static value:I = 0x5
+.field public static blocked:I
 .method static constructor <clinit>()V
 .registers 1
     const/16 v0, 17

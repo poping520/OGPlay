@@ -1,0 +1,23 @@
+.class public Ltest/ViewFieldAccess;
+.super Landroid/view/View;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public context()Landroid/content/Context;
+.registers 2
+    iget-object v0, v1, Landroid/view/View;->mContext:Landroid/content/Context;
+    return-object v0
+.end method
+.method public left()I
+.registers 2
+    iget v0, v1, Landroid/view/View;->mLeft:I
+    return v0
+.end method
+.method public writeLeft()I
+.registers 2
+    const/4 v0, 7
+    iput v0, v1, Landroid/view/View;->mLeft:I
+    return v0
+.end method

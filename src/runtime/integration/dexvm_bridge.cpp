@@ -261,6 +261,12 @@ void RegisterAndroidOwnerAttachedStateTable(
                 found != context->sax_content_handlers.end()) visit_ref(found->second);
             if (const auto found = context->holder_canvases.find(key);
                 found != context->holder_canvases.end()) visit_ref(found->second);
+            if (const auto found = context->view_adapter_references.find(key);
+                found != context->view_adapter_references.end()) {
+                visit_ref(found->second.window_owner);
+                visit_ref(found->second.focus_listener);
+                visit_ref(found->second.system_ui_listener);
+            }
             if (const auto found = context->ui_view_layout_params.find(key);
                 found != context->ui_view_layout_params.end()) visit_ref(found->second);
             if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) visit_ref(image->second);
@@ -327,6 +333,7 @@ void RegisterAndroidOwnerAttachedStateTable(
                 }
                 context->sound_pools.erase(pool);
             }
+            context->view_adapter_references.erase(key);
             context->ui_view_layout_params.erase(key);
             context->ui_image_scale_types.erase(key);
             context->text_watchers.erase(key);

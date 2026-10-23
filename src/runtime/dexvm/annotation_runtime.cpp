@@ -467,7 +467,9 @@ VmObjectRef AnnotationRuntime::GetMethodAnnotations(VmMethodId method) {
 VmObjectRef AnnotationRuntime::GetParameterAnnotations(VmMethodId method) {
     auto& vm = *interpreter_;
     const auto& linked = vm.Linker().Method(method);
-    const auto count = ClassNameCodec::ParseMethod(linked.descriptor).parameters.size();
+    const auto count = linked.has_parameter_annotations
+                           ? linked.parameter_annotations.size()
+                           : ClassNameCodec::ParseMethod(linked.descriptor).parameters.size();
     const auto component = vm.Linker().ResolveDescriptor("[Ljava/lang/annotation/Annotation;");
     const auto array_class = vm.Linker().ResolveDescriptor("[[Ljava/lang/annotation/Annotation;");
     const auto result = vm.Model().NewObjectArray(array_class, component, static_cast<JniSize>(count));

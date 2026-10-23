@@ -32,19 +32,30 @@
   保留 `android:exported`：显式布尔写入事实，缺省时按 API 19 在有 intent-filter 时为
   true。`application` icon 保留
   resource id，label 严格区分 resource id 与字面量；DVM-77 继续按声明序提取去重的
-  `uses-permission` 与 application `meta-data`，metadata 只接受 API19 string、integer、
-  boolean、value/resource reference；两种 reference 保留独立身份，由运行时仅解析
-  `android:value`，`android:resource` 继续发布 resource id。
+  `uses-permission` 与 application `meta-data`。metadata 按 API19 Bundle 保存 string、float、
+  boolean、全部 INT 范围（含 color）；dimension/fraction 等非 RIGID 类型记录 diagnostics 后忽略。
+  空 key 合法，同 owner 的最后有效写入覆盖；resource 非零优先，否则回退 value。
+  `android:resource` 保留 id；value 引用在资源上下文中解析，byte-only API 无上下文时
+  保留独立 value reference 交给运行时解析。
+  清单 typed getter 支持资源引用、整数 truth 与字段缺省；getInteger 与 getInt 分别受检，
+  可转换 string 属性按 TypedValue 转换，non-resource 字段仍限制原始字符串。
+  ParseAndroidBinaryManifest 接受显式资源 resolver；ReadAndroidManifest 按需读取 APK ARSC，
+  选择默认配置/API19/density160，框架引用经可选 external resolver，缺资源、循环/深度超限
+  明确失败，不用资源 id 的非零性猜测值。versionCode 缺省/显式 0、空 versionName 合法；
+  无 uses-sdk 保留缺席事实，有 uses-sdk 的 min 缺省 0、target 缺省随 min，重复声明后项更新。
+  包名沿 API19 validateName（含 android 特例）；不放宽 chunk/栈/索引等结构安全检查。
   顶层 `<permission>` 另存名称、所属包、protectionLevel、group、flags、description 与
   自身 `meta-data`；权限定义不从 `uses-permission` 推导。
   DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
-  service 名称沿用 API19 buildClassName，缺名/空名/非法名/重复声明明确失败；
+  service 名称沿用 API19 buildClassName，缺名/空名/非法名明确失败；
   service 还保存 exported、继承或覆盖的 process/permission、自身 `meta-data` 和
   stopWithTask/isolatedProcess/singleUser flags；singleUser 强制 exported=false。
   服务不参与 Launcher 选择，本层不执行服务解析、实例化或生命周期。
   receiver 独立保存规范类名、enabled/exported、继承或覆盖的 process/permission 与自身
   `meta-data`；exported 缺省取决于 intent-filter 是否存在。receiver 不混入 Activity 列表。
+  service/receiver 与 Activity 一样保留所有同名声明，不合并配置或过滤器；运行时按名取后项，
+  intent 查询保留逐声明匹配并按组件去重。provider 仍无清单投影，不新增 provider 子系统。
   receiver 同样逐个保存 intent-filter，不合并 action/category；共用过滤器事实还保留
   signed priority、label/icon，供上层查询返回与排序。
   Manifest 顶层 supports-gl-texture 的 android:name 保留为 supported_gl_textures，按首次
@@ -82,7 +93,8 @@
   元数据，不作为运行时注解发布。复制、拼接和参数矩阵均计入相同受检预算；encoded value
   kind/value_arg 按 DEX 宽度与复合/null/boolean 规则 fail closed；不执行任何字节码。
   注解 item/set 在单次解析内按偏移缓存受检、不可变结果；引用处仍校验 member owner
-  与 AnnotationDefault 声明类型。返回元数据保持拥有型，深复制另计预算。
+  与 AnnotationDefault 声明类型。参数 item 存在性与原始 list.size 独立保存，不要求等于原型
+  参数数，不补 synthetic 参数；显式空列表与无 item 不同。返回元数据保持拥有型，深复制另计预算。
   单项保留 depth=16、elements=1024、array=65535，并有独立 item node 上限；
   整体工作量默认 `min(65536+8*data_size, 16 Mi units)`，存储默认
   `min(1 MiB+384*file_size, 256 MiB)`，调用方可传通用硬上限。

@@ -74,9 +74,9 @@ std::optional<bool> BindLocalService(dx::IntrinsicContext& call, const Context& 
   const auto package = vm.StringUtf8(CallAndroidMethod(vm, component, "getPackageName", "()Ljava/lang/String;").ref);
   const auto name = vm.StringUtf8(CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref);
   if (package != context->package_name) UnsupportedLocalService(vm, "external explicit service binding is unsupported");
-  const auto found = std::find_if(context->service_components.begin(), context->service_components.end(),
-                                [&](const auto& s) { return s.name == name; });
-  if (!context->application_enabled || found == context->service_components.end() || !found->enabled) return false;
+  const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
+                                  [&](const auto& s) { return s.name == name; });
+  if (!context->application_enabled || found == context->service_components.rend() || !found->enabled) return false;
   const auto process = context->application_process_name.empty() ? context->package_name : context->application_process_name;
   // API19 ServiceInfo.FLAG_ISOLATED_PROCESS creates a separate UID/process.
   if ((found->flags & 0x0002U) != 0 ||
@@ -2354,6 +2354,9 @@ MakeActivityInfo(dx::IntrinsicContext &call, const Context &context,
     for (const auto &receiver : context->receiver_components) {
       if (!receiver.enabled)
         continue;
+      if (std::any_of(matches.begin(), matches.end(),
+                      [&](const auto& match) { return match.receiver->name == receiver.name; }))
+          continue;
       for (const auto &filter : receiver.intent_filters) {
         if (!FilterContains(filter.actions, action_name) ||
             !std::ranges::all_of(categories, [&](const auto &category) {
@@ -2735,15 +2738,12 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                                   "dexvm.receiver_info", "getReceiverInfo");
         const auto [package_name, class_name] =
             ReadComponentIdentity(call, context, component);
-        const auto found = std::find_if(
-            context->receiver_components.begin(), context->receiver_components.end(),
-            [&](const auto &receiver) { return receiver.name == class_name; });
-        if (found == context->receiver_components.end() ||
-            (!(flags & kGetDisabledComponents) &&
-             (!context->application_enabled || !found->enabled))) {
-          throw dx::VmJavaThrow{
-              "Landroid/content/pm/PackageManager$NameNotFoundException;",
-              package_name + "/" + class_name};
+        const auto found = std::find_if(context->receiver_components.rbegin(), context->receiver_components.rend(),
+                                        [&](const auto& receiver) { return receiver.name == class_name; });
+        if (found == context->receiver_components.rend() ||
+            (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
+            throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
+                                  package_name + "/" + class_name};
         }
         const auto application =
             MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);
@@ -2761,15 +2761,12 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
                                   "dexvm.service_info", "getServiceInfo");
         const auto [package_name, class_name] =
             ReadComponentIdentity(call, context, component);
-        const auto found = std::find_if(
-            context->service_components.begin(), context->service_components.end(),
-            [&](const auto &service) { return service.name == class_name; });
-        if (found == context->service_components.end() ||
-            (!(flags & kGetDisabledComponents) &&
-             (!context->application_enabled || !found->enabled))) {
-          throw dx::VmJavaThrow{
-              "Landroid/content/pm/PackageManager$NameNotFoundException;",
-              package_name + "/" + class_name};
+        const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
+                                        [&](const auto& service) { return service.name == class_name; });
+        if (found == context->service_components.rend() ||
+            (!(flags & kGetDisabledComponents) && (!context->application_enabled || !found->enabled))) {
+            throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;",
+                                  package_name + "/" + class_name};
         }
         const auto application =
             MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0);

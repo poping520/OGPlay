@@ -113,8 +113,7 @@ public:
 
 private:
     void ValidateConfig() const {
-        if (config_.package_name.empty() || config_.package_name.size() > 255 ||
-            config_.version_name.empty() || config_.version_code < 0) {
+        if (config_.package_name.empty() || config_.package_name.size() > 255 || config_.version_code < 0) {
             InvalidConfig();
         }
         std::size_t cursor = 0;

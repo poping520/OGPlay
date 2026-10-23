@@ -50,7 +50,8 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   widen、虚派、boxing 与原异常身份包装。
 
 - 运行时注解的 class/field/method/parameter 与默认值均来自本成员所属 DEX unit，统一由
-  AnnotationRuntime 物化；Method/Constructor 注解不继承，参数按原型发布独立二维数组。
+  AnnotationRuntime 物化；Method/Constructor 注解不继承，参数有 item 时按原始 list.size
+  发布独立二维数组（含显式 0），无 item 时才按原型发布空矩阵，不补 synthetic 参数。
   Signature 为 system 元数据，由原版 libcore GenericSignatureParser 与 Type 实现解析，
   支持 class/field/method/constructor 泛型、type variable、wildcard 和 generic array；无签名
   回退原始类型，畸形/缺失类型保留原版 Java 异常。enclosing declaration 从受检元数据取得，

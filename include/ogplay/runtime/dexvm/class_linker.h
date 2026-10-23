@@ -223,6 +223,7 @@ struct LinkedMethod final {
     std::optional<std::u16string> generic_signature;
     std::vector<LinkedAnnotation> runtime_annotations;
     std::vector<std::vector<LinkedAnnotation>> parameter_annotations;
+    bool has_parameter_annotations{};
     VmMethodId id;
     DexClassId owner;
     std::string name;

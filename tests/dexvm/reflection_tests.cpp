@@ -1717,6 +1717,7 @@ TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive p
             const auto id = wrapper == method ? vm.Reflection().MethodMetadata(wrapper).method : vm.Reflection().ConstructorMetadata(wrapper).method;
             auto& metadata = f.linker.MutableMethod(id);
             metadata.runtime_annotations = annotations;
+            metadata.has_parameter_annotations = true;
             metadata.parameter_annotations.resize(wrapper == method ? 2 : 1);
             metadata.parameter_annotations[0] = annotations;
             const auto annotation_class = ClassOf(f, "Lann/Named;");
@@ -1738,6 +1739,25 @@ TEST_CASE("WU7-5 executable annotations share annotation runtime and defensive p
             CHECK(f.model.GetObjectElement(f.model.GetObjectElement(again, 0), 0).IsValid());
             if (wrapper == method) CHECK(f.model.ArrayLength(f.model.GetObjectElement(again, 1)) == 0);
         }
+        // Dalvik preserves an explicit item length, including zero and arity mismatches.
+        const auto method_id = vm.Reflection().MethodMetadata(method).method;
+        auto& item = f.linker.MutableMethod(method_id);
+        for (const auto count : {0U, 1U, 3U}) {
+            item.has_parameter_annotations = true;
+            item.parameter_annotations.clear();
+            item.parameter_annotations.resize(count);
+            if (count) item.parameter_annotations.back() = annotations;
+            const auto matrix =
+                Ref(f.Virtual(method, "getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;"));
+            REQUIRE(f.model.ArrayLength(matrix) == count);
+            if (count)
+                CHECK(f.model.ArrayLength(f.model.GetObjectElement(matrix, static_cast<JniSize>(count - 1))) == 1);
+        }
+        item.has_parameter_annotations = false;
+        item.parameter_annotations.clear();
+        const auto absent = Ref(f.Virtual(method, "getParameterAnnotations", "()[[Ljava/lang/annotation/Annotation;"));
+        REQUIRE(f.model.ArrayLength(absent) == 2);
+        CHECK(f.model.ArrayLength(f.model.GetObjectElement(absent, 0)) == 0);
         const auto unannotated = MethodWrapper(f, "Lann/Named;", "number");
         CHECK(f.model.ArrayLength(Ref(f.Virtual(unannotated, "getAnnotations", "()[Ljava/lang/annotation/Annotation;"))) == 0);
     }

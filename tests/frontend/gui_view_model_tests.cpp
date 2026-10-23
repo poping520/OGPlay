@@ -213,6 +213,8 @@ TEST_CASE("library detail exposes factual conditions without inferring runtime f
         ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context);
     CHECK(detail.package == entry.key);
     CHECK(detail.version == "versionCode 42");
+    entry.metadata->version_code = 0;
+    CHECK(ogplay::frontend::BuildLibraryDetail(entry, tiles.front(), context).version == "versionCode 0");
     REQUIRE(detail.profile.has_value());
     CHECK(detail.profile->status ==
           ogplay::frontend::LibraryConditionStatus::ready);

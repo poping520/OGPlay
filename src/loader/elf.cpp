@@ -108,10 +108,8 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     throw ElfError("PT_DYNAMIC is not terminated by DT_NULL");
 }
 
-[[nodiscard]] std::optional<std::uint32_t> UniqueDynamicValue(
-    const Elf32Image& image, const std::int32_t tag) {
-    return elf_detail::UniqueDynamicValue(
-        image, tag, "dynamic tag appears more than once");
+[[nodiscard]] std::optional<std::uint32_t> LastDynamicValue(const Elf32Image& image, const std::int32_t tag) {
+    return elf_detail::LastDynamicValue(image, tag);
 }
 
 [[nodiscard]] std::size_t VirtualFileOffset(
@@ -355,8 +353,6 @@ Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
             "ELF is not 32-bit");
     Require(std::to_integer<std::uint8_t>(bytes[5]) == 1,
             "ELF is not little-endian");
-    Require(std::to_integer<std::uint8_t>(bytes[6]) == kElfVersionCurrent,
-            "ELF identification version is invalid");
 
     const auto raw_type = Read16(bytes, 16);
     Require(raw_type == static_cast<std::uint16_t>(Elf32ImageType::executable) ||
@@ -365,16 +361,10 @@ Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
     Require(Read16(bytes, 18) == kElfMachineArm, "ELF machine is not ARM");
     Require(Read32(bytes, 20) == kElfVersionCurrent,
             "ELF header version is invalid");
-    Require(Read16(bytes, 40) == kElf32HeaderSize,
-            "ELF header size is invalid");
 
     const auto program_offset = Read32(bytes, 28);
-    const auto program_entry_size = Read16(bytes, 42);
     const auto program_count = Read16(bytes, 44);
-    Require(program_count == 0 || program_entry_size == kElf32ProgramHeaderSize,
-            "ELF program header size is invalid");
-    const auto table_size = static_cast<std::uint64_t>(program_entry_size) *
-                            program_count;
+    const auto table_size = static_cast<std::uint64_t>(kElf32ProgramHeaderSize) * program_count;
     RequireRange(program_offset, table_size, bytes.size(),
                  "ELF program header table is outside the image");
 
@@ -389,9 +379,7 @@ Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
                             index * kElf32ProgramHeaderSize;
         auto header = ParseProgramHeader(bytes, offset);
         if (header.type == kElfProgramDynamic) {
-            Require(!dynamic_index.has_value(),
-                    "ELF contains multiple PT_DYNAMIC segments");
-            dynamic_index = index;
+            if (!dynamic_index.has_value()) dynamic_index = index;
         }
         image.program_headers.push_back(header);
     }
@@ -406,9 +394,8 @@ Elf32Image ParseElf32Arm(const std::span<const std::byte> bytes) {
 Elf32DynamicInfo ReadElf32DynamicInfo(
     const std::span<const std::byte> bytes, const Elf32Image& image) {
     Require(image.has_dynamic_segment, "ELF has no PT_DYNAMIC segment");
-    const auto string_table = UniqueDynamicValue(image, kElfDynamicStringTable);
-    const auto string_table_size =
-        UniqueDynamicValue(image, kElfDynamicStringTableSize);
+    const auto string_table = LastDynamicValue(image, kElfDynamicStringTable);
+    const auto string_table_size = LastDynamicValue(image, kElfDynamicStringTableSize);
     Require(string_table.has_value() && string_table_size.has_value(),
             "dynamic string table metadata is incomplete");
     Require(*string_table_size != 0, "dynamic string table is empty");
@@ -425,7 +412,7 @@ Elf32DynamicInfo ReadElf32DynamicInfo(
                 bytes, table_offset, *string_table_size, entry.value));
         }
     }
-    const auto soname = UniqueDynamicValue(image, kElfDynamicSoname);
+    const auto soname = LastDynamicValue(image, kElfDynamicSoname);
     if (soname.has_value()) {
         info.soname = ReadDynamicString(
             bytes, table_offset, *string_table_size, *soname);
@@ -436,20 +423,16 @@ Elf32DynamicInfo ReadElf32DynamicInfo(
 Elf32SymbolTable ReadElf32SymbolTable(
     const std::span<const std::byte> bytes, const Elf32Image& image) {
     const auto dynamic = ReadElf32DynamicInfo(bytes, image);
-    const auto symbol_table = UniqueDynamicValue(image, kElfDynamicSymbolTable);
-    const auto symbol_size = UniqueDynamicValue(image, kElfDynamicSymbolEntrySize);
-    Require(symbol_table.has_value() && symbol_size.has_value(),
-            "dynamic symbol table metadata is incomplete");
-    Require(*symbol_size == kElf32SymbolSize,
-            "DT_SYMENT is not the ELF32 symbol size");
+    const auto symbol_table = LastDynamicValue(image, kElfDynamicSymbolTable);
+    Require(symbol_table.has_value(), "dynamic symbol table is missing");
 
     Elf32SymbolTable result;
-    const auto sysv_hash = UniqueDynamicValue(image, kElfDynamicHash);
+    const auto sysv_hash = LastDynamicValue(image, kElfDynamicHash);
     if (sysv_hash.has_value()) {
         result.sysv_hash = ReadSysvHash(
             bytes, image, memory::GuestAddress{*sysv_hash});
     }
-    const auto gnu_hash = UniqueDynamicValue(image, kElfDynamicGnuHash);
+    const auto gnu_hash = LastDynamicValue(image, kElfDynamicGnuHash);
     if (gnu_hash.has_value()) {
         result.gnu_hash = ReadGnuHash(
             bytes, image, memory::GuestAddress{*gnu_hash});
@@ -494,12 +477,6 @@ Elf32SymbolTable ReadElf32SymbolTable(
             static_cast<std::uint8_t>(other & 0x03U),
             section});
     }
-    const auto& null_symbol = result.symbols.front();
-    Require(null_symbol.name.empty() && null_symbol.value.Value() == 0 &&
-                null_symbol.size == 0 && null_symbol.binding == 0 &&
-                null_symbol.type == 0 && null_symbol.visibility == 0 &&
-                null_symbol.section_index == 0,
-            "dynamic symbol zero is not the null symbol");
     return result;
 }
 
@@ -508,29 +485,15 @@ Elf32RelocationTable ReadElf32Relocations(
     const Elf32SymbolTable& symbols) {
     Require(image.has_dynamic_segment, "ELF has no PT_DYNAMIC segment");
     Require(!symbols.symbols.empty(), "relocations require a symbol table");
-    const auto rela = UniqueDynamicValue(image, kElfDynamicRela);
-    const auto rela_size = UniqueDynamicValue(image, kElfDynamicRelaSize);
-    const auto rela_entry = UniqueDynamicValue(image, kElfDynamicRelaEntrySize);
-    Require(!rela.has_value() && !rela_size.has_value() && !rela_entry.has_value(),
-            "ELF32 ARM RELA relocations are unsupported");
+    const auto rela = LastDynamicValue(image, kElfDynamicRela);
+    Require(!rela.has_value(), "ELF32 ARM RELA relocations are unsupported");
 
-    const auto rel = UniqueDynamicValue(image, kElfDynamicRel);
-    const auto rel_size = UniqueDynamicValue(image, kElfDynamicRelSize);
-    const auto rel_entry = UniqueDynamicValue(image, kElfDynamicRelEntrySize);
-    const auto jmprel = UniqueDynamicValue(image, kElfDynamicJmpRel);
-    const auto plt_size = UniqueDynamicValue(image, kElfDynamicPltRelSize);
-    const auto plt_rel = UniqueDynamicValue(image, kElfDynamicPltRel);
+    const auto rel = LastDynamicValue(image, kElfDynamicRel);
+    const auto rel_size = LastDynamicValue(image, kElfDynamicRelSize);
+    const auto jmprel = LastDynamicValue(image, kElfDynamicJmpRel);
+    const auto plt_size = LastDynamicValue(image, kElfDynamicPltRelSize);
+    const auto plt_rel = LastDynamicValue(image, kElfDynamicPltRel);
 
-    Require(rel.has_value() == rel_size.has_value() &&
-                rel.has_value() == rel_entry.has_value(),
-            "DT_REL metadata is incomplete");
-    Require(jmprel.has_value() == plt_size.has_value() &&
-                jmprel.has_value() == plt_rel.has_value(),
-            "DT_JMPREL metadata is incomplete");
-    if (rel_entry.has_value()) {
-        Require(*rel_entry == kElf32RelocationSize,
-                "DT_RELENT is not the ELF32 REL size");
-    }
     if (plt_rel.has_value()) {
         Require(*plt_rel == static_cast<std::uint32_t>(kElfDynamicRel),
                 "DT_PLTREL does not select ELF32 REL");
@@ -541,46 +504,32 @@ Elf32RelocationTable ReadElf32Relocations(
         std::uint32_t size{};
         Elf32RelocationTableKind kind{};
     };
-    std::vector<Table> tables;
-    if (rel.has_value()) tables.push_back({*rel, *rel_size,
-                                           Elf32RelocationTableKind::dynamic});
-    if (jmprel.has_value()) {
-        tables.push_back({*jmprel, *plt_size,
-                          Elf32RelocationTableKind::procedure_linkage});
-    }
 
+    // API19 processes PLT first and truncates sizes to complete Elf32_Rel entries.
+    std::vector<Table> tables;
+    if (jmprel.has_value() && plt_size.value_or(0) >= kElf32RelocationSize) {
+        tables.push_back({*jmprel, *plt_size, Elf32RelocationTableKind::procedure_linkage});
+    }
+    if (rel.has_value() && rel_size.value_or(0) >= kElf32RelocationSize) {
+        tables.push_back({*rel, *rel_size, Elf32RelocationTableKind::dynamic});
+    }
     Elf32RelocationTable result;
-    for (std::size_t table_index = 0; table_index < tables.size(); ++table_index) {
-        const auto& table = tables[table_index];
-        Require(table.size % kElf32RelocationSize == 0,
-                "ELF32 REL table size is not entry aligned");
-        const auto begin = static_cast<std::uint64_t>(table.address);
-        const auto end = begin + table.size;
-        Require(end <= (UINT64_C(1) << 32U),
-                "ELF32 REL table range wraps the address space");
-        for (std::size_t other = 0; other < table_index; ++other) {
-            const auto other_begin =
-                static_cast<std::uint64_t>(tables[other].address);
-            const auto other_end = other_begin + tables[other].size;
-            Require(end <= other_begin || begin >= other_end,
-                    "ELF32 REL tables overlap");
-        }
-        const auto offset = VirtualFileOffset(
-            image, memory::GuestAddress{table.address}, table.size, bytes.size());
+    for (const auto& table : tables) {
         const auto count = table.size / kElf32RelocationSize;
+        const auto offset = VirtualFileOffset(image, memory::GuestAddress{table.address},
+                                              static_cast<std::uint32_t>(count * kElf32RelocationSize), bytes.size());
         for (std::uint32_t index = 0; index < count; ++index) {
-            const auto entry = offset +
-                               static_cast<std::size_t>(index) *
-                                   kElf32RelocationSize;
+            const auto entry = offset + static_cast<std::size_t>(index) * kElf32RelocationSize;
             const memory::GuestAddress target{Read32(bytes, entry)};
             const auto info = Read32(bytes, entry + 4);
+            const auto type = static_cast<std::uint8_t>(info & 0xffU);
             const auto symbol_index = info >> 8U;
-            Require(symbol_index < symbols.symbols.size(),
-                    "ELF32 REL symbol index is outside dynsym");
-            RequireLoadMemoryRange(image, target, 4);
-            result.relocations.push_back(
-                {target, symbol_index, static_cast<std::uint8_t>(info & 0xffU),
-                 table.kind});
+            // R_ARM_NONE does not inspect the symbol or touch the target.
+            if (type != 0) {
+                Require(symbol_index < symbols.symbols.size(), "ELF32 REL symbol index is outside dynsym");
+                RequireLoadMemoryRange(image, target, 4);
+            }
+            result.relocations.push_back({target, symbol_index, type, table.kind});
         }
     }
     return result;

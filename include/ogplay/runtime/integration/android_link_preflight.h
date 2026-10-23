@@ -31,10 +31,12 @@ struct AndroidImportGap final {
     std::string library;
     std::string symbol;
     bool weak{};
+    bool relocation_referenced{true};
 };
 struct AndroidImportAudit final {
     std::vector<AndroidImportGap> gaps;
     std::size_t strong_missing{}, weak_missing{};
+    std::size_t unused_strong_missing{}, unused_weak_missing{};
 };
 // Every APK library is audited as a potential dlopen root. Only its NEEDED
 // closure can satisfy imports; unrelated APK exports cannot mask a real gap.

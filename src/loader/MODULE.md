@@ -132,13 +132,13 @@
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、
-  `DT_NEEDED` 与 `DT_SONAME`，重复、缺失、越界和未终止字符串均明确失败。
+  `DT_NEEDED` 与 `DT_SONAME`；scalar 标签取最后值，缺失必要表、越界和未终止字符串明确失败。
 - `BuildElf32LoadPlan` / `LoadElf32Arm`：按宿主页合并 `PT_LOAD`，以临时 RW 装载文件、
   顺序清零 BSS，最后切换为合并后的 W^X 权限；失败时回滚本次新增映射。
 - `ReadElf32SymbolTable`：通过边界校验后的 SysV/GNU hash 推导 dynsym 数量，解析名称、
   binding、type、visibility 和 section index；`IsExported` 只接受已定义且外部可见的全局/弱符号。
 - `ReadElf32Relocations`：同时解析普通与 PLT ELF32 ARM REL 表，保留目标、符号索引、
-  原始类型与表类别；RELA、元数据残缺、表重叠及不安全目标均明确失败。
+  原始类型与表类别；DT_RELA、非 REL 的 DT_PLTREL 和不安全的实际读取/目标明确失败。
 - `ApplyElf32ArmRelocations`：原子应用 `NONE/ABS32/REL32/GLOB_DAT/JUMP_SLOT/RELATIVE`，
   写入期间将装载区域切为 RW，成功或失败后均恢复最终 W^X 权限。
 - `BuildElf32LinkNamespace` / `ResolveElf32Symbols`：构造递归依赖闭包、依赖优先装载顺序
@@ -156,7 +156,8 @@
   为动态 root 建立独立 scope，并只映射/重定位本次 guest 输入；extender 可在其后追加
   HLE-only module，但不得重排/替换输入。失败只撤销本次新增映射并保留原始错误，成功保留既有索引。
 - `ReadElf32LifecycleInfo`：解析 `DT_INIT/FINI`、init/fini arrays 与 `PT_ARM_EXIDX`，
-  对重复、元数据残缺、非对齐及非 file-backed 范围明确失败。
+  标量动态标签取最后值，数组指针/尺寸独立缺省，尺寸按完整指针截断；
+  EXIDX 取首段并按 memory size/8 计数。实际读取仍要求 file-backed 且范围受检。
 - `ReadElf32TlsInfo`：解析唯一 `PT_TLS` 模板，保留初始化字节、BSS 大小与对齐，
   并要求模板由唯一 `PT_LOAD` 覆盖且不回绕。
 - `ReadElf32SymbolVersions`：解析 `DT_VERSYM/VERDEF/VERNEED`，将每个 dynsym 映射为
@@ -165,7 +166,8 @@
   不一致时明确失败。
 - 静态导入审计消费者复用 ELF/dynsym/version 事实及 BuildElf32LinkNamespace/LookupElf32Symbol，
   逐根只查 NEEDED scope、保留 visibility/版本/旧 provider 回退规则；聚合未定义 GLOBAL 与
-  WEAK 的查找缺口，不修改解析表、强符号规则或运行时首错失败行为，不执行 guest。
+  WEAK 的查找缺口，另标明是否被非 NONE 重定位引用；未引用缺口保留诊断但不拒绝，
+  不修改解析表、不执行 guest。
 - 后续 Work Unit 在该事实模型上增加映射、符号、重定位和链接命名空间，不重复解析字节。
 
 ## 不变量
@@ -199,14 +201,21 @@
   library basename 与所需导出符号组成的声明式签名提供。
 - 小端字段先在足够宽的无符号类型中组合，最终结果只做一次显式收窄。
 - `PT_LOAD` 必须满足 file size ≤ memory size、guest 地址不回绕、文件范围有效且对齐同余。
-- `PT_DYNAMIC` 最多一个、文件范围完整、条目尺寸正确并由 `DT_NULL` 终止。
+- `PT_DYNAMIC` 采用首段，文件范围完整、条目尺寸正确并由 `DT_NULL` 终止；
+  共享 scalar tag 取最后声明，重复 NEEDED 仍逐项保留。
 - 动态虚拟地址必须能完整翻译到单个 file-backed `PT_LOAD`，不得读取 BSS 或猜测文件偏移。
 - dynamic-info 与 lifecycle 读取共用唯一的虚拟地址→文件偏移和唯一 dynamic tag 私有实现，
   各 API 仍提供自己的 typed error 文案。
 - load bias 必须按宿主页对齐；ET_EXEC 不允许 bias；非零入口必须落在 executable `PT_LOAD`。
 - 任一宿主页需要同时 W+X 时拒绝装载，不以兼容为由放宽权限。
 - dynsym 必须由有效 SysV 或 GNU hash 限定数量；GNU chain 必须在 file-backed 范围内终止。
-- REL 表必须 file-backed 且互不重叠；目标可在 BSS，但 4 字节范围必须唯一属于 `PT_LOAD` memory。
+- REL 先处理 PLT 再处理普通表；尺寸按完整条目截断，允许表重叠与重复目标，
+  重复目标依次累积后事务提交。NONE 不读取目标或符号；其他目标可在 BSS，
+  但 4 字节范围必须唯一属于 `PT_LOAD` memory，实际表读取必须 file-backed。
+- 装载只解析非 NONE 重定位的非零符号索引；未引用 dynsym 事实保留，不作为强缺口拒绝。
+  `ResolveElf32Symbols` 的显式全表模式仍供诊断调用，传入 relocation table 时按引用过滤。
+- ELF header/program header/dynsym 使用固定 ELF32 布局；EI_VERSION、e_ehsize、
+  e_phentsize、DT_SYMENT/RELENT 不作为冗余一致性门槛，e_version 仍校验。
 - `DT_NEEDED`、TLS、exidx、符号版本、init/fini 使用同一链接模型。
 - 输出只描述事实，不猜测具体游戏身份。
 

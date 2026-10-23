@@ -244,11 +244,6 @@ TEST_CASE("ELF32 ARM parser requires one terminated dynamic segment") {
         Put32(bytes, 0x138, 6);
         CHECK_THROWS_AS(ParseAndDiscard(bytes), ogplay::loader::ElfError);
     }
-    SUBCASE("multiple dynamic segments") {
-        auto bytes = ValidElf();
-        Put32(bytes, 52, ogplay::loader::kElfProgramDynamic);
-        CHECK_THROWS_AS(ParseAndDiscard(bytes), ogplay::loader::ElfError);
-    }
     SUBCASE("dynamic size is not entry aligned") {
         auto bytes = ValidElf();
         Put32(bytes, 100, 63);
@@ -347,41 +342,19 @@ TEST_CASE("ELF32 ARM REL metadata preserves targets symbols types and tables") {
     const auto relocations =
         ogplay::loader::ReadElf32Relocations(bytes, image, symbols);
     REQUIRE(relocations.relocations.size() == 3);
-    CHECK(relocations.relocations[0].target ==
-          ogplay::memory::GuestAddress{0x10280});
-    CHECK(relocations.relocations[0].symbol_index == 1);
-    CHECK(relocations.relocations[0].type == 2);
-    CHECK(relocations.relocations[0].table ==
-          ogplay::loader::Elf32RelocationTableKind::dynamic);
-    CHECK(relocations.relocations[1].target ==
-          ogplay::memory::GuestAddress{0x10300});
-    CHECK(relocations.relocations[1].symbol_index == 0);
-    CHECK(relocations.relocations[1].type == 23);
-    CHECK(relocations.relocations[2].symbol_index == 2);
-    CHECK(relocations.relocations[2].type == 22);
-    CHECK(relocations.relocations[2].table ==
-          ogplay::loader::Elf32RelocationTableKind::procedure_linkage);
+    CHECK(relocations.relocations[0].symbol_index == 2);
+    CHECK(relocations.relocations[0].type == 22);
+    CHECK(relocations.relocations[0].table == ogplay::loader::Elf32RelocationTableKind::procedure_linkage);
+    CHECK(relocations.relocations[1].target == ogplay::memory::GuestAddress{0x10280});
+    CHECK(relocations.relocations[1].symbol_index == 1);
+    CHECK(relocations.relocations[1].type == 2);
+    CHECK(relocations.relocations[1].table == ogplay::loader::Elf32RelocationTableKind::dynamic);
+    CHECK(relocations.relocations[2].target == ogplay::memory::GuestAddress{0x10300});
+    CHECK(relocations.relocations[2].symbol_index == 0);
+    CHECK(relocations.relocations[2].type == 23);
 }
 
 TEST_CASE("ELF32 ARM REL metadata rejects malformed or unsafe facts") {
-    SUBCASE("incomplete dynamic REL metadata") {
-        auto bytes = RelocationElf();
-        Put32(bytes, 0x140, 0x60000001);
-        const auto image = ogplay::loader::ParseElf32Arm(bytes);
-        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
-        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
-                            bytes, image, symbols)),
-                        ogplay::loader::ElfError);
-    }
-    SUBCASE("wrong REL entry size") {
-        auto bytes = RelocationElf();
-        Put32(bytes, 0x14c, 12);
-        const auto image = ogplay::loader::ParseElf32Arm(bytes);
-        const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
-        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(
-                            bytes, image, symbols)),
-                        ogplay::loader::ElfError);
-    }
     SUBCASE("PLT selects RELA") {
         auto bytes = RelocationElf();
         Put32(bytes, 0x164, ogplay::loader::kElfDynamicRela);
@@ -421,14 +394,6 @@ TEST_CASE("ELF32 ARM REL metadata rejects malformed or unsafe facts") {
 }
 
 TEST_CASE("ELF32 symbol metadata rejects malformed hash and table bounds") {
-    SUBCASE("wrong symbol entry size") {
-        auto bytes = ValidElf();
-        Put32(bytes, 0x134, 12);
-        const auto image = ogplay::loader::ParseElf32Arm(bytes);
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32SymbolTable(bytes, image)),
-                        ogplay::loader::ElfError);
-    }
     SUBCASE("missing supported hash") {
         auto bytes = ValidElf();
         Put32(bytes, 0x120, 0x6000000d);
@@ -456,14 +421,6 @@ TEST_CASE("ELF32 symbol metadata rejects malformed hash and table bounds") {
     SUBCASE("symbol name is outside the string table") {
         auto bytes = ValidElf();
         Put32(bytes, 0x1c0, 30);
-        const auto image = ogplay::loader::ParseElf32Arm(bytes);
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32SymbolTable(bytes, image)),
-                        ogplay::loader::ElfError);
-    }
-    SUBCASE("symbol zero is not null") {
-        auto bytes = ValidElf();
-        Put32(bytes, 0x1b4, 1);
         const auto image = ogplay::loader::ParseElf32Arm(bytes);
         CHECK_THROWS_AS(static_cast<void>(
                             ogplay::loader::ReadElf32SymbolTable(bytes, image)),
@@ -570,4 +527,76 @@ TEST_CASE("ELF32 load leaves an existing address space unchanged on collision") 
     std::array<std::byte, 1> actual{};
     address_space.Read(occupied, actual);
     CHECK(actual == marker);
+}
+
+TEST_CASE("WU11-6 ELF ignored header fields and symbol redundancy follow API19") {
+    auto bytes = ValidElf();
+    bytes[6] = std::byte{0xff};
+    Put16(bytes, 40, 1);
+    Put16(bytes, 42, 1);
+    Put32(bytes, 0x134, 12);
+    Put32(bytes, 0x1b4, 7);
+    auto image = ogplay::loader::ParseElf32Arm(bytes);
+    auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+    REQUIRE(symbols.symbols.size() == 3);
+    CHECK(symbols.symbols[0].value.Value() == 7);
+    CHECK(symbols.symbols[1].name == "foo");
+    Put32(bytes, 0x130, 0x60000001);  // DT_SYMENT may also be absent.
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK(ogplay::loader::ReadElf32SymbolTable(bytes, image).symbols.size() == 3);
+    Put32(bytes, 20, 0);  // e_version is checked by VerifyElfHeader.
+    CHECK_THROWS_AS(ParseAndDiscard(bytes), ogplay::loader::ElfError);
+}
+
+TEST_CASE("WU11-6 ELF dynamic singleton tags use last value and first segment") {
+    auto bytes = ValidElf();
+    Put32(bytes, 0x100, ogplay::loader::kElfDynamicStringTable);
+    Put32(bytes, 0x104, 0xffffffff);  // Unused earlier pointer must not be dereferenced.
+    auto image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK(ogplay::loader::ReadElf32DynamicInfo(bytes, image).string_table.Value() == 0x10160);
+    // Add another PT_DYNAMIC without replacing the valid first segment.
+    Put16(bytes, 44, 3);
+    Put32(bytes, 116, ogplay::loader::kElfProgramDynamic);
+    Put32(bytes, 120, 0xffffffff);
+    Put32(bytes, 132, 8);
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK(ogplay::loader::ReadElf32DynamicInfo(bytes, image).soname == "sample.so");
+    Put32(bytes, 0x10c, 0xffffffff);  // The selected final pointer is still bounded.
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32DynamicInfo(bytes, image)), ogplay::loader::ElfError);
+}
+
+TEST_CASE("WU11-6 ELF REL uses fixed entries truncation and PLT first") {
+    auto bytes = RelocationElf();
+    Put32(bytes, 0x14c, 1);   // Ignored DT_RELENT.
+    Put32(bytes, 0x144, 17);  // Two complete entries.
+    auto image = ogplay::loader::ParseElf32Arm(bytes);
+    const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+    auto rel = ogplay::loader::ReadElf32Relocations(bytes, image, symbols);
+    REQUIRE(rel.relocations.size() == 3);
+    CHECK(rel.relocations.front().table == ogplay::loader::Elf32RelocationTableKind::procedure_linkage);
+    Put32(bytes, 0x154, 0x10210);  // The two tables may share entries.
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK(ogplay::loader::ReadElf32Relocations(bytes, image, symbols).relocations.size() == 3);
+    Put32(bytes, 0x140, 0x60000001);  // Missing size defaults to zero.
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK(ogplay::loader::ReadElf32Relocations(bytes, image, symbols).relocations.size() == 1);
+    Put32(bytes, 0x154, 0xffffffff);
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32Relocations(bytes, image, symbols)),
+                    ogplay::loader::ElfError);
+}
+
+TEST_CASE("WU11-6 ELF symbol stride and unused zero entry do not reject API19 images") {
+    auto bytes = ValidElf();
+    Put32(bytes, 0x134, 12);
+    Put32(bytes, 0x1b4, 7);
+    auto image = ogplay::loader::ParseElf32Arm(bytes);
+    const auto symbols = ogplay::loader::ReadElf32SymbolTable(bytes, image);
+    REQUIRE(symbols.symbols.size() == 3);
+    CHECK(symbols.symbols[0].value.Value() == 7);
+    CHECK(symbols.symbols[1].name == "foo");
+    Put32(bytes, 0x12c, 0xffffffff);
+    image = ogplay::loader::ParseElf32Arm(bytes);
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32SymbolTable(bytes, image)), ogplay::loader::ElfError);
 }

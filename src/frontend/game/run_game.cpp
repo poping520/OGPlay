@@ -293,14 +293,23 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (process_abi) audit = runtime::AuditAndroidNativeImports(
             loader::ApkSelectedNativeLibraries(native_inventory, *process_abi), bionic, system_sources);
         for (const auto& gap : audit.gaps) {
-            Write("OGPlay: preflight import: library=" + gap.library + " binding=" +
-                  (gap.weak ? "weak" : "strong") + " symbol=" + gap.symbol + "\n");
-            logger.Write(gap.weak ? core::LogLevel::warn : core::LogLevel::error,
-                "frontend.preflight", "unresolved native import", {},
-                {{"library", gap.library}, {"symbol", gap.symbol}, {"weak", gap.weak}}, kUnrestrictedLog);
+            Write("OGPlay: preflight import: library=" + gap.library +
+                  " referenced=" + (gap.relocation_referenced ? "true" : "false") +
+                  " binding=" + (gap.weak ? "weak" : "strong") + " symbol=" + gap.symbol + "\n");
+            logger.Write(!gap.relocation_referenced ? core::LogLevel::info
+                         : gap.weak                 ? core::LogLevel::warn
+                                                    : core::LogLevel::error,
+                         "frontend.preflight", "unresolved native import", {},
+                         {{"library", gap.library},
+                          {"symbol", gap.symbol},
+                          {"weak", gap.weak},
+                          {"relocation_referenced", gap.relocation_referenced}},
+                         kUnrestrictedLog);
         }
         Write("OGPlay: preflight imports: strong_missing=" + std::to_string(audit.strong_missing) +
-              " weak_missing=" + std::to_string(audit.weak_missing) + "\n");
+              " weak_missing=" + std::to_string(audit.weak_missing) +
+              " unused_strong_missing=" + std::to_string(audit.unused_strong_missing) +
+              " unused_weak_missing=" + std::to_string(audit.unused_weak_missing) + "\n");
         logger.Write(audit.strong_missing ? core::LogLevel::error : core::LogLevel::info,
             "frontend.preflight", "native import audit completed", {},
             {{"strong_missing", static_cast<std::uint64_t>(audit.strong_missing)},

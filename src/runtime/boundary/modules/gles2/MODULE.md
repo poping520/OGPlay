@@ -16,3 +16,7 @@ ES3 Context 复用的 glVertexAttribPointer 接受 HALF_FLOAT、INT/UNSIGNED_INT
 
 ATC 压缩上传使用下层解码回退；guest RAM/PBO 两条路径成功后维护相同 share-group
 纹理格式事实。ATC 禁止的子图更新在 guest 搬运前返回 GL_INVALID_OPERATION。
+
+API19 ELF 扩展入口独立于扩展字符串。ABI 相同的 ES3 核心别名仅在 current client
+version=3 时复用唯一 GLES3 handler；旧 Context 和其余未支持入口走记账/error/零返回，
+不读取输出指针、不声明扩展可用。

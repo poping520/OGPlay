@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "ogplay/memory/address_space.h"
+#include "ogplay/runtime/boundary/boundary_symbol.h"
 #include "runtime/boundary/services/gles_transfer_io.h"
 #include "gles1_draw.h"
 #include "gles1_query.h"
@@ -34,9 +35,9 @@ constexpr std::uint32_t kLinearAttenuation = 0x1208U;
 constexpr std::uint32_t kQuadraticAttenuation = 0x1209U;
 constexpr std::uint32_t kMaterialEmission = 0x1600U;
 constexpr std::uint32_t kMaterialAmbientAndDiffuse = 0x1602U;
-constexpr memory::GuestAddress kGles1QueryStringRegion{0x70010000U};
+constexpr auto kGles1QueryStringRegion = kBoundaryGles1Strings.Start();
 constexpr std::uint32_t kQueryStringSlotBytes = 12U * 1024U;
-constexpr std::uint32_t kQueryStringRegionBytes = 64U * 1024U;
+constexpr auto kQueryStringRegionBytes = kBoundaryGles1Strings.Size();
 constexpr std::uint32_t kTexture0 = 0x84C0U;
 constexpr std::uint32_t kTexture31 = 0x84DFU;
 

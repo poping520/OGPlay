@@ -1,4 +1,5 @@
 #include "log_module.h"
+#include "ogplay/runtime/boundary/boundary_symbol.h"
 
 #include <algorithm>
 #include <bit>
@@ -32,8 +33,8 @@ constexpr std::size_t kMaximumLogBytes = 4096U;
 constexpr std::size_t kMaximumBinaryLogBytes = 64U * 1024U;
 constexpr std::uint32_t kFirstFormatHandle = 0x6e004000U;
 constexpr std::uint32_t kHandleStride = 4U;
-constexpr std::uint32_t kEventTagPoolBegin = 0x70f00000U;
-constexpr std::uint32_t kEventTagPoolEnd = 0x71000000U;
+constexpr auto kEventTagPoolBegin = kBoundaryEventTags.Start().Value();
+constexpr auto kEventTagPoolEnd = static_cast<std::uint32_t>(kBoundaryEventTags.EndExclusive());
 
 constexpr std::int32_t kLogVerbose = 2;
 constexpr std::int32_t kLogDebug = 3;

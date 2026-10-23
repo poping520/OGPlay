@@ -1248,6 +1248,21 @@ status = "partial"
 test = "tests/frontend/surface_export_tests.cpp; tools.framework_contract_self_test"
 note = "DIAG-9/WU9-0b：固定 API19 ROM own-member 契约对 intrinsic 做 A1 可覆写性、A2 其余修饰符、B 同族/构造器缺口、C 多余成员、D 层级差分；稳定键基线只降不升。首轮 381/384/274/13/74，30 个 ROM 外私有类排除；E 纯 Java 清单未测，不代表语义或游戏兼容验收。"
 
+[tools.boundary_exports]
+status = "partial"
+test = "tools.boundary_exports_self_test"
+note = "DVM-271：生产 native_exports 对照固定 NDK r25c ARM API19 桩库，七个 HLE 库逐符号比较 MISSING/EXTRA，路径/SHA-256/符号固定，基线只降不升；libc/libdl intercept 排除。GLES/EGL 导出缺口已补齐，其他库差分待续；不代表调用语义或游戏兼容验收。"
+
+[runtime.gles_unimplemented]
+status = "partial"
+test = "tests/runtime/android_link_preflight_tests.cpp#DVM271; tests/runtime/boundary/integration/android_gles1_exports_tests.cpp#DVM271; tests/runtime/boundary/modules/gles1_fixed_tests.cpp#DVM271"
+note = "DVM-271：API19 GL ELF 名单与扩展可用性分开。核心别名复用 handler，blend/draw-texture 使用 ANGLE；未支持入口按 AOSP gl_unimplemented 记账、error 日志、零返回，不访问 guest 输出或增加扩展串。draw-texture 限两个 2D stage；ES3 别名仅 current version=3 执行。GPU 调用待沙盒外验收。"
+
+[runtime.egl_api19_exports]
+status = "partial"
+test = "tests/runtime/boundary/integration/android_gles1_exports_tests.cpp#DVM271"
+note = "DVM-271：lock/unlock 校验后无驱动 backing 返回 FALSE/BAD_DISPLAY，NV 时钟无支持返回 AAPCS32 宽零/BAD_DISPLAY，均记账；presentation-time 保存有符号 surface 生产者时间戳，不提供宿主呈现调度或新增扩展声明。GPU 调用待沙盒外验收。"
+
 [tools.dex_dependency_survey]
 status = "complete"
 test = "tools.dex_dependency_survey_self_test"

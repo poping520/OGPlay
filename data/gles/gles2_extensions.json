@@ -5,6 +5,778 @@
   "header_scope": "subset",
   "functions": [
     {
+      "name": "glBeginPerfMonitorAMD",
+      "thunk_id": 3,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "monitor",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindVertexArrayOES",
+      "thunk_id": 4,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "array",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glCompressedTexImage3DOES",
+      "thunk_id": 5,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "border",
+          "type": "GLint"
+        },
+        {
+          "name": "imageSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glCompressedTexSubImage3DOES",
+      "thunk_id": 6,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "imageSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glCopyTexSubImage3DOES",
+      "thunk_id": 7,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glCoverageMaskNV",
+      "thunk_id": 8,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mask",
+          "type": "GLboolean"
+        }
+      ]
+    },
+    {
+      "name": "glCoverageOperationNV",
+      "thunk_id": 9,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "operation",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteFencesNV",
+      "thunk_id": 10,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "fences",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDeletePerfMonitorsAMD",
+      "thunk_id": 11,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "monitors",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteVertexArraysOES",
+      "thunk_id": 12,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "arrays",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDisableDriverControlQCOM",
+      "thunk_id": 13,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDiscardFramebufferEXT",
+      "thunk_id": 14,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "numAttachments",
+          "type": "GLsizei"
+        },
+        {
+          "name": "attachments",
+          "type": "GLenum",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glEnableDriverControlQCOM",
+      "thunk_id": 15,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glEndPerfMonitorAMD",
+      "thunk_id": 16,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "monitor",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glEndTilingQCOM",
+      "thunk_id": 17,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "preserveMask",
+          "type": "GLbitfield"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetBufferPointervQCOM",
+      "thunk_id": 18,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory",
+          "indirection": 2
+        }
+      ]
+    },
+    {
+      "name": "glExtGetBuffersQCOM",
+      "thunk_id": 19,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "buffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxBuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numBuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetFramebuffersQCOM",
+      "thunk_id": 20,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxFramebuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numFramebuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetProgramBinarySourceQCOM",
+      "thunk_id": 21,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "shadertype",
+          "type": "GLenum"
+        },
+        {
+          "name": "source",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "length",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetProgramsQCOM",
+      "thunk_id": 22,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "programs",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxPrograms",
+          "type": "GLint"
+        },
+        {
+          "name": "numPrograms",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetRenderbuffersQCOM",
+      "thunk_id": 23,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxRenderbuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numRenderbuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetShadersQCOM",
+      "thunk_id": 24,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shaders",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxShaders",
+          "type": "GLint"
+        },
+        {
+          "name": "numShaders",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexLevelParameterivQCOM",
+      "thunk_id": 25,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexSubImageQCOM",
+      "thunk_id": 26,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "texels",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexturesQCOM",
+      "thunk_id": 27,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "textures",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxTextures",
+          "type": "GLint"
+        },
+        {
+          "name": "numTextures",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtIsProgramBinaryQCOM",
+      "thunk_id": 28,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glExtTexObjectStateOverrideiQCOM",
+      "thunk_id": 29,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glFinishFenceNV",
+      "thunk_id": 30,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferTexture2DMultisampleIMG",
+      "thunk_id": 31,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "textarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "samples",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferTexture3DOES",
+      "thunk_id": 32,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "textarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glGenFencesNV",
+      "thunk_id": 33,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "fences",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGenPerfMonitorsAMD",
+      "thunk_id": 34,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "monitors",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGenVertexArraysOES",
+      "thunk_id": 35,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "arrays",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
       "name": "glGetBufferPointervOES",
       "thunk_id": 0,
       "return": "void",
@@ -29,6 +801,342 @@
       ]
     },
     {
+      "name": "glGetDriverControlStringQCOM",
+      "thunk_id": 36,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "driverControlString",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetDriverControlsQCOM",
+      "thunk_id": 37,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "num",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "size",
+          "type": "GLsizei"
+        },
+        {
+          "name": "driverControls",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetFenceivNV",
+      "thunk_id": 38,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorCounterDataAMD",
+      "thunk_id": 39,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "monitor",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "dataSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "data",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "bytesWritten",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorCounterInfoAMD",
+      "thunk_id": 40,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "group",
+          "type": "GLuint"
+        },
+        {
+          "name": "counter",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "data",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorCounterStringAMD",
+      "thunk_id": 41,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "group",
+          "type": "GLuint"
+        },
+        {
+          "name": "counter",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "counterString",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorCountersAMD",
+      "thunk_id": 42,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "group",
+          "type": "GLuint"
+        },
+        {
+          "name": "numCounters",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxActiveCounters",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "counterSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "counters",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorGroupStringAMD",
+      "thunk_id": 43,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "group",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "groupString",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetPerfMonitorGroupsAMD",
+      "thunk_id": 44,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "numGroups",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "groupsSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "groups",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetProgramBinaryOES",
+      "thunk_id": 45,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "binaryFormat",
+          "type": "GLenum",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "binary",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glIsFenceNV",
+      "thunk_id": 46,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsVertexArrayOES",
+      "thunk_id": 47,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "array",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
       "name": "glMapBufferOES",
       "thunk_id": 1,
       "return": "void*",
@@ -40,6 +1148,317 @@
         {
           "name": "access",
           "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glMultiDrawArraysEXT",
+      "thunk_id": 48,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "first",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "primcount",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glMultiDrawElementsEXT",
+      "thunk_id": 49,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "indices",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory",
+          "indirection": 2
+        },
+        {
+          "name": "primcount",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glProgramBinaryOES",
+      "thunk_id": 50,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "binaryFormat",
+          "type": "GLenum"
+        },
+        {
+          "name": "binary",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "length",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glRenderbufferStorageMultisampleIMG",
+      "thunk_id": 51,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "samples",
+          "type": "GLsizei"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glSelectPerfMonitorCountersAMD",
+      "thunk_id": 52,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "monitor",
+          "type": "GLuint"
+        },
+        {
+          "name": "enable",
+          "type": "GLboolean"
+        },
+        {
+          "name": "group",
+          "type": "GLuint"
+        },
+        {
+          "name": "numCounters",
+          "type": "GLint"
+        },
+        {
+          "name": "counterList",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glSetFenceNV",
+      "thunk_id": 53,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        },
+        {
+          "name": "condition",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glStartTilingQCOM",
+      "thunk_id": 54,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLuint"
+        },
+        {
+          "name": "y",
+          "type": "GLuint"
+        },
+        {
+          "name": "width",
+          "type": "GLuint"
+        },
+        {
+          "name": "height",
+          "type": "GLuint"
+        },
+        {
+          "name": "preserveMask",
+          "type": "GLbitfield"
+        }
+      ]
+    },
+    {
+      "name": "glTestFenceNV",
+      "thunk_id": 55,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glTexImage3DOES",
+      "thunk_id": 56,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "border",
+          "type": "GLint"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "pixels",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glTexSubImage3DOES",
+      "thunk_id": 57,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "pixels",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
         }
       ]
     },

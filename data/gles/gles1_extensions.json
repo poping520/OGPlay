@@ -4,9 +4,266 @@
   "library": "libGLESv1_CM.so",
   "header_scope": "subset",
   "functions": [
-    {"name":"glBindFramebufferOES","thunk_id":0,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"framebuffer","type":"GLuint"}]},
-    {"name":"glBindRenderbufferOES","thunk_id":1,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"renderbuffer","type":"GLuint"}]},
-    {"name":"glCheckFramebufferStatusOES","thunk_id":2,"return":"GLenum","parameters":[{"name":"target","type":"GLenum"}]},
+    {
+      "name": "glAlphaFuncxOES",
+      "thunk_id": 22,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "func",
+          "type": "GLenum"
+        },
+        {
+          "name": "ref",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glBindFramebufferOES",
+      "thunk_id": 0,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "framebuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindRenderbufferOES",
+      "thunk_id": 1,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBindVertexArrayOES",
+      "thunk_id": 23,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "array",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glBlendEquationOES",
+      "thunk_id": 24,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBlendEquationSeparateOES",
+      "thunk_id": 25,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "modeRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "modeAlpha",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glBlendFuncSeparateOES",
+      "thunk_id": 26,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "srcRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "dstRGB",
+          "type": "GLenum"
+        },
+        {
+          "name": "srcAlpha",
+          "type": "GLenum"
+        },
+        {
+          "name": "dstAlpha",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glCheckFramebufferStatusOES",
+      "thunk_id": 2,
+      "return": "GLenum",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glClearColorxOES",
+      "thunk_id": 27,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "red",
+          "type": "GLfixed"
+        },
+        {
+          "name": "green",
+          "type": "GLfixed"
+        },
+        {
+          "name": "blue",
+          "type": "GLfixed"
+        },
+        {
+          "name": "alpha",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glClearDepthfOES",
+      "thunk_id": 28,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "d",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glClearDepthxOES",
+      "thunk_id": 29,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "depth",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glClipPlanefIMG",
+      "thunk_id": 30,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "p",
+          "type": "GLenum"
+        },
+        {
+          "name": "eqn",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glClipPlanefOES",
+      "thunk_id": 31,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "p",
+          "type": "GLenum"
+        },
+        {
+          "name": "eqn",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glClipPlanexIMG",
+      "thunk_id": 32,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "plane",
+          "type": "GLenum"
+        },
+        {
+          "name": "equation",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glClipPlanexOES",
+      "thunk_id": 33,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "plane",
+          "type": "GLenum"
+        },
+        {
+          "name": "equation",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glColor4xOES",
+      "thunk_id": 34,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "red",
+          "type": "GLfixed"
+        },
+        {
+          "name": "green",
+          "type": "GLfixed"
+        },
+        {
+          "name": "blue",
+          "type": "GLfixed"
+        },
+        {
+          "name": "alpha",
+          "type": "GLfixed"
+        }
+      ]
+    },
     {
       "name": "glCurrentPaletteMatrixOES",
       "thunk_id": 3,
@@ -18,13 +275,940 @@
         }
       ]
     },
-    {"name":"glDeleteFramebuffersOES","thunk_id":4,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"framebuffers","type":"GLuint","pointer":true,"direction":"in","nullable":false,"count":"arg0"}]},
-    {"name":"glDeleteRenderbuffersOES","thunk_id":5,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"renderbuffers","type":"GLuint","pointer":true,"direction":"in","nullable":false,"count":"arg0"}]},
-    {"name":"glFramebufferRenderbufferOES","thunk_id":6,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"renderbuffertarget","type":"GLenum"},{"name":"renderbuffer","type":"GLuint"}]},
-    {"name":"glFramebufferTexture2DOES","thunk_id":7,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"textarget","type":"GLenum"},{"name":"texture","type":"GLuint"},{"name":"level","type":"GLint"}]},
-    {"name":"glGenFramebuffersOES","thunk_id":8,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"framebuffers","type":"GLuint","pointer":true,"direction":"out","nullable":false,"count":"arg0"}]},
-    {"name":"glGenRenderbuffersOES","thunk_id":9,"return":"void","parameters":[{"name":"n","type":"GLsizei"},{"name":"renderbuffers","type":"GLuint","pointer":true,"direction":"out","nullable":false,"count":"arg0"}]},
-    {"name":"glGenerateMipmapOES","thunk_id":10,"return":"void","parameters":[{"name":"target","type":"GLenum"}]},
+    {
+      "name": "glDeleteFencesNV",
+      "thunk_id": 35,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "fences",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteFramebuffersOES",
+      "thunk_id": 4,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "arg0"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteRenderbuffersOES",
+      "thunk_id": 5,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "arg0"
+        }
+      ]
+    },
+    {
+      "name": "glDeleteVertexArraysOES",
+      "thunk_id": 36,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "arrays",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDepthRangefOES",
+      "thunk_id": 37,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLfloat"
+        },
+        {
+          "name": "f",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glDepthRangexOES",
+      "thunk_id": 38,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLfixed"
+        },
+        {
+          "name": "f",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glDisableDriverControlQCOM",
+      "thunk_id": 39,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glDiscardFramebufferEXT",
+      "thunk_id": 40,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "numAttachments",
+          "type": "GLsizei"
+        },
+        {
+          "name": "attachments",
+          "type": "GLenum",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexfOES",
+      "thunk_id": 41,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLfloat"
+        },
+        {
+          "name": "y",
+          "type": "GLfloat"
+        },
+        {
+          "name": "z",
+          "type": "GLfloat"
+        },
+        {
+          "name": "width",
+          "type": "GLfloat"
+        },
+        {
+          "name": "height",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexfvOES",
+      "thunk_id": 42,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coords",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "5"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexiOES",
+      "thunk_id": 43,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLint"
+        },
+        {
+          "name": "y",
+          "type": "GLint"
+        },
+        {
+          "name": "z",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLint"
+        },
+        {
+          "name": "height",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexivOES",
+      "thunk_id": 44,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coords",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "5"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexsOES",
+      "thunk_id": 45,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLshort"
+        },
+        {
+          "name": "y",
+          "type": "GLshort"
+        },
+        {
+          "name": "z",
+          "type": "GLshort"
+        },
+        {
+          "name": "width",
+          "type": "GLshort"
+        },
+        {
+          "name": "height",
+          "type": "GLshort"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexsvOES",
+      "thunk_id": 46,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coords",
+          "type": "GLshort",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "5"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexxOES",
+      "thunk_id": 47,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLfixed"
+        },
+        {
+          "name": "y",
+          "type": "GLfixed"
+        },
+        {
+          "name": "z",
+          "type": "GLfixed"
+        },
+        {
+          "name": "width",
+          "type": "GLfixed"
+        },
+        {
+          "name": "height",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glDrawTexxvOES",
+      "thunk_id": 48,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coords",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "5"
+        }
+      ]
+    },
+    {
+      "name": "glEnableDriverControlQCOM",
+      "thunk_id": 49,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glEndTilingQCOM",
+      "thunk_id": 50,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "preserveMask",
+          "type": "GLbitfield"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetBufferPointervQCOM",
+      "thunk_id": 51,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory",
+          "indirection": 2
+        }
+      ]
+    },
+    {
+      "name": "glExtGetBuffersQCOM",
+      "thunk_id": 52,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "buffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxBuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numBuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetFramebuffersQCOM",
+      "thunk_id": 53,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxFramebuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numFramebuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetProgramBinarySourceQCOM",
+      "thunk_id": 54,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        },
+        {
+          "name": "shadertype",
+          "type": "GLenum"
+        },
+        {
+          "name": "source",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "length",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetProgramsQCOM",
+      "thunk_id": 55,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "programs",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxPrograms",
+          "type": "GLint"
+        },
+        {
+          "name": "numPrograms",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetRenderbuffersQCOM",
+      "thunk_id": 56,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxRenderbuffers",
+          "type": "GLint"
+        },
+        {
+          "name": "numRenderbuffers",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetShadersQCOM",
+      "thunk_id": 57,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "shaders",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxShaders",
+          "type": "GLint"
+        },
+        {
+          "name": "numShaders",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexLevelParameterivQCOM",
+      "thunk_id": 58,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexSubImageQCOM",
+      "thunk_id": 59,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "xoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "yoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "zoffset",
+          "type": "GLint"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        },
+        {
+          "name": "depth",
+          "type": "GLsizei"
+        },
+        {
+          "name": "format",
+          "type": "GLenum"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "texels",
+          "type": "void",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtGetTexturesQCOM",
+      "thunk_id": 60,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "textures",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "maxTextures",
+          "type": "GLint"
+        },
+        {
+          "name": "numTextures",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glExtIsProgramBinaryQCOM",
+      "thunk_id": 61,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "program",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glExtTexObjectStateOverrideiQCOM",
+      "thunk_id": 62,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glFinishFenceNV",
+      "thunk_id": 63,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glFogxOES",
+      "thunk_id": 64,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glFogxvOES",
+      "thunk_id": 65,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "fog_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferRenderbufferOES",
+      "thunk_id": 6,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffertarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferTexture2DMultisampleIMG",
+      "thunk_id": 66,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "textarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        },
+        {
+          "name": "samples",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glFramebufferTexture2DOES",
+      "thunk_id": 7,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "textarget",
+          "type": "GLenum"
+        },
+        {
+          "name": "texture",
+          "type": "GLuint"
+        },
+        {
+          "name": "level",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glFrustumfOES",
+      "thunk_id": 67,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "l",
+          "type": "GLfloat"
+        },
+        {
+          "name": "r",
+          "type": "GLfloat"
+        },
+        {
+          "name": "b",
+          "type": "GLfloat"
+        },
+        {
+          "name": "t",
+          "type": "GLfloat"
+        },
+        {
+          "name": "n",
+          "type": "GLfloat"
+        },
+        {
+          "name": "f",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glFrustumxOES",
+      "thunk_id": 68,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "l",
+          "type": "GLfixed"
+        },
+        {
+          "name": "r",
+          "type": "GLfixed"
+        },
+        {
+          "name": "b",
+          "type": "GLfixed"
+        },
+        {
+          "name": "t",
+          "type": "GLfixed"
+        },
+        {
+          "name": "n",
+          "type": "GLfixed"
+        },
+        {
+          "name": "f",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glGenFencesNV",
+      "thunk_id": 69,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "fences",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGenFramebuffersOES",
+      "thunk_id": 8,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "framebuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "arg0"
+        }
+      ]
+    },
+    {
+      "name": "glGenRenderbuffersOES",
+      "thunk_id": 9,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "renderbuffers",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "arg0"
+        }
+      ]
+    },
+    {
+      "name": "glGenVertexArraysOES",
+      "thunk_id": 70,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "GLsizei"
+        },
+        {
+          "name": "arrays",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGenerateMipmapOES",
+      "thunk_id": 10,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        }
+      ]
+    },
     {
       "name": "glGetBufferPointervOES",
       "thunk_id": 11,
@@ -49,10 +1233,501 @@
         }
       ]
     },
-    {"name":"glGetFramebufferAttachmentParameterivOES","thunk_id":12,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"attachment","type":"GLenum"},{"name":"pname","type":"GLenum"},{"name":"params","type":"GLint","pointer":true,"direction":"out","nullable":false,"count":"1"}]},
-    {"name":"glGetRenderbufferParameterivOES","thunk_id":13,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"pname","type":"GLenum"},{"name":"params","type":"GLint","pointer":true,"direction":"out","nullable":false,"count":"1"}]},
-    {"name":"glIsFramebufferOES","thunk_id":14,"return":"GLboolean","parameters":[{"name":"framebuffer","type":"GLuint"}]},
-    {"name":"glIsRenderbufferOES","thunk_id":15,"return":"GLboolean","parameters":[{"name":"renderbuffer","type":"GLuint"}]},
+    {
+      "name": "glGetClipPlanefOES",
+      "thunk_id": 71,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "plane",
+          "type": "GLenum"
+        },
+        {
+          "name": "equation",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glGetClipPlanexOES",
+      "thunk_id": 72,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "plane",
+          "type": "GLenum"
+        },
+        {
+          "name": "equation",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "4"
+        }
+      ]
+    },
+    {
+      "name": "glGetDriverControlStringQCOM",
+      "thunk_id": 73,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "driverControl",
+          "type": "GLuint"
+        },
+        {
+          "name": "bufSize",
+          "type": "GLsizei"
+        },
+        {
+          "name": "length",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "driverControlString",
+          "type": "GLchar",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetDriverControlsQCOM",
+      "thunk_id": 74,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "num",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "size",
+          "type": "GLsizei"
+        },
+        {
+          "name": "driverControls",
+          "type": "GLuint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetFenceivNV",
+      "thunk_id": 75,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetFixedvOES",
+      "thunk_id": 76,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "data",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "state_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetFramebufferAttachmentParameterivOES",
+      "thunk_id": 12,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "attachment",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetLightxvOES",
+      "thunk_id": 77,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "light",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "light_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetMaterialxvOES",
+      "thunk_id": 78,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "material_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetRenderbufferParameterivOES",
+      "thunk_id": 13,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexEnvxvOES",
+      "thunk_id": 79,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "tex_env_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexGenfvOES",
+      "thunk_id": 80,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexGenivOES",
+      "thunk_id": 81,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexGenxvOES",
+      "thunk_id": 82,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glGetTexParameterxvOES",
+      "thunk_id": 83,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glIsFenceNV",
+      "thunk_id": 84,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsFramebufferOES",
+      "thunk_id": 14,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "framebuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsRenderbufferOES",
+      "thunk_id": 15,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "renderbuffer",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glIsVertexArrayOES",
+      "thunk_id": 85,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "array",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glLightModelxOES",
+      "thunk_id": 86,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glLightModelxvOES",
+      "thunk_id": 87,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "light_model_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glLightxOES",
+      "thunk_id": 88,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "light",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glLightxvOES",
+      "thunk_id": 89,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "light",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "light_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glLineWidthxOES",
+      "thunk_id": 90,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "width",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glLoadMatrixxOES",
+      "thunk_id": 91,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "m",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "16"
+        }
+      ]
+    },
     {
       "name": "glLoadPaletteFromModelViewMatrixOES",
       "thunk_id": 16,
@@ -71,6 +1746,48 @@
         {
           "name": "access",
           "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glMaterialxOES",
+      "thunk_id": 92,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glMaterialxvOES",
+      "thunk_id": 93,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "face",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "material_count(pname)"
         }
       ]
     },
@@ -101,7 +1818,668 @@
         }
       ]
     },
-    {"name":"glRenderbufferStorageOES","thunk_id":19,"return":"void","parameters":[{"name":"target","type":"GLenum"},{"name":"internalformat","type":"GLenum"},{"name":"width","type":"GLsizei"},{"name":"height","type":"GLsizei"}]},
+    {
+      "name": "glMultMatrixxOES",
+      "thunk_id": 94,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "m",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "16"
+        }
+      ]
+    },
+    {
+      "name": "glMultiDrawArraysEXT",
+      "thunk_id": 95,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "first",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "primcount",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glMultiDrawElementsEXT",
+      "thunk_id": 96,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "GLenum"
+        },
+        {
+          "name": "count",
+          "type": "GLsizei",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "type",
+          "type": "GLenum"
+        },
+        {
+          "name": "indices",
+          "type": "void",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory",
+          "indirection": 2
+        },
+        {
+          "name": "primcount",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glMultiTexCoord4xOES",
+      "thunk_id": 97,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "texture",
+          "type": "GLenum"
+        },
+        {
+          "name": "s",
+          "type": "GLfixed"
+        },
+        {
+          "name": "t",
+          "type": "GLfixed"
+        },
+        {
+          "name": "r",
+          "type": "GLfixed"
+        },
+        {
+          "name": "q",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glNormal3xOES",
+      "thunk_id": 98,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "nx",
+          "type": "GLfixed"
+        },
+        {
+          "name": "ny",
+          "type": "GLfixed"
+        },
+        {
+          "name": "nz",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glOrthofOES",
+      "thunk_id": 99,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "l",
+          "type": "GLfloat"
+        },
+        {
+          "name": "r",
+          "type": "GLfloat"
+        },
+        {
+          "name": "b",
+          "type": "GLfloat"
+        },
+        {
+          "name": "t",
+          "type": "GLfloat"
+        },
+        {
+          "name": "n",
+          "type": "GLfloat"
+        },
+        {
+          "name": "f",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glOrthoxOES",
+      "thunk_id": 100,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "l",
+          "type": "GLfixed"
+        },
+        {
+          "name": "r",
+          "type": "GLfixed"
+        },
+        {
+          "name": "b",
+          "type": "GLfixed"
+        },
+        {
+          "name": "t",
+          "type": "GLfixed"
+        },
+        {
+          "name": "n",
+          "type": "GLfixed"
+        },
+        {
+          "name": "f",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glPointParameterxOES",
+      "thunk_id": 101,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glPointParameterxvOES",
+      "thunk_id": 102,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "point_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glPointSizexOES",
+      "thunk_id": 103,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "size",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glPolygonOffsetxOES",
+      "thunk_id": 104,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "factor",
+          "type": "GLfixed"
+        },
+        {
+          "name": "units",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glQueryMatrixxOES",
+      "thunk_id": 105,
+      "return": "GLbitfield",
+      "parameters": [
+        {
+          "name": "mantissa",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        },
+        {
+          "name": "exponent",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "out",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glRenderbufferStorageMultisampleIMG",
+      "thunk_id": 106,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "samples",
+          "type": "GLsizei"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glRenderbufferStorageOES",
+      "thunk_id": 19,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "internalformat",
+          "type": "GLenum"
+        },
+        {
+          "name": "width",
+          "type": "GLsizei"
+        },
+        {
+          "name": "height",
+          "type": "GLsizei"
+        }
+      ]
+    },
+    {
+      "name": "glRotatexOES",
+      "thunk_id": 107,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "angle",
+          "type": "GLfixed"
+        },
+        {
+          "name": "x",
+          "type": "GLfixed"
+        },
+        {
+          "name": "y",
+          "type": "GLfixed"
+        },
+        {
+          "name": "z",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glSampleCoveragexOES",
+      "thunk_id": 108,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "value",
+          "type": "GLclampx"
+        },
+        {
+          "name": "invert",
+          "type": "GLboolean"
+        }
+      ]
+    },
+    {
+      "name": "glScalexOES",
+      "thunk_id": 109,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLfixed"
+        },
+        {
+          "name": "y",
+          "type": "GLfixed"
+        },
+        {
+          "name": "z",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glSetFenceNV",
+      "thunk_id": 110,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        },
+        {
+          "name": "condition",
+          "type": "GLenum"
+        }
+      ]
+    },
+    {
+      "name": "glStartTilingQCOM",
+      "thunk_id": 111,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLuint"
+        },
+        {
+          "name": "y",
+          "type": "GLuint"
+        },
+        {
+          "name": "width",
+          "type": "GLuint"
+        },
+        {
+          "name": "height",
+          "type": "GLuint"
+        },
+        {
+          "name": "preserveMask",
+          "type": "GLbitfield"
+        }
+      ]
+    },
+    {
+      "name": "glTestFenceNV",
+      "thunk_id": 112,
+      "return": "GLboolean",
+      "parameters": [
+        {
+          "name": "fence",
+          "type": "GLuint"
+        }
+      ]
+    },
+    {
+      "name": "glTexEnvxOES",
+      "thunk_id": 113,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glTexEnvxvOES",
+      "thunk_id": 114,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "tex_env_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glTexGenfOES",
+      "thunk_id": 115,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfloat"
+        }
+      ]
+    },
+    {
+      "name": "glTexGenfvOES",
+      "thunk_id": 116,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfloat",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glTexGeniOES",
+      "thunk_id": 117,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLint"
+        }
+      ]
+    },
+    {
+      "name": "glTexGenivOES",
+      "thunk_id": 118,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLint",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glTexGenxOES",
+      "thunk_id": 119,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glTexGenxvOES",
+      "thunk_id": 120,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "coord",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "opaque; gl_unimplemented does not access guest memory"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameterxOES",
+      "thunk_id": 121,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "param",
+          "type": "GLfixed"
+        }
+      ]
+    },
+    {
+      "name": "glTexParameterxvOES",
+      "thunk_id": 122,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "target",
+          "type": "GLenum"
+        },
+        {
+          "name": "pname",
+          "type": "GLenum"
+        },
+        {
+          "name": "params",
+          "type": "GLfixed",
+          "pointer": true,
+          "direction": "in",
+          "nullable": false,
+          "count": "tex_parameter_count(pname)"
+        }
+      ]
+    },
+    {
+      "name": "glTranslatexOES",
+      "thunk_id": 123,
+      "return": "void",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "GLfixed"
+        },
+        {
+          "name": "y",
+          "type": "GLfixed"
+        },
+        {
+          "name": "z",
+          "type": "GLfixed"
+        }
+      ]
+    },
     {
       "name": "glUnmapBufferOES",
       "thunk_id": 20,

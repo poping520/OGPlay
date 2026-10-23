@@ -18,6 +18,9 @@ void BoundaryThunkArena::Map(const std::size_t slot_count) {
     if (IsMapped()) {
         throw std::logic_error("Android boundary thunks are already mapped");
     }
+    if (slot_count == 0U || slot_count > kBoundaryThunkCapacity) {
+        throw std::length_error("Android boundary thunk arena exceeds its guest range");
+    }
     const auto page_size = address_space_.PageSize();
     const auto code_bytes = slot_count * kThunkStride;
     const auto arena_bytes =

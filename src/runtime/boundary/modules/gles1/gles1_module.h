@@ -5,6 +5,9 @@
 #include <stdexcept>
 
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/generated/gles1_catalog.h"
+#include "ogplay/gles/generated/gles1_extensions_catalog.h"
+#include "runtime/boundary/services/gles_api19.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
 #include "runtime/boundary/modules/gles1/gles1_support.h"
@@ -38,6 +41,25 @@ public:
 
     template <gles::GlesApi Api, gles::GlesThunkId Id>
     std::uint32_t Invoke(const A32CallFrame& call) {
+        if constexpr (Api == gles::GlesApi::gles1_extensions) {
+            constexpr auto function = gles::generated::gles1_extensions::kFunctions[Id];
+            constexpr auto alias = GlesCoreAlias(function.name, gles::generated::gles1::kFunctions);
+            if constexpr (alias != kNoGlesAlias) {
+                static_assert(function.abi_word_count == gles::generated::gles1::kFunctions[alias].abi_word_count);
+                return Invoke<gles::GlesApi::gles1, alias>(call);
+            } else if constexpr (Id >= 22U) {
+                return Api19Extension(call, function.name);
+            } else {
+                return InvokeBound<Api, Id>(call);
+            }
+        } else {
+            return InvokeBound<Api, Id>(call);
+        }
+    }
+
+private:
+    template <gles::GlesApi Api, gles::GlesThunkId Id>
+    std::uint32_t InvokeBound(const A32CallFrame& call) {
         std::scoped_lock execution_lock(graphics_.execution_mutex);
         graphics_.ActivateCurrentContext();
         constexpr bool draw_call = Api == gles::GlesApi::gles1 &&
@@ -112,6 +134,7 @@ public:
     }
 
 private:
+    std::uint32_t Api19Extension(const A32CallFrame& call, std::string_view symbol);
     std::uint32_t InvokeBounds(const A32CallFrame& call, std::uint32_t array,
                                std::uint32_t client_texture,
                                std::int32_t size, std::uint32_t type,

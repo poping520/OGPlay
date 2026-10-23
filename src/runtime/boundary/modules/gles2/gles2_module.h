@@ -9,6 +9,8 @@
 #include <string>
 
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/generated/gles2_extensions_catalog.h"
+#include "runtime/boundary/services/gles_api19.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
 #include "runtime/boundary/modules/gles1/gles1_support.h"
@@ -32,7 +34,9 @@ public:
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return calls_; }
     template <gles::GlesThunkId Id>
     std::uint32_t InvokeExtension(const A32CallFrame& call) {
-        static_assert(Id < 3);
+        if constexpr (Id >= 3U)
+            return UnimplementedGl(calls_, call, "libGLESv2.so",
+                                   gles::generated::gles2_extensions::kFunctions[Id].name);
         std::scoped_lock execution_lock(graphics_.execution_mutex);
         graphics_.ActivateCurrentContext();
         try {

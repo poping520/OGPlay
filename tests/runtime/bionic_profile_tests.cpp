@@ -1,4 +1,6 @@
 #include <set>
+#include <limits>
+#include "runtime/boundary/core/boundary_thunk_arena.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -429,4 +431,59 @@ TEST_CASE("Bionic virtual SO publishes complete exports for late imports") {
         extension.link_namespace, extension.scope, 2);
     REQUIRE(resolved.values[1].has_value());
     CHECK(*resolved.values[1] == ogplay::memory::GuestAddress{0x70000205U});
+}
+
+TEST_CASE("DVM271 production thunk mappings cannot overlap fixed boundary data") {
+    using namespace ogplay::runtime;
+    for (const auto api : {AndroidApi::api19, AndroidApi::api22, AndroidApi::api23}) {
+        const auto& catalog = AndroidBoundaryCatalog(api);
+        CAPTURE(static_cast<int>(api));
+        const auto symbols = detail::BuildAndroidBoundarySymbols(api);
+        const auto descriptors = detail::BuildAndroidBoundaryDescriptors(symbols);
+        const auto slot_count = descriptors.size();
+        CAPTURE(slot_count);
+        CHECK(slot_count >= catalog.SlotCount());
+        CHECK(slot_count > 1024U);
+        ogplay::memory::AddressSpace memory;
+        BoundaryThunkArena arena(memory);
+        arena.Map(slot_count);
+        const auto mappings = memory.DescribeMappings();
+        REQUIRE(mappings.size() == 1U);
+        const auto actual = mappings.front().range;
+        CHECK(actual.Start().Value() == kBionicHleThunkBegin);
+        CHECK(actual.Size() == ((slot_count * 4U + memory.PageSize() - 1U) / memory.PageSize()) * memory.PageSize());
+        // Keep at least one whole extra mapped page, beyond catalog growth today.
+        CHECK(actual.EndExclusive() + memory.PageSize() <= kBionicHleThunkEnd);
+        for (const auto& fixed : kBoundaryFixedRegions) {
+            CHECK_FALSE(actual.Overlaps(fixed));
+            CHECK_NOTHROW(
+                memory.Map(fixed, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write));
+        }
+    }
+}
+
+TEST_CASE("DVM271 oversized thunk arenas and catalogs fail before mapping or address wrap") {
+    using namespace ogplay::runtime;
+    ogplay::memory::AddressSpace memory;
+    BoundaryThunkArena arena(memory);
+    for (const auto slots : {std::size_t{kBoundaryThunkCapacity} + 1U, std::numeric_limits<std::size_t>::max()}) {
+        CHECK_THROWS_AS(arena.Map(slots), std::length_error);
+        CHECK_FALSE(arena.IsMapped());
+        CHECK(memory.DescribeMappings().empty());
+    }
+    // The exact limit is usable, including the last slot, and cannot touch data.
+    arena.Map(kBoundaryThunkCapacity);
+    CHECK(arena.DecodeSlot(kBionicHleThunkEnd - 4U) == kBoundaryThunkCapacity - 1U);
+    CHECK(BoundaryThunkArena::SlotForAddress(kBionicHleThunkEnd) == BoundaryThunkArena::InvalidSlot());
+    CHECK_NOTHROW(memory.Map(kBoundaryGles1Strings, ogplay::memory::PageProtection::read));
+
+    std::vector<std::string> names;
+    names.reserve(kBoundaryThunkCapacity + 1U);
+    for (std::uint32_t i = 0; i <= kBoundaryThunkCapacity; ++i)
+        names.push_back("overflow_" + std::to_string(i));
+    std::vector<BoundaryExportDefinition> exports;
+    for (std::uint32_t i = 0; i <= kBoundaryThunkCapacity; ++i)
+        exports.push_back({names[i], static_cast<std::uint16_t>(i)});
+    const std::array definitions{BoundaryModuleDefinition{"overflow.so", {}, exports}};
+    CHECK_THROWS_AS(BoundaryCatalog(AndroidApi::api19, definitions), std::length_error);
 }

@@ -893,8 +893,7 @@ TEST_CASE("Android boundary publishes GLES1 core without silent handlers") {
 
 TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     BoundaryFixture fixture;
-    CHECK(ogplay::gles::GlesFunctionCount(
-              ogplay::gles::GlesApi::gles1_extensions) == 22);
+    CHECK(ogplay::gles::GlesFunctionCount(ogplay::gles::GlesApi::gles1_extensions) == 124);
     CHECK(ogplay::gles::FindGlesFunction(
               ogplay::gles::GlesApi::gles1_extensions,
               "glCurrentPaletteMatrixOES") == 3U);
@@ -978,4 +977,129 @@ TEST_CASE("Android boundary publishes required GLES1 extensions separately") {
     CHECK(fixture.Call("libGLESv1_CM.so", "glDrawArrays", {0x0000U, 0U, 1U}) == 0U);
     CHECK(fixture.Call("libGLESv1_CM.so", "glGetError") == 0x0502U);
     fixture.boundary.CloseManagedSurface();
+}
+
+TEST_CASE("DVM271 headless GL unimplemented exports account log and leave guest memory untouched") {
+    BoundaryFixture f;
+    const auto before = f.ledger.Unimplemented().size();
+    f.bus.Write32(f.output, 0x12345678U, 1U);
+    CHECK(f.Call("libGLESv1_CM.so", "glGetTexGenfvOES", {0U, 0U, 0xffffffffU}) == 0U);
+    CHECK(FastBoundaryCall(f, "libGLESv2.so", "glGetPerfMonitorGroupsAMD", {0U, 99U, 0xffffffffU}) == 0U);
+    CHECK(f.bus.Read32(f.output, 1U) == 0x12345678U);
+    const auto hits = f.ledger.Unimplemented();
+    REQUIRE(hits.size() == before + 1U);
+    const auto hit =
+        std::find_if(hits.begin(), hits.end(), [](const auto& h) { return h.id == "runtime.gles_unimplemented"; });
+    REQUIRE(hit != hits.end());
+    CHECK(hit->count == 2U);
+    const auto records = f.logger.Snapshot(ogplay::core::LogLevel::error, "guest.gles");
+    REQUIRE(records.size() == 2U);
+    CHECK(records[0].message == "called unimplemented OpenGL ES API");
+    CHECK(records[1].message == records[0].message);
+    CHECK(std::get<std::string>(records[0].fields[1].value) == "glGetTexGenfvOES");
+    CHECK(std::get<std::string>(records[1].fields[1].value) == "glGetPerfMonitorGroupsAMD");
+}
+
+TEST_CASE("DVM271 headless EGL missing driver entries return API19 errors and wide zero") {
+    BoundaryFixture f;
+    CHECK(f.Call("libEGL.so", "eglLockSurfaceKHR", {99U, 99U, 0xffffffffU}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3008U);
+    CHECK(f.Call("libEGL.so", "eglUnlockSurfaceKHR", {1U, 99U}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3001U);
+    REQUIRE(f.Call("libEGL.so", "eglInitialize", {1U}) == 1U);
+    CHECK(f.Call("libEGL.so", "eglLockSurfaceKHR", {1U, 99U, 0xffffffffU}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300DU);
+    CHECK(f.Call("libEGL.so", "eglPresentationTimeANDROID", {1U, 99U, 0xffffffffU, 0x80000000U}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x300DU);
+    for (const auto name : {"eglGetSystemTimeNV", "eglGetSystemTimeFrequencyNV"}) {
+        CAPTURE(name);
+        const auto address = f.boundary.Symbols().Lookup("libEGL.so", name);
+        REQUIRE(address.has_value());
+        std::array<std::uint32_t, 16> registers{};
+        registers[0] = 0x12345678U;
+        registers[1] = 0x87654321U;
+        registers[2] = 0x55555555U;
+        registers[13] = f.stack.Value();
+        ogplay::cpu::A32HostCallContext context{registers, 1U,
+                                                ogplay::memory::GuestAddress{address->Value() & ~UINT32_C(1)}};
+        const auto hook = f.boundary.FastHostCallHook();
+        REQUIRE(hook.invoke(hook.userdata, 2U, context) == ogplay::cpu::HostCallResult::handled);
+        CHECK(registers[0] == 0U);
+        CHECK(registers[1] == 0U);
+        CHECK(registers[2] == 0x55555555U);
+        CHECK(f.Call("libEGL.so", "eglGetError") == 0x3008U);
+    }
+}
+
+TEST_CASE("DVM271 GPU ANGLE blend aliases and draw texture preserve guest state and sample crop") {
+    BoundaryFixture f;
+    PrepareNativeEgl(f);
+    REQUIRE(f.Call("libEGL.so", "eglMakeCurrent", {1U, 3U, 3U, 4U}) == 1U);
+    const auto gl = [&f](const std::string_view name, std::initializer_list<std::uint32_t> args) {
+        const auto address = f.boundary.Symbols().Lookup("libGLESv1_CM.so", name);
+        REQUIRE(address.has_value());
+        return BoundaryCallAddress(f, address->Value(), std::span(args.begin(), args.size()));
+    };
+    gl("glBlendEquationOES", {0x800BU});
+    f.Call("libGLESv2.so", "glGetIntegerv", {0x8009U, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1U) == 0x800BU);
+    gl("glBlendEquationSeparateOES", {0x800AU, 0x8006U});
+    f.Call("libGLESv2.so", "glGetIntegerv", {0x8009U, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1U) == 0x800AU);
+    gl("glBlendFuncSeparateOES", {1U, 0U, 1U, 0U});
+    gl("glBlendEquationOES", {0x8006U});
+    gl("glGenTextures", {1U, f.output.Value()});
+    const auto texture = f.bus.Read32(f.output, 1U);
+    gl("glBindTexture", {0x0DE1U, texture});
+    f.bus.Write32(f.output, 0xff0000ffU, 1U);
+    f.bus.Write32(f.output.Add(4U), 0xff00ff00U, 1U);
+    f.bus.Write32(f.output.Add(8U), 0xffff0000U, 1U);
+    f.bus.Write32(f.output.Add(12U), 0xffffffffU, 1U);
+    gl("glTexImage2D", {0x0DE1U, 0U, 0x1908U, 2U, 2U, 0U, 0x1908U, 0x1401U, f.output.Value()});
+    gl("glTexParameteri", {0x0DE1U, 0x2801U, 0x2600U});
+    gl("glTexParameteri", {0x0DE1U, 0x2800U, 0x2600U});
+    for (std::size_t i = 0; i < 4U; ++i)
+        f.bus.Write32(f.output.Add(i * 4U), i >= 2U ? 2U : 0U, 1U);
+    gl("glTexParameteriv", {0x0DE1U, 0x8B9DU, f.output.Value()});
+    gl("glEnable", {0x0DE1U});
+    gl("glEnable", {0x0B44U});  // culling must not affect DrawTex
+    gl("glCullFace", {0x0408U});
+    gl("glTranslatef", {std::bit_cast<std::uint32_t>(100.0F), 0U, 0U});
+    gl("glDrawTexfOES", {0U, 0U, 0U, std::bit_cast<std::uint32_t>(4.0F), std::bit_cast<std::uint32_t>(3.0F)});
+    REQUIRE(gl("glGetError", {}) == 0U);
+    gl("glReadPixels", {0U, 0U, 1U, 1U, 0x1908U, 0x1401U, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1U) == 0xff0000ffU);
+    gl("glReadPixels", {3U, 2U, 1U, 1U, 0x1908U, 0x1401U, f.output.Value()});
+    CHECK(f.bus.Read32(f.output, 1U) == 0xffffffffU);
+    CHECK(gl("glIsEnabled", {0x0B44U}) == 1U);
+    gl("glGetFloatv", {0x0BA6U, f.output.Value()});
+    CHECK(std::bit_cast<float>(f.bus.Read32(f.output.Add(48U), 1U)) == doctest::Approx(100.0F));
+    gl("glDrawTexiOES", {0U, 0U, 0U, 0U, 3U});
+    CHECK(gl("glGetError", {}) == 0x0501U);
+    CHECK(f.Call("libEGL.so", "eglLockSurfaceKHR", {1U, 3U, 0xffffffffU}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3008U);
+    CHECK(f.Call("libEGL.so", "eglUnlockSurfaceKHR", {1U, 3U}) == 0U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3008U);
+    CHECK(f.Call("libEGL.so", "eglPresentationTimeANDROID", {1U, 3U, 123U, 0U}) == 1U);
+    CHECK(f.Call("libEGL.so", "eglGetError") == 0x3000U);
+    const auto string_address = gl("glGetString", {0x1F03U});
+    std::string extensions;
+    for (std::uint32_t i = 0; i < 4096U; ++i) {
+        const auto ch = f.bus.Read8(ogplay::memory::GuestAddress{string_address}.Add(i), 1U);
+        if (ch == 0U) break;
+        extensions.push_back(static_cast<char>(ch));
+    }
+    CHECK(extensions.find("GL_OES_draw_texture") == std::string::npos);
+    CHECK(extensions.find("GL_NV_fence") == std::string::npos);
+}
+
+TEST_CASE("DVM271 headless ES3 aliases use unimplemented driver semantics without a current ES3 context") {
+    BoundaryFixture f;
+    CHECK(f.Call("libGLESv1_CM.so", "glGenVertexArraysOES", {1U, 0xffffffffU}) == 0U);
+    CHECK(f.Call("libGLESv2.so", "glGetProgramBinaryOES", {99U, 0U, 0xffffffffU, 0xffffffffU}) == 0U);
+    const auto hits = f.ledger.Unimplemented();
+    REQUIRE(hits.size() == 1U);
+    CHECK(hits[0].id == "runtime.gles_unimplemented");
+    CHECK(hits[0].count == 2U);
+    CHECK(f.logger.Snapshot(ogplay::core::LogLevel::error, "guest.gles").size() == 2U);
 }

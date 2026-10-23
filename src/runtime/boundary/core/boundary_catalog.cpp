@@ -54,6 +54,9 @@ BoundaryCatalog::BoundaryCatalog(
                 }
                 export_.address = definition_export.data_address;
             } else {
+                if (slot_count_ >= kBoundaryThunkCapacity) {
+                    throw std::length_error("Android boundary thunk catalog exceeds its guest range");
+                }
                 export_.address = memory::GuestAddress{
                     kBionicHleThunkBegin + slot_count_ * kThunkStride + 1U};
                 ++slot_count_;

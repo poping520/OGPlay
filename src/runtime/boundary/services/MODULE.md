@@ -48,3 +48,7 @@ context/surface/尺寸变更、软件帧、覆盖及关闭退役旧读回代际�
 GraphicsBoundaryContext 承接创建前固定的强类型厂商格式策略与 Logger，不读取 Profile。
 每个首次绑定的 Context 记录 native/software/available/published/masked 格式，查询日志
 不要求跨线程执行 GL；未绑定仍遵守原错误与 null 语义。见 ADR-0128。
+
+SharedGlState 的 texture object 元数据还保存成功定义的 level-zero 尺寸与
+OES_draw_texture crop；跨 share group 引用共用，删除时清理，Context 切换不丢失。
+GLES API19 无驱动回退共用显式 logger/ledger 服务，不拥有会话或图形状态。

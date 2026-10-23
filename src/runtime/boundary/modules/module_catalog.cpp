@@ -31,8 +31,8 @@ struct NamedExport final {
 constexpr std::array kBitmapExports{OGPLAY_BITMAP_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kAndroidExports{
     OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
-constexpr std::array kEglExports{
-    OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)};
+constexpr std::array kEglExports{OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_NAMED_METADATA)
+                                     OGPLAY_EGL_API19_EXPORTS(OGPLAY_NAMED_METADATA)};
 constexpr std::array kGles1BoundsExports{
     OGPLAY_GLES1_BOUNDS_EXPORTS(OGPLAY_NAMED_METADATA)
     OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_NAMED_METADATA)};

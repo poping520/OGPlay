@@ -350,10 +350,12 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/boundary/modules/android/android_surface.cpp
     src/runtime/boundary/modules/android/android_sensor.cpp
     src/runtime/boundary/modules/android/android_asset.cpp
+    src/runtime/boundary/modules/egl/egl_api19.cpp
     src/runtime/boundary/modules/egl/egl_module.cpp
     src/runtime/boundary/modules/gles1/gles1_bounds.cpp
     src/runtime/boundary/modules/gles1/gles1_completion.cpp
     src/runtime/boundary/modules/gles1/gles1_dispatch.cpp
+    src/runtime/boundary/modules/gles1/gles1_draw_texture.cpp
     src/runtime/boundary/modules/gles1/gles1_draw.cpp
     src/runtime/boundary/modules/gles1/gles1_fixed.cpp
     src/runtime/boundary/modules/gles1/gles1_query.cpp

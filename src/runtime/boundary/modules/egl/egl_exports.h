@@ -48,3 +48,11 @@
 #define OGPLAY_GLES_IMAGE_EXPORTS(X) \
     X("glEGLImageTargetTexture2DOES", 0xF100, 2, ImageTexture) \
     X("glEGLImageTargetRenderbufferStorageOES", 0xF101, 2, ImageRenderbuffer)
+
+// Kept separate because the NV clock queries return two AAPCS32 words.
+#define OGPLAY_EGL_API19_EXPORTS(X)                                                                                    \
+    X("eglLockSurfaceKHR", 42, 3, LockSurface)                                                                         \
+    X("eglUnlockSurfaceKHR", 43, 2, UnlockSurface)                                                                     \
+    X("eglPresentationTimeANDROID", 44, 4, PresentationTime)                                                           \
+    X("eglGetSystemTimeFrequencyNV", 45, 0, GetSystemTimeFrequency)                                                    \
+    X("eglGetSystemTimeNV", 46, 0, GetSystemTime)

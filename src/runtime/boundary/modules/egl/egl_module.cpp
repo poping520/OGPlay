@@ -106,7 +106,7 @@ constexpr std::uint32_t kEglWindowBit = 0x0004U;
 constexpr std::uint32_t kEglPbufferBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEsBit = 0x0001U;
 constexpr std::uint32_t kEglOpenGlEs2Bit = 0x0004U;
-constexpr memory::GuestAddress kEglStringPage{0x71C00000U};
+constexpr auto kEglStringPage = kBoundaryEglStrings.Start();
 constexpr std::size_t kMaximumProcNameBytes = 1024U;
 constexpr std::size_t kMaximumAttributeWords = 64U;
 
@@ -318,6 +318,9 @@ std::uint32_t EglModule::PublishQueryString(const std::uint32_t name, const std:
     }
     std::scoped_lock lock(mutex_);
     if (!strings_mapped_) {
+        if (calls_.address_space.PageSize() > kBoundaryEglStrings.Size()) {
+            throw std::length_error("EGL string page exceeds its guest reservation");
+        }
         const auto page = memory::GuestRange{kEglStringPage, calls_.address_space.PageSize()};
         calls_.address_space.Map(page, memory::PageProtection::read | memory::PageProtection::write);
         for (const auto& entry : kPublishedStrings) {

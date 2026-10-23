@@ -10,17 +10,17 @@
 
 namespace ogplay::runtime {
 
-inline constexpr memory::GuestAddress kOpenSlesAbiBegin{0x71800000U};
-inline constexpr memory::GuestAddress kOpenSlesIidValuesBegin{0x71801000U};
-inline constexpr memory::GuestAddress kOpenSlesObjectVtable{0x71802000U};
-inline constexpr memory::GuestAddress kOpenSlesEngineVtable{0x71802100U};
-inline constexpr memory::GuestAddress kOpenSlesPlayVtable{0x71802200U};
-inline constexpr memory::GuestAddress kOpenSlesBufferQueueVtable{0x71802300U};
-inline constexpr memory::GuestAddress kOpenSlesVolumeVtable{0x71802400U};
-inline constexpr memory::GuestAddress kOpenSlesOutputMixVtable{0x71802500U};
-inline constexpr memory::GuestAddress kOpenSlesObjectArenaBegin{0x71900000U};
-inline constexpr std::size_t kOpenSlesStaticAbiBytes = 0x3000U;
-inline constexpr std::size_t kOpenSlesObjectArenaBytes = 0x100000U;
+inline constexpr auto kOpenSlesAbiBegin = kBoundaryOpenSlesAbi.Start().Add(0U);
+inline constexpr auto kOpenSlesIidValuesBegin = kBoundaryOpenSlesAbi.Start().Add(4096U);
+inline constexpr auto kOpenSlesObjectVtable = kBoundaryOpenSlesAbi.Start().Add(8192U);
+inline constexpr auto kOpenSlesEngineVtable = kBoundaryOpenSlesAbi.Start().Add(8448U);
+inline constexpr auto kOpenSlesPlayVtable = kBoundaryOpenSlesAbi.Start().Add(8704U);
+inline constexpr auto kOpenSlesBufferQueueVtable = kBoundaryOpenSlesAbi.Start().Add(8960U);
+inline constexpr auto kOpenSlesVolumeVtable = kBoundaryOpenSlesAbi.Start().Add(9216U);
+inline constexpr auto kOpenSlesOutputMixVtable = kBoundaryOpenSlesAbi.Start().Add(9472U);
+inline constexpr auto kOpenSlesObjectArenaBegin = kBoundaryOpenSlesObjects.Start();
+inline constexpr std::size_t kOpenSlesStaticAbiBytes = kBoundaryOpenSlesAbi.Size();
+inline constexpr std::size_t kOpenSlesObjectArenaBytes = kBoundaryOpenSlesObjects.Size();
 
 struct OpenSlesIidValue final {
     std::uint32_t time_low{};

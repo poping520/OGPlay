@@ -515,6 +515,12 @@ add_test(
 set_tests_properties(tools.framework_contract_self_test PROPERTIES LABELS tools)
 
 add_test(
+    NAME tools.boundary_exports_self_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance/boundary_exports.py --self-test
+)
+set_tests_properties(tools.boundary_exports_self_test PROPERTIES LABELS tools)
+
+add_test(
     NAME tools.title_preflight_self_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/title_preflight.py --self-test
 )

@@ -30,7 +30,7 @@
 namespace ogplay::runtime {
 namespace {
 
-constexpr memory::GuestAddress kQueryStringPage{0x70001000U};
+constexpr auto kQueryStringPage = kBoundaryGles2Strings.Start();
 constexpr std::uint32_t kQueryStringSlotBytes = 1024;
 constexpr std::uint32_t kQueryStringSlotCount = 5;
 constexpr std::uint32_t kArrayBuffer = 0x8892U;
@@ -360,6 +360,11 @@ public:
             if (context_.Shared().transfer.BoundBuffer(0x88ECU) != 0U) {
                 RequireFrame(frame, symbol).TransferPixelBuffer(
                     gles::AngleFrame::PixelBufferOperation::image2d, all);
+                if (std::bit_cast<std::int32_t>(all[1]) == 0) {
+                    context_.Shared().SetTextureBaseFormat(all[0], all[2]);
+                    context_.Shared().SetTextureSize(all[0], std::bit_cast<std::int32_t>(all[3]),
+                                                     std::bit_cast<std::int32_t>(all[4]));
+                }
                 return 0U;
             }
             auto call = PrepareCall(function_id, all, tid);
@@ -373,6 +378,8 @@ public:
                 OptionalBytes(pixels));
             if (std::bit_cast<std::int32_t>(all[1]) == 0) {
                 context_.Shared().SetTextureBaseFormat(all[0], all[2]);
+                context_.Shared().SetTextureSize(all[0], std::bit_cast<std::int32_t>(all[3]),
+                                                 std::bit_cast<std::int32_t>(all[4]));
             }
             return 0;
         }
@@ -1029,7 +1036,8 @@ private:
     void EnsureQueryStringPage() {
         if (query_string_page_mapped_) return;
         const auto region_bytes = address_space_.PageSize() * 2U;
-        if (region_bytes < kQueryStringSlotBytes * kQueryStringSlotCount) {
+        if (region_bytes < kQueryStringSlotBytes * kQueryStringSlotCount ||
+            region_bytes > kBoundaryGles2Strings.Size()) {
             throw std::length_error("guest region is too small for GLES query strings");
         }
         address_space_.Map({kQueryStringPage, region_bytes},

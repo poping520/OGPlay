@@ -14,6 +14,9 @@
 
 #include "ogplay/gles/angle_frame.h"
 #include "ogplay/gles/gles_dispatch.h"
+#include "ogplay/gles/generated/gles1_extensions_catalog.h"
+#include "ogplay/gles/generated/gles2_extensions_catalog.h"
+#include "runtime/boundary/services/gles_api19.h"
 #include "ogplay/gles/guest_transfer.h"
 #include "runtime/boundary/core/a32_call_frame.h"
 #include "runtime/boundary/core/boundary_binding.h"
@@ -29,6 +32,24 @@ public:
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept { return calls_; }
     void RetireShareGroup(const std::uint32_t group) noexcept {
         std::erase_if(syncs_, [group](const auto& entry) { return entry.second.share_group == group; });
+    }
+
+    template <gles::GlesThunkId FunctionId, gles::GlesApi Origin, std::size_t ExtensionId>
+    std::uint32_t InvokeAlias(const A32CallFrame& call) {
+        // The existing ES3 backend implements these aliases only on a version
+        // 3 context. On older contexts use the API19 absent-driver path.
+        const auto version = graphics_.api_routing.CurrentVersion(call.ThreadId());
+        if (!version.has_value() || *version != 3U) {
+            constexpr bool fixed = Origin == gles::GlesApi::gles1_extensions;
+            constexpr auto name = [] {
+                if constexpr (fixed)
+                    return gles::generated::gles1_extensions::kFunctions[ExtensionId].name;
+                else
+                    return gles::generated::gles2_extensions::kFunctions[ExtensionId].name;
+            }();
+            return UnimplementedGl(calls_, call, fixed ? "libGLESv1_CM.so" : "libGLESv2.so", name);
+        }
+        return Invoke<FunctionId>(call);
     }
     template <gles::GlesThunkId FunctionId>
     std::uint32_t Invoke(const A32CallFrame& call) {
@@ -413,12 +434,12 @@ private:
     std::uint32_t PublishString(const std::string_view value,
                                 const std::uint32_t index,
                                 const std::uint64_t thread_id) {
-        constexpr memory::GuestAddress begin{0x71E00000U};
+        constexpr auto begin = kBoundaryGles3Strings.Start();
         constexpr std::uint32_t slot_size = 256U;
         if (index >= 256U || value.size() >= slot_size) {
             throw std::length_error("GLES3 indexed string exceeds guest arena");
         }
-        const auto region = memory::GuestRange{begin, 65536U};
+        const auto region = kBoundaryGles3Strings;
         if (!strings_mapped_) {
             calls_.address_space.Map(region, memory::PageProtection::read |
                                              memory::PageProtection::write);

@@ -1104,8 +1104,12 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
     std::vector<std::uint32_t> holders;
     if (phase == SurfaceHolderPhase::created) {
         context.managed_host_surface_open = true;
-        try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
-        catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
+        try {
+            static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
+                                                       AndroidUiTraversalPhase::ResolveAndNotifySizes));
+        } catch (const dexvm::VmJavaThrow& error) {
+            return error.descriptor + ": " + error.message;
+        }
         holders = AttachedHolderHandles(context);
         if (context.window_surface_callback.IsValid())
             holders.push_back(context.window_surface_holder.Value());
@@ -1138,8 +1142,12 @@ std::optional<std::string> AttachSurfaceViewSubtree(
         return std::nullopt;
     }
     if (context.ui_layout_dispatching) return std::nullopt;
-    try { static_cast<void>(DispatchAndroidViewSizes(vm,context)); }
-    catch (const dexvm::VmJavaThrow& error) { return error.descriptor + ": " + error.message; }
+    try {
+        static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
+                                                   AndroidUiTraversalPhase::ResolveAndNotifySizes));
+    } catch (const dexvm::VmJavaThrow& error) {
+        return error.descriptor + ": " + error.message;
+    }
     if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
     const auto pending = context.surface_traversal_pending;
     const auto holders = SubtreeHolderHandles(context, subtree);

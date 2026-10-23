@@ -598,8 +598,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 scroll_last_y_ = pointer_y_;
                 const auto edit_class = vm.Linker().ResolveDescriptor(
                     "Landroid/widget/EditText;");
-                for (const auto handle : runtime::FindTouchReceiversAt(
-                         context, pointer_x_, pointer_y_)) {
+                for (const auto handle : runtime::FindTouchReceiversAt(vm, context, pointer_x_, pointer_y_)) {
                     const dx::VmObjectRef candidate{
                         static_cast<std::uint32_t>(handle)};
                     if (vm.Linker().IsAssignable(
@@ -613,7 +612,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         scroll_view_handle_ = handle;
                     }
                 }
-
             }
             if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
                 const auto node = runtime::FindViewUiNode(
@@ -700,11 +698,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             auto& context = *bindings_.context;
             {
               const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
-              if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
-                runtime::ui::LayoutUiTree(context.ui_tree, {
-                    static_cast<std::int32_t>(context.surface_width),
-                    static_cast<std::int32_t>(context.surface_height)});
-                runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+              if (runtime::EnsureAndroidUiTraversal(bindings_.bridge->Vm(), context,
+                                                    runtime::AndroidUiTraversalReason::OwnerTick,
+                                                    runtime::AndroidUiTraversalPhase::ResolveOnly)) {
+                  runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
               }
             }
             DispatchInput();
@@ -789,14 +786,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         runtime::RefreshAndroidImageDrawables(context);
         runtime::RefreshAndroidSurfaceFrames(context);
-        if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
-            runtime::ui::LayoutUiTree(
-                context.ui_tree,
-                {
-                    static_cast<std::int32_t>(frame.width),
-                    static_cast<std::int32_t>(frame.height)
-                });
-        }
+        runtime::EnsureAndroidUiTraversal(
+            bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalReason::BeforePresent,
+            runtime::AndroidUiTraversalPhase::ResolveOnly,
+            runtime::ui::Size{static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)});
         runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
         const bool ui_dirty = context.ui_tree.Get(context.ui_tree.Root())->draw_dirty;
         const auto& overlay = context.ui_overlay_renderer.Render(
@@ -1338,7 +1331,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (context.ui_tree.Get(*node)->children.empty()) return;
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
-        const bool layout_changed=runtime::DispatchAndroidViewSizes(bindings_.bridge->Vm(),context);
+        const bool layout_changed = runtime::EnsureAndroidUiTraversal(
+            bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalReason::OwnerTick,
+            runtime::AndroidUiTraversalPhase::ResolveAndNotifySizes);
         if (!content_changed && !layout_changed && !layout_dirty &&
             context.surface_traversal_pending.empty()) return;
         // A virtual size callback may replace its own content. Reconcile the

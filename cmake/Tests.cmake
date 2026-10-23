@@ -389,6 +389,13 @@ add_test(
 set_tests_properties(architecture.platform_boundaries PROPERTIES LABELS architecture)
 
 add_test(
+    NAME architecture.ui_traversal_entry
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_ui_traversal.py
+)
+set_tests_properties(architecture.ui_traversal_entry PROPERTIES LABELS architecture)
+
+add_test(
     NAME architecture.documentation_layout
     COMMAND ${CMAKE_COMMAND}
         -DROOT=${CMAKE_CURRENT_SOURCE_DIR}

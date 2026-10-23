@@ -154,11 +154,10 @@ TEST_CASE("UI hit test chooses the topmost resolved clickable node") {
     vm.CallOn(top_view, "setOnClickListener",
               "(Landroid/view/View$OnClickListener;)V",
               {VmValue::Ref(vm.NewListener())});
-    CHECK(FindClickableViewAt(*vm.context, 50.0F, 95.0F) == top_view.Value());
+    CHECK(FindClickableViewAt(vm.interpreter, *vm.context, 50.0F, 95.0F) == top_view.Value());
     vm.context->ui_tree.SetVisibility(top_node, ui::Visibility::Invisible);
-    CHECK(FindClickableViewAt(*vm.context, 50.0F, 95.0F) ==
-          vm.skip_button.Value());
-    CHECK_FALSE(ViewContainsPoint(*vm.context, top_view.Value(), 50.0F, 95.0F));
+    CHECK(FindClickableViewAt(vm.interpreter, *vm.context, 50.0F, 95.0F) == vm.skip_button.Value());
+    CHECK_FALSE(ViewContainsPoint(vm.interpreter, *vm.context, top_view.Value(), 50.0F, 95.0F));
 }
 
 TEST_CASE("hidden buttons do not receive clicks and GONE reflows the row") {

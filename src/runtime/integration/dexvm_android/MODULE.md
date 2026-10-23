@@ -154,6 +154,12 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 
 ## UI、Surface 与输入
 
+`EnsureAndroidUiTraversal` 是 integration/session 的唯一布局调度入口，调用方显式提供 VM、
+reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutParams，BeforePresent
+沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
+保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
+HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
+
 live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
 Java 字段修改不自动 traversal，getContext 是构造/inflation 的 mContext。addView(width,height)
 虚派默认 LayoutParams、写原 Java 字段再统一 attach，不复制参数。

@@ -1540,15 +1540,6 @@ namespace {
            y < static_cast<float>(rect.bottom);
 }
 
-void EnsureLayout(DexVmAndroidContext& context) {
-    if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
-        ui::LayoutUiTree(
-            context.ui_tree,
-            {static_cast<std::int32_t>(context.surface_width),
-             static_cast<std::int32_t>(context.surface_height)});
-    }
-}
-
 [[nodiscard]] std::optional<ui::UiNodeId> HitClickable(
     const DexVmAndroidContext& context, const ui::UiNodeId id, const float x,
     const float y) {
@@ -1597,9 +1588,9 @@ void CollectTouchReceivers(const DexVmAndroidContext& context,
 
 }  // namespace android_intrinsics
 
-std::optional<std::uint64_t> FindClickableViewAt(
-    DexVmAndroidContext& context, const float x, const float y) {
-    android_intrinsics::EnsureLayout(context);
+std::optional<std::uint64_t> FindClickableViewAt(dexvm::Interpreter& vm, DexVmAndroidContext& context, const float x,
+                                                 const float y) {
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
     const auto hit = android_intrinsics::HitClickable(
         context, context.ui_tree.Root(), x, y);
     if (!hit.has_value()) return std::nullopt;
@@ -1608,9 +1599,9 @@ std::optional<std::uint64_t> FindClickableViewAt(
                           : std::nullopt;
 }
 
-std::vector<std::uint64_t> FindTouchReceiversAt(
-    DexVmAndroidContext& context, const float x, const float y) {
-    android_intrinsics::EnsureLayout(context);
+std::vector<std::uint64_t> FindTouchReceiversAt(dexvm::Interpreter& vm, DexVmAndroidContext& context, const float x,
+                                                const float y) {
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
     std::vector<std::uint64_t> receivers;
     android_intrinsics::CollectTouchReceivers(
         context, context.ui_tree.Root(), x, y, receivers);
@@ -1659,7 +1650,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     VmObjectRef view, VmObjectRef event, const bool group) {
     const auto action = TouchAction(vm, event);
     const auto roots = vm.ProtectReferences(std::array{view, event});
-    android_intrinsics::EnsureLayout(context);
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
     const auto node = FindViewUiNode(context, view.Value());
     if (!node) return false;
     const auto key = view.Value();
@@ -1694,7 +1685,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             const auto children = context.ui_tree.Get(*node)->children;
             for (auto child = children.rbegin(); child != children.rend(); ++child) {
                 const auto receiver = ViewObjectForUiNode(context, *child);
-                if (!receiver.IsValid() || !ViewContainsPoint(context, receiver.Value(), x, y)) continue;
+                if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
                 if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
                     if (TouchLive(context, receiver)) context.ui_touch_targets[key] = receiver;
                     if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
@@ -1719,7 +1710,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         context.ui_click_listeners.contains(*node)) {
         const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
         const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
-        if (ViewContainsPoint(context, key, x, y)) {
+        if (ViewContainsPoint(vm, context, key, x, y)) {
             if (const auto error = InvokeViewOnClick(vm, context, key))
                 throw dexvm::VmJavaThrow{"Ljava/lang/RuntimeException;", *error};
         }
@@ -1743,14 +1734,15 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
     }
     bool handled = false;
     if (action == 0) {
-        android_intrinsics::EnsureLayout(context);
+        EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput,
+                                 AndroidUiTraversalPhase::ResolveOnly);
         const auto root = ActivityContentRoot(context, context.activity);
         const auto children = context.ui_tree.Get(root)->children;
         const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
         const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
         for (auto child = children.rbegin(); child != children.rend(); ++child) {
             const auto receiver = ViewObjectForUiNode(context, *child);
-            if (!receiver.IsValid() || !ViewContainsPoint(context, receiver.Value(), x, y)) continue;
+            if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
             if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
                 if (TouchLive(context, receiver)) context.ui_touch_targets[0] = receiver;
                 if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
@@ -1781,10 +1773,9 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     }
 }
 
-bool ViewContainsPoint(DexVmAndroidContext& context,
-                       const std::uint64_t handle, const float x,
+bool ViewContainsPoint(dexvm::Interpreter& vm, DexVmAndroidContext& context, const std::uint64_t handle, const float x,
                        const float y) {
-    android_intrinsics::EnsureLayout(context);
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value()) return false;
     const auto* state = context.ui_tree.Get(*node);
@@ -1860,8 +1851,8 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
                 .touch_consumed = touch_consumed};
     }
     if (action == kActionUp) {
-        if (!touch_consumed && click_eligible && has_live_click &&
-            is_clickable && ViewContainsPoint(context, handle, x, y)) {
+        if (!touch_consumed && click_eligible && has_live_click && is_clickable &&
+            ViewContainsPoint(vm, context, handle, x, y)) {
             if (const auto error = InvokeViewOnClick(vm, context, handle);
                 error.has_value()) {
                 return {.error = error};
@@ -2107,7 +2098,8 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             node->layout.width.mode = ui::SizeMode::WrapContent; node->layout.height.mode = ui::SizeMode::WrapContent;
             tree.Attach(row, id);
         }
-        ui::LayoutUiTree(tree, {static_cast<std::int32_t>(context->surface_width), static_cast<std::int32_t>(context->surface_height)});
+        EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::HostDialog,
+                                 AndroidUiTraversalPhase::ResolveOnly);
         const auto bounds = tree.Get(panel)->screen_frame;
         if (bounds.top < 8 || bounds.bottom > static_cast<std::int32_t>(context->surface_height) - 8)
             unsupported("Dialog content cannot fit the bounded viewport");
@@ -2163,8 +2155,7 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
     }
     const auto action = input.action & 0xff;
     if (!top && !context.dialog_pointer_active) return false;
-    if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty)
-        ui::LayoutUiTree(context.ui_tree, {static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::HostDialog, AndroidUiTraversalPhase::ResolveOnly);
     if (action == 0) {
         context.dialog_pointer_active = true; context.dialog_pressed_button.reset();
         if (top) for (const auto button : top->buttons)

@@ -83,7 +83,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
   queueEvent 仍可唤醒 GLThread。真正 detach/finish 或进程关闭先停止并等待
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
-  内容同步先调用 integration 的附着子树尺寸派发，再交付 Surface creation/global layout；
+  帧、呈现及内容同步统一经 integration traversal 入口，显式区分 reason/phase；
+  呈现仅解析几何，内容同步先派发附着子树尺寸，再交付 Surface creation/global layout；
   未变尺寸不重复，callback 替换内容后仅在后续同步处理新 root，不启动旧子树。
   初次启动与动态挂载均在 holder 激活/尺寸发布后开放 intrinsic renderer 的 EGL 初始化；
   pending 由所属遍历消费，不清除其他窗口或回调中新挂载子树的请求。

@@ -88,6 +88,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - hierarchy、android id、visibility、layout params、geometry 与 clip 开关只有 UiTree
   一份权威事实。
 - renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
+- integration/session 的 Legacy 布局由 integration 统一调度；本层仍只接收 UiTree/UiMetrics，
+  不获取解释器、guest 回调或 Java 引用。
 - `ClearLayoutDirty` 与 `ClearDrawDirty` 只能由各自阶段消费；禁止恢复同时清除两类状态的
   模糊入口。
 - 只有接入当前 content root 的 node 进入 id index；detach/destroy/reset 后立即不可查找。

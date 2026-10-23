@@ -519,7 +519,7 @@ std::int32_t ClickVm::TouchViewValue(const char* name) {
 
 std::optional<std::string> ClickVm::Click(const float x,
                                                const float y) {
-    const auto hit = FindClickableViewAt(*context, x, y);
+    const auto hit = FindClickableViewAt(interpreter, *context, x, y);
     if (!hit.has_value()) return std::nullopt;
     const auto error = InvokeViewOnClick(interpreter, *context, *hit);
     REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));

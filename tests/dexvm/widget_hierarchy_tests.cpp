@@ -95,7 +95,7 @@ TEST_CASE("parameterless nested View hierarchy measures and receives touch") {
     CHECK(vm.CallOn(frame, "getHeight", "()I").AsInt() == 100);
     CHECK(vm.CallOn(touch, "getWidth", "()I").AsInt() == 100);
     CHECK(vm.CallOn(touch, "getHeight", "()I").AsInt() == 100);
-    const auto receivers = FindTouchReceiversAt(*vm.context, 50.0F, 50.0F);
+    const auto receivers = FindTouchReceiversAt(vm.interpreter, *vm.context, 50.0F, 50.0F);
     REQUIRE_FALSE(receivers.empty());
     CHECK(receivers.front() == touch.Value());
 

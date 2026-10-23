@@ -63,7 +63,7 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
                                    dx::VmObjectRef metrics);
 [[nodiscard]] ui::LayoutParams ReadAndroidLayoutParams(
     dx::Interpreter& vm, dx::VmObjectRef params);
-void RefreshAndroidLayoutParams(dx::Interpreter& vm, const Context& context);
+void RefreshAndroidLayoutParams(dx::Interpreter& vm, DexVmAndroidContext& context);
 
 [[nodiscard]] dx::VmCallOutcome DispatchLocalServiceBinding(
     dx::Interpreter&, DexVmAndroidContext&, std::uint64_t generation);

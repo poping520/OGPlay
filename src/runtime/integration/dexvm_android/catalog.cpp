@@ -74,24 +74,6 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
     context->singletons.emplace(std::string(key), instance);
     return instance;
   };
-  services.schedule_timer_task =
-      [context](dexvm::Interpreter &vm, const dexvm::VmObjectRef timer,
-                const dexvm::VmObjectRef task, const std::int64_t delay,
-                const std::int64_t period, const bool fixed_rate) {
-        android_intrinsics::ScheduleTimerTask(vm, context, timer, task, delay,
-                                              period, fixed_rate);
-      };
-  services.cancel_timer = [context](const dexvm::VmObjectRef timer) {
-    android_intrinsics::CancelTimer(context, timer);
-  };
-  services.cancel_timer_task = [context](const dexvm::VmObjectRef task) {
-    return android_intrinsics::CancelTimerTask(context, task);
-  };
-  services.timer_task_scheduled_execution_time =
-      [context](const dexvm::VmObjectRef task) {
-        return android_intrinsics::TimerTaskScheduledExecutionTime(context,
-                                                                   task);
-      };
   services.set_sax_content_handler =
       [context](const dexvm::VmObjectRef reader,
                 const dexvm::VmObjectRef handler) {
@@ -198,7 +180,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_nfc_NfcAdapter(context),
       Declare_android_location_LocationListener(context),
       Declare_android_location_Criteria(context),
-      Declare_android_location_Location(context),
       Declare_android_location_LocationManager(context),
       Declare_android_media_AudioManager(context),
       Declare_android_media_AudioTrack(context),
@@ -229,7 +210,6 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_os_FileUtils(context),
       Declare_android_os_Binder(context),
       Declare_android_os_StrictMode(context),
-      Declare_android_os_CountDownTimer(context),
       Declare_android_os_Environment(context),
       Declare_android_os_Handler(context),
       Declare_android_os_Handler_Callback(context),

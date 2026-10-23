@@ -580,15 +580,18 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
     const auto timer = fixture.New("Ljava/util/Timer;");
     fixture.ConstructAs(timer, "Ljava/util/Timer;", "()V");
     const auto task = fixture.New("Ltest/RecordingTimerTask;");
+    fixture.ConstructAs(task, "Ljava/util/TimerTask;", "()V");
     SchedulerVm::RequireOk(fixture.Virtual(
         timer, "schedule", "(Ljava/util/TimerTask;J)V",
         {VmValue::Ref(task), VmValue::Long(10)}));
     const auto cancelled_task = fixture.New("Ltest/RecordingTimerTask;");
+    fixture.ConstructAs(cancelled_task, "Ljava/util/TimerTask;", "()V");
     SchedulerVm::RequireOk(fixture.Virtual(
         timer, "schedule", "(Ljava/util/TimerTask;J)V",
         {VmValue::Ref(cancelled_task), VmValue::Long(20)}));
     CHECK(fixture.Virtual(cancelled_task, "cancel", "()Z").value.AsInt() == 1);
     const auto invalid_task = fixture.New("Ltest/RecordingTimerTask;");
+    fixture.ConstructAs(invalid_task, "Ljava/util/TimerTask;", "()V");
     const auto invalid = fixture.Virtual(
         timer, "schedule", "(Ljava/util/TimerTask;JJ)V",
         {VmValue::Ref(invalid_task), VmValue::Long(0), VmValue::Long(0)});
@@ -596,6 +599,7 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
     CHECK(fixture.linker.Class(invalid.exception_class).descriptor ==
           "Ljava/lang/IllegalArgumentException;");
 
+    CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
     const auto countdown = fixture.New("Ltest/RecordingCountDown;");
     fixture.ConstructAs(countdown, "Landroid/os/CountDownTimer;", "(JJ)V",
                         {VmValue::Long(30), VmValue::Long(10)});
@@ -608,7 +612,8 @@ TEST_CASE("DVM-85 Timer and CountDownTimer share the Android clock") {
         AdvanceAndroidClock(*fixture.context, 10);
         CHECK_FALSE(PumpJavaThreads(fixture.vm, *fixture.context).has_value());
     }
-    CHECK(fixture.timer_calls.load() == 1);
+    REQUIRE(WaitFor([&] { return fixture.timer_calls.load() == 1; }));
+    SchedulerVm::RequireOk(fixture.Virtual(timer, "cancel", "()V"));
     CHECK(fixture.ticks == std::vector<std::int64_t>{30, 20, 10});
     CHECK(fixture.finishes.load() == 1);
 }
@@ -755,7 +760,7 @@ TEST_CASE("DVM-262 Message obtain overload calls the ROM no-argument pool factor
     }
 }
 
-TEST_CASE("DVM-265 DEX Timer schedules one callback") {
+TEST_CASE("DVM-268 DEX Timer schedules once and cancel rejects more work") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         SchedulerVm f(backend);
         const auto timer = f.New("Ljava/util/Timer;");
@@ -768,20 +773,51 @@ TEST_CASE("DVM-265 DEX Timer schedules one callback") {
                                         {VmValue::Ref(timer), VmValue::Ref(task)}));
         AdvanceAndroidClock(*f.context, 10);
         CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
-        CHECK(f.timer_calls.load() == 1);
+        REQUIRE(WaitFor([&] { return f.timer_calls.load() == 1; }));
         SchedulerVm::RequireOk(f.Virtual(timer, "cancel", "()V"));
+        const auto other = f.New("Ltest/RecordingTimerTask;");
+        const auto other_root = f.vm.ProtectReferences(std::array{other});
+        f.ConstructAs(other, "Ljava/util/TimerTask;", "()V");
+        const auto cancelled =
+            f.Direct("Ltest/RomJavaReplacement;", "timer", "(Ljava/util/Timer;Ljava/util/TimerTask;)V",
+                     {VmValue::Ref(timer), VmValue::Ref(other)});
+        REQUIRE(cancelled.exception.IsValid());
+        CHECK(f.linker.Class(cancelled.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(f.linker.Class(f.Class("Ljava/util/Timer;")).is_boot_dex);
     }
 }
 
-TEST_CASE("DVM-265 DEX CountDownTimer completes callback") {
+TEST_CASE("DVM-268 DEX CountDownTimer ticks and finishes") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         SchedulerVm f(backend);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
         const auto timer = f.New("Ltest/RecordingCountDown;");
         const auto roots = f.vm.ProtectReferences(std::array{timer});
-        f.ConstructAs(timer, "Landroid/os/CountDownTimer;", "(JJ)V", {VmValue::Long(0), VmValue::Long(1)});
+        f.ConstructAs(timer, "Landroid/os/CountDownTimer;", "(JJ)V", {VmValue::Long(30), VmValue::Long(10)});
         SchedulerVm::RequireOk(f.Direct("Ltest/RomJavaReplacement;", "countdown", "(Landroid/os/CountDownTimer;)V",
                                         {VmValue::Ref(timer)}));
         CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.ticks == std::vector<std::int64_t>{30});
+        for (int i = 0; i < 3; ++i) {
+            AdvanceAndroidClock(*f.context, 10);
+            CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        }
+        CHECK(f.ticks == std::vector<std::int64_t>{30, 20, 10});
         CHECK(f.finishes.load() == 1);
+        CHECK(f.linker.Class(f.Class("Landroid/os/CountDownTimer;")).is_boot_dex);
+    }
+}
+
+TEST_CASE("DVM-268 DEX TimerTask cancellation before scheduling returns false") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        SchedulerVm f(backend);
+        const auto task = f.New("Ltest/RecordingTimerTask;");
+        const auto roots = f.vm.ProtectReferences(std::array{task});
+        f.ConstructAs(task, "Ljava/util/TimerTask;", "()V");
+        const auto outcome =
+            f.Direct("Ltest/RomJavaReplacement;", "task", "(Ljava/util/TimerTask;)Z", {VmValue::Ref(task)});
+        SchedulerVm::RequireOk(outcome);
+        CHECK(outcome.value.AsInt() == 0);
+        CHECK(f.linker.Class(f.Class("Ljava/util/TimerTask;")).is_boot_dex);
     }
 }

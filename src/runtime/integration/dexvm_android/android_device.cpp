@@ -106,15 +106,6 @@ Decl Declare_android_location_Criteria(const Context& context) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_location_Location(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/location/Location;", "Ljava/lang/Object;",
-        {"Landroid/os/Parcelable;"});
-    builder.Constructor("(Ljava/lang/String;)V", NeutralHandler('V'));
-    return std::move(builder).Build();
-}
-
 Decl Declare_android_location_LocationManager(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class(

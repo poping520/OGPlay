@@ -209,7 +209,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "Ljava/lang/SecurityException;.<init>(Ljava/lang/Throwable;)V",
         "Ljava/lang/TypeNotPresentException;.<init>"
         "(Ljava/lang/String;Ljava/lang/Throwable;)V",
-        "Ljava/lang/AutoCloseable;.close()V",
         "Ljava/io/Closeable;.close()V",
         "Ljava/lang/CharSequence;.charAt(I)C",
         "Ljava/lang/CharSequence;.subSequence(II)Ljava/lang/CharSequence;",
@@ -228,14 +227,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "(Ljava/lang/String;Ljava/lang/ClassLoader;)V",
         "Ldalvik/system/PathClassLoader;.<init>"
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V",
-        "Ljava/lang/reflect/AnnotatedElement;.isAnnotationPresent"
-        "(Ljava/lang/Class;)Z",
-        "Ljava/lang/reflect/AnnotatedElement;.getAnnotation"
-        "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/AnnotatedElement;.getAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/AnnotatedElement;.getDeclaredAnnotations"
-        "()[Ljava/lang/annotation/Annotation;",
         "Ljava/lang/reflect/Method;.isAnnotationPresent(Ljava/lang/Class;)Z",
         "Ljava/lang/reflect/Method;.getAnnotation"
         "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;",
@@ -251,12 +242,6 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
         "()[Ljava/lang/annotation/Annotation;",
         "Ljava/lang/reflect/Constructor;.getDeclaredAnnotations"
         "()[Ljava/lang/annotation/Annotation;",
-        "Ljava/lang/reflect/GenericDeclaration;.getTypeParameters"
-        "()[Ljava/lang/reflect/TypeVariable;",
-        "Ljava/lang/reflect/Member;.getDeclaringClass()Ljava/lang/Class;",
-        "Ljava/lang/reflect/Member;.getName()Ljava/lang/String;",
-        "Ljava/lang/reflect/Member;.getModifiers()I",
-        "Ljava/lang/reflect/Member;.isSynthetic()Z",
         "Ljava/math/NativeBN;.BN_add(JJJ)V",
         "Ljava/math/NativeBN;.BN_add_word(JI)V",
         "Ljava/math/NativeBN;.BN_bin2bn([BIZJ)V",
@@ -324,9 +309,9 @@ TEST_CASE("dexvm core intrinsic catalog is unique and structurally stable") {
     ogplay::test::RegisterBootDex(boot_linker);
     boot_linker.Link();
     CHECK(boot_linker.Class(boot_linker.ResolveDescriptor("Ljavax/net/ssl/SSLSocketFactory;")).is_boot_dex);
-    for (const auto* name :
-         {"Ljava/lang/Appendable;", "Ljava/lang/Iterable;", "Ljava/io/DataInput;", "Ljava/io/DataOutput;",
-          "Ljava/io/ObjectInput;", "Ljava/io/ObjectOutput;", "Ljava/io/ObjectStreamConstants;"}) {
+    for (const auto* name : {"Ljava/lang/AutoCloseable;", "Ljava/lang/Appendable;", "Ljava/lang/Iterable;",
+                             "Ljava/io/DataInput;", "Ljava/io/DataOutput;", "Ljava/io/ObjectInput;",
+                             "Ljava/io/ObjectOutput;", "Ljava/io/ObjectStreamConstants;"}) {
         CHECK_FALSE(descriptors.contains(name));
         const auto type = boot_linker.ResolveDescriptor(name);
         const auto& linked = boot_linker.Class(type);
@@ -1112,7 +1097,7 @@ TEST_CASE("dexvm API 19 java.lang interface inventory is complete") {
     for (const auto& name : inventory) {
         const auto descriptor = "Ljava/lang/" + name + ";";
         CAPTURE(descriptor);
-        if (name == "Iterable" || name == "Appendable") {
+        if (name == "Iterable" || name == "Appendable" || name == "AutoCloseable") {
             CHECK(descriptor_counts[descriptor] == 0U);
             const auto type = linker.ResolveDescriptor(descriptor);
             CHECK(linker.Class(type).is_boot_dex);
@@ -1248,5 +1233,41 @@ TEST_CASE("DVM-265 DEX Appendable interface dispatch") {
                   .ref == builder);
         CHECK(f.vm.StringUtf8(f.On(builder, "toString", "()Ljava/lang/String;").ref) == "A");
         CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/Appendable;")).is_boot_dex);
+    }
+}
+
+TEST_CASE("DVM-268 DEX AnnotatedElement ROM interface dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto result = f.Static("Ltest/RomJavaReplacement;", "annotated", "()I");
+        CHECK(result.AsInt() == 0);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/reflect/AnnotatedElement;")).is_boot_dex);
+    }
+}
+
+TEST_CASE("DVM-268 DEX Member ROM interface dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto result = f.Static("Ltest/RomJavaReplacement;", "member", "()Ljava/lang/Class;");
+        CHECK(f.vm.StringUtf8(f.On(result.ref, "getName", "()Ljava/lang/String;").ref) == "java.lang.Object");
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/reflect/Member;")).is_boot_dex);
+    }
+}
+
+TEST_CASE("DVM-268 DEX GenericDeclaration ROM interface dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto result = f.Static("Ltest/RomJavaReplacement;", "generic", "()I");
+        CHECK(result.AsInt() == 1);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/reflect/GenericDeclaration;")).is_boot_dex);
+    }
+}
+
+TEST_CASE("DVM-268 DEX AutoCloseable ROM interface dispatch") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        const auto result = f.Static("Ltest/RomJavaReplacement;", "close", "()I");
+        CHECK(result.AsInt() == 0);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ljava/lang/AutoCloseable;")).is_boot_dex);
     }
 }

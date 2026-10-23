@@ -1646,7 +1646,7 @@ note = "DVM-230：root guest 线程按真实 UiTree frame 向附着子树派发 
 [dexvm.android_scheduler]
 status = "complete"
 test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
-note = "DVM-85/135/160/170：API19 SystemClock、Looper/Handler/HandlerThread、Message、CountDownTimer、有界 AsyncTask 与 Timer 共用 session 唯一 scheduler；Clock 从确定性 60 秒 boot-age 起步；主 Looper 在 lifecycle 安全点泵送，View.post 与 runOnUiThread 复用主队列。不模拟设备 suspend、Binder MessageQueue 与 AsyncTask 并行 Executor 策略。"
+note = "DVM-268：Looper/Handler/Message 与有界 AsyncTask 共用 session scheduler；原版 CountDownTimer 经 Handler，Timer/TimerTask 经 Thread/monitor，共用统一 Clock，状态归 BootDex，无任务侧表。Clock 起于确定性 60 秒 boot-age；主 Looper 在 lifecycle 安全点泵送，View.post/runOnUiThread 复用主队列。不模拟 suspend、Binder MessageQueue 与 AsyncTask 并行策略。"
 
 [dexvm.android_value_services]
 status = "complete"

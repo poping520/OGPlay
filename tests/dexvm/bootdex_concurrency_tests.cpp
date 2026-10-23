@@ -33,6 +33,7 @@
 #include "tls_fixtures.h"
 
 #include "bootdex_library_fixture.h"
+#include "android_value_fixture.h"
 
 using namespace ogplay::test::bootdex_library;
 using namespace ogplay::runtime;
@@ -485,5 +486,13 @@ TEST_CASE("DVM-104 atomic arrays references and immediate timeouts follow API19"
                 const auto broken = f.Virtual(sync, "isBroken", "()Z"); f.RequireOk(broken); CHECK(broken.value.AsInt() == 1);
             } else { f.RequireOk(result); CHECK(result.value.AsInt() == 0); }
         }
+    }
+}
+
+TEST_CASE("DVM-267 ROM Thread subclass executes start and join") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        CHECK(f.Static("Lfixture/PlatformTables;", "romThread", "()I").AsInt() == 0);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

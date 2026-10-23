@@ -1120,3 +1120,35 @@ TEST_CASE("DVM-266 AppGlobals keeps the ROM ActivityThread dependency explicit")
         }));
     }
 }
+
+TEST_CASE("DVM-267 ROM Handler subclass receives a message through Looper") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto looper = f.Static("Landroid/os/Looper;", "getMainLooper", "()Landroid/os/Looper;").ref;
+        const auto listener = f.New("Lfixture/RomHandlerProbe;");
+        const auto base = f.New("Landroid/os/Handler;", "(Landroid/os/Looper;)V", {VmValue::Ref(looper)});
+        const auto handler = f.New("Landroid/hardware/input/InputManager$InputDeviceListenerDelegate;",
+                                   "(Landroid/hardware/input/InputManager$InputDeviceListener;Landroid/os/Handler;)V",
+                                   {VmValue::Ref(listener), VmValue::Ref(base)});
+        f.Static("Lfixture/RomHandlerProbe;", "send", "(Landroid/os/Handler;)V", {VmValue::Ref(handler)});
+        CHECK(f.Static("Lfixture/RomHandlerProbe;", "result", "()I").AsInt() == 0);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context).has_value());
+        CHECK(f.Static("Lfixture/RomHandlerProbe;", "result", "()I").AsInt() == 73);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-267 ROM BroadcastReceiver subclass constructs and dispatches onReceive") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto object = f.New("Landroid/media/MediaRouter$VolumeChangeReceiver;");
+        const auto receiver =
+            f.Static("Lfixture/RomReceiverProbe;", "receive",
+                     "(Landroid/content/BroadcastReceiver;)Landroid/content/BroadcastReceiver;", {VmValue::Ref(object)})
+                .ref;
+        CHECK(receiver.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(receiver)).descriptor ==
+              "Landroid/media/MediaRouter$VolumeChangeReceiver;");
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

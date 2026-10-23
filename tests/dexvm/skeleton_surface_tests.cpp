@@ -105,19 +105,23 @@ TEST_CASE("API19 skeleton supplements handwritten declarations without replacing
     auto field=f.linker.FindFieldRecursive(owner,"VALUE","I");REQUIRE(field);CHECK_FALSE(f.linker.Field(*field).is_skeleton);
 }
 TEST_CASE("API19 skeleton real artifact remains indexed until requested") {
+    // SystemVibrator remains a skeleton: native-backed classes are outside ROM Java admission.
     DexClassLinker linker;linker.RegisterIntrinsics(CoreIntrinsicCatalog());
         linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
         ogplay::test::RegisterBootDex(linker);
     auto before=linker.ClassCount();linker.RegisterSkeletonSurface(Bytes(std::filesystem::path(OGPLAY_SOURCE_DIR)/"data/dexvm/api19-skeleton.bin"));
-    CHECK(linker.ClassCount()==before);CHECK_FALSE(linker.FindClass("Landroid/os/NullVibrator;"));
-    linker.Link();CHECK(linker.ClassCount()==before);CHECK_FALSE(linker.FindClass("Landroid/os/NullVibrator;"));
+    CHECK(linker.ClassCount() == before);
+    CHECK_FALSE(linker.FindClass("Landroid/os/SystemVibrator;"));
+    linker.Link();
+    CHECK(linker.ClassCount() == before);
+    CHECK_FALSE(linker.FindClass("Landroid/os/SystemVibrator;"));
     auto array=linker.ResolveDescriptor("Ljava/util/ArrayList;");
     auto slot=linker.FindVtableIndex(array,"size","()I");REQUIRE(slot);
     const auto original=linker.Class(array).vtable[*slot];CHECK_FALSE(linker.Method(original).is_skeleton);
     CHECK(linker.Method(original).kind==MethodKind::interpreted);
     auto id=linker.ResolveDescriptor("Landroid/animation/Animator;");CHECK(linker.Class(id).is_boot_dex);CHECK_FALSE(linker.Class(id).is_skeleton);
     CHECK(linker.ResolveDescriptor("Landroid/animation/Animator;")==id);
-    const auto vibrator=linker.ResolveDescriptor("Landroid/os/NullVibrator;");
+    const auto vibrator = linker.ResolveDescriptor("Landroid/os/SystemVibrator;");
     const auto cancel=linker.FindVtableIndex(vibrator,"cancel","()V");REQUIRE(cancel);
     const auto& cancel_method=linker.Method(linker.Class(vibrator).vtable[*cancel]);
     CHECK(cancel_method.owner==vibrator);CHECK(cancel_method.is_skeleton);

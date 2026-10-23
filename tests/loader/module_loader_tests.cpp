@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "ogplay/loader/module_loader.h"
@@ -115,7 +116,7 @@ TEST_CASE("ELF module loader maps links and resolves one namespace transaction")
     CHECK(instruction[0] == std::byte{0x1e});
 }
 
-TEST_CASE("ELF module loader restores the prior address space on failure") {
+TEST_CASE("ELF module loader unmaps its new regions on failure") {
     const auto bytes = RelocationFailureElf();
     const ogplay::loader::Elf32ModuleInput input{
         "sample.so", bytes, ogplay::memory::GuestAddress{0x20000U}};
@@ -175,4 +176,58 @@ TEST_CASE("ELF module loader rejects builders that replace guest identity") {
                 return ogplay::loader::Elf32LinkNamespace{
                     {std::move(changed)}, {0}, {0}};
             })), ogplay::loader::LinkError);
+}
+
+TEST_CASE("DVM-270 ELF namespace rollback preserves active protected payload") {
+    using namespace ogplay::loader;
+    using namespace ogplay::memory;
+    AddressSpace memory;
+    std::vector<std::string> denied;
+    auto owner = memory.RegisterProtectedOwner([&](std::string_view operation) { denied.emplace_back(operation); });
+    const auto payload_size = memory.BackingPageSize();
+    const auto payload = memory.MapProtectedAnywhere(owner, {GuestAddress{0x40000U}, payload_size}, payload_size);
+    const GuestRange payload_range{payload, payload_size};
+    auto* backing = memory.ResolveProtected(owner, payload_range);
+    memory.Write32(payload, 0x12345678U);
+    const GuestRange ordinary{GuestAddress{0x32000U}, 4096};
+    memory.Map(ordinary, PageProtection::read | PageProtection::write);
+    memory.Write32(ordinary.Start(), 0xaabbccddU);
+    const auto good = ModuleElf();
+    auto base_bytes = good;
+    constexpr char base_name[] = "base.so";
+    for (std::size_t index = 0; index < sizeof(base_name); ++index) {
+        base_bytes[0x161 + index] = static_cast<std::byte>(base_name[index]);
+    }
+    const Elf32ModuleInput base_input{"base.so", base_bytes, GuestAddress{0x50000U}};
+    const auto base = LoadElf32ModuleNamespace("base.so", std::span{&base_input, 1}, memory);
+    const auto before = memory.DescribeMappings(16);
+    const auto bad = RelocationFailureElf();
+    bool extend = false;
+    SUBCASE("initial namespace") {}
+    SUBCASE("dynamic extension") {
+        extend = true;
+    }
+    const Elf32ModuleInput failing{"sample.so", bad, GuestAddress{0x20000U}};
+    const auto& existing = base.link_namespace;
+    const auto load = [&](const Elf32ModuleInput& input) {
+        if (extend) {
+            return ExtendElf32ModuleNamespace(existing, "sample.so", std::span{&input, 1}, memory).modules;
+        }
+        return LoadElf32ModuleNamespace("sample.so", std::span{&input, 1}, memory).modules;
+    };
+    CHECK_THROWS_WITH_AS(static_cast<void>(load(failing)), "relocation references an unresolved symbol",
+                         RelocationError);
+    CHECK(memory.DescribeMappings(16).size() == before.size());
+    CHECK_THROWS_AS(memory.ValidateMapped({GuestAddress{0x30000U}, 4096}), MemoryFault);
+    CHECK(memory.ResolveProtected(owner, payload_range) == backing);
+    CHECK(memory.Read32(payload) == 0x12345678U);
+    CHECK(memory.Read32(ordinary.Start()) == 0xaabbccddU);
+    memory.Validate({GuestAddress{0x60200U}, 4}, AccessType::execute);
+    CHECK(memory.DirectPageTable()->at(payload.Value() >> kGuestPageBits) != nullptr);
+    CHECK(denied.empty());
+    const Elf32ModuleInput successful{"sample.so", good, GuestAddress{0x20000U}};
+    REQUIRE(load(successful).size() == 1);
+    memory.Validate({GuestAddress{0x30200U}, 4}, AccessType::execute);
+    CHECK(memory.Read32(payload) == 0x12345678U);
+    memory.UnmapProtected(owner, payload_range);
 }

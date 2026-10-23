@@ -95,8 +95,7 @@ Elf32LoadedNamespace LoadElf32ModuleNamespace(
         }
         for (const auto index : result.link_namespace.load_order) {
             if (index >= inputs.size()) continue;
-            const auto resolved = ResolveElf32Symbols(
-                result.link_namespace, index);
+            const auto resolved = ResolveElf32Symbols(result.link_namespace, index, &result.modules[index].relocations);
             ApplyElf32ArmRelocations(
                 result.modules[index].relocations, resolved,
                 inputs[index].load_bias, result.modules[index].load_plan,
@@ -165,8 +164,8 @@ Elf32LoadedModuleExtension ExtendElf32ModuleNamespace(
                 continue;
             }
             const auto input_index = namespace_index - old_size;
-            const auto resolved = ResolveElf32Symbols(
-                extension.link_namespace, extension.scope, namespace_index);
+            const auto resolved = ResolveElf32Symbols(extension.link_namespace, extension.scope, namespace_index,
+                                                      &parsed.loaded[input_index].relocations);
             ApplyElf32ArmRelocations(
                 parsed.loaded[input_index].relocations, resolved,
                 inputs[input_index].load_bias,

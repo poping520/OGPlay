@@ -101,6 +101,8 @@ std::vector<std::byte> ImportModule(std::string name, std::vector<std::string> n
     tag(ogplay::loader::kElfDynamicSymbolTable, 0x10600);
     tag(ogplay::loader::kElfDynamicSymbolEntrySize, 16);
     for (const auto& dependency : needed) tag(ogplay::loader::kElfDynamicNeeded, text(dependency));
+    tag(ogplay::loader::kElfDynamicRel, 0x10b00);
+    tag(ogplay::loader::kElfDynamicRelSize, static_cast<std::uint32_t>(imports.size() * 8));
     tag(0, 0);
     Put32(bytes, 100, static_cast<std::uint32_t>(dynamic - 0x100));
     Put32(bytes, 104, static_cast<std::uint32_t>(dynamic - 0x100));
@@ -108,6 +110,9 @@ std::vector<std::byte> ImportModule(std::string name, std::vector<std::string> n
     Put32(bytes, 0x900, 1); Put32(bytes, 0x904, static_cast<std::uint32_t>(count));
     std::size_t index = 1;
     for (const auto& [symbol, binding] : imports) {
+        Put32(bytes, 0xb00 + (index - 1) * 8, 0x10e00 + static_cast<std::uint32_t>((index - 1) * 4));
+        Put32(bytes, 0xb04 + (index - 1) * 8,
+              (static_cast<std::uint32_t>(index) << 8U) | ogplay::loader::kArmRelocationJumpSlot);
         const auto base = 0x600 + index++ * 16;
         Put32(bytes, base, text(symbol)); bytes[base + 12] = static_cast<std::byte>(binding << 4U);
     }
@@ -187,4 +192,28 @@ TEST_CASE("DVM271 API19 GLES imports resolve from a guest ELF and removing eithe
         CHECK_THROWS_WITH_AS(static_cast<void>(loader::ResolveElf32Symbols(ns, 0U)),
                              (std::string("strong ELF symbol is unresolved: ") + removed).c_str(), loader::LinkError);
     }
+}
+
+TEST_CASE("WU11-6 preflight retains unused import diagnostics without rejecting the ELF") {
+    using namespace ogplay;
+    auto bytes = ImportModule("sample.so", {}, {{"unused_strong", 1}, {"unused_weak", 2}});
+    for (std::size_t pos = 0x100; pos < 0x200; pos += 8) {
+        if (bytes[pos] == static_cast<std::byte>(loader::kElfDynamicRelSize)) Put32(bytes, pos + 4, 0);
+    }
+    loader::ApkNativeLibraryInventory inventory({AuditLibrary("sample.so", bytes)});
+    const auto report = runtime::AuditAndroidNativeImports(
+        loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a),
+        runtime::SelectBionicProfile(19), {});
+    CHECK(report.strong_missing == 0);
+    CHECK(report.weak_missing == 0);
+    CHECK(report.unused_strong_missing == 1);
+    CHECK(report.unused_weak_missing == 1);
+    REQUIRE(report.gaps.size() == 2);
+    CHECK_FALSE(report.gaps[0].relocation_referenced);
+    const loader::Elf32ModuleInput input{"sample.so", bytes, memory::GuestAddress{0x10000000}};
+    CHECK_NOTHROW(static_cast<void>(runtime::PreflightAndroidGuestLink({19, "sample.so", std::span{&input, 1}})));
+    // An actual strong reference must still fail.
+    Put32(bytes, 0x138 + 4, 8);  // DT_RELSZ, after the six metadata tags and DT_REL.
+    CHECK_THROWS_AS(static_cast<void>(runtime::PreflightAndroidGuestLink({19, "sample.so", std::span{&input, 1}})),
+                    runtime::AndroidLinkPreflightError);
 }

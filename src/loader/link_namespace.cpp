@@ -153,17 +153,28 @@ using ModuleNames = std::map<std::string, std::size_t, std::less<>>;
     return std::nullopt;
 }
 
-[[nodiscard]] Elf32ResolvedSymbols ResolveInScope(
-    const Elf32LinkNamespace& link_namespace,
-    const std::span<const std::size_t> lookup_scope,
-    const std::size_t module_index) {
+[[nodiscard]] Elf32ResolvedSymbols ResolveInScope(const Elf32LinkNamespace& link_namespace,
+                                                  const std::span<const std::size_t> lookup_scope,
+                                                  const std::size_t module_index,
+                                                  const Elf32RelocationTable* relocations) {
     if (module_index >= link_namespace.modules.size()) {
         throw LinkError("ELF module index is outside the link namespace");
     }
     const auto& module = link_namespace.modules[module_index];
     Elf32ResolvedSymbols result;
     result.values.resize(module.symbols.symbols.size());
+    std::vector<bool> referenced(module.symbols.symbols.size(), relocations == nullptr);
+    if (relocations != nullptr) {
+        for (const auto& relocation : relocations->relocations) {
+            if (relocation.type == kArmRelocationNone || relocation.symbol_index == 0) continue;
+            if (relocation.symbol_index >= referenced.size()) {
+                throw LinkError("relocation symbol index is outside dynsym");
+            }
+            referenced[relocation.symbol_index] = true;
+        }
+    }
     for (std::size_t index = 1; index < module.symbols.symbols.size(); ++index) {
+        if (!referenced[index]) continue;
         const auto& symbol = module.symbols.symbols[index];
         const bool locally_bound = symbol.section_index != 0 &&
                                    (symbol.binding == 0 ||
@@ -274,17 +285,14 @@ Elf32SymbolLocation LookupElf32Symbol(
     return *result;
 }
 
-Elf32ResolvedSymbols ResolveElf32Symbols(
-    const Elf32LinkNamespace& link_namespace,
-    const std::size_t module_index) {
-    return ResolveInScope(link_namespace, link_namespace.lookup_scope,
-                          module_index);
+Elf32ResolvedSymbols ResolveElf32Symbols(const Elf32LinkNamespace& link_namespace, const std::size_t module_index,
+                                         const Elf32RelocationTable* relocations) {
+    return ResolveInScope(link_namespace, link_namespace.lookup_scope, module_index, relocations);
 }
 
-Elf32ResolvedSymbols ResolveElf32Symbols(
-    const Elf32LinkNamespace& link_namespace, const Elf32LinkScope& scope,
-    const std::size_t module_index) {
-    return ResolveInScope(link_namespace, scope.lookup_scope, module_index);
+Elf32ResolvedSymbols ResolveElf32Symbols(const Elf32LinkNamespace& link_namespace, const Elf32LinkScope& scope,
+                                         const std::size_t module_index, const Elf32RelocationTable* relocations) {
+    return ResolveInScope(link_namespace, scope.lookup_scope, module_index, relocations);
 }
 
 }  // namespace ogplay::loader

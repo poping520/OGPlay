@@ -108,18 +108,31 @@ TEST_CASE("ARM REL rejects unresolved unsupported and ambiguous writes atomicall
                             fixture.memory),
                         ogplay::loader::RelocationError);
     }
-    SUBCASE("duplicate target") {
-        ogplay::loader::Elf32RelocationTable table;
-        table.relocations = {
-            {GuestAddress{0x10280}, 0, ogplay::loader::kArmRelocationRelative},
-            {GuestAddress{0x10280}, 0, ogplay::loader::kArmRelocationRelative}};
-        CHECK_THROWS_AS(ogplay::loader::ApplyElf32ArmRelocations(
-                            table, symbols, GuestAddress{0x20000}, fixture.plan,
-                            fixture.memory),
-                        ogplay::loader::RelocationError);
-    }
     CHECK(ReadWord(fixture.memory, GuestAddress{0x30280}) == 4);
     const std::array byte{std::byte{1}};
     CHECK_THROWS_AS(fixture.memory.Write(GuestAddress{0x30280}, byte),
                     ogplay::memory::MemoryFault);
+}
+
+TEST_CASE("WU11-6 ARM REL skips NONE and composes repeated targets in table order") {
+    Fixture fixture;
+    WriteWord(fixture.memory, GuestAddress{0x30280}, 4);
+    fixture.memory.Protect(fixture.plan.regions[0].range, fixture.plan.regions[0].final_protection);
+    ogplay::loader::Elf32ResolvedSymbols symbols;
+    symbols.values = {std::nullopt, GuestAddress{7}};
+    ogplay::loader::Elf32RelocationTable table;
+    table.relocations = {
+        {GuestAddress{0xffffffff}, 0xffffff, ogplay::loader::kArmRelocationNone},
+        {GuestAddress{0x10280}, 0, ogplay::loader::kArmRelocationRelative},
+        {GuestAddress{0x10280}, 1, ogplay::loader::kArmRelocationAbs32},
+        {GuestAddress{0x10280}, 0, ogplay::loader::kArmRelocationAbs32},
+    };
+    ogplay::loader::ApplyElf32ArmRelocations(table, symbols, GuestAddress{0x20000}, fixture.plan, fixture.memory);
+    CHECK(ReadWord(fixture.memory, GuestAddress{0x30280}) == 0x2000b);
+    table.relocations.push_back({GuestAddress{0x10280}, 1, 255});
+    CHECK_THROWS_AS(
+        ogplay::loader::ApplyElf32ArmRelocations(table, symbols, GuestAddress{0x20000}, fixture.plan, fixture.memory),
+        ogplay::loader::RelocationError);
+    CHECK(ReadWord(fixture.memory, GuestAddress{0x30280}) == 0x2000b);
+    CHECK_THROWS_AS(WriteWord(fixture.memory, GuestAddress{0x30280}, 0), ogplay::memory::MemoryFault);
 }

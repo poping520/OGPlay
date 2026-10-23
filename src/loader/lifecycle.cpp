@@ -33,10 +33,8 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
     return core::ReadLittleEndian<std::uint32_t>(bytes, offset);
 }
 
-[[nodiscard]] std::optional<std::uint32_t> UniqueDynamicValue(
-    const Elf32Image& image, const std::int32_t tag) {
-    return elf_detail::UniqueDynamicValue(
-        image, tag, "lifecycle dynamic tag appears more than once");
+[[nodiscard]] std::optional<std::uint32_t> LastDynamicValue(const Elf32Image& image, const std::int32_t tag) {
+    return elf_detail::LastDynamicValue(image, tag);
 }
 
 [[nodiscard]] std::size_t VirtualFileOffset(
@@ -54,18 +52,14 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
 [[nodiscard]] std::vector<memory::GuestAddress> ReadFunctionArray(
     const std::span<const std::byte> bytes, const Elf32Image& image,
     const std::int32_t address_tag, const std::int32_t size_tag) {
-    const auto address = UniqueDynamicValue(image, address_tag);
-    const auto size = UniqueDynamicValue(image, size_tag);
-    Require(address.has_value() == size.has_value(),
-            "lifecycle array metadata is incomplete");
-    if (!address.has_value()) return {};
-    Require(*size % 4U == 0, "lifecycle array size is not word aligned");
-    if (*size == 0) return {};
-    const auto offset = VirtualFileOffset(
-        image, memory::GuestAddress{*address}, *size, bytes.size());
+    const auto address = LastDynamicValue(image, address_tag);
+    const auto size = LastDynamicValue(image, size_tag);
+    const auto byte_count = (size.value_or(0) / 4U) * 4U;
+    if (!address.has_value() || byte_count == 0) return {};
+    const auto offset = VirtualFileOffset(image, memory::GuestAddress{*address}, byte_count, bytes.size());
     std::vector<memory::GuestAddress> result;
-    result.reserve(*size / 4U);
-    for (std::uint32_t index = 0; index < *size / 4U; ++index) {
+    result.reserve(byte_count / 4U);
+    for (std::uint32_t index = 0; index < byte_count / 4U; ++index) {
         result.push_back(memory::GuestAddress{
             Read32(bytes, offset + static_cast<std::size_t>(index) * 4U)});
     }
@@ -77,8 +71,8 @@ void RequireRange(const std::size_t offset, const std::uint64_t size,
 Elf32LifecycleInfo ReadElf32LifecycleInfo(
     const std::span<const std::byte> bytes, const Elf32Image& image) {
     Elf32LifecycleInfo result;
-    const auto init = UniqueDynamicValue(image, kElfDynamicInit);
-    const auto fini = UniqueDynamicValue(image, kElfDynamicFini);
+    const auto init = LastDynamicValue(image, kElfDynamicInit);
+    const auto fini = LastDynamicValue(image, kElfDynamicFini);
     if (init.has_value()) result.init = memory::GuestAddress{*init};
     if (fini.has_value()) result.fini = memory::GuestAddress{*fini};
     result.init_array = ReadFunctionArray(
@@ -88,17 +82,12 @@ Elf32LifecycleInfo ReadElf32LifecycleInfo(
 
     for (const auto& segment : image.program_headers) {
         if (segment.type != kElfProgramArmExidx) continue;
-        Require(!result.arm_exidx.has_value(),
-                "ELF contains multiple PT_ARM_EXIDX segments");
-        Require(segment.file_size == segment.memory_size &&
-                    segment.file_size % 8U == 0,
-                "PT_ARM_EXIDX has an invalid size");
-        if (segment.file_size != 0) {
-            static_cast<void>(VirtualFileOffset(
-                image, segment.virtual_address, segment.file_size, bytes.size()));
+        if (result.arm_exidx.has_value()) continue;
+        if (segment.memory_size / 8U != 0) {
+            static_cast<void>(
+                VirtualFileOffset(image, segment.virtual_address, (segment.memory_size / 8U) * 8U, bytes.size()));
         }
-        result.arm_exidx =
-            Elf32ArmExidx{segment.virtual_address, segment.file_size / 8U};
+        result.arm_exidx = Elf32ArmExidx{segment.virtual_address, segment.memory_size / 8U};
     }
     return result;
 }

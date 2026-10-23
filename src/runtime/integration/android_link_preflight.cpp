@@ -34,15 +34,21 @@ AndroidImportAudit AuditAndroidNativeImports(
     AndroidImportAudit report;
     const auto symbols = detail::BuildAndroidBoundarySymbols(profile.api);
     const BionicHleSymbolProvider provider(symbols);
-    std::set<std::tuple<std::string, std::string, bool>> missing;
+    std::set<std::tuple<std::string, std::string, bool, bool>> missing;
     for (const auto& library : libraries.Libraries()) {
         const auto closure = CollectApkNativeLibraryClosure(
             libraries, profile, system_libraries, library.soname);
         std::vector<loader::Elf32LinkModule> modules;
+        std::vector<std::set<std::uint32_t>> referenced;
         for (const auto& source : closure) {
             const auto image = loader::ParseElf32Arm(source.image);
             auto dynamic = loader::ReadElf32DynamicInfo(source.image, image);
             auto table = loader::ReadElf32SymbolTable(source.image, image);
+            const auto relocations = loader::ReadElf32Relocations(source.image, image, table);
+            auto& used = referenced.emplace_back();
+            for (const auto& relocation : relocations.relocations) {
+                if (relocation.type != loader::kArmRelocationNone) used.insert(relocation.symbol_index);
+            }
             auto versions = loader::ReadElf32SymbolVersions(source.image, image, dynamic, table);
             modules.push_back({source.name, source.load_bias, std::move(dynamic),
                                std::move(table), std::move(versions), {}});
@@ -69,13 +75,21 @@ AndroidImportAudit AuditAndroidNativeImports(
                     static_cast<void>(loader::LookupElf32Symbol(ns, scope, symbol.name, version, dependency));
                 } catch (const loader::LinkError& error) {
                     if (!std::string_view(error.what()).starts_with("ELF symbol is unresolved: ")) throw;
-                    missing.emplace(module.name, symbol.name, symbol.binding == 2);
+                    missing.emplace(module.name, symbol.name, symbol.binding == 2,
+                                    referenced[m].contains(static_cast<std::uint32_t>(i)));
                 }
             }
         }
     }
-    for (const auto& [library, symbol, weak] : missing) {
-        report.gaps.push_back({library, symbol, weak});
+    for (const auto& [library, symbol, weak, used] : missing) {
+        report.gaps.push_back({library, symbol, weak, used});
+        if (!used) {
+            if (weak)
+                ++report.unused_weak_missing;
+            else
+                ++report.unused_strong_missing;
+            continue;
+        }
         if (weak) ++report.weak_missing; else ++report.strong_missing;
     }
     return report;

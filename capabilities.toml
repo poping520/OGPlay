@@ -756,7 +756,7 @@ note = "APS-7：Manifest→rootless AndroidAppProcess→Application→launcher A
 [loader.hle_boundary_namespace]
 status = "complete"
 test = "tests/loader/module_loader_tests.cpp; tests/runtime/android_link_preflight_tests.cpp#APS-11"
-note = "ELF namespace 可追加仅参与解析的绝对 HLE boundary 模块，保留 guest 身份与排序。preflight 逐个所选 ABI APK 根共用 native 依赖/SONAME 选择和版本查找，按库聚合所有强/弱导入缺口；强缺口失败，弱缺口单列，不执行 guest。"
+note = "ELF namespace 可追加仅参与解析的绝对 HLE boundary 模块，保留 guest 身份与排序。preflight 逐个所选 ABI APK 根共用 native 依赖/SONAME 选择和版本查找，按库聚合所有强/弱导入缺口并标记重定位引用；仅引用强缺口失败，未引用缺口保留独立计数与诊断，不执行 guest。"
 
 [loader.apk_stored_entry]
 status = "complete"

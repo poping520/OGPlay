@@ -63,10 +63,13 @@ public:
     std::string_view name,
     std::optional<std::string_view> version = std::nullopt,
     std::optional<std::string_view> dependency = std::nullopt);
-[[nodiscard]] Elf32ResolvedSymbols ResolveElf32Symbols(
-    const Elf32LinkNamespace& link_namespace, std::size_t module_index);
-[[nodiscard]] Elf32ResolvedSymbols ResolveElf32Symbols(
-    const Elf32LinkNamespace& link_namespace, const Elf32LinkScope& scope,
-    std::size_t module_index);
+// With a relocation table, only non-NONE references are resolved. nullptr
+// retains the explicit all-symbol diagnostic mode.
+[[nodiscard]] Elf32ResolvedSymbols ResolveElf32Symbols(const Elf32LinkNamespace& link_namespace,
+                                                       std::size_t module_index,
+                                                       const Elf32RelocationTable* relocations = nullptr);
+[[nodiscard]] Elf32ResolvedSymbols ResolveElf32Symbols(const Elf32LinkNamespace& link_namespace,
+                                                       const Elf32LinkScope& scope, std::size_t module_index,
+                                                       const Elf32RelocationTable* relocations = nullptr);
 
 }  // namespace ogplay::loader

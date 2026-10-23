@@ -215,7 +215,7 @@ TEST_CASE("DVM-270 ELF namespace rollback preserves active protected payload") {
         }
         return LoadElf32ModuleNamespace("sample.so", std::span{&input, 1}, memory).modules;
     };
-    CHECK_THROWS_WITH_AS(static_cast<void>(load(failing)), "relocation references an unresolved symbol",
+    CHECK_THROWS_WITH_AS(static_cast<void>(load(failing)), "unsupported ELF32 ARM relocation type 255",
                          RelocationError);
     CHECK(memory.DescribeMappings(16).size() == before.size());
     CHECK_THROWS_AS(memory.ValidateMapped({GuestAddress{0x30000U}, 4096}), MemoryFault);
@@ -230,4 +230,33 @@ TEST_CASE("DVM-270 ELF namespace rollback preserves active protected payload") {
     memory.Validate({GuestAddress{0x30200U}, 4}, AccessType::execute);
     CHECK(memory.Read32(payload) == 0x12345678U);
     memory.UnmapProtected(owner, payload_range);
+}
+
+TEST_CASE("WU11-6 module loading resolves only non-NONE relocation symbols") {
+    using namespace ogplay;
+    auto bytes = RelocationFailureElf();
+    Put16(bytes, 0x1ce, 0);  // Strong undefined entry, initially unreferenced.
+    Put32(bytes, 0x220, 0xffffffff);
+    Put32(bytes, 0x224, (1U << 8U) | loader::kArmRelocationNone);
+    const loader::Elf32ModuleInput input{"sample.so", bytes, memory::GuestAddress{0x20000}};
+    memory::AddressSpace memory;
+    auto loaded = loader::LoadElf32ModuleNamespace("sample.so", std::span{&input, 1}, memory);
+    CHECK(loaded.modules[0].relocations.relocations.size() == 1);
+    CHECK(loaded.link_namespace.modules[0].symbols.symbols[1].name == "entry");
+    // The same unprovided symbol becomes fatal once a real relocation refers to it.
+    Put32(bytes, 0x220, 0x10200);
+    Put32(bytes, 0x224, (1U << 8U) | loader::kArmRelocationJumpSlot);
+    memory::AddressSpace negative;
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(loader::LoadElf32ModuleNamespace("sample.so", std::span{&input, 1}, negative)),
+        "strong ELF symbol is unresolved: entry", loader::LinkError);
+    // Extension uses exactly the same relocation-filtered resolution.
+    auto base = ModuleElf();
+    Put32(base, 0x110, 0x60000001);
+    const loader::Elf32ModuleInput base_input{"base.so", base, memory::GuestAddress{0x40000}};
+    memory::AddressSpace extension_memory;
+    const auto initial = loader::LoadElf32ModuleNamespace("base.so", std::span{&base_input, 1}, extension_memory);
+    Put32(bytes, 0x224, (1U << 8U) | loader::kArmRelocationNone);
+    CHECK_NOTHROW(static_cast<void>(loader::ExtendElf32ModuleNamespace(initial.link_namespace, "sample.so",
+                                                                       std::span{&input, 1}, extension_memory)));
 }

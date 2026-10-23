@@ -20,13 +20,10 @@ struct VirtualFileOffsetErrors final {
     std::string_view not_file_backed;
 };
 
-[[nodiscard]] inline std::optional<std::uint32_t> UniqueDynamicValue(
-    const Elf32Image& image, const std::int32_t tag,
-    const std::string_view duplicate_error) {
+[[nodiscard]] inline std::optional<std::uint32_t> LastDynamicValue(const Elf32Image& image, const std::int32_t tag) {
     std::optional<std::uint32_t> result;
     for (const auto& entry : image.dynamic_entries) {
         if (entry.tag != tag) continue;
-        if (result.has_value()) throw ElfError(std::string(duplicate_error));
         result = entry.value;
     }
     return result;

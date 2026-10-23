@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <set>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -55,12 +55,6 @@ struct PendingWrite final {
     const memory::GuestAddress load_bias,
     const Elf32ResolvedSymbols& resolved_symbols) {
     const auto type = relocation.type;
-    if (type == kArmRelocationNone) {
-        if (relocation.symbol_index != 0) {
-            throw RelocationError("R_ARM_NONE references a non-null symbol");
-        }
-        return addend;
-    }
     if (type == kArmRelocationRelative) {
         if (relocation.symbol_index != 0) {
             throw RelocationError("R_ARM_RELATIVE references a non-null symbol");
@@ -70,7 +64,8 @@ struct PendingWrite final {
     if (relocation.symbol_index >= resolved_symbols.values.size()) {
         throw RelocationError("relocation symbol index is outside resolved symbols");
     }
-    const auto symbol = resolved_symbols.values[relocation.symbol_index];
+    const auto symbol = relocation.symbol_index == 0 ? std::optional{memory::GuestAddress{}}
+                                                     : resolved_symbols.values[relocation.symbol_index];
     if (!symbol.has_value()) {
         throw RelocationError("relocation references an unresolved symbol");
     }
@@ -100,16 +95,17 @@ void ApplyElf32ArmRelocations(
     }
     std::vector<PendingWrite> writes;
     writes.reserve(relocations.relocations.size());
-    std::set<std::uint32_t> targets;
+    std::map<std::uint32_t, std::size_t> targets;
     for (const auto& relocation : relocations.relocations) {
+        if (relocation.type == kArmRelocationNone) continue;
         const auto target = Biased(relocation.target, load_bias);
-        if (!targets.insert(target.Value()).second) {
-            throw RelocationError("multiple relocations target the same word");
+        const auto [position, inserted] = targets.emplace(target.Value(), writes.size());
+        if (inserted) {
+            const auto original = ReadWord(address_space, target);
+            writes.push_back({target, original, original});
         }
-        const auto original = ReadWord(address_space, target);
-        writes.push_back({target, original,
-                          ResolveValue(relocation, original, target, load_bias,
-                                       resolved_symbols)});
+        auto& write = writes[position->second];
+        write.value = ResolveValue(relocation, write.value, target, load_bias, resolved_symbols);
     }
 
     std::size_t writable_regions{};

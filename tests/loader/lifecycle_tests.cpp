@@ -66,45 +66,55 @@ TEST_CASE("ELF lifecycle rejects incomplete ambiguous and unbacked metadata") {
     SUBCASE("incomplete array pair") {
         auto image = LifecycleImage();
         image.dynamic_entries.erase(image.dynamic_entries.begin() + 3);
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
-                        ogplay::loader::ElfError);
+        CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
     SUBCASE("array size is not word aligned") {
         auto image = LifecycleImage();
         image.dynamic_entries[3].value = 6;
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
-                        ogplay::loader::ElfError);
+        CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
     SUBCASE("array is outside file backed load") {
         auto image = LifecycleImage();
         image.dynamic_entries[2].value = 0x1080;
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
+        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
                         ogplay::loader::ElfError);
     }
     SUBCASE("duplicate init tag") {
         auto image = LifecycleImage();
         image.dynamic_entries.push_back(
             {ogplay::loader::kElfDynamicInit, 0x1601});
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
-                        ogplay::loader::ElfError);
+        CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
     SUBCASE("multiple exidx segments") {
         auto image = LifecycleImage();
         image.program_headers.push_back(image.program_headers[1]);
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
-                        ogplay::loader::ElfError);
+        CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
     SUBCASE("exidx size is not entry aligned") {
         auto image = LifecycleImage();
         image.program_headers[1].file_size = 12;
         image.program_headers[1].memory_size = 12;
-        CHECK_THROWS_AS(static_cast<void>(
-                            ogplay::loader::ReadElf32LifecycleInfo(bytes, image)),
-                        ogplay::loader::ElfError);
+        CHECK_NOTHROW(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)));
     }
+}
+
+TEST_CASE("WU11-6 ELF lifecycle last tags floor sizes and first exidx follow API19") {
+    std::vector<std::byte> bytes(0x80);
+    Put32(bytes, 0x10, 0x1301);
+    auto image = LifecycleImage();
+    image.dynamic_entries.push_back({ogplay::loader::kElfDynamicInit, 0x1701});
+    image.dynamic_entries[3].value = 7;
+    image.program_headers[1].memory_size = 15;
+    image.program_headers[1].file_size = 4;
+    image.program_headers.push_back(image.program_headers[1]);
+    image.program_headers.back().virtual_address = ogplay::memory::GuestAddress{0xffffffff};
+    const auto info = ogplay::loader::ReadElf32LifecycleInfo(bytes, image);
+    CHECK(info.init->Value() == 0x1701);
+    REQUIRE(info.init_array.size() == 1);
+    CHECK(info.init_array[0].Value() == 0x1301);
+    CHECK(info.arm_exidx->entry_count == 1);
+    image.dynamic_entries.erase(image.dynamic_entries.begin() + 3);
+    CHECK(ogplay::loader::ReadElf32LifecycleInfo(bytes, image).init_array.empty());
+    image.dynamic_entries.push_back({ogplay::loader::kElfDynamicInitArraySize, 0xffff});
+    CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ReadElf32LifecycleInfo(bytes, image)), ogplay::loader::ElfError);
 }

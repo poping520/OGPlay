@@ -89,6 +89,21 @@ python3 tools/bootdex/select_shapes.py --surface <dump-surface.json> --scan-dir 
 不接受构造器、枚举、计算式初始化或其他行为代码。依赖包括签名/注解中的类型；
 未引用的依赖不自动纳入。报告/反汇编缓存留 `.local/`，边界见 [DVM-252](../docs/tasks/dexvm/DVM-252.md)。
 
+`select_rom_java.py --scope closure` 按 [ADR-0155](../docs/adr/dexvm.md#adr-0155)
+从当前 BootDex 配方与 intrinsic 声明出发，沿 ROM 方法体引用补全准入闭包，包含父类与
+初始化必需类；不依赖样本库。拒绝类不作为继续遍历的桥梁。
+
+```text
+python3 tools/bootdex/select_rom_java.py --scope closure --surface <dump-surface.json> --report <selection.json> --apply
+python3 tools/bootdex/build_bootdex.py build
+python3 tools/bootdex/build_bootdex.py check
+# 用当前 ogplay-cli dexvm dump-surface 重新导出后：
+python3 tools/bootdex/select_rom_java.py --check-closure --surface <new-surface.json> --report <closure-check.json>
+```
+
+检查缺口非零即失败并列出类；method_ids/field_ids 本批不超过 60000，仍为单 dex。
+`--scope referenced --scan-dir <preflight目录>` 只保留作样本引用诊断。
+
 `select_rom_java.py --replace-intrinsic <descriptor...>` 是 ADR-0154 的显式撤换入口，
 需同时提供 `--surface` 与 `--report`；默认只出报告，`--apply` 写入目标及其准入初始化闭包。
 仅允许已有同签名 native 绑定；其他规则不放宽。源码/签名交互需在同批删除或改经 Java 调用，

@@ -18,7 +18,8 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 ## 批次划分（对应设计 06 §1 阶段）
 
 | 批次 | 阶段 | 内容 | WU |
-| --- | --- | --- | --- |
+| --- | --- | --- |
+| [DVM-266](DVM-266.md) | WU10-1 BootDex 自身可达准入闭包 | 加载性能门禁未过 | --- |
 | 批次 0 | 阶段 0 · 地基 | AOSP 参考资料、题库测量、opcode 目录、dexasm | DVM-1..5 |
 | 批次 1 | 阶段 1 · 解释器内核 | dex_code 读取、类链接、对象模型、指令家族、异常、clinit、GC-A | DVM-6.. |
 | 批次 2 | 阶段 2 · 边界互通 | JNI 出向编组、入向第三路由、java.* P1 intrinsic | 随批次 1 收敛后分配 |

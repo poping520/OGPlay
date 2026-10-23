@@ -32,6 +32,19 @@
     return-object v0
 .end method
 
+# DVM-266: initialization and ROM service dependency through guest instructions.
+.method public static contentValuesCreator()Landroid/os/Parcelable$Creator;
+.registers 1
+    sget-object v0, Landroid/content/ContentValues;->CREATOR:Landroid/os/Parcelable$Creator;
+    return-object v0
+.end method
+.method public static coreSetting(Ljava/lang/String;I)I
+.registers 2
+    invoke-static {v0, v1}, Landroid/app/AppGlobals;->getIntCoreSetting(Ljava/lang/String;I)I
+    move-result v0
+    return v0
+.end method
+
 # Observe the binding override before Application.<clinit> executes.
 .class public Lfixture/PlatformApplication;
 .super Landroid/app/Application;

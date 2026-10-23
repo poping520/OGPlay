@@ -17,6 +17,8 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import struct
+import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_bootdex as builder
@@ -117,7 +119,9 @@ class Analyzer:
     def __init__(self, surface: list[dict], smali: dict[str, dict], jar_of: dict[str, str],
                  recipe_classes: set[str], guest: set[str], reserved: set[str],
                  source_tokens: set[str] | None = None, cha_precise: bool = False,
-                 replacements: set[str] | None = None, native_bindings: set[tuple] | None = None):
+                 replacements: set[str] | None = None, native_bindings: set[tuple] | None = None,
+                 boot_smali: dict[str, dict] | None = None):
+        self.boot_smali = boot_smali or {}
         self.replacements = replacements or set()
         self.native_bindings = native_bindings or set()
         self.cls = {c['descriptor']: c for c in surface}
@@ -489,6 +493,47 @@ class Analyzer:
             stack.extend(self.required.get(d, ()))
         return out
 
+    def reachable_closure(self):
+        """ADR-0155: ROM body reachability from recipe and intrinsic declarations.
+
+        Rejected classes are boundaries, not bridges into otherwise unreachable code.
+        Each admitted dependency contributes all its bodies, parents and init closure.
+        Existing BootDex seeds must be traversed even though they are not candidates.
+        """
+        seeds = set(self.recipe_classes) | set(self.boot_smali)
+        for d, c in self.cls.items():
+            if c['source'] != 'intrinsic':
+                continue
+            seeds.update(c.get('interfaces', []))
+            if c.get('superclass'):
+                seeds.add(c['superclass'])
+            for member in c['methods'] + c['fields']:
+                seeds.update(SIG_TYPE_RE.findall(member['descriptor']))
+        selected, seen, stack = set(), set(), list(seeds)
+        while stack:
+            d = stack.pop()
+            if d in seen:
+                continue
+            seen.add(d)
+            if d in self.admitted:
+                dependencies = self.closure_of({d})
+                selected.update(dependencies)
+                stack.extend(dependencies - {d})
+            elif d not in self.recipe_classes and d not in self.boot_smali:
+                continue
+            body = self.boot_smali.get(d, self.smali.get(d, {}))
+            for method in body.get('methods', {}).values():
+                for op in method['ops']:
+                    if op[0] == 'new':
+                        stack.append(op[2])
+                    elif op[0] == 'invoke':
+                        stack.append(array_base(op[3]))
+                    elif op[0] == 'field':
+                        stack.append(array_base(op[2]))
+                    elif op[0] == 'ref':
+                        stack.append(op[1])
+        return {d for d in selected if self.cls[d]['source'] == 'skeleton'}
+
     def primary(self, d):
         if d in self.interacting and not self.local_reasons[d]:
             return 'intrinsic-interaction'
@@ -526,6 +571,32 @@ def disassemble(cache: Path) -> dict[str, dict]:
             else:
                 texts[owner] = (jar, smali)
     return texts
+
+
+def disassemble_bootdex(cache: Path, surface: list[dict]) -> dict[str, dict]:
+    """Traverse the actual payload too: ROM overrides, Conscrypt and guest Java.
+
+    Keep this separate from the unchanged ADR-0148 initialization admission audit.
+    """
+    digest = builder.file_sha256(builder.OUTPUT)
+    dest = cache / ('bootdex-' + digest[:16])
+    stamp = dest / '.complete'
+    if not stamp.exists():
+        dest.mkdir(parents=True, exist_ok=True)
+        subprocess.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
+                        'disassemble', '--api', '19', '--jobs', '1', '--output', str(dest),
+                        str(builder.OUTPUT)], check=True)
+        stamp.write_text(digest, encoding='utf-8')
+    out = {}
+    for c in surface:
+        if c['source'] != 'bootdex':
+            continue
+        d = c['descriptor']
+        path = dest / (d[1:-1] + '.smali')
+        if not path.is_file():
+            raise ValueError('BootDex surface/payload mismatch: ' + d)
+        out[d] = parse_smali_class(path.read_text(encoding='utf-8'))
+    return out
 
 
 def guest_descriptors() -> set[str]:
@@ -625,7 +696,8 @@ def run(args) -> int:
     recipe_classes = {x for v in recipe['classes'].values() for x in v}
     analyzer = Analyzer(surface, smali, jar_of, recipe_classes, guest_descriptors(), reserved,
                         source_tokens(builder.ROOT), cha_precise=args.cha_precise,
-                        replacements=replacements, native_bindings=native_bindings)
+                        replacements=replacements, native_bindings=native_bindings,
+                        boot_smali=disassemble_bootdex(args.cache, surface))
     for d in sorted(reserved & set(analyzer.candidates)):
         analyzer.cand_set.discard(d)
     analyzer.candidates = [d for d in analyzer.candidates if d not in reserved]
@@ -665,6 +737,11 @@ def run(args) -> int:
                           for d, w in sorted(analyzer.interacting.items())],
         rejected_detail={d: [list(r) for r in reasons[:5]] for d, reasons in sorted(analyzer.rejected.items())})
     chosen = sorted(admitted)
+    closure_missing = sorted(analyzer.reachable_closure())
+    report['closure_missing'] = closure_missing
+    report['closure_missing_count'] = len(closure_missing)
+    if args.scope == 'closure':
+        chosen = closure_missing
     if args.scope == 'referenced':
         if not freq:
             raise ValueError('--scope referenced requires --scan-dir')
@@ -688,6 +765,20 @@ def run(args) -> int:
     report['selected'] = len(chosen)
     report['selected_classes'] = chosen
     args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
+    if args.check_closure:
+        with zipfile.ZipFile(builder.OUTPUT) as archive:
+            dex = archive.read('classes.dex')
+        indices = dict(method_ids=struct.unpack_from('<I', dex, 88)[0],
+                       field_ids=struct.unpack_from('<I', dex, 80)[0])
+        report['dex_indices'] = indices
+        args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
+        over_budget = any(n > 60000 for n in indices.values())
+        if over_budget:
+            print('single DEX index budget exceeded (60000): ' + str(indices), file=sys.stderr)
+        for d in closure_missing:
+            print('CLOSURE GAP ' + d, file=sys.stderr)
+        print(f'closure gaps: {len(closure_missing)}')
+        return 1 if closure_missing or over_budget else 0
     if args.apply:
         for d in chosen:
             group = recipe['classes'].setdefault(jar_of[d], [])
@@ -793,6 +884,37 @@ def self_test():
     assert reasons('Ltest/Child;') == ['parent-not-admitted'] or 'parent-not-admitted' in reasons('Ltest/Child;')
     assert analyzer.primary('Ltest/Passed;') == 'intrinsic-interaction' and 'Ltest/Passed;' in analyzer.interacting
     assert 'Ltest/Existing;' not in analyzer.rejected and 'Ltest/Existing;' not in admitted
+    # ADR-0155: existing BootDex clinit and ordinary bodies, class constants,
+    # field/invoke owners, a second hop, rejected boundaries, intrinsic declarations.
+    seed = 'Ltest/Existing;'
+    smali[seed] = parse_smali_class(_smali(seed, methods=clinit(
+        ' new-instance v0, Ltest/ExactType;\n') + '.method public f()V\n'
+        ' const-class v0, Ltest/Const;\n'
+        ' check-cast v0, Ltest/Native;\n'
+        ' sget-object v0, Ltest/Cycle1;->value:Ljava/lang/Object;\n'
+        ' invoke-static {}, Ltest/SoloHelper;->run(Ltest/Solo;)I\n'
+        ' return-void\n.end method\n'))
+    smali['Ltest/Native;'] = parse_smali_class(_smali('Ltest/Native;', methods=
+        '.method public f()V\n const-class v0, Ltest/Plain;\n return-void\n.end method\n'))
+    analyzer.recipe_classes = {seed}
+    reachable = analyzer.reachable_closure()
+    assert {'Ltest/ExactType;', 'Ltest/Base;', 'Ltest/Const;', 'Ltest/Cycle1;',
+            'Ltest/Cycle2;', 'Ltest/SoloHelper;', 'Ltest/Solo;'} <= reachable
+    assert 'Ltest/Native;' not in reachable and 'Ltest/Plain;' not in reachable
+    classes.append(_surface('Ltest/IntrinsicSeed;', 'intrinsic', methods=[
+        unimpl('declaration', '()Ltest/Plain;')]))
+    seeded = Analyzer(classes, smali, jar_of, {seed}, set(), set())
+    seeded.analyze()
+    assert 'Ltest/Plain;' in seeded.reachable_closure()
+    assert parse_ops('instance-of v0, v1, Ltest/Const;') == [('ref', 'Ltest/Const;')]
+    assert parse_ops('const-class v0, [Ltest/Const;') == [('ref', 'Ltest/Const;')]
+    payload = Analyzer(classes, smali, jar_of, set(), set(), set(), boot_smali={
+        'Ltest/GuestPayload;': parse_smali_class(_smali('Ltest/GuestPayload;', methods=
+            '.method public f()V\n const-class v0, Ltest/Plain;\n return-void\n.end method\n'))})
+    payload.analyze()
+    assert 'Ltest/Plain;' in payload.reachable_closure()
+    # The historical scope deliberately does not repair an existing BootDex seed.
+    assert analyzer.closure_of({seed}) == set()
     # A second Solo override must turn the unique chain into a rejected one (sensitivity).
     add('Ltest/Solo2;', 'skeleton', [skel('<init>', '()V'), skel('name', '()I')], super_='Ltest/Solo;',
         extra='.method public name()I\n const/4 v0, 0x2\n return v0\n.end method\n')
@@ -848,7 +970,8 @@ def self_test():
     except ValueError:
         pass
     print('select_rom_java self-test passed (admit, native, intrinsic parent, unimplemented target, '
-          'binder, indirect virtual chain, CHA uniqueness, cascade, interaction, cycles)')
+          'binder, indirect virtual chain, CHA uniqueness, cascade, interaction, cycles, '
+          'body reachability, class constants, rejected boundary, closure fixed point)')
 
 
 def main():
@@ -861,9 +984,12 @@ def main():
     p.add_argument('--replace-intrinsic', nargs='+', metavar='DESCRIPTOR',
                    help='ADR-0154 explicit migration; includes admitted initialization dependencies')
     p.add_argument('--cha-precise', action='store_true', help='sensitivity only: accept non-unique targets that are all implemented')
-    p.add_argument('--scope', choices=('all', 'referenced'), default='all',
-                   help='all: every admitted class; referenced: classes the sample library uses plus their '
+    p.add_argument('--scope', choices=('all', 'referenced', 'closure'), default='all',
+                   help='closure: BootDex/intrinsic declaration body reachability; all: every admitted class; '
+                        'referenced: classes the sample library uses plus their '
                         'superclass/<clinit>-required closure (single classes.dex has a 64K id limit)')
+    p.add_argument('--check-closure', action='store_true',
+                   help='fail and list admitted skeleton classes reachable from BootDex/intrinsic declarations')
     p.add_argument('--apply', action='store_true')
     p.add_argument('--self-test', action='store_true')
     args = p.parse_args()
@@ -872,6 +998,10 @@ def main():
         return 0
     if not (args.surface and args.report):
         p.error('--surface and --report required')
+    if args.scope == 'closure' and (args.only or args.replace_intrinsic or args.cha_precise):
+        p.error('--scope closure requires default admission rules without explicit selection')
+    if args.check_closure and (args.apply or args.only or args.replace_intrinsic or args.cha_precise):
+        p.error('--check-closure requires unchanged default admission rules and cannot apply')
     if args.replace_intrinsic and (args.only or args.cha_precise):
         p.error('--replace-intrinsic cannot be combined with --only or --cha-precise')
     return run(args)

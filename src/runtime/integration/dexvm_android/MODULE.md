@@ -65,7 +65,8 @@ Runtime.nativeExit 共用不可返回 VM 退出协议，展开 Java 并终止 ex
 仅发布 session 封存的当前 APK Manifest/path/label/permission/feature，不从默认字段猜安装状态。
 值对象来自 BootDex，Context 保持稳定 ApplicationInfo，查询返回独立值；FLAG_INSTALLED 是已知事实。
 meta-data 的 value 解码 ARSC 类型（含 float→Bundle.putFloat），非 RIGID 不支持类型告警忽略，
-NULL 值/缺失字符串仍明确失败；resource 保留 ID，application/组件分别物化；selected-ABI 库
+TYPE_NULL 缺 value/resource 仍失败；Manifest TYPE_STRING 转换失败保留 Bundle null string，
+key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保留 ID，application/组件分别物化；selected-ABI 库
 在 `/data/app-lib` 只读挂 VFS。
 
 | 查询 | 支持与失败边界 |
@@ -76,7 +77,7 @@ NULL 值/缺失字符串仍明确失败；resource 保留 ID，application/组�
 | getPackageArchiveInfo | 当前封存只读 APK、VFS 规范路径，0/GET_ACTIVITIES/GET_DISABLED_COMPONENTS；UID=-1、安装目录=null/时间=0；缺路径/非普通文件 null，未登记归档/缺事实/未知 flags 失败 |
 | getPackageInfo | GET_ACTIVITIES/META_DATA/PERMISSIONS 组合；activities 仅请求时按声明顺序发布、保留 alias，默认排除禁用项，否则 null |
 | getActivityInfo/getReceiverInfo/getServiceInfo | 当前包完整组件名，0/GET_META_DATA/GET_DISABLED_COMPONENTS；按应用/组件启用状态过滤，缺失 NameNotFoundException，同名 Activity/receiver/service 取最后声明 |
-| getPermissionInfo | 仅 Manifest `<permission>` 定义，0/GET_META_DATA；仅请求/授予但未定义仍 NameNotFoundException |
+| getPermissionInfo | 仅 Manifest 中 registered 的 `<permission>` 首个有效定义，0/GET_META_DATA；未知 group/重复后项不注册，仅请求/授予但未定义仍 NameNotFoundException |
 | queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，无需 DEFAULT；排除禁用项，同组件首匹配、API19 稳定排序 |
 | resolveService | 非空 action，无 component/data/type/categories，0/GET_RESOLVED_FILTER；仅确定无候选时 null，投影不改匹配；潜在匹配/未知条件失败 |
 | bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务（ADR-0084） |

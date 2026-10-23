@@ -2787,9 +2787,9 @@ Decl Declare_android_content_pm_PackageManager(const Context &context) {
               "Ljava/lang/UnsupportedOperationException;",
               "getPermissionInfo requires current-package definitions and flags 0 or GET_META_DATA"};
         }
-        const auto found = std::find_if(
-            context->defined_permissions.begin(), context->defined_permissions.end(),
-            [&](const auto &definition) { return definition.name == name; });
+        const auto found =
+            std::find_if(context->defined_permissions.begin(), context->defined_permissions.end(),
+                         [&](const auto& definition) { return definition.registered && definition.name == name; });
         if (found == context->defined_permissions.end())
           throw dx::VmJavaThrow{
               "Landroid/content/pm/PackageManager$NameNotFoundException;", name};

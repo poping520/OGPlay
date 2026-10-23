@@ -6,21 +6,21 @@
 
 ## 公共 API
 
-- `ParseApkArchive` / `ReadApkEntry`：严格解析单盘 ZIP32 central directory，并按名称、
-  local/central 元数据和 CRC32 提取 stored 或 Deflate 条目；`ReadStoredApkEntry` 保留为要求
-  调用方显式保证未压缩的窄接口；使用 bit 3 的 ZIP32 data descriptor 同样与 central
-  metadata 精确交叉验证。`StoredApkEntryDataOffset` 复用同一 local/central 校验，仅为
-  AFD 发布 stored payload 在 APK 中的物理偏移，不放宽压缩或 CRC 读取契约。
-- `ValidatedStoredApkEntryData`：完整验证 local/central、尺寸、尾部和 CRC 后借用 STORED
-  payload 的只读 span；调用方必须保持 APK 存活且不可变。用于封存媒体来源的一次校验，
-  后续区间读取不重复扫描整条目、不复制完整视频；Deflate 不提供此视图。
-- `ReadApkEntryRange`：对 stored/Deflate 做 local/central、尺寸、尾部及 CRC 完整扫描，
-  仅复制请求窗口；Deflate 只保留 32 KiB history，不分配完整解压结果。按 64 KiB 输出块
-  检查取消；`ApkEntryRangeStatistics` 分开累计完整校验扫描量和实际交付量。
+- `ParseApkArchive` / `ReadApkEntry`：读取单盘 ZIP32 central directory，按 central
+  metadata 提取 stored/Deflate。local header 只校验签名、加密标志与载荷范围，名称、
+  method/size/CRC 冗余字段及 data descriptor 不交叉匹配。按 API19 普通 ZIP 读取语义
+  不比较 CRC；目录余量、EOCD 间隙/文件尾和 Deflate 完整流之后的尾部允许存在。
+  `ReadStoredApkEntry` 是要求未压缩且两种尺寸一致的窄接口；
+  `StoredApkEntryDataOffset` 复用相同定位与范围校验，发布 stored payload 物理偏移。
+- `ValidatedStoredApkEntryData`：校验 stored 尺寸与 local payload 范围后借用只读 span；
+  调用方必须保持 APK 存活且不可变。本接口不提供 CRC 完整性保证，不扫描/复制载荷。
+- `ReadApkEntryRange`：stored 校验范围后只复制窗口；Deflate 完整扫描受界流并核对输出
+  尺寸，只保留 32 KiB history，按 64 KiB 输出检查取消。
+  `ApkEntryRangeStatistics` 的扫描量仅累计 Deflate 输出，stored 为 0；交付量独立累计。
 - `ParseAndroidBinaryManifest` / `ReadAndroidManifest`：受检解析 binary XML chunk、UTF-8/
   UTF-16 string pool、元素与 typed attribute，产出 package/version/SDK、默认或自定义
   Application 类，以及按声明顺序保留 enabled、逐 intent-filter、alias target 的 Activity
-  组件事实；Activity 另保留受检 launchMode（0..3，缺省 standard）及继承 application/package
+  组件事实；Activity 另保留原始整数 launchMode（缺省 standard）及继承 application/package
   默认值的 taskAffinity（保留显式空值），上层决定支持边界。
   同名 Activity/alias 不拒绝或合并，按 API19 保留各声明及过滤器；
   `FindAndroidManifestActivityComponent` 按组件名取最后声明。alias 的受支持 theme/launchMode/taskAffinity
@@ -43,9 +43,21 @@
   选择默认配置/API19/density160，框架引用经可选 external resolver，缺资源、循环/深度超限
   明确失败，不用资源 id 的非零性猜测值。versionCode 缺省/显式 0、空 versionName 合法；
   无 uses-sdk 保留缺席事实，有 uses-sdk 的 min 缺省 0、target 缺省随 min，重复声明后项更新。
-  包名沿 API19 validateName（含 android 特例）；不放宽 chunk/栈/索引等结构安全检查。
+  包名沿 API19 validateName（含 android 特例）。XML 使用声明 headerSize/size，扫描
+  preamble 到首节点；首 START 必须是 manifest，根结束即停止，END 名称不另作栈匹配。
+  节点最小扩展、属性读取与 chunk 范围仍受界；Res_value.size/res0 不作全局拒绝条件。
+  未知节点跳过。字符串池按需解码，非法未使用字符串不拒包；访问转换失败返回空事实，
+  按具体 getter 取默认值/忽略或失败。TYPE_STRING 的空事实保留为 Bundle null string，
+  不替换为空串。字符串使用 UTF-16 code-unit 的 WTF-8 投影，保留 NUL 与孤立 surrogate；
+  UTF8 按 API19 libutils mask 转换，保留声明长度校验并防止转换时越界。
+  重复属性取首项，有 resource map 时 Android typed 字段按资源 ID 匹配；重复 application
+  警告并跳过整棵后项子树。
   顶层 `<permission>` 另存名称、所属包、protectionLevel、group、flags、description 与
-  自身 `meta-data`；权限定义不从 `uses-permission` 推导。
+  自身 `meta-data`；权限定义不从 `uses-permission` 推导。重复声明保留，`registered`
+  标明当前包首个 group 已知的定义；group 来源为固定 API19 平台与当前包声明，未知 group
+  和后续同名定义不注册。protectionLevel 仅按 API19 fixProtectionLevel/-1/flags-base 校验，
+  permissionFlags 不另限位，非资源 description 忽略。
+  uses-permission 缺失/非字符串名称忽略、空串合法，按声明去重并处理整数 maxSdkVersion。
   DVM-112 保留 application enabled、独立的 service 名称/enabled/过滤器事实；过滤器
   保存 action/category 与 data 条件存在标记，不能将未解析的 data 条件当作没有条件。
   service 名称沿用 API19 buildClassName，缺名/空名/非法名明确失败；
@@ -58,9 +70,8 @@
   intent 查询保留逐声明匹配并按组件去重。provider 仍无清单投影，不新增 provider 子系统。
   receiver 同样逐个保存 intent-filter，不合并 action/category；共用过滤器事实还保留
   signed priority、label/icon，供上层查询返回与排序。
-  Manifest 顶层 supports-gl-texture 的 android:name 保留为 supported_gl_textures，按首次
-  声明序去重，未知扩展原样保留；缺名/空名/非法属性明确失败，非顶层声明不投影。
-  本层不选择纹理格式、不探测 GPU 或读取游戏资源，策略归上层启动装配。
+  Manifest 顶层 supports-gl-texture 按 ADR-0128 保留 android:name 原始声明，按声明序去重，
+  包括未知扩展，供上层压缩纹理策略使用；缺名、空名或名称取值失败跳过该条并记诊断，不拒包。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。
@@ -157,13 +168,14 @@
 - APK/AXML/ARSC/DEX/ELF 的 little-endian 标量解码复用 `core::ReadLittleEndian`，
   但每种格式仍在读取前执行自己的范围检查并保留 typed error 与错误上下文。
 - 输入不可信；所有偏移、长度和整数运算必须校验。
-- APK entry 禁止绝对路径、`.`/`..` segment、重复名称、加密和多磁盘；Deflate 的 stored、
-  fixed 与 dynamic Huffman block 均受输出长度、回溯距离、尾部和 CRC 约束，不支持的压缩
-  方法明确失败。
-- binary Manifest 必须是单一完整 XML chunk，根元素、元素嵌套、字符串索引、UTF 编码和
-  typed attribute 全部受检；package 与正 versionCode 缺失或非法时不得发布身份事实。
+- APK entry 名称保留非 ASCII 字节，拒绝 NUL；提取路径仍拒绝绝对路径及 `.`/`..`
+  segment，保留 SAFETY 边界。重复名称、加密、多磁盘与不支持压缩方法明确失败；
+  Deflate stored/fixed/dynamic block 的输出尺寸和回溯距离仍受界，空距离表只允许不使用距离码。
+- Manifest 必须有合法包身份，版本可为缺省/显式 0。容器、扩展和属性读取范围受检，
+  不把 per-string 终止字节、无用坏字符串或 END 标签名匹配作为全包准入条件。
 - native library catalog 只接受 ABI 与 basename 之间恰有一级的 `.so` 路径，空字节失败；
-  catalog 以完整 entry path 稳定排序且不隐含 main library 选择；inventory 同一 ABI 的
+  零长度文件仍发布 SHA-256/ABI/identity，实际 ELF 装载时才失败。
+  catalog 以完整 entry path 稳定排序，不隐含 main library 选择；inventory 同一 ABI 的
   soname/logical name 必须唯一，ABI resolver 禁止读取 `so_sha256` 或猜 root library。
 - DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
   header 与唯一、有序、非重叠的 map 声明必须一致。

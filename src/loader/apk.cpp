@@ -14,7 +14,6 @@ namespace {
 constexpr std::uint32_t kLocalSignature = 0x04034b50;
 constexpr std::uint32_t kCentralSignature = 0x02014b50;
 constexpr std::uint32_t kEndSignature = 0x06054b50;
-constexpr std::uint32_t kDataDescriptorSignature = 0x08074b50;
 constexpr std::size_t kEndSize = 22;
 constexpr std::size_t kMaxCommentSize = 65535;
 constexpr std::uint16_t kStoredMethod = 0;
@@ -44,8 +43,8 @@ std::string ReadName(const std::span<const std::byte> bytes, const std::size_t o
     name.reserve(size);
     for (std::size_t index = 0; index < size; ++index) {
         const auto value = std::to_integer<std::uint8_t>(bytes[offset + index]);
-        if (value == 0 || value >= 0x80) {
-            throw std::runtime_error("APK entry name must be non-empty ASCII without NUL");
+        if (value == 0) {
+            throw std::runtime_error("APK entry name contains NUL");
         }
         name.push_back(static_cast<char>(value));
     }
@@ -63,34 +62,6 @@ std::string ReadName(const std::span<const std::byte> bytes, const std::size_t o
         begin = end + 1;
     }
     return name;
-}
-
-std::uint32_t Crc32(const std::span<const std::byte> bytes) noexcept {
-    std::uint32_t crc = 0xffffffffU;
-    for (const auto byte : bytes) {
-        crc ^= std::to_integer<std::uint8_t>(byte);
-        for (unsigned bit = 0; bit < 8; ++bit) {
-            const auto mask = 0U - (crc & 1U);
-            crc = (crc >> 1U) ^ (0xedb88320U & mask);
-        }
-    }
-    return ~crc;
-}
-
-std::uint32_t Crc32(const std::span<const std::byte> bytes,
-                    const std::stop_token stop) {
-    std::uint32_t crc = 0xffffffffU;
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        if ((index & 0xffffU) == 0U && stop.stop_requested()) {
-            throw std::runtime_error("APK entry read cancelled");
-        }
-        crc ^= std::to_integer<std::uint8_t>(bytes[index]);
-        for (unsigned bit = 0; bit < 8; ++bit) {
-            const auto mask = 0U - (crc & 1U);
-            crc = (crc >> 1U) ^ (0xedb88320U & mask);
-        }
-    }
-    return ~crc;
 }
 
 class DeflateBitReader final {
@@ -124,33 +95,31 @@ class DeflateBitReader final {
 
 class DeflateHuffman final {
   public:
-    explicit DeflateHuffman(const std::span<const std::uint8_t> lengths) {
-        for (const auto length : lengths) {
-            if (length > 15) throw std::runtime_error("APK deflate code length is invalid");
-            ++counts_[length];
-        }
-        if (counts_[0] == lengths.size()) {
-            throw std::runtime_error("APK deflate Huffman alphabet is empty");
-        }
-        std::int32_t remaining{1};
-        for (std::size_t length = 1; length < counts_.size(); ++length) {
-            remaining = remaining * 2 - counts_[length];
-            if (remaining < 0) {
-                throw std::runtime_error("APK deflate Huffman alphabet is oversubscribed");
-            }
-        }
+      explicit DeflateHuffman(const std::span<const std::uint8_t> lengths, const bool allow_empty = false) {
+          for (const auto length : lengths) {
+              if (length > 15) throw std::runtime_error("APK deflate code length is invalid");
+              ++counts_[length];
+          }
+          if (!allow_empty && counts_[0] == lengths.size())
+              throw std::runtime_error("APK deflate Huffman alphabet is empty");
+          std::int32_t remaining{1};
+          for (std::size_t length = 1; length < counts_.size(); ++length) {
+              remaining = remaining * 2 - counts_[length];
+              if (remaining < 0) {
+                  throw std::runtime_error("APK deflate Huffman alphabet is oversubscribed");
+              }
+          }
 
-        std::array<std::uint16_t, 16> offsets{};
-        for (std::size_t length = 1; length + 1 < offsets.size(); ++length) {
-            offsets[length + 1] =
-                static_cast<std::uint16_t>(offsets[length] + counts_[length]);
-        }
-        symbols_.resize(lengths.size() - counts_[0]);
-        for (std::size_t symbol = 0; symbol < lengths.size(); ++symbol) {
-            const auto length = lengths[symbol];
-            if (length != 0) symbols_[offsets[length]++] = static_cast<std::uint16_t>(symbol);
-        }
-    }
+          std::array<std::uint16_t, 16> offsets{};
+          for (std::size_t length = 1; length + 1 < offsets.size(); ++length) {
+              offsets[length + 1] = static_cast<std::uint16_t>(offsets[length] + counts_[length]);
+          }
+          symbols_.resize(lengths.size() - counts_[0]);
+          for (std::size_t symbol = 0; symbol < lengths.size(); ++symbol) {
+              const auto length = lengths[symbol];
+              if (length != 0) symbols_[offsets[length]++] = static_cast<std::uint16_t>(symbol);
+          }
+      }
 
     [[nodiscard]] std::uint16_t Decode(DeflateBitReader& input) const {
         std::uint32_t code{};
@@ -238,7 +207,7 @@ std::pair<DeflateHuffman, DeflateHuffman> DynamicDeflateTables(DeflateBitReader&
         throw std::runtime_error("APK deflate literal alphabet has no end code");
     }
     return {DeflateHuffman{{lengths.data(), literal_count}},
-            DeflateHuffman{{lengths.data() + literal_count, distance_count}}};
+            DeflateHuffman{{lengths.data() + literal_count, distance_count}, true}};
 }
 
 class DeflateOutput final {
@@ -258,11 +227,6 @@ class DeflateOutput final {
         if (offset_ >= window_offset_ && offset_ - window_offset_ < window_.size()) {
             window_[offset_ - window_offset_] = value;
         }
-        crc_ ^= std::to_integer<std::uint8_t>(value);
-        for (unsigned bit = 0; bit < 8; ++bit) {
-            const auto mask = 0U - (crc_ & 1U);
-            crc_ = (crc_ >> 1U) ^ (0xedb88320U & mask);
-        }
         ++offset_;
     }
 
@@ -277,7 +241,6 @@ class DeflateOutput final {
     }
 
     [[nodiscard]] std::size_t Size() const noexcept { return offset_; }
-    [[nodiscard]] std::uint32_t Crc32() const noexcept { return ~crc_; }
 
   private:
     static constexpr std::size_t kHistorySize = 32U * 1024U;
@@ -286,7 +249,6 @@ class DeflateOutput final {
     std::size_t window_offset_{};
     std::span<std::byte> window_;
     std::size_t offset_{};
-    std::uint32_t crc_{0xffffffffU};
     std::stop_token stop_;
 };
 
@@ -327,11 +289,9 @@ void InflateCompressedBlock(DeflateBitReader& input, const DeflateHuffman& liter
     }
 }
 
-std::uint32_t InflateDeflateWindow(const std::span<const std::byte> compressed,
-                                  const std::size_t expected_size,
-                                  const std::size_t window_offset,
-                                  const std::span<std::byte> window,
-                                  const std::stop_token stop = {}) {
+void InflateDeflateWindow(const std::span<const std::byte> compressed, const std::size_t expected_size,
+                          const std::size_t window_offset, const std::span<std::byte> window,
+                          const std::stop_token stop = {}) {
     DeflateOutput output{expected_size, window_offset, window, stop};
     DeflateBitReader input{compressed};
     bool final{};
@@ -361,10 +321,6 @@ std::uint32_t InflateDeflateWindow(const std::span<const std::byte> compressed,
     if (output.Size() != expected_size) {
         throw std::runtime_error("APK deflate output size disagrees with entry metadata");
     }
-    if (input.ConsumedBytes() != compressed.size()) {
-        throw std::runtime_error("APK deflate stream has trailing data");
-    }
-    return output.Crc32();
 }
 
 std::vector<std::byte> InflateDeflate(const std::span<const std::byte> compressed,
@@ -382,47 +338,12 @@ std::span<const std::byte> ReadCompressedEntryData(
     if (Read32(bytes, offset) != kLocalSignature) {
         throw std::runtime_error("APK local file header signature is invalid");
     }
-    if (Read16(bytes, offset + 6) != entry.general_purpose_flags ||
-        Read16(bytes, offset + 8) != entry.compression_method) {
-        throw std::runtime_error("APK local and central entry metadata disagree");
-    }
-    const auto local_crc = Read32(bytes, offset + 14);
-    const auto local_compressed_size = Read32(bytes, offset + 18);
-    const auto local_uncompressed_size = Read32(bytes, offset + 22);
-    const bool has_descriptor = (entry.general_purpose_flags & 8U) != 0;
-    const bool empty_local_metadata = local_crc == 0 && local_compressed_size == 0 &&
-                                      local_uncompressed_size == 0;
-    const bool matching_local_metadata = local_crc == entry.crc32 &&
-                                         local_compressed_size == entry.compressed_size &&
-                                         local_uncompressed_size == entry.uncompressed_size;
-    if ((!has_descriptor && !matching_local_metadata) ||
-        (has_descriptor && !empty_local_metadata && !matching_local_metadata)) {
-        throw std::runtime_error("APK local and central entry metadata disagree");
-    }
+    // API19 uses central metadata; local flags still reject encrypted input.
+    if ((Read16(bytes, offset + 6) & 1U) != 0) throw std::runtime_error("encrypted APK entries are unsupported");
     const auto local_name_size = Read16(bytes, offset + 26);
     const auto local_extra_size = Read16(bytes, offset + 28);
-    if (ReadName(bytes, offset + 30, local_name_size) != entry.name) {
-        throw std::runtime_error("APK local and central entry names disagree");
-    }
     const auto data_offset = offset + 30U + local_name_size + local_extra_size;
     RequireRange(bytes, data_offset, entry.compressed_size, description);
-    const auto data_end = data_offset + entry.compressed_size;
-    if (has_descriptor) {
-        RequireRange(bytes, data_end, 12, "APK data descriptor");
-        const bool unsigned_matches = Read32(bytes, data_end) == entry.crc32 &&
-                                      Read32(bytes, data_end + 4) == entry.compressed_size &&
-                                      Read32(bytes, data_end + 8) == entry.uncompressed_size;
-        bool signed_matches{};
-        if (Read32(bytes, data_end) == kDataDescriptorSignature &&
-            bytes.size() - data_end >= 16U) {
-            signed_matches = Read32(bytes, data_end + 4) == entry.crc32 &&
-                             Read32(bytes, data_end + 8) == entry.compressed_size &&
-                             Read32(bytes, data_end + 12) == entry.uncompressed_size;
-        }
-        if (!unsigned_matches && !signed_matches) {
-            throw std::runtime_error("APK data descriptor disagrees with central metadata");
-        }
-    }
     return bytes.subspan(data_offset, entry.compressed_size);
 }
 
@@ -432,8 +353,12 @@ std::size_t FindEnd(const std::span<const std::byte> bytes) {
                            ? bytes.size() - kEndSize - kMaxCommentSize
                            : 0;
     for (auto offset = bytes.size() - kEndSize;; --offset) {
-        if (Read32(bytes, offset) == kEndSignature &&
-            Read16(bytes, offset + 20) == bytes.size() - offset - kEndSize) {
+        if (Read32(bytes, offset) == kEndSignature) {
+            // API19 ZipArchive.cpp:211-214 selects the last signature first;
+            // :254-257 rejects an out-of-range comment without resuming the scan.
+            if (Read16(bytes, offset + 20) > bytes.size() - offset - kEndSize) {
+                throw std::runtime_error("APK has no valid ZIP end record");
+            }
             return offset;
         }
         if (offset == first) break;
@@ -455,7 +380,7 @@ ApkArchive ParseApkArchive(const std::span<const std::byte> bytes) {
     const auto central_size = Read32(bytes, end + 12);
     const auto central_offset = Read32(bytes, end + 16);
     RequireRange(bytes, central_offset, central_size, "APK central directory");
-    if (static_cast<std::uint64_t>(central_offset) + central_size != end) {
+    if (static_cast<std::uint64_t>(central_offset) + central_size > end) {
         throw std::runtime_error("APK central directory does not end at the ZIP end record");
     }
 
@@ -463,8 +388,9 @@ ApkArchive ParseApkArchive(const std::span<const std::byte> bytes) {
     archive.entries.reserve(entry_count);
     std::unordered_set<std::string> names;
     std::size_t cursor = central_offset;
+    const auto central_end = static_cast<std::size_t>(central_offset) + central_size;
     for (std::size_t index = 0; index < entry_count; ++index) {
-        RequireRange(bytes, cursor, 46, "APK central directory entry");
+        RequireRange(bytes.first(central_end), cursor, 46, "APK central directory entry");
         if (Read32(bytes, cursor) != kCentralSignature) {
             throw std::runtime_error("APK central directory signature is invalid");
         }
@@ -474,7 +400,7 @@ ApkArchive ParseApkArchive(const std::span<const std::byte> bytes) {
         const auto extra_size = Read16(bytes, cursor + 30);
         const auto comment_size = Read16(bytes, cursor + 32);
         const auto record_size = static_cast<std::size_t>(46) + name_size + extra_size + comment_size;
-        RequireRange(bytes, cursor, record_size, "APK central directory entry");
+        RequireRange(bytes.first(central_end), cursor, record_size, "APK central directory entry");
         auto name = ReadName(bytes, cursor + 46, name_size);
         if (!names.insert(name).second) throw std::runtime_error("APK contains duplicate entry names");
         archive.entries.push_back({
@@ -487,9 +413,6 @@ ApkArchive ParseApkArchive(const std::span<const std::byte> bytes) {
             .local_header_offset = Read32(bytes, cursor + 42),
         });
         cursor += record_size;
-    }
-    if (cursor != static_cast<std::size_t>(central_offset) + central_size) {
-        throw std::runtime_error("APK central directory size disagrees with entries");
     }
     return archive;
 }
@@ -505,7 +428,6 @@ std::vector<std::byte> ReadStoredApkEntry(const std::span<const std::byte> bytes
         throw std::runtime_error("APK entry is not stored without compression");
     }
     const auto data = ReadCompressedEntryData(bytes, *found, "APK stored entry data");
-    if (Crc32(data) != found->crc32) throw std::runtime_error("APK stored entry CRC32 mismatch");
     return {data.begin(), data.end()};
 }
 
@@ -538,7 +460,7 @@ std::span<const std::byte> ValidatedStoredApkEntryData(
         throw std::runtime_error("APK entry is not stored without compression");
     }
     const auto data = ReadCompressedEntryData(bytes, *found, "APK stored entry data");
-    if (Crc32(data, stop) != found->crc32) throw std::runtime_error("APK stored entry CRC32 mismatch");
+    if (stop.stop_requested()) throw std::runtime_error("APK entry read cancelled");
     return data;
 }
 
@@ -557,9 +479,6 @@ std::vector<std::byte> ReadApkEntry(const std::span<const std::byte> bytes,
 
     const auto data = ReadCompressedEntryData(bytes, *found, "APK deflated entry data");
     auto result = InflateDeflate(data, found->uncompressed_size);
-    if (Crc32(result) != found->crc32) {
-        throw std::runtime_error("APK deflated entry CRC32 mismatch");
-    }
     return result;
 }
 
@@ -579,12 +498,10 @@ std::size_t ReadApkEntryRange(
         if (found->compressed_size != found->uncompressed_size)
             throw std::runtime_error("APK stored entry sizes disagree");
         const auto data = ReadCompressedEntryData(bytes, *found, "APK stored entry data");
-        if (Crc32(data, stop) != found->crc32)
-            throw std::runtime_error("APK stored entry CRC32 mismatch");
+        if (stop.stop_requested()) throw std::runtime_error("APK entry read cancelled");
         std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(offset), count,
                     destination.begin());
         if (statistics != nullptr) {
-            statistics->validation_scan_bytes += data.size();
             statistics->copied_bytes += count;
         }
         return count;
@@ -593,12 +510,8 @@ std::size_t ReadApkEntryRange(
         throw std::runtime_error("APK entry uses an unsupported compression method");
     }
     const auto data = ReadCompressedEntryData(bytes, *found, "APK deflated entry data");
-    const auto crc = InflateDeflateWindow(data, found->uncompressed_size,
-                                          static_cast<std::size_t>(offset),
-                                          destination.first(count), stop);
-    if (crc != found->crc32) {
-        throw std::runtime_error("APK deflated entry CRC32 mismatch");
-    }
+    InflateDeflateWindow(data, found->uncompressed_size, static_cast<std::size_t>(offset), destination.first(count),
+                         stop);
     if (statistics != nullptr) {
         statistics->validation_scan_bytes += found->uncompressed_size;
         statistics->copied_bytes += count;

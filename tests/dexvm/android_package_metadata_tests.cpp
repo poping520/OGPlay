@@ -624,10 +624,19 @@ TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") 
         definition.description_res = 0x7f030002U;
         definition.meta_data = {
             {"permission.string", std::string("ready")},
-            {"permission.bool", true}, {"permission.int", std::int32_t{42}},
+            {"permission.null", ogplay::loader::AndroidManifestMetaDataNullString{}},
+            {"permission.units", std::string("a\0\xed\xa0\x80", 5)},
+            {"permission.bool", true},
+            {"permission.int", std::int32_t{42}},
             {"permission.value", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U}},
             {"permission.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f030001U}}};
-        f.context->defined_permissions = {definition};
+        auto ignored = definition;
+        ignored.registered = false;
+        ignored.protection_level = 4;
+        auto duplicate = definition;
+        duplicate.registered = false;
+        duplicate.protection_level = 0x102;
+        f.context->defined_permissions = {ignored, definition, duplicate};
         const auto manager = f.vm.NewIntrinsicInstance(
             "Landroid/content/pm/PackageManager;");
         const auto roots = f.vm.ProtectReferences(std::array{manager});
@@ -670,6 +679,11 @@ TEST_CASE("PackageManager getPermissionInfo queries definitions, not requests") 
         const auto metadata = ref_field(info, "metaData", "Landroid/os/Bundle;");
         REQUIRE(metadata.IsValid());
         CHECK(f.vm.StringUtf8(get_string(metadata, "permission.string")) == "ready");
+        CHECK_FALSE(get_string(metadata, "permission.null").IsValid());
+        CHECK(f.On(metadata, "containsKey", "(Ljava/lang/String;)Z",
+                   {VmValue::Ref(f.vm.NewStringUtf8("permission.null"))})
+                  .AsInt() == 1);
+        CHECK(f.model.StringValue(get_string(metadata, "permission.units")) == std::u16string({u'a', 0, 0xd800}));
         CHECK(f.vm.StringUtf8(get_string(metadata, "permission.value")) == "resolved");
         CHECK(f.On(metadata, "getBoolean", "(Ljava/lang/String;)Z",
                    {VmValue::Ref(f.vm.NewStringUtf8("permission.bool"))}).AsInt() == 1);

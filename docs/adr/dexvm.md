@@ -55,6 +55,7 @@
 - [ADR-0154 · 已有 intrinsic 的 ROM Java 类撤换为 BootDex](#adr-0154)
 - [ADR-0155 · BootDex 自身可达闭包准入](#adr-0155)
 - [ADR-0156 · intrinsic 与 overlay 父类的 ROM 子类准入](#adr-0156)
+- [ADR-0157 · 进程内 Java View 遍历与宿主投影](#adr-0157)
 - [ADR-0158 · 固定 ROM 成员级行为组合](#adr-0158)
 
 <a id="adr-0017"></a>
@@ -1765,3 +1766,48 @@ WU9-5a 确认部分已有 intrinsic 的算法本为 ROM 纯 Java；ADR-0148 决�
 成员级组合成为 View 状态迁移的基础工具，不代表 View 遍历或任一游戏已兼容。
 VD-03 只启用测试 ROM 样例；生产 manifest 为空，closure 增量为零。
 纯 ROM clinit 是本批唯一初始化 owner，尚不提供构造或 clinit adapter 生成器。
+
+
+### VD-J1 实施补充（编排方决定，2026-10-24）
+
+组合类的 clinit 必须为 rom，其依赖按 ADR-0148/0155 常规准入规则收录，不放宽检查。
+逐字段来源 rom 表示 Java 唯一事实来源且已正确维护，failure 保留形状并在访问时走
+ADR-0147 记账失败；构建依赖检查及运行期 linker 共用此可用性，被选 ROM 读写 failure 字段
+视为漏依赖。构造器 overlay 可作受审初始化 adapter，逐字段列出 ROM 默认值依据。
+
+
+<a id="adr-0157"></a>
+
+## ADR-0157 · 进程内 Java View 遍历与宿主投影
+
+- 状态：Accepted（编排方按用户授权于 2026-10-24 决定）
+- 日期：2026-10-24
+- 关联：[ADR-0154](#adr-0154)、[ADR-0156](#adr-0156)、[ADR-0158](#adr-0158)、
+  [DVM-277 / VD-J1](../tasks/dexvm/DVM-277.md)
+- Supersedes：ADR-0154 决定 3、5 对本批 View 状态迁移的以下限制；其他条款保留。
+
+### 决定
+
+1. integration 在 owner guest 线程调度 managed-window 根的 measure/layout；Java 唯一拥有
+   guest 几何与布局 flags，UiTree 接受只读 geometry/hierarchy 投影，不执行 guest。
+2. 投影使用 generation、content/metrics revision 与 epoch；Surface、input、render 共享
+   最终发布的同一 geometry。guest 异常不回滚已执行的 Java 动作，失败遍历不发布快照。
+3. onSizeChanged 保持 ROM setFrame 的同步时序；第一轮 layout 中有效 request 可触发第二轮，
+   第二轮请求留至下一 owner tick。宿主 buffer/holder 生命周期独立管理。
+4. 纯宿主 UI 可拥有独立 C++ 布局根，不能重排 Java 窗口；presenter 只读快照，
+   只有 owner 调度入口可执行 guest。
+5. 精确替代 ADR-0154 决定 3 中本批 View 私有字段的宿主读取禁令：只允许 integration
+   通过逐字段列账的绑定 token 读取 Java 字段并生成投影；ui 不读取 Java 字段。
+   初始化及系统接缝 adapter 如需写 Java 状态，必须逐字段、方法、位掩码受审列账；
+   measured/bounds 不允许 C++ 反向写，字段真值不得另建 side-table 权威。
+6. 本批替代 ADR-0154 决定 5 的“九场景全部通过”为冻结 baseline 差分门禁：保住六项通过，
+   三项已知失败不提前；一致性基线保留已知失败，不得重置基线隐藏回归。
+7. ADR-0156 全 own-body 父成员审计不变；native、Binder、初始化及索引预算不豁免。
+   不引入 ViewRootImpl 系统实现、Binder 或完整 Android。
+8. ui 契约按实施阶段区分 guest 投影与纯宿主分区；ui 不执行 guest、不保存 Java 引用的
+   不变量完整保留。
+
+### 实施边界
+
+本决定不等于遍历已落地。VD-J1 仅使用逐字段投影授权；遍历、发布协议、宿主根隔离及
+最终 owner 切换由后续 WU 实施，各阶段以任务单及实际验证为准。

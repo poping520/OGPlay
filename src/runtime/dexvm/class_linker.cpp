@@ -433,9 +433,13 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
             bool found = false;
             for (const auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
                 for (const auto fid : *list) {
-                    const auto& actual = impl_->FieldAt(fid);
+                    auto& actual = impl_->FieldAt(fid);
                     if (actual.name + ":" + actual.descriptor != key) continue;
                     found = member(field, "flags").UnsignedInteger() == actual.access_flags;
+                    const auto source = text(field, "source");
+                    if (source != "rom" && source != "failure") invalid("field source " + key);
+                    actual.is_unimplemented = source == "failure";
+                    actual.is_skeleton = source == "failure";
                 }
             }
             if (!found) invalid("field identity " + key);

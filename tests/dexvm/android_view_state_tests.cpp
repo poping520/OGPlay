@@ -42,6 +42,75 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("DVM-277 ROM View shape preserves adapters and rejects host-owned fields") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm fixture(backend, {}, false, "view_field_access.dex");
+        const auto owner = fixture.New("Landroid/app/Activity;");
+        const auto view = fixture.New("Ltest/ViewFieldAccess;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        CHECK(fixture.On(view, "context", "()Landroid/content/Context;").ref == owner);
+        const auto type = fixture.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto& cls = fixture.linker.Class(type);
+        CHECK(cls.is_boot_dex);
+        CHECK(cls.own_instance_fields.size() == 91);
+        for (const auto name : {"mOgplayWindowOwner", "mOnFocusChangeListener", "mOgplaySystemUiVisibilityListener"}) {
+            CHECK(std::none_of(cls.own_instance_fields.begin(), cls.own_instance_fields.end(),
+                               [&](const auto id) { return fixture.linker.Field(id).name == name; }));
+        }
+        const auto states = fixture.linker.FindFieldRecursive(type, "VIEW_STATE_SETS", "[[I");
+        REQUIRE(states.has_value());
+        const auto array = VmObjectRef(fixture.linker.Class(type).static_storage[fixture.linker.Field(*states).slot]);
+        REQUIRE(array.IsValid());
+        CHECK(fixture.model.ArrayLength(array) == 1024);
+        for (const auto name : {"left", "writeLeft"}) {
+            const auto outcome = fixture.OnOutcome(view, name, "()I");
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(fixture.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        }
+        CHECK(fixture.On(view, "getId", "()I").AsInt() == -1);
+        RegisterAndroidOwnerAttachedStateTable(fixture.vm, fixture.context);
+        const auto focus = fixture.New("Ljava/lang/Object;");
+        const auto system_ui = fixture.New("Ljava/lang/Object;");
+        const auto window_owner = fixture.New("Landroid/app/Activity;");
+        fixture.context->view_adapter_references[view.Value()] = {window_owner, focus, system_ui};
+        {
+            const auto roots = fixture.vm.ProtectReferences(std::array{view});
+            static_cast<void>(fixture.vm.CollectGarbage("dvm277-view-adapter-trace"));
+            CHECK(fixture.model.ObjectClass(focus) == fixture.linker.ResolveDescriptor("Ljava/lang/Object;"));
+            CHECK(fixture.model.ObjectClass(system_ui) == fixture.model.ObjectClass(focus));
+            CHECK(fixture.model.ObjectClass(window_owner) == fixture.model.ObjectClass(owner));
+        }
+        static_cast<void>(fixture.vm.CollectGarbage("dvm277-view-adapter-sweep"));
+        CHECK_FALSE(fixture.context->view_adapter_references.contains(view.Value()));
+    }
+}
+
+TEST_CASE("DVM-277 View constructor initializes ROM SDK compatibility flags once") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto sdk : {17U, 18U, 19U}) {
+            AndroidValueVm fixture(backend);
+            fixture.context->target_sdk_version = sdk;
+            const auto owner = fixture.New("Landroid/app/Activity;");
+            static_cast<void>(
+                fixture.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)}));
+            const auto type = fixture.linker.ResolveDescriptor("Landroid/view/View;");
+            const auto flag = [&](const char* name) {
+                const auto field = fixture.linker.FindFieldRecursive(type, name, "Z");
+                REQUIRE(field.has_value());
+                CHECK_FALSE(fixture.linker.Field(*field).is_unimplemented);
+                return fixture.linker.Class(type).static_storage[fixture.linker.Field(*field).slot];
+            };
+            CHECK(flag("sCompatibilityDone") == 1);
+            CHECK(flag("sUseBrokenMakeMeasureSpec") == (sdk <= 17U));
+            CHECK(flag("sIgnoreMeasureCache") == (sdk < 19U));
+            fixture.context->target_sdk_version = 1;
+            static_cast<void>(
+                fixture.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)}));
+            CHECK(flag("sUseBrokenMakeMeasureSpec") == (sdk <= 17U));
+            CHECK(flag("sIgnoreMeasureCache") == (sdk < 19U));
+        }
+    }
+}
+
 TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
     for (const auto backend :
          {InterpreterBackend::switch_dispatch,

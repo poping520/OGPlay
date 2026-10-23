@@ -300,6 +300,7 @@ TEST_CASE("DVM-276 BootDex exact member sources execute on both backends") {
         std::vector<std::uint8_t> dex(dex_entry.size());
         std::memcpy(dex.data(), dex_entry.data(), dex.size());
         linker.RegisterBootDex(std::move(dex), DexClassLinker::BootDexMemberSources(archive));
+        linker.RegisterDex(read("member_field_access.dex"));
         linker.Link();
         ogplay::runtime::HostCopyJavaPayloadProvider string_payload;
         JniStringStore strings{string_payload};
@@ -329,7 +330,18 @@ TEST_CASE("DVM-276 BootDex exact member sources execute on both backends") {
             return hit.id.find("MemberComposition;") != std::string::npos &&
                    hit.id.find("missing") != std::string::npos;
         }));
-        CHECK(linker.Class(owner).own_static_fields.size() == 1);
+        CHECK(linker.Class(owner).own_static_fields.size() == 2);
+        const auto blocked = linker.FindFieldRecursive(owner, "blocked", "I");
+        REQUIRE(blocked.has_value());
+        CHECK(linker.Field(*blocked).is_unimplemented);
+        const auto consumer = linker.ResolveDescriptor("Ltest/MemberFieldAccess;");
+        for (const auto name : {"read", "write"}) {
+            const auto access = linker.FindDirectMethod(consumer, name, "()I");
+            REQUIRE(access.has_value());
+            const auto outcome = vm.Call(*access, {});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        }
         const auto id = linker.FindDirectMethod(owner, "rom", "()I");
         CHECK(linker.Method(*id).kind == MethodKind::interpreted);
         CHECK(linker.Method(*linker.FindDirectMethod(owner, "host", "()I")).kind == MethodKind::intrinsic);

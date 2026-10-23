@@ -156,20 +156,16 @@ TEST_CASE("View system UI visibility exposes API 19 state and listener shape") {
         "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
         {VmValue::Ref(listener)});
     CHECK(vm.system_ui_visibility_events == 0);
-    const auto listener_field = vm.linker.FindFieldRecursive(
-        vm.model.ObjectClass(decor), "mOgplaySystemUiVisibilityListener",
-        "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
-    REQUIRE(listener_field.has_value());
-    const auto& linked_listener_field = vm.linker.Field(*listener_field);
-    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].bits ==
-          listener.Value());
-    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].tag ==
-          SlotTag::ref);
+    CHECK_FALSE(vm.linker
+                    .FindFieldRecursive(vm.model.ObjectClass(decor), "mOgplaySystemUiVisibilityListener",
+                                        "Landroid/view/View$OnSystemUiVisibilityChangeListener;")
+                    .has_value());
+    CHECK(vm.context->view_adapter_references.at(decor.Value()).system_ui_listener == listener);
     vm.CallOn(
         decor, "setOnSystemUiVisibilityChangeListener",
         "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
         {VmValue::Ref(VmObjectRef{})});
-    CHECK(vm.model.InstanceSlots(decor)[linked_listener_field.slot].bits == 0U);
+    CHECK_FALSE(vm.context->view_adapter_references.at(decor.Value()).system_ui_listener.IsValid());
 }
 
 TEST_CASE("View system UI constants are public and reflect their API 19 values") {

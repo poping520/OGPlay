@@ -1530,16 +1530,12 @@ std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
 }
 
-void DispatchViewFocusChange(dx::Interpreter& vm, const dx::VmObjectRef view,
+void DispatchViewFocusChange(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef view,
                              const bool focused) {
     if (!view.IsValid()) return;
-    const auto field = vm.Linker().FindFieldRecursive(
-        vm.Model().ObjectClass(view), "mOnFocusChangeListener",
-        "Landroid/view/View$OnFocusChangeListener;");
-    if (!field.has_value()) return;
-    const auto bits = vm.Model().InstanceSlots(view)[
-        vm.Linker().Field(*field).slot].bits;
-    const dx::VmObjectRef listener(bits);
+    const auto found = context.view_adapter_references.find(view.Value());
+    if (found == context.view_adapter_references.end()) return;
+    const auto listener = found->second.focus_listener;
     if (!listener.IsValid()) return;
     static_cast<void>(CallAndroidMethod(
         vm, listener, "onFocusChange", "(Landroid/view/View;Z)V",
@@ -1567,15 +1563,14 @@ Decl Declare_android_view_View(const Context& context) {
             }
             return dx::VmValue::Ref(dx::VmObjectRef{});
         });
-    const auto decor_owner = builder.BoundInstanceField("mOgplayWindowOwner", "Landroid/app/Activity;", dx::kAccPrivate);
-    builder.VirtualMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
-        [context, decor_owner](dx::IntrinsicContext& call) {
-            const auto owner = dx::IntrinsicCall(call).GetRef(decor_owner);
-            if (owner.IsValid()) return CallAndroidMethod(call.vm, owner,
-                "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", {call.arguments[0]});
-            return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context,
-                call.receiver, call.arguments[0].ref, false));
-        });
+    builder.VirtualMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
+        const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
+        if (owner.IsValid())
+            return CallAndroidMethod(call.vm, owner, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+                                     {call.arguments[0]});
+        return dx::VmValue::Int(
+            DispatchAndroidViewTouch(call.vm, *context, call.receiver, call.arguments[0].ref, false));
+    });
     builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
         .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
                      dx::kAccPublic)
@@ -1597,15 +1592,12 @@ Decl Declare_android_view_View(const Context& context) {
         "mSystemUiVisibility", "I", dx::kAccNone);
     const auto view_flags = builder.BoundInstanceField(
         "mViewFlags", "I", dx::kAccNone);
-    const auto focus_listener = builder.BoundInstanceField(
-        "mOnFocusChangeListener", "Landroid/view/View$OnFocusChangeListener;",
-        dx::kAccPrivate);
-    const auto system_ui_listener = builder.BoundInstanceField(
-        "mOgplaySystemUiVisibilityListener",
-        "Landroid/view/View$OnSystemUiVisibilityChangeListener;",
-        dx::kAccPrivate | dx::kAccSynthetic);
     context->view_context_field = builder.BoundInstanceField(
         "mContext", "Landroid/content/Context;", dx::kAccProtected);
+    context->view_compatibility_fields =
+        std::array{builder.BoundStaticField("sCompatibilityDone", "Z", dx::kAccPrivate),
+                   builder.BoundStaticField("sUseBrokenMakeMeasureSpec", "Z", dx::kAccPrivate),
+                   builder.BoundStaticField("sIgnoreMeasureCache", "Z", dx::kAccPrivate)};
     builder.Constructor("(Landroid/content/Context;)V",
                     ViewInitHandler(context));
     builder.FinalMethod("getContext", "()Landroid/content/Context;",
@@ -1647,18 +1639,15 @@ Decl Declare_android_view_View(const Context& context) {
                 dx::IntrinsicCall(call).GetInt(view_flags) &
                 kScrollbarsStyleMask);
         });
-    builder.VirtualMethod("hasWindowFocus", "()Z",
-        [context, decor_owner](dx::IntrinsicContext& call) {
-            if (!context->window_has_focus.load()) {
-                return dx::VmValue::Int(0);
-            }
-            const auto owner = dx::IntrinsicCall(call).GetRef(decor_owner);
-            if (owner.IsValid())
-                return dx::VmValue::Int(context->window_focus_activity.load() == owner.Value() ? 1 : 0);
-            const auto node = FindViewUiNode(*context, call.receiver.Value());
-            return dx::VmValue::Int(
-                node.has_value() && context->ui_tree.IsAttached(*node));
-        });
+    builder.VirtualMethod("hasWindowFocus", "()Z", [context](dx::IntrinsicContext& call) {
+        if (!context->window_has_focus.load()) {
+            return dx::VmValue::Int(0);
+        }
+        const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
+        if (owner.IsValid()) return dx::VmValue::Int(context->window_focus_activity.load() == owner.Value() ? 1 : 0);
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        return dx::VmValue::Int(node.has_value() && context->ui_tree.IsAttached(*node));
+    });
     builder.FinalMethod("getParent", "()Landroid/view/ViewParent;",
         [context](dx::IntrinsicContext& call) {
             const auto node = FindViewUiNode(
@@ -1794,27 +1783,25 @@ Decl Declare_android_view_View(const Context& context) {
             return outcome.value;
         });
     const auto dispatch_focus =
-        [focus_listener](dx::IntrinsicContext& call,
-                         const dx::VmObjectRef view, const bool focused) {
+        [context](dx::IntrinsicContext& call, const dx::VmObjectRef view, const bool focused) {
             if (!view.IsValid()) return;
-            const auto listener =
-                dx::IntrinsicCall(call).GetRef(focus_listener, view);
+            const auto listener = context->view_adapter_references[view.Value()].focus_listener;
             if (!listener.IsValid()) return;
             static_cast<void>(CallAndroidMethod(
                 call.vm, listener, "onFocusChange",
                 "(Landroid/view/View;Z)V",
                 {dx::VmValue::Ref(view), dx::VmValue::Int(focused ? 1 : 0)}));
         };
-    builder.VirtualMethod("setOnFocusChangeListener",
-        "(Landroid/view/View$OnFocusChangeListener;)V",
-        [focus_listener](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall(call).SetRef(focus_listener,
-                                           call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("setOnFocusChangeListener", "(Landroid/view/View$OnFocusChangeListener;)V",
+                          [context](dx::IntrinsicContext& call) {
+                              context->view_adapter_references[call.receiver.Value()].focus_listener =
+                                  call.arguments[0].ref;
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("getOnFocusChangeListener", "()Landroid/view/View$OnFocusChangeListener;",
-                          [focus_listener](dx::IntrinsicContext& call) {
-                              return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(focus_listener));
+                          [context](dx::IntrinsicContext& call) {
+                              return dx::VmValue::Ref(
+                                  context->view_adapter_references[call.receiver.Value()].focus_listener);
                           });
     builder.VirtualMethod("setFocusable", "(Z)V",
         [context, dispatch_focus](dx::IntrinsicContext& call) {
@@ -2186,11 +2173,9 @@ Decl Declare_android_view_View(const Context& context) {
                 dx::IntrinsicCall(context).GetInt(system_ui_visibility));
         });
     builder.VirtualMethod(
-        "setOnSystemUiVisibilityChangeListener",
-        "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
-        [system_ui_listener](dx::IntrinsicContext& context) {
-            dx::IntrinsicCall(context).SetRef(
-                system_ui_listener, context.arguments[0].ref);
+        "setOnSystemUiVisibilityChangeListener", "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
+        [context](dx::IntrinsicContext& call) {
+            context->view_adapter_references[call.receiver.Value()].system_ui_listener = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
     builder.VirtualMethod("getWindowToken", "()Landroid/os/IBinder;",
@@ -2268,8 +2253,7 @@ void RemoveChild(dx::IntrinsicContext& call, const Context& context,
         ? ViewObjectForUiNode(*context, *focused) : dx::VmObjectRef{};
     const auto focus_root = call.vm.ProtectReferences(std::array{focus_object});
     context->ui_tree.Detach(*current_node, layout);
-    if (focused && !context->ui_tree.Focused())
-        DispatchViewFocusChange(call.vm, focus_object, false);
+    if (focused && !context->ui_tree.Focused()) DispatchViewFocusChange(call.vm, *context, focus_object, false);
 }
 
 void RequestLayoutAndInvalidate(dx::IntrinsicContext& call) {
@@ -2912,21 +2896,16 @@ Decl Declare_android_view_Window(const Context& context) {
         return CallAndroidMethod(call.vm, call.receiver, "setContentView",
             "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)});
     });
-    builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
-        [decor, owner](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            auto value = fields.GetRef(decor);
-            if (!value.IsValid()) {
-                value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
-                const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(value),
-                    "mOgplayWindowOwner", "Landroid/app/Activity;");
-                if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "decor owner field is missing");
-                call.vm.Model().InstanceSlots(value)[call.vm.Linker().Field(*field).slot] = {
-                    fields.GetRef(owner).Value(), dx::SlotTag::ref};
-                fields.SetRef(decor, value);
-            }
-            return dx::VmValue::Ref(value);
-        });
+    builder.VirtualMethod("getDecorView", "()Landroid/view/View;", [context, decor, owner](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        auto value = fields.GetRef(decor);
+        if (!value.IsValid()) {
+            value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
+            context->view_adapter_references[value.Value()].window_owner = fields.GetRef(owner);
+            fields.SetRef(decor, value);
+        }
+        return dx::VmValue::Ref(value);
+    });
     const auto wu_mContext =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
     const auto wu_mIsActive = builder.BoundInstanceField("mIsActive", "Z", dx::kAccPrivate);

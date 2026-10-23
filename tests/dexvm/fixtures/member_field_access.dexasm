@@ -1,0 +1,13 @@
+.class public Ltest/MemberFieldAccess;
+.super Ljava/lang/Object;
+.method public static read()I
+.registers 1
+    sget v0, Ltest/MemberComposition;->blocked:I
+    return v0
+.end method
+.method public static write()I
+.registers 1
+    const/4 v0, 7
+    sput v0, Ltest/MemberComposition;->blocked:I
+    return v0
+.end method

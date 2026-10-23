@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "classes": [
+    {
+      "descriptor": "Ltest/MemberComposition;",
+      "superclass": null,
+      "fields": [],
+      "methods": [
+        {
+          "name": "host",
+          "descriptor": "()I",
+          "status": "implemented",
+          "binding": "intrinsic"
+        }
+      ]
+    }
+  ]
+}

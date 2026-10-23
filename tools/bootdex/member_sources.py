@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import gzip
 import json
 from pathlib import Path
 import re
@@ -81,7 +82,10 @@ def validate(document, texts, surface):
         if digest(text.encode('utf-8')) != cls['smali_sha256']:
             raise ValueError('ROM input hash mismatch: ' + owner)
         methods, fields = inventory(text)
-        if fields != cls['fields']:
+        available_fields = cls['fields']
+        if any(f.get('source') not in ('rom', 'failure') for f in available_fields):
+            raise ValueError('invalid field source: ' + owner)
+        if fields != [{**f, 'source': 'rom'} for f in available_fields]:
             raise ValueError('ROM field type/flags/initialization mismatch: ' + owner)
         if ('<clinit>()V' in methods) != (cls['clinit_owner'] == 'rom'):
             raise ValueError('clinit owner mismatch: ' + owner)
@@ -130,8 +134,11 @@ def validate(document, texts, surface):
         while owner and owner not in visited:
             visited.add(owner)
             if owner in tables:
-                if field and key in {f['signature'] for f in next(c for c in classes if c['owner'] == owner)['fields']}:
-                    return True
+                if field:
+                    match = next((f for f in next(c for c in classes if c['owner'] == owner)['fields']
+                                  if f['signature'] == key), None)
+                    if match:
+                        return match['source'] == 'rom'
                 if not field and key in tables[owner]:
                     return tables[owner][key]['source'] != 'failure'
             cls = runtime.get(owner, {})
@@ -159,7 +166,8 @@ def validate(document, texts, surface):
                                                binding='bytecode' if r['source'] == 'rom' else 'intrinsic')
                                           for r in cls['methods']],
                                  fields=[dict(name=f['signature'].split(':')[0], descriptor=f['signature'].split(':')[1],
-                                              status='implemented', static=bool(f['flags'] & 8)) for f in cls['fields']])
+                                              status='implemented' if f['source'] == 'rom' else 'unimplemented-ledger',
+                                              static=bool(f['flags'] & 8)) for f in cls['fields']])
     for cls in normalized.values():
         cls.setdefault('source', 'intrinsic')
         cls.setdefault('access_flags', 1)
@@ -221,7 +229,8 @@ def payload(document, roots, root):
         surface = root / cls['surface']
         if digest(surface.read_bytes()) != cls['surface_sha256']:
             raise ValueError('pinned runtime surface hash mismatch')
-        current = json.loads(surface.read_text(encoding='utf-8'))
+        raw = surface.read_bytes()
+        current = json.loads(gzip.decompress(raw) if surface.suffix == '.gz' else raw)
         if current.get('startup_link_error'):
             raise ValueError('surface startup link failure')
         surfaces += current['classes']
@@ -231,6 +240,9 @@ def payload(document, roots, root):
 def fixture(text):
     """Controlled test ROM; never part of the production recipe."""
     methods, fields = inventory(text)
+    for field in fields:
+        if field['signature'] == 'blocked:I':
+            field['source'] = 'failure'
     owner = 'Ltest/MemberComposition;'
     rows = []
     for key, m in methods.items():
@@ -256,12 +268,15 @@ def self_test():
     texts = {'Ltest/MemberComposition;': text}
     result = validate(document, texts, surface)
     assert result == validate(copy.deepcopy(document), texts, surface)
-    for mutation in ('duplicate', 'hash', 'field', 'clinit', 'native', 'review', 'dependency'):
+    for mutation in ('duplicate', 'hash', 'field', 'field-source', 'field-dependency', 'clinit', 'native', 'review', 'dependency'):
         bad = copy.deepcopy(document)
         rows = bad['classes'][0]['methods']
         if mutation == 'duplicate': rows.append(rows[0])
         elif mutation == 'hash': rows[0]['body_sha256'] = '0' * 64
         elif mutation == 'field': bad['classes'][0]['fields'][0]['flags'] ^= 8
+        elif mutation == 'field-source': bad['classes'][0]['fields'][0]['source'] = 'overlay'
+        elif mutation == 'field-dependency':
+            next(f for f in bad['classes'][0]['fields'] if f['signature'] == 'value:I')['source'] = 'failure'
         elif mutation == 'clinit': bad['classes'][0]['clinit_owner'] = 'overlay'
         elif mutation == 'review': next(r for r in rows if r['source'] == 'overlay').pop('review')
         elif mutation == 'native':
@@ -292,6 +307,7 @@ def self_test():
         import subprocess
         for mutation, expected in (('conflict', 'conflicting member sources'),
                                    ('dependency', 'selected-ROM-dependency'),
+                                   ('field-dependency', 'selected-ROM-dependency'),
                                    ('overlay', 'overlay lacks explicit review'),
                                    ('native', 'unauthorized native selection')):
             bad = copy.deepcopy(document)
@@ -300,6 +316,8 @@ def self_test():
                 rows.append(rows[0])
             elif mutation == 'dependency':
                 next(r for r in rows if r['signature'] == 'rom()I')['source'] = 'failure'
+            elif mutation == 'field-dependency':
+                next(f for f in bad['classes'][0]['fields'] if f['signature'] == 'value:I')['source'] = 'failure'
             elif mutation == 'overlay':
                 next(r for r in rows if r['source'] == 'overlay').pop('review')
             else:
@@ -350,6 +368,14 @@ def main():
         # exception/library closure. Production data is only read.
         import tempfile
         import build_bootdex as builder
+        import zipfile
+        # The fixture embeds the current production DEX as its exception
+        # closure, so retain its sealed composition policy as well.
+        sealed = copy.deepcopy(document)
+        with zipfile.ZipFile(builder.OUTPUT) as archive:
+            if ENTRY in archive.namelist():
+                sealed['classes'] += json.loads(archive.read(ENTRY))['classes']
+        args.fixture.write_bytes(canonical(sealed))
         with tempfile.TemporaryDirectory(prefix='ogplay-member-fixture-') as work:
             root = Path(work) / 'smali'
             builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),

@@ -1,6 +1,7 @@
 #include "ogplay/loader/dex.h"
 
 #include "dex_uleb128.h"
+#include "ogplay/core/text.h"
 #include <algorithm>
 #include <bit>
 #include <iterator>
@@ -45,6 +46,10 @@ public:
                static_cast<std::uint32_t>(bytes_[offset + 3]) << 24U;
     }
 
+    [[nodiscard]] Reader Prefix(const std::size_t end) const {
+        Require(0, end);
+        return Reader(bytes_.first(end));
+    }
     void Require(const std::size_t offset, const std::size_t size) const {
         if (offset > bytes_.size() || size > bytes_.size() - offset) {
             Fail(DexErrorReason::truncated, offset, "DEX input is truncated");
@@ -74,12 +79,12 @@ private:
 void RequireRange(const std::uint32_t offset, const std::uint32_t count,
                   const std::uint32_t item_size,
                   const std::size_t file_size, const char* name) {
-    if ((count == 0) != (offset == 0)) {
+    if (item_size != 1 && count != 0 && offset == 0) {
         Fail(DexErrorReason::invalid_range, offset,
              std::string("DEX ") + name + " size/offset pair is inconsistent");
     }
-    if (count == 0) return;
-    if ((offset & 3U) != 0) {
+    if (count == 0 && item_size != 1) return;
+    if (item_size != 1 && (offset & 3U) != 0) {
         Fail(DexErrorReason::invalid_range, offset,
              std::string("DEX ") + name + " offset is not aligned");
     }
@@ -154,7 +159,7 @@ void RequireRange(const std::uint32_t offset, const std::uint32_t count,
 }
 
 void ValidateHeader(const DexHeader& header, const std::size_t file_size) {
-    if (header.file_size != file_size || header.header_size != kDexHeaderSize) {
+    if (header.file_size != file_size || (header.header_size < kDexHeaderSize || header.header_size > file_size)) {
         Fail(DexErrorReason::invalid_header, 32,
              "DEX file or header size is invalid");
     }
@@ -183,7 +188,7 @@ void ValidateHeader(const DexHeader& header, const std::size_t file_size) {
     }
     const auto data_end = static_cast<std::uint64_t>(header.data_offset) +
                           header.data_size;
-    if (data_end != file_size || header.map_offset >= data_end) {
+    if (data_end > file_size || header.map_offset >= data_end) {
         Fail(DexErrorReason::invalid_range, header.data_offset,
              "DEX data section must end at file boundary");
     }
@@ -200,7 +205,8 @@ void ValidateHeader(const DexHeader& header, const std::size_t file_size) {
              "DEX map count is invalid");
     }
     const auto map_bytes = 4ULL + static_cast<std::uint64_t>(count) * 12ULL;
-    if (map_bytes > file_size - header.map_offset) {
+    const auto data_end = static_cast<std::uint64_t>(header.data_offset) + header.data_size;
+    if (map_bytes > file_size - header.map_offset || map_bytes > data_end - header.map_offset) {
         Fail(DexErrorReason::invalid_map, header.map_offset,
              "DEX map range exceeds file");
     }
@@ -213,21 +219,27 @@ void ValidateHeader(const DexHeader& header, const std::size_t file_size) {
         const auto at = static_cast<std::size_t>(header.map_offset) + 4ULL +
                         static_cast<std::size_t>(index) * 12ULL;
         const auto type = reader.U16(at);
-        const auto unused = reader.U16(at + 2);
+        static_cast<void>(reader.U16(at + 2));
         const auto size = reader.U32(at + 4);
         const auto offset = reader.U32(at + 8);
-        if (unused != 0 || size == 0 || !seen.emplace(type, at).second ||
-            (index != 0 && offset <= previous_offset) || offset >= file_size) {
+        const bool known =
+            FixedItemSize(type).has_value() || (type >= 0x1000 && type <= 0x1003) || (type >= 0x2000 && type <= 0x2006);
+        if ((size == 0 && !known) || !seen.emplace(type, at).second || (index != 0 && offset <= previous_offset) ||
+            offset >= file_size) {
             Fail(DexErrorReason::invalid_map, at,
                  "DEX map item is duplicate, unordered or malformed");
         }
         if (const auto fixed = FixedItemSize(type); fixed.has_value()) {
-            const auto bytes = static_cast<std::uint64_t>(size) * *fixed;
+            const auto bytes =
+                static_cast<std::uint64_t>(size) *
+                (type == static_cast<std::uint16_t>(DexMapItemType::header) ? header.header_size : *fixed);
             if ((offset & 3U) != 0 || bytes > file_size - offset) {
                 Fail(DexErrorReason::invalid_map, at,
                      "DEX fixed map item range is invalid");
             }
         }
+        if (type >= 0x1000 && known && (offset < header.data_offset || offset >= data_end))
+            Fail(DexErrorReason::invalid_map, at, "DEX data map item is outside data section");
         items.push_back({type, size, offset});
         previous_offset = offset;
     }
@@ -237,13 +249,7 @@ void ValidateHeader(const DexHeader& header, const std::size_t file_size) {
 void RequireMapMatch(const DexImage& image, const DexMapItemType type,
                      const std::uint32_t size, const std::uint32_t offset) {
     const auto found = image.FindMapItem(type);
-    if (size == 0) {
-        if (found.has_value()) {
-            Fail(DexErrorReason::invalid_map, found->offset,
-                 "empty DEX header section appears in map");
-        }
-        return;
-    }
+    if (size == 0 && !found.has_value()) return;
     if (!found.has_value() || found->size != size || found->offset != offset) {
         Fail(DexErrorReason::invalid_map, offset,
              "DEX header and map section facts disagree");
@@ -252,6 +258,8 @@ void RequireMapMatch(const DexImage& image, const DexMapItemType type,
 
 void ValidateMap(const DexImage& image) {
     RequireMapMatch(image, DexMapItemType::header, 1, 0);
+    if (image.map_items.size() > 1 && image.map_items[1].offset < image.header.header_size)
+        Fail(DexErrorReason::invalid_map, image.map_items[1].offset, "DEX map section overlaps header");
     RequireMapMatch(image, DexMapItemType::string_id,
                     image.header.string_ids_size,
                     image.header.string_ids_offset);
@@ -352,6 +360,20 @@ void ValidateMap(const DexImage& image) {
     return result;
 }
 
+[[nodiscard]] std::string DescriptorString(const DexString& string) {
+    const auto& units = string.value;
+    for (std::size_t i = 0; i < units.size(); ++i) {
+        const auto unit = static_cast<std::uint16_t>(units[i]);
+        if (unit <= 0x7fU) continue;
+        if (unit <= 0xa0U || (unit >= 0x2000U && unit <= 0x200fU) || (unit >= 0x2028U && unit <= 0x202fU) ||
+            unit >= 0xfff0U)
+            Fail(DexErrorReason::invalid_descriptor, string.data_offset, "DEX descriptor has invalid Unicode");
+    }
+    const auto text = core::Utf16ToUtf8(units, core::InvalidUtf16Policy::reject);
+    if (!text) Fail(DexErrorReason::invalid_descriptor, string.data_offset, "DEX descriptor has invalid Unicode");
+    return *text;
+}
+
 void ValidateTypeDescriptor(const std::string& descriptor,
                             const std::size_t offset) {
     if (descriptor.empty()) {
@@ -403,14 +425,14 @@ void ValidateTypeDescriptor(const std::string& descriptor,
 }
 
 void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
+    const auto data_reader = reader.Prefix(static_cast<std::size_t>(image.header.data_offset) + image.header.data_size);
     image.strings.reserve(image.header.string_ids_size);
     for (std::uint32_t index = 0; index < image.header.string_ids_size;
          ++index) {
         const auto at = static_cast<std::size_t>(
                             image.header.string_ids_offset) +
                         static_cast<std::size_t>(index) * 4U;
-        image.strings.push_back(ReadString(
-            reader, image.header, reader.U32(at)));
+        image.strings.push_back(ReadString(data_reader, image.header, reader.U32(at)));
     }
 
     image.types.reserve(image.header.type_ids_size);
@@ -422,8 +444,7 @@ void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
             Fail(DexErrorReason::invalid_index, at,
                  "DEX type descriptor string index is invalid");
         }
-        auto descriptor = RequireAscii(image.strings[string_index],
-                                       "type descriptor");
+        auto descriptor = DescriptorString(image.strings[string_index]);
         ValidateTypeDescriptor(descriptor, at);
         image.types.push_back({string_index, std::move(descriptor)});
     }
@@ -448,14 +469,12 @@ void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
                 Fail(DexErrorReason::invalid_range, parameters_offset,
                      "DEX prototype type_list offset is invalid");
             }
-            const auto count = reader.U32(parameters_offset);
-            reader.Require(static_cast<std::size_t>(parameters_offset) + 4U,
-                           static_cast<std::size_t>(count) * 2U);
+            const auto count = data_reader.U32(parameters_offset);
+            data_reader.Require(static_cast<std::size_t>(parameters_offset) + 4U, static_cast<std::size_t>(count) * 2U);
             prototype.parameter_type_indices.reserve(count);
             for (std::uint32_t parameter = 0; parameter < count; ++parameter) {
-                const auto type_index = reader.U16(
-                    static_cast<std::size_t>(parameters_offset) + 4U +
-                    static_cast<std::size_t>(parameter) * 2U);
+                const auto type_index = data_reader.U16(static_cast<std::size_t>(parameters_offset) + 4U +
+                                                        static_cast<std::size_t>(parameter) * 2U);
                 if (type_index >= image.types.size()) {
                     Fail(DexErrorReason::invalid_index, parameters_offset,
                          "DEX prototype parameter type index is invalid");
@@ -503,7 +522,7 @@ void ReadStringsTypesAndPrototypes(const Reader& reader, DexImage& image) {
 void RequireDataOffset(const DexHeader& header, const std::uint32_t offset,
                        const char* name) {
     if (offset != 0 &&
-        (offset < header.data_offset || offset >= header.file_size)) {
+        (offset < header.data_offset || offset >= static_cast<std::uint64_t>(header.data_offset) + header.data_size)) {
         Fail(DexErrorReason::invalid_range, offset,
              std::string("DEX ") + name + " is outside data section");
     }
@@ -516,14 +535,13 @@ void RequireDataOffset(const DexHeader& header, const std::uint32_t offset,
         Fail(DexErrorReason::invalid_range, offset,
              "DEX class interface type_list offset is invalid");
     }
-    const auto count = reader.U32(offset);
-    reader.Require(static_cast<std::size_t>(offset) + 4U,
-                   static_cast<std::size_t>(count) * 2U);
+    const auto data_reader = reader.Prefix(static_cast<std::size_t>(image.header.data_offset) + image.header.data_size);
+    const auto count = data_reader.U32(offset);
+    data_reader.Require(static_cast<std::size_t>(offset) + 4U, static_cast<std::size_t>(count) * 2U);
     std::vector<std::uint32_t> result;
     result.reserve(count);
     for (std::uint32_t index = 0; index < count; ++index) {
-        const auto type = reader.U16(static_cast<std::size_t>(offset) + 4U +
-                                     static_cast<std::size_t>(index) * 2U);
+        const auto type = data_reader.U16(static_cast<std::size_t>(offset) + 4U + static_cast<std::size_t>(index) * 2U);
         if (!IsClassType(image, type) ||
             std::find(result.begin(), result.end(), type) != result.end()) {
             Fail(DexErrorReason::invalid_class_def, offset,

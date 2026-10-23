@@ -187,6 +187,11 @@ void DexClassLinker::PrecheckMethod(const VmMethodId id) {
                          where + ": ins exceed registers");
     }
 
+    // libdex accepts empty try intervals; Dalvik's method verifier rejects them.
+    for (const auto& block : code.tries) {
+        if (block.instruction_count == 0) throw JavaLinkageError(JavaLinkageKind::verify, where + ": empty try range");
+    }
+
     // Pass 1: decode boundaries.
     std::set<std::uint32_t> boundaries;
     std::set<std::uint32_t> payload_starts;

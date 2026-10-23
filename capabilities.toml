@@ -1281,7 +1281,7 @@ note = "DVM-4/5 确定性 dex 035 汇编器：受限 IR、24 种标准格式、t
 [loader.dex_code]
 status = "complete"
 test = "tests/dexvm/dex_code_tests.cpp"
-note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；指令级分支/payload 校验留给 dexvm 链接预检"
+note = "DVM-6 在 L1 之上受检读取方法指令流、try/catch（区间有序不重叠、handler 偏移命中真实条目、type/地址受检）与静态初始值 encoded_array（11 种形态，符号/右零扩展对照 dex-format）；空 try 区间留给 dexvm 惰性方法预检产生 VerifyError；指令级分支/payload 校验留给 dexvm 链接预检"
 
 [dexvm.class_linker]
 status = "complete"
@@ -1721,12 +1721,12 @@ note = "run-apk --survey-gaps（DIAG-5）：与 API19 骨架共存，层级/常�
 [loader.binary_xml_pull]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp; tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "DVM-18 复用严格 binary XML reader 发布 aapt 保留的 START/TEXT/END pull events；UTF-8/UTF-16 string pool、chunk、索引和 nesting 受检，合成 APK 与本地 exact res/xml 交叉验证通过"
+note = "DVM-18/273：发布编译 XML 的 START/TEXT/END；字符串按需沿 API19 转换，UTF16 code units 保留，首节点前后池替换、之后忽略；空名及事件名称/闭合不作全包拒绝，chunk/属性/字符串范围与残缺尾部仍受检"
 
 [loader.arsc]
 status = "complete"
 test = "tests/dexvm/arsc_tests.cpp"
-note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，保留既有配置选择；DVM-121 保留复杂 bag parent/typed items，校验 entry/value/map 边界、重复键和字符串索引；多 locale/动态 qualifier 未扩展，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
+note = "DVM-15 严格 resources.arsc 读取：resid↔(type,name,文件路径)双向查询，UTF-8/UTF-16 string pool，保留既有配置选择；DVM-121 保留复杂 bag parent/typed items，校验 entry/value/map 边界和字符串索引，重复 child key 按声明序保留；零包合法、包数匹配且全局池必需；条目延迟失败及缺名投影待扩展；多 locale/动态 qualifier 未扩展，越界即失败；本地 exact 交叉验证 0x7f040009→res/raw/raw_000.ogg 与 v1 人工 pattern 一致"
 
 [session.dex_activity_lifecycle]
 status = "complete"

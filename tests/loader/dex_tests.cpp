@@ -710,3 +710,116 @@ TEST_CASE("WU11 DEX parameter annotation item preserves raw arity and presence")
     Put32(invalid, list + 4, static_cast<std::uint32_t>(invalid.size() + 4));
     CHECK_THROWS_AS(static_cast<void>(ParseDex(invalid)), DexError);
 }
+
+TEST_CASE("WU11b DEX header map accepts API19 byte ranges and empty sections") {
+    using ogplay::loader::ParseDex;
+    SUBCASE("unused empty section offsets and unaligned link outside data") {
+        auto bytes = MinimalDex();
+        Put32(bytes, 68, 0x71);  // empty type table offset is unused
+        bytes.push_back(0x42);
+        bytes.push_back(0x43);
+        Put32(bytes, 32, static_cast<std::uint32_t>(bytes.size()));
+        Put32(bytes, 44, 1);
+        Put32(bytes, 48, 0x8d);
+        CHECK(ParseDex(bytes).header.link_offset == 0x8d);
+        Put32(bytes, 48, 0);
+        CHECK(ParseDex(bytes).header.link_offset == 0);
+        Put32(bytes, 44, 0);
+        Put32(bytes, 48, 0xfffffff0U);
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+        Put32(bytes, 44, 1);
+        Put32(bytes, 48, 0x8d);
+        Put32(bytes, 104, 1);  // map cannot borrow bytes outside declared data
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+        Put32(bytes, 104, 0x1c);
+        Put32(bytes, 48, 0xfffffff0U);
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+    }
+    SUBCASE("data starts before an aligned map at a byte boundary") {
+        auto bytes = MinimalDex();
+        Put32(bytes, 108, 0x6f);
+        Put32(bytes, 104, 0x1d);
+        CHECK(ParseDex(bytes).header.data_offset == 0x6f);
+    }
+    SUBCASE("zero count map entry and nonzero reserved word") {
+        auto bytes = MinimalDex();
+        bytes.resize(0x9c);
+        Put32(bytes, 32, 0x9c);
+        Put32(bytes, 52, 0x74);
+        Put32(bytes, 68, 0x70);
+        Put32(bytes, 104, 0x28);
+        Put32(bytes, 108, 0x74);
+        Put32(bytes, 0x74, 3);
+        PutMap(bytes, 0x78, 0, 1, 0);
+        PutMap(bytes, 0x84, 2, 0, 0x70);
+        Put16(bytes, 0x86, 0x1234);
+        PutMap(bytes, 0x90, 0x1000, 1, 0x74);
+        CHECK(ParseDex(bytes).map_items.size() == 3);
+        Put16(bytes, 0x84, 0xffff);
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+        Put16(bytes, 0x84, 2);
+        Put32(bytes, 68, 0x71);
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+    }
+    SUBCASE("string data cannot be borrowed from a file tail") {
+        auto bytes = TableDex();
+        Put32(bytes, 0x70 + 16, static_cast<std::uint32_t>(bytes.size()));
+        bytes.push_back(0);
+        bytes.push_back(0);
+        Put32(bytes, 32, static_cast<std::uint32_t>(bytes.size()));
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+    }
+    SUBCASE("extended header does not overlap the following section") {
+        auto bytes = MinimalDex();
+        bytes.insert(bytes.begin() + 0x70, 4, 0);
+        Put32(bytes, 32, static_cast<std::uint32_t>(bytes.size()));
+        Put32(bytes, 36, 0x74);
+        Put32(bytes, 52, 0x74);
+        Put32(bytes, 108, 0x74);
+        Put32(bytes, 0x74 + 24, 0x74);
+        CHECK(ParseDex(bytes).header.header_size == 0x74);
+        Put32(bytes, 36, 0x78);
+        CHECK_THROWS(static_cast<void>(ParseDex(bytes)));
+    }
+}
+
+TEST_CASE("WU11b DEX descriptors preserve valid Unicode names") {
+    auto bytes = ClassDex();
+    const auto at = Read32(bytes, 0x70 + 8);
+    bytes[at] -= 1;  // replace ASCII s,a with one two-byte MUTF8 character
+    bytes[at + 2] = 0xc3;
+    bytes[at + 3] = 0xa9;
+    const auto image = ogplay::loader::ParseDex(bytes);
+    CHECK(image.types[2].descriptor == "Lémple/Peer;");
+    bytes[at + 2] = 0xc2;
+    bytes[at + 3] = 0xa0;
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseDex(bytes)));
+    bytes = ClassDex();
+    bytes[at] -= 4;
+    const std::uint8_t pair[]{0xed, 0xa0, 0xb4, 0xed, 0xb4, 0x9e};
+    std::copy(std::begin(pair), std::end(pair), bytes.begin() + at + 2);
+    CHECK(ogplay::loader::ParseDex(bytes).types[2].descriptor == "L𝄞/Peer;");
+}
+
+TEST_CASE("WU11b DEX accepts nonminimal ULEB128 but rejects truncation and overflow") {
+    auto bytes = TableDex();
+    // Replace the final string_data item with a nonminimal prefix in unused padding.
+    Put32(bytes, 0x70 + 16, 0xb6);
+    bytes[0xb6] = 0x80;
+    bytes[0xb7] = 0;
+    bytes[0xb8] = 0;
+    const auto image = ogplay::loader::ParseDex(bytes);
+    CHECK(image.strings[4].value.empty());
+    bytes[0xb6] = 0xff;
+    bytes[0xb7] = 0xff;
+    bytes[0xb8] = 0xff;
+    bytes[0xb9] = 0xff;
+    bytes[0xba] = 0x10;
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseDex(bytes)));
+    bytes = TableDex();
+    Put32(bytes, 0x70 + 16, static_cast<std::uint32_t>(bytes.size()));
+    bytes.push_back(0x80);
+    Put32(bytes, 32, static_cast<std::uint32_t>(bytes.size()));
+    Put32(bytes, 104, Read32(bytes, 104) + 1);
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseDex(bytes)));
+}

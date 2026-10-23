@@ -76,11 +76,15 @@
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。
   `ParseBinaryXmlPullEvents` 从同一受检文档发布编译后仍保留的 START/TEXT/END 高层事件；
-  UTF-8/UTF-16 string pool、chunk、attribute 和元素 nesting 全部受检，畸形输入明确失败。
+  string pool 按需转换，UTF16 保留 code units（WTF-8 投影），UTF8 沿 API19 mask 转换；
+  坏字符串取 null，raw_string 保留缺席。首节点前后池替换，节点后的池跳过。
+  空名称和未闭合/错名/多余 END 不做格式拒绝；事件深度沿 XmlBlock 计数，父索引仅用于
+  START 投影。chunk、节点扩展、属性及字符串读取范围受检，残缺尾部仍明确失败。
 - `ParseArsc`：严格读取 resources.arsc（ResTable/string pool/package/type/entry），
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
   原样保留给上层有界 string/color/dimension/reference resolver；DVM-121 保留复杂 bag 的
-  parent/typed items，校验 entry/value/map 边界、重复键与字符串索引；DVM-148 同时保留
+  parent/typed items，重复 child key 按声明序保留；校验 entry/value/map 边界与字符串索引。
+  零包表合法，实际 package chunk 数须与声明一致，全局字符串池不可缺失；DVM-148 同时保留
   orientation、density、SDK、screenLayout size 与屏幕 dp 配置事实，由上层按固定 API 19
   的 qualifier 优先级选择候选；仍不扩展
   locale/动态 qualifier，越界/截断即失败。
@@ -118,12 +122,13 @@
 - `AnalyzeDexL1(image, class_data, libraries, signatures)`：输出应用类/方法/native 数量、
   总指令与渲染回调规模、Java 厚度和 DEX 执行候选；引擎规则由声明式 catalog 注入。
 - `ReadDexMethodCode(bytes, image, code)`：受检复制方法指令 code-unit 流并解码
-  try/catch——try 区间必须非空、有序、不重叠且落在指令流内，handler 偏移必须命中
+  try/catch——try 区间有序、不重叠且落在指令流内；空区间留给 dexvm 惰性方法预检
+  产生 VerifyError。handler 偏移必须命中
   encoded handler 列表的真实条目，type 索引与 handler 地址全部受检；不解释指令，
   分支目标/payload 引用等指令级校验属 dexvm 链接预检（ADR-0017）。
 - `ReadDexStaticValues(bytes, image, offset)`：受检解码 class_def static_values 的
   encoded_array；支持 boolean/byte/short/char/int/long/float/double/string/type/null，
-  size 超界、索引越界、非最小 ULEB128 与 annotation 等不支持形态均明确失败。
+  size 超界、索引越界与 annotation 等不支持形态均明确失败；ULEB128 允许非最短编码。
 - `ParseElf32Arm(bytes)`：从不可信字节解析 little-endian ELF32/ARM ET_EXEC/ET_DYN，
   返回入口、ARM flags、程序头和未知 tag 不丢失的动态项事实模型。
 - `ReadElf32DynamicInfo(bytes, image)`：只在 file-backed `PT_LOAD` 范围内解析动态字符串表、
@@ -177,10 +182,12 @@
   零长度文件仍发布 SHA-256/ABI/identity，实际 ELF 装载时才失败。
   catalog 以完整 entry path 稳定排序，不隐含 main library 选择；inventory 同一 ABI 的
   soname/logical name 必须唯一，ABI resolver 禁止读取 `so_sha256` 或猜 root library。
-- DEX header 固定为 0x70 字节且只接受 little-endian 035..040；固定表必须 4 字节对齐，
-  header 与唯一、有序、非重叠的 map 声明必须一致。
-- DEX Modified UTF-8 和 ULEB128 必须最小且完整编码；type/proto 的每个索引、descriptor、
-  参数列表和 shorty 必须互相一致。
+- DEX header 至少 0x70 字节且只接受 little-endian 035..040；较大 header 不得与后续 map
+  section 重叠；固定表对齐，link/data 按字节范围校验，data 不必结束于文件尾。
+  空固定表允许无 map 或匹配的零 count map；unused 不作拒绝条件，非空表与有序 map 事实须一致。
+- DEX Modified UTF-8 完整受检；ULEB128 允许非最短编码，仍限制五字节、32 位及读取范围。
+  type descriptor 允许 API19 合法 Unicode 并以 UTF8 发布；shorty 仍限 ASCII，
+  type/proto 的索引、参数列表和 shorty 须互相一致。
 - field 的声明类必须是 class descriptor；method 的声明 owner 允许 class 或数组
   descriptor（数组继承 `Object.clone()`，AOSP libdex 与 dex-format 均允许），仍拒绝
   基元与 `V`；class_def 类型唯一，父类、接口、源码与 data offset 全部受检，只保留

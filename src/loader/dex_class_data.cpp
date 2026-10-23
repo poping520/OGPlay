@@ -71,7 +71,7 @@ private:
     const auto units = reader.U32(static_cast<std::size_t>(offset) + 12U);
     if (incoming > registers ||
         (debug != 0 &&
-         (debug < header.data_offset || debug >= header.file_size))) {
+         (debug < header.data_offset || debug >= static_cast<std::uint64_t>(header.data_offset) + header.data_size))) {
         Fail(DexErrorReason::invalid_member, offset,
              "DEX code_item register or debug metadata is invalid");
     }
@@ -79,7 +79,8 @@ private:
     const auto padding = tries != 0 && (units & 1U) != 0 ? 2ULL : 0ULL;
     const auto try_bytes = static_cast<std::uint64_t>(tries) * 8U;
     const auto total = 16ULL + instruction_bytes + padding + try_bytes;
-    if (total > header.file_size - offset) {
+    const auto data_end = static_cast<std::uint64_t>(header.data_offset) + header.data_size;
+    if (offset > data_end || total > data_end - offset) {
         Fail(DexErrorReason::invalid_range, offset,
              "DEX code_item instructions or try table exceed file");
     }
@@ -165,7 +166,10 @@ std::vector<DexClassData> ReadDexClassData(
         Fail(DexErrorReason::invalid_header, 32,
              "DEX class_data bytes do not match parsed image size");
     }
-    const Reader reader(bytes);
+    const auto data_end = static_cast<std::uint64_t>(image.header.data_offset) + image.header.data_size;
+    if (data_end > bytes.size())
+        Fail(DexErrorReason::invalid_range, image.header.data_offset, "DEX data section exceeds file");
+    const Reader reader(bytes.first(static_cast<std::size_t>(data_end)));
     std::vector<DexClassData> result;
     result.reserve(image.classes.size());
     for (std::uint32_t class_index = 0; class_index < image.classes.size();

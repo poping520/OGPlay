@@ -129,10 +129,8 @@ private:
         block.start_pc = reader.U32(base);
         block.instruction_count = reader.U16(base + 4U);
         const auto handler_off = reader.U16(base + 6U);
-        if (block.instruction_count == 0 ||
-            block.start_pc >= code.instruction_units ||
-            block.instruction_count >
-                code.instruction_units - block.start_pc) {
+        if (block.start_pc >= code.instruction_units ||
+            block.instruction_count > code.instruction_units - block.start_pc) {
             Fail(DexErrorReason::invalid_range, base,
                  "DEX try block range is outside the method");
         }
@@ -286,7 +284,10 @@ DexMethodCode ReadDexMethodCode(const std::span<const std::uint8_t> bytes,
         Fail(DexErrorReason::invalid_header, 32,
              "DEX code bytes do not match parsed image size");
     }
-    const Reader reader(bytes);
+    const auto data_end = static_cast<std::uint64_t>(image.header.data_offset) + image.header.data_size;
+    if (data_end > bytes.size())
+        Fail(DexErrorReason::invalid_range, image.header.data_offset, "DEX data section exceeds file");
+    const Reader reader(bytes.first(static_cast<std::size_t>(data_end)));
     DexMethodCode result;
     result.info = code;
     result.instructions.reserve(code.instruction_units);
@@ -319,7 +320,10 @@ std::vector<DexEncodedValue> ReadDexStaticValues(
         Fail(DexErrorReason::invalid_range, static_values_offset,
              "DEX static values offset is outside the data section");
     }
-    const Reader reader(bytes);
+    const auto data_end = static_cast<std::uint64_t>(image.header.data_offset) + image.header.data_size;
+    if (data_end > bytes.size())
+        Fail(DexErrorReason::invalid_range, image.header.data_offset, "DEX data section exceeds file");
+    const Reader reader(bytes.first(static_cast<std::size_t>(data_end)));
     std::size_t cursor = static_values_offset;
     const auto count = reader.Uleb128(cursor);
     if (count > 0xffffU) {

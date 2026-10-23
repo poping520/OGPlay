@@ -34,10 +34,6 @@ struct Uleb128ErrorTexts final {
         }
         value |= static_cast<std::uint32_t>(byte & 0x7fU) << (index * 7U);
         if ((byte & 0x80U) == 0) {
-            if (index != 0 && byte == 0) {
-                throw DexError(DexErrorReason::invalid_uleb128, offset - 1,
-                               texts.not_minimal);
-            }
             return value;
         }
     }

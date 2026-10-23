@@ -69,3 +69,63 @@
     invoke-virtual {v0}, Landroid/os/CountDownTimer;->start()Landroid/os/CountDownTimer;
     return-void
 .end method
+
+.method public static annotated()I
+.registers 1
+    const-class v0, Ltest/RomJavaReplacement;
+    invoke-interface {v0}, Ljava/lang/reflect/AnnotatedElement;->getDeclaredAnnotations()[Ljava/lang/annotation/Annotation;
+    move-result-object v0
+    array-length v0, v0
+    return v0
+.end method
+
+.method public static generic()I
+.registers 1
+    const-class v0, Ljava/util/ArrayList;
+    invoke-interface {v0}, Ljava/lang/reflect/GenericDeclaration;->getTypeParameters()[Ljava/lang/reflect/TypeVariable;
+    move-result-object v0
+    array-length v0, v0
+    return v0
+.end method
+
+.method public static member()Ljava/lang/Class;
+.registers 2
+    const-class v0, Ljava/lang/Object;
+    invoke-virtual {v0}, Ljava/lang/Class;->getDeclaredMethods()[Ljava/lang/reflect/Method;
+    move-result-object v0
+    const/4 v1, 0
+    aget-object v0, v0, v1
+    invoke-interface {v0}, Ljava/lang/reflect/Member;->getDeclaringClass()Ljava/lang/Class;
+    move-result-object v0
+    return-object v0
+.end method
+
+.method public static close()I
+.registers 1
+    new-instance v0, Ljava/io/ByteArrayOutputStream;
+    invoke-direct {v0}, Ljava/io/ByteArrayOutputStream;-><init>()V
+    invoke-interface {v0}, Ljava/lang/AutoCloseable;->close()V
+    invoke-virtual {v0}, Ljava/io/ByteArrayOutputStream;->size()I
+    move-result v0
+    return v0
+.end method
+
+
+.method public static location()J
+.registers 3
+    new-instance v0, Landroid/location/Location;
+    const-string v1, "gps"
+    invoke-direct {v0, v1}, Landroid/location/Location;-><init>(Ljava/lang/String;)V
+    const-wide/16 v1, 42
+    invoke-virtual {v0, v1, v2}, Landroid/location/Location;->setTime(J)V
+    invoke-virtual {v0}, Landroid/location/Location;->getTime()J
+    move-result-wide v1
+    return-wide v1
+.end method
+
+.method public static task(Ljava/util/TimerTask;)Z
+.registers 1
+    invoke-virtual {v0}, Ljava/util/TimerTask;->cancel()Z
+    move-result v0
+    return v0
+.end method

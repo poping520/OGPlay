@@ -320,45 +320,7 @@ namespace ogplay::runtime::android_intrinsics {
 // ---- migrated from android_os_CountDownTimer.cpp ----
 #include "catalog.h"
 
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_os_CountDownTimer(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/CountDownTimer;", "Ljava/lang/Object;");
-    builder.Constructor("(JJ)V", [context](dx::IntrinsicContext& call) {
-        const auto duration = call.arguments[0].AsLong();
-        const auto interval = call.arguments[1].AsLong();
-        if (interval <= 0) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "countDownInterval must be positive"};
-        }
-        std::scoped_lock lock(context->scheduler_mutex);
-        context->countdown_timers[call.receiver.Value()] = {
-            duration, interval, 0, 0, false};
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("start", "()Landroid/os/CountDownTimer;",
-        [context](dx::IntrinsicContext& call) {
-            static_cast<void>(EnsureMainLooper(call, context));
-            ScheduleCountDown(context, call.receiver);
-            return dx::VmValue::Ref(call.receiver);
-        });
-    builder.FinalMethod("cancel", "()V", [context](dx::IntrinsicContext& call) {
-        CancelCountDown(context, call.receiver);
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("onTick", "(J)V", [](dx::IntrinsicContext&) -> dx::VmValue {
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "CountDownTimer.onTick is not overridden"};
-    });
-    builder.VirtualMethod("onFinish", "()V", [](dx::IntrinsicContext&) -> dx::VmValue {
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "CountDownTimer.onFinish is not overridden"};
-    });
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
+namespace ogplay::runtime::android_intrinsics {}  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_os_Environment.cpp ----
 #include "catalog.h"

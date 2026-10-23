@@ -1310,84 +1310,6 @@ void EnqueueLocked(DexVmAndroidContext& context,
     if (work.kind == Kind::handler_runnable) {
         return CallVirtual(vm, work.payload, "run", "()V");
     }
-    if (work.kind == Kind::timer_task) {
-        const auto outcome = CallVirtual(vm, work.owner, "run", "()V");
-        if (outcome.exception.IsValid()) return outcome;
-        std::scoped_lock lock(context.scheduler_mutex);
-        const auto found = context.timer_tasks.find(work.owner.Value());
-        if (found == context.timer_tasks.end() || found->second.cancelled ||
-            found->second.generation != work.generation ||
-            found->second.period_millis <= 0 ||
-            context.cancelled_timers[found->second.timer.Value()]) {
-            if (found != context.timer_tasks.end()) {
-                found->second.scheduled = false;
-            }
-            return outcome;
-        }
-        const auto now = context.uptime_millis.load();
-        auto& state = found->second;
-        state.scheduled_time = state.fixed_rate
-                                   ? SaturatingDeadline(
-                                         state.scheduled_time,
-                                         state.period_millis)
-                                   : SaturatingDeadline(now,
-                                                        state.period_millis);
-        EnqueueLocked(context,
-                      {state.scheduled_time, 0, Kind::timer_task,
-                       work.looper, work.owner, dx::VmObjectRef{},
-                       dx::VmObjectRef{}, dx::VmObjectRef{}, 0,
-                       state.generation});
-        context.scheduler_changed.notify_all();
-        return outcome;
-    }
-    if (work.kind == Kind::countdown) {
-        std::int64_t remaining{};
-        std::int64_t interval{};
-        {
-            std::scoped_lock lock(context.scheduler_mutex);
-            const auto found = context.countdown_timers.find(work.owner.Value());
-            if (found == context.countdown_timers.end() ||
-                found->second.cancelled ||
-                found->second.generation != work.generation) {
-                return NormalOutcome();
-            }
-            remaining = found->second.stop_time_millis -
-                        context.uptime_millis.load();
-            interval = found->second.interval_millis;
-        }
-        if (remaining <= 0) {
-            return CallVirtual(vm, work.owner, "onFinish", "()V");
-        }
-        if (remaining < interval) {
-            std::scoped_lock lock(context.scheduler_mutex);
-            EnqueueLocked(context,
-                          {SaturatingDeadline(context.uptime_millis.load(),
-                                              remaining),
-                           0, Kind::countdown, work.looper, work.owner,
-                           dx::VmObjectRef{}, dx::VmObjectRef{},
-                           dx::VmObjectRef{}, 0, work.generation});
-            context.scheduler_changed.notify_all();
-            return NormalOutcome();
-        }
-        const auto outcome = CallVirtual(
-            vm, work.owner, "onTick", "(J)V",
-            {dx::VmValue::Long(remaining)});
-        if (outcome.exception.IsValid()) return outcome;
-        std::scoped_lock lock(context.scheduler_mutex);
-        const auto found = context.countdown_timers.find(work.owner.Value());
-        if (found != context.countdown_timers.end() &&
-            !found->second.cancelled &&
-            found->second.generation == work.generation) {
-            EnqueueLocked(context,
-                          {SaturatingDeadline(context.uptime_millis.load(),
-                                              interval),
-                           0, Kind::countdown, work.looper, work.owner,
-                           dx::VmObjectRef{}, dx::VmObjectRef{},
-                           dx::VmObjectRef{}, 0, work.generation});
-            context.scheduler_changed.notify_all();
-        }
-        return outcome;
-    }
     if (work.kind == Kind::async_progress) {
         return CallVirtual(vm, work.owner, "onProgressUpdate",
                            "([Ljava/lang/Object;)V",
@@ -1770,22 +1692,6 @@ void PublishHandlerThreadLooper(const Context& context,
     context->scheduler_changed.notify_all();
 }
 
-void ScheduleCountDown(const Context& context, const dx::VmObjectRef timer) {
-    const auto main = context->main_looper;
-    std::scoped_lock lock(context->scheduler_mutex);
-    auto& state = context->countdown_timers[timer.Value()];
-    state.cancelled = false;
-    ++state.generation;
-    state.stop_time_millis = SaturatingDeadline(
-        context->uptime_millis.load(), state.duration_millis);
-    EnqueueLocked(*context,
-                  {context->uptime_millis.load(), 0,
-                   DexVmAndroidContext::ScheduledWorkKind::countdown,
-                   main, timer, dx::VmObjectRef{}, dx::VmObjectRef{},
-                   dx::VmObjectRef{}, 0, state.generation});
-    context->scheduler_changed.notify_all();
-}
-
 void StartAsyncTask(dx::IntrinsicContext& call, const Context& context,
                     const dx::VmObjectRef task,
                     const dx::VmObjectRef params) {
@@ -1898,110 +1804,7 @@ void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context,
     }
 }
 
-void CancelCountDown(const Context& context, const dx::VmObjectRef timer) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    auto& state = context->countdown_timers[timer.Value()];
-    state.cancelled = true;
-    ++state.generation;
-    std::erase_if(context->scheduled_work, [timer](const auto& work) {
-        return work.kind == DexVmAndroidContext::ScheduledWorkKind::countdown &&
-               work.owner == timer;
-    });
-}
 
-void ScheduleTimerTask(dx::Interpreter& vm, const Context& context,
-                       const dx::VmObjectRef timer,
-                       const dx::VmObjectRef task,
-                       const std::int64_t delay_millis,
-                       const std::int64_t period_millis,
-                       const bool fixed_rate) {
-    if (delay_millis < 0 || period_millis < -1) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "negative Timer delay or period"};
-    }
-    if (period_millis == 0) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "Timer period must be positive"};
-    }
-    const auto looper = EnsureMainLooper(vm, context);
-    std::scoped_lock lock(context->scheduler_mutex);
-    if (context->cancelled_timers[timer.Value()]) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "Timer is cancelled"};
-    }
-    auto& state = context->timer_tasks[task.Value()];
-    if (state.cancelled) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "TimerTask is cancelled"};
-    }
-    if (state.scheduled) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "TimerTask is already scheduled"};
-    }
-    state.timer = timer;
-    state.period_millis = std::max<std::int64_t>(period_millis, 0);
-    state.fixed_rate = fixed_rate;
-    state.scheduled = true;
-    state.cancelled = false;
-    ++state.generation;
-    state.scheduled_time = SaturatingDeadline(
-        context->uptime_millis.load(), delay_millis);
-    EnqueueLocked(*context,
-                  {state.scheduled_time, 0,
-                   DexVmAndroidContext::ScheduledWorkKind::timer_task,
-                   looper, task, dx::VmObjectRef{}, dx::VmObjectRef{},
-                   dx::VmObjectRef{}, 0, state.generation});
-    context->scheduler_changed.notify_all();
-}
-
-void CancelTimer(const Context& context, const dx::VmObjectRef timer) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    context->cancelled_timers[timer.Value()] = true;
-    for (auto& [_, state] : context->timer_tasks) {
-        if (state.timer == timer) {
-            state.cancelled = true;
-            state.scheduled = false;
-            ++state.generation;
-        }
-    }
-    std::erase_if(context->scheduled_work, [context, timer](const auto& work) {
-        if (work.kind != DexVmAndroidContext::ScheduledWorkKind::timer_task) {
-            return false;
-        }
-        const auto found = context->timer_tasks.find(work.owner.Value());
-        return found != context->timer_tasks.end() &&
-               found->second.timer == timer;
-    });
-}
-
-bool CancelTimerTask(const Context& context, const dx::VmObjectRef task) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    const auto found = context->timer_tasks.find(task.Value());
-    if (found == context->timer_tasks.end()) {
-        auto& state = context->timer_tasks[task.Value()];
-        state.cancelled = true;
-        ++state.generation;
-        return false;
-    }
-    const auto was_scheduled = found->second.scheduled &&
-                               !found->second.cancelled;
-    found->second.cancelled = true;
-    found->second.scheduled = false;
-    ++found->second.generation;
-    std::erase_if(context->scheduled_work, [task](const auto& work) {
-        return work.kind == DexVmAndroidContext::ScheduledWorkKind::timer_task &&
-               work.owner == task;
-    });
-    return was_scheduled;
-}
-
-std::int64_t TimerTaskScheduledExecutionTime(
-    const Context& context, const dx::VmObjectRef task) {
-    std::scoped_lock lock(context->scheduler_mutex);
-    const auto found = context->timer_tasks.find(task.Value());
-    return found == context->timer_tasks.end() ? 0
-                                               : found->second.scheduled_time;
-}
 
 void DeliverMessage(dx::IntrinsicContext& call,
                     const dx::VmObjectRef handler,
@@ -2180,10 +1983,6 @@ void RegisterAndroidSchedulerStateTable(
                 found != context->handler_threads.end()) {
                 visit_if(found->second);
             }
-            if (const auto found = context->timer_tasks.find(owner.Value());
-                found != context->timer_tasks.end()) {
-                visit_if(found->second.timer);
-            }
             if (const auto found = context->async_tasks.find(owner.Value());
                 found != context->async_tasks.end()) {
                 visit_if(found->second.params);
@@ -2203,9 +2002,6 @@ void RegisterAndroidSchedulerStateTable(
             context->handler_loopers.erase(owner.Value());
             context->handler_callbacks.erase(owner.Value());
             context->handler_threads.erase(owner.Value());
-            context->timer_tasks.erase(owner.Value());
-            context->cancelled_timers.erase(owner.Value());
-            context->countdown_timers.erase(owner.Value());
             context->async_tasks.erase(owner.Value());
             context->async_workers.erase(owner.Value());
             std::erase_if(context->thread_loopers,

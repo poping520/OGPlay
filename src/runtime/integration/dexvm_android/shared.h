@@ -161,23 +161,12 @@ void LoopLooper(dx::IntrinsicContext& call, const Context& context,
 void PublishHandlerThreadLooper(const Context& context,
                                 dx::VmObjectRef thread,
                                 dx::VmObjectRef looper);
-void ScheduleCountDown(const Context& context, dx::VmObjectRef timer);
-void CancelCountDown(const Context& context, dx::VmObjectRef timer);
 void StartAsyncTask(dx::IntrinsicContext& call, const Context& context,
                     dx::VmObjectRef task, dx::VmObjectRef params);
 void ScheduleAsyncProgress(const Context& context, dx::VmObjectRef task,
                            dx::VmObjectRef values);
 void RunAsyncWorker(dx::IntrinsicContext& call, const Context& context,
                     dx::VmObjectRef worker);
-void ScheduleTimerTask(dx::Interpreter& vm, const Context& context,
-                       dx::VmObjectRef timer, dx::VmObjectRef task,
-                       std::int64_t delay_millis,
-                       std::int64_t period_millis, bool fixed_rate);
-void CancelTimer(const Context& context, dx::VmObjectRef timer);
-[[nodiscard]] bool CancelTimerTask(const Context& context,
-                                   dx::VmObjectRef task);
-[[nodiscard]] std::int64_t TimerTaskScheduledExecutionTime(
-    const Context& context, dx::VmObjectRef task);
 
 // Video view state shared by the VideoView intrinsics and the guest video
 // pump (android_media.cpp): lookup, playback-position math, and the

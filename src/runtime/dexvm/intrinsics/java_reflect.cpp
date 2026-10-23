@@ -792,24 +792,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement() {
-    auto builder = IntrinsicClassBuilder::Interface(
-        "Ljava/lang/reflect/AnnotatedElement;");
-    builder.UnimplementedVirtual(
-        "isAnnotationPresent", "(Ljava/lang/Class;)Z");
-    builder.UnimplementedVirtual(
-        "getAnnotation", "(Ljava/lang/Class;)Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedVirtual(
-        "getAnnotations", "()[Ljava/lang/annotation/Annotation;");
-    builder.UnimplementedVirtual(
-        "getDeclaredAnnotations", "()[Ljava/lang/annotation/Annotation;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
+namespace ogplay::runtime::dexvm::intrinsics {}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Array.cpp ----
 #include "catalog.h"
@@ -1403,17 +1386,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_Field() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
-    auto builder = IntrinsicClassBuilder::Interface("Ljava/lang/reflect/GenericDeclaration;", {});
-    builder.UnimplementedVirtual(
-        "getTypeParameters", "()[Ljava/lang/reflect/TypeVariable;");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
+namespace ogplay::runtime::dexvm::intrinsics {}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Member.cpp ----
 #include "catalog.h"
@@ -1422,20 +1395,7 @@ IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration() {
 
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 
-namespace ogplay::runtime::dexvm::intrinsics {
-
-IntrinsicClassDecl Declare_java_lang_reflect_Member() {
-    auto builder = IntrinsicClassBuilder::Interface(
-        "Ljava/lang/reflect/Member;");
-    builder.UnimplementedVirtual("getDeclaringClass", "()Ljava/lang/Class;");
-    builder.UnimplementedVirtual("getName", "()Ljava/lang/String;");
-    builder.UnimplementedVirtual("getModifiers", "()I");
-    builder.UnimplementedVirtual("isSynthetic", "()Z");
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::dexvm::intrinsics
-
+namespace ogplay::runtime::dexvm::intrinsics {}  // namespace ogplay::runtime::dexvm::intrinsics
 
 // ---- migrated from java_lang_reflect_Method.cpp ----
 #include "catalog.h"

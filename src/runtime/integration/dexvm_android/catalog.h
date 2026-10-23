@@ -108,7 +108,6 @@ Declare_android_graphics_drawable_ColorDrawable(const Context &context);
 [[nodiscard]] Decl
 Declare_android_location_LocationListener(const Context &context);
 [[nodiscard]] Decl Declare_android_location_Criteria(const Context &context);
-[[nodiscard]] Decl Declare_android_location_Location(const Context &context);
 [[nodiscard]] Decl
 Declare_android_location_LocationManager(const Context &context);
 [[nodiscard]] Decl Declare_android_media_AudioManager(const Context &context);
@@ -145,7 +144,6 @@ Declare_android_opengl_GLSurfaceView_Renderer(const Context &context);
 [[nodiscard]] Decl Declare_android_os_FileUtils(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Binder(const Context &context);
 [[nodiscard]] Decl Declare_android_os_StrictMode(const Context &context);
-[[nodiscard]] Decl Declare_android_os_CountDownTimer(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Environment(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Handler(const Context &context);
 [[nodiscard]] Decl Declare_android_os_Handler_Callback(const Context &context);

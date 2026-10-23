@@ -98,7 +98,7 @@
 - Unsafe 单例与 caller loader 受检；读写/CAS/数组位置委托 UnsafeRuntime，park/unpark
   复用 Thread，absolute epoch 经注入时间转单调 deadline。无 Clock/溢出明确失败；
   allocateInstance 先 clinit 再跳过构造器。并发 family 只保留 Unsafe 与 AtomicLong CS8。
-  Timer/TimerTask 的 deadline、队列、Clock、取消和生命周期交注入 scheduler；不反向读 context。
+  Timer/TimerTask 的队列、取消和生命周期归原版 BootDex；TimerImpl 复用 Thread/monitor 与统一 Clock，无宿主任务侧表。
 
 ## IO、NIO 与网络
 

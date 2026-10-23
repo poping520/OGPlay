@@ -650,8 +650,6 @@ struct DexVmAndroidContext final {
     local_service_bind,
     handler_message,
     handler_runnable,
-    timer_task,
-    countdown,
     async_post,
     async_progress,
   };
@@ -684,24 +682,6 @@ struct DexVmAndroidContext final {
     dexvm::VmObjectRef thread{};
     bool main{};
     bool quitting{};
-  };
-
-  struct TimerTaskState final {
-    dexvm::VmObjectRef timer{};
-    std::int64_t scheduled_time{};
-    std::int64_t period_millis{};
-    std::uint64_t generation{};
-    bool fixed_rate{};
-    bool scheduled{};
-    bool cancelled{};
-  };
-
-  struct CountDownState final {
-    std::int64_t duration_millis{};
-    std::int64_t interval_millis{};
-    std::int64_t stop_time_millis{};
-    std::uint64_t generation{};
-    bool cancelled{};
   };
 
   enum class AsyncStatus : std::uint8_t { pending, running, finished };
@@ -738,9 +718,6 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_loopers;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_callbacks;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> handler_threads;
-  std::unordered_map<std::uint32_t, TimerTaskState> timer_tasks;
-  std::unordered_map<std::uint32_t, bool> cancelled_timers;
-  std::unordered_map<std::uint32_t, CountDownState> countdown_timers;
   std::unordered_map<std::uint32_t, AsyncTaskState> async_tasks;
   std::unordered_map<std::uint32_t, AsyncWorkerState> async_workers;
   // Owned by the DexVm bridge; set once the interpreter exists.

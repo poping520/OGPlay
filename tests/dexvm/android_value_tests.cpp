@@ -756,3 +756,11 @@ TEST_CASE("DVM-267 ROM overlay Exception subclass preserves throw catch and mess
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-268 DEX Location owns provider and time") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::android_value::AndroidValueVm f(backend, {}, false, "rom_java_replacement.dex");
+        CHECK(f.Static("Ltest/RomJavaReplacement;", "location", "()J").AsLong() == 42);
+        CHECK(f.linker.Class(f.linker.ResolveDescriptor("Landroid/location/Location;")).is_boot_dex);
+    }
+}

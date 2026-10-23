@@ -27,6 +27,7 @@ content/os/view/graphics/gl/media/database/device family TU 同址。`shared.*` 
 
 IntentFilter 的 actions、categories、MIME、scheme、authority 和 Parcelable 协议归原版 BootDex；
 Context 不持过滤器内容副本。宿主仅登记 receiver 身份，方法/签名中的类型引用使用同一 Java 类。
+CountDownTimer 的状态和 tick/finish 算法归 BootDex，通过既有 Handler/Looper 与统一 Clock 调度，无宿主倒计时侧表。
 
 ## Context、组件与进程
 
@@ -249,7 +250,7 @@ GLThread 为真实 Java Thread，经显式 hook 接 session，不自动 prepare 
 onPause/onResume 在所属线程确认、释放/恢复 EGLSurface，Context 按 preserve 保留/重建，
 backend context-loss 按验证范围记账。
 
-Handler/Looper/HandlerThread/Timer/AsyncTask 共用 scheduler，同 uptime deadline 按 sequence FIFO；
+Handler/Looper/HandlerThread/AsyncTask 共用 scheduler，同 uptime deadline 按 sequence FIFO；
 主 Looper 在 lifecycle safe point 泵送、子 Looper 在对应 host 线程执行，不同步伪装 post。
 Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
 prepare_native_looper 显式关联 Java/native 线程、主 Looper 仅首次关联，查询/消息泵不重 prepare；

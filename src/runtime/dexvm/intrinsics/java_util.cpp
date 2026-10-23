@@ -244,116 +244,13 @@ IntrinsicClassDecl DeclarePlatformLocale(
     return std::move(builder).Build();
 }
 
-IntrinsicClassDecl DeclarePlatformTimer(
-    const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class("Ljava/util/Timer;",
-                                                "Ljava/lang/Object;");
-    builder.Constructor("()V",
-                        [](IntrinsicContext&) { return VmValue::Void(); });
-    builder.Constructor("(Z)V",
-                        [](IntrinsicContext&) { return VmValue::Void(); });
-    builder.Constructor("(Ljava/lang/String;)V",
-                        [](IntrinsicContext& call) {
-                            if (!call.arguments[0].ref.IsValid()) {
-                                throw VmJavaThrow{
-                                    "Ljava/lang/NullPointerException;",
-                                    "Timer name is null"};
-                            }
-                            return VmValue::Void();
-                        });
-    builder.Constructor("(Ljava/lang/String;Z)V",
-                        [](IntrinsicContext& call) {
-                            if (!call.arguments[0].ref.IsValid()) {
-                                throw VmJavaThrow{
-                                    "Ljava/lang/NullPointerException;",
-                                    "Timer name is null"};
-                            }
-                            return VmValue::Void();
-                        });
-    builder.VirtualMethod(
-        "schedule", "(Ljava/util/TimerTask;J)V", [schedule = services.schedule_timer_task](IntrinsicContext& call) {
-            const auto task = call.arguments[0].ref;
-            if (!task.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "scheduled TimerTask is null"};
-            }
-            if (!schedule) {
-                throw VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "Timer scheduling needs platform services"};
-            }
-            schedule(call.vm, call.receiver, task,
-                     call.arguments[1].AsLong(), -1, false);
-            return VmValue::Void();
-        });
-    builder.VirtualMethod(
-        "schedule", "(Ljava/util/TimerTask;JJ)V", [schedule = services.schedule_timer_task](IntrinsicContext& call) {
-            const auto task = call.arguments[0].ref;
-            if (!task.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "scheduled TimerTask is null"};
-            }
-            if (!schedule) {
-                throw VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "Timer scheduling needs platform services"};
-            }
-            schedule(call.vm, call.receiver, task,
-                     call.arguments[1].AsLong(),
-                     call.arguments[2].AsLong(), false);
-            return VmValue::Void();
-        });
-    builder.VirtualMethod(
-        "scheduleAtFixedRate", "(Ljava/util/TimerTask;JJ)V",
-        [schedule = services.schedule_timer_task](IntrinsicContext& call) {
-            const auto task = call.arguments[0].ref;
-            if (!task.IsValid()) {
-                throw VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  "scheduled TimerTask is null"};
-            }
-            if (!schedule) {
-                throw VmJavaThrow{
-                    "Ljava/lang/UnsupportedOperationException;",
-                    "Timer scheduling needs platform services"};
-            }
-            schedule(call.vm, call.receiver, task,
-                     call.arguments[1].AsLong(),
-                     call.arguments[2].AsLong(), true);
-            return VmValue::Void();
-        });
-    builder.VirtualMethod("cancel", "()V", [cancel = services.cancel_timer](IntrinsicContext& call) {
-        if (cancel) cancel(call.receiver);
-        return VmValue::Void();
-    });
-    builder.VirtualMethod("purge", "()I", [](IntrinsicContext&) { return VmValue::Int(0); });
-    return std::move(builder).Build();
-}
 
-IntrinsicClassDecl DeclarePlatformTimerTask(
-    const CoreIntrinsicServices& services) {
-    auto builder = IntrinsicClassBuilder::Class(
-        "Ljava/util/TimerTask;", "Ljava/lang/Object;",
-        {"Ljava/lang/Runnable;"});
-    builder.Constructor("()V",
-                        [](IntrinsicContext&) { return VmValue::Void(); });
-    builder.VirtualMethod("cancel", "()Z", [cancel = services.cancel_timer_task](IntrinsicContext& call) {
-        return VmValue::Int(cancel && cancel(call.receiver) ? 1 : 0);
-    });
-    builder.VirtualMethod("scheduledExecutionTime", "()J",
-                          [scheduled = services.timer_task_scheduled_execution_time](IntrinsicContext& call) {
-                              return VmValue::Long(scheduled ? scheduled(call.receiver) : 0);
-                          });
-    builder.UnimplementedVirtual("run", "()V", kAccPublic | kAccAbstract);
-    return std::move(builder).Build();
-}
 
 }  // namespace
 
 void AppendJavaUtilPlatform(std::vector<IntrinsicClassDecl>& catalog,
                             const CoreIntrinsicServices& services) {
     catalog.push_back(DeclarePlatformLocale(services));
-    catalog.push_back(DeclarePlatformTimer(services));
-    catalog.push_back(DeclarePlatformTimerTask(services));
 }
 
 }  // namespace ogplay::runtime::dexvm::intrinsics

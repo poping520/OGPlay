@@ -60,10 +60,7 @@ Declare_java_lang_Thread_UncaughtExceptionHandler();
 [[nodiscard]] IntrinsicClassDecl Declare_libcore_io_IoUtils();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_Class(
     const CoreIntrinsicServices& services);
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AnnotatedElement();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_GenericDeclaration();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Type();
-[[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Member();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_AccessibleObject();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Method();
 [[nodiscard]] IntrinsicClassDecl Declare_java_lang_reflect_Constructor();

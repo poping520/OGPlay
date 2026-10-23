@@ -1602,7 +1602,10 @@ DexVmGuestBridge::DexVmGuestBridge(
         impl_->linker.RegisterIntrinsics(platform_catalog);
     }
     if (!boot_dex_bytes.empty()) {
-        impl_->linker.RegisterBootDex(std::move(boot_dex_bytes));
+        impl_->linker.RegisterBootDex(
+            std::move(boot_dex_bytes),
+            android_context ? dexvm::DexClassLinker::BootDexMemberSources(android_context->boot_classpath_bytes)
+                            : std::string{});
     }
     if (!skeleton_bytes.empty()) impl_->linker.RegisterSkeletonSurface(std::move(skeleton_bytes));
     impl_->linker.RegisterDex(std::move(dex_bytes));

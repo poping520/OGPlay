@@ -545,7 +545,7 @@ set_tests_properties(tools.dexvm_gap_report_self_test PROPERTIES LABELS tools)
 add_test(
     NAME tools.bootdex_builder_self_test
     COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/build_bootdex.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py
         --self-test
 )
 set_tests_properties(tools.bootdex_builder_self_test

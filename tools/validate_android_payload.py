@@ -20,6 +20,8 @@ sys.path.insert(0, str(TOOLS_DIR))
 sys.path.insert(0, str(TOOLS_DIR / "bootdex"))
 
 import build_bootdex as bootdex
+import compose_bootdex as composition
+import member_sources
 import dex_survey_lib
 
 
@@ -273,7 +275,11 @@ def validate(root: Path) -> None:
         recipe = bootdex.load_recipe()
         resource_recipe = bootdex.load_resources()
         resources = bootdex.resource_payload(resource_recipe)
-    except (bootdex.BuildError, OSError) as error:
+        member_document = member_sources.load()
+        if member_document['classes']:
+            # The same reviewed table used by build/check must be sealed verbatim.
+            resources[member_sources.ENTRY] = member_sources.canonical(member_document)
+    except (bootdex.BuildError, OSError, ValueError, KeyError, TypeError) as error:
         raise PayloadError(f"BootDex recipe is invalid: {error}") from error
     try:
         jar_bytes = (root / BOOT_DEX).read_bytes()
@@ -292,7 +298,7 @@ def validate(root: Path) -> None:
     except (OSError, zipfile.BadZipFile, KeyError, bootdex.BuildError) as error:
         raise PayloadError(f"boot_dex archive is invalid: {error}") from error
     try:
-        expected_metadata = bootdex.boot_metadata(jar_bytes, dex, recipe)
+        expected_metadata = composition.boot_metadata(jar_bytes, dex, recipe)
     except OSError as error:
         raise PayloadError(f"BootDex metadata input is missing: {error}") from error
     if _mapping(manifest.get("boot_dex"), "boot_dex") != expected_metadata:

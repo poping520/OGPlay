@@ -13,6 +13,11 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - 装配顺序固定为 `RegisterIntrinsics → RegisterBootDex → RegisterDex → Link`。Boot/App 分别
   保存 DEX unit 与常量池缓存；解析使用方法所属 unit。BootDex 提供 class/field/hierarchy，
   同签名 intrinsic 只 overlay 方法；未绑定 native 明确失败。
+  ADR-0158 显式组合由封存 JAR 的 `META-INF/ogplay/member-sources.json` 传入
+  `RegisterBootDex`：完整 ROM 形状/字段/clinit 唯一；逐签名选择 ROM 字节码、受审 handler
+  或缺口失败。ROM 来源清除旧 handler，失败来源禁用旧 handler 与字节码；额外 intrinsic
+  成员、未批准 overlay/native 拒绝。未启用时沿用既有 overlay 契约。
+  构建期固定输入、flags、方法体 hash、字段初始化策略并验证依赖；运行时不接受动态配置。
   DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合
   APK 副本的层级、字段、方法、注解与 clinit，不要求字节码相同。常量池经现有惰性解析

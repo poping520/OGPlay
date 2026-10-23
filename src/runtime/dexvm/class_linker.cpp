@@ -1,5 +1,7 @@
 #include "class_linker_internal.h"
 #include "ogplay/core/json.h"
+#include "ogplay/loader/apk.h"
+#include <set>
 #include <cmath>
 #include <bit>
 #include "ogplay/core/text.h"
@@ -359,17 +361,157 @@ VmFieldId DexClassLinker::ResolveIntrinsicFieldBinding(
     return found->second;
 }
 
-DexUnitId DexClassLinker::RegisterBootDex(
-    std::vector<std::uint8_t> dex_bytes) {
-    return RegisterDexUnit(std::move(dex_bytes), true);
+std::string DexClassLinker::BootDexMemberSources(const std::span<const std::byte> archive_bytes) {
+    if (archive_bytes.empty()) return {};
+    constexpr std::string_view name = "META-INF/ogplay/member-sources.json";
+    const auto archive = loader::ParseApkArchive(archive_bytes);
+    for (const auto& entry : archive.entries) {
+        if (entry.name != name) continue;
+        const auto bytes = loader::ReadApkEntry(archive_bytes, archive, name);
+        return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+    }
+    return {};
+}
+
+DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, const std::string_view member_sources) {
+    if (member_sources.empty()) return RegisterDexUnit(std::move(dex_bytes), true);
+    const auto invalid = [](const std::string& message) {
+        Fail(DexVmErrorReason::invalid_member, "boot member sources: " + message);
+    };
+    core::JsonParseError error;
+    const auto document = core::JsonDocument::ParseStrict(member_sources, error);
+    if (!document) invalid("invalid JSON: " + error.message);
+    const auto member = [&](const core::JsonValue value, const std::string_view name) {
+        const auto found = value.Member(name);
+        if (!found) invalid("missing " + std::string(name));
+        return *found;
+    };
+    const auto text = [&](const core::JsonValue value, const std::string_view name) {
+        const auto result = member(value, name).String();
+        if (!result) invalid("non-string " + std::string(name));
+        return std::string(*result);
+    };
+    if (member(document->Root(), "schema").Integer() != 1) invalid("schema");
+    const auto classes = member(document->Root(), "classes");
+    if (!classes.IsArray()) invalid("classes must be array");
+    std::vector<std::string> failed_native;
+    for (std::size_t i = 0; i < classes.Size(); ++i) {
+        const auto row = *classes.Element(i);
+        const auto methods = member(row, "methods");
+        if (!methods.IsArray()) invalid("methods must be array");
+        for (std::size_t j = 0; j < methods.Size(); ++j) {
+            const auto method = *methods.Element(j);
+            if (text(method, "source") == "failure")
+                failed_native.push_back(text(row, "owner") + "->" + text(method, "signature"));
+        }
+    }
+    const auto unit = RegisterDexUnit(std::move(dex_bytes), true, failed_native);
+    std::set<std::string> owners;
+    for (std::size_t i = 0; i < classes.Size(); ++i) {
+        const auto row = *classes.Element(i);
+        const auto owner = text(row, "owner");
+        if (!owners.insert(owner).second) invalid("duplicate class " + owner);
+        const auto id = FindClass(owner);
+        if (!id || !impl_->ClassAt(*id).is_boot_dex) invalid("not a ROM class " + owner);
+        auto& cls = impl_->ClassAt(*id);
+        const auto& rom_data = impl_->UnitAt(unit).class_data[*cls.dex_class_def_index];
+        if (rom_data.static_fields.size() + rom_data.instance_fields.size() !=
+                cls.own_static_fields.size() + cls.own_instance_fields.size() ||
+            rom_data.direct_methods.size() + rom_data.virtual_methods.size() !=
+                cls.own_direct_methods.size() + cls.own_virtual_methods.size())
+            invalid("legacy members outside ROM shape " + owner);
+        if (text(row, "shape_owner") != "rom") invalid("shape owner");
+        const auto clinit = text(row, "clinit_owner");
+        if (clinit != "rom" && clinit != "rom-absent") invalid("clinit owner");
+        const auto fields = member(row, "fields");
+        if (!fields.IsArray()) invalid("fields must be array");
+        std::set<std::string> field_keys;
+        for (std::size_t j = 0; j < fields.Size(); ++j) {
+            const auto field = *fields.Element(j);
+            const auto key = text(field, "signature");
+            if (!field_keys.insert(key).second) invalid("duplicate field " + key);
+            bool found = false;
+            for (const auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
+                for (const auto fid : *list) {
+                    const auto& actual = impl_->FieldAt(fid);
+                    if (actual.name + ":" + actual.descriptor != key) continue;
+                    found = member(field, "flags").UnsignedInteger() == actual.access_flags;
+                }
+            }
+            if (!found) invalid("field identity " + key);
+        }
+        if (field_keys.size() != cls.own_static_fields.size() + cls.own_instance_fields.size())
+            invalid("non-ROM field survived " + owner);
+        // DEX field IDs determine the single ROM layout, independently of the
+        // order in which legacy intrinsic field handles were registered.
+        for (auto* list : {&cls.own_static_fields, &cls.own_instance_fields}) {
+            std::sort(list->begin(), list->end(), [&](const VmFieldId a, const VmFieldId b) {
+                const auto& left = impl_->FieldAt(a);
+                const auto& right = impl_->FieldAt(b);
+                return std::tie(left.name, left.descriptor) < std::tie(right.name, right.descriptor);
+            });
+        }
+        const auto methods = member(row, "methods");
+        if (!methods.IsArray()) invalid("methods must be array");
+        std::set<std::string> method_keys;
+        bool has_clinit = false;
+        for (std::size_t j = 0; j < methods.Size(); ++j) {
+            const auto method = *methods.Element(j);
+            const auto key = text(method, "signature");
+            if (!method_keys.insert(key).second) invalid("duplicate method " + key);
+            LinkedMethod* actual = nullptr;
+            for (const auto* list : {&cls.own_direct_methods, &cls.own_virtual_methods}) {
+                for (const auto mid : *list) {
+                    auto& candidate = impl_->MethodAt(mid);
+                    if (candidate.name + candidate.descriptor == key) actual = &candidate;
+                }
+            }
+            if (!actual || member(method, "flags").UnsignedInteger() != actual->access_flags)
+                invalid("method identity " + key);
+            if (actual->dex_unit != unit) invalid("member outside ROM DEX " + key);
+            actual->overridable = (actual->access_flags & (kAccStatic | kAccPrivate | kAccFinal)) == 0;
+            actual->must_override = false;
+            const auto source = text(method, "source");
+            if (key == "<clinit>()V") {
+                has_clinit = true;
+                if (source != "rom") invalid("ROM must own clinit");
+            }
+            if (source == "overlay") {
+                if (actual->kind != MethodKind::intrinsic || !actual->implementation)
+                    invalid("missing approved handler " + key);
+                const auto review = member(method, "review");
+                for (const auto name : {"reason", "inputs", "outputs", "state_owner", "failure_boundary"})
+                    if (text(review, name).empty()) invalid("empty overlay review");
+                if ((actual->access_flags & kAccNative) != 0 && member(method, "platform_seam").Bool() != true)
+                    invalid("unapproved native seam " + key);
+            } else if (source == "rom") {
+                if (!actual->code || (actual->access_flags & (kAccNative | kAccAbstract)) != 0)
+                    invalid("ROM method has no bytecode " + key);
+                actual->kind = MethodKind::interpreted;
+                actual->implementation = {};
+                actual->is_skeleton = false;
+            } else if (source == "failure") {
+                actual->kind = MethodKind::intrinsic;
+                actual->implementation = {};
+                actual->code.reset();
+                actual->is_skeleton = true;
+            } else
+                invalid("unknown source " + source);
+        }
+        if (has_clinit != (clinit == "rom")) invalid("clinit declaration mismatch");
+        cls.clinit_implementation = {};
+        if (method_keys.size() != cls.own_direct_methods.size() + cls.own_virtual_methods.size())
+            invalid("non-ROM method survived " + owner);
+    }
+    return unit;
 }
 
 DexUnitId DexClassLinker::RegisterDex(std::vector<std::uint8_t> dex_bytes) {
     return RegisterDexUnit(std::move(dex_bytes), false);
 }
 
-DexUnitId DexClassLinker::RegisterDexUnit(
-    std::vector<std::uint8_t> dex_bytes, const bool boot) {
+DexUnitId DexClassLinker::RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, const bool boot,
+                                          const std::span<const std::string> failed_native) {
     if (impl_->link_complete) {
         Fail(DexVmErrorReason::internal_invariant,
              "dex registered after linking");
@@ -632,8 +774,9 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                         stored.clinit = current.id;
                     }
                 } else {
-                    if (method.kind == MethodKind::native && boot &&
-                        !stored.admit_boot_native_methods) {
+                    if (method.kind == MethodKind::native && boot && !stored.admit_boot_native_methods &&
+                        std::find(failed_native.begin(), failed_native.end(),
+                                  stored.descriptor + "->" + method.name + method.descriptor) == failed_native.end()) {
                         Fail(DexVmErrorReason::invalid_member,
                              "curated boot dex contains an unbound native "
                              "method: " + stored.descriptor + "." +

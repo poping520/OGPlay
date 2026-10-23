@@ -743,10 +743,8 @@ TEST_CASE("binary AndroidManifest exposes package permission and application met
     CHECK(std::get<ogplay::loader::AndroidManifestMetaDataResourceReference>(
               facts.application_meta_data[3].value).resource_id == 0x7f030001U);
     CHECK(std::get<bool>(facts.application_meta_data[4].value));
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
-            PackageFactsManifest(true))),
-        "binary AndroidManifest application meta-data requires name and exactly one value or resource");
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(PackageFactsManifest(true))),
+                      "binary AndroidManifest application meta-data requires value or resource");
 }
 
 TEST_CASE("Manifest permission definitions are separate from requests") {
@@ -836,24 +834,16 @@ TEST_CASE("binary AndroidManifest boolean values use nonzero truth semantics") {
     }
 }
 
-TEST_CASE("binary AndroidManifest rejects invalid application visual types") {
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(
-            false, "org.example.game", 0x10,
-            {{11, 13, 0x03, 13, 9}}))),
-        "binary AndroidManifest attribute application icon is not a resource reference");
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(
-            false, "org.example.game", 0x10,
-            {{12, 0xffffffffU, 0x10, 7, 9}}))),
-        "binary AndroidManifest application label is neither a resource reference nor a string");
+TEST_CASE("binary AndroidManifest visual getters use API19 defaults and coercion") {
+    const auto literal = ogplay::loader::ParseAndroidBinaryManifest(
+        Manifest(false, "org.example.game", 0x10, {{11, 13, 0x03, 13, 9}, {12, 0xffffffffU, 0x10, 7, 9}}));
+    CHECK(literal.application_icon == 0);
+    CHECK(std::get<std::string>(*literal.application_label) == "7");
 }
 
 TEST_CASE("binary AndroidManifest rejects identity type and structure errors") {
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
-            Manifest(false, "invalid"))),
-        "binary AndroidManifest identity or structure is invalid");
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(Manifest(false, "invalid"))),
+                      "binary AndroidManifest package is invalid");
     CHECK_THROWS_WITH(
         static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
             Manifest(false, "org.example.game", 0x03))),
@@ -954,11 +944,8 @@ TEST_CASE("Manifest preserves service query fields and owned metadata") {
     CHECK(inherited.meta_data.empty());
 }
 
-TEST_CASE("DVM-112 Manifest rejects duplicate or invalid service names") {
+TEST_CASE("DVM-112 Manifest rejects invalid service names") {
     using namespace ogplay::loader;
-    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
-        {"service", ".Local", {}, true, {}}, {"service", "Local", {}, true, {}}}))),
-        AndroidManifestStartupError);
     CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
         {"service", "Bad.Name", {}, true, {}}}))), AndroidManifestStartupError);
     CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {
@@ -1106,4 +1093,356 @@ TEST_CASE("binary Manifest rejects malformed supports-gl-texture names") {
         CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
             TextureManifest(declarations, true, false, attributes))), std::runtime_error);
     }
+}
+
+namespace {
+struct Api19Manifest {
+    std::vector<std::string> strings;
+    std::vector<std::byte> nodes;
+
+    std::uint32_t Index(std::string_view text) {
+        const auto it = std::find(strings.begin(), strings.end(), text);
+        if (it != strings.end()) return static_cast<std::uint32_t>(it - strings.begin());
+        strings.emplace_back(text);
+        return static_cast<std::uint32_t>(strings.size() - 1);
+    }
+
+    Attribute Value(std::string_view name, std::uint8_t type, std::uint32_t data) {
+        return {Index(name), 0xffffffffU, type, data, Index("http://schemas.android.com/apk/res/android")};
+    }
+
+    Attribute Text(std::string_view name, std::string_view value) { return Value(name, 3, Index(value)); }
+
+    void Start(std::string_view tag, std::vector<Attribute> attrs = {}) {
+        Append(nodes, StartElement(Index(tag), attrs));
+    }
+
+    void End(std::string_view tag) { Append(nodes, EndElement(Index(tag))); }
+
+    void Root(std::vector<Attribute> attrs = {}) {
+        attrs.push_back({Index("package"), 0xffffffffU, 3, Index("org.example.game")});
+        Start("manifest", attrs);
+    }
+
+    std::vector<std::byte> Bytes() {
+        std::vector<std::byte> bytes;
+        Append16(bytes, 3);
+        Append16(bytes, 8);
+        Append32(bytes, 0);
+        Append(bytes, StringPool(strings, true));
+        Append(bytes, nodes);
+        Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+        return bytes;
+    }
+};
+
+std::vector<std::byte> ManifestBoolArsc() {
+    const auto types = StringPool({"bool"}, true);
+    const auto keys = StringPool({"enabled"}, true);
+    std::vector<std::byte> package(284);
+    package[0] = std::byte{0};
+    package[1] = std::byte{2};
+    package[2] = std::byte{28};
+    package[3] = std::byte{1};
+    Set32(package, 8, 0x7f);
+    const std::string name = "org.example.game";
+    for (std::size_t i = 0; i < name.size(); ++i)
+        package[12 + 2 * i] = static_cast<std::byte>(name[i]);
+    Set32(package, 268, 284);
+    Set32(package, 276, 284 + static_cast<std::uint32_t>(types.size()));
+    Append(package, types);
+    Append(package, keys);
+    for (const auto sdk : {0U, 23U}) {
+        std::vector<std::byte> type;
+        Append16(type, 0x201);
+        Append16(type, 56);
+        Append32(type, 76);
+        Append32(type, 1);
+        Append32(type, 1);
+        Append32(type, 60);
+        Append32(type, 36);
+        type.resize(56);
+        type[44] = static_cast<std::byte>(sdk);
+        Append32(type, 0);
+        Append16(type, 8);
+        Append16(type, 0);
+        Append32(type, 0);
+        Append16(type, 8);
+        type.push_back(std::byte{0});
+        type.push_back(std::byte{0x12});
+        Append32(type, sdk == 0 ? 1 : 0);
+        Append(package, type);
+    }
+    Set32(package, 4, static_cast<std::uint32_t>(package.size()));
+    std::vector<std::byte> table;
+    Append16(table, 2);
+    Append16(table, 12);
+    Append32(table, 0);
+    Append32(table, 1);
+    Append(table, StringPool({"unused"}, true));
+    Append(table, package);
+    Set32(table, 4, static_cast<std::uint32_t>(table.size()));
+    return table;
+}
+
+std::vector<std::byte> TwoEntryApk(const std::vector<std::byte>& manifest, const std::vector<std::byte>& resources) {
+    std::vector<std::byte> locals, central;
+    for (const auto& [name, payload] :
+         {std::pair{"AndroidManifest.xml", manifest}, std::pair{"resources.arsc", resources}}) {
+        const auto zip = StoredApk(name, payload);
+        const auto local_size = 30U + std::string_view(name).size() + payload.size();
+        const auto central_size = 46U + std::string_view(name).size();
+        const auto old = central.size();
+        central.insert(central.end(), zip.begin() + static_cast<std::ptrdiff_t>(local_size),
+                       zip.begin() + static_cast<std::ptrdiff_t>(local_size) +
+                           static_cast<std::ptrdiff_t>(central_size));
+        Set32(central, old + 42, static_cast<std::uint32_t>(locals.size()));
+        locals.insert(locals.end(), zip.begin(), zip.begin() + static_cast<std::ptrdiff_t>(local_size));
+    }
+    const auto offset = static_cast<std::uint32_t>(locals.size());
+    Append(locals, central);
+    Append32(locals, 0x06054b50);
+    Append16(locals, 0);
+    Append16(locals, 0);
+    Append16(locals, 2);
+    Append16(locals, 2);
+    Append32(locals, static_cast<std::uint32_t>(central.size()));
+    Append32(locals, offset);
+    Append16(locals, 0);
+    return locals;
+}
+}  // namespace
+
+TEST_CASE("WU11 metadata uses KitKat Bundle types and overwrite precedence") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    const auto metadata = [&](std::string_view key, std::uint8_t type, std::uint32_t data, bool resource = false) {
+        auto attrs = std::vector{xml.Text("name", key), xml.Value("value", type, data)};
+        if (resource) attrs.push_back(xml.Value("resource", 1, 0x7f010000));
+        xml.Start("meta-data", attrs);
+        xml.End("meta-data");
+    };
+    metadata("float", 4, 0x40066666);
+    metadata("color", 0x1c, 0xff123456);
+    metadata("ignored", 5, 0x00000e02);
+    metadata("ignored", 6, 0x00010000);
+    metadata("", 0x10, 1);
+    metadata("", 0x10, 2);
+    metadata("precedence", 4, 0x40400000, true);
+    xml.End("application");
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    REQUIRE(facts.application_meta_data.size() == 4);
+    CHECK(std::get<float>(facts.application_meta_data[0].value) == doctest::Approx(2.1F));
+    CHECK(std::get<std::int32_t>(facts.application_meta_data[1].value) == static_cast<std::int32_t>(0xff123456U));
+    CHECK(facts.application_meta_data[2].name.empty());
+    CHECK(std::get<std::int32_t>(facts.application_meta_data[2].value) == 2);
+    CHECK(std::get<AndroidManifestMetaDataResourceReference>(facts.application_meta_data[3].value).resource_id ==
+          0x7f010000);
+    CHECK(facts.diagnostics.size() == 2);
+}
+
+TEST_CASE("WU11 Manifest resolves typed references using API19 resources") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root({xml.Value("versionCode", 1, 0x7f020000), xml.Value("versionName", 1, 0x7f030000)});
+    xml.Start("application", {xml.Value("enabled", 1, 0x7f010000), xml.Value("label", 0x10, 42)});
+    xml.Start("meta-data",
+              {xml.Text("name", "resolved"), xml.Value("value", 1, 0x7f040000), xml.Value("resource", 1, 0)});
+    xml.End("meta-data");
+    xml.End("application");
+    xml.End("manifest");
+    const AndroidManifestResourceResolver resolver =
+        [](std::uint32_t id) -> std::optional<AndroidManifestResourceValue> {
+        if (id == 0x7f010000) return AndroidManifestResourceValue{0x10, 2, {}};
+        if (id == 0x7f020000) return AndroidManifestResourceValue{0x1c, 0, {}};
+        if (id == 0x7f030000) return AndroidManifestResourceValue{3, 0, ""};
+        if (id == 0x7f040000) return AndroidManifestResourceValue{4, 0x40400000, {}};
+        return std::nullopt;
+    };
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes(), resolver);
+    CHECK(facts.application_enabled);
+    CHECK(facts.version_code == 0);
+    CHECK(facts.version_name == "");
+    CHECK(std::get<std::string>(*facts.application_label) == "42");
+    CHECK(std::get<float>(facts.application_meta_data[0].value) == 3.0F);
+    CHECK_THROWS_WITH_AS(
+        static_cast<void>(ParseAndroidBinaryManifest(
+            xml.Bytes(), [](auto) { return std::optional{AndroidManifestResourceValue{1, 0x7f010000, {}}}; })),
+        "binary AndroidManifest resource cycle or depth limit", std::runtime_error);
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(
+                        xml.Bytes(), [](auto) { return std::optional<AndroidManifestResourceValue>{}; })),
+                    std::runtime_error);
+
+    for (const auto type : {0x10U, 0x11U, 0x12U, 0x1fU}) {
+        for (const auto number : {0U, 2U}) {
+            Api19Manifest scalar;
+            scalar.Root();
+            scalar.Start("application", {scalar.Value("enabled", static_cast<std::uint8_t>(type), number)});
+            scalar.End("application");
+            scalar.End("manifest");
+            CHECK(ParseAndroidBinaryManifest(scalar.Bytes()).application_enabled == (number != 0));
+        }
+    }
+    for (const auto text : {"true", "TRUE", "1", "True", "false", "0"}) {
+        Api19Manifest scalar;
+        scalar.Root();
+        scalar.Start("application", {scalar.Text("enabled", text)});
+        scalar.End("application");
+        scalar.End("manifest");
+        const auto expected =
+            std::string_view(text) == "true" || std::string_view(text) == "TRUE" || std::string_view(text) == "1";
+        CHECK(ParseAndroidBinaryManifest(scalar.Bytes()).application_enabled == expected);
+    }
+    for (const auto type : {0U, 4U}) {
+        Api19Manifest scalar;
+        scalar.Root();
+        scalar.Start("application",
+                     {scalar.Value("enabled", static_cast<std::uint8_t>(type), type == 4U ? 0x3f800000U : 0U)});
+        scalar.End("application");
+        scalar.End("manifest");
+        CHECK(ParseAndroidBinaryManifest(scalar.Bytes()).application_enabled == (type == 0));
+    }
+    for (const auto& [text, expected] : std::vector<std::pair<std::string, std::int32_t>>{
+             {"17", 17}, {"017", 15}, {"0x17", 23}, {"#17", 23}, {"-7", -7}, {"+7", 7}}) {
+        Api19Manifest scalar;
+        scalar.Root();
+        scalar.Start("application");
+        scalar.Start("receiver", {scalar.Text("name", ".R")});
+        scalar.Start("intent-filter", {scalar.Text("priority", text)});
+        scalar.End("intent-filter");
+        scalar.End("receiver");
+        scalar.End("application");
+        scalar.End("manifest");
+        CHECK(ParseAndroidBinaryManifest(scalar.Bytes()).receiver_components[0].intent_filters[0].priority == expected);
+    }
+    for (const auto text : {" 17", "17 ", "-2147483648", "0x80000000"}) {
+        Api19Manifest scalar;
+        scalar.Root();
+        scalar.Start("application");
+        scalar.Start("receiver", {scalar.Text("name", ".R")});
+        scalar.Start("intent-filter", {scalar.Text("priority", text)});
+        scalar.End("intent-filter");
+        scalar.End("receiver");
+        scalar.End("application");
+        scalar.End("manifest");
+        CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(scalar.Bytes())), std::runtime_error);
+    }
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(
+                        xml.Bytes(), [](auto) { return std::optional{AndroidManifestResourceValue{3, 0, {}}}; })),
+                    std::runtime_error);
+    const AndroidManifestResourceResolver null_resource = [](auto) {
+        return std::optional{AndroidManifestResourceValue{0, 0, {}}};
+    };
+    Api19Manifest nulls;
+    nulls.Root({nulls.Value("versionName", 1, 0x7f010000)});
+    nulls.Start("application", {nulls.Value("name", 1, 0x7f010000)});
+    nulls.End("application");
+    nulls.End("manifest");
+    const auto null_facts = ParseAndroidBinaryManifest(nulls.Bytes(), null_resource);
+    CHECK_FALSE(null_facts.version_name);
+    CHECK(null_facts.application_class == "android.app.Application");
+    Api19Manifest null_key;
+    null_key.Root();
+    null_key.Start("application");
+    null_key.Start("meta-data", {null_key.Value("name", 1, 0x7f010000), null_key.Value("value", 0x10, 7)});
+    null_key.End("meta-data");
+    null_key.End("application");
+    null_key.End("manifest");
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(null_key.Bytes(), null_resource)), std::runtime_error);
+    Api19Manifest duplicate_null;
+    duplicate_null.Root();
+    duplicate_null.Start("application",
+                         {duplicate_null.Value("enabled", 0, 0), duplicate_null.Value("enabled", 0x12, 1)});
+    duplicate_null.End("application");
+    duplicate_null.End("manifest");
+    CHECK_THROWS_WITH(static_cast<void>(ParseAndroidBinaryManifest(duplicate_null.Bytes())),
+                      "binary AndroidManifest contains duplicate attribute enabled");
+    Api19Manifest apk_xml;
+    apk_xml.Root();
+    apk_xml.Start("application", {apk_xml.Value("enabled", 1, 0x7f010000)});
+    apk_xml.End("application");
+    apk_xml.End("manifest");
+    const auto apk = TwoEntryApk(apk_xml.Bytes(), ManifestBoolArsc());
+    CHECK(ReadAndroidManifest(apk, ParseApkArchive(apk)).application_enabled);
+}
+
+TEST_CASE("WU11 repeated components preserve declarations and independent filters") {
+    using namespace ogplay::loader;
+    for (const auto tag : {"activity", "service", "receiver"}) {
+        CAPTURE(tag);
+        Api19Manifest xml;
+        xml.Root();
+        xml.Start("application");
+        for (const bool enabled : {true, false}) {
+            xml.Start(tag, {xml.Text("name", ".Repeated"), xml.Value("enabled", 0x12, enabled ? 1U : 0U)});
+            xml.Start("intent-filter");
+            xml.Start("action", {xml.Text("name", enabled ? "FIRST" : "SECOND")});
+            xml.End("action");
+            xml.End("intent-filter");
+            xml.End(tag);
+        }
+        xml.End("application");
+        xml.End("manifest");
+        const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+        const auto check = [](const auto& components) {
+            REQUIRE(components.size() == 2);
+            CHECK(components[0].enabled);
+            CHECK_FALSE(components[1].enabled);
+            CHECK(components[0].intent_filters[0].actions == std::vector<std::string>{"FIRST"});
+            CHECK(components[1].intent_filters[0].actions == std::vector<std::string>{"SECOND"});
+        };
+        if (std::string_view(tag) == "activity") check(facts.activity_components);
+        if (std::string_view(tag) == "service") check(facts.service_components);
+        if (std::string_view(tag) == "receiver") check(facts.receiver_components);
+    }
+}
+
+TEST_CASE("WU11 Manifest identity preserves zero absent and empty defaults") {
+    using namespace ogplay::loader;
+    for (const bool version : {false, true}) {
+        Api19Manifest xml;
+        std::vector<Attribute> attrs{xml.Text("versionName", "")};
+        if (version) attrs.push_back(xml.Value("versionCode", 0x10, 0));
+        xml.Root(attrs);
+        xml.Start("application");
+        xml.End("application");
+        xml.End("manifest");
+        const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+        CHECK(facts.version_code == 0);
+        CHECK(facts.version_name == "");
+        CHECK_FALSE(facts.min_sdk);
+        CHECK_FALSE(facts.target_sdk);
+    }
+    for (const auto min : {0U, 5U}) {
+        Api19Manifest xml;
+        xml.Root();
+        xml.Start("uses-sdk", {xml.Value("minSdkVersion", 0x10, min)});
+        xml.End("uses-sdk");
+        xml.Start("uses-sdk", {xml.Value("minSdkVersion", 0x10, min), xml.Value("targetSdkVersion", 0x10, 0)});
+        xml.End("uses-sdk");
+        xml.End("manifest");
+        const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+        CHECK(facts.min_sdk == min);
+        CHECK(facts.target_sdk == 0);
+    }
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("uses-sdk", {xml.Value("minSdkVersion", 0x10, 5)});
+    xml.End("uses-sdk");
+    xml.End("manifest");
+    CHECK(ParseAndroidBinaryManifest(xml.Bytes()).target_sdk == 5);
+    CHECK_NOTHROW(static_cast<void>(ParseAndroidBinaryManifest(Manifest(false, ".org..example."))));
+    CHECK_NOTHROW(static_cast<void>(ParseAndroidBinaryManifest(Manifest(false, "android"))));
+    Api19Manifest referenced_package;
+    auto package = referenced_package.Value("package", 1, 0x7f010000);
+    package.namespace_index = 0xffffffffU;
+    referenced_package.Start("manifest", {package});
+    referenced_package.End("manifest");
+    CHECK_THROWS_AS(static_cast<void>(ParseAndroidBinaryManifest(
+                        referenced_package.Bytes(),
+                        [](auto) { return std::optional{AndroidManifestResourceValue{3, 0, "org.example.game"}}; })),
+                    std::runtime_error);
 }

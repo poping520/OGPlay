@@ -720,6 +720,16 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
             {.resource_id = 0x7f050001U, .type_name = "string",
              .entry_name = "service_value", .string_value = "resolved",
              .value_type = 0x03U});
+        f.context->arsc.entries.push_back({.resource_id = 0x7f050002U,
+                                           .type_name = "float",
+                                           .entry_name = "floating",
+                                           .value_type = 0x04U,
+                                           .value_data = 0x40066666U});
+        f.context->arsc.entries.push_back({.resource_id = 0x7f050003U,
+                                           .type_name = "dimen",
+                                           .entry_name = "ignored",
+                                           .value_type = 0x05U,
+                                           .value_data = 0x00000e02U});
         ogplay::loader::AndroidManifestServiceComponent push;
         push.name = "org.example.game.PushService";
         push.exported = true;
@@ -727,7 +737,11 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
         push.permission = "org.example.SERVICE";
         push.flags = 3;
         push.meta_data = {{"service.string", std::string("ready")},
-                          {"service.bool", true}, {"service.int", std::int32_t{42}},
+                          {"service.bool", true},
+                          {"service.int", std::int32_t{42}},
+                          {"service.float", 2.1F},
+                          {"service.float-ref", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050002U}},
+                          {"service.ignored", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050003U}},
                           {"service.value", ogplay::loader::AndroidManifestMetaDataValueReference{0x7f050001U}},
                           {"service.resource", ogplay::loader::AndroidManifestMetaDataResourceReference{0x7f030001U}}};
         ogplay::loader::AndroidManifestServiceComponent disabled;
@@ -736,6 +750,10 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
         ogplay::loader::AndroidManifestServiceComponent no_meta;
         no_meta.name = "org.example.game.NoMetaService";
         f.context->service_components = {push, disabled, no_meta};
+        auto earlier = push;
+        earlier.process_name = "org.example.game:old";
+        earlier.enabled = false;
+        f.context->service_components.insert(f.context->service_components.begin(), earlier);
         const auto manager = f.vm.NewIntrinsicInstance(
             "Landroid/content/pm/PackageManager;");
         const auto component = [&](const char* package, const char* name) {
@@ -791,6 +809,14 @@ TEST_CASE("PackageManager getServiceInfo uses current Manifest service facts") {
         REQUIRE(metadata.IsValid());
         CHECK(f.vm.StringUtf8(bundle_string(metadata, "service.string")) == "ready");
         CHECK(f.vm.StringUtf8(bundle_string(metadata, "service.value")) == "resolved");
+        CHECK(f.On(metadata, "getFloat", "(Ljava/lang/String;)F", {VmValue::Ref(f.vm.NewStringUtf8("service.float"))})
+                  .AsFloat() == doctest::Approx(2.1F));
+        CHECK(
+            f.On(metadata, "getFloat", "(Ljava/lang/String;)F", {VmValue::Ref(f.vm.NewStringUtf8("service.float-ref"))})
+                .AsFloat() == doctest::Approx(2.1F));
+        CHECK_FALSE(f.On(metadata, "containsKey", "(Ljava/lang/String;)Z",
+                         {VmValue::Ref(f.vm.NewStringUtf8("service.ignored"))})
+                        .AsInt());
         CHECK_FALSE(bundle_string(metadata, "application.key").IsValid());
         CHECK(f.On(metadata, "getBoolean", "(Ljava/lang/String;)Z",
                    {VmValue::Ref(f.vm.NewStringUtf8("service.bool"))}).AsInt() == 1);
@@ -872,6 +898,10 @@ TEST_CASE("PackageManager getReceiverInfo uses current Manifest receiver facts")
             {.name = "org.example.game.DisabledReceiver", .enabled = false,
              .process_name = "org.example.game:app"},
         };
+        auto earlier = f.context->receiver_components.front();
+        earlier.process_name = "org.example.game:old";
+        earlier.enabled = false;
+        f.context->receiver_components.insert(f.context->receiver_components.begin(), earlier);
         const auto manager = f.vm.NewIntrinsicInstance(
             "Landroid/content/pm/PackageManager;");
         const auto component = [&](const char* package, const char* name) {

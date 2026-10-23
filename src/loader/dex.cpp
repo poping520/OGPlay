@@ -1319,9 +1319,7 @@ void ReadSystemMetadata(const Reader& reader, DexImage& image,
             budget.RequireData(reader, list_offset, 4U, true);
             const auto count = reader.U32(list_offset);
             budget.RequireData(reader, list_offset, 4ULL + 4ULL * count, true);
-            const auto& prototype = image.prototypes[image.methods[method_index].prototype_index];
-            if (count != prototype.parameter_type_indices.size())
-                Fail(DexErrorReason::invalid_range, list_offset, "parameter annotation arity mismatch");
+            image.method_annotation_metadata[method_index].has_parameter_annotations = true;
             auto& parameters = image.method_annotation_metadata[method_index].parameters;
             budget.Reserve(parameters, count, list_offset); parameters.resize(count);
             for (std::uint32_t parameter = 0; parameter < count; ++parameter) {

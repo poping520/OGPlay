@@ -646,3 +646,67 @@ TEST_CASE("DEX annotations retain depth and single-array complexity limits") {
     CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseDex(LargeAnnotationDex(65536U))),
                     ogplay::loader::DexError);
 }
+
+namespace {
+std::vector<std::uint8_t> ParameterAnnotationDex(const std::uint32_t count) {
+    auto bytes = ClassDex();
+    const auto old_map = Read32(bytes, 52);
+    const std::vector<std::uint8_t> fixed(bytes.begin() + old_map + 4, bytes.begin() + old_map + 4 + 8 * 12);
+    const auto item = static_cast<std::uint32_t>(bytes.size());
+    bytes.insert(bytes.end(), {1, 2, 0});  // runtime-visible marker, Lsample/Peer;
+    while (bytes.size() % 4)
+        bytes.push_back(0);
+    const auto set = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 8);
+    Put32(bytes, set, 1);
+    Put32(bytes, set + 4, item);
+    const auto list = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 4 + count * 4);
+    Put32(bytes, list, count);
+    for (std::uint32_t i = 0; i < count; ++i)
+        Put32(bytes, list + 4 + i * 4, i == 0 ? set : 0);
+    const auto directory = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 24);
+    Put32(bytes, directory + 12, 1);
+    Put32(bytes, directory + 16, 0);
+    Put32(bytes, directory + 20, list);
+    Put32(bytes, Read32(bytes, 100) + 20, directory);
+    const auto map = static_cast<std::uint32_t>(bytes.size());
+    bytes.resize(bytes.size() + 4 + 13 * 12);
+    Put32(bytes, map, 13);
+    std::copy(fixed.begin(), fixed.end(), bytes.begin() + map + 4);
+    PutMap(bytes, map + 4 + 8 * 12, 0x2004, 1, item);
+    PutMap(bytes, map + 4 + 9 * 12, 0x1003, 1, set);
+    PutMap(bytes, map + 4 + 10 * 12, 0x1002, 1, list);
+    PutMap(bytes, map + 4 + 11 * 12, 0x2006, 1, directory);
+    PutMap(bytes, map + 4 + 12 * 12, 0x1000, 1, map);
+    Put32(bytes, 32, static_cast<std::uint32_t>(bytes.size()));
+    Put32(bytes, 52, map);
+    Put32(bytes, 104, static_cast<std::uint32_t>(bytes.size()) - Read32(bytes, 108));
+    return bytes;
+}
+}  // namespace
+
+TEST_CASE("WU11 DEX parameter annotation item preserves raw arity and presence") {
+    using namespace ogplay::loader;
+    const auto absent = ParseDex(ClassDex());
+    CHECK_FALSE(absent.method_annotation_metadata[0].has_parameter_annotations);
+    for (const auto count : {0U, 1U, 3U}) {
+        const auto image = ParseDex(ParameterAnnotationDex(count));
+        REQUIRE(image.prototypes[0].parameter_type_indices.empty());
+        const auto& metadata = image.method_annotation_metadata[0];
+        CHECK(metadata.has_parameter_annotations);
+        REQUIRE(metadata.parameters.size() == count);
+        if (count) {
+            REQUIRE(metadata.parameters[0].size() == 1);
+            CHECK(metadata.parameters[0][0].type_index == 2);
+            for (std::size_t i = 1; i < count; ++i)
+                CHECK(metadata.parameters[i].empty());
+        }
+    }
+    auto invalid = ParameterAnnotationDex(1);
+    const auto directory = Read32(invalid, Read32(invalid, 100) + 20);
+    const auto list = Read32(invalid, directory + 20);
+    Put32(invalid, list + 4, static_cast<std::uint32_t>(invalid.size() + 4));
+    CHECK_THROWS_AS(static_cast<void>(ParseDex(invalid)), DexError);
+}

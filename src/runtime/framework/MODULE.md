@@ -20,6 +20,7 @@ execution、integration 或游戏 profile。
   计数；状态未请求时必须保持未知，不能伪造默认窗口策略。
 - legacy phone-language index 从同一受检、确定性 Locale 配置派生：法/德/意/西/日/英/葡
   为 `0..6`，支持 ISO-639 两/三字母代码，其他合法语言明确回退英语索引 `5`。
+- 当前包 PackageInfo 接受 versionCode=0 与空 versionName，原样发布到版本字段。
 - 服务未安装或能力未实现时明确失败，不模拟完整 Android services。
 - `src/` 不得出现游戏、厂商或包名特判。
 

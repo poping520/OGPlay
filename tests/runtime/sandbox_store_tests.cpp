@@ -344,6 +344,12 @@ TEST_CASE("sandbox store records the version code as a diagnostic fact") {
     // the selected installation id, not the version, owns the saves.
     auto reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     reopened->RecordVersionCode(133);
+    reopened->RecordVersionCode(0);
+    std::ifstream meta(reopened->Directory() / "meta.toml", std::ios::binary);
+    const std::string persisted{std::istreambuf_iterator<char>(meta), {}};
+    CHECK(persisted.find("version_code = 0\n") != std::string::npos);
+    reopened.reset();
+    reopened = SandboxStore::Open(root.path, kPackage, kPackage);
     CHECK(reopened->Package() == kPackage);
 }
 

@@ -555,6 +555,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                 if (encoded.method_index < image_ref.method_annotation_metadata.size()) {
                     const auto& metadata = image_ref.method_annotation_metadata[encoded.method_index];
                     method.generic_signature = metadata.signature;
+                    method.has_parameter_annotations = metadata.has_parameter_annotations;
                     for (const auto& annotation : metadata.annotations)
                         method.runtime_annotations.push_back(ConvertAnnotation(image_ref, unit_id, annotation));
                     for (const auto& parameter : metadata.parameters) {
@@ -622,6 +623,7 @@ DexUnitId DexClassLinker::RegisterDexUnit(
                     current.generic_signature = std::move(method.generic_signature);
                     current.runtime_annotations = std::move(method.runtime_annotations);
                     current.parameter_annotations = std::move(method.parameter_annotations);
+                    current.has_parameter_annotations = method.has_parameter_annotations;
                     current.code = std::move(method.code);
                     current.shape = std::move(method.shape);
                     current.return_shorty = method.return_shorty;

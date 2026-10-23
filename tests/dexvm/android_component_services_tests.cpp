@@ -189,6 +189,11 @@ TEST_CASE("DVM-193 receiver queries match independent filters and return BootDex
                 {.actions = {"OTHER"}, .categories = {"org.example.game", "EXTRA"}}}},
             disabled};
         f.context->receiver_components.back().intent_filters.front().has_data = true;
+        auto repeated = f.context->receiver_components.front();
+        repeated.intent_filters = {high};
+        repeated.intent_filters.front().has_data = true;
+        repeated.process_name = "org.example.game:later";
+        f.context->receiver_components.insert(f.context->receiver_components.end() - 1, repeated);
         const auto manager = f.vm.NewIntrinsicInstance("Landroid/content/pm/PackageManager;");
         const auto intent = f.New("Landroid/content/Intent;", "(Ljava/lang/String;)V",
                                  {VmValue::Ref(f.vm.NewStringUtf8("RECEIVE"))});

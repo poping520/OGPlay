@@ -180,6 +180,7 @@ struct DexMethodAnnotationMetadata final {
     std::optional<std::u16string> signature;
     std::vector<DexRuntimeAnnotation> annotations;
     std::vector<std::vector<DexRuntimeAnnotation>> parameters;
+    bool has_parameter_annotations{};
 };
 
 struct DexClassAnnotationMetadata final {

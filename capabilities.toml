@@ -766,12 +766,12 @@ note = "M5 WU-0217 在严格 ZIP32 local/central 与 CRC32 校验上支持 store
 [loader.apk_manifest_identity]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
-note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool 与 typed attributes，产出 package/versionCode/versionName/minSdk/targetSdk 事实"
+note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool 与 typed attributes，产出 package/versionCode/versionName/minSdk/targetSdk 事实；DVM-269 接受零/缺省版本与空版本名，SDK 缺省随 API19，typed getter 接入有界 ARSC 引用解析（默认配置/API19，框架值可显式注入），metadata 按 Bundle 保存 float/color/INT/boolean/string，其他非 RIGID 类型诊断忽略"
 
 [loader.apk_startup_manifest]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
-note = "APS-1：按 API19 PackageParser 规则解析 Application 类、声明序 Activity/activity-alias、enabled 与 intent-filter，确定性选择 launcher，无 launcher 或非法 alias 返回 typed error，不依赖 Profile。同名组件按声明序保留过滤器、查询取最后声明。BND-54 保留 supports-gl-texture 声明顺序与未知扩展，缺失/非法名称拒绝。"
+note = "APS-1：按 API19 PackageParser 规则解析 Application 类、声明序 Activity/activity-alias、enabled 与 intent-filter，确定性选择 launcher，无 launcher 或非法 alias 返回 typed error，不依赖 Profile。同名 Activity/service/receiver 按声明序独立保留配置/过滤器，按名取后项，receiver 查询按组件去重。BND-54 保留 supports-gl-texture 声明顺序与未知扩展，缺失/非法名称拒绝。"
 
 [loader.apk_arm_native_catalog]
 status = "complete"
@@ -1381,7 +1381,7 @@ note = "DVM-69/205：受检解析 InnerClass/EnclosingClass/EnclosingMethod/Memb
 [dexvm.reflection_field_annotations]
 status = "complete"
 test = "tests/loader/dex_tests.cpp; tests/dexvm/reflection_tests.cpp"
-note = "DVM-181/WU7-5：Class/Field/Method/Constructor/参数运行时注解共用 AnnotationRuntime，含默认值、@Inherited 类继承、数组防御性复制、equals/hashCode/toString。不可加载的注解类型按 4.4 跳过，成员缺失类型/枚举与类型不匹配仍抛精确异常。实现类保持受限合成，不宣称通用 Proxy（DVM-259）。"
+note = "DVM-181/WU7-5：Class/Field/Method/Constructor/参数运行时注解共用 AnnotationRuntime，含默认值、@Inherited 类继承、数组防御性复制、equals/hashCode/toString；DVM-269 参数有 item 时保留原始 list.size，无 item 才按原型补空矩阵。不可加载的注解类型按 4.4 跳过，成员缺失类型/枚举与类型不匹配仍抛精确异常。实现类保持受限合成，不宣称通用 Proxy（DVM-259）。"
 
 [dexvm.reflection_metadata_laziness]
 status = "complete"
@@ -1921,17 +1921,17 @@ note = "DVM-112/142/202、ADR-0042/0084：resolveService 只接受非空 action�
 [dexvm.receiver_query]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp#receiver facts; tests/dexvm/android_component_services_tests.cpp#DVM-193"
-note = "DVM-193：queryBroadcastReceivers 仅查当前 APK，支持非空 action、同一 filter category 子集、无 component/selector/data/type、flags=0；过滤禁用组件，按 API19 首次匹配去重并稳定排序，返回原版 BootDex ArrayList/ResolveInfo/ActivityInfo。无 inventory、未知 flags、外部包与不能判断的 data 条件记账失败；permission 不是声明查询授权门槛。不含广播投递或系统包服务。"
+note = "DVM-193：queryBroadcastReceivers 仅查当前 APK，支持非空 action、同一 filter category 子集、无 component/selector/data/type、flags=0；过滤禁用组件，按 API19 跨同名声明首次匹配去重并稳定排序，返回原版 BootDex ArrayList/ResolveInfo/ActivityInfo。无 inventory、未知 flags、外部包与不能判断的 data 条件记账失败；permission 不是声明查询授权门槛。不含广播投递或系统包服务。"
 
 [dexvm.receiver_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-190：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
+note = "DVM-190/269：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo，同名声明取后项；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
 
 [dexvm.service_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、元数据与 flags；getServiceInfo 只按当前包完整 ComponentName 查询，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS 与禁用过滤。未知 flags 或缺清单记账失败；不启动独立进程，不含 Binder 与系统包服务。"
+note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、元数据与 flags；getServiceInfo 只按当前包完整 ComponentName 查询，同名声明取后项，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS 与禁用过滤。未知 flags 或缺清单记账失败；不启动独立进程，不含 Binder 与系统包服务。"
 
 [dexvm.permission_info]
 status = "partial"

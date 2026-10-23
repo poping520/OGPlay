@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <span>
@@ -24,8 +25,7 @@ struct AndroidManifestMetaDataResourceReference final {
 };
 
 using AndroidManifestMetaDataValue =
-    std::variant<std::int32_t, bool, std::string,
-                 AndroidManifestMetaDataValueReference,
+    std::variant<std::int32_t, bool, float, std::string, AndroidManifestMetaDataValueReference,
                  AndroidManifestMetaDataResourceReference>;
 
 struct AndroidManifestMetaData final {
@@ -138,6 +138,15 @@ private:
     AndroidManifestStartupErrorReason reason_;
 };
 
+// Resolved typed resource value; references may be returned for bounded chaining.
+struct AndroidManifestResourceValue final {
+    std::uint8_t type{};
+    std::uint32_t data{};
+    std::optional<std::string> string;
+};
+
+using AndroidManifestResourceResolver = std::function<std::optional<AndroidManifestResourceValue>(std::uint32_t)>;
+
 struct AndroidManifestFacts final {
     std::string package;
     std::uint32_t version_code{};
@@ -165,6 +174,7 @@ struct AndroidManifestFacts final {
     std::vector<AndroidManifestReceiverComponent> receiver_components;
     // Top-level supports-gl-texture android:name, in first-declaration order.
     std::vector<std::string> supported_gl_textures;
+    std::vector<std::string> diagnostics;
 };
 
 [[nodiscard]] std::string NormalizeAndroidManifestClassName(
@@ -177,9 +187,9 @@ struct AndroidManifestFacts final {
 [[nodiscard]] AndroidManifestLauncherComponent ResolveLauncherComponent(
     const AndroidManifestFacts& facts);
 
-[[nodiscard]] AndroidManifestFacts ParseAndroidBinaryManifest(
-    std::span<const std::byte> bytes);
-[[nodiscard]] AndroidManifestFacts ReadAndroidManifest(
-    std::span<const std::byte> apk_bytes, const ApkArchive& archive);
+[[nodiscard]] AndroidManifestFacts ParseAndroidBinaryManifest(std::span<const std::byte> bytes,
+                                                              const AndroidManifestResourceResolver& resources = {});
+[[nodiscard]] AndroidManifestFacts ReadAndroidManifest(std::span<const std::byte> apk_bytes, const ApkArchive& archive,
+                                                       const AndroidManifestResourceResolver& external_resources = {});
 
 }  // namespace ogplay::loader

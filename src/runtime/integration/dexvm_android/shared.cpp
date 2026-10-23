@@ -355,6 +355,10 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
             "(Ljava/lang/String;I)V",
             {dx::VmValue::Ref(key), dx::VmValue::Int(integer)}));
     };
+    const auto put_float = [&](const float number) {
+        static_cast<void>(CallAndroidMethod(call.vm, bundle, "putFloat", "(Ljava/lang/String;F)V",
+                                            {dx::VmValue::Ref(key), dx::VmValue::Float(number)}));
+    };
     const auto put_boolean = [&](const bool boolean) {
         static_cast<void>(CallAndroidMethod(call.vm, bundle, "putBoolean",
             "(Ljava/lang/String;Z)V",
@@ -367,21 +371,30 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
     };
     if (const auto* integer = std::get_if<std::int32_t>(&value)) {
         put_integer(*integer);
+    } else if (const auto* number = std::get_if<float>(&value)) {
+        put_float(*number);
     } else if (const auto* boolean = std::get_if<bool>(&value)) {
         put_boolean(*boolean);
     } else if (const auto* text = std::get_if<std::string>(&value)) {
         put_string(*text);
-    } else if (const auto* reference =
-                   std::get_if<loader::AndroidManifestMetaDataValueReference>(&value)) {
+    } else if (const auto* reference = std::get_if<loader::AndroidManifestMetaDataValueReference>(&value)) {
         const auto& resolved = ResolveUiResourceEntry(*context, reference->resource_id);
+        if (!resolved.is_complex && resolved.value_type == 0U)
+            throw std::runtime_error("meta-data value resource is null: " + name);
+        if (resolved.value_type == 0x03U && !resolved.string_value)
+            throw std::runtime_error("meta-data value resource string is missing: " + name);
         if (resolved.value_type == 0x03U && resolved.string_value) {
             put_string(*resolved.string_value);
+        } else if (resolved.value_type == 0x04U) {
+            put_float(std::bit_cast<float>(resolved.value_data));
         } else if (resolved.value_type == 0x12U) {
             put_boolean(resolved.value_data != 0U);
         } else if (resolved.value_type >= 0x10U && resolved.value_type <= 0x1fU) {
             put_integer(static_cast<std::int32_t>(resolved.value_data));
         } else {
-            throw std::runtime_error("meta-data value resource has unsupported type");
+            if (auto* logger = call.vm.Log())
+                logger->Write(core::LogLevel::warn, "runtime.manifest", "ignored unsupported meta-data value type", {},
+                              {{"name", name}, {"type", static_cast<std::uint64_t>(resolved.value_type)}});
         }
     } else {
         put_integer(static_cast<std::int32_t>(

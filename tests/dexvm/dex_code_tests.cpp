@@ -12,6 +12,8 @@
 #include "ogplay/loader/dex.h"
 #include "ogplay/loader/dex_class_data.h"
 #include "ogplay/loader/dex_code.h"
+#include "interpreter_fixture.h"
+#include "ogplay/runtime/dexvm/class_name_codec.h"
 
 namespace {
 
@@ -158,4 +160,53 @@ TEST_CASE("dex_code rejects malformed structures") {
                 bytes, fixture.image, *divide.code)),
             ogplay::loader::DexError);
     }
+}
+
+TEST_CASE("WU11b empty DEX try ranges fail method verification after format loading") {
+    const Fixture fixture;
+    const auto& divide = fixture.Method("divide");
+    REQUIRE(divide.code.has_value());
+    auto bytes = fixture.bytes;
+    const auto count_at = divide.code->offset + 16U + divide.code->instruction_units * 2U +
+                          ((divide.code->instruction_units & 1U) ? 2U : 0U) + 4U;
+    bytes[count_at] = 0;
+    bytes[count_at + 1] = 0;
+    const auto parsed = ogplay::loader::ParseDex(bytes);
+    const auto code = ogplay::loader::ReadDexMethodCode(bytes, parsed, *divide.code);
+    REQUIRE(code.tries.size() == 1);
+    CHECK(code.tries[0].instruction_count == 0);
+    ogplay::test::interpreter::WithEachBackend([](const auto config) {
+        using namespace ogplay::runtime::dexvm;
+        ogplay::test::interpreter::Vm vm(config);
+        const auto id = vm.Static("LFlow;", "loopSum", "(I)I");
+        auto& method = vm.linker.MutableMethod(id);
+        REQUIRE(method.code.has_value());
+        method.code->tries.push_back({.start_pc = 0, .instruction_count = 0});
+        const auto outcome = vm.CallStatic("LFlow;", "loopSum", "(I)I", {VmValue::Int(0)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(vm.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/VerifyError;");
+        CHECK(outcome.exception_message.find("empty try range") != std::string::npos);
+    });
+}
+
+TEST_CASE("WU11b Unicode descriptors retain runtime class identity") {
+    using namespace ogplay::runtime::dexvm;
+    Fixture fixture;
+    const auto& type = fixture.image.types[fixture.image.classes[1].class_type_index];
+    const auto& text = fixture.image.strings[type.descriptor_string_index];
+    REQUIRE(text.value.size() > 3);
+    REQUIRE(text.value.size() < 128);
+    auto expected = type.descriptor;
+    expected.replace(1, 2, "é");
+    fixture.bytes[text.data_offset] -= 1;
+    fixture.bytes[text.data_offset + 2] = 0xc3;
+    fixture.bytes[text.data_offset + 3] = 0xa9;
+    DexClassLinker linker;
+    linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+    ogplay::test::RegisterBootDex(linker);
+    linker.RegisterDex(fixture.bytes);
+    linker.Link();
+    const auto id = linker.ResolveDescriptor(expected);
+    CHECK(linker.Class(id).descriptor == expected);
+    CHECK(ClassNameCodec::ClassGetName(expected).find("é") != std::string::npos);
 }

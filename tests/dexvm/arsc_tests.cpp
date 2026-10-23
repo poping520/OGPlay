@@ -212,11 +212,44 @@ TEST_CASE("DVM-121 ARSC bags preserve parent and typed values and reject corrupt
     CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
     corrupt = bytes;
     PatchU32(corrupt, start + 28, 0x01010095); // duplicate name
-    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
+    CHECK(ogplay::loader::ParseArsc(corrupt).FindById(0x7f010000)->bag.size() == 2);
     corrupt = bytes;
     corrupt[start + 20] = 7; // invalid Res_value size
     CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
     corrupt = bytes;
     corrupt[start] = 8; // truncated ResTable_map_entry
     CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(corrupt)));
+}
+
+TEST_CASE("WU11b ARSC permits zero packages and requires the declared package count") {
+    const auto pool = Utf8Pool({});
+    std::vector<std::uint8_t> bytes;
+    PushU16(bytes, 2);
+    PushU16(bytes, 12);
+    PushU32(bytes, static_cast<std::uint32_t>(12 + pool.size()));
+    PushU32(bytes, 0);
+    bytes.insert(bytes.end(), pool.begin(), pool.end());
+    const auto table = ogplay::loader::ParseArsc(bytes);
+    CHECK(table.entries.empty());
+    CHECK(table.FindById(0x7f010000) == nullptr);
+    CHECK(table.FindByName("raw", "raw_000") == nullptr);
+    PatchU32(bytes, 8, 1);
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(bytes)));
+    bytes = SyntheticArsc();
+    PatchU32(bytes, 8, 0);
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseArsc(bytes)));
+}
+
+TEST_CASE("WU11b ARSC keeps duplicate child bag items in declaration order") {
+    auto bytes = SyntheticArsc(true);
+    const auto start = bytes.size() - 40;
+    PatchU32(bytes, start + 28, 0x01010095);
+    const auto table = ogplay::loader::ParseArsc(bytes);
+    const auto* entry = table.FindById(0x7f010000);
+    REQUIRE(entry != nullptr);
+    REQUIRE(entry->bag.size() == 2);
+    CHECK(entry->bag[0].name == entry->bag[1].name);
+    CHECK(entry->bag[0].value_data == 0x00000e02);
+    CHECK(entry->bag[1].value_data == 0xff123456);
+    CHECK(entry->parent == 0x01030005);
 }

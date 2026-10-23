@@ -1,7 +1,6 @@
 #include "ogplay/loader/arsc.h"
 
 #include <algorithm>
-#include <unordered_set>
 
 #include "ogplay/core/byte_order.h"
 
@@ -172,9 +171,8 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
         Fail(0, "resources.arsc does not start with a resource table chunk");
     }
     const auto package_count = reader.U32(8);
-    if (package_count == 0) {
-        Fail(8, "resources.arsc declares no packages");
-    }
+    std::uint32_t packages{};
+    bool saw_global_pool = false;
 
     ArscTable result;
     std::vector<std::string> global_strings;
@@ -182,9 +180,11 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
     std::size_t cursor = table.Body();
     while (cursor < table.End()) {
         const auto chunk = ReadChunk(reader, cursor);
-        if (chunk.type == kResStringPoolType && global_strings.empty()) {
+        if (chunk.type == kResStringPoolType && !saw_global_pool) {
             global_strings = ReadStringPool(reader, chunk);
+            saw_global_pool = true;
         } else if (chunk.type == kResTablePackageType) {
+            ++packages;
             const auto package_base = chunk.offset;
             result.package_id = reader.U32(package_base + 8);
             result.package_name = ReadPackageName(reader, package_base + 12);
@@ -291,13 +291,10 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                             const auto map_base = entry_base + entry_size;
                             if (count > (sub.End() - map_base) / 12U)
                                 Fail(map_base, "resources.arsc bag items escape type chunk");
-                            std::unordered_set<std::uint32_t> names;
                             for (std::uint32_t item = 0; item < count; ++item) {
                                 const auto item_base = map_base + static_cast<std::size_t>(item) * 12;
                                 auto value = read_value(item_base + 4);
                                 value.name = reader.U32(item_base);
-                                if (!names.insert(value.name).second)
-                                    Fail(item_base, "resources.arsc duplicate bag item");
                                 entry.bag.push_back(std::move(value));
                             }
                         }
@@ -312,9 +309,10 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
         }
         cursor = chunk.End();
     }
-    if (result.package_id == 0) {
-        Fail(0, "resources.arsc contains no package chunk");
+    if (packages != package_count) {
+        Fail(0, "resources.arsc package count does not match declaration");
     }
+    if (!saw_global_pool) Fail(0, "resources.arsc has no global string pool");
     return result;
 }
 

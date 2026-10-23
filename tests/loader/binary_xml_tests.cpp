@@ -320,16 +320,12 @@ TEST_CASE("binary XML layout walk rejects malformed documents") {
     auto unclosed = Layout(false);
     unclosed.resize(unclosed.size() - EndElement(0).size());
     Set32(unclosed, 4, static_cast<std::uint32_t>(unclosed.size()));
-    CHECK_THROWS_WITH(static_cast<void>(
-                          ogplay::loader::ParseBinaryXmlElements(unclosed)),
-                      "binary XML element is not closed");
+    CHECK(ogplay::loader::ParseBinaryXmlElements(unclosed).size() == 3);
 
     auto mismatched = Layout(false);
     const auto final_end_offset = mismatched.size() - EndElement(0).size();
     Set32(mismatched, final_end_offset + 20, 1U);
-    CHECK_THROWS_WITH(static_cast<void>(
-                          ogplay::loader::ParseBinaryXmlElements(mismatched)),
-                      "binary XML element nesting is malformed");
+    CHECK(ogplay::loader::ParseBinaryXmlElements(mismatched).size() == 3);
 }
 
 TEST_CASE("binary XML pull reader accepts local exact resource documents when present") {
@@ -356,4 +352,81 @@ TEST_CASE("binary XML pull reader accepts local exact resource documents when pr
                    ogplay::loader::BinaryXmlPullEventType::text;
         }));
     }
+}
+
+namespace {
+std::vector<std::byte> XmlDocument(const std::vector<std::vector<std::byte>>& chunks) {
+    std::vector<std::byte> bytes;
+    Append16(bytes, 3);
+    Append16(bytes, 8);
+    Append32(bytes, 0);
+    for (const auto& chunk : chunks)
+        Append(bytes, chunk);
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    return bytes;
+}
+}  // namespace
+
+TEST_CASE("WU11b XML string conversion follows API19 code units and lazy access") {
+    auto utf16 = StringPool({"A", "unused"}, false);
+    utf16[38] = std::byte{0};
+    utf16[39] = std::byte{0xd8};  // first string: lone high surrogate
+    auto doc = XmlDocument({utf16, StartElement(0, {}), EndElement(0)});
+    CHECK(ogplay::loader::ParseBinaryXmlElements(doc)[0].name == "\xed\xa0\x80");
+    auto utf8 = StringPool({"aa"}, true);
+    utf8[32] = std::byte{1};  // declared UTF16 units
+    utf8[34] = std::byte{0xc1};
+    utf8[35] = std::byte{0x81};  // API19 mask conversion -> A
+    doc = XmlDocument({utf8, StartElement(0, {}), EndElement(0)});
+    CHECK(ogplay::loader::ParseBinaryXmlElements(doc)[0].name == "A");
+    auto lazy = StringPool({"View", "unused"}, true);
+    Set32(lazy, 32, 0xfffffff0U);  // unused string offset
+    doc = XmlDocument({lazy, StartElement(0, {}), EndElement(0)});
+    CHECK(ogplay::loader::ParseBinaryXmlElements(doc)[0].name == "View");
+    doc = XmlDocument({lazy, StartElement(0, {{0, 1, 3, 1}}), EndElement(0)});
+    CHECK_FALSE(ogplay::loader::ParseBinaryXmlElements(doc)[0].attributes[0].raw_string.has_value());
+}
+
+TEST_CASE("WU11b XML preamble pool replacement ends at the first node") {
+    auto doc = XmlDocument({StringPool({"old"}, true), StringPool({"new"}, true), StartElement(0, {}),
+                            StringPool({"late"}, true), EndElement(0)});
+    const auto events = ogplay::loader::ParseBinaryXmlPullEvents(doc);
+    CHECK(events[1].name == "new");
+    CHECK(events[2].name == "new");
+    auto bad = StringPool({"old"}, true);
+    Set32(bad, 20, 0xffffffffU);
+    doc = XmlDocument({bad, StringPool({"new"}, true), StartElement(0, {}), EndElement(0)});
+    CHECK(ogplay::loader::ParseBinaryXmlElements(doc)[0].name == "new");
+}
+
+TEST_CASE("WU11b XML retains empty tag and attribute names and typed facts") {
+    const auto doc =
+        XmlDocument({StringPool({""}, true), StartElement(0, {{0, 0xffffffffU, 0x10, 73}}), EndElement(0)});
+    const auto elements = ogplay::loader::ParseBinaryXmlElements(doc);
+    REQUIRE(elements.size() == 1);
+    CHECK(elements[0].name.empty());
+    REQUIRE(elements[0].attributes.size() == 1);
+    CHECK(elements[0].attributes[0].name.empty());
+    CHECK(elements[0].attributes[0].data == 73);
+}
+
+TEST_CASE("WU11b XML events do not enforce a named element stack") {
+    using Type = ogplay::loader::BinaryXmlPullEventType;
+    const auto pool = StringPool({"root", "other", "text"}, true);
+    auto doc = XmlDocument({pool, Cdata(2), EndElement(1), StartElement(0, {}), EndElement(1), StartElement(0, {})});
+    const auto events = ogplay::loader::ParseBinaryXmlPullEvents(doc);
+    REQUIRE(events.size() == 7);
+    CHECK(events[1].type == Type::text);
+    CHECK(events[1].text == "text");
+    CHECK(events[1].depth == 0);
+    CHECK(events[2].type == Type::end_tag);
+    CHECK(events[2].depth == 0);
+    CHECK(events[4].name == "other");
+    CHECK(events.back().type == Type::end_document);
+    CHECK(events.back().depth == 0);
+    doc = XmlDocument({pool, StartElement(0, {}), EndElement(0)});
+    doc.push_back(std::byte{0});
+    Set32(doc, 4, static_cast<std::uint32_t>(doc.size()));
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseBinaryXmlPullEvents(doc)),
+                      "binary XML document has trailing bytes");
 }

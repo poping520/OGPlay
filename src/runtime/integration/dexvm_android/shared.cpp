@@ -369,7 +369,10 @@ void PutAndroidMetaData(dx::IntrinsicContext& call, const Context& context,
             "(Ljava/lang/String;Ljava/lang/String;)V",
             {dx::VmValue::Ref(key), dx::VmValue::Ref(call.vm.NewStringUtf8(text))}));
     };
-    if (const auto* integer = std::get_if<std::int32_t>(&value)) {
+    if (std::holds_alternative<loader::AndroidManifestMetaDataNullString>(value)) {
+        static_cast<void>(CallAndroidMethod(call.vm, bundle, "putString", "(Ljava/lang/String;Ljava/lang/String;)V",
+                                            {dx::VmValue::Ref(key), dx::VmValue::Ref(dx::VmObjectRef{})}));
+    } else if (const auto* integer = std::get_if<std::int32_t>(&value)) {
         put_integer(*integer);
     } else if (const auto* number = std::get_if<float>(&value)) {
         put_float(*number);

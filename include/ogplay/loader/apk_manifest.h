@@ -24,9 +24,11 @@ struct AndroidManifestMetaDataResourceReference final {
     std::uint32_t resource_id{};
 };
 
+struct AndroidManifestMetaDataNullString final {};
+
 using AndroidManifestMetaDataValue =
     std::variant<std::int32_t, bool, float, std::string, AndroidManifestMetaDataValueReference,
-                 AndroidManifestMetaDataResourceReference>;
+                 AndroidManifestMetaDataResourceReference, AndroidManifestMetaDataNullString>;
 
 struct AndroidManifestMetaData final {
     std::string name;
@@ -42,6 +44,8 @@ struct AndroidManifestPermissionDefinition final {
     std::uint32_t description_res{};
     std::optional<std::string> nonlocalized_description;
     std::vector<AndroidManifestMetaData> meta_data;
+    // Current-package API19 registration: first definition with a known group.
+    bool registered{true};
 };
 
 enum class AndroidManifestComponentKind : std::uint8_t {

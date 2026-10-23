@@ -37,13 +37,15 @@ struct ApkEntryRangeStatistics final {
 [[nodiscard]] std::uint64_t StoredApkEntryDataOffset(
     std::span<const std::byte> bytes, const ApkArchive& archive,
     std::string_view name);
-// Validates all metadata and CRC once and borrows the STORED payload. Caller
+// Checks central sizes and local payload bounds, then borrows the STORED payload.
+// As in API19 ZIP readers, redundant local metadata and CRC are not compared. Caller
 // must keep the APK bytes alive and immutable for the lifetime of this view.
 [[nodiscard]] std::span<const std::byte> ValidatedStoredApkEntryData(
     std::span<const std::byte> bytes, const ApkArchive& archive,
     std::string_view name, std::stop_token stop = {});
-// Validates local/central metadata and CRC, then copies only the requested
-// uncompressed window. Stored entries never allocate the full payload.
+// Checks ZIP bounds and Deflate output size, then copies the requested window.
+// Stored entries borrow payload and do not scan it; validation_scan_bytes counts
+// only Deflate output scanned. CRC is not a read-time integrity contract.
 [[nodiscard]] std::size_t ReadApkEntryRange(
     std::span<const std::byte> bytes, const ApkArchive& archive,
     std::string_view name, std::uint64_t offset,

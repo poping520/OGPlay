@@ -356,7 +356,7 @@ TEST_CASE("DVM-112 AndroidAppProcess installs sealed service discovery facts") {
     }
 }
 
-TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profile") {
+TEST_CASE("BND54 CPU texture declarations resolve vendor family without a Profile") {
     using namespace ogplay;
     using Family = gles::CompressedTextureFamily;
     loader::AndroidManifestFacts facts;
@@ -373,7 +373,10 @@ TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profi
     CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
     facts.supported_gl_textures = {"GL_OES_compressed_ETC1_RGB8_texture"};
     CHECK(session::ResolveManifestCompressedTextureFamily(facts) == Family::all);
+}
 
+TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profile") {
+    using namespace ogplay;
     OrchestratedApp fixture{"fixture.MainActivity", true, false, {}, {}, true,
         runtime::dexvm::InterpreterBackend::switch_dispatch, "android.app.Application", {}, {64, 36},
         {"GL_AMD_compressed_ATC_texture"}};

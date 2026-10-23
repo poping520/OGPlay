@@ -78,8 +78,7 @@ ApkNativeLibraryInventory::ApkNativeLibraryInventory(
     std::vector<ApkNativeLibrary> libraries)
     : libraries_(std::move(libraries)) {
     for (auto& library : libraries_) {
-        if (library.basename.empty() || library.entry_name.empty() ||
-            library.image.empty()) {
+        if (library.basename.empty() || library.entry_name.empty()) {
             throw ApkNativeInventoryError(
                 ApkNativeInventoryErrorReason::invalid_library_identity,
                 "APK native inventory contains an incomplete library identity");
@@ -228,9 +227,6 @@ std::vector<ApkNativeLibrary> ReadApkArmNativeLibraries(
         std::string basename;
         if (!DecodeLibraryPath(entry.name, abi, basename)) continue;
         auto image = ReadApkEntry(apk_bytes, archive, entry.name);
-        if (image.empty()) {
-            throw std::runtime_error("APK native library is empty: " + entry.name);
-        }
         const auto soname = basename;
         result.push_back({entry.name, std::move(basename), abi, Sha256(image),
                           std::move(image), soname, LogicalName(soname)});

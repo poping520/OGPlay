@@ -11,6 +11,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_native.h"
+#include "ogplay/loader/elf.h"
 
 namespace {
 
@@ -128,12 +129,14 @@ TEST_CASE("APK native catalog owns exact ARM library bytes and SHA-256") {
     CHECK(libraries[1].image == abc);
 }
 
-TEST_CASE("APK native catalog rejects empty libraries and never selects one") {
+TEST_CASE("WU11 native inventory defers empty library failure until ELF loading") {
     const auto empty_apk = MakeApk({{"lib/armeabi/libempty.so", {}}});
     const auto empty_archive = ogplay::loader::ParseApkArchive(empty_apk);
-    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ReadApkArmNativeLibraries(
-                          empty_apk, empty_archive)),
-                      "APK native library is empty: lib/armeabi/libempty.so");
+    const auto inventory = ogplay::loader::ReadApkNativeLibraryInventory(empty_apk, empty_archive);
+    REQUIRE(inventory.Libraries().size() == 1);
+    CHECK(inventory.Libraries()[0].image.empty());
+    CHECK(inventory.Libraries()[0].sha256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseElf32Arm(inventory.Libraries()[0].image)));
 
     const auto no_arm = MakeApk({{"lib/x86/libgame.so", Bytes("x")}});
     const auto no_arm_archive = ogplay::loader::ParseApkArchive(no_arm);

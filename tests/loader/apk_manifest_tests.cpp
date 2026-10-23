@@ -851,23 +851,18 @@ TEST_CASE("binary AndroidManifest rejects identity type and structure errors") {
 
     auto mismatched_end = Manifest();
     mismatched_end[mismatched_end.size() - 4] = std::byte{4};
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(mismatched_end)),
-        "binary XML element nesting is invalid");
+    CHECK(ogplay::loader::ParseAndroidBinaryManifest(mismatched_end).package == "org.example.game");
 }
 
 TEST_CASE("binary AndroidManifest rejects hostile string pool offsets") {
     auto invalid_offset = Manifest();
     Set32(invalid_offset, 8 + 28, 0xffffffffU);
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(invalid_offset)),
-        "binary XML string offset is outside string data");
+    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(invalid_offset)),
+                      "binary XML element name string is unavailable");
 
     auto invalid_size = Manifest();
     Set32(invalid_size, 4, static_cast<std::uint32_t>(invalid_size.size() - 1U));
-    CHECK_THROWS_WITH(
-        static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(invalid_size)),
-        "AndroidManifest.xml is not one complete binary XML document");
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(invalid_size)));
 }
 
 TEST_CASE("DVM-112 Manifest preserves service facts independently of activities") {
@@ -1025,7 +1020,9 @@ TEST_CASE("DVM-223 Manifest retains launch modes and rejects invalid values") {
         CHECK(facts.activity_components[0].launch_mode == mode);
     }
     activity.launch_mode = 4U;
-    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}))));
+    CHECK(ogplay::loader::ParseAndroidBinaryManifest(StartupManifest(std::nullopt, {activity}))
+              .activity_components[0]
+              .launch_mode == 4U);
 }
 
 TEST_CASE("DVM-250 Manifest task affinity inherits application and alias snapshots") {
@@ -1062,8 +1059,8 @@ std::vector<std::byte> TextureManifest(
     Append(bytes, StartElement(0, {{2, 7, 0x03, 7}, {3, 0xffffffffU, 0x10, 1, 6}}));
     if (nested) Append(bytes, StartElement(1, {}));
     for (std::uint32_t index = 0; index < declarations.size(); ++index) {
-        const auto attributes = override_names.value_or(
-            std::vector<Attribute>{{4, 8U + index, 0x03, 8U + index, 6}});
+        const auto attributes = (index == 1 ? override_names : std::nullopt)
+                                    .value_or(std::vector<Attribute>{{4, 8U + index, 0x03, 8U + index, 6}});
         Append(bytes, StartElement(5, attributes)); Append(bytes, EndElement(5));
     }
     if (!nested) Append(bytes, StartElement(1, {}));
@@ -1084,14 +1081,22 @@ TEST_CASE("binary Manifest preserves top-level supports-gl-texture declarations"
     }
 }
 
-TEST_CASE("binary Manifest rejects malformed supports-gl-texture names") {
-    const std::vector<std::string> declarations{""};
-    for (const auto& attributes : {std::vector<Attribute>{},
-        std::vector<Attribute>{{4, 8, 0x03, 8, 6}},
-        std::vector<Attribute>{{4, 8, 0x03, 8, 0xffffffffU}},
-        std::vector<Attribute>{{4, 0xffffffffU, 0x10, 7, 6}}}) {
-        CHECK_THROWS_AS(static_cast<void>(ogplay::loader::ParseAndroidBinaryManifest(
-            TextureManifest(declarations, true, false, attributes))), std::runtime_error);
+TEST_CASE("binary Manifest skips malformed supports-gl-texture names and preserves other declarations") {
+    const std::vector<std::string> declarations{"GL_AMD_compressed_ATC_texture", "", "GL_UNKNOWN_format",
+                                                "GL_AMD_compressed_ATC_texture"};
+    for (const bool utf8 : {false, true}) {
+        for (const auto& attributes : {std::vector<Attribute>{}, std::vector<Attribute>{{4, 9, 0x03, 9, 6}},
+                                       std::vector<Attribute>{{4, 9, 0x03, 9, 0xffffffffU}},
+                                       std::vector<Attribute>{{4, 0xffffffffU, 0x10, 7, 6}},
+                                       std::vector<Attribute>{{4, 0xffffffffU, 0x03, 0xfffffffeU, 6}}}) {
+            const auto facts =
+                ogplay::loader::ParseAndroidBinaryManifest(TextureManifest(declarations, utf8, false, attributes));
+            CHECK(facts.package == "org.example.game");
+            CHECK(facts.supported_gl_textures ==
+                  std::vector<std::string>{"GL_AMD_compressed_ATC_texture", "GL_UNKNOWN_format"});
+            REQUIRE(facts.diagnostics.size() == 1);
+            CHECK(facts.diagnostics[0].find("skipped supports-gl-texture") != std::string::npos);
+        }
     }
 }
 
@@ -1124,12 +1129,12 @@ struct Api19Manifest {
         Start("manifest", attrs);
     }
 
-    std::vector<std::byte> Bytes() {
+    std::vector<std::byte> Bytes(const bool utf8 = true) {
         std::vector<std::byte> bytes;
         Append16(bytes, 3);
         Append16(bytes, 8);
         Append32(bytes, 0);
-        Append(bytes, StringPool(strings, true));
+        Append(bytes, StringPool(strings, utf8));
         Append(bytes, nodes);
         Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
         return bytes;
@@ -1358,8 +1363,7 @@ TEST_CASE("WU11 Manifest resolves typed references using API19 resources") {
                          {duplicate_null.Value("enabled", 0, 0), duplicate_null.Value("enabled", 0x12, 1)});
     duplicate_null.End("application");
     duplicate_null.End("manifest");
-    CHECK_THROWS_WITH(static_cast<void>(ParseAndroidBinaryManifest(duplicate_null.Bytes())),
-                      "binary AndroidManifest contains duplicate attribute enabled");
+    CHECK(ParseAndroidBinaryManifest(duplicate_null.Bytes()).application_enabled);
     Api19Manifest apk_xml;
     apk_xml.Root();
     apk_xml.Start("application", {apk_xml.Value("enabled", 1, 0x7f010000)});
@@ -1445,4 +1449,318 @@ TEST_CASE("WU11 Manifest identity preserves zero absent and empty defaults") {
                         referenced_package.Bytes(),
                         [](auto) { return std::optional{AndroidManifestResourceValue{3, 0, "org.example.game"}}; })),
                     std::runtime_error);
+}
+
+TEST_CASE("WU11 Manifest takes first attribute and skips duplicate application subtree") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application", {xml.Value("enabled", 0x12, 0), xml.Value("enabled", 0x12, 1)});
+    xml.End("application");
+    xml.Start("application", {xml.Text("name", "")});
+    xml.Start("service");  // Missing required name must not escape skipCurrentTag.
+    xml.End("service");
+    xml.End("application");
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    CHECK_FALSE(facts.application_enabled);
+    CHECK(facts.application_class == "android.app.Application");
+    CHECK(facts.service_components.empty());
+}
+
+TEST_CASE("WU11 Manifest ignores missing permission requests and preserves empty names") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("uses-permission");
+    xml.End("uses-permission");
+    xml.Start("uses-permission", {xml.Value("name", 0x10, 42)});
+    xml.End("uses-permission");
+    xml.Start("uses-permission", {xml.Text("name", "")});
+    xml.End("uses-permission");
+    xml.Start("uses-permission", {xml.Text("name", "old"), xml.Value("maxSdkVersion", 0x10, 18)});
+    xml.End("uses-permission");
+    xml.Start("uses-permission", {xml.Text("name", "new"), xml.Value("maxSdkVersion", 0x10, 19)});
+    xml.End("uses-permission");
+    xml.End("manifest");
+    CHECK(ParseAndroidBinaryManifest(xml.Bytes()).requested_permissions == std::vector<std::string>{"", "new"});
+}
+
+TEST_CASE("WU11 Manifest preserves permission declarations and API19 integer domains") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    for (const auto level : {0x102U, 4U}) {
+        xml.Start("permission", {xml.Text("name", ".PERM"), xml.Value("protectionLevel", 0x10, level),
+                                 xml.Value("permissionFlags", 0x10, 0xff), xml.Text("description", "ignored")});
+        xml.End("permission");
+    }
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    REQUIRE(facts.defined_permissions.size() == 2);
+    CHECK(facts.defined_permissions[0].protection_level == 0x102);
+    CHECK(facts.defined_permissions[1].protection_level == 4);
+    CHECK(facts.defined_permissions[0].flags == 0xff);
+    CHECK(facts.defined_permissions[0].description_res == 0);
+    CHECK_FALSE(facts.defined_permissions[0].nonlocalized_description);
+    Api19Manifest bad;
+    bad.Root();
+    bad.Start("permission", {bad.Text("name", ".PERM"), bad.Value("protectionLevel", 0x10, 0x10)});
+    bad.End("permission");
+    bad.End("manifest");
+    CHECK_THROWS(static_cast<void>(ParseAndroidBinaryManifest(bad.Bytes())));
+}
+
+TEST_CASE("WU11 Manifest ignores unused malformed strings and preserves Java code units") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.Start("meta-data", {xml.Text("name", "nul"), xml.Text("value", std::string("a\0b", 3))});
+    xml.End("meta-data");
+    xml.End("application");
+    xml.End("manifest");
+    xml.Index(std::string("\xff", 1));
+    auto bytes = xml.Bytes();
+    const auto facts = ParseAndroidBinaryManifest(bytes);
+    CHECK(std::get<std::string>(facts.application_meta_data[0].value) == std::string("a\0b", 3));
+    // Corrupt the used value's UTF8 declared UTF16 length: stringAt returns null.
+    const auto value_index = xml.Index(std::string("a\0b", 3));
+    const auto pool_start = 8U;
+    const auto data_start = 28U + xml.strings.size() * 4U;
+    const auto table = pool_start + 28 + value_index * 4;
+    std::size_t relative{};
+    for (unsigned i = 0; i < 4; ++i)
+        relative |= std::to_integer<std::size_t>(bytes[table + i]) << (i * 8U);
+    bytes[pool_start + data_start + relative] = std::byte{99};
+    CHECK(std::holds_alternative<AndroidManifestMetaDataNullString>(
+        ParseAndroidBinaryManifest(bytes).application_meta_data[0].value));
+}
+
+TEST_CASE("WU11 Manifest uses declared headers and stops at root end") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.End("application");
+    xml.End("manifest");
+    auto bytes = xml.Bytes();
+    // Unknown preamble chunk before the pool; extra bytes after the XML document.
+    const std::vector<std::byte> unknown{std::byte{0x77}, std::byte{0x77}, std::byte{8}, std::byte{0},
+                                         std::byte{8},    std::byte{0},    std::byte{0}, std::byte{0}};
+    bytes.insert(bytes.begin() + 8, unknown.begin(), unknown.end());
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    bytes.push_back(std::byte{0xff});
+    CHECK(ParseAndroidBinaryManifest(bytes).package == "org.example.game");
+    // A second malformed document after the first root is not consumed.
+    auto second = xml.Bytes();
+    second.insert(second.end(), unknown.begin(), unknown.end());
+    Set32(second, 4, static_cast<std::uint32_t>(second.size()));
+    CHECK(ParseAndroidBinaryManifest(second).package == "org.example.game");
+}
+
+TEST_CASE("WU11 Manifest accepts extended node headers and ignores typed layout fields") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.End("application");
+    xml.End("manifest");
+    // Widen all start/end headers, preserving extensions at the declared offset.
+    std::vector<std::byte> nodes;
+    for (std::size_t at = 0; at < xml.nodes.size();) {
+        std::uint32_t size{};
+        for (unsigned i = 0; i < 4; ++i)
+            size |= std::to_integer<std::uint32_t>(xml.nodes[at + 4 + i]) << (i * 8U);
+        std::vector<std::byte> node(xml.nodes.begin() + static_cast<std::ptrdiff_t>(at),
+                                    xml.nodes.begin() + static_cast<std::ptrdiff_t>(at + size));
+        node.insert(node.begin() + 16, 4, std::byte{0});
+        node[2] = std::byte{20};
+        Set32(node, 4, size + 4);
+        if (at == 0) {
+            // Package remains a STRING; Res_value.size/res0 do not change its value.
+            node[20 + 20 + 12] = std::byte{1};
+            node[20 + 20 + 14] = std::byte{255};
+        }
+        Append(nodes, node);
+        at += size;
+    }
+    // Namespaces, text, resource map and unknown nodes carry larger headers.
+    const auto extra = [&](std::uint16_t type, std::uint16_t header, std::size_t ext) {
+        std::vector<std::byte> node;
+        Append16(node, type);
+        Append16(node, header);
+        Append32(node, static_cast<std::uint32_t>(header + ext));
+        node.resize(header + ext, std::byte{0xff});
+        return node;
+    };
+    const auto root_end = nodes.size() - 28;
+    std::vector<std::byte> middle;
+    Append(middle, extra(0x100, 20, 8));
+    Append(middle, extra(0x101, 20, 8));
+    Append(middle, extra(0x104, 20, 12));
+    Append(middle, extra(0x180, 12, 4));
+    Append(middle, extra(0x177, 20, 0));
+    nodes.insert(nodes.begin() + static_cast<std::ptrdiff_t>(root_end), middle.begin(), middle.end());
+    xml.nodes = nodes;
+    CHECK(ParseAndroidBinaryManifest(xml.Bytes()).package == "org.example.game");
+    xml.nodes[2] = std::byte{12};  // Actual short node header remains invalid.
+    CHECK_THROWS(static_cast<void>(ParseAndroidBinaryManifest(xml.Bytes())));
+}
+
+TEST_CASE("WU11 Manifest typed attribute lookup follows resource ids and first match") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    // Raw spelling differs: the resource map is authoritative for TypedArray.
+    xml.Start("application", {xml.Value("otherSpelling", 0x12, 0), xml.Value("enabled", 0x12, 1)});
+    xml.End("application");
+    xml.End("manifest");
+    const auto enabled = xml.Index("enabled");
+    const auto other = xml.Index("otherSpelling");
+    auto bytes = xml.Bytes();
+    const auto pool_size = StringPool(xml.strings, true).size();
+    std::vector<std::byte> map;
+    Append16(map, 0x180);
+    Append16(map, 8);
+    Append32(map, static_cast<std::uint32_t>(8 + xml.strings.size() * 4));
+    for (std::size_t i = 0; i < xml.strings.size(); ++i)
+        Append32(map, i == enabled || i == other ? 0x0101000e : 0);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(8 + pool_size), map.begin(), map.end());
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    CHECK_FALSE(ParseAndroidBinaryManifest(bytes).application_enabled);
+}
+
+TEST_CASE("WU11 Manifest permission registration takes first valid group definition") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    for (const auto group : {"missing", "org.example.GROUP", "org.example.GROUP"}) {
+        xml.Start("permission", {xml.Text("name", ".PERM"), xml.Text("permissionGroup", group)});
+        xml.End("permission");
+    }
+    // Groups can be declared after permissions; platform groups also exist at API19.
+    xml.Start("permission-group", {xml.Text("name", "org.example.GROUP")});
+    xml.End("permission-group");
+    xml.Start("permission",
+              {xml.Text("name", ".SYSTEM"), xml.Text("permissionGroup", "android.permission-group.CAMERA")});
+    xml.End("permission");
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    REQUIRE(facts.defined_permissions.size() == 4);
+    CHECK_FALSE(facts.defined_permissions[0].registered);
+    CHECK(facts.defined_permissions[1].registered);
+    CHECK_FALSE(facts.defined_permissions[2].registered);
+    CHECK(facts.defined_permissions[3].registered);
+}
+
+TEST_CASE("WU11 Manifest UTF pools preserve noncanonical code units and ignore terminator bytes") {
+    using namespace ogplay::loader;
+    for (const bool utf8 : {false, true}) {
+        Api19Manifest xml;
+        xml.Root();
+        xml.Start("application");
+        xml.Start("meta-data", {xml.Text("name", "key"), xml.Text("value", utf8 ? "xy" : "q")});
+        xml.End("meta-data");
+        xml.End("application");
+        xml.End("manifest");
+        const auto index = xml.Index(utf8 ? "xy" : "q");
+        auto bytes = xml.Bytes(utf8);
+        const auto table = 8 + 28 + index * 4;
+        std::uint32_t relative{};
+        for (unsigned i = 0; i < 4; ++i)
+            relative |= std::to_integer<std::uint32_t>(bytes[table + i]) << (i * 8U);
+        const auto at = 8 + 28 + xml.strings.size() * 4 + relative;
+        std::string expected;
+        if (utf8) {
+            bytes[at] = std::byte{1};  // Declared UTF16 length, byte length stays 2.
+            bytes[at + 2] = std::byte{0xc0};
+            bytes[at + 3] = std::byte{0x80};
+            bytes[at + 4] = std::byte{0x7f};  // Per-string terminator is not checked.
+            expected.assign(1, '\0');
+        } else {
+            bytes[at + 2] = std::byte{0};
+            bytes[at + 3] = std::byte{0xd8};
+            bytes[at + 4] = std::byte{1};  // Nonzero per-string UTF16 terminator.
+            expected = "\xed\xa0\x80";
+        }
+        CHECK(std::get<std::string>(ParseAndroidBinaryManifest(bytes).application_meta_data[0].value) == expected);
+    }
+}
+
+TEST_CASE("WU11 Manifest ignores unknown blocks with a valid node header") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    std::vector<std::byte> node;
+    Append16(node, 0x177);
+    Append16(node, 16);
+    Append32(node, 16);
+    node.resize(16);
+    Append(xml.nodes, node);
+    xml.Start("application");
+    xml.End("application");
+    xml.End("manifest");
+    CHECK(ParseAndroidBinaryManifest(xml.Bytes()).package == "org.example.game");
+}
+
+TEST_CASE("WU11 Manifest skips a second application including invalid descendants") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.End("application");
+    xml.Start("application", {xml.Text("name", "")});
+    xml.Start("service");
+    xml.End("service");
+    xml.End("application");
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    CHECK(facts.application_class == "android.app.Application");
+    CHECK(facts.service_components.empty());
+}
+
+TEST_CASE("WU11 Manifest honors XML header size and retains aligned chunk bounds") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.End("application");
+    xml.End("manifest");
+    auto bytes = xml.Bytes();
+    bytes.insert(bytes.begin() + 8, 4, std::byte{0});
+    bytes[2] = std::byte{12};
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    CHECK(ParseAndroidBinaryManifest(bytes).package == "org.example.game");
+    bytes[2] = std::byte{10};
+    CHECK_THROWS(static_cast<void>(ParseAndroidBinaryManifest(bytes)));
+}
+
+TEST_CASE("WU11 Manifest null decoded typed strings use getter defaults") {
+    using namespace ogplay::loader;
+    Api19Manifest xml;
+    xml.Root();
+    // The string index is absent: stringAt returns null, not an empty string.
+    xml.Start("application", {xml.Value("enabled", 3, 0xfffffffe)});
+    xml.Start("activity", {xml.Text("name", ".A"), xml.Value("launchMode", 3, 0xfffffffe)});
+    xml.End("activity");
+    xml.End("application");
+    xml.End("manifest");
+    const auto facts = ParseAndroidBinaryManifest(xml.Bytes());
+    CHECK(facts.application_enabled);
+    REQUIRE(facts.activity_components.size() == 1);
+    CHECK(facts.activity_components[0].launch_mode == 0);
+}
+
+TEST_CASE("WU11 Manifest raw package attribute name does not convert UTF8") {
+    Api19Manifest xml;
+    xml.Root();
+    xml.Start("application");
+    xml.End("application");
+    xml.End("manifest");
+    auto bytes = xml.Bytes();
+    // package is the first string in this fixture; its raw name remains ASCII.
+    const auto at = 8 + 28 + xml.strings.size() * 4;
+    bytes[at] = std::byte{99};  // string8At ignores the declared UTF16 length.
+    CHECK(ogplay::loader::ParseAndroidBinaryManifest(bytes).package == "org.example.game");
 }

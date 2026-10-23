@@ -130,18 +130,16 @@ TEST_CASE("APK stored entry window reads a slice without copying the payload") {
               bytes, archive, "assets/large.bin", 100U, ranged, {},
               &statistics) == 2U);
     CHECK(ranged == std::array{std::byte{0x11}, std::byte{0x22}});
-    CHECK(statistics.validation_scan_bytes == payload.size());
+    CHECK(statistics.validation_scan_bytes == 0);
     CHECK(statistics.copied_bytes == ranged.size());
 }
 
-TEST_CASE("APK stored entry rejects corruption and compression") {
+TEST_CASE("WU11 CRC is ignored and unsupported compression fails") {
     const std::vector<std::byte> payload{std::byte{1}, std::byte{2}, std::byte{3}};
     auto corrupt = MakeZip("lib/armeabi-v7a/libgame.so", payload);
     const auto archive = ogplay::loader::ParseApkArchive(corrupt);
     corrupt[30 + archive.entries.front().name.size()] = std::byte{9};
-    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ReadStoredApkEntry(
-                          corrupt, archive, "lib/armeabi-v7a/libgame.so")),
-                      "APK stored entry CRC32 mismatch");
+    CHECK(ogplay::loader::ReadStoredApkEntry(corrupt, archive, "lib/armeabi-v7a/libgame.so")[0] == std::byte{9});
 
     const auto compressed = MakeZip("classes.dex", payload, 12, payload);
     const auto compressed_archive = ogplay::loader::ParseApkArchive(compressed);
@@ -239,9 +237,7 @@ TEST_CASE("APK Deflate reader rejects malformed streams and metadata") {
     const auto wrong_payload_stream = Bytes({0x73, 0x02, 0x00});
     const auto bad_crc = MakeZip("bad-crc.bin", payload, 8, wrong_payload_stream);
     const auto bad_crc_archive = ogplay::loader::ParseApkArchive(bad_crc);
-    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ReadApkEntry(
-                          bad_crc, bad_crc_archive, "bad-crc.bin")),
-                      "APK deflated entry CRC32 mismatch");
+    CHECK(ogplay::loader::ReadApkEntry(bad_crc, bad_crc_archive, "bad-crc.bin") == Bytes({'B'}));
 
     const auto one_byte_stream = Bytes({0x73, 0x04, 0x00});
     const std::vector<std::byte> two_bytes{std::byte{'A'}, std::byte{'A'}};
@@ -257,9 +253,7 @@ TEST_CASE("APK Deflate reader rejects malformed streams and metadata") {
     const auto descriptor_offset = 30U + bad_descriptor_archive.entries.front().name.size() +
                                    one_byte_stream.size();
     bad_descriptor[descriptor_offset + 4] ^= std::byte{1};
-    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ReadApkEntry(
-                          bad_descriptor, bad_descriptor_archive, "bad-descriptor.bin")),
-                      "APK data descriptor disagrees with central metadata");
+    CHECK(ogplay::loader::ReadApkEntry(bad_descriptor, bad_descriptor_archive, "bad-descriptor.bin") == payload);
 }
 
 TEST_CASE("APK parser rejects unsafe entry paths") {
@@ -282,8 +276,77 @@ TEST_CASE("APK validated stored view borrows exact bytes and rejects corruption 
     CHECK_THROWS(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(bytes, archive, "assets/movie.bin", stop.get_token())));
     auto corrupt = bytes;
     corrupt[static_cast<std::size_t>(view.data() - bytes.data())] = std::byte{9};
-    CHECK_THROWS_WITH(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(corrupt, archive, "assets/movie.bin")), "APK stored entry CRC32 mismatch");
+    CHECK(ogplay::loader::ValidatedStoredApkEntryData(corrupt, archive, "assets/movie.bin")[0] == std::byte{9});
     const auto compressed = MakeZip("assets/movie.bin", payload, 12, payload);
     const auto compressed_archive = ogplay::loader::ParseApkArchive(compressed);
     CHECK_THROWS(static_cast<void>(ogplay::loader::ValidatedStoredApkEntryData(compressed, compressed_archive, "assets/movie.bin")));
+}
+
+TEST_CASE("WU11 ZIP central metadata owns entry identity and payload") {
+    using namespace ogplay::loader;
+    const auto payload = Bytes({1, 2});
+    auto bytes = MakeZip("abc", payload, 0, {}, true);
+    const auto archive = ParseApkArchive(bytes);
+    bytes[6] = std::byte{0};
+    bytes[8] = std::byte{8};
+    bytes[14] = std::byte{99};
+    bytes[18] = std::byte{99};
+    bytes[22] = std::byte{99};
+    bytes[30] = std::byte{'z'};
+    CHECK(ReadApkEntry(bytes, archive, "abc") == payload);
+    bytes[0] = std::byte{0};
+    CHECK_THROWS(static_cast<void>(ReadApkEntry(bytes, archive, "abc")));
+}
+
+TEST_CASE("WU11 ZIP accepts UTF8 names and keeps extraction paths confined") {
+    using namespace ogplay::loader;
+    const std::string name = "assets/中文.bin";
+    const auto bytes = MakeZip(name, Bytes({7}));
+    const auto archive = ParseApkArchive(bytes);
+    CHECK(archive.entries[0].name == name);
+    CHECK(ReadApkEntry(bytes, archive, name) == Bytes({7}));
+    for (const auto unsafe : {"/absolute", "a/../b", "a/./b", "\\absolute"})
+        CHECK_THROWS(static_cast<void>(ParseApkArchive(MakeZip(unsafe, Bytes({1})))));
+}
+
+TEST_CASE("WU11 ZIP permits central padding EOCD gaps and trailing bytes") {
+    using namespace ogplay::loader;
+    const auto payload = Bytes({1});
+    auto bytes = MakeZip("a", payload);
+    // Directory size includes four ignored padding bytes, followed by an EOCD gap.
+    const auto end = bytes.size() - 22;
+    const auto size = 47U + 4U;
+    bytes[end + 12] = static_cast<std::byte>(size);
+    bytes.insert(bytes.begin() + static_cast<std::ptrdiff_t>(end), 8, std::byte{0});
+    bytes.push_back(std::byte{99});
+    CHECK(ReadApkEntry(bytes, ParseApkArchive(bytes), "a") == payload);
+    bytes[end + 8 + 12] = std::byte{0xff};
+    CHECK_THROWS(static_cast<void>(ParseApkArchive(bytes)));
+}
+
+TEST_CASE("WU11 Deflate accepts empty distance alphabet and stream tail") {
+    using namespace ogplay::loader;
+    // Minimal dynamic block: end only, no distance symbols.
+    const auto encoded = Bytes({0x5, 0xc0, 0x1, 0x4, 0x0, 0x0, 0x0, 0x0, 0x10, 0x0, 0x0, 0x0, 0x0,  0x0,
+                                0x0, 0x0,  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,  0x0, 0x0, 0x0, 0x0,  0x0,
+                                0x0, 0x0,  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,  0x0, 0x0, 0x0, 0x80, 0x0});
+    const auto payload = Bytes({});
+    const auto bytes = MakeZip("a", payload, 8, encoded);
+    CHECK(ReadApkEntry(bytes, ParseApkArchive(bytes), "a") == payload);
+    auto tail = Bytes({0x73, 0x04, 0x00, 0xff, 0xff});
+    const auto padded = MakeZip("a", Bytes({'A'}), 8, tail);
+    CHECK(ReadApkEntry(padded, ParseApkArchive(padded), "a") == Bytes({'A'}));
+    tail[0] = std::byte{7};
+    const auto invalid = MakeZip("a", Bytes({'A'}), 8, tail);
+    CHECK_THROWS(static_cast<void>(ReadApkEntry(invalid, ParseApkArchive(invalid), "a")));
+}
+
+TEST_CASE("WU11 ZIP does not backtrack past a malformed last EOCD signature") {
+    const auto original = MakeZip("a", Bytes({1}));
+    auto bytes = original;
+    Append32(bytes, 0x06054b50);
+    bytes.resize(bytes.size() + 18, std::byte{0});
+    bytes[bytes.size() - 2] = std::byte{0xff};
+    bytes.back() = std::byte{0xff};
+    CHECK_THROWS(static_cast<void>(ogplay::loader::ParseApkArchive(bytes)));
 }

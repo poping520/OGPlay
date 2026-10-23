@@ -761,22 +761,22 @@ note = "ELF namespace 可追加仅参与解析的绝对 HLE boundary 模块，�
 [loader.apk_stored_entry]
 status = "complete"
 test = "tests/loader/apk_tests.cpp"
-note = "M5 WU-0217 在严格 ZIP32 local/central 与 CRC32 校验上支持 stored、fixed/dynamic Huffman Deflate；VFS-02 增加可取消 range reader，stored 不复制整条目，Deflate 只保留 32 KiB history 并单独统计完整校验扫描/交付字节。元数据冲突、CRC、截断、尾随数据均明确失败"
+note = "API19 ZIP32 central metadata 读取 stored/fixed/dynamic Deflate；local 只校验定位、安全范围与加密标志，不比较冗余元数据或 CRC，允许目录/EOCD/Deflate 尾部。range reader 可取消，stored 只复制窗口且扫描量为0，Deflate 保留32 KiB history并验证完整输出尺寸；路径提取边界仍拒绝绝对路径和点段。"
 
 [loader.apk_manifest_identity]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
-note = "M5 WU-0218 严格解析二进制 Manifest 的 UTF-8/UTF-16 string pool 与 typed attributes，产出 package/versionCode/versionName/minSdk/targetSdk 事实；DVM-269 接受零/缺省版本与空版本名，SDK 缺省随 API19，typed getter 接入有界 ARSC 引用解析（默认配置/API19，框架值可显式注入），metadata 按 Bundle 保存 float/color/INT/boolean/string，其他非 RIGID 类型诊断忽略"
+note = "API19 Manifest：声明 header/size 与根结束边界，惰性 UTF8/UTF16 字符串池，受界解码保留 Java code units；重复属性取首项，Android typed 属性按资源 ID，重复 application 整棵跳过。零/缺省版本、SDK 默认和有界资源解析保留；metadata 保存 float/color/INT/boolean/string/null string，非 RIGID 类型诊断忽略。"
 
 [loader.apk_startup_manifest]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp"
-note = "APS-1：按 API19 PackageParser 规则解析 Application 类、声明序 Activity/activity-alias、enabled 与 intent-filter，确定性选择 launcher，无 launcher 或非法 alias 返回 typed error，不依赖 Profile。同名 Activity/service/receiver 按声明序独立保留配置/过滤器，按名取后项，receiver 查询按组件去重。BND-54 保留 supports-gl-texture 声明顺序与未知扩展，缺失/非法名称拒绝。"
+note = "API19 Application/Activity/alias/enabled/intent-filter 事实和确定性 launcher；组件同名声明独立保留，按名取后项。launchMode 保存原整数。permission 保留声明并标注首个已知 group 的注册事实；uses-permission 忽略 null、保留空串并过滤 maxSdkVersion。supports-gl-texture 按 ADR-0128 保序去重保留原始声明，非法名称跳过并记诊断。"
 
 [loader.apk_arm_native_catalog]
 status = "complete"
 test = "tests/loader/apk_native_tests.cpp"
-note = "M5 WU-0219 稳定枚举 armeabi/armeabi-v7a native library，拥有解压字节并产出精确小写 SHA-256；不猜 main library"
+note = "稳定枚举 armeabi/armeabi-v7a native library，拥有解压字节与小写 SHA-256；零长度文件保留 inventory，实际 ELF 加载时失败，不猜 main library。"
 
 [loader.apk_native_inventory]
 status = "complete"
@@ -1031,7 +1031,7 @@ note = "BND-50 固定上游 RGB block decoder 与 alpha 适配层，覆盖 ATC R
 [runtime.gles_compressed_texture_policy]
 status = "partial"
 test = "tests/runtime/boundary/integration/android_gles_texture_formats_tests.cpp#BND54; tests/gles/angle_frame_tests.cpp#BND54; tests/dexvm/egl_facade_tests.cpp#WU-3 EGL14; tests/loader/apk_manifest_tests.cpp#supports-gl-texture; tests/runtime/application_startup_tests.cpp#BND54; tools.title_profiles_current; tools.quirk_registry_current"
-note = "BND-54/ADR-0128：进程创建前固定 all/atc/pvrtc 策略，Context 首次 current 时冻结；GLES1/2/3 与 Java 的字符串、格式枚举与上传校验共用策略，隐藏格式返回 GL_INVALID_ENUM；始终保留 ETC1 与 GLES3 核心 ETC2/EAC。仅依据 Manifest 单一已知厂商声明选择，否则保持 all；Profile 不覆盖。Windows/Linux 未验收。"
+note = "BND-54/ADR-0128：进程创建前固定 all/atc/pvrtc 策略，Context 首次 current 时冻结；GLES1/2/3 与 Java 的字符串、格式枚举与上传校验共用策略，隐藏格式返回 GL_INVALID_ENUM；始终保留 ETC1 与 GLES3 核心 ETC2/EAC。通用 APK 顶层 supports-gl-texture 保序去重保留原名（含未知扩展），缺名/空名/取值失败跳过并记诊断；明确单族才收窄，否则 all。Profile 不覆盖。Windows/Linux 未验收。"
 
 [gles.pvrtc1_decode_fallback]
 status = "complete"

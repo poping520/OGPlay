@@ -739,3 +739,20 @@ TEST_CASE("DVM-266 ContentValues clinit constructs the ROM Parcelable creator") 
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-267 ROM Enum subclass executes values valueOf and ordinal") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        CHECK(f.Static("Lfixture/PlatformTables;", "romEnum", "()I").AsInt() == 31);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-267 ROM overlay Exception subclass preserves throw catch and message") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "platform_tables.dex", true);
+        const auto message = f.Static("Lfixture/PlatformTables;", "romException", "()Ljava/lang/String;").ref;
+        CHECK(f.vm.StringUtf8(message) == "ROM exception");
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

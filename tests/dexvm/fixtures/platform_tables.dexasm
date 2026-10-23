@@ -45,6 +45,48 @@
     return v0
 .end method
 
+# DVM-267: ROM subclasses reuse intrinsic and overlay parent implementations.
+.method public static romEnum()I
+.registers 4
+    invoke-static {}, Landroid/graphics/Bitmap$CompressFormat;->values()[Landroid/graphics/Bitmap$CompressFormat;
+    move-result-object v0
+    array-length v1, v0
+    const-string v0, "PNG"
+    invoke-static {v0}, Landroid/graphics/Bitmap$CompressFormat;->valueOf(Ljava/lang/String;)Landroid/graphics/Bitmap$CompressFormat;
+    move-result-object v0
+    invoke-virtual {v0}, Ljava/lang/Enum;->ordinal()I
+    move-result v2
+    mul-int/lit8 v1, v1, 10
+    add-int v0, v1, v2
+    return v0
+.end method
+.method public static romException()Ljava/lang/String;
+.registers 2
+    new-instance v0, Landroid/util/MalformedJsonException;
+    const-string v1, "ROM exception"
+    invoke-direct {v0, v1}, Landroid/util/MalformedJsonException;-><init>(Ljava/lang/String;)V
+    :try_start
+    throw v0
+    :try_end
+    .catch Landroid/util/MalformedJsonException; :try_start :try_end :caught
+    :caught
+    move-exception v0
+    invoke-virtual {v0}, Ljava/lang/Throwable;->getMessage()Ljava/lang/String;
+    move-result-object v0
+    return-object v0
+.end method
+.method public static romThread()I
+.registers 2
+    new-instance v0, Lorg/apache/harmony/luni/util/DeleteOnExit;
+    invoke-direct {v0}, Lorg/apache/harmony/luni/util/DeleteOnExit;-><init>()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->start()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->join()V
+    invoke-virtual {v0}, Ljava/lang/Thread;->isAlive()Z
+    move-result v1
+    return v1
+.end method
+
+
 # Observe the binding override before Application.<clinit> executes.
 .class public Lfixture/PlatformApplication;
 .super Landroid/app/Application;
@@ -65,5 +107,57 @@
 .method public static initial()Ljava/lang/String;
 .registers 1
     sget-object v0, Lfixture/PlatformApplication;->initialTmp:Ljava/lang/String;
+    return-object v0
+.end method
+
+.class public Lfixture/RomHandlerProbe;
+.super Ljava/lang/Object;
+.implements Landroid/hardware/input/InputManager$InputDeviceListener;
+.field public static received:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onInputDeviceAdded(I)V
+.registers 2
+    sput v1, Lfixture/RomHandlerProbe;->received:I
+    return-void
+.end method
+.method public onInputDeviceRemoved(I)V
+.registers 2
+    return-void
+.end method
+.method public onInputDeviceChanged(I)V
+.registers 2
+    return-void
+.end method
+.method public static send(Landroid/os/Handler;)V
+.registers 4
+    move-object v2, v3
+    const/4 v0, 1
+    const/16 v1, 73
+    const/4 v3, 0
+    invoke-virtual {v2, v0, v1, v3}, Landroid/os/Handler;->obtainMessage(III)Landroid/os/Message;
+    move-result-object v0
+    invoke-virtual {v2, v0}, Landroid/os/Handler;->sendMessage(Landroid/os/Message;)Z
+    return-void
+.end method
+.method public static result()I
+.registers 1
+    sget v0, Lfixture/RomHandlerProbe;->received:I
+    return v0
+.end method
+
+.class public Lfixture/RomReceiverProbe;
+.super Ljava/lang/Object;
+.method public static receive(Landroid/content/BroadcastReceiver;)Landroid/content/BroadcastReceiver;
+.registers 4
+    move-object v0, v3
+    new-instance v1, Landroid/content/Intent;
+    const-string v2, "unrelated.action"
+    invoke-direct {v1, v2}, Landroid/content/Intent;-><init>(Ljava/lang/String;)V
+    const/4 v2, 0
+    invoke-virtual {v0, v2, v1}, Landroid/content/BroadcastReceiver;->onReceive(Landroid/content/Context;Landroid/content/Intent;)V
     return-object v0
 .end method

@@ -92,6 +92,10 @@ python3 tools/bootdex/select_shapes.py --surface <dump-surface.json> --scan-dir 
 `select_rom_java.py --scope closure` 按 [ADR-0155](../docs/adr/dexvm.md#adr-0155)
 从当前 BootDex 配方与 intrinsic 声明出发，沿 ROM 方法体引用补全准入闭包，包含父类与
 初始化必需类；不依赖样本库。拒绝类不作为继续遍历的桥梁。
+父类按 [ADR-0156](../docs/adr/dexvm.md#adr-0156) 统一处理 intrinsic 与 overlay BootDex：
+检查全部自身方法体，不触及父类未实现成员，不覆写不可覆写方法；字节码父类以 ROM
+final 标志为准，intrinsic 以 overridable 契约为准。Binder 父类和被拒父类继续级联拒绝。
+拒绝原因分别为 `parent-intrinsic-unimplemented-member`、`overrides-nonoverridable`。
 
 ```text
 python3 tools/bootdex/select_rom_java.py --scope closure --surface <dump-surface.json> --report <selection.json> --apply

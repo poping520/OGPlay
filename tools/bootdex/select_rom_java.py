@@ -3,7 +3,7 @@
 
 The audited object is the rule set, not individual classes. A skeleton class from the four
 pinned ROM jars is admitted when it has no native method, its superclass chain is Object /
-an admitted class / a plain (non-overlay) BootDex class, its <clinit> transitive call closure
+an admitted class / an implemented intrinsic or BootDex parent (ADR-0156), its <clinit> transitive call closure
 touches only implemented code, and no implemented intrinsic signature or C++ source names it.
 Virtual/interface targets that are not uniquely determined are treated as possibly reaching
 unimplemented code (conservative: reject rather than mistakenly admit).
@@ -33,7 +33,8 @@ DYNAMIC_TARGETS = frozenset((
     ('Ljava/lang/Class;', 'forName'), ('Ljava/lang/Class;', 'newInstance'),
     ('Ljava/lang/ClassLoader;', 'loadClass'), ('Ljava/lang/reflect/Method;', 'invoke'),
     ('Ljava/lang/reflect/Constructor;', 'newInstance'), ('Ljava/lang/Thread;', 'start')))
-PRIORITY = ('native-method', 'parent-not-admitted', 'missing-dependency', 'binder-in-clinit',
+PRIORITY = ('native-method', 'parent-intrinsic-unimplemented-member', 'overrides-nonoverridable',
+            'parent-not-admitted', 'missing-dependency', 'binder-in-clinit',
             'clinit-unimplemented-target', 'clinit-unimplemented-field', 'clinit-virtual-nonunique',
             'clinit-dynamic-dispatch', 'clinit-unresolved', 'requires-rejected-class')
 
@@ -412,15 +413,40 @@ class Analyzer:
         return None
 
     # ---- admission -------------------------------------------------------------
-    def plain_boot_parent(self, desc, memo=None):
-        """Existing BootDex class without overlay/intrinsic involvement on its own chain."""
-        c = self.cls.get(desc)
-        if not c or c['source'] != 'bootdex':
-            return False
-        if any(m['binding'] == 'intrinsic' and m['status'] == 'implemented' for m in c['methods']):
-            return False
-        parent = c.get('superclass')
-        return parent == 'Ljava/lang/Object;' or parent is None or self.plain_boot_parent(parent)
+    def parent_member_reasons(self, desc):
+        """ADR-0156: audit every own body against the implemented parent surface."""
+        parents = self.superchain(desc)[1:]
+        protected = {d for d in parents if self.cls[d]['source'] in ('intrinsic', 'bootdex')}
+        reasons = set()
+        for key, method in self.smali[desc]['methods'].items():
+            if key[0] not in ('<init>', '<clinit>') and not method['flags'] & {'static', 'private'}:
+                for parent in parents:
+                    inherited = self.meth.get(parent, {}).get(key)
+                    # Bytecode uses ROM flags; the exported overridable bit is an intrinsic contract.
+                    if inherited and not inherited['access_flags'] & (ACC_STATIC | ACC_PRIVATE) and (
+                            inherited['binding'] == 'intrinsic' and inherited.get('overridable') is False or
+                            inherited['access_flags'] & ACC_FINAL):
+                        reasons.add(('overrides-nonoverridable', parent + '->' + ''.join(key)))
+            for op in method['ops']:
+                if op[0] == 'invoke':
+                    owner, name, signature = op[3:]
+                    if name == '<init>':
+                        resolved = owner if (name, signature) in self.meth.get(owner, {}) else None
+                    else:
+                        resolved = self.find_method(owner, (name, signature))
+                    member = self.meth.get(resolved, {}).get((name, signature))
+                    target = owner + '->' + name + signature
+                elif op[0] == 'field':
+                    owner, name = op[2:]
+                    resolved = self.find_field(owner, name)
+                    member = self.fields.get(resolved, {}).get(name)
+                    target = owner + '->' + name
+                else:
+                    continue
+                if (resolved in protected or resolved is None and owner in protected) and (
+                        member is None or member['status'] != 'implemented'):
+                    reasons.add(('parent-intrinsic-unimplemented-member', target))
+        return sorted(reasons)
 
     def analyze(self):
         self.interacting = {}
@@ -439,6 +465,7 @@ class Analyzer:
                 if t not in self.cls and t != d:
                     reasons.append(('missing-dependency', t))
                     break
+            reasons.extend(self.parent_member_reasons(d))
             fails, required = self.closure(d)
             reasons.extend(fails)
             self.required[d] = required - {d}
@@ -458,9 +485,11 @@ class Analyzer:
                         continue
                     if parent in self.cand_set:
                         problem = ('parent-not-admitted', parent + ('' if parent not in self.interacting else ' [interaction]'))
-                    elif not self.plain_boot_parent(parent):
+                    elif (self.cls.get(parent, {}).get('source') not in ('intrinsic', 'bootdex') or
+                          any(p in BINDER_NAMES for p in self.superchain(d)[1:])):
                         problem = ('parent-not-admitted', parent + f" [{self.cls.get(parent, {}).get('source', 'absent')}]")
-                    break
+                    if problem:
+                        break
                 if problem is None:
                     bad = sorted(r for r in self.required[d] if r not in admitted)
                     if bad:
@@ -835,9 +864,12 @@ def self_test():
         clinit_ops=' invoke-static {}, Ltest/Cycle2;->g()V\n', extra='.method public static g()V\n return-void\n.end method\n')
     add('Ltest/Cycle2;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8), skel('g', '()V', 9)],
         clinit_ops=' invoke-static {}, Ltest/Cycle1;->g()V\n', extra='.method public static g()V\n return-void\n.end method\n')
-    # --- rejected: native, intrinsic parent, unimplemented target, binder, virtual chain
+    # --- parent admission and rejections: native, unimplemented target, Binder, virtual chain
     add('Ltest/Native;', 'skeleton', [skel('<init>', '()V'), skel('n', '()V', 0x101)])
     add('Ltest/ExtendsIntrinsic;', 'skeleton', [skel('<init>', '()V')], super_='Landroid/os/Handler;')
+    smali['Ltest/ExtendsIntrinsic;'] = parse_smali_class(_smali(
+        'Ltest/ExtendsIntrinsic;', super_='Landroid/os/Handler;',
+        methods=ctor.replace('Ljava/lang/Object;', 'Landroid/os/Handler;')))
     add('Ltest/CallsUnimpl;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
         clinit_ops=' new-instance v0, Landroid/os/Handler;\n invoke-direct {v0}, Landroid/os/Handler;-><init>()V\n invoke-virtual {v0, v1}, Landroid/os/Handler;->post(Ljava/lang/Runnable;)Z\n')
     add('Ltest/TouchesBinder;', 'skeleton', [skel('<init>', '()V'), skel('<clinit>', '()V', 8)],
@@ -872,11 +904,11 @@ def self_test():
     admitted = analyzer.analyze()
     ok = {'Ltest/Plain;', 'Ltest/Const;', 'Ltest/ExactType;', 'Ltest/Base;', 'Ltest/Cycle1;', 'Ltest/Cycle2;',
           'Ltest/Shape;', 'Ltest/Square;', 'Ltest/Circle;', 'Ltest/Helper;', 'Ltest/Solo;', 'Ltest/SoloHelper;',
-          'Ltest/ViaUniqueChain;'}
+          'Ltest/ViaUniqueChain;', 'Ltest/ExtendsIntrinsic;'}
     assert admitted == ok, (sorted(admitted ^ ok), analyzer.rejected)
     reasons = lambda d: [r[0] for r in analyzer.rejected[d]]
     assert 'native-method' in reasons('Ltest/Native;')
-    assert reasons('Ltest/ExtendsIntrinsic;') == ['parent-not-admitted']
+    assert 'Ltest/ExtendsIntrinsic;' in admitted
     assert 'clinit-unimplemented-target' in reasons('Ltest/CallsUnimpl;')
     assert 'binder-in-clinit' in reasons('Ltest/TouchesBinder;')
     # Indirect virtual chain: Shape.area has two concrete implementations -> possibly unimplemented.
@@ -884,6 +916,34 @@ def self_test():
     assert reasons('Ltest/Child;') == ['parent-not-admitted'] or 'parent-not-admitted' in reasons('Ltest/Child;')
     assert analyzer.primary('Ltest/Passed;') == 'intrinsic-interaction' and 'Ltest/Passed;' in analyzer.interacting
     assert 'Ltest/Existing;' not in analyzer.rejected and 'Ltest/Existing;' not in admitted
+    # ADR-0156: all own bodies, inherited resolution, final methods and overlays.
+    add('Ltest/BadParentCall;', 'skeleton', super_='Landroid/os/Handler;',
+        extra='.method public f()V\n invoke-virtual {p0, v0}, Ltest/BadParentCall;->post(Ljava/lang/Runnable;)Z\n return-void\n.end method\n')
+    final_method = impl('fixed', '()V', ACC_FINAL | 1)
+    final_method['overridable'] = False
+    add('Ltest/Overlay;', 'bootdex', [impl('<init>', '()V'), final_method],
+        fields=[dict(name='missing', descriptor='I', status='unimplemented-ledger')])
+    add('Ltest/OverlayChild;', 'skeleton', super_='Ltest/Overlay;')
+    add('Ltest/BadOverride;', 'skeleton', super_='Ltest/Overlay;',
+        extra='.method public fixed()V\n return-void\n.end method\n')
+    add('Ltest/BadParentField;', 'skeleton', super_='Ltest/Overlay;',
+        extra='.method public f()V\n iget v0, p0, Ltest/BadParentField;->missing:I\n return-void\n.end method\n')
+    bytecode = _method('ordinary', '()V', 1, 'implemented', 'bytecode')
+    bytecode['overridable'] = False  # Exported bit is not used for bytecode methods.
+    add('Ltest/BytecodeParent;', 'bootdex', [bytecode])
+    add('Ltest/BytecodeChild;', 'skeleton', super_='Ltest/BytecodeParent;',
+        extra='.method public ordinary()V\n return-void\n.end method\n')
+    add('Ltest/BadParentConstructor;', 'skeleton', super_='Landroid/os/Handler;',
+        extra='.method public constructor <init>(I)V\n invoke-direct {p0, p1}, Landroid/os/Handler;-><init>(I)V\n return-void\n.end method\n')
+    add('Ltest/BinderChild;', 'skeleton', super_='Landroid/os/Binder;')
+    jar_of.update({d: 'core.jar' for d in smali})
+    parent_audit = Analyzer(classes, smali, jar_of, set(), set(), set())
+    parent_audit.analyze()
+    assert {'Ltest/ExtendsIntrinsic;', 'Ltest/OverlayChild;', 'Ltest/BytecodeChild;'} <= parent_audit.admitted
+    for d in ('Ltest/BadParentCall;', 'Ltest/BadParentField;', 'Ltest/BadParentConstructor;'):
+        assert 'parent-intrinsic-unimplemented-member' in [r[0] for r in parent_audit.rejected[d]]
+    assert 'overrides-nonoverridable' in [r[0] for r in parent_audit.rejected['Ltest/BadOverride;']]
+    assert 'parent-not-admitted' in [r[0] for r in parent_audit.rejected['Ltest/BinderChild;']]
     # ADR-0155: existing BootDex clinit and ordinary bodies, class constants,
     # field/invoke owners, a second hop, rejected boundaries, intrinsic declarations.
     seed = 'Ltest/Existing;'
@@ -950,12 +1010,12 @@ def self_test():
                            source_tokens={'test/Replacement'}, replacements={target}, native_bindings=bindings)
     replacement.analyze()
     assert target in replacement.admitted
-    # Explicit replacement must not waive the intrinsic-parent or Binder rules.
+    # Explicit replacement follows the same parent audit and Binder rules.
     rom[target] = ('Landroid/os/Handler;', [], 1, [], [])
     migrated, bindings = replacement_surface(classes, rom, {target})
     parent = Analyzer(migrated, smali, jar_of, set(), set(), set(), replacements={target})
     parent.analyze()
-    assert 'parent-not-admitted' in [r[0] for r in parent.rejected[target]]
+    assert target in parent.admitted
     rom[target] = ('Ljava/lang/Object;', [], 1, [('<clinit>', '()V', ACC_STATIC)], [])
     migrated, bindings = replacement_surface(classes, rom, {target})
     smali[target] = parse_smali_class(_smali(target, methods=clinit(' new-instance v0, Landroid/os/Binder;\n')))

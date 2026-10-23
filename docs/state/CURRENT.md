@@ -32,7 +32,7 @@
 - 门禁：boundary 架构违规与 `architecture.dexvm_intrinsic_layout` 媒体清单缺项未闭合
   （[DVM-190](../tasks/dexvm/DVM-190.md)）。[WU7-T](../tasks/diagnostics/DIAG-7.md) 已清理 HEAD
   测试失败：ogplay_tests 1903/1903、ogplay_app_tests 89/89 通过，0 失败，保留既有 7 skip。
-- 一致性：dalvik/tests 双后端 85/91（93.4%）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。 Framework A–D=0/536/177/13/2、E=27/0/0；四类撤换，见 [DVM-265](../tasks/dexvm/DVM-265.md)。 BootDex闭包补齐，加载门禁未过。
+- 一致性：dalvik/tests 双后端 85/91（93.4%）；035/046/070 通过，085 oracle 排除；070 共享数组已修复，见 [DIAG-7](../tasks/diagnostics/DIAG-7.md)；JNI 双后端 399/399（100%，DVM-260 / ADR-0152、0153：pending 按 Dalvik 非 CheckJNI 放行、heap capacity 对齐 4.4；JNI/dalvik 零回归、基础场景 6/9 无新增失败），静态覆盖 233/233（100%），见 [DIAG-8](../tasks/diagnostics/DIAG-8.md)。 Framework A–D=0/536/177/13/2、E=27/0/0；四类撤换，见 [DVM-265](../tasks/dexvm/DVM-265.md)。 BootDex父类准入，场景待外验。
 - `--ephemeral-sandbox` 下 Dungeon Hunter 约 106 帧抛 `Invalid path: /sdcard`；持久沙盒不复现。
 - 跨平台：近期修复多只在 macOS 实跑；[VFS-07](../tasks/vfs/VFS-07.md) macOS 待验证。
 

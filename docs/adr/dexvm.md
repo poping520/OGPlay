@@ -54,6 +54,7 @@
 - [ADR-0152 · Java primitive/String payload 使用稳定 guest backing](#adr-0152)
 - [ADR-0154 · 已有 intrinsic 的 ROM Java 类撤换为 BootDex](#adr-0154)
 - [ADR-0155 · BootDex 自身可达闭包准入](#adr-0155)
+- [ADR-0156 · intrinsic 与 overlay 父类的 ROM 子类准入](#adr-0156)
 
 <a id="adr-0017"></a>
 
@@ -1330,6 +1331,7 @@ ADR-0147 的骨架补齐了全部 ROM 类型，但未实现成员只能明确失
      日期审计冻结的非 boot_dex 分类中；
    - 父类链为 Object、其他准入类，或不含 overlay 的现有 BootDex 类；继承 intrinsic 类的类
      （含 Enum、Throwable、Handler、View 等）本批不准入，由级联拒绝；
+     已由 [ADR-0156](#adr-0156) 修订父类准入规则。
    - `<clinit>` 的传递调用闭包（含 new-instance/静态字段/invoke-static 触发的类初始化与
      BootDex 字节码）全部已实现，不得触及骨架中未实现的方法、构造器或非常量字段；
    - 普通方法可以引用未实现成员，执行到时沿 ADR-0147 明确失败。
@@ -1349,6 +1351,7 @@ ADR-0147 的骨架补齐了全部 ROM 类型，但未实现成员只能明确失
    再判断是规则缺陷（修规则后重新选择）还是应加入规则化排除条件的个别类问题。
 6. **不变的承诺**：不当模拟器、不伪造成功、手写优先；不实现 intrinsic 行为，不准入继承
    intrinsic 类的类（另行评估）。
+   已由 [ADR-0156](#adr-0156) 修订继承 intrinsic 的限制。
 
 ### 后果
 
@@ -1685,3 +1688,40 @@ WU9-5a 确认部分已有 intrinsic 的算法本为 ROM 纯 Java；ADR-0148 决�
 索引、加载/首次解析、冷启动与 RSS、定向回归和一致性门禁须留下前后证据；
 性能预算以端到端指标（冷启动/首帧耗时、RSS）为准，退化超过 10% 停止；BootDex 注册加载与 Link
 的组件耗时随类数近似线性增长，只作记录。任何必需门禁不达标则停止并报告。游戏场景由编排方在沙盒外验收，闭包为零不代表兼容验收。
+
+
+<a id="adr-0156"></a>
+
+## ADR-0156 · intrinsic 与 overlay 父类的 ROM 子类准入
+
+- 状态：Accepted（WU10-2 用户明确决定）
+- 日期：2026-10-23
+- Supersedes：[ADR-0148](#adr-0148) 决定 1、6 的父类限制。
+- 关联：[DVM-267 / WU10-2](../tasks/dexvm/DVM-267.md)、[ADR-0154](#adr-0154)、[ADR-0155](#adr-0155)
+
+### 背景
+
+原限制是 WU3 推迟的范围，未论证一律拒绝的必要性。当时手写 intrinsic 将可覆写方法
+误声明为 final 的链接风险，已由 WU9-1 将 framework_contract A1 清零。仍需逐类检查
+父类可用成员，防止构造和常用路径的失败点后移、探测分支改变。
+
+### 决定
+
+1. ROM 类的父类链出现 intrinsic 或带 overlay 的 BootDex 类不再一律拒绝；选择器统一
+   检查本类不覆写父类链上 `overridable=false` 的实例方法。framework_contract A1=0
+   保证父类契约与 ROM 一致，选择器逐类复核。
+2. 本类自身全部方法的字节码不得触及父类链 intrinsic 或 overlay 部分未实现的构造器、
+   方法或字段；不只分析 `<clinit>`。此条件比普通方法“到达时明确失败”更严格。
+   报告分别使用 `parent-intrinsic-unimplemented-member` 和 `overrides-nonoverridable`。
+3. ADR-0148 其余规则不变：本类无 native、初始化闭包唯一且已实现、Binder 排除、
+   intrinsic 交互排除和日期冻结；ADR-0155 的 closure 范围、零缺口与索引预算不变。
+   ADR-0154 的显式撤换规则不变，不新增 intrinsic 撤换或 native。
+4. 父类链含 Binder 的继续拒绝；父类本身被拒绝的继续级联拒绝。默认选择和 closure
+   范围共用上述规则，不允许按类名豁免。
+
+### 后果
+
+干净的 Enum、Handler、Thread 等 ROM 子类可复用现有父类实现。触及父类未实现成员的类
+（主要为 View 系）暂缓，待手写外观补齐 ROM 状态后另行评估；不放宽“不伪造成功”。
+五个父类族的 DEX 回归及撤去配方的负对照、契约、一致性和端到端性能证据见 DVM-267。
+任何必需门禁不达标即停止；游戏场景和帧时间由编排方在沙盒外验证。

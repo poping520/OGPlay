@@ -43,6 +43,11 @@ void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
 void RegisterBootDexSkeleton(runtime::dexvm::DexClassLinker& linker);
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
     BindBootDexPlatformNatives(linker);
-    linker.RegisterBootDex(ReadBootDex());
+    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar";
+    std::ifstream stream(path, std::ios::binary);
+    const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+    const auto policy = runtime::dexvm::DexClassLinker::BootDexMemberSources(
+        {reinterpret_cast<const std::byte*>(raw.data()), raw.size()});
+    linker.RegisterBootDex(ReadBootDex(), policy);
 }
 }  // namespace ogplay::test

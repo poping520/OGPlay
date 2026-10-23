@@ -367,7 +367,9 @@ public:
     DexClassLinker& operator=(const DexClassLinker&) = delete;
 
     void RegisterIntrinsics(std::span<const IntrinsicClassDecl> catalog);
-    DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes);
+    DexUnitId RegisterBootDex(std::vector<std::uint8_t> dex_bytes, std::string_view member_sources = {});
+    // Optional sealed archive entry; absent on legacy/disabled payloads.
+    [[nodiscard]] static std::string BootDexMemberSources(std::span<const std::byte> archive_bytes);
     DexUnitId RegisterDex(std::vector<std::uint8_t> dex_bytes);
     // Install indexed data before application registration/Link; no classes are built.
     void RegisterSkeletonSurface(std::vector<std::uint8_t> bytes);
@@ -485,8 +487,8 @@ public:
 
 private:
     void MarkVerificationFailed(DexClassId id);
-    [[nodiscard]] DexUnitId RegisterDexUnit(
-        std::vector<std::uint8_t> dex_bytes, bool boot);
+    [[nodiscard]] DexUnitId RegisterDexUnit(std::vector<std::uint8_t> dex_bytes, bool boot,
+                                            std::span<const std::string> failed_native = {});
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

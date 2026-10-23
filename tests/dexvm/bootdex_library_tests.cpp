@@ -270,3 +270,69 @@ TEST_CASE("DVM-104 formatters events tokenizer and key parameters use guest stat
         }
     }
 }
+
+TEST_CASE("DVM-276 BootDex exact member sources execute on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+        linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
+        auto builder = IntrinsicClassBuilder::Class("Ltest/MemberComposition;");
+        builder.StaticMethod("host", "()I", [](IntrinsicContext&) { return VmValue::Int(29); });
+        // This legacy implementation must lose to the explicit ROM source.
+        builder.StaticMethod("rom", "()I", [](IntrinsicContext&) { return VmValue::Int(-100); });
+        builder.StaticMethod("missing", "()I", [](IntrinsicContext&) { return VmValue::Int(-200); });
+        auto declaration = std::move(builder).Build();
+        int legacy_clinit_calls = 0;
+        declaration.clinit_implementation = [&](IntrinsicContext&) {
+            ++legacy_clinit_calls;
+            return VmValue::Void();
+        };
+        linker.RegisterIntrinsics(std::array{declaration});
+        const auto read = [](const std::string& name) {
+            std::ifstream input(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / name, std::ios::binary);
+            REQUIRE(input.good());
+            return std::vector<std::uint8_t>{std::istreambuf_iterator<char>(input), {}};
+        };
+        const auto jar = read("member-sources.jar");
+        const auto archive = std::span<const std::byte>{reinterpret_cast<const std::byte*>(jar.data()), jar.size()};
+        const auto dex_entry =
+            ogplay::loader::ReadApkEntry(archive, ogplay::loader::ParseApkArchive(archive), "classes.dex");
+        std::vector<std::uint8_t> dex(dex_entry.size());
+        std::memcpy(dex.data(), dex_entry.data(), dex.size());
+        linker.RegisterBootDex(std::move(dex), DexClassLinker::BootDexMemberSources(archive));
+        linker.Link();
+        ogplay::runtime::HostCopyJavaPayloadProvider string_payload;
+        JniStringStore strings{string_payload};
+        ogplay::runtime::HostCopyJavaPayloadProvider array_payload;
+        JniPrimitiveArrayStore arrays{array_payload};
+        JavaObjectModel model{strings, arrays};
+        ogplay::core::CapabilityLedger ledger;
+        Interpreter vm{linker, model, nullptr, ledger, InterpreterConfig{.backend = backend}};
+        const auto owner = linker.ResolveDescriptor("Ltest/MemberComposition;");
+        const auto call = [&](const std::string& name) {
+            const auto id = linker.FindDirectMethod(owner, name, "()I");
+            REQUIRE(id.has_value());
+            return vm.Call(*id, {});
+        };
+        const auto rom = call("rom");
+        REQUIRE_FALSE(rom.exception.IsValid());
+        CHECK(legacy_clinit_calls == 0);
+        CHECK(rom.value.AsInt() == 17);  // encoded 5 is overwritten by the ROM clinit.
+        CHECK(call("host").value.AsInt() == 29);
+        CHECK(call("combined").value.AsInt() == 46);
+        const auto missing = call("missing");
+        REQUIRE(missing.exception.IsValid());
+        CHECK(linker.Class(missing.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK(call("unavailable").exception.IsValid());
+        const auto hits = ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id.find("MemberComposition;") != std::string::npos &&
+                   hit.id.find("missing") != std::string::npos;
+        }));
+        CHECK(linker.Class(owner).own_static_fields.size() == 1);
+        const auto id = linker.FindDirectMethod(owner, "rom", "()I");
+        CHECK(linker.Method(*id).kind == MethodKind::interpreted);
+        CHECK(linker.Method(*linker.FindDirectMethod(owner, "host", "()I")).kind == MethodKind::intrinsic);
+        CHECK(linker.Method(*linker.FindDirectMethod(owner, "missing", "()I")).is_skeleton);
+    }
+}

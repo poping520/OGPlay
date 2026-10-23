@@ -55,6 +55,7 @@
 - [ADR-0154 · 已有 intrinsic 的 ROM Java 类撤换为 BootDex](#adr-0154)
 - [ADR-0155 · BootDex 自身可达闭包准入](#adr-0155)
 - [ADR-0156 · intrinsic 与 overlay 父类的 ROM 子类准入](#adr-0156)
+- [ADR-0158 · 固定 ROM 成员级行为组合](#adr-0158)
 
 <a id="adr-0017"></a>
 
@@ -1725,3 +1726,42 @@ WU9-5a 确认部分已有 intrinsic 的算法本为 ROM 纯 Java；ADR-0148 决�
 （主要为 View 系）暂缓，待手写外观补齐 ROM 状态后另行评估；不放宽“不伪造成功”。
 五个父类族的 DEX 回归及撤去配方的负对照、契约、一致性和端到端性能证据见 DVM-267。
 任何必需门禁不达标即停止；游戏场景和帧时间由编排方在沙盒外验证。
+
+<a id="adr-0158"></a>
+
+## ADR-0158 · 固定 ROM 成员级行为组合
+
+- 状态：Accepted（编排方按用户授权于 2026-10-24 决定）
+- 日期：2026-10-24
+- 关联：[DVM-276 / VD-03](../tasks/dexvm/DVM-276.md)、[ADR-0147](#adr-0147)、
+  [ADR-0154](#adr-0154)、[ADR-0156](#adr-0156)
+- 关系：补充 ADR-0154 整类撤换；精确修订 ADR-0147 手写优先的显式 manifest 例外。
+
+### 决定
+
+1. 允许固定 ROM 类通过精确成员来源 manifest 组合原版字节码、受审平台 adapter / 既有
+   C++ overlay 和明确失败成员。每类只有一个 ROM class_def、完整字段布局及 clinit owner；
+   不复制字段子集，不登记第二份 Java 状态，不以默认零或空 clinit 冒充初始化。
+2. 每个方法按完整签名列明来源、ROM flags 和原始方法体 hash；每个字段列明类型、flags、
+   ROM 来源及 encoded value / VM 清零后 ROM 构造与 clinit 的初始化策略。
+   原版 DEX 方法体保留，不改写成代理桩。未选成员声明保留，调用时按 ADR-0147 记账失败。
+3. 普通方法 overlay 只在 manifest 逐签名批准；审查项包括理由、输入、输出、状态 owner
+   与失败边界。ROM 来源清除同签名旧 handler，失败来源禁用字节码与旧 handler；
+   不扩大未启用类的通用 overlay 优先级。类形状以 ROM 为准，额外 intrinsic 字段/方法拒绝。
+4. 新 native 只限显式受审的平台服务接缝，逐签名批准并绑定真实 handler；不授权全类
+   native 准入。未选 native 也保留声明并明确失败。此例外替代 ADR-0154 决定 2 在本批
+   显式组合成员上的限制；guest JNI 动态注册与其他 native 准入规则不放宽。
+5. build/check 校验输入、原始方法体身份、成员来源冲突、精确依赖、普通 overlay 与 native
+   越权，并输出封存 JAR 内的 manifest。相同输入两次生成逐字节一致；空表不增加 JAR entry，
+   保持既有制品身份。运行时只消费封存制品，不提供用户配置或动态成员开关。
+6. 默认 selector、ADR-0156 全部 own 方法及父成员审计不变；组合校验复用其层级/分派分析，
+   被选字节码不能调用未选且无 handler 的成员，不能用“未来实现”填补依赖。
+   ADR-0155 closure 零缺口和单 DEX 预算继续有效；四个不可达类不强制收录。
+7. 构造/clinit、访问 flags、虚分派、字段通道、GC 强边与两解释后端按每批真实变更验证。
+   surface 必须反映 bytecode / handler / unimplemented 的实际来源，不能以配方存在标记实现。
+
+### 后果与本批边界
+
+成员级组合成为 View 状态迁移的基础工具，不代表 View 遍历或任一游戏已兼容。
+VD-03 只启用测试 ROM 样例；生产 manifest 为空，closure 增量为零。
+纯 ROM clinit 是本批唯一初始化 owner，尚不提供构造或 clinit adapter 生成器。

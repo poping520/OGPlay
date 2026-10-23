@@ -2117,3 +2117,8 @@ note = "DVM-253/254、ADR-0147：固定四ROM own-member索引按需物化，既
 status = "partial"
 test = "tools/bootdex/select_rom_java.py --self-test; tools/bootdex/build_bootdex.py check; tools.android_payload_current; tests/dexvm/intrinsics_p1_tests.cpp#DVM-265; tests/dexvm/network_sqlite_tests.cpp#DVM-265; tests/dexvm/android_intent_uri_tests.cpp#DVM-265; tests/dexvm/core_catalog_tests.cpp#DVM-265; tests/dexvm/android_value_tests.cpp#DVM-266; tests/dexvm/android_context_services_tests.cpp#DVM-266; tests/dexvm/android_value_tests.cpp#DVM-267; tests/dexvm/android_context_services_tests.cpp#DVM-267; tests/dexvm/bootdex_concurrency_tests.cpp#DVM-267"
 note = "DVM-255/265/266/267、ADR-0148/0154/0155/0156：固定ROM规则准入，closure按BootDex方法体与intrinsic声明补全。允许intrinsic及overlay父类；全部自身字节码不得触及父类未实现成员或覆写不可覆写方法。native、Binder、交互、初始化及日期冻结仍受限；显式撤换保留已有native边界。单dex索引预算60000，--check-closure强制零缺口；游戏及帧时间由外部验收。"
+
+[dexvm.bootdex_member_composition]
+status = "partial"
+note = "DVM-276/ADR-0158：封存 manifest 精确选择 ROM 字节码、受审 C++ handler 或记账失败；ROM 唯一拥有完整形状、字段与 clinit。输入/方法体 hash、字段初始化、依赖、来源冲突及 native/overlay 越权受检。仅受控样例启用，生产表为空；View 状态迁移与构造/clinit adapter 未纳入。"
+test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276"

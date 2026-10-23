@@ -55,6 +55,27 @@ add_custom_command(
 add_custom_target(ogplay_dexvm_fixtures
     DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/.stamp")
 
+# ADR-0158: controlled test ROM plus existing exception closure, no production recipe change.
+add_custom_command(
+    OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.json"
+           "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.dex"
+           "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.jar"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
+        --fixture "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.json"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/build_bootdex.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/member_composition.dexasm"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/dexvm/fixtures/member_composition.surface.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"
+    VERBATIM
+)
+add_custom_target(ogplay_member_sources_fixture
+    DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.json"
+            "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.dex"
+            "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.jar")
+add_dependencies(ogplay_dexvm_fixtures ogplay_member_sources_fixture)
+
 # API19 ICU property fallbacks follow the bundled payload metadata, not host ICU.
 set(_ogplay_platform_manifest "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/manifest.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ogplay_platform_manifest}")

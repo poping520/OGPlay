@@ -26,7 +26,7 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     runtime::dexvm::DexClassLinker linker;
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
-    linker.RegisterBootDex(std::move(dex));
+    linker.RegisterBootDex(std::move(dex), runtime::dexvm::DexClassLinker::BootDexMemberSources(archive));
     const auto skeleton_path = BundledDataPaths().root / "dexvm/api19-skeleton.bin";
     std::ifstream skeleton(skeleton_path, std::ios::binary);
     if (!skeleton) throw std::runtime_error("cannot open skeleton surface");

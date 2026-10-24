@@ -87,6 +87,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-paint-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-paint.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-text.surface.json.gz"

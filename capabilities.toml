@@ -2142,3 +2142,8 @@ note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字�
 status = "partial"
 test = "tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp"
 note = "DVM-294/295：实验配对TextView构造与有界plain文本setter/getter，真实View/Theme/TypedArray；纯叶onMeasure虚派setMeasuredDimension，固定字体baseline与compound line-plan随完整epoch冻结。宿主单一文本owner、身份随View GC；未知主题/属性、RTL、shaping、TextPaint/Editor/Layout明确失败。生产Legacy保持。"
+
+[dexvm.image_leaf]
+status = "partial"
+note = "DVM-296：仅实验配对ImageView/ImageButton完整ROM形状与clinit、真实主题构造及纯叶测量adapter；Java持图片身份/scale/alpha，五种scale、bitmap版本与纯色填充同epoch冻结。默认系统皮肤、其余scale、matrix/tint/adjust/max/baseline/crop非中性请求明确失败；生产Legacy保持。"
+test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-296"

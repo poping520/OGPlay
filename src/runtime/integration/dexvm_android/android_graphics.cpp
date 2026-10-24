@@ -746,6 +746,44 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Matrix(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;", "Ljava/lang/Object;");
+        builder.Constructor("()V", [context](dx::IntrinsicContext& c) {
+            context->identity_matrices.insert(c.receiver.Value());
+            return dx::VmValue::Void();
+        });
+        builder.VirtualMethod("isIdentity", "()Z", [context](dx::IntrinsicContext& c) {
+            if (!context->identity_matrices.contains(c.receiver.Value()))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Matrix requires construction"};
+            return dx::VmValue::Int(1);
+        });
+        builder.VirtualMethod("getValues", "([F)V", [context](dx::IntrinsicContext& c) {
+            if (!context->identity_matrices.contains(c.receiver.Value()))
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Matrix requires construction"};
+            const auto array = c.arguments[0].ref;
+            if (!array.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Matrix values"};
+            if (c.vm.Model().ArrayLength(array) < 9)
+                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "Matrix values length"};
+            for (int i = 0; i < 9; ++i)
+                c.vm.Model().SetPrimitiveElement(array, i, dx::VmValue::Float(i % 4 == 0 ? 1.0F : 0.0F).cat1);
+            return dx::VmValue::Void();
+        });
+        builder.VirtualMethod(
+            "finalize", "()V",
+            [context](dx::IntrinsicContext& c) {
+                context->identity_matrices.erase(c.receiver.Value());
+                const auto object = c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;");
+                const auto index = c.vm.Linker().FindVtableIndex(object, "finalize", "()V");
+                const auto out =
+                    c.vm.Call(c.vm.Linker().Class(object).vtable.at(*index), std::array{dx::VmValue::Ref(c.receiver)});
+                if (out.exception.IsValid())
+                    throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                          out.exception};
+                return out.value;
+            },
+            dx::kAccProtected);
+        return std::move(builder).Build();
+    }
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;", "Ljava/lang/Object;");
     builder.Constructor("()V", GraphicsNoopHandler());

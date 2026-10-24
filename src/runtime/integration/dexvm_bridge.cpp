@@ -229,7 +229,9 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         for (const auto& [_, ref] : context.ui_node_to_object)
             root(ref);
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
-    for (const auto& [_, ref] : context.ui_view_images) root(ref);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
+        for (const auto& [_, ref] : context.ui_view_images)
+            root(ref);
 }
 
 void RegisterAndroidOwnerAttachedStateTable(
@@ -279,7 +281,9 @@ void RegisterAndroidOwnerAttachedStateTable(
             }
             if (const auto found = context->ui_view_layout_params.find(key);
                 found != context->ui_view_layout_params.end()) visit_ref(found->second);
-            if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) visit_ref(image->second);
+            if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
+                if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end())
+                    visit_ref(image->second);
             if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) visit_ref(state->second.bitmap);
             if (const auto node = context->object_to_ui_node.find(key);
                 node != context->object_to_ui_node.end()) {
@@ -315,6 +319,7 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->global_layout_listeners.erase(key);
             context->sax_content_handlers.erase(key);
             context->bitmaps.erase(key);
+            context->identity_matrices.erase(key);
             context->canvases.erase(key);
             context->holder_canvases.erase(key);
             const auto media = context->media_players.find(key);

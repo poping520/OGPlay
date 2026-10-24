@@ -515,3 +515,25 @@ setText/getText、字号、Typeface、纯色/单态颜色、gravity、singleLine
 不进入 adapter、不写 guest 几何；没有叶测量结果时基线沿 View 缺席值 -1。
 有限 plain text 的 onLayout/setFrame/RTL/drawable-state/padding 回调执行真实 View 父协议；RTL、Editor/状态 Drawable
 等未覆盖语义仍失败，ROM 原 TextView 方法不获实现信用。Legacy 公式和路径不变。
+
+## 实验 ImageView 叶输入与光栅
+
+JavaTraversal 配对保留 ImageView/ImageButton、八成员 ScaleType 及 Matrix 的完整 ROM 形状和
+原 clinit。ImageView 构造接缝执行真实 View/Theme/TypedArray；Context-only 沿源码只初始化，
+属性构造保留 defStyleAttr 优先级。ImageButton 三构造执行 ROM，真实 imageButtonStyle 和
+setFocusable(true) 不被删除；系统 selector/ninepatch 背景拒绝，应用显式受支持主题可成功。
+Java mDrawable/mScaleType/mAlpha 唯一拥有图片身份、缩放和 drawableAlpha；BitmapDrawable 的
+mBitmap 是 Java 强边。ui_view_images 在此路径仅为弱派生索引，不参与 GC 保活或 setter 读取。
+宿主只缓存对象拥有的不可变像素/版本；measure 与发布阶段从 Java 字段和真实 intrinsic 重建
+叶输入。像素改变建立新 backing，回收 bitmap 明确失败，旧发布 epoch 仍可消费。
+ImageView onMeasure 接缝调用 MeasureImageLeaf 并真实虚派 setMeasuredDimension；读取 Java
+padding/suggested minimum，不写 measured/bounds/flags，不递归。无 adjustViewBounds 时按
+固定源码 resolveSizeAndState 保留 TOO_SMALL；非空 Drawable 非正 intrinsic 只在测量时取1，
+ColorDrawable 原 intrinsic=-1，光栅为内容区纯色填充。
+FIT_XY/FIT_CENTER/CENTER/CENTER_CROP/CENTER_INSIDE 复用 ImageDestination；投影同时冻结
+intrinsic、像素版本、scale、alpha 和几何，CENTER/INSIDE 使用 density 后 Drawable 尺寸，
+像素采样仍用原 backing 尺寸。Legacy 继续以原像素尺寸计算，行为保持。
+Matrix 接缝只初始化实际 identity 状态并提供 isIdentity/getValues/finalize，随 Java 对象 sweep 退役；
+原 Matrix.IDENTITY_MATRIX 单例由 ROM clinit/Matrix$1 构造。native_instance/变换操作仍失败。
+其余 scaleType、matrix、tint、adjustViewBounds/maxWidth/maxHeight/baseline/crop 等非中性
+请求、任意 Drawable/custom draw 继续记账失败；原方法不因 adapter 获得 ROM 算法实现信用。

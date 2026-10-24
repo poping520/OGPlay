@@ -13,6 +13,10 @@
 // resolves the framework default style carried by defStyleAttr.
 namespace ogplay::runtime::android_intrinsics {
 [[nodiscard]] dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context);
+
+namespace {
+Decl ExperimentalImageView(const Context& context);
+}
 }
 
 namespace ogplay::runtime::android_intrinsics {
@@ -213,6 +217,8 @@ Decl Declare_android_widget_FrameLayout(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageButton(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageButton;", "Landroid/widget/ImageView;").Build();
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageButton;", "Landroid/widget/ImageView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
@@ -228,6 +234,8 @@ Decl Declare_android_widget_ImageButton(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView$ScaleType;", "Ljava/lang/Enum;").Build();
     constexpr std::array scale_types{
         ui::ImageScaleType::Center,
         ui::ImageScaleType::CenterInside,
@@ -256,6 +264,7 @@ Decl Declare_android_widget_ImageView_ScaleType(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_ImageView(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return ExperimentalImageView(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.VirtualMethod("setImageBitmap", "(Landroid/graphics/Bitmap;)V",
@@ -923,6 +932,274 @@ TextStyleable RomTextAttributes(dx::Interpreter& vm, std::string_view group) {
     if (!result.array.IsValid())
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "ROM styleable missing");
     return result;
+}
+
+[[noreturn]] void ImageFailure(dx::Interpreter& vm, const std::string& message) {
+    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
+}
+
+Decl ExperimentalImageView(const Context& context) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ImageView;", "Landroid/view/View;");
+    const auto drawable =
+        builder.BoundInstanceField("mDrawable", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate);
+    const auto scale =
+        builder.BoundInstanceField("mScaleType", "Landroid/widget/ImageView$ScaleType;", dx::kAccPrivate);
+    const auto alpha = builder.BoundInstanceField("mAlpha", "I", dx::kAccPrivate);
+    const auto matrix = builder.BoundInstanceField("mMatrix", "Landroid/graphics/Matrix;", dx::kAccPrivate);
+    const auto width = builder.BoundInstanceField("mDrawableWidth", "I", dx::kAccPrivate);
+    const auto height = builder.BoundInstanceField("mDrawableHeight", "I", dx::kAccPrivate);
+    const auto compat = builder.BoundInstanceField("mAdjustViewBoundsCompat", "Z", dx::kAccPrivate);
+    const auto maxw = builder.BoundInstanceField("mMaxWidth", "I", dx::kAccPrivate);
+    const auto maxh = builder.BoundInstanceField("mMaxHeight", "I", dx::kAccPrivate);
+    const auto baseline = builder.BoundInstanceField("mBaseline", "I", dx::kAccPrivate);
+    const auto src_rect = builder.BoundInstanceField("mTempSrc", "Landroid/graphics/RectF;", dx::kAccPrivate);
+    const auto dst_rect = builder.BoundInstanceField("mTempDst", "Landroid/graphics/RectF;", dx::kAccPrivate);
+    const auto changed = [](dx::IntrinsicContext& c) {
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "requestLayout", "()V"));
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V"));
+    };
+    const auto init = [=](dx::IntrinsicContext& c) {
+        auto& vm = c.vm;
+        const bool attributes = c.arguments.size() != 1;
+        const auto view = vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto ctor = vm.Linker().FindDirectMethod(
+            view, "<init>",
+            attributes ? "(Landroid/content/Context;Landroid/util/AttributeSet;I)V" : "(Landroid/content/Context;)V");
+        std::vector<dx::VmValue> args{dx::VmValue::Ref(c.receiver)};
+        args.insert(args.end(), c.arguments.begin(), c.arguments.end());
+        const auto result = vm.Call(*ctor, args);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        dx::IntrinsicCall fields(c);
+        fields.SetInt(alpha, 255);
+        fields.SetInt(maxw, INT32_MAX);
+        fields.SetInt(maxh, INT32_MAX);
+        fields.SetInt(baseline, -1);
+        fields.SetInt(width, 0);
+        fields.SetInt(height, 0);
+        const auto allocate = [&](const char* name) {
+            const auto type = vm.Linker().ResolveDescriptor(name);
+            const auto initialized = vm.EnsureClassInitialized(type);
+            if (initialized.exception.IsValid())
+                throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                                      initialized.exception_message, initialized.exception};
+            const auto value = vm.NewIntrinsicInstance(name);
+            const auto root = vm.ProtectReferences(std::array{value});
+            const auto out =
+                vm.Call(*vm.Linker().FindDirectMethod(type, "<init>", "()V"), std::array{dx::VmValue::Ref(value)});
+            if (out.exception.IsValid())
+                throw dx::VmJavaThrow{vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                      out.exception};
+            return value;
+        };
+        fields.SetRef(matrix, allocate("Landroid/graphics/Matrix;"));
+        fields.SetRef(src_rect, allocate("Landroid/graphics/RectF;"));
+        fields.SetRef(dst_rect, allocate("Landroid/graphics/RectF;"));
+        const auto enum_type = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView$ScaleType;");
+        const auto sf = vm.Linker().FindFieldRecursive(enum_type, "FIT_CENTER", "Landroid/widget/ImageView$ScaleType;");
+        fields.SetRef(scale, dx::VmObjectRef{vm.Linker().Class(enum_type).static_storage[vm.Linker().Field(*sf).slot]});
+        const auto info =
+            CallAndroidMethod(vm, c.arguments[0].ref, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;")
+                .ref;
+        const auto target = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(info), "targetSdkVersion", "I");
+        fields.SetInt(compat,
+                      static_cast<int>(vm.Model().InstanceSlots(info)[vm.Linker().Field(*target).slot].bits) <= 17);
+        if (attributes) {
+            const auto attrs = c.arguments[1].ref;
+            const auto group = RomTextAttributes(vm, "ImageView");
+            if (attrs.IsValid()) {
+                std::set<std::uint32_t> known;
+                for (auto name : {"View", "ImageView", "ViewGroup_Layout", "ViewGroup_MarginLayout",
+                                  "FrameLayout_Layout", "LinearLayout_Layout", "RelativeLayout_Layout"}) {
+                    const auto array = RomTextAttributes(vm, name).array;
+                    for (JniSize i = 0; i < vm.Model().ArrayLength(array); ++i)
+                        known.insert(static_cast<std::uint32_t>(vm.Model().GetPrimitiveElement(array, i)));
+                }
+                const auto count = CallAndroidMethod(vm, attrs, "getAttributeCount", "()I").AsInt();
+                for (int i = 0; i < count; ++i) {
+                    const auto id =
+                        CallAndroidMethod(vm, attrs, "getAttributeNameResource", "(I)I", {dx::VmValue::Int(i)}).cat1;
+                    if (id == 0 && vm.StringUtf8(CallAndroidMethod(vm, attrs, "getAttributeName",
+                                                                   "(I)Ljava/lang/String;", {dx::VmValue::Int(i)})
+                                                     .ref) == "style")
+                        continue;
+                    if (!known.contains(id)) ImageFailure(vm, "unknown ImageView XML attribute");
+                }
+            }
+            const auto theme =
+                CallAndroidMethod(vm, c.arguments[0].ref, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
+            const auto theme_root = vm.ProtectReferences(std::array{theme});
+            const auto array =
+                CallAndroidMethod(vm, theme, "obtainStyledAttributes",
+                                  "(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
+                                  {c.arguments[1], dx::VmValue::Ref(group.array), c.arguments[2], dx::VmValue::Int(0)})
+                    .ref;
+            const auto array_root = vm.ProtectReferences(std::array{array});
+            std::map<std::string, int> indices;
+            for (const auto& [index, name] : group.names)
+                indices.emplace(name, index);
+            const auto get = [&](const char* name, const char* method, int fallback) {
+                return CallAndroidMethod(vm, array, method, "(II)I",
+                                         {dx::VmValue::Int(indices.at(name)), dx::VmValue::Int(fallback)})
+                    .AsInt();
+            };
+            const auto boolean = [&](const char* name) {
+                return CallAndroidMethod(vm, array, "getBoolean", "(IZ)Z",
+                                         {dx::VmValue::Int(indices.at(name)), dx::VmValue::Int(0)})
+                    .AsInt();
+            };
+            if (boolean("baselineAlignBottom") || get("baseline", "getDimensionPixelSize", -1) != -1 ||
+                boolean("adjustViewBounds") || get("maxWidth", "getDimensionPixelSize", INT32_MAX) != INT32_MAX ||
+                get("maxHeight", "getDimensionPixelSize", INT32_MAX) != INT32_MAX || get("tint", "getInt", 0) != 0 ||
+                boolean("cropToPadding"))
+                ImageFailure(vm, "unsupported ImageView bounds/baseline/tint/crop request");
+            const auto st = get("scaleType", "getInt", -1);
+            if (st >= 0) {
+                if (st >= 8) ImageFailure(vm, "invalid ImageView scaleType");
+                const auto values =
+                    vm.Linker().FindFieldRecursive(vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;"),
+                                                   "sScaleTypeArray", "[Landroid/widget/ImageView$ScaleType;");
+                const auto value_array =
+                    dx::VmObjectRef{vm.Linker()
+                                        .Class(vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;"))
+                                        .static_storage[vm.Linker().Field(*values).slot]};
+                static_cast<void>(CallAndroidMethod(vm, c.receiver, "setScaleType",
+                                                    "(Landroid/widget/ImageView$ScaleType;)V",
+                                                    {dx::VmValue::Ref(vm.Model().GetObjectElement(value_array, st))}));
+            }
+            const auto image = CallAndroidMethod(vm, array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                                 {dx::VmValue::Int(indices.at("src"))})
+                                   .ref;
+            const auto image_root = vm.ProtectReferences(std::array{image});
+            if (image.IsValid())
+                static_cast<void>(CallAndroidMethod(vm, c.receiver, "setImageDrawable",
+                                                    "(Landroid/graphics/drawable/Drawable;)V",
+                                                    {dx::VmValue::Ref(image)}));
+            const auto value = get("drawableAlpha", "getInt", 255);
+            if (value != 255)
+                static_cast<void>(
+                    CallAndroidMethod(vm, c.receiver, "setImageAlpha", "(I)V", {dx::VmValue::Int(value)}));
+            static_cast<void>(CallAndroidMethod(vm, array, "recycle", "()V"));
+        }
+        ProjectAndroidImage(vm, *context, c.receiver);
+        return dx::VmValue::Void();
+    };
+    builder.Constructor("(Landroid/content/Context;)V", init);
+    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", init);
+    builder.VirtualMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", [=](dx::IntrinsicContext& c) {
+        const auto value = c.arguments[0].ref;
+        if (value.IsValid()) {
+            const auto& type = c.vm.Linker().Class(c.vm.Model().ObjectClass(value)).descriptor;
+            const auto found = context->ui_drawables.find(value.Value());
+            if (found == context->ui_drawables.end() || (type != "Landroid/graphics/drawable/BitmapDrawable;" &&
+                                                         type != "Landroid/graphics/drawable/ColorDrawable;"))
+                ImageFailure(c.vm, "unreviewed Drawable");
+            const auto source = found->second.bitmap_drawable
+                                    ? CallAndroidMethod(c.vm, value, "getBitmap", "()Landroid/graphics/Bitmap;").ref
+                                    : dx::VmObjectRef{};
+            if (source.IsValid()) {
+                const auto b = context->bitmaps.find(source.Value());
+                if (b == context->bitmaps.end() || b->second.recycled)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "recycled image bitmap"};
+            }
+        }
+        dx::IntrinsicCall f(c);
+        f.SetRef(drawable, value);
+        f.SetInt(width, value.IsValid() ? CallAndroidMethod(c.vm, value, "getIntrinsicWidth", "()I").AsInt() : -1);
+        f.SetInt(height, value.IsValid() ? CallAndroidMethod(c.vm, value, "getIntrinsicHeight", "()I").AsInt() : -1);
+        ProjectAndroidImage(c.vm, *context, c.receiver);
+        changed(c);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setImageResource", "(I)V", [](dx::IntrinsicContext& c) {
+        dx::VmObjectRef image;
+        if (c.arguments[0].AsInt() != 0) {
+            const auto resources =
+                CallAndroidMethod(c.vm, c.receiver, "getResources", "()Landroid/content/res/Resources;").ref;
+            image = CallAndroidMethod(c.vm, resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                      {c.arguments[0]})
+                        .ref;
+        }
+        const auto root = c.vm.ProtectReferences(std::array{image});
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "setImageDrawable",
+                                            "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(image)}));
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", [=](dx::IntrinsicContext& c) {
+        const auto value = c.arguments[0].ref;
+        if (!value.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "scaleType"};
+        const auto ordinal = CallAndroidMethod(c.vm, value, "ordinal", "()I").AsInt();
+        if (ordinal != 1 && ordinal != 3 && ordinal != 5 && ordinal != 6 && ordinal != 7)
+            ImageFailure(c.vm, "unsupported ImageView scaleType");
+        dx::IntrinsicCall(c).SetRef(scale, value);
+        ProjectAndroidImage(c.vm, *context, c.receiver);
+        changed(c);
+        return dx::VmValue::Void();
+    });
+    const auto set_alpha = [=](dx::IntrinsicContext& c) {
+        dx::IntrinsicCall(c).SetInt(alpha, c.arguments[0].AsInt() & 255);
+        ProjectAndroidImage(c.vm, *context, c.receiver);
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V"));
+        return dx::VmValue::Void();
+    };
+    builder.VirtualMethod("setAlpha", "(I)V", set_alpha);
+    builder.VirtualMethod("setImageAlpha", "(I)V", set_alpha);
+    builder.VirtualMethod("onMeasure", "(II)V", [=](dx::IntrinsicContext& c) {
+        if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Image measurement requires owner"};
+        ProjectAndroidImage(c.vm, *context, c.receiver);
+        const auto& node = *context->ui_tree.Get(*FindViewUiNode(*context, c.receiver.Value()));
+        dx::IntrinsicCall fields(c);
+        const bool present = fields.GetRef(drawable).IsValid();
+        fields.SetInt(width, present ? node.intrinsic.width : -1);
+        fields.SetInt(height, present ? node.intrinsic.height : -1);
+        const ui::ImageLeafInput input{
+            present ? ui::Size{std::max(1, node.intrinsic.width), std::max(1, node.intrinsic.height)} : ui::Size{},
+            ReadAndroidViewPadding(c.vm, *context, c.receiver),
+            {CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumWidth", "()I").AsInt(),
+             CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumHeight", "()I").AsInt()}};
+        const auto spec = [&](int bits) {
+            const auto mode = static_cast<std::uint32_t>(bits) >> 30U;
+            if (mode == 3) ImageFailure(c.vm, "invalid MeasureSpec");
+            return ui::MeasureSpec{mode == 1   ? ui::MeasureMode::Exactly
+                                   : mode == 2 ? ui::MeasureMode::AtMost
+                                               : ui::MeasureMode::Unspecified,
+                                   bits & 0x3fffffff};
+        };
+        const auto result = ui::MeasureImageLeaf(input, spec(c.arguments[0].AsInt()), spec(c.arguments[1].AsInt()));
+        static_cast<void>(
+            CallAndroidMethod(c.vm, c.receiver, "setMeasuredDimension", "(II)V",
+                              {dx::VmValue::Int(static_cast<int>(static_cast<std::uint32_t>(result.constrained.width) |
+                                                                 result.width_state)),
+                               dx::VmValue::Int(static_cast<int>(static_cast<std::uint32_t>(result.constrained.height) |
+                                                                 result.height_state))}));
+        return dx::VmValue::Void();
+    });
+    // No Drawable layout/state/draw stack is claimed. Execute the genuine View
+    // protocol for geometry and visibility; the leaf renderer consumes backing.
+    for (const auto& [name, sig] :
+         std::array<std::pair<const char*, const char*>, 5>{{{"setFrame", "(IIII)Z"},
+                                                             {"onRtlPropertiesChanged", "(I)V"},
+                                                             {"drawableStateChanged", "()V"},
+                                                             {"setSelected", "(Z)V"},
+                                                             {"setVisibility", "(I)V"}}}) {
+        builder.VirtualMethod(name, sig, [name, sig](dx::IntrinsicContext& c) {
+            if (std::string_view(name) == "onRtlPropertiesChanged" && c.arguments[0].AsInt() != 0)
+                ImageFailure(c.vm, "RTL image unsupported");
+            const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto index = c.vm.Linker().FindVtableIndex(type, name, sig);
+            std::vector<dx::VmValue> args{dx::VmValue::Ref(c.receiver)};
+            args.insert(args.end(), c.arguments.begin(), c.arguments.end());
+            const auto out = c.vm.Call(c.vm.Linker().Class(type).vtable.at(*index), args);
+            if (out.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                      out.exception};
+            return out.value;
+        });
+    }
+    return std::move(builder).Build();
 }
 
 [[noreturn]] void TextInputFailure(dx::Interpreter& vm, std::string message) {

@@ -958,7 +958,7 @@ struct InflateNode {
 };
 
 std::vector<std::byte> InflateXml(const InflateNode& root) {
-    std::vector<std::string> strings{"layout_width", "layout_height", "layout", "padding", "id"};
+    std::vector<std::string> strings{"layout_width", "layout_height", "layout", "padding", "id", "scaleType"};
     const auto intern = [&](const std::string& name) {
         auto it = std::ranges::find(strings, name);
         if (it == strings.end()) {
@@ -981,8 +981,8 @@ std::vector<std::byte> InflateXml(const InflateNode& root) {
     bytes.insert(bytes.end(), pool.begin(), pool.end());
     Append16(bytes, 0x0180);
     Append16(bytes, 8);
-    Append32(bytes, 28);
-    for (auto id : {0x010100f4U, 0x010100f5U, 0U, 0x010100d5U, 0x010100d0U})
+    Append32(bytes, 32);
+    for (auto id : {0x010100f4U, 0x010100f5U, 0U, 0x010100d5U, 0x010100d0U, 0x0101011dU})
         Append32(bytes, id);
     const auto emit = [&](const auto& self, const InflateNode& node) -> void {
         const auto tag = intern(node.tag);
@@ -1004,6 +1004,7 @@ std::vector<std::byte> InflateXml(const InflateNode& root) {
                                : attr.id == 0x010100f5 ? 1U
                                : attr.id == 0          ? 2U
                                : attr.id == 0x010100d5 ? 3U
+                               : attr.id == 0x0101011d ? 5U
                                                        : 4U;
             Append32(bytes, 0xffffffffU);
             Append32(bytes, index);
@@ -1187,8 +1188,12 @@ TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic f
               {"include", {{0, 1, 0x7f030002}}, {}}}},
             {"merge", {}, {{"View", small, {}}}},
             {"merge", {}, {{"View", small, {}}, {"TextView", small, {}}}}};
-        for (const auto* tag : {"ImageView", "Button", "EditText", "ScrollView", "ViewStub", "blink"})
-            layouts.push_back({"merge", {}, {{"View", small, {}}, {tag, small, {}}}});
+        // ImageView now constructs; MATRIX remains an explicit unsupported request.
+        for (const auto* tag : {"ImageView", "Button", "EditText", "ScrollView", "ViewStub", "blink"}) {
+            auto attributes = small;
+            if (std::string_view(tag) == "ImageView") attributes.push_back({0x0101011d, 16, 0});
+            layouts.push_back({"merge", {}, {{"View", small, {}}, {tag, attributes, {}}}});
+        }
         InstallInflateLayouts(f, layouts);
         f.On(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030001)});
         const auto root = f.context->content_view;
@@ -1228,6 +1233,7 @@ TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic f
         for (std::size_t i = 2; i < layouts.size(); ++i) {
             const auto error =
                 f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(static_cast<int>(0x7f030001 + i))});
+            INFO("layout index: " << i);
             REQUIRE(error.exception.IsValid());
             CHECK(f.linker.Class(error.exception_class).descriptor == (i == layouts.size() - 1
                                                                            ? "Ljava/lang/UnsupportedOperationException;"
@@ -2010,5 +2016,117 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
         const auto failed = f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030002)});
         CHECK(failed.exception.IsValid());
         CHECK(f.context->content_view == old);
+    }
+}
+
+TEST_CASE("DVM-296 ImageView XML APK src matches code Java state and measurement") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = TextOwner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        constexpr std::uint32_t resource = 0x7f030060;
+        f.context->arsc.entries.push_back({.resource_id = resource,
+                                           .type_name = "drawable",
+                                           .entry_name = "image",
+                                           .string_value = "res/drawable/fixture.png",
+                                           .value_type = 3,
+                                           .value_data = 2,
+                                           .density = 160});
+        const auto parser = OpenAttributeXml(
+            f, owner, AttributeXml({{{0x01010119, 1, resource}, {0x0101011d, 16, 6}, {0x0101042f, 16, 96}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
+        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+        const auto xml = f.New("Landroid/widget/ImageView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                               {VmValue::Ref(owner), VmValue::Ref(parser)});
+        const auto code = f.New("Landroid/widget/ImageView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{xml, code});
+        f.On(code, "setImageResource", "(I)V", {VmValue::Int(resource)});
+        const auto st = f.On(xml, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref;
+        f.On(code, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", {VmValue::Ref(st)});
+        f.On(code, "setImageAlpha", "(I)V", {VmValue::Int(96)});
+        for (const auto view : {xml, code}) {
+            const auto d = f.On(view, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+            CHECK(f.linker.Class(f.model.ObjectClass(d)).descriptor == "Landroid/graphics/drawable/BitmapDrawable;");
+            CHECK(f.On(d, "getIntrinsicWidth", "()I").AsInt() == 2);
+            CHECK(f.On(d, "getIntrinsicHeight", "()I").AsInt() == 1);
+            CHECK(JavaField(f, view, "mDrawable", "Landroid/graphics/drawable/Drawable;").bits == d.Value());
+            CHECK(f.On(view, "getImageAlpha", "()I").AsInt() == 96);
+            CHECK(f.On(view, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == st);
+            const auto matrix = VmObjectRef{JavaField(f, view, "mMatrix", "Landroid/graphics/Matrix;").bits};
+            CHECK(f.On(matrix, "isIdentity", "()Z").AsInt() == 1);
+            const auto& state = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
+            REQUIRE(state.image_bitmap);
+            CHECK(state.image_bitmap->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+        }
+        for (auto mode : {0U, 0x40000000U, 0x80000000U}) {
+            for (auto view : {xml, code})
+                f.On(view, "measure", "(II)V",
+                     {VmValue::Int(static_cast<int>(mode | 10)), VmValue::Int(static_cast<int>(mode | 8))});
+            CHECK(f.On(xml, "getMeasuredWidth", "()I").AsInt() == f.On(code, "getMeasuredWidth", "()I").AsInt());
+            CHECK(f.On(xml, "getMeasuredHeight", "()I").AsInt() == f.On(code, "getMeasuredHeight", "()I").AsInt());
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        // Requests rejected in both XML and the public API; neutral defaults are source-proven.
+        for (const auto attr : std::array<XmlValue, 10>{{{0x0101011d, 16, 0},
+                                                         {0x0101011d, 16, 2},
+                                                         {0x0101011d, 16, 4},
+                                                         {0x0101011e, 18, 1},
+                                                         {0x0101011f, 5, 0x1000},
+                                                         {0x01010120, 5, 0x1000},
+                                                         {0x01010121, 28, 0xffff0000},
+                                                         {0x0101031c, 5, 0x1000},
+                                                         {0x01010122, 18, 1},
+                                                         {0x01010123, 18, 1}}}) {
+            const auto p = OpenAttributeXml(f, owner, AttributeXml({{attr}}));
+            const auto object = f.vm.NewIntrinsicInstance("Landroid/widget/ImageView;");
+            const auto ctor =
+                f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/widget/ImageView;"), "<init>",
+                                          "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+            const auto outcome =
+                f.vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner), VmValue::Ref(p)});
+            CHECK(outcome.exception.IsValid());
+        }
+    }
+}
+
+TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and explicit precedence") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = TextOwner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        f.context->arsc.entries.push_back(Style(
+            0x7f020071, 0, {{0x01010119, 28, 0xff884422, {}}, {0x0101011d, 16, 5, {}}, {0x0101042f, 16, 64, {}}}));
+        f.context->arsc.entries.push_back(Style(0x7f020072, 0, {{0x01010072, 1, 0x7f020071, {}}}));
+        const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020072), VmValue::Int(1)});
+        const auto parser = OpenAttributeXml(
+            f, owner, AttributeXml({{{0x01010119, 28, 0xff223344}, {0x0101011d, 16, 1}, {0x0101042f, 16, 96}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        const auto xml =
+            f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                  {VmValue::Ref(owner), VmValue::Ref(parser)});
+        const auto code = f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{xml, code});
+        CHECK(f.On(code, "getImageAlpha", "()I").AsInt() == 64);
+        const auto original = f.On(code, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        CHECK(f.On(original, "getColor", "()I").cat1 == 0xff884422);
+        const auto desired = f.On(xml, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
+        CHECK(f.On(desired, "getColor", "()I").cat1 == 0xff223344);
+        const auto scale = f.On(xml, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref;
+        CHECK(f.On(scale, "ordinal", "()I").AsInt() == 1);
+        f.On(code, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(desired)});
+        f.On(code, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", {VmValue::Ref(scale)});
+        f.On(code, "setImageAlpha", "(I)V", {VmValue::Int(96)});
+        for (const auto view : {xml, code}) {
+            CHECK(f.On(view, "isFocusable", "()Z").AsInt() == 1);
+            CHECK(f.On(view, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == desired);
+            CHECK(f.On(view, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == scale);
+            CHECK(f.On(view, "getImageAlpha", "()I").AsInt() == 96);
+            f.On(view, "measure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+            CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() == 1);
+            CHECK(f.On(view, "getMeasuredHeight", "()I").AsInt() == 1);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

@@ -25,43 +25,40 @@ namespace {
         denominator);
 }
 
-[[nodiscard]] Rect ImageDestination(const UiNode& node,
-                                    const UiBitmap& bitmap) {
+[[nodiscard]] Rect ImageDestination(const UiNode& node, const Size source) {
     const Rect content{node.screen_frame.left + node.padding.left,
                        node.screen_frame.top + node.padding.top,
                        node.screen_frame.right - node.padding.right,
                        node.screen_frame.bottom - node.padding.bottom};
     const auto content_width = std::max(0, content.right - content.left);
     const auto content_height = std::max(0, content.bottom - content.top);
-    if (content_width == 0 || content_height == 0 || bitmap.width <= 0 ||
-        bitmap.height <= 0) {
+    if (content_width == 0 || content_height == 0 || source.width <= 0 || source.height <= 0) {
         return {content.left, content.top, content.left, content.top};
     }
-    std::int32_t width = bitmap.width;
-    std::int32_t height = bitmap.height;
+    std::int32_t width = source.width;
+    std::int32_t height = source.height;
     if (node.image_scale_type == ImageScaleType::FitXy) {
         width = content_width;
         height = content_height;
     } else if (node.image_scale_type == ImageScaleType::FitCenter ||
                (node.image_scale_type == ImageScaleType::CenterInside &&
-                (bitmap.width > content_width ||
-                 bitmap.height > content_height))) {
-        if (static_cast<std::int64_t>(content_width) * bitmap.height <=
-            static_cast<std::int64_t>(content_height) * bitmap.width) {
+                (source.width > content_width || source.height > content_height))) {
+        if (static_cast<std::int64_t>(content_width) * source.height <=
+            static_cast<std::int64_t>(content_height) * source.width) {
             width = content_width;
-            height = ScaleRounded(bitmap.height, content_width, bitmap.width);
+            height = ScaleRounded(source.height, content_width, source.width);
         } else {
             height = content_height;
-            width = ScaleRounded(bitmap.width, content_height, bitmap.height);
+            width = ScaleRounded(source.width, content_height, source.height);
         }
     } else if (node.image_scale_type == ImageScaleType::CenterCrop) {
-        if (static_cast<std::int64_t>(content_width) * bitmap.height >=
-            static_cast<std::int64_t>(content_height) * bitmap.width) {
+        if (static_cast<std::int64_t>(content_width) * source.height >=
+            static_cast<std::int64_t>(content_height) * source.width) {
             width = content_width;
-            height = ScaleRounded(bitmap.height, content_width, bitmap.width);
+            height = ScaleRounded(source.height, content_width, source.width);
         } else {
             height = content_height;
-            width = ScaleRounded(bitmap.width, content_height, bitmap.height);
+            width = ScaleRounded(source.width, content_height, source.height);
         }
     }
     // API19 ImageView adds 0.5 then truncates the centered translation.
@@ -120,8 +117,12 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
             found != bitmaps.end() ? found->second : nullptr;
         if (image) {
             const auto& bitmap = *image;
-            out.emplace_back(DrawBitmap{ImageDestination(node, bitmap),
-                                        image, node.alpha * node.image_alpha});
+            // Java Drawable intrinsic dimensions include target density; backing
+            // dimensions continue to describe the immutable pixel buffer.
+            const auto source = external && node.intrinsic.width > 0 && node.intrinsic.height > 0
+                                    ? node.intrinsic
+                                    : Size{bitmap.width, bitmap.height};
+            out.emplace_back(DrawBitmap{ImageDestination(node, source), image, node.alpha * node.image_alpha});
         }
     }
     if (!node.text.empty() ||

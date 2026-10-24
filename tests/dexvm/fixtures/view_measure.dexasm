@@ -355,3 +355,51 @@
     iget v0, v1, Ltest/TextMeasureFails;->counter:I
     return v0
 .end method
+
+.class public Ltest/ImageMeasureOverride;
+.super Landroid/widget/ImageView;
+.field private counter:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/ImageView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 6
+    iget v0, v3, Ltest/ImageMeasureOverride;->counter:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v3, Ltest/ImageMeasureOverride;->counter:I
+    const/16 v0, 37
+    const/16 v1, 19
+    invoke-virtual {v3, v0, v1}, Landroid/view/View;->setMeasuredDimension(II)V
+    return-void
+.end method
+.method public calls()I
+.registers 2
+    iget v0, v1, Ltest/ImageMeasureOverride;->counter:I
+    return v0
+.end method
+
+.class public Ltest/ImageMeasureSuper;
+.super Landroid/widget/ImageView;
+.field private counter:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/ImageView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 6
+    iget v0, v3, Ltest/ImageMeasureSuper;->counter:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v3, Ltest/ImageMeasureSuper;->counter:I
+    invoke-super {v3, v4, v5}, Landroid/widget/ImageView;->onMeasure(II)V
+    return-void
+.end method
+.method public calls()I
+.registers 2
+    iget v0, v1, Ltest/ImageMeasureSuper;->counter:I
+    return v0
+.end method

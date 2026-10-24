@@ -285,3 +285,7 @@ Declare_javax_microedition_khronos_egl_EGLSurface(const Context &context);
 } // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics { Decl Declare_android_graphics_SurfaceTexture(const Context&); }
+
+namespace ogplay::runtime::android_intrinsics {
+void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view);
+}

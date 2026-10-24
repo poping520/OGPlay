@@ -164,3 +164,7 @@ SurfaceView 三种 surface_layer 为 UiNode 唯一配置事实；上层发布 su
 开孔沿用相同 clip，后绘制的控件保留；窗口上层不对 UI 开孔。光栅后重新认证最终
 透明性，清除已绘制像素也能正确失效缓存。视频仍由上层按同一 geometry 合成，
 UiTree 不持有播放器或 guest 引用，不依赖解码器。
+
+实验 ImageView 光栅以同一投影 epoch 的 Drawable intrinsic（含 density）计算五种缩放目标，
+不可变像素 backing 保留原尺寸用于采样；纯色 intrinsic=-1 仍填充内容区。HostLayout Legacy
+继续用原像素尺寸，renderer 不重新测量或改写投影几何。

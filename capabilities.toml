@@ -2137,3 +2137,8 @@ test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check;
 status = "partial"
 test = "tests/dexvm/paint_measure_tests.cpp"
 note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定ASCII字表与有fallback字形的基本CJK；完整shaping、绘制特性、TextPaint/Layout/Editor及TextView构造明确失败。生产Legacy保持。"
+
+[dexvm.text_constructor]
+status = "partial"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-294"
+note = "DVM-294：仅实验配对的TextView三构造，真实View/Theme/TypedArray与defStyleAttr；plain文本、px字号、纯色、四样式、绝对gravity、有界行策略和四位图槽。宿主单一文本owner，身份随View GC。未知/未支持属性主题明确失败；测量、setText/getText、TextPaint/Editor/Layout未开放，生产Legacy保持。"

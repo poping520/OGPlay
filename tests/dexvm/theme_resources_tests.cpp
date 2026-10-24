@@ -522,7 +522,7 @@ std::vector<std::byte> AttributeXml(const std::vector<std::vector<XmlValue>>& ta
     for (const auto& attrs : tags)
         for (const auto& attr : attrs)
             if (std::ranges::find(ids, attr.id) == ids.end()) ids.push_back(attr.id);
-    std::vector<std::string> names{"fixture"};
+    std::vector<std::string> names{"style"};
     for (std::size_t i = 1; i < ids.size(); ++i)
         names.push_back("a" + std::to_string(i));
     std::vector<std::byte> bytes;
@@ -1704,5 +1704,286 @@ TEST_CASE("DVM-292 unsupported leaf resources fail before publishing six slots")
             xml.attributes = {Attr(a, 1, 0)};
             CHECK(f.context->theme_resources.Styled({token}, 0, 0, &xml, std::array{a}, f.context->arsc)[0].type == 0);
         }
+    }
+}
+
+namespace {
+constexpr std::uint32_t text_theme = 0x7f020040, text_default = 0x7f020041, text_appearance = 0x7f020042;
+
+VmObjectRef TextOwner(ContainerVm& f, const std::vector<std::byte>& pool = {}) {
+    f.context->ui_test_accessibility_disabled = true;
+    f.context->arsc = Table();
+    const std::array styles{Style(text_theme, theme_id,
+                                  {{0x01010064, 1, 0, {}},
+                                   {0x01010065, 1, 0, {}},
+                                   {0x01010034, 1, 0, {}},
+                                   {0x01010084, 1, text_default, {}}}),
+                            Style(text_default, 0, {{0x01010034, 1, text_appearance, {}}}),
+                            Style(text_appearance, 0,
+                                  {{0x01010098, 28, 0xff123456, {}},
+                                   {0x01010095, 5, 0x1200, {}},
+                                   {0x01010097, 16, 2, {}},
+                                   {0x010103ac, 3, 0, std::string("serif")}})};
+    f.context->arsc.entries.insert(f.context->arsc.entries.end(), styles.begin(), styles.end());
+    // An application explicitly removes unused selection/hint/link presentation.
+    // These are real @null overrides, never filtering in the adapter/provider.
+    for (const auto id : {0x01010099U, 0x0101009aU, 0x0101009bU, 0x010102c5U, 0x010102c6U, 0x010102c7U, 0x01010314U,
+                          0x01010315U, 0x0101035eU, 0x0101035fU, 0x01010374U})
+        f.context->arsc.entries[3].bag.push_back({id, 1, 0, {}});
+    f.context->arsc.global_string_pool =
+        pool.empty() ? StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true) : pool;
+    f.context->application_theme = text_theme;
+    const auto owner = f.New("Landroid/app/Activity;");
+    ogplay::test::AttachViewTestContext(f.vm, owner);
+    f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
+    return owner;
+}
+
+const ui::UiNode& TextState(ContainerVm& f, VmObjectRef view) {
+    REQUIRE(f.context->object_to_ui_node.contains(view.Value()));
+    return *f.context->ui_tree.Get(f.context->object_to_ui_node.at(view.Value()));
+}
+
+VmCallOutcome ConstructText(ContainerVm& f, VmObjectRef owner, VmObjectRef parser = VmObjectRef{},
+                            int style = 0x01010084) {
+    const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
+    f.Checked(f.vm.EnsureClassInitialized(type));
+    const auto ctor =
+        f.linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
+    REQUIRE(ctor);
+    const auto view = f.vm.NewIntrinsicInstance("Landroid/widget/TextView;");
+    return f.vm.Call(*ctor,
+                     std::array{VmValue::Ref(view), VmValue::Ref(owner), VmValue::Ref(parser), VmValue::Int(style)});
+}
+}  // namespace
+
+TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = TextOwner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto plain = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto plain_root = f.vm.ProtectReferences(std::array{plain});
+        const auto& base = TextState(f, plain);
+        CHECK(base.text.empty());
+        CHECK(base.text_size_px == 18);
+        CHECK(base.text_color == 0x123456ff);
+        CHECK(base.text_style == 2);
+        CHECK(base.gravity == 0x33);
+        CHECK(base.max_lines == 0x7fffffff);
+        const auto face = f.context->view_adapter_references.at(plain.Value()).text_typeface;
+        REQUIRE(face.IsValid());
+        CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
+        f.context->arsc.entries.push_back({});
+        auto& string = f.context->arsc.entries.back();
+        string.resource_id = 0x7f030040;
+        string.type_name = "string";
+        string.value_type = 3;
+        string.string_value = "Plain text";
+        string.value_data = 1;
+        const auto parser = OpenAttributeXml(f, owner,
+                                             AttributeXml({{{0x0101014f, 1, 0x7f030040},
+                                                            {0x01010095, 5, 0x1a00},
+                                                            {0x01010098, 28, 0xffabcdef},
+                                                            {0x010100af, 16, 0x55},
+                                                            {0x01010153, 16, 3},
+                                                            {0x010100da, 18, 1},
+                                                            {0x010100e5, 18, 1},
+                                                            {0x010100e6, 18, 1}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        const auto view = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                                {VmValue::Ref(owner), VmValue::Ref(parser)});
+        const auto view_root = f.vm.ProtectReferences(std::array{view});
+        const auto& xml = TextState(f, view);
+        CHECK(xml.text == u"Plain text");
+        CHECK(xml.text_size_px == 26);
+        CHECK(xml.text_color == 0xabcdefff);
+        CHECK(xml.gravity == 0x55);
+        CHECK(xml.max_lines == 3);
+        CHECK(xml.text_style == 2);
+        CHECK(f.On(view, "isFocusable", "()Z").AsInt() == 1);
+        CHECK(f.On(view, "isClickable", "()Z").AsInt() == 1);
+        CHECK(f.On(view, "isLongClickable", "()Z").AsInt() == 1);
+        const auto trace = f.vm.Trace("", 10000);
+        for (
+            const auto signature :
+            {"Landroid/view/View;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+             "Landroid/content/res/Resources$Theme;->obtainStyledAttributes(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
+             "Landroid/content/res/TypedArray;->getDimensionPixelSize(II)I",
+             "Landroid/content/res/TypedArray;->getText(I)Ljava/lang/CharSequence;"})
+            CHECK(std::any_of(trace.begin(), trace.end(), [&](const auto& e) {
+                return e.class_descriptor + "->" + e.method_name + e.method_descriptor == signature;
+            }));
+        static_cast<void>(f.vm.CollectGarbage("text-constructor-identity"));
+        CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
+        CHECK_FALSE(f.linker.FindFieldRecursive(type, "mTypeface", "Landroid/graphics/Typeface;"));
+        for (const auto name : {"mText", "mLayout", "mEditor"}) {
+            const auto& cls = f.linker.Class(type);
+            const auto field = std::find_if(cls.own_instance_fields.begin(), cls.own_instance_fields.end(),
+                                            [&](auto id) { return f.linker.Field(id).name == name; });
+            REQUIRE(field != cls.own_instance_fields.end());
+            CHECK(f.linker.Field(*field).is_unimplemented);
+        }
+        CHECK(f.OnOutcome(view, "getPaint", "()Landroid/text/TextPaint;").exception.IsValid());
+        CHECK(f.OnOutcome(view, "getText", "()Ljava/lang/CharSequence;").exception.IsValid());
+        CHECK(f.OnOutcome(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)}).exception.IsValid());
+    }
+}
+
+TEST_CASE("DVM-294 TextView style precedence defaults line policy and failure boundaries") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = TextOwner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        f.context->arsc.entries.push_back(
+            Style(0x7f020043, 0, {{0x01010095, 5, 0x1400, {}}, {0x01010098, 28, 0xff111111, {}}}));
+        f.context->arsc.entries.push_back(Style(0x7f020044, 0, {{0x01010095, 5, 0x1600, {}}}));
+        for (auto& entry : f.context->arsc.entries)
+            if (entry.resource_id == text_theme) entry.bag.push_back({def, 1, 0x7f020043, {}});
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(text_theme)});
+        const auto parser = OpenAttributeXml(f, owner, AttributeXml({{{0, 1, 0x7f020044}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        const auto custom =
+            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(def)});
+        CHECK(TextState(f, custom).text_size_px == 20);
+        CHECK(TextState(f, custom).text_color == 0x111111ff);
+        const auto explicit_style =
+            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(parser), VmValue::Int(def)});
+        CHECK(TextState(f, explicit_style).text_size_px == 22);
+        CHECK(TextState(f, explicit_style).text_color == 0x111111ff);
+        const auto styled =
+            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                  {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        CHECK(TextState(f, styled).text_size_px == 15);
+        CHECK(TextState(f, styled).text_color == 0x000000ff);
+        const auto single_parser =
+            OpenAttributeXml(f, owner, AttributeXml({{{0x0101015d, 18, 1}, {0x010100ab, 16, 0}}}));
+        const auto single_root = f.vm.ProtectReferences(std::array{single_parser});
+        const auto single =
+            f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                  {VmValue::Ref(owner), VmValue::Ref(single_parser)});
+        CHECK(TextState(f, single).max_lines == 1);
+        CHECK(f.context->view_adapter_references.at(single.Value()).text_single_line);
+        CHECK(f.ledger.Unimplemented().empty());
+        // Each independent unsupported class is a requested, non-neutral value.
+        for (const auto attr : std::vector<XmlValue>{{0x01010220, 16, 1},
+                                                     {0x0101016b, 18, 1},
+                                                     {0x010100ab, 16, 3},
+                                                     {0x0101038c, 18, 1},
+                                                     {0x01010161, 28, 0xff000001},
+                                                     {0x010100b0, 16, 1},
+                                                     {0x0101021d, 16, 2},
+                                                     {0x01010154, 16, 2},
+                                                     {0x01010157, 16, 2},
+                                                     {0x01010217, 5, 0x100},
+                                                     {0x01010218, 4, 0x40000000},
+                                                     {0x01010171, 5, 0x100},
+                                                     {0x01010392, 1, 0x7f030099},
+                                                     {0x01010150, 16, 2},
+                                                     {0x0101015d, 18, 1},
+                                                     {0x010100af, 16, 0x800003},
+                                                     {0x010105ff, 16, 1}}) {
+            INFO(attr.id);
+            const auto p = OpenAttributeXml(f, owner, AttributeXml({{attr}}));
+            const auto root = f.vm.ProtectReferences(std::array{p});
+            CHECK(ConstructText(f, owner, p).exception.IsValid());
+        }
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        CHECK(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
+        ContainerVm spans(backend);
+        auto styled_pool = StringPool({"serif", "Plain text", "res/drawable/fixture.png"}, true);
+        styled_pool.insert(styled_pool.begin() + 40, 12, std::byte{0});
+        Set32(styled_pool, 12, 3);
+        Set32(styled_pool, 20, 52);
+        Set32(styled_pool, 24, static_cast<std::uint32_t>(styled_pool.size()));
+        Set32(styled_pool, 40, 0xffffffff);
+        Set32(styled_pool, 44, 0);
+        Set32(styled_pool, 48, 0xffffffff);
+        for (const auto word : {0U, 0U, 1U, 0xffffffffU, 0xffffffffU, 0xffffffffU})
+            Append32(styled_pool, word);
+        Set32(styled_pool, 4, static_cast<std::uint32_t>(styled_pool.size()));
+        CHECK(ogplay::loader::ParseCompiledStringPool(styled_pool)->HasStringStyles());
+        const auto span_owner = TextOwner(spans, styled_pool);
+        const auto span_failure = ConstructText(spans, span_owner);
+        CHECK(span_failure.exception.IsValid());
+        CHECK(span_failure.exception_message.find("spans") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater failure is atomic") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = TextOwner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        constexpr std::uint32_t image = 0x7f030050;
+        f.context->arsc.entries.push_back({.resource_id = image,
+                                           .type_name = "drawable",
+                                           .entry_name = "compound",
+                                           .string_value = "res/drawable/fixture.png",
+                                           .value_type = 3,
+                                           .value_data = 2,
+                                           .density = 160});
+        const auto parser = OpenAttributeXml(
+            f, owner,
+            AttributeXml(
+                {{{0x0101016f, 1, image}, {0x0101016d, 1, image}, {0x01010170, 1, image}, {0x0101016e, 1, image}}}));
+        const auto parser_root = f.vm.ProtectReferences(std::array{parser});
+        // Parser owns its immutable document; the APK now supplies the bitmap.
+        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
+        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+        const auto view = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                                {VmValue::Ref(owner), VmValue::Ref(parser)});
+        {
+            const auto root = f.vm.ProtectReferences(std::array{view});
+            const auto& refs = f.context->view_adapter_references.at(view.Value()).text_compounds;
+            for (std::size_t i = 0; i < 4; ++i) {
+                CHECK(TextState(f, view).compound_drawables[i].resource_id == image);
+                CHECK(TextState(f, view).compound_drawables[i].width == 2);
+                CHECK(TextState(f, view).compound_drawables[i].height == 1);
+                REQUIRE(refs[i].IsValid());
+                const auto& pixels = f.context->ui_drawables.at(refs[i].Value()).leaf_pixels;
+                REQUIRE(pixels);
+                CHECK(pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+            }
+            static_cast<void>(f.vm.CollectGarbage("text-compound-rooted"));
+            for (const auto ref : refs)
+                CHECK(f.context->ui_drawables.contains(ref.Value()));
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+        static_cast<void>(f.vm.CollectGarbage("text-compound-unrooted"));
+        CHECK_FALSE(f.context->view_adapter_references.contains(view.Value()));
+        // Inflate into an unattached tree: measurement is intentionally unopened.
+        f.context->activity = owner;
+        // The ARSC serializer used by this fixture has no styled-string bag pool.
+        for (auto& entry : f.context->arsc.entries)
+            if (entry.resource_id == text_appearance)
+                entry.bag = {{0x01010095, 5, 0x1200, {}}, {0x01010098, 28, 0xff123456, {}}, {0x01010096, 16, 2, {}}};
+        InstallInflateLayouts(f, {{"TextView", InflateSize(20, 10), {}},
+                                  {"FrameLayout",
+                                   InflateSize(40, 20),
+                                   {{"View", InflateSize(10, 10), {}}, {"TextView", InflateSize(20, 10), {}}}}});
+        const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
+        const auto inflater_root = f.vm.ProtectReferences(std::array{inflater});
+        const auto tree = f.On(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                               {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
+                              .ref;
+        const auto tree_root = f.vm.ProtectReferences(std::array{tree});
+        CHECK(f.linker.Class(f.model.ObjectClass(tree)).descriptor == "Landroid/widget/TextView;");
+        CHECK(TextState(f, tree).text_size_px == 18);
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto old_root =
+            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(old_root)});
+        const auto old = f.context->content_view;
+        REQUIRE(old.IsValid());
+        for (auto& entry : f.context->arsc.entries)
+            if (entry.resource_id == text_default) entry.bag.push_back({0x01010220, 16, 1, {}});
+        const auto failed = f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030002)});
+        CHECK(failed.exception.IsValid());
+        CHECK(f.context->content_view == old);
     }
 }

@@ -151,14 +151,18 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         const auto frame = vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;");
         const auto linear = vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;");
         const auto relative = vm.Linker().ResolveDescriptor("Landroid/widget/RelativeLayout;");
+        const auto text = vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
+        // Construction/input only. TextView's own ROM-shape onMeasure remains
+        // failure until the separately reviewed leaf measurement adapter.
         if (kind != ui::UiClass::View &&
+            !(kind == ui::UiClass::TextView && vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::RelativeLayout &&
               vm.Linker().IsAssignable(relative, vm.Model().ObjectClass(view)))) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_measure_nonleaf", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                     "JavaTraversal only supports plain Views and test ViewGroups"};
+                                     "JavaTraversal View kind has no reviewed construction adapter"};
         }
     }
     dexvm::IntrinsicContext call{vm, view, {}};

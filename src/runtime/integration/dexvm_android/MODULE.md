@@ -494,3 +494,12 @@ measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mT
 固定ASCII字表/基本CJK、1024单位、1..128px、flags位集0x501以外明确失败并记账；
 完整 shaping、Paint 绘制、TextPaint/Layout/Editor 与 TextView 构造保持 failure。
 真实finalize及GC sweep/teardown 删除实例测量状态；生产 Legacy handler 与 payload 保持原行为。
+
+## 实验 TextView 构造输入
+
+ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，精确调用 ROM View
+属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
+UiNode 的文本、字号、颜色、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
+View adapter 状态另存独立 singleLine 位，并保活 Typeface/Drawable 身份及其不可变 backing，随 View trace/sweep。
+不写 mText/mLayout/mEditor，不开放 getPaint singleton 或 TextView measure/setter/getter。
+未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。

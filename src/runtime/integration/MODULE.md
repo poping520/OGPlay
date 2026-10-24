@@ -393,3 +393,8 @@ committed/slab_free/应急池与尺寸级别属于共享 provider，不按 Strin
 UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布；MUTF-8 复制协议不变。
 
 实验 Paint 测量状态按 Java 对象身份拥有，GC sweep 退役；Typeface 强边仅由 Java 字段追踪。
+
+实验 TextView 构造经 ROM View/Theme/TypedArray 解析，宿主独占文本输入；
+文本/样式在 UiNode，独立 singleLine 策略在同一 View adapter 状态中；
+Typeface/compound Drawable 身份由 View adapter 强边 trace/sweep，不镜像 Java mText/mLayout。
+测量及 TextPaint/Editor 保持明确失败；不改变生产 Legacy 路径。

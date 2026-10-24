@@ -273,6 +273,9 @@ void RegisterAndroidOwnerAttachedStateTable(
                 visit_ref(found->second.window_owner);
                 visit_ref(found->second.focus_listener);
                 visit_ref(found->second.system_ui_listener);
+                visit_ref(found->second.text_typeface);
+                for (const auto ref : found->second.text_compounds)
+                    visit_ref(ref);
             }
             if (const auto found = context->ui_view_layout_params.find(key);
                 found != context->ui_view_layout_params.end()) visit_ref(found->second);

@@ -830,6 +830,7 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
 
   // Experimental bounded measurement state; Typeface remains a Java strong field.
+  std::unordered_set<std::uint32_t> identity_matrices;
   struct PaintMeasureState final {
       std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
       float text_size{12.0F};     // API19 SkPaint default.

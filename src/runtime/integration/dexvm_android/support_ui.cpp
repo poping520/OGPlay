@@ -16,6 +16,8 @@
 namespace ogplay::runtime {
 
 void RefreshAndroidImageDrawables(DexVmAndroidContext& context) {
+    // JavaTraversal derives image inputs from Java fields at measure/publication.
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return;
     for (const auto& [view, drawable] : context.ui_view_images) {
         const auto node = FindViewUiNode(context, view);
         if (!node) continue;
@@ -152,8 +154,11 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         const auto linear = vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;");
         const auto relative = vm.Linker().ResolveDescriptor("Landroid/widget/RelativeLayout;");
         const auto text = vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
+        const auto image = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
         // TextView uses its reviewed pure leaf adapter, never host tree layout.
         if (kind != ui::UiClass::View &&
+            !((kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton) &&
+              vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::TextView && vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
@@ -312,6 +317,9 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
             entry.clip_children = (flags & 1) != 0;
             entry.clip_to_padding = (flags & 2) != 0;
         }
+        const auto kind = context.ui_tree.Get(*node)->kind;
+        if (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton)
+            android_intrinsics::ProjectAndroidImage(vm, context, view);
         if (context.ui_tree.Get(*node)->kind == ui::UiClass::TextView && visibility != ui::Visibility::Gone) {
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
@@ -1346,8 +1354,92 @@ dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call,
     return object;
 }
 
+void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
+    const auto read = [&](const char* name, const char* descriptor) {
+        const auto id = vm.Linker().FindFieldRecursive(type, name, descriptor);
+        if (!id || vm.Linker().Field(*id).is_unimplemented) throw std::logic_error("ImageView field unavailable");
+        return vm.Model().InstanceSlots(view)[vm.Linker().Field(*id).slot].bits;
+    };
+    const dx::VmObjectRef drawable{read("mDrawable", "Landroid/graphics/drawable/Drawable;")};
+    const dx::VmObjectRef scale{read("mScaleType", "Landroid/widget/ImageView$ScaleType;")};
+    const auto ordinal = CallAndroidMethod(vm, scale, "ordinal", "()I").AsInt();
+    ui::ImageScaleType scale_type;
+    switch (ordinal) {
+    case 1: scale_type = ui::ImageScaleType::FitXy; break;
+    case 3: scale_type = ui::ImageScaleType::FitCenter; break;
+    case 5: scale_type = ui::ImageScaleType::Center; break;
+    case 6: scale_type = ui::ImageScaleType::CenterCrop; break;
+    case 7: scale_type = ui::ImageScaleType::CenterInside; break;
+    default: throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported ImageView scaleType"};
+    }
+    std::shared_ptr<const ui::UiBitmap> image;
+    std::optional<std::uint32_t> color;
+    ui::Size intrinsic{};
+    if (drawable.IsValid()) {
+        const auto& descriptor = vm.Linker().Class(vm.Model().ObjectClass(drawable)).descriptor;
+        const auto found = context.ui_drawables.find(drawable.Value());
+        if (found == context.ui_drawables.end() || (descriptor != "Landroid/graphics/drawable/BitmapDrawable;" &&
+                                                    descriptor != "Landroid/graphics/drawable/ColorDrawable;")) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unreviewed image Drawable"};
+        }
+        auto& state = found->second;
+        const auto source = state.bitmap_drawable
+                                ? CallAndroidMethod(vm, drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref
+                                : dx::VmObjectRef{};
+        if (source.IsValid()) {
+            const auto bitmap = context.bitmaps.find(source.Value());
+            if (bitmap == context.bitmaps.end() || bitmap->second.recycled)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "ImageView bitmap recycled"};
+            if (state.leaf_pixels)
+                image = state.leaf_pixels;
+            else {
+                const auto& b = bitmap->second;
+                if (!state.image_projection || state.bitmap_revision != b.pixels->Revision() ||
+                    b.pixels->Locks() != 0) {
+                    auto pixels = std::make_shared<ui::UiBitmap>();
+                    pixels->width = b.width;
+                    pixels->height = b.height;
+                    for (const auto argb : b.pixels->Snapshot()) {
+                        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16U));
+                        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8U));
+                        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb));
+                        pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24U));
+                    }
+                    state.image_projection = std::move(pixels);
+                    state.bitmap_revision = b.pixels->Revision();
+                }
+                image = state.image_projection;
+            }
+        } else if (state.color)
+            color = (*state.color << 8U) | (*state.color >> 24U);
+        else if (!state.bitmap_drawable)
+            throw std::logic_error("missing image backing");
+        intrinsic = {CallAndroidMethod(vm, drawable, "getIntrinsicWidth", "()I").AsInt(),
+                     CallAndroidMethod(vm, drawable, "getIntrinsicHeight", "()I").AsInt()};
+    }
+    const auto node = EnsureViewUiNode(context, view, UiClassForObject(vm, view));
+    auto& target = *context.ui_tree.Get(node);
+    if (target.intrinsic != intrinsic) context.ui_tree.MarkLayoutDirty(node);
+    target.intrinsic = intrinsic;
+    target.image_bitmap = std::move(image);
+    target.image_color = color;
+    target.image_scale_type = scale_type;
+    target.image_alpha = static_cast<float>(read("mAlpha", "I")) / 255.0F;
+    target.image_resource_id = 0;
+    // Weak derived index: Java mDrawable is the only identity and GC edge.
+    if (drawable.IsValid())
+        context.ui_view_images[view.Value()] = drawable;
+    else
+        context.ui_view_images.erase(view.Value());
+    context.ui_tree.MarkDrawDirty(node);
+}
+
 void BindImageDrawable(dx::Interpreter& vm, const Context& context,
     const dx::VmObjectRef view, const dx::VmObjectRef drawable) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        throw std::logic_error("Java image identity must be written through its reviewed adapter");
     const auto node = EnsureViewUiNode(*context, view, UiClassForObject(vm, view));
     if (drawable.IsValid() && !context->ui_drawables.contains(drawable.Value())) {
         if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);

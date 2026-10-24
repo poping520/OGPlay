@@ -76,6 +76,27 @@ add_custom_target(ogplay_member_sources_fixture
             "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.jar")
 add_dependencies(ogplay_dexvm_fixtures ogplay_member_sources_fixture)
 
+# VD-04 fixed test counterpart. Production always loads the Legacy payload.
+add_custom_command(
+    OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
+           "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.manifest.json"
+    COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py" build
+        --view-measure-test-output "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/compose_bootdex.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure.surface.json.gz"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/api19.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"
+    VERBATIM
+)
+add_custom_target(ogplay_view_measure_fixture
+    DEPENDS "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
+            "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.manifest.json")
+add_dependencies(ogplay_dexvm_fixtures ogplay_view_measure_fixture)
+
 # API19 ICU property fallbacks follow the bundled payload metadata, not host ICU.
 set(_ogplay_platform_manifest "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/manifest.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ogplay_platform_manifest}")

@@ -43,7 +43,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
 - `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
-  每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy。
+  每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy；
+  实验 plain View 测量投影可提交 measured 与空 frame，表示尚未 layout，本层不补算 guest bounds。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
   当前 target、严格递增非零 epoch 的完整窗口批次。节点必须存在、唯一、全树连通且满足

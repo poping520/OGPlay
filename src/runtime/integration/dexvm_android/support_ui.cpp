@@ -137,11 +137,27 @@ void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                      const dexvm::VmObjectRef view) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto type = vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto field = vm.Linker().FindFieldRecursive(type, "mMeasuredWidth", "I");
+        if (!field || vm.Linker().Field(*field).is_unimplemented)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                     "JavaTraversal requires its paired measure payload"};
+        if (android_intrinsics::UiClassForObject(vm, view) != ui::UiClass::View ||
+            vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
+                                     vm.Model().ObjectClass(view))) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_measure_nonleaf", 0);
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                     "JavaTraversal only supports plain test roots/leaves"};
+        }
+    }
     dexvm::IntrinsicContext call{vm, view, {}};
     dexvm::IntrinsicCall fields(call);
     // View.java:3438. Context prebinding is separate from construction:
     // a failed constructor must never suppress a later resource exception.
     const auto owner = fields.GetRef(*context.view_context_field);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !owner.IsValid())
+        throw dexvm::VmJavaThrow{"Ljava/lang/NullPointerException;", "Measured View requires Context"};
     const auto roots = vm.ProtectReferences(std::array{view, owner});
     const auto resources =
         owner.IsValid()
@@ -159,6 +175,18 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     fields.SetInt(tokens.user_padding[4], std::numeric_limits<std::int32_t>::min());
     for (const auto token : tokens.padding_defined)
         fields.SetInt(token, 0);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto& measure = *context.view_java_measure_fields;
+        // Pinned ROM View(Context): old specs MIN_VALUE, flags2 0x22408,
+        // SOUND_EFFECTS_ENABLED | HAPTIC_FEEDBACK_ENABLED. Measured fields
+        // remain VM zero until ROM setMeasuredDimension writes them.
+        for (const auto token : measure.old_specs)
+            fields.SetInt(token, std::numeric_limits<std::int32_t>::min());
+        fields.SetInt(measure.flags[0], 0);
+        fields.SetInt(measure.flags[1], 0x22408);
+        fields.SetInt(measure.flags[2], 0);
+        fields.SetInt(measure.view_flags, 0x18000000);
+    }
     if (android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
         // Preserve the existing bounded Widget.Button background projection.
         WriteAndroidViewPadding(vm, context, view, {6, 4, 6, 4}, false);
@@ -175,6 +203,43 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         }
     }
     ProjectViewLayoutInputs(vm, context, view);
+}
+
+void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                         const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
+                                         const std::uint64_t epoch) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection requires Java owner thread"};
+    if (root != context.content_view || target.content_revision != context.ui_content_revision ||
+        target.window_generation != context.ui_tree.Generation())
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
+    const auto node = FindViewUiNode(context, root.Value());
+    if (!node || android_intrinsics::UiClassForObject(vm, root) != ui::UiClass::View ||
+        vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
+                                 vm.Model().ObjectClass(root)))
+        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                 "Measured projection requires a plain root"};
+    dexvm::IntrinsicContext call{vm, root, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto& measure = *context.view_java_measure_fields;
+    if ((fields.GetInt(measure.flags[0]) & 0x800) == 0)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
+    const ui::Size measured{fields.GetInt(measure.measured[0]) & 0x00ffffff,
+                            fields.GetInt(measure.measured[1]) & 0x00ffffff};
+    // VD-04 does not invent a Java frame. The synthetic host window root has
+    // viewport geometry; the guest leaf projects measured size and empty bounds.
+    const ui::UiGeometryProjection projection{
+        target,
+        epoch,
+        {{target.root,
+          std::nullopt,
+          {0, 0, target.metrics.width, target.metrics.height},
+          {target.metrics.width, target.metrics.height},
+          ui::Visibility::Visible,
+          {}},
+         {*node, target.root, {}, measured, ui::Visibility::Visible, ReadAndroidViewPadding(vm, context, root)}}};
+    context.ui_tree.CommitProjection(projection);
+    context.ui_measure_epoch = epoch;
 }
 
 void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
@@ -251,6 +316,7 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
 }
 
 void ResetViewUiState(DexVmAndroidContext& context) {
+    context.ui_measure_requests.clear();
     context.ui_touch_capture = 0;
     context.ui_touch_activity = dexvm::VmObjectRef{};
     context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();

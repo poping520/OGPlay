@@ -7,7 +7,9 @@ stable; reuse its assembly, audits, canonical ZIP and metadata implementations.
 from __future__ import annotations
 
 import argparse
+import copy
 import io
+import json
 import json
 from pathlib import Path
 import tempfile
@@ -17,9 +19,44 @@ import build_bootdex as builder
 import member_sources
 
 
-def assemble(recipe, work):
+def measure_sources(document):
+    """Fixed test-only counterpart; never selected by runtime/user settings."""
+    policy = json.loads(Path(__file__).with_name('view-measure-sources.json').read_text(encoding='utf-8'))
+    document = copy.deepcopy(document)
+    cls, = document['classes']
+    if set(policy) != {'rom_methods', 'rom_fields', 'overlays', 'surface', 'surface_sha256'}:
+        raise builder.BuildError('invalid test measure policy')
+    method_keys = {r['signature'] for r in cls['methods']}
+    field_keys = {f['signature'] for f in cls['fields']}
+    if (len(set(policy['rom_methods'])) != len(policy['rom_methods'])
+            or len(set(policy['rom_fields'])) != len(policy['rom_fields'])
+            or set(policy['rom_methods']) & set(policy['overlays'])
+            or (set(policy['rom_methods']) | set(policy['overlays'])) - method_keys
+            or set(policy['rom_fields']) - field_keys):
+        raise builder.BuildError('conflicting or unknown test measure member')
+    for row in cls['methods']:
+        key = row['signature']
+        if key in policy['rom_methods']:
+            row['source'] = 'rom'
+            row.pop('review', None)
+        elif key in policy['overlays']:
+            row['source'] = 'overlay'
+            row['review'] = policy['overlays'][key]
+        else:
+            row['source'] = 'failure'
+            row.pop('review', None)
+    for field in cls['fields']:
+        if field['signature'] in policy['rom_fields']:
+            field['source'] = 'rom'
+    cls['surface'], cls['surface_sha256'] = policy['surface'], policy['surface_sha256']
+    return document
+
+
+def assemble(recipe, work, measure=False):
     dex = builder.assemble(recipe, work)
     document = member_sources.load()
+    if measure:
+        document = measure_sources(document)
     for cls in document['classes']:
         sources = [s for s, owners in recipe.items() if cls['owner'] in owners]
         if len(sources) != 1 or (builder.ROOT / cls['rom_input']).resolve() != builder.source_path(sources[0]).resolve():
@@ -29,13 +66,13 @@ def assemble(recipe, work):
     return dex, payload
 
 
-def build():
+def build(measure=False):
     recipe = builder.load_recipe()
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
             tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:
-        dex, payload = assemble(recipe, Path(first))
-        if (dex, payload) != assemble(recipe, Path(second)):
+        dex, payload = assemble(recipe, Path(first), measure)
+        if (dex, payload) != assemble(recipe, Path(second), measure):
             raise builder.BuildError('two BootDex DEX/member source assemblies differ')
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
         selected = builder.compile_expected_class_names(recipe, Path(work))
@@ -71,21 +108,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', nargs='?', choices=('build', 'check'))
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--view-measure-test-output', type=Path,
+                        help='write/check the fixed experimental test counterpart instead of production')
     args = parser.parse_args()
     try:
         if args.self_test:
             return self_test()
         if not args.mode:
             parser.error('build, check or --self-test required')
-        jar, dex, recipe = build()
+        jar, dex, recipe = build(args.view_measure_test_output is not None)
         builder.audit_crc32(dex)
         builder.audit_zip_streams(dex)
         builder.audit_native_crypto(dex)
         manifest = builder.manifest_bytes(boot_metadata(jar, dex, recipe))
+        output = args.view_measure_test_output or builder.OUTPUT
+        metadata = output.with_suffix('.manifest.json') if args.view_measure_test_output else builder.MANIFEST
         if args.mode == 'build':
-            builder.OUTPUT.write_bytes(jar)
-            builder.MANIFEST.write_bytes(manifest)
-        elif builder.OUTPUT.read_bytes() != jar or builder.MANIFEST.read_bytes() != manifest:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(jar)
+            metadata.write_bytes(manifest)
+        elif output.read_bytes() != jar or metadata.read_bytes() != manifest:
             raise builder.BuildError('BootDex payload is stale; run compose_bootdex.py build')
         print(f'BootDex composition {args.mode}: {len(builder.class_names(dex))} classes, '
               f'DEX {builder.sha256(dex)}, JAR {builder.sha256(jar)}')

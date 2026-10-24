@@ -65,7 +65,7 @@ def validate(document, texts, surface):
     `surface` is a pinned dump-surface; no dependency receives future-implementation
     credit. All selected bodies, including constructors/clinit, are audited.
     """
-    if set(document) != {'schema', 'classes'} or document['schema'] != 1:
+    if not {'schema', 'classes'} <= set(document) or set(document) - {'schema', 'classes', 'dispatch_ledger'} or document['schema'] != 1:
         raise ValueError('invalid member source schema')
     classes = document['classes']
     if not isinstance(classes, list):
@@ -176,6 +176,27 @@ def validate(document, texts, surface):
         for m in cls['methods']:
             m.setdefault('access_flags', 1)
     analyzer = selector.Analyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
+    # ADR-0159 applies only to ordinary composition bodies. Keep the default
+    # selector and the complete clinit traversal on the strict analyzer.
+    class OrdinaryAnalyzer(selector.Analyzer):
+        def invoke(self, current, op, exact, fails, required, calls):
+            self.invoke_index += 1
+            _, opcode, receiver, cls, name, desc = op
+            if (opcode.split('/')[0] in ('invoke-virtual', 'invoke-interface')
+                    and receiver not in exact and (cls, name) not in selector.DYNAMIC_TARGETS):
+                owners = self.virtual_impls(selector.array_base(cls), (name, desc))
+                if owners and None not in owners:
+                    site = (self.caller + '@' + str(self.invoke_index) + ':' + opcode
+                            + ' ' + cls + '->' + name + desc)
+                    dispatch_ledger[site] = [dict(signature=o + '->' + name + desc,
+                        source='implemented' if self.method_kind(o, (name, desc))
+                        in ('bytecode', 'intrinsic') else 'failure') for o in sorted(owners)]
+                    if len(owners) > 1:
+                        return
+            super().invoke(current, op, exact, fails, required, calls)
+
+    ordinary = OrdinaryAnalyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
+    dispatch_ledger = {}
     for owner in parsed:
         reasons = analyzer.parent_member_reasons(owner)
         if reasons:
@@ -184,12 +205,24 @@ def validate(document, texts, surface):
             if row['source'] != 'rom':
                 continue
             name, descriptor = key.split('(', 1)
-            reasons, _, _ = analyzer.summary((owner, name, '(' + descriptor))
+            if name == '<clinit>':
+                reasons, _ = analyzer.closure(owner)
+            else:
+                ordinary.caller, ordinary.invoke_index = owner + '->' + key, 0
+                reasons, _, calls = ordinary.summary((owner, name, '(' + descriptor))
+                # A class-use edge still initializes its class under the original
+                # closed-world rules, even when reached from an ordinary body.
+                for target, called_name, _ in calls:
+                    if called_name == '<clinit>':
+                        failures, _ = analyzer.closure(target)
+                        reasons += failures
             if reasons:
                 raise ValueError('selected-ROM-dependency: ' + repr(reasons))
 
-    # Signature-exact references. Check every selected body, not just clinit;
-    # default selector/ADR-0156 analysis is deliberately untouched.
+    # Fields retain exact availability checks. Invocation checks above preserve
+    # direct/static/super and exact-receiver guarantees while recording open
+    # virtual targets; treating every textual method reference as a direct call
+    # here would incorrectly reimpose the pre-0159 restriction.
     reference = re.compile(r'(L[^;\s]+;)->([^\s,}]+)')
     for cls in classes:
         methods, _ = inventory(texts[cls['owner']])
@@ -198,10 +231,19 @@ def validate(document, texts, surface):
                 continue
             body = re.sub(r'"(?:\\.|[^"\\])*"|#[^\n]*', '', methods[key]['body'])
             for owner, member in reference.findall(body):
+                if '(' in member:
+                    continue
                 if not implemented(owner, member, '(' not in member):
                     raise ValueError('parent-intrinsic-unimplemented-member/missing-dependency: '
                                      + cls['owner'] + '->' + key + ' -> ' + owner + '->' + member)
-    return canonical(document)
+    sealed = copy.deepcopy(document)
+    if dispatch_ledger:
+        sealed['dispatch_ledger'] = dispatch_ledger
+    else:
+        sealed.pop('dispatch_ledger', None)
+    if 'dispatch_ledger' in document and document['dispatch_ledger'] != dispatch_ledger:
+        raise ValueError('stale dispatch ledger')
+    return canonical(sealed)
 
 
 def load(path=DEFAULT):
@@ -338,7 +380,118 @@ def self_test():
             else:
                 raise AssertionError('accepted changed input ' + key)
     assert payload({'schema': 1, 'classes': []}, [], Path('.')) is None
+    dispatch_self_test()
     print('member_sources self-test passed (identity, ownership, conflicts, dependencies, native, overlay, deterministic, disabled)')
+
+
+def dispatch_self_test():
+    """ADR-0159 positive/negative controls without changing selector policy."""
+    owner = 'Ltest/MemberComposition;'
+    template = '''.class public Ltest/MemberComposition;
+.super Ljava/lang/Object;
+.field private static blocked:I
+.method static constructor <clinit>()V
+    .registers 1
+    CLINIT
+    return-void
+.end method
+.method public target()I
+    .registers 1
+    const/4 v0, 0x1
+    return v0
+.end method
+.method private failure()I
+    .registers 1
+    const/4 v0, 0x0
+    return v0
+.end method
+.method public static run(Ltest/MemberComposition;)I
+    .registers 2
+    BODY
+    const/4 v0, 0x0
+    return v0
+.end method
+'''
+    def sample(body, clinit='nop'):
+        text = template.replace('BODY', body).replace('CLINIT', clinit)
+        doc, _ = fixture(text)
+        next(r for r in doc['classes'][0]['methods'] if r['signature'] == 'failure()I')['source'] = 'failure'
+        surface = [dict(descriptor=owner, superclass='Ljava/lang/Object;', methods=[], fields=[])]
+        for name, status in [('Ready', 'implemented'), ('Failure', 'unimplemented-ledger')]:
+            surface.append(dict(descriptor='Ltest/' + name + ';', superclass=owner,
+                source='skeleton' if name == 'Failure' else 'intrinsic', fields=[], methods=[
+                    dict(name='target', descriptor='()I', status=status, binding='intrinsic'),
+                    dict(name='<init>', descriptor='()V', status='implemented', binding='intrinsic')]))
+        return doc, {owner: text}, surface
+
+    call = 'invoke-virtual {p0}, Ltest/MemberComposition;->target()I'
+    doc, texts, surface = sample(call)
+    encoded = validate(doc, texts, surface)
+    assert encoded == validate(copy.deepcopy(doc), texts, list(reversed(surface)))
+    sealed = json.loads(encoded)
+    targets = next(iter(sealed['dispatch_ledger'].values()))
+    assert targets == [
+        dict(signature='Ltest/Failure;->target()I', source='failure'),
+        dict(signature=owner + '->target()I', source='implemented'),
+        dict(signature='Ltest/Ready;->target()I', source='implemented')], targets
+    assert validate(sealed, texts, surface) == encoded
+    interface_doc, interface_texts, interface_surface = sample(
+        'invoke-interface {p0}, Ltest/Contract;->target()I')
+    interface_texts[owner] = interface_texts[owner].replace(
+        '.super Ljava/lang/Object;', '.super Ljava/lang/Object;\n.implements Ltest/Contract;')
+    interface_doc['classes'][0]['smali_sha256'] = digest(interface_texts[owner].encode())
+    interface_surface.append(dict(descriptor='Ltest/Contract;', superclass='Ljava/lang/Object;',
+        access_flags=0x601, source='skeleton', fields=[], methods=[dict(
+            name='target', descriptor='()I', access_flags=0x401,
+            status='implemented', binding='abstract-contract')]))
+    interface_sealed = json.loads(validate(interface_doc, interface_texts, interface_surface))
+    assert next(iter(interface_sealed['dispatch_ledger'].values())) == targets
+    bad_ledger = copy.deepcopy(sealed)
+    next(iter(bad_ledger['dispatch_ledger'].values()))[0]['source'] = 'implemented'
+    try:
+        validate(bad_ledger, texts, surface)
+    except ValueError as error:
+        assert 'stale dispatch ledger' in str(error)
+    else:
+        raise AssertionError('accepted tampered dispatch ledger')
+
+    negatives = {
+        'direct': 'invoke-direct {p0}, Ltest/MemberComposition;->failure()I',
+        'static': 'invoke-static {p0}, Ltest/MemberComposition;->failure()I',
+        'super': 'invoke-super {p0}, Ltest/Failure;->target()I',
+        'exact': ('new-instance v0, Ltest/Failure;\n'
+                  'invoke-direct {v0}, Ltest/Failure;-><init>()V\n'
+                  'invoke-virtual {v0}, Ltest/Failure;->target()I'),
+        'field-read': 'sget v0, Ltest/MemberComposition;->blocked:I',
+        'field-write': 'sput v0, Ltest/MemberComposition;->blocked:I',
+        'dynamic': 'invoke-static {p0}, Ljava/lang/Class;->forName(Ljava/lang/String;)Ljava/lang/Class;',
+        'dynamic-virtual': 'invoke-virtual {p0}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;',
+    }
+    for name, body in negatives.items():
+        bad, bodies, classes = sample(body)
+        # A real super call starts from the current class's parent.
+        if name == 'super':
+            bodies[owner] = bodies[owner].replace('.super Ljava/lang/Object;', '.super Ltest/Failure;')
+            bad['classes'][0]['smali_sha256'] = digest(bodies[owner].encode())
+            classes[0]['superclass'] = 'Ltest/Failure;'
+            classes[2]['superclass'] = 'Ljava/lang/Object;'
+        try:
+            validate(bad, bodies, classes)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('accepted ' + name)
+    # Strict clinit must inspect the ordinary callee too, rather than reuse its
+    # relaxed summary. This is the negative control for the policy split.
+    for clinit in [call, 'invoke-static {v0}, Ltest/MemberComposition;->run(Ltest/MemberComposition;)I']:
+        bad, bodies, classes = sample(call, clinit)
+        try:
+            validate(bad, bodies, classes)
+        except ValueError as error:
+            assert 'clinit-virtual-nonunique' in str(error), error
+        else:
+            raise AssertionError('accepted open dispatch reachable from clinit')
+    print('ADR-0159 dispatch self-test passed (all targets, failure, exact/direct/static/super, fields, dynamic, strict clinit, deterministic)')
 
 
 def main():

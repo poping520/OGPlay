@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -98,88 +99,94 @@ struct AndroidInputDevice final {
 // code-defined immutable list; handlers bind to the running guest session
 // (sound mixer, VFS, platform identity) through this shared context.
 
-// Fixed before VM startup. JavaTraversal is reserved and deliberately unavailable.
+// Fixed before VM startup; JavaTraversal is paired with a test-only payload.
 enum class AndroidUiTraversalOwner : std::uint8_t { Legacy, JavaTraversal };
-inline constexpr AndroidUiTraversalOwner kAndroidUiTraversalOwner = AndroidUiTraversalOwner::Legacy;
 
 struct DexVmAndroidContext final {
-  std::atomic_bool process_stopping{};
-  // Set from the owning native process before linking/startup. No host query.
-  std::optional<GuestMemorySnapshot> memory_snapshot;
-  std::optional<GuestProcessMemorySnapshot> process_memory_snapshot;
-  std::function<std::optional<GuestProcessMemorySnapshot>()> read_process_memory;
-  // Installed before Application startup; no host device or Binder discovery.
-  std::vector<AndroidInputDevice> input_devices;
-  AndroidGuestCallSession *session{};
-  // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
-  audio::OpenSlesPcmMixer *pcm_playback{};
-  // Documented shared desktop output fact. Frontends inject their session's
-  // actual mixer rate when it differs from the default desktop configuration.
-  std::uint32_t native_output_sample_rate{48000U};
-  // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
-  audio::JavaSoundPoolMixer *encoded_audio_playback{};
-  audio::EncodedMusicMixer *encoded_music{};
-  mutable std::mutex audio_policy_mutex;
-  std::array<std::int32_t, 10> stream_volume{7, 7, 7, 15, 7, 7, 7, 7, 7, 7};
-  std::array<bool, 10> stream_mute{};
-  // Process-wide APK native loader used by java.lang.System.load*.
-  // The application ClassLoader has one stable non-zero identity for the
-  // lifetime of this context; APS-5 intentionally does not invent a second
-  // loader namespace.
-  NativeLibraryLoader *native_libraries{};
-  std::shared_ptr<NativeActivityRuntime> native_activity;
-  std::uint64_t application_class_loader_token{1U};
-  loader::ArscTable arsc;
-  std::vector<std::byte> apk_bytes;
-  loader::ApkArchive archive;
-  std::vector<std::byte> boot_classpath_bytes;
-  loader::ApkArchive boot_classpath_archive;
-  std::string package_name;
-  // Guest-visible path of the installed APK. Context code/resource paths and
-  // ApplicationInfo source paths expose this instead of leaking the
-  // frontend's host path.
-  std::string package_resource_path;
-  // The installed guest inventory is sealed and contains only this APK.
-  // Missing standalone context facts are not an empty installation list.
-  bool package_inventory_known{};
-  // Internal sealed APK source, initialized only by ApkAssets().
-  std::shared_ptr<AndroidAssetManagerSource> apk_asset_source;
-  std::uint32_t package_version_code{};
-  std::string package_version_name;
-  std::uint32_t target_sdk_version{};
-  bool strict_webview_errors{};
-  std::uint32_t application_uid{10000U};
-  std::string application_class_name;
-  std::string application_process_name;
-  std::optional<loader::AndroidManifestLabel> application_label;
-  std::uint32_t application_icon{};
-  std::uint32_t application_theme{};
-  std::unordered_map<std::string, std::uint32_t> activity_themes;
-  std::unordered_map<std::string, loader::AndroidManifestMetaDataValue>
-      application_meta_data;
-  std::vector<std::string> requested_permissions;
-  bool permission_inventory_known{};
-  std::vector<loader::AndroidManifestPermissionDefinition> defined_permissions;
-  // Installed service discovery is limited to the sealed current-APK facts.
-  // An unconfigured standalone VM must not confuse missing metadata with
-  // absence.
-  bool service_inventory_known{};
-  bool activity_inventory_known{};
-  bool receiver_inventory_known{};
-  bool application_enabled{true};
-  std::vector<loader::AndroidManifestActivityComponent> activity_components;
-  std::vector<loader::AndroidManifestServiceComponent> service_components;
-  std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
-  // API19 registers a dispatcher before an absent bind returns false.
-  // Connections are strong edges of the Context, removed on unbind/sweep.
-  std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
-      service_connections;
-  struct LocalServiceBinding final {
-    std::uint64_t generation{};
-    dexvm::VmObjectRef owner{}, connection{}, intent{}, component{};
-    std::string name;
-    bool delivered{};
-  };
+    explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy)
+        : ui_traversal_owner(owner),
+          ui_tree(owner == AndroidUiTraversalOwner::Legacy ? ui::UiGeometryOwner::HostLayout
+                                                           : ui::UiGeometryOwner::ExternalProjection) {}
+
+    const AndroidUiTraversalOwner ui_traversal_owner;
+    std::uint64_t ui_measure_epoch{};
+    std::set<dexvm::VmObjectRef> ui_measure_requests;
+    std::atomic_bool process_stopping{};
+    // Set from the owning native process before linking/startup. No host query.
+    std::optional<GuestMemorySnapshot> memory_snapshot;
+    std::optional<GuestProcessMemorySnapshot> process_memory_snapshot;
+    std::function<std::optional<GuestProcessMemorySnapshot>()> read_process_memory;
+    // Installed before Application startup; no host device or Binder discovery.
+    std::vector<AndroidInputDevice> input_devices;
+    AndroidGuestCallSession* session{};
+    // One process-owned PCM backend shared by OpenSL ES and AudioTrack.
+    audio::OpenSlesPcmMixer* pcm_playback{};
+    // Documented shared desktop output fact. Frontends inject their session's
+    // actual mixer rate when it differs from the default desktop configuration.
+    std::uint32_t native_output_sample_rate{48000U};
+    // Process-owned encoded-audio mixer used by SoundPool and MediaPlayer.
+    audio::JavaSoundPoolMixer* encoded_audio_playback{};
+    audio::EncodedMusicMixer* encoded_music{};
+    mutable std::mutex audio_policy_mutex;
+    std::array<std::int32_t, 10> stream_volume{7, 7, 7, 15, 7, 7, 7, 7, 7, 7};
+    std::array<bool, 10> stream_mute{};
+    // Process-wide APK native loader used by java.lang.System.load*.
+    // The application ClassLoader has one stable non-zero identity for the
+    // lifetime of this context; APS-5 intentionally does not invent a second
+    // loader namespace.
+    NativeLibraryLoader* native_libraries{};
+    std::shared_ptr<NativeActivityRuntime> native_activity;
+    std::uint64_t application_class_loader_token{1U};
+    loader::ArscTable arsc;
+    std::vector<std::byte> apk_bytes;
+    loader::ApkArchive archive;
+    std::vector<std::byte> boot_classpath_bytes;
+    loader::ApkArchive boot_classpath_archive;
+    std::string package_name;
+    // Guest-visible path of the installed APK. Context code/resource paths and
+    // ApplicationInfo source paths expose this instead of leaking the
+    // frontend's host path.
+    std::string package_resource_path;
+    // The installed guest inventory is sealed and contains only this APK.
+    // Missing standalone context facts are not an empty installation list.
+    bool package_inventory_known{};
+    // Internal sealed APK source, initialized only by ApkAssets().
+    std::shared_ptr<AndroidAssetManagerSource> apk_asset_source;
+    std::uint32_t package_version_code{};
+    std::string package_version_name;
+    std::uint32_t target_sdk_version{};
+    bool strict_webview_errors{};
+    std::uint32_t application_uid{10000U};
+    std::string application_class_name;
+    std::string application_process_name;
+    std::optional<loader::AndroidManifestLabel> application_label;
+    std::uint32_t application_icon{};
+    std::uint32_t application_theme{};
+    std::unordered_map<std::string, std::uint32_t> activity_themes;
+    std::unordered_map<std::string, loader::AndroidManifestMetaDataValue> application_meta_data;
+    std::vector<std::string> requested_permissions;
+    bool permission_inventory_known{};
+    std::vector<loader::AndroidManifestPermissionDefinition> defined_permissions;
+    // Installed service discovery is limited to the sealed current-APK facts.
+    // An unconfigured standalone VM must not confuse missing metadata with
+    // absence.
+    bool service_inventory_known{};
+    bool activity_inventory_known{};
+    bool receiver_inventory_known{};
+    bool application_enabled{true};
+    std::vector<loader::AndroidManifestActivityComponent> activity_components;
+    std::vector<loader::AndroidManifestServiceComponent> service_components;
+    std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
+    // API19 registers a dispatcher before an absent bind returns false.
+    // Connections are strong edges of the Context, removed on unbind/sweep.
+    std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>> service_connections;
+
+    struct LocalServiceBinding final {
+        std::uint64_t generation{};
+        dexvm::VmObjectRef owner{}, connection{}, intent{}, component{};
+        std::string name;
+        bool delivered{};
+    };
   struct LocalService final {
     dexvm::VmObjectRef instance{}, binder{}, intent{};
   };
@@ -843,6 +850,16 @@ struct DexVmAndroidContext final {
   };
 
   std::optional<ViewJavaLayoutFields> view_java_layout_fields;
+
+  struct ViewJavaMeasureFields final {
+      std::array<dexvm::IntrinsicFieldHandle, 2> measured;
+      std::array<dexvm::IntrinsicFieldHandle, 2> old_specs;
+      std::array<dexvm::IntrinsicFieldHandle, 3> flags;
+      dexvm::IntrinsicFieldHandle cache;
+      dexvm::IntrinsicFieldHandle view_flags;
+  };
+
+  std::optional<ViewJavaMeasureFields> view_java_measure_fields;
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
 };
@@ -886,6 +903,10 @@ ExpandUiIncludes(std::span<const loader::BinaryXmlElement> elements,
 void AssignViewContext(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                        dexvm::VmObjectRef view, dexvm::VmObjectRef owner);
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view);
+// VD-04 test roots only: publish measured size with empty, not-yet-laid-out frame.
+// Reads Java authority; never writes measured/bounds or invokes LayoutUiTree.
+void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
+                                         const ui::UiProjectionTarget& target, std::uint64_t epoch);
 [[nodiscard]] ui::Insets ReadAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                                 dexvm::VmObjectRef view);
 [[nodiscard]] ui::Size ReadAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context,

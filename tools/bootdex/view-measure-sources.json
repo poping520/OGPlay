@@ -6,8 +6,11 @@
     "canResolveTextAlignment()Z",
     "canResolveTextDirection()Z",
     "computeOpticalInsets()Landroid/graphics/Insets;",
+    "getBottom()I",
     "getDefaultSize(II)I",
+    "getHeight()I",
     "getLayoutDirection()I",
+    "getLeft()I",
     "getMeasuredHeight()I",
     "getMeasuredHeightAndState()I",
     "getMeasuredState()I",
@@ -22,20 +25,30 @@
     "getRawTextAlignment()I",
     "getRawTextDirection()I",
     "getResources()Landroid/content/res/Resources;",
+    "getRight()I",
     "getSuggestedMinimumHeight()I",
     "getSuggestedMinimumWidth()I",
-    "hasRtlSupport()Z",
+    "getTop()I",
+    "getWidth()I",
+    "invalidate()V",
+    "invalidateParentCaches()V",
+    "invalidateParentIfNeeded()V",
     "isDrawablesResolved()Z",
+    "isHardwareAccelerated()Z",
     "isLayoutDirectionResolved()Z",
+    "isLayoutRequested()Z",
     "isPaddingResolved()Z",
     "isRtlCompatibilityMode()Z",
     "isTextAlignmentResolved()Z",
     "isTextDirectionResolved()Z",
+    "layout(IIII)V",
     "measure(II)V",
     "needRtlPropertiesResolution()Z",
+    "onLayout(ZIIII)V",
     "onMeasure(II)V",
     "onResolveDrawables(I)V",
     "onRtlPropertiesChanged(I)V",
+    "onSizeChanged(IIII)V",
     "resolveDrawables()V",
     "resolveLayoutDirection()Z",
     "resolveLayoutParams()V",
@@ -44,21 +57,36 @@
     "resolveSizeAndState(III)I",
     "resolveTextAlignment()Z",
     "resolveTextDirection()Z",
-    "setMeasuredDimension(II)V"
+    "setBottom(I)V",
+    "setFrame(IIII)Z",
+    "setMeasuredDimension(II)V",
+    "setOpticalFrame(IIII)Z",
+    "setRight(I)V",
+    "sizeChange(IIII)V"
   ],
   "rom_fields": [
+    "mAttachInfo:Landroid/view/View$AttachInfo;",
     "mBackground:Landroid/graphics/drawable/Drawable;",
+    "mBackgroundSizeChanged:Z",
+    "mBottom:I",
+    "mDisplayList:Landroid/view/DisplayList;",
     "mLayoutInsets:Landroid/graphics/Insets;",
     "mLayoutParams:Landroid/view/ViewGroup$LayoutParams;",
+    "mLeft:I",
+    "mListenerInfo:Landroid/view/View$ListenerInfo;",
     "mMeasureCache:Landroid/util/LongSparseLongArray;",
     "mMeasuredHeight:I",
     "mMeasuredWidth:I",
     "mOldHeightMeasureSpec:I",
     "mOldWidthMeasureSpec:I",
+    "mOverlay:Landroid/view/ViewOverlay;",
     "mParent:Landroid/view/ViewParent;",
     "mPrivateFlags2:I",
     "mPrivateFlags3:I",
     "mPrivateFlags:I",
+    "mRight:I",
+    "mTop:I",
+    "mTransformationInfo:Landroid/view/View$TransformationInfo;",
     "mViewFlags:I"
   ],
   "overlays": {
@@ -91,11 +119,11 @@
       "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
     },
     "requestLayout()V": {
-      "reason": "Process-local root request queue replaces AttachInfo/ViewRootImpl seam for measure-only test roots",
+      "reason": "Reviewed View.java:16412 and ViewRootImpl.java:1909-2110 process-local scheduling seam",
       "inputs": "receiver and Java measure cache/flags",
-      "outputs": "clear real LongSparseLongArray cache; flags |= 0x80001000; queue requester for next owner tick",
+      "outputs": "Clear Java measure cache; first-pass requests set FORCE_LAYOUT/INVALIDATED; second-pass requests are deferred without setting FORCE_LAYOUT",
       "state_owner": "Java fields; integration owns scheduling queue only",
-      "failure_boundary": "owner thread and unattached plain roots only; no during-layout protocol before VD-05; no fake ViewRootImpl/Binder"
+      "failure_boundary": "owner thread, plain test root/leaf; bound current root substitutes actual attach identity; no fabricated AttachInfo/ViewRootImpl/Binder; bounded nonconvergence fails with requester and epoch"
     },
     "setMinimumHeight(I)V": {
       "reason": "Retain exact default CHA dependency policy: ROM setters have non-unique requestLayout targets.",
@@ -131,8 +159,43 @@
       "outputs": "write padding and user left/right/bottom; virtual requestLayout only on change",
       "state_owner": "Java fields only",
       "failure_boundary": "reject scrollbar/inset flags; only experimental plain View"
+    },
+    "invalidate(Z)V": {
+      "reason": "View.java:10905 software dirty seam; reject hardware/animation/transformation state",
+      "inputs": "receiver, actual Java state and current process binding",
+      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes",
+      "state_owner": "Java mPrivateFlags with reviewed masks 0x20/0x200000/0x8000/0x80000000; current process dirty service",
+      "failure_boundary": "Only plain roots/leaves with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+    },
+    "notifySubtreeAccessibilityStateChangedIfNeeded()V": {
+      "reason": "View.java:7295 process-local test-root boundary; no accessibility subscribers or system service attached",
+      "inputs": "receiver, actual Java state and current process binding",
+      "outputs": "Mark current process draw dirty; no geometry writes or guest callbacks",
+      "state_owner": "Java geometry/flags; process UiTree dirty service only",
+      "failure_boundary": "Only plain roots/leaves with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+    },
+    "updateMatrix()V": {
+      "reason": "View.java:9304 direct dependency of ROM setRight/setBottom used by ROM sizeChange; bounded untransformed root",
+      "inputs": "actual mTransformationInfo",
+      "outputs": "Return only for the original null fast path; non-null records and throws UOE",
+      "state_owner": "Java; no matrix, geometry or transform writes",
+      "failure_boundary": "Transformation/Camera/Matrix closure is unsupported; never fabricates identity for an existing object"
+    },
+    "invalidate(IIII)V": {
+      "reason": "View.java:10905 software dirty seam; reject hardware/animation/transformation state",
+      "inputs": "receiver, actual Java state and current process binding",
+      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes",
+      "state_owner": "Java mPrivateFlags with reviewed masks 0x20/0x200000/0x8000/0x80000000; current process dirty service",
+      "failure_boundary": "Only plain roots/leaves with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+    },
+    "hasRtlSupport()Z": {
+      "reason": "VD-05 field-receiver constraint rejects non-null mContext with open failure targets; explicit process ApplicationInfo seam",
+      "inputs": "actual Java mContext and virtual Context.getApplicationInfo",
+      "outputs": "actual virtual ApplicationInfo.hasRtlSupport result; original exceptions propagate",
+      "state_owner": "Java Context/ApplicationInfo; no duplicated SDK flags",
+      "failure_boundary": "Plain root/leaf only; existing Context services; no fake null mContext and no unimplemented dispatch credit"
     }
   },
   "surface": "tools/bootdex/view-measure.surface.json.gz",
-  "surface_sha256": "8a03617edfa00104603830500e68dafbc6a693ca4169f9a60c229563ca27fb37"
+  "surface_sha256": "09da4fb29f842868021ef43cc547770318e3b53f56b6ba4f2e8a5dab2c4e89d5"
 }

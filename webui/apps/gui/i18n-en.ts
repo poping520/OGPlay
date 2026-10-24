@@ -46,7 +46,7 @@ export const en: Record<string, string> = {
   '设置': 'Settings',
   '游戏详情': 'Game details',
   '游戏条目': 'Games',
-  '{n} 个安装实例': '{n} installed',
+  '{n} 款游戏': '{n} games',
   ' · 搜索“{query}”': ' · search “{query}”',
   '排序': 'Sort',
   '名称': 'Name',

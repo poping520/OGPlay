@@ -350,7 +350,7 @@ function App() {
     </header>
     <section class="stage" aria-label={t('游戏详情')} aria-busy={loading}>{hero()}</section>
     <section class="rail" aria-label={t('游戏条目')}>
-      <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 个安装实例', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
+      <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 款游戏', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
         <label class="sort">{t('排序')}<select aria-label={t('排序')} value={sort} onChange={event => setSort(event.currentTarget.value as Sort)}><option value="name">{t('名称')}</option><option value="newest">{t('最近导入')}</option><option value="oldest">{t('最早导入')}</option></select></label>
       </div>
       <div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>

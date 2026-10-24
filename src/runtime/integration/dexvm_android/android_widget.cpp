@@ -88,7 +88,8 @@ Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_Button(const Context& context) {
-    static_cast<void>(context);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/widget/Button;", "Landroid/widget/TextView;").Build();
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Button;", "Landroid/widget/TextView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
@@ -1730,7 +1731,8 @@ Decl ExperimentalTextView(const Context& context) {
     // No Editor/Layout/Drawables object graph is installed. These callbacks
     // execute the genuine View protocol; all text work belongs to the leaf owner.
     for (const auto& [name, sig] :
-         std::array<std::pair<const char*, const char*>, 8>{{{"onLayout", "(ZIIII)V"},
+         std::array<std::pair<const char*, const char*>, 9>{{{"onLayout", "(ZIIII)V"},
+                                                             {"onFocusChanged", "(ZILandroid/graphics/Rect;)V"},
                                                              {"onRtlPropertiesChanged", "(I)V"},
                                                              {"drawableStateChanged", "()V"},
                                                              {"setPadding", "(IIII)V"},

@@ -537,3 +537,15 @@ Matrix 接缝只初始化实际 identity 状态并提供 isIdentity/getValues/fi
 原 Matrix.IDENTITY_MATRIX 单例由 ROM clinit/Matrix$1 构造。native_instance/变换操作仍失败。
 其余 scaleType、matrix、tint、adjustViewBounds/maxWidth/maxHeight/baseline/crop 等非中性
 请求、任意 Drawable/custom draw 继续记账失败；原方法不因 adapter 获得 ROM 算法实现信用。
+
+## 实验 Button 文本路径
+
+JavaTraversal 配对保留 Button 的完整 ROM 形状；三个薄构造执行 ROM，保留非零 buttonStyle
+及调用方 defStyleAttr，委托已有 TextView 构造和同一文本/字体/compound/叶测量服务。
+Button 与 TextView 同步冻结 line-plan；focus/click 沿真实 View 协议，不增 Button adapter。
+plain 文本的 TextView.onFocusChanged 为受审父协议接缝；Editor/spans/marquee/
+transformation 不在支持输入内，不读取相应 failure 字段或伪初始化其状态。
+实验 Button 不取得 Legacy 默认背景、padding、clickable 或行数投影；属性仍通过真实
+Theme/TypedArray 解析。默认主题的不支持背景/状态色等请求沿 ADR-0147 明确失败，
+应用 style/主题可用纯色或 @null 显式覆盖。accessibility 两个 Button 覆写仍 failure。
+Legacy 控件默认值与生产配方保持。

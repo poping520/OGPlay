@@ -159,7 +159,8 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         if (kind != ui::UiClass::View &&
             !((kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton) &&
               vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&
-            !(kind == ui::UiClass::TextView && vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
+            !((kind == ui::UiClass::TextView || kind == ui::UiClass::Button) &&
+              vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::RelativeLayout &&
@@ -207,7 +208,8 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         fields.SetInt(context.view_java_hierarchy_fields->id, -1);
         fields.SetInt(context.view_java_hierarchy_fields->label_for_id, -1);
     }
-    if (android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy &&
+        android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
         // Preserve the existing bounded Widget.Button background projection.
         WriteAndroidViewPadding(vm, context, view, {6, 4, 6, 4}, false);
     }
@@ -320,7 +322,7 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
         const auto kind = context.ui_tree.Get(*node)->kind;
         if (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton)
             android_intrinsics::ProjectAndroidImage(vm, context, view);
-        if (context.ui_tree.Get(*node)->kind == ui::UiClass::TextView && visibility != ui::Visibility::Gone) {
+        if ((kind == ui::UiClass::TextView || kind == ui::UiClass::Button) && visibility != ui::Visibility::Gone) {
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
             auto& text = *context.ui_tree.Get(*node);
@@ -427,6 +429,14 @@ ui::UiNodeId EnsureViewUiNode(DexVmAndroidContext& context,
     const auto found = context.object_to_ui_node.find(view.Value());
     if (found != context.object_to_ui_node.end()) return found->second;
     const auto node = context.ui_tree.CreateNode(kind);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && kind == ui::UiClass::Button) {
+        // Legacy defaults have no authority over the ROM theme consumption path.
+        auto& text = *context.ui_tree.Get(node);
+        text.background_color.reset();
+        text.padding = {};
+        text.clickable = false;
+        text.max_lines = 0x7fffffff;
+    }
     BindViewToUiNode(context, view, node);
     return node;
 }
@@ -452,8 +462,8 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
                                      DexVmAndroidContext& context,
                                      const dexvm::VmObjectRef view,
                                      const ui::UiNodeId node) {
-    if (context.ui_tree.Get(node)->kind != ui::UiClass::Button ||
-        context.ui_view_backgrounds.contains(view.Value())) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal ||
+        context.ui_tree.Get(node)->kind != ui::UiClass::Button || context.ui_view_backgrounds.contains(view.Value())) {
         return;
     }
     const auto drawable =

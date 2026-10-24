@@ -2140,8 +2140,8 @@ note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字�
 
 [dexvm.text_constructor]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp"
-note = "DVM-294/295：实验配对TextView构造与有界plain文本setter/getter，真实View/Theme/TypedArray；纯叶onMeasure虚派setMeasuredDimension，固定字体baseline与compound line-plan随完整epoch冻结。宿主单一文本owner、身份随View GC；未知主题/属性、RTL、shaping、TextPaint/Editor/Layout明确失败。生产Legacy保持。"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp"
+note = "DVM-294/295/297：实验TextView真实View/Theme/TypedArray构造与有界plain文本API；Button三个ROM薄构造保留buttonStyle，复用文本、focus/click、字体与compound。纯叶测量虚派setMeasuredDimension，baseline/line-plan随epoch冻结；宿主独占文本输入，身份随View GC。默认皮肤/状态色、未知主题/属性、RTL、shaping、TextPaint/Editor/Layout明确失败；允许显式受支持style覆盖，生产Legacy保持。"
 
 [dexvm.image_leaf]
 status = "partial"

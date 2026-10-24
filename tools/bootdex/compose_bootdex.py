@@ -61,6 +61,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-leaf-resources-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-paint-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-image-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-button-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -138,7 +139,7 @@ def build(measure=False):
                      'Landroid/text/style/BulletSpan;'}
         # ADR-0155 retains declarations in disabled TextView/Paint bodies too.
         # Pure ROM helpers do not enable TextView construction or Editor.
-        hierarchy.update({'Landroid/widget/ImageView;', 'Landroid/widget/ImageButton;',
+        hierarchy.update({'Landroid/widget/Button;', 'Landroid/widget/ImageView;', 'Landroid/widget/ImageButton;',
                           'Landroid/widget/ImageView$ScaleType;', 'Landroid/graphics/Matrix;', 'Landroid/graphics/Matrix$1;',
             'Landroid/graphics/TemporaryBuffer;',
             'Landroid/text/method/AllCapsTransformationMethod;',

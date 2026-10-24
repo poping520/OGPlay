@@ -16,6 +16,7 @@ import zipfile
 
 import build_bootdex as builder
 import member_sources
+import theme_projection
 
 
 def measure_sources(document):
@@ -54,6 +55,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-linear-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-relative-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-xml-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-theme-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -82,6 +84,11 @@ def build(measure=False):
         hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
                      *(c['owner'] for c in measure_sources(member_sources.load())['classes']
                        if c['owner'].startswith(('Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
+                     'Landroid/content/res/AssetManager;', 'Landroid/content/res/Resources;',
+                     'Landroid/content/res/Resources$Theme;', 'Landroid/content/res/TypedArray;',
+                     'Landroid/content/res/AssetManager$AssetInputStream;',
+                     'Landroid/app/IconPackHelper;', 'Landroid/app/IconPackHelper$ColorFilterUtils;',
+                     'Landroid/app/IconPackHelper$ColorFilterUtils$Builder;',
                      'Landroid/view/View$ListenerInfo;',
                      'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
                      'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',
@@ -105,6 +112,10 @@ def build(measure=False):
     if payload is not None:
         resources[member_sources.ENTRY] = payload
     resources[builder.SYSTEM_RESOURCES_ENTRY] = builder.system_resources_payload(dex)
+    if measure:
+        projected = theme_projection.generate()
+        theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
+        resources[theme_projection.ENTRY] = projected
     return builder.make_jar(dex, resources), dex, recipe
 
 
@@ -117,6 +128,16 @@ def boot_metadata(jar, dex, recipe):
                 manifest_sha256=builder.sha256(archive.read(member_sources.ENTRY)),
                 composer='tools/bootdex/compose_bootdex.py',
                 composer_sha256=builder.file_sha256(Path(__file__)))
+        if theme_projection.ENTRY in archive.namelist():
+            metadata['theme_projection'] = dict(entry=theme_projection.ENTRY, schema_version=1,
+                sha256=builder.sha256(archive.read(theme_projection.ENTRY)))
+    # Publish experimental provenance independently of the production JAR bytes.
+    if 'theme_projection' not in metadata:
+        metadata['experimental_theme_projection'] = dict(
+            scope='JavaTraversal paired payload only', entry=theme_projection.ENTRY,
+            schema_version=1, sha256=builder.sha256(theme_projection.generate()),
+            generator='tools/bootdex/theme_projection.py',
+            inputs_sha256=builder.file_sha256(theme_projection.POLICY))
     return metadata
 
 

@@ -26,7 +26,7 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     auto owner = runtime::AndroidUiTraversalOwner::Legacy;
     if (!sources.empty()) {
         core::JsonParseError parse_error;
-        const auto policy = core::JsonDocument::ParseStrict(sources, parse_error);
+        const auto policy = core::JsonDocument::ParseStrict(sources, parse_error, 4U * 1024U * 1024U);
         if (!policy) throw std::runtime_error("invalid member source diagnostic input");
         const auto classes = policy->Root().Member("classes").value_or(core::JsonValue{});
         for (std::size_t i = 0; i < classes.Size(); ++i) {

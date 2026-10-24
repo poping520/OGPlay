@@ -36,6 +36,7 @@ struct ArscEntry final {
     bool is_complex{};
     std::uint32_t parent{};
     std::vector<ArscBagValue> bag;
+    std::uint32_t changing_configurations{};
     std::uint8_t orientation{};
     std::uint16_t density{};
     std::uint16_t sdk_version{};
@@ -49,6 +50,8 @@ struct ArscTable final {
     std::string package_name;
     std::uint32_t package_id{};
     std::vector<ArscEntry> entries;
+    // Original global pool chunk, including style metadata and pool indices.
+    std::vector<std::byte> global_string_pool;
 
     [[nodiscard]] const ArscEntry* FindById(
         std::uint32_t resource_id) const noexcept;

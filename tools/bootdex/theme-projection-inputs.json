@@ -1,0 +1,27 @@
+{
+  "input_sha256": {
+    ".local/aosp/framework.jar": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+    ".local/aosp/framework/base/core/res/res/values/arrays.xml": "60a09aca5c2cffa528e7eede39d559d48f1b007026ff99f6c0c2cba8fd2f7887",
+    ".local/aosp/framework/base/core/res/res/values/attrs.xml": "96c0b7b2ebc2978fb06abc1243911ddb04203bda8e64cc35166a5c11c7bd186f",
+    ".local/aosp/framework/base/core/res/res/values/attrs_manifest.xml": "9e3f2338fdf979d57324c479446dd97aa398b2cea5979358bb25794db2dc69ad",
+    ".local/aosp/framework/base/core/res/res/values/bools.xml": "0dac5b8a56b311a235bcb2c7f8cd658abad1c26773e96318d8eb59adbfaf3a7c",
+    ".local/aosp/framework/base/core/res/res/values/colors.xml": "35559424c8a7552085e40cae3739dd26cce4521323b229b13b3f4d4ac6d5759f",
+    ".local/aosp/framework/base/core/res/res/values/config.xml": "5d014c61baa316270df15a6e1a36a5bb0543a2eb4da54f5182d33d7159153776",
+    ".local/aosp/framework/base/core/res/res/values/dimens.xml": "4e370ec1f8797a8e350cd713f8bd1036760bf19e568ccdcb80732b37ca9c8314",
+    ".local/aosp/framework/base/core/res/res/values/donottranslate-cldr.xml": "aad5b9fb9afc8dbb2cf9eccb41e9673fc89f8bd878e88df4cd932d1807243417",
+    ".local/aosp/framework/base/core/res/res/values/donottranslate-maps.xml": "6b1bd6cf29c7301c492b48efce461bbf17f8f3fd086b21d977cbd0470858ae60",
+    ".local/aosp/framework/base/core/res/res/values/donottranslate-names.xml": "e85419c8e4bf1b32e55f10184144b25a26d1d7ba2daebc140e5c568cd4c6f90b",
+    ".local/aosp/framework/base/core/res/res/values/donottranslate.xml": "21c8e6a354806c5dc823bff4ca350a98946ee50ef24af487b0fd4e6982f1c7c3",
+    ".local/aosp/framework/base/core/res/res/values/ids.xml": "d069b56982d2c9fc2e70a5f0dca9b6ac00fa68b1c008d91fbef532488607e5bd",
+    ".local/aosp/framework/base/core/res/res/values/integers.xml": "4e304be02546afdff734e3d7ebbdf1604e4164c492d3f478291bffb529b4f2d0",
+    ".local/aosp/framework/base/core/res/res/values/public.xml": "69bd943477dc09a5ec7beee3deca5671675c4b0ac84805565d96c2570709aa32",
+    ".local/aosp/framework/base/core/res/res/values/strings.xml": "c7d343e26c8a75371d8fb5ae53f15f57b2b0525fdd5680fb67b191edd3a89c9a",
+    ".local/aosp/framework/base/core/res/res/values/styles.xml": "0b7b274bd8e6ceef236c3abd61c72854ff1b6a2d64f6d7f76097cce334797e60",
+    ".local/aosp/framework/base/core/res/res/values/styles_device_defaults.xml": "615f2075f2a9b35ea24efa00dcbfd0ae746575a5350ca98a7ed8bd636b87b50a",
+    ".local/aosp/framework/base/core/res/res/values/symbols.xml": "7308e63d825098bd746ae1f7a125dfead48eee4263a42b2f4cc6f869268dbc49",
+    ".local/aosp/framework/base/core/res/res/values/themes.xml": "d19bcb3faf1032942fb8e438937ca6b66633f15c757f117254463e919d51eea2",
+    ".local/aosp/framework/base/core/res/res/values/themes_device_defaults.xml": "7fc92597654744f451372b1b3c7da549a9f47bb796d17766b6e511513c41212e",
+    ".local/aosp/framework2.jar": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+  },
+  "schema_version": 1
+}

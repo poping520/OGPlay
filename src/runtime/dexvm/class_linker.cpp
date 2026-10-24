@@ -379,7 +379,7 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
         Fail(DexVmErrorReason::invalid_member, "boot member sources: " + message);
     };
     core::JsonParseError error;
-    const auto document = core::JsonDocument::ParseStrict(member_sources, error);
+    const auto document = core::JsonDocument::ParseStrict(member_sources, error, 4U * 1024U * 1024U);
     if (!document) invalid("invalid JSON: " + error.message);
     const auto member = [&](const core::JsonValue value, const std::string_view name) {
         const auto found = value.Member(name);

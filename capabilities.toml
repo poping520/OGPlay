@@ -1993,6 +1993,11 @@ status = "partial"
 test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/build_bootdex.py check"
 note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；Legacy XmlResourceParser 为事件子集。DVM-287 实验 ROM XmlBlock/Parser 支持 APK compiled XML typed/raw 查询与生命周期；StringBlock 仅无样式池，系统 XML/span 失败。"
 
+[dexvm.bounded_theme]
+status = "partial"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "DVM-288/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。无系统 AssetManager、资源文件/span、控件属性构造或实验 inflater；Legacy 不变。"
+
 [runtime.guest_proc_maps]
 status = "partial"
 test = "tests/memory/address_space_tests.cpp#VFS-05; tests/runtime/vfs_tests.cpp#VFS-05; tests/runtime/syscall_tests.cpp#VFS-05; tests/runtime/android_guest_call_session_tests.cpp#VFS-05"

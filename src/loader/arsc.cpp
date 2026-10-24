@@ -1,6 +1,8 @@
 #include "ogplay/loader/arsc.h"
 
 #include <algorithm>
+#include <cstring>
+#include <map>
 
 #include "ogplay/core/byte_order.h"
 
@@ -183,6 +185,8 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
         if (chunk.type == kResStringPoolType && !saw_global_pool) {
             global_strings = ReadStringPool(reader, chunk);
             saw_global_pool = true;
+            result.global_string_pool.resize(chunk.size);
+            std::memcpy(result.global_string_pool.data(), bytes.data() + chunk.offset, chunk.size);
         } else if (chunk.type == kResTablePackageType) {
             ++packages;
             const auto package_base = chunk.offset;
@@ -205,8 +209,18 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                     reader, package_base + key_strings_offset);
                 key_names = ReadStringPool(reader, pool);
             }
+            std::map<std::uint8_t, std::vector<std::uint32_t>> type_flags;
             while (inner < chunk.End()) {
                 const auto sub = ReadChunk(reader, inner);
+                if (sub.type == kResTableTypeSpecType) {
+                    if (sub.header_size < 16) Fail(sub.offset, "resources.arsc truncated type spec header");
+                    const auto count = reader.U32(sub.offset + 12);
+                    if (count > (sub.size - sub.header_size) / 4U)
+                        Fail(sub.offset, "resources.arsc truncated type spec");
+                    auto& flags = type_flags[reader.U8(sub.offset + 8)];
+                    for (std::uint32_t i = 0; i < count; ++i)
+                        flags.push_back(reader.U32(sub.Body() + i * 4U));
+                }
                 if (sub.type == kResTableTypeType) {
                     const auto type_id = reader.U8(sub.offset + 8);
                     const auto entry_count = reader.U32(sub.offset + 12);
@@ -238,6 +252,11 @@ ArscTable ParseArsc(const std::span<const std::uint8_t> bytes) {
                                  "resources.arsc entry key is out of range");
                         }
                         ArscEntry entry;
+                        if (const auto flags = type_flags.find(type_id); flags != type_flags.end()) {
+                            if (index >= flags->second.size())
+                                Fail(sub.offset, "resources.arsc type spec index mismatch");
+                            entry.changing_configurations = flags->second[index];
+                        }
                         const auto config_size = reader.U32(sub.offset + 20);
                         if (config_size < 4 || 20U + config_size > sub.header_size) {
                             Fail(sub.offset, "resources.arsc invalid configuration");

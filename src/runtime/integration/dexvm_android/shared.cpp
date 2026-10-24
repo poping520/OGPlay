@@ -1093,6 +1093,7 @@ namespace android_intrinsics {
     }
     call.vm.Model().InstanceSlots(resources)[call.vm.Linker().Field(*field).slot] =
         {assets.Value(), dx::SlotTag::ref};
+    if (!system) InitializeThemeResourceOwner(call, context, resources, assets);
     context->singletons.emplace(asset_key, assets);
     context->singletons.emplace(resource_key, resources);
     return resources;

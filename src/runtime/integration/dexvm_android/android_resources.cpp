@@ -507,9 +507,297 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+void ThemeField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type, std::uint32_t bits,
+                dx::SlotTag tag = dx::SlotTag::cat1) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+    if (!field) throw std::logic_error(std::string("missing ROM theme field: ") + name);
+    vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot] = {bits, tag};
+}
+
+void ThemeLoad(dx::IntrinsicContext& call, const Context& context) {
+    RequireXmlExperiment(call, context);
+    if (!context->theme_projection_loaded) {
+        constexpr std::string_view entry = "META-INF/ogplay/theme-projection.json";
+        const auto count = std::count_if(
+            context->boot_classpath_archive.entries.begin(), context->boot_classpath_archive.entries.end(),
+            [](const auto& row) { return row.name == "META-INF/ogplay/theme-projection.json"; });
+        if (count != 1) throw std::runtime_error("theme projection entry missing or duplicated");
+        const auto bytes =
+            loader::ReadStoredApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, entry);
+        context->theme_resources.Load(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+        context->theme_projection_loaded = true;
+    }
+    if (!context->theme_gc_registered) {
+        call.vm.RegisterIntrinsicStateTable(
+            {"android.theme",
+             {},
+             [&vm = call.vm, context](dx::VmObjectRef owner) {
+                 const auto& type = vm.Linker().Class(vm.Model().ObjectClass(owner)).descriptor;
+                 if (type == "Landroid/content/res/Resources$Theme;") {
+                     const ThemeToken token{XmlField(vm, owner, "mTheme")};
+                     if (context->theme_resources.Has(token)) context->theme_resources.Delete(token);
+                     context->theme_owners.erase(token);
+                 }
+                 if (context->theme_asset_owners.erase(owner)) {
+                     for (auto it = context->theme_owners.begin(); it != context->theme_owners.end();) {
+                         if (it->second == owner) {
+                             if (context->theme_resources.Has(it->first)) context->theme_resources.Delete(it->first);
+                             it = context->theme_owners.erase(it);
+                         } else
+                             ++it;
+                     }
+                 }
+             },
+             {}});
+        context->theme_gc_registered = true;
+    }
+}
+
+template <class F>
+dx::VmValue ThemeChecked(dx::IntrinsicContext& call, const Context& context, F&& operation) {
+    try {
+        ThemeLoad(call, context);
+        return operation();
+    } catch (const dx::VmJavaThrow&) {
+        throw;
+    } catch (const std::exception& error) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.theme.unsupported", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", error.what()};
+    }
+}
+
+void ThemeOutput(dx::IntrinsicContext& call, dx::VmObjectRef target, const ThemeValue& value) {
+    if (!target.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "outValue"};
+    const auto fields = std::array{"type", "data", "assetCookie", "resourceId", "changingConfigurations", "density"};
+    const auto slots = value.Slots();
+    for (std::size_t i = 0; i < fields.size(); ++i)
+        ThemeField(call.vm, target, fields[i], "I", slots[i]);
+    ThemeField(call.vm, target, "string", "Ljava/lang/CharSequence;", 0, dx::SlotTag::ref);
+}
+
+std::vector<std::uint32_t> ThemeAttrs(dx::IntrinsicContext& call, dx::VmObjectRef array) {
+    if (!array.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "attrs"};
+    if (call.vm.Model().PrimitiveArrayKind(array) != JniPrimitiveKind::integer)
+        throw std::runtime_error("attribute IDs require int[]");
+    const auto count = call.vm.Model().ArrayLength(array);
+    if (count > 4096) throw std::runtime_error("attribute request exceeds bounded ABI");
+    std::vector<std::uint32_t> result;
+    for (std::int32_t i = 0; i < count; ++i)
+        result.push_back(static_cast<std::uint32_t>(call.vm.Model().GetPrimitiveElement(array, i)));
+    return result;
+}
+
+dx::VmValue ThemeArrays(dx::IntrinsicContext& call, const std::vector<ThemeValue>& values, dx::VmObjectRef data,
+                        dx::VmObjectRef indices) {
+    if (!data.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "outValues"};
+    if (call.vm.Model().PrimitiveArrayKind(data) != JniPrimitiveKind::integer ||
+        (indices.IsValid() && call.vm.Model().PrimitiveArrayKind(indices) != JniPrimitiveKind::integer))
+        throw std::runtime_error("TypedArray outputs require int[]");
+    if (call.vm.Model().ArrayLength(data) < static_cast<std::int32_t>(values.size() * 6) ||
+        (indices.IsValid() && call.vm.Model().ArrayLength(indices) <= static_cast<std::int32_t>(values.size())))
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "TypedArray output capacity"};
+    std::int32_t count{};
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto slots = values[i].Slots();
+        for (std::size_t j = 0; j < slots.size(); ++j)
+            call.vm.Model().SetPrimitiveElement(data, static_cast<std::int32_t>(i * 6 + j), slots[j]);
+        if (indices.IsValid() && values[i].type)
+            call.vm.Model().SetPrimitiveElement(indices, ++count, static_cast<std::uint64_t>(i));
+    }
+    if (indices.IsValid()) call.vm.Model().SetPrimitiveElement(indices, 0, static_cast<std::uint32_t>(count));
+    return dx::VmValue::Int(1);
+}
+
+void ThemeAssetLive(const Context& context, dx::VmObjectRef assets) {
+    if (!context->theme_asset_owners.contains(assets)) throw std::runtime_error("AssetManager owner is not live");
+}
+
+void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
+    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    const auto method = [&](const char* name, const char* desc, bool is_static, auto operation) {
+        auto handler = [context, operation](dx::IntrinsicContext& call) {
+            return ThemeChecked(call, context, [&] { return operation(call); });
+        };
+        const auto flags =
+            dx::kAccNative | dx::kAccFinal | (std::string_view(name) == "retrieveAttributes" ? 0U : dx::kAccPrivate);
+        if (is_static)
+            builder.StaticMethod(name, desc, handler, flags | dx::kAccStatic);
+        else if (std::string_view(name) == "retrieveAttributes")
+            builder.FinalMethod(name, desc, handler, flags);
+        else
+            builder.DirectMethod(name, desc, handler, flags);
+    };
+    method("init", "(Z)V", false, [context](dx::IntrinsicContext& c) {
+        if (static_cast<std::uint32_t>(c.arguments[0].AsInt()))
+            throw std::runtime_error("system AssetManager init unsupported");
+        if (!context->theme_asset_owners.emplace(c.receiver).second)
+            throw std::runtime_error("AssetManager already initialized");
+        return dx::VmValue::Void();
+    });
+    method("destroy", "()V", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        context->theme_asset_owners.erase(c.receiver);
+        for (auto it = context->theme_owners.begin(); it != context->theme_owners.end();) {
+            if (it->second == c.receiver) {
+                context->theme_resources.Delete(it->first);
+                it = context->theme_owners.erase(it);
+            } else
+                ++it;
+        }
+        return dx::VmValue::Void();
+    });
+    method("newTheme", "()I", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        const auto token = context->theme_resources.New();
+        context->theme_owners.emplace(token, c.receiver);
+        return XmlInt(token.value);
+    });
+    method("deleteTheme", "(I)V", false, [context](dx::IntrinsicContext& c) {
+        const ThemeToken token{static_cast<std::uint32_t>(c.arguments[0].AsInt())};
+        const auto it = context->theme_owners.find(token);
+        if (it == context->theme_owners.end() || it->second != c.receiver)
+            throw std::runtime_error("theme AssetManager owner mismatch");
+        context->theme_resources.Delete(token);
+        context->theme_owners.erase(token);
+        return dx::VmValue::Void();
+    });
+    method("applyThemeStyle", "(IIZ)V", true, [context](dx::IntrinsicContext& c) {
+        context->theme_resources.Apply({static_cast<std::uint32_t>(c.arguments[0].AsInt())},
+                                       static_cast<std::uint32_t>(c.arguments[1].AsInt()),
+                                       static_cast<std::uint32_t>(c.arguments[2].AsInt()), context->arsc);
+        return dx::VmValue::Void();
+    });
+    method("copyTheme", "(II)V", true, [context](dx::IntrinsicContext& c) {
+        context->theme_resources.Copy({static_cast<std::uint32_t>(c.arguments[0].AsInt())},
+                                      {static_cast<std::uint32_t>(c.arguments[1].AsInt())});
+        return dx::VmValue::Void();
+    });
+    method("loadThemeAttributeValue", "(IILandroid/util/TypedValue;Z)I", true, [context](dx::IntrinsicContext& c) {
+        const auto value = context->theme_resources.Attribute(
+            {static_cast<std::uint32_t>(c.arguments[0].AsInt())}, static_cast<std::uint32_t>(c.arguments[1].AsInt()),
+            static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
+        if (!value) return XmlInt(-1);
+        ThemeOutput(c, c.arguments[2].ref, *value);
+        return XmlInt(0);
+    });
+    method("applyStyle", "(IIII[I[I[I)Z", true, [context](dx::IntrinsicContext& c) {
+        const auto attrs = ThemeAttrs(c, c.arguments[4].ref);
+        const auto token = static_cast<std::uint32_t>(c.arguments[3].AsInt());
+        const auto tag = token ? std::optional{context->xml_cursors.StartTag({token})} : std::nullopt;
+        const auto values = context->theme_resources.Styled(
+            {static_cast<std::uint32_t>(c.arguments[0].AsInt())}, static_cast<std::uint32_t>(c.arguments[1].AsInt()),
+            static_cast<std::uint32_t>(c.arguments[2].AsInt()), tag ? &*tag : nullptr, attrs, context->arsc);
+        return ThemeArrays(c, values, c.arguments[5].ref, c.arguments[6].ref);
+    });
+    method("retrieveAttributes", "(I[I[I[I)Z", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        const auto attrs = ThemeAttrs(c, c.arguments[1].ref);
+        const auto tag = context->xml_cursors.StartTag({static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+        return ThemeArrays(c, context->theme_resources.Retrieve(tag, attrs, context->arsc), c.arguments[2].ref,
+                           c.arguments[3].ref);
+    });
+    method("loadResourceValue", "(ISLandroid/util/TypedValue;Z)I", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        const auto value =
+            context->theme_resources.Resource(static_cast<std::uint32_t>(c.arguments[0].AsInt()),
+                                              static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
+        ThemeOutput(c, c.arguments[2].ref, value);
+        return XmlInt(0);
+    });
+    method("loadResourceBagValue", "(IILandroid/util/TypedValue;Z)I", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        const auto value = context->theme_resources.BagValue(
+            static_cast<std::uint32_t>(c.arguments[0].AsInt()), static_cast<std::uint32_t>(c.arguments[1].AsInt()),
+            static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
+        if (!value) return XmlInt(-1);
+        ThemeOutput(c, c.arguments[2].ref, *value);
+        return XmlInt(0);
+    });
+    method("getStringBlockCount", "()I", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        return XmlInt(context->arsc.global_string_pool.empty() ? 0 : 1);
+    });
+    method("getNativeStringBlock", "(I)I", false, [context](dx::IntrinsicContext& c) {
+        ThemeAssetLive(context, c.receiver);
+        if (static_cast<std::uint32_t>(c.arguments[0].AsInt()) != 0 || context->arsc.global_string_pool.empty())
+            throw std::runtime_error("resource pool index unavailable");
+        if (!context->resource_string_pool.value)
+            context->resource_string_pool = context->xml_cursors.CreateStringPool(context->arsc.global_string_pool);
+        return XmlInt(context->resource_string_pool.value);
+    });
+    builder.Constructor("()V", [context](dx::IntrinsicContext& c) {
+        return ThemeChecked(c, context, [&] {
+            ThemeField(c.vm, c.receiver, "mOpen", "Z", 1);
+            ThemeField(c.vm, c.receiver, "mNumRefs", "I", 1);
+            auto value = c.vm.NewIntrinsicInstance("Landroid/util/TypedValue;");
+            const auto root = c.vm.ProtectReferences(std::array{value});
+            ThemeField(c.vm, c.receiver, "mValue", "Landroid/util/TypedValue;", value.Value(), dx::SlotTag::ref);
+            auto offsets = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[J"),
+                                                          JniPrimitiveKind::long_integer, 2);
+            ThemeField(c.vm, c.receiver, "mOffsets", "[J", offsets.Value(), dx::SlotTag::ref);
+            if (!context->theme_asset_owners.emplace(c.receiver).second)
+                throw std::runtime_error("AssetManager already initialized");
+            return dx::VmValue::Void();
+        });
+    });
+    // No synthetic system AssetManager. Construct the single APK pool's genuine
+    // StringBlock, whose Java caches and plain-string guard remain authoritative.
+    builder.FinalMethod("makeStringBlocks", "(Z)V", [context](dx::IntrinsicContext& c) {
+        return ThemeChecked(c, context, [&] {
+            ThemeAssetLive(context, c.receiver);
+            const auto owner = c.vm.Linker().ResolveDescriptor("Landroid/content/res/StringBlock;");
+            const auto count = context->arsc.global_string_pool.empty() ? 0 : 1;
+            const auto array = c.vm.Model().NewObjectArray(
+                c.vm.Linker().ResolveDescriptor("[Landroid/content/res/StringBlock;"), owner, count);
+            const auto roots = c.vm.ProtectReferences(std::array{array});
+            if (count) {
+                if (!context->resource_string_pool.value)
+                    context->resource_string_pool =
+                        context->xml_cursors.CreateStringPool(context->arsc.global_string_pool);
+                const auto block = c.vm.NewIntrinsicInstance("Landroid/content/res/StringBlock;");
+                const auto block_root = c.vm.ProtectReferences(std::array{block});
+                const auto ctor = c.vm.Linker().FindDirectMethod(owner, "<init>", "(IZ)V");
+                if (!ctor) throw std::logic_error("StringBlock native-pool constructor missing");
+                const auto result = c.vm.Call(
+                    *ctor, std::array{dx::VmValue::Ref(block), XmlInt(context->resource_string_pool.value), XmlInt(0)});
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                c.vm.Model().SetObjectElement(array, 0, block);
+            }
+            ThemeField(c.vm, c.receiver, "mStringBlocks", "[Landroid/content/res/StringBlock;", array.Value(),
+                       dx::SlotTag::ref);
+            return dx::VmValue::Void();
+        });
+    });
+}
+}  // namespace
+
+void InitializeThemeResourceOwner(dx::IntrinsicContext& c, const Context& context, dx::VmObjectRef resources,
+                                  dx::VmObjectRef assets) {
+    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    ThemeLoad(c, context);
+    const auto initialized = c.vm.EnsureClassInitialized(c.vm.Model().ObjectClass(resources));
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{c.vm.Linker().Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
+    const auto lock = c.vm.NewIntrinsicInstance("Ljava/lang/Object;");
+    ThemeField(c.vm, resources, "mAccessLock", "Ljava/lang/Object;", lock.Value(), dx::SlotTag::ref);
+    const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(assets), "<init>", "()V");
+    if (!ctor) throw std::logic_error("AssetManager constructor missing");
+    const auto result = c.vm.Call(*ctor, std::array{dx::VmValue::Ref(assets)});
+    if (result.exception.IsValid())
+        throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                              result.exception};
+    static_cast<void>(CallAndroidMethod(c.vm, assets, "ensureStringBlocks", "()V"));
+    static_cast<void>(CallAndroidMethod(c.vm, resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;"));
+}
+
 Decl Declare_android_content_res_AssetManager(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class(
       "Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
+  AddThemeAssetMethods(builder, context);
   // Equivalent APK-only opening boundary. Construction/counts stay in ROM;
   // no AssetManager native declaration is admitted by this adapter.
   const auto open_xml = [context](dx::IntrinsicContext& call, int cookie, dx::VmObjectRef file) {
@@ -1135,17 +1423,25 @@ Decl Declare_android_content_res_Resources(const Context &context) {
                                               {dx::VmValue::Ref(locale)}));
           return dx::VmValue::Ref(instance);
       });
-  builder.VirtualMethod("getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
-                        [context](dx::IntrinsicContext& call) {
-                            if (IsSystemResources(context, call.receiver))
-                                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                                      "system resource names are unavailable"};
-                            const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
-                            const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
-                            const auto* entry = context->arsc.FindByName(type_name, entry_name);
-                            return dx::VmValue::Int(entry == nullptr ? 0
-                                                                     : static_cast<std::int32_t>(entry->resource_id));
-                        });
+  builder.VirtualMethod(
+      "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
+      [context](dx::IntrinsicContext& call) {
+          if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+              call.arguments[1].ref.IsValid() && call.vm.StringUtf8(call.arguments[1].ref) == "style" &&
+              (IsSystemResources(context, call.receiver) ||
+               (call.arguments[2].ref.IsValid() && call.vm.StringUtf8(call.arguments[2].ref) == "android"))) {
+              return ThemeChecked(call, context, [&] {
+                  return XmlInt(context->theme_resources.ThemeId(call.vm.StringUtf8(call.arguments[0].ref)));
+              });
+          }
+          if (IsSystemResources(context, call.receiver))
+              throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                    "system resource names are unavailable"};
+          const auto entry_name = call.vm.StringUtf8(call.arguments[0].ref);
+          const auto type_name = call.vm.StringUtf8(call.arguments[1].ref);
+          const auto* entry = context->arsc.FindByName(type_name, entry_name);
+          return dx::VmValue::Int(entry == nullptr ? 0 : static_cast<std::int32_t>(entry->resource_id));
+      });
   builder.VirtualMethod(
       "openRawResource", "(I)Ljava/io/InputStream;",
       [](dx::IntrinsicContext& call) {

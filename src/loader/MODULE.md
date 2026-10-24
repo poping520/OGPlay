@@ -96,6 +96,8 @@
   产出 resid ↔ (type, name, typed simple value/文件路径) 双向事实；Res_value type/data
   原样保留给上层有界 string/color/dimension/reference resolver；DVM-121 保留复杂 bag 的
   parent/typed items，重复 child key 按声明序保留；校验 entry/value/map 边界与字符串索引。
+  原全局字符串池 chunk（含 style 元数据及索引）与逐 entry 的 typeSpec 配置变更 flags
+  无损保留，供上层资源池身份及 TypedArray 六槽输出使用；loader 不持有 theme 状态。
   零包表合法，实际 package chunk 数须与声明一致，全局字符串池不可缺失；DVM-148 同时保留
   orientation、density、SDK、screenLayout size 与屏幕 dp 配置事实，由上层按固定 API 19
   的 qualifier 优先级选择候选；仍不扩展

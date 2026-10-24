@@ -44,7 +44,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   `UiNodeId` 永不重新变为有效。
 - `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
   每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy；
-  实验 View/ViewGroup、LinearLayout 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
+  实验 View/ViewGroup、LinearLayout/RelativeLayout 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
   本层不补算 guest bounds；render/hit-test 消费同一完整窗口 epoch。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
@@ -72,7 +72,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   parent gravity 定位整组，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
   指定主轴约束下，finite non-negative weight 按剩余像素确定性分配，padding/margin 同时
   参与可用空间和最终 frame；负值/NaN/Inf 明确失败。
-- `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
+- HostLayout / Legacy 的 `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
   align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
   sibling id 与 cycle 明确失败。同轴边缘规则按 API19 覆盖顺序解析，双边缘确定尺寸，
   居中仅在两边均未定位时生效。sibling 规则值为非正数（含
@@ -80,6 +80,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - DVM-119：RelativeLayout gravity 在相对定位后按含 margin 的非 GONE 子节点整体
   边界平移，支持右/下/居中，默认 START/TOP 保留原定位。Java 参数经 integration
   映射为 UiTree 布局输入快照；UI 不保存 guest 引用或读取 Java 字段。
+- ExternalProjection 的 RelativeLayout 规则、margin/方向、缺失或 GONE 锚点与依赖环均由上层 ROM 处理；
+  本层只接收成功遍历的完整 frame，不能套用上述 Legacy 拒绝语义或另算规则。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。窗口先裁剪 content root；父容器 `clipChildren`（默认 true）把子

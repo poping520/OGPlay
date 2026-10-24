@@ -240,9 +240,8 @@ TEST_CASE("DVM-283 experimental unsupported containers foreground and attribute 
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
-        for (const auto type :
-             {"Landroid/widget/RelativeLayout;", "Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;",
-              "Landroid/widget/TableRow;", "Landroid/widget/AbsoluteLayout;"}) {
+        for (const auto type : {"Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;",
+                                "Landroid/widget/TableRow;", "Landroid/widget/AbsoluteLayout;"}) {
             const auto object = f.vm.NewIntrinsicInstance(type);
             const auto ctor =
                 f.linker.FindDirectMethod(f.linker.ResolveDescriptor(type), "<init>", "(Landroid/content/Context;)V");

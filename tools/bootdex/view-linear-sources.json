@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-measure.surface.json.gz",
-      "surface_sha256": "1a09bfa69251060de591ef9881a49197891c7a32841fb68c8bebc7a7d2087500",
+      "surface_sha256": "c11a54daa8c8ae25cc813f64274741082efbd8d38cfcb34d70cea51fa629e8f0",
       "owner": "Landroid/widget/LinearLayout;",
       "smali_sha256": "cccfca243e362817cd38ba3791fb19afb0a0c46ab8fca7a9988378e953a985bb",
       "fields": [
@@ -512,7 +512,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-measure.surface.json.gz",
-      "surface_sha256": "1a09bfa69251060de591ef9881a49197891c7a32841fb68c8bebc7a7d2087500",
+      "surface_sha256": "c11a54daa8c8ae25cc813f64274741082efbd8d38cfcb34d70cea51fa629e8f0",
       "owner": "Landroid/widget/LinearLayout$LayoutParams;",
       "smali_sha256": "b6981fc5da39d3c58f28abf30b03379fa62343af6d1a5aa43c9930ebd05e6ff2",
       "fields": [

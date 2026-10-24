@@ -23,7 +23,9 @@ struct ManifestSummary final {
     std::uint32_t source_height, std::uint32_t destination_width,
     std::uint32_t destination_height);
 
-inline constexpr std::uint32_t kLauncherIconSize = 128;
+// Stored launcher icons keep the largest PNG density the APK ships, square, never
+// upscaled; larger sources are reduced to this side.
+inline constexpr std::uint32_t kLauncherIconMaxSize = 256;
 
 enum class ApplicationVisualFallback : std::uint8_t {
     icon_attribute_missing,

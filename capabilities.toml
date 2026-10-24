@@ -301,7 +301,7 @@ note = "GUI-5/6/9/14：spawn 前校验并装配当前 ogplay EXE 的 --run-game 
 [loader.apk_application_visuals]
 status = "complete"
 test = "tests/loader/apk_manifest_tests.cpp; tests/frontend/library_visuals_tests.cpp"
-note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，以双线性 ARGB 缩放缓存 128x128 RGBA PNG，资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
+note = "Launcher GUI-3/14/16 严格产出 application icon resource id 与 label resource/string 二选一事实；提取链复用 ParseArsc/ReadApkEntry 和既有 stb，从图标的全部密度配置中取最大可解码 PNG（跳过 XML），只缩小不放大、上限 256 的方形 RGBA PNG，`library refresh-icons` 按此规则重提已入库图标；资源/路径/条目/解码或 label 控制字符均以结构化 fallback 回到占位图标或 package name"
 
 [agent.run]
 status = "complete"

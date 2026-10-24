@@ -221,6 +221,136 @@ std::vector<std::byte> Resources(
     return table;
 }
 
+// Resource table whose icon id (0x7f010000) has one configuration per (density, path),
+// the way aapt emits drawable-ldpi … drawable-xxxhdpi; the label stays a manifest literal.
+std::vector<std::byte> DensityResources(const std::vector<std::pair<std::uint16_t, std::string>>& icons) {
+    std::vector<std::string> paths;
+    for (const auto& [density, path] : icons)
+        paths.push_back(path);
+    const auto global = Utf8Pool(paths);
+    const auto type_pool = Utf8Pool({"drawable"});
+    const auto key_pool = Utf8Pool({"icon"});
+    std::vector<std::byte> types;
+    for (std::uint32_t index = 0; index < icons.size(); ++index) {
+        std::vector<std::byte> type;
+        Push16(type, 0x0201);
+        Push16(type, 56);
+        Push32(type, 0);
+        type.push_back(std::byte{1});
+        type.push_back(std::byte{0});
+        Push16(type, 0);
+        Push32(type, 1);
+        Push32(type, 0);
+        Push32(type, 36);
+        for (int byte = 0; byte < 32; ++byte)
+            type.push_back(std::byte{0});
+        type[34] = static_cast<std::byte>(icons[index].first & 0xffU);
+        type[35] = static_cast<std::byte>(icons[index].first >> 8U);
+        Push32(type, 0);
+        Patch32(type, 16, static_cast<std::uint32_t>(type.size()));
+        Push16(type, 8);
+        Push16(type, 0);
+        Push32(type, 0);
+        Push16(type, 8);
+        type.push_back(std::byte{0});
+        type.push_back(std::byte{0x03});
+        Push32(type, index);
+        Patch32(type, 4, static_cast<std::uint32_t>(type.size()));
+        Append(types, type);
+    }
+    std::vector<std::byte> package;
+    Push16(package, 0x0200);
+    Push16(package, 288);
+    Push32(package, 0);
+    Push32(package, 0x7f);
+    const std::string_view package_name = "org.example.game";
+    for (std::size_t index = 0; index < 128; ++index) {
+        Push16(package, index < package_name.size() ? static_cast<std::uint8_t>(package_name[index]) : 0);
+    }
+    const auto type_offset = package.size();
+    Push32(package, 0);
+    Push32(package, 0);
+    const auto key_offset = package.size();
+    Push32(package, 0);
+    Push32(package, 0);
+    while (package.size() < 288)
+        package.push_back(std::byte{0});
+    Patch32(package, type_offset, static_cast<std::uint32_t>(package.size()));
+    Append(package, type_pool);
+    Patch32(package, key_offset, static_cast<std::uint32_t>(package.size()));
+    Append(package, key_pool);
+    Append(package, types);
+    Patch32(package, 4, static_cast<std::uint32_t>(package.size()));
+    std::vector<std::byte> table;
+    Push16(table, 0x0002);
+    Push16(table, 12);
+    Push32(table, 0);
+    Push32(table, 1);
+    Append(table, global);
+    Append(table, package);
+    Patch32(table, 4, static_cast<std::uint32_t>(table.size()));
+    return table;
+}
+
+// Solid RGBA PNG of any size: zlib "stored" blocks keep the encoder a few lines long.
+std::vector<std::byte> SolidPng(const std::uint32_t side, const std::array<std::uint8_t, 4> rgba) {
+    std::vector<std::byte> raw;
+    for (std::uint32_t y = 0; y < side; ++y) {
+        raw.push_back(std::byte{0});
+        for (std::uint32_t x = 0; x < side; ++x)
+            for (const auto channel : rgba)
+                raw.push_back(static_cast<std::byte>(channel));
+    }
+    std::vector<std::byte> zlib{std::byte{0x78}, std::byte{0x01}};
+    for (std::size_t offset = 0; offset < raw.size(); offset += 65535) {
+        const auto length = static_cast<std::uint16_t>(std::min<std::size_t>(65535, raw.size() - offset));
+        zlib.push_back(std::byte{offset + length == raw.size() ? std::uint8_t{1} : std::uint8_t{0}});
+        Push16(zlib, length);
+        Push16(zlib, static_cast<std::uint16_t>(~length));
+        zlib.insert(zlib.end(), raw.begin() + static_cast<std::ptrdiff_t>(offset),
+                    raw.begin() + static_cast<std::ptrdiff_t>(offset + length));
+    }
+    std::uint32_t a = 1, b = 0;
+    for (const auto byte : raw) {
+        a = (a + std::to_integer<std::uint32_t>(byte)) % 65521U;
+        b = (b + a) % 65521U;
+    }
+    const auto push_be = [](std::vector<std::byte>& out, const std::uint32_t value) {
+        for (const unsigned shift : {24U, 16U, 8U, 0U})
+            out.push_back(static_cast<std::byte>((value >> shift) & 0xffU));
+    };
+    push_be(zlib, (b << 16U) | a);
+    std::vector<std::byte> png;
+    for (const std::uint8_t byte : std::array<std::uint8_t, 8>{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+        png.push_back(static_cast<std::byte>(byte));
+    const auto chunk = [&](const std::string_view type, const std::vector<std::byte>& data) {
+        push_be(png, static_cast<std::uint32_t>(data.size()));
+        std::vector<std::byte> body;
+        for (const char c : type)
+            body.push_back(static_cast<std::byte>(c));
+        body.insert(body.end(), data.begin(), data.end());
+        png.insert(png.end(), body.begin(), body.end());
+        push_be(png, Crc32(body));
+    };
+    std::vector<std::byte> header;
+    push_be(header, side);
+    push_be(header, side);
+    for (const std::uint8_t byte : std::array<std::uint8_t, 5>{8, 6, 0, 0, 0})
+        header.push_back(static_cast<std::byte>(byte));
+    chunk("IHDR", header);
+    chunk("IDAT", zlib);
+    chunk("IEND", {});
+    return png;
+}
+
+std::uint32_t PngSide(const std::vector<std::byte>& png) {
+    REQUIRE(png.size() >= 24);
+    std::uint32_t value{};
+    for (std::size_t i = 16; i < 20; ++i)
+        value = (value << 8U) | std::to_integer<std::uint32_t>(png[i]);
+    return value;
+}
+
 std::vector<std::byte> OnePixelPng() {
     constexpr std::array<std::uint8_t, 68> bytes{
         0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,
@@ -287,8 +417,9 @@ TEST_CASE("launcher extracts resource label and normalized PNG then caches it") 
         for (std::size_t i = 0; i < 4; ++i) value = (value << 8U) | std::to_integer<std::uint32_t>(visuals.icon_png[offset + i]);
         return value;
     };
-    CHECK(dimension(16) == 128);
-    CHECK(dimension(20) == 128);
+    // Never upscaled: the view scales the stored icon once.
+    CHECK(dimension(16) == 1);
+    CHECK(dimension(20) == 1);
 
     TempDirectory temporary;
     const auto source = temporary.Path() / "source.apk";
@@ -373,4 +504,61 @@ TEST_CASE("launcher visual extraction records every resource and image fallback"
         {"res/drawable/icon.png", {std::byte{1}, std::byte{2}}}});
     CHECK(ogplay::app::ExtractApkApplicationVisuals(bad_image).Used(
         ogplay::app::ApplicationVisualFallback::icon_decode_failed));
+}
+
+TEST_CASE("launcher icon takes the largest PNG density, never upscales and caps the size") {
+    const auto apk = StoredZip({{"AndroidManifest.xml", Manifest(true, true)},
+                                {"resources.arsc", DensityResources({{0, "res/drawable/icon.png"},
+                                                                     {120, "res/drawable-ldpi/icon.png"},
+                                                                     {640, "res/drawable-xxxhdpi/icon.png"},
+                                                                     {0xfffe, "res/mipmap-anydpi-v26/icon.xml"}})},
+                                {"res/drawable/icon.png", SolidPng(48, {255, 0, 0, 255})},
+                                {"res/drawable-ldpi/icon.png", SolidPng(36, {0, 255, 0, 255})},
+                                {"res/drawable-xxxhdpi/icon.png", SolidPng(192, {0, 0, 255, 255})},
+                                {"res/mipmap-anydpi-v26/icon.xml", {std::byte{'<'}}}});
+    const auto visuals = ogplay::app::ExtractApkApplicationVisuals(apk);
+    CHECK(visuals.fallbacks.empty());
+    CHECK(PngSide(visuals.icon_png) == 192);
+
+    const auto large = StoredZip(
+        {{"AndroidManifest.xml", Manifest(true, true)},
+         {"resources.arsc", DensityResources({{160, "res/drawable-mdpi/icon.png"}, {0, "res/drawable/icon.png"}})},
+         {"res/drawable-mdpi/icon.png", SolidPng(48, {255, 0, 0, 255})},
+         {"res/drawable/icon.png", SolidPng(512, {0, 0, 255, 255})}});
+    CHECK(PngSide(ogplay::app::ExtractApkApplicationVisuals(large).icon_png) == ogplay::app::kLauncherIconMaxSize);
+
+    // A larger density that does not decode yields to the next one instead of a placeholder.
+    auto broken = SolidPng(300, {0, 0, 255, 255});
+    broken.resize(40);
+    const auto fallback =
+        StoredZip({{"AndroidManifest.xml", Manifest(true, true)},
+                   {"resources.arsc",
+                    DensityResources({{240, "res/drawable-hdpi/icon.png"}, {480, "res/drawable-xxhdpi/icon.png"}})},
+                   {"res/drawable-hdpi/icon.png", SolidPng(72, {255, 0, 0, 255})},
+                   {"res/drawable-xxhdpi/icon.png", broken}});
+    const auto recovered = ogplay::app::ExtractApkApplicationVisuals(fallback);
+    CHECK(recovered.fallbacks.empty());
+    CHECK(PngSide(recovered.icon_png) == 72);
+}
+
+TEST_CASE("library refresh re-extracts stored icons with the current rule") {
+    TempDirectory temporary;
+    const auto source = temporary.Path() / "source.apk";
+    WriteBytes(source, StoredZip({{"AndroidManifest.xml", Manifest(true, true)},
+                                  {"resources.arsc", DensityResources({{120, "res/drawable-ldpi/icon.png"},
+                                                                       {320, "res/drawable-xhdpi/icon.png"}})},
+                                  {"res/drawable-ldpi/icon.png", SolidPng(36, {255, 0, 0, 255})},
+                                  {"res/drawable-xhdpi/icon.png", SolidPng(96, {0, 0, 255, 255})}}));
+    ogplay::app::LibraryStore store(temporary.Path() / "root");
+    const auto stale = SolidPng(128, {0, 255, 0, 255});
+    const auto id =
+        store.Import({source,
+                      {"org.example.game", "Example Game", 1, "", "2026-10-24T00:00:00Z", std::nullopt, std::nullopt},
+                      stale},
+                     true);
+    CHECK(store.RefreshIcons() == std::vector<std::string>{id});
+    const auto entries = store.LoadEntries();
+    REQUIRE(entries.size() == 1);
+    CHECK(PngSide(entries.front().icon_png) == 96);
+    CHECK(store.RefreshIcons().empty());
 }

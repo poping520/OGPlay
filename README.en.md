@@ -22,6 +22,8 @@ Bring classic Android games back to modern devices without booting an Android sy
 
 OGPlay lets you try classic Android games on your computer. Add your own APKs and data packages to one game library, then select a game to launch it without first booting a full Android system.
 
+![OGPlay game library](assets/pic/LibraryStore.jpg)
+
 > [!NOTE]
 > The project is still in **early alpha, with no release available yet**. Some games reach menus or gameplay, but complete playthroughs are not guaranteed. OGPlay does not include games; you need to supply your own APKs and any required data packages.
 

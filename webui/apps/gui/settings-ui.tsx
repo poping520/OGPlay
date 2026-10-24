@@ -1,7 +1,8 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { choiceLabel, fieldMeta, stepValue, type SettingField, type SettingValue } from './settings';
+import { choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
 import { shellPalette } from './library';
+import { t } from './i18n';
 import logo from './assets/logo.png';
 import './settings.css';
 
@@ -52,21 +53,23 @@ export function Paths({ rows }: { rows: [string, string][] }) {
 }
 
 // ---------------------------------------------------------------- controls
+// Display width in Latin-letter units: wide (CJK) characters count twice, so both languages pick the same control.
+const textWidth = (text: string) => [...text].reduce((width, char) => width + (/[\u2e80-\u9fff\uff00-\uffef]/.test(char) ? 2 : 1), 0);
 function Control({ field, value, disabled, change, browse }: {
   field: SettingField; value: SettingValue; disabled: boolean; change: (value: SettingValue) => void; browse?: () => void;
 }) {
   const meta = fieldMeta(field);
   if (typeof field.initial === 'boolean')
     return <button class={`switch ${value === true ? 'on' : ''}`} role="switch" aria-checked={value === true} aria-label={meta.label} disabled={disabled} onClick={() => change(value !== true)} />;
-  if (field.choices.length && field.choices.length <= 3 && field.choices.every(choice => choiceLabel(field, choice).length <= 6))
+  if (field.choices.length && field.choices.length <= 3 && field.choices.every(choice => textWidth(choiceLabel(field, choice)) <= 14))
     return <div class="seg" role="radiogroup" aria-label={meta.label}>{field.choices.map(choice =>
       <button key={choice} role="radio" aria-checked={choice === value} class={choice === value ? 'on' : ''} disabled={disabled} onClick={() => change(choice)}>{choiceLabel(field, choice)}</button>)}</div>;
   if (field.choices.length) {
     const at = field.choices.indexOf(String(value));
     return <div class="cyc" role="group" aria-label={meta.label}>
-      <button aria-label="上一项" disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>‹</button>
+      <button aria-label={t('上一项')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>‹</button>
       <div class="val"><span>{choiceLabel(field, String(value))}</span><div class="pips">{field.choices.map((choice, index) => <i key={choice} class={index === at ? 'on' : ''} />)}</div></div>
-      <button aria-label="下一项" disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>›</button>
+      <button aria-label={t('下一项')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>›</button>
     </div>;
   }
   if (typeof field.initial === 'number') {
@@ -77,16 +80,16 @@ function Control({ field, value, disabled, change, browse }: {
         aria-label={meta.label} style={{ '--p': `${percent}%` }} onInput={event => change(event.currentTarget.valueAsNumber)} /><b>{Number.isFinite(number) ? number : '—'}%</b></div>;
     }
     return <div class="step">
-      <button aria-label="减少" disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>−</button>
+      <button aria-label={t('减少')} disabled={disabled} onClick={() => change(stepValue(field, value, -1))}>−</button>
       <input type="number" min={field.min} max={field.max} step={1} value={Number.isNaN(number) ? '' : String(number)} disabled={disabled} aria-label={meta.label}
         onInput={event => change(event.currentTarget.valueAsNumber)} />
       {meta.unit && <small>{meta.unit}</small>}
-      <button aria-label="增加" disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>+</button>
+      <button aria-label={t('增加')} disabled={disabled} onClick={() => change(stepValue(field, value, 1))}>+</button>
     </div>;
   }
   return <div class="txt"><input type="text" value={String(value)} disabled={disabled} aria-label={meta.label}
-    placeholder={field.directory ? '留空使用默认行为' : field.pending.startsWith('预留') ? '跟随设备预设' : '未设置'} onInput={event => change(event.currentTarget.value)} />
-    {browse && <button disabled={disabled} onClick={browse}>浏览…</button>}</div>;
+    placeholder={field.directory ? t('留空使用默认行为') : field.pending.startsWith(RESERVED_MARK) ? t('跟随设备预设') : t('未设置')} onInput={event => change(event.currentTarget.value)} />
+    {browse && <button disabled={disabled} onClick={browse}>{t('浏览…')}</button>}</div>;
 }
 
 // What a page tells the frame about one row.
@@ -103,17 +106,17 @@ function FieldRow({ field, model, focused, focus, change, browse, toggleInherit 
     <GroupIcon name={field.group} />
     <div class="lbl"><b>{meta.label}</b>
       {(model.changed || inherit || meta.reserved || meta.hint) && <div class="meta">
-        {model.changed && <span class="tag mod">未保存</span>}
+        {model.changed && <span class="tag mod">{t('未保存')}</span>}
         {inherited && <span class="inherit-val">{inherit.source} · {inherit.shown}</span>}
-        {inherit?.overridden && inherit.saved && !model.changed && <span class="tag over">已覆盖</span>}
-        {meta.reserved && <span class="tag pending" title={field.pending}>预留 · 仅保存</span>}
+        {inherit?.overridden && inherit.saved && !model.changed && <span class="tag over">{t('已覆盖')}</span>}
+        {meta.reserved && <span class="tag pending" title={meta.reserved}>{t('预留 · 仅保存')}</span>}
         {(meta.hint || meta.reserved) && <span>{meta.hint || meta.reserved}</span>}
       </div>}
     </div>
     <div class="ctl">
       <Control field={field} value={model.value} disabled={model.disabled || !!inherited} change={change} browse={field.directory ? browse : undefined} />
-      {inherit && <button class={`inh ${inherited ? 'on' : ''}`} disabled={model.disabled} title={`继承${inherit.source}`} onClick={toggleInherit}>
-        <span class="sw" />{inherited ? '继承' : '单独设置'}</button>}
+      {inherit && <button class={`inh ${inherited ? 'on' : ''}`} disabled={model.disabled} title={t('继承{source}', { source: inherit.source })} onClick={toggleInherit}>
+        <span class="sw" />{inherited ? t('继承') : t('单独设置')}</button>}
     </div>
   </div>;
 }
@@ -233,13 +236,13 @@ export function SettingsFrame(props: FrameProps) {
     <div class="cfg-bg" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
     <header class="cfg-top">
       <Brand />
-      <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>游戏库</button>
+      <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>{t('游戏库')}</button>
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
-      <span class={`dirty ${changed.length ? 'on' : ''}`} role="status"><i />{changed.length ? `${changed.length} 项未保存` : props.idle}</span>
-      <button class="pill" disabled={props.busy} onClick={props.reload}><Key>⟳</Key>重新载入</button>
+      <span class={`dirty ${changed.length ? 'on' : ''}`} role="status"><i />{changed.length ? t('{n} 项未保存', { n: changed.length }) : props.idle}</span>
+      <button class="pill" disabled={props.busy} onClick={props.reload}><Key>⟳</Key>{t('重新载入')}</button>
       <button class="pill" disabled={props.busy || !props.loaded} onClick={props.reset}><Key>X</Key>{props.resetLabel}</button>
-      <button class="pill main" disabled={props.busy || !props.loaded || !changed.length} onClick={props.save}><Key>Y</Key>保存设置{changed.length ? ` · ${changed.length}` : ''}</button>
+      <button class="pill main" disabled={props.busy || !props.loaded || !changed.length} onClick={props.save}><Key>Y</Key>{t('保存设置')}{changed.length ? ` · ${changed.length}` : ''}</button>
     </header>
     <aside class="cfg-side">
       {props.who}
@@ -247,31 +250,31 @@ export function SettingsFrame(props: FrameProps) {
       <nav class="groups" aria-label={props.groupsTitle}>{groups.map(([key, label]) => {
         const count = fields.filter(field => field.group === key).length;
         return <button key={key} class={key === group ? 'on' : ''} aria-current={key === group ? 'page' : undefined} onClick={() => selectGroup(key)}>
-          <GroupIcon name={key} />{label}{dirtyGroups.has(key) && <span class="dot" />}<span class="n">{count || ''}</span></button>;
+          <GroupIcon name={key} />{t(label)}{dirtyGroups.has(key) && <span class="dot" />}<span class="n">{count || ''}</span></button>;
       })}</nav>
       <div class="cfg-file">{props.fileLabel}<span title={props.filePath}><span dir="ltr">{props.filePath}</span></span></div>
     </aside>
     <main class="cfg-main" ref={main}>
-      <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{title}</h1><p>{description}</p></div>
-        <div class="legend"><span><i class="l-mod" />未保存</span>{props.toggleInherit && <span><i class="l-inh" />继承</span>}<span><i class="l-pending" />预留 · 仅保存</span></div></div>
+      <div class="head"><div><div class="kicker"><i />{props.kicker}</div><h1>{t(title)}</h1><p>{t(description)}</p></div>
+        <div class="legend"><span><i class="l-mod" />{t('未保存')}</span>{props.toggleInherit && <span><i class="l-inh" />{t('继承')}</span>}<span><i class="l-pending" />{t('预留 · 仅保存')}</span></div></div>
       <div class="rows" key={group} aria-busy={props.busy}>
-        {props.error && <Note icon="info" title="操作失败" warn><pre role="alert">{props.error}</pre></Note>}
-        {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? '正在读取设置…' : '设置不可用'} />}
+        {props.error && <Note icon="info" title={t('操作失败')} warn><pre role="alert">{props.error}</pre></Note>}
+        {props.loaded ? <>{props.top}{rows}{props.end}</> : !props.error && <Note icon="info" title={props.busy ? t('正在读取设置…') : t('设置不可用')} />}
       </div>
     </main>
     <footer class="cfg-foot">
-      <span class="hk"><Key>↑ ↓</Key>选择</span><span class="hk"><Key>← →</Key>调整</span><span class="hk"><Key>A</Key>切换</span>
-      <span class="hk"><Key>B</Key>返回</span><span class="hk"><Key>X</Key>{props.resetLabel}</span><span class="hk"><Key>Y</Key>保存</span>
-      <span class="hk"><Key>L R</Key>切换分组<kbd>Q E</kbd></span>
+      <span class="hk"><Key>↑ ↓</Key>{t('选择')}</span><span class="hk"><Key>← →</Key>{t('调整')}</span><span class="hk"><Key>A</Key>{t('切换')}</span>
+      <span class="hk"><Key>B</Key>{t('返回')}</span><span class="hk"><Key>X</Key>{props.resetLabel}</span><span class="hk"><Key>Y</Key>{t('保存')}</span>
+      <span class="hk"><Key>L R</Key>{t('切换分组')}<kbd>Q E</kbd></span>
       <span class="note-text">{props.note}</span>
     </footer>
-    <dialog ref={dialog} aria-label="有未保存的修改" onCancel={event => { event.preventDefault(); props.keep(); }}>
+    <dialog ref={dialog} aria-label={t('有未保存的修改')} onCancel={event => { event.preventDefault(); props.keep(); }}>
       <div class="kicker"><i />Unsaved</div>
-      <h2>放弃 {changed.length} 项修改？</h2>
-      <p>{props.discard === 'back' ? '返回游戏库前，' : '重新载入前，'}这些修改不会写入配置。</p>
+      <h2>{t('放弃 {n} 项修改？', { n: changed.length })}</h2>
+      <p>{props.discard === 'back' ? t('返回游戏库前，这些修改不会写入配置。') : t('重新载入前，这些修改不会写入配置。')}</p>
       <ul>{fields.filter(field => changed.includes(field.key)).map(field => <li key={field.key}>{fieldMeta(field).label}</li>)}</ul>
-      <div class="acts"><button class="pill" autoFocus onClick={props.keep}><Key>B</Key>继续编辑</button>
-        <button class="pill danger" onClick={props.confirmDiscard}><Key>A</Key>放弃修改</button></div>
+      <div class="acts"><button class="pill" autoFocus onClick={props.keep}><Key>B</Key>{t('继续编辑')}</button>
+        <button class="pill danger" onClick={props.confirmDiscard}><Key>A</Key>{t('放弃修改')}</button></div>
     </dialog>
     {props.toast && <div class="toast" role="status"><i />{props.toast}</div>}
   </div>;

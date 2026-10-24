@@ -11,6 +11,7 @@ export interface CartFace {
   color: [number, number, number];
   tone: string;           // ready / running / warning / danger
   status: string;         // host status: damaged scuffs the cartridge, missing_external removes the gold
+  captions: { version: string; imported: string; tagline: string };  // label words in the launcher language
 }
 export interface Cart3D {
   // Moves the single hero canvas into `stage` and starts its loop; the returned function detaches it again.

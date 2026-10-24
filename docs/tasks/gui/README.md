@@ -17,6 +17,7 @@
 | [GUI-11](GUI-11.md) | macOS WebView 启动器、.app 包与 ad-hoc 签名 | macOS 完成；真实点击流程已验 |
 | [GUI-12](GUI-12.md) | 导入数据包默认复制入库、引用为显式选项 | macOS 定向与真实数据已验；GUI 点击待验 |
 | [GUI-13](GUI-13.md) | 运行时推断数据包挂载位置，退出后确认修改 | macOS 定向与 DH 真实复跑已验；App 内点击待验 |
+| [GUI-14](GUI-14.md) | 启动器界面中英文切换（前端文案） | macOS 前端已验；宿主文字与 App 内点击待验 |
 | [DASH-01](DASH-01.md) | Dashboard agent 只读聚合、事件游标与线程关联 | agent 层完成 |
 | [DASH-02](DASH-02.md) | 堆/GC、JNI、CPU 缓存、权限、VFS/动态库快照 | Windows 完成；扩展 BootDex 回归有阻塞 |
 | [DASH-03](DASH-03.md) | Dashboard HTTP、顶栏/拓扑/时间轴/线程表 | Windows 完成；新增来源/面板见 DASH-02/04 |

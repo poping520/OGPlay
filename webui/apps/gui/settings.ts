@@ -1,3 +1,4 @@
+import { t } from './i18n';
 export type SettingValue = boolean | number | string;
 export interface SettingField {
   key: string; group: string; label: string; pending: string; initial: SettingValue;
@@ -15,13 +16,13 @@ export const groups = [
   ['control', '控制面 (MCP)', '本机 MCP 服务与 Dashboard。'], ['about', '关于', '版本与随程序交付的制品清单。'],
 ] as const;
 export function settingsError(fields: SettingField[], values: Record<string, SettingValue>): string | null {
-  if (Object.keys(values).some(key => !fields.some(field => field.key === key))) return '包含未知设置。';
+  if (Object.keys(values).some(key => !fields.some(field => field.key === key))) return t('包含未知设置。');
   for (const field of fields) {
-    const value = values[field.key];
-    if (typeof value !== typeof field.initial) return `${field.label}：类型不正确。`;
+    const value = values[field.key], label = fieldMeta(field).label;
+    if (typeof value !== typeof field.initial) return t('{label}：类型不正确。', { label });
     if (typeof value === 'number' && (!Number.isInteger(value) || value < field.min || value > field.max))
-      return `${field.label}：请输入 ${field.min}–${field.max} 的整数。`;
-    if (typeof value === 'string' && field.choices.length && !field.choices.includes(value)) return `${field.label}：选项不支持。`;
+      return t('{label}：请输入 {min}–{max} 的整数。', { label, min: field.min, max: field.max });
+    if (typeof value === 'string' && field.choices.length && !field.choices.includes(value)) return t('{label}：选项不支持。', { label });
   }
   return null;
 }
@@ -34,14 +35,18 @@ export function changedKeys(saved: Record<string, SettingValue>, draft: Record<s
 }
 
 // The host packs a unit or a short note into the label's trailing full-width brackets, and uses `pending` both for
-// "预留 · …" (saved but not yet wired) and for plain explanations. The page shows them apart.
+// "预留 · …" (saved but not yet wired) and for plain explanations. The page shows them apart, each part translated
+// from the host's Chinese text (GUI-14), so the host schema stays the single source of the fields.
 export interface FieldMeta { label: string; unit: string; hint: string; reserved: string }
+// Host marker for saved-only fields, matched on the host's (Chinese) text before translation.
+export const RESERVED_MARK = '预留';
+const reservedPrefix = new RegExp(`^${RESERVED_MARK}\\s*·\\s*`);
 export function fieldMeta(field: SettingField): FieldMeta {
   const match = /^(.*?)（([^）]+)）$/.exec(field.label);
   const numeric = typeof field.initial === 'number';
-  const reserved = /^预留/.test(field.pending) ? field.pending.replace(/^预留\s*·\s*/, '') : '';
-  const notes = [match && !numeric ? match[2] : '', reserved ? '' : field.pending].filter(Boolean);
-  return { label: match ? match[1] : field.label, unit: match && numeric ? match[2] : '', hint: notes.join('；'), reserved };
+  const reserved = field.pending.startsWith(RESERVED_MARK) ? field.pending.replace(reservedPrefix, '') : '';
+  const notes = [match && !numeric ? match[2] : '', reserved ? '' : field.pending].filter(Boolean).map(note => t(note));
+  return { label: t(match ? match[1] : field.label), unit: match && numeric ? t(match[2]) : '', hint: notes.join(t('；')), reserved: reserved && t(reserved) };
 }
 const labels: Record<string, string> = {
   dark: '深色', light: '浅色', system: '跟随系统', compact: '紧凑', comfortable: '舒适',
@@ -51,11 +56,11 @@ const labels: Record<string, string> = {
   '3d': '3D 模型', css: 'CSS 轻量', console: '主机之夜', glass: '玻璃紫',
 };
 export function choiceLabel(field: SettingField, value: string): string {
-  return field.key === 'clock_rate' ? `${value}×` : labels[value] ?? value;
+  return field.key === 'clock_rate' ? `${value}×` : value in labels ? t(labels[value]) : value;
 }
 export function displayValue(field: SettingField, value: SettingValue | undefined): string {
-  if (typeof value === 'boolean') return value ? '开' : '关';
-  if (value === undefined || value === '') return field.directory ? '默认' : '未设置';
+  if (typeof value === 'boolean') return value ? t('开') : t('关');
+  if (value === undefined || value === '') return field.directory ? t('默认') : t('未设置');
   if (typeof value === 'number') { const unit = fieldMeta(field).unit; return unit ? `${value} ${unit}` : String(value); }
   return field.choices.length ? choiceLabel(field, value) : value;
 }

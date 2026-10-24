@@ -3,6 +3,7 @@ import type { Cart3D, CartFace } from './cart3d/api';
 import { Cartridge, iconSampled, knownIconColor, useIconColor } from './cartridge';
 import { versionLabel } from './library';
 import type { LibraryItem } from './rpc';
+import { t } from './i18n';
 
 // Resolved while gui.js runs, so cart3d.js is found next to gui.js rather than next to the page.
 const bundle = new URL('cart3d.js', (document.currentScript as HTMLScriptElement | null)?.src ?? location.href).href;
@@ -11,9 +12,9 @@ const loadCart3D = () => loading ??= new Promise<void>((resolve, reject) => {
   const script = document.createElement('script');
   script.src = bundle;
   script.onload = () => resolve();
-  script.onerror = () => reject(new Error('cart3d.js 缺失或无法加载。'));
+  script.onerror = () => reject(new Error(t('cart3d.js 缺失或无法加载。')));
   document.head.append(script);
-}).then(() => window.OGPlayCart3D ?? Promise.reject(new Error('cart3d.js 没有注册 3D 卡带。')));
+}).then(() => window.OGPlayCart3D ?? Promise.reject(new Error(t('cart3d.js 没有注册 3D 卡带。'))));
 
 // The 3D bundle loads only when the setting asks for it. While the setting or the bundle is still on its way the
 // cartridge slots stay empty ('waiting') instead of flashing the CSS cartridge; only "css" or a failure (missing
@@ -28,7 +29,7 @@ export function useCart3D(mode: CartMode, report: (reason: unknown) => void): Ca
     loadCart3D().then(value => { if (live) setApi(value); }, reason => {
       if (!live) return;
       setApi('failed');
-      report(`3D 卡带不可用，已改用 CSS 卡带。\n${reason instanceof Error ? reason.message : String(reason)}`);
+      report(`${t('3D 卡带不可用，已改用 CSS 卡带。')}\n${reason instanceof Error ? reason.message : String(reason)}`);
     });
     return () => { live = false; };
   }, [mode]);
@@ -42,6 +43,8 @@ export function cartFace(item: LibraryItem, tone: string, color: [number, number
   const face = {
     id: item.installation_id, name: item.display_name, package: item.package || item.installation_id, version: versionLabel(item),
     imported: item.imported_at?.slice(0, 10) ?? '', color, tone, status: item.status,
+    // Printed words follow the launcher language; they are part of the key so a switch reprints the label.
+    captions: { version: t('版本'), imported: t('导入'), tagline: t('安卓老游戏兼容层') },
   };
   return { ...face, icon: item.icon, key: JSON.stringify([face, iconIds.get(item.icon)]) };
 }

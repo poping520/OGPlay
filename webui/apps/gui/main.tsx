@@ -12,18 +12,19 @@ import type { DataHint } from './import';
 import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
+import { setLanguage, t, useLanguage } from './i18n';
 import '../../packages/ui-kit/theme.css';
 import './console.css';
 interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
-const statusOf = (item: LibraryItem) => statuses[item.status] ?? { label: '状态未知', tone: 'warning' };
+const statusOf = (item: LibraryItem) => { const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' }; return { ...status, label: t(status.label) }; };
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
 function Key({ children }: { children: ComponentChildren }) { return <span class="key" aria-hidden="true">{children}</span>; }
 function Modal({ title, onDismiss, children }: { title: string; onDismiss: () => void; children: ComponentChildren }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
   return <dialog ref={dialog} aria-label={title} onCancel={event => { event.preventDefault(); onDismiss(); }}>
-    <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>关闭</button></div>
+    <h2>{title}</h2>{children}<div class="modal-actions"><button autoFocus onClick={onDismiss}>{t('关闭')}</button></div>
   </dialog>;
 }
 // Selection changes crossfade stacked layers by opacity only (compositor work); the art is pre-blurred.
@@ -64,8 +65,8 @@ function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
     const timer = window.setTimeout(onDone, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 450);
     return () => window.clearTimeout(timer);
   }, [leaving]);
-  return <div class={`splash ${leaving ? 'leaving' : ''}`} role="status" aria-label="OGPlay 正在启动">
-    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>Android 经典游戏兼容层</small><i class="splash-bar" />
+  return <div class={`splash ${leaving ? 'leaving' : ''}`} role="status" aria-label={t('OGPlay 正在启动')}>
+    <img src={logo} alt="" /><b><span>OG</span>Play</b><small>{t('Android 经典游戏兼容层')}</small><i class="splash-bar" />
   </div>;
 }
 function Clock() {
@@ -74,6 +75,7 @@ function Clock() {
   return <span class="clock">{now.toTimeString().slice(0, 5)}</span>;
 }
 function App() {
+  useLanguage();
   const [library, setLibrary] = useState<Library>({ items: [], library_root: '' });
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
@@ -113,7 +115,7 @@ function App() {
   const instance = item && dashboards.find(value => value.installation_id === item.installation_id);
   const runningCount = library.items.filter(game => game.running).length;
   const report = (reason: unknown) => setErrors(queue => [...queue, reason instanceof Error ? reason.message : String(reason)]);
-  const applySettings = (value: Settings) => { settingsRef.current = value; setSettings(value); };
+  const applySettings = (value: Settings) => { settingsRef.current = value; setSettings(value); applyLanguage(value.values.language); };
   // Pending until settings load, so a CSS preference never starts loading the 3D bundle; unreadable settings use the default.
   const cartMode: CartMode = settings ? (settings.values.cartridge === 'css' ? 'css' : '3d') : settingsFailed ? '3d' : 'pending';
   const cart3d = useCart3D(cartMode, report);
@@ -141,7 +143,7 @@ function App() {
     const exited = (event: Event) => {
       const detail = (event as CustomEvent<{ installation_id: string; exit_code: number; log_tail: string }>).detail;
       setDashboards(current => current.filter(instance => instance.installation_id !== detail.installation_id));
-      if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${detail.installation_id} 退出码 ${detail.exit_code}\n${detail.log_tail}`);
+      if (detail.exit_code !== 0 && settingsRef.current?.values.show_exit_log !== false) report(`${t('{id} 退出码 {code}', { id: detail.installation_id, code: detail.exit_code })}\n${detail.log_tail}`);
       void refresh().catch(report);
       // ADR-0146: what the run failed to find may point at a better data mount.
       void rpc<DataHint>('library.data_hint', { installation_id: detail.installation_id })
@@ -249,27 +251,27 @@ function App() {
     skin={settings?.values.settings_style === 'glass' ? 'glass' : 'console'} cart3d={cart3d}
     onBack={() => { setGameSettingsId(''); void refresh().catch(report); }} />;
 
-  const filterLabel = filters.find(([value]) => value === filter)![1];
+  const filterLabel = t(filters.find(([value]) => value === filter)![1]);
   const moreMenu = (game: LibraryItem) => <div class="more">
-    <button class="pill" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Key>…</Key>更多</button>
+    <button class="pill" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Key>…</Key>{t('更多')}</button>
     {menuOpen && <div class="menu" role="menu">
-      {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>游戏设置<small>保存后下次启动生效</small></button>}
-      <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'sandbox'); }}>打开沙盒目录</button>
-      <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>打开日志目录</button>
-      <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>安装信息</button>
+      {game.running && <button role="menuitem" disabled={busy || importing} onClick={() => openGameSettings(game)}>{t('游戏设置')}<small>{t('保存后下次启动生效')}</small></button>}
+      <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'sandbox'); }}>{t('打开沙盒目录')}</button>
+      <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button>
+      <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>
       <hr />
-      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? '游戏运行中，退出后才能移除。' : undefined} onClick={() => requestRemoval(game)}>移除库中实例<small>默认保留存档，重新导入时恢复</small></button>
+      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能移除。') : undefined} onClick={() => requestRemoval(game)}>{t('移除库中实例')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
     </div>}
   </div>;
   const actions = (game: LibraryItem) => {
     if (game.running) {
-      const dashboard = instance?.port ? <button ref={primary} class="pill main" disabled={busy || instance.status !== 'ready'} title={instance.detail} onClick={() => void act('dashboard.open', game)}><Key>A</Key>打开 Dashboard</button> : null;
-      const controls = <button ref={dashboard ? undefined : primary} class={`pill ${dashboard ? '' : 'main'}`} disabled={busy || !editorReady} title={instance?.key_editor_detail ?? '游戏内也可按 F2 打开按键设置。'} onClick={() => openControls(game)}><Key>{dashboard ? 'X' : 'A'}</Key>按键设置</button>;
+      const dashboard = instance?.port ? <button ref={primary} class="pill main" disabled={busy || instance.status !== 'ready'} title={instance.detail} onClick={() => void act('dashboard.open', game)}><Key>A</Key>{t('打开 Dashboard')}</button> : null;
+      const controls = <button ref={dashboard ? undefined : primary} class={`pill ${dashboard ? '' : 'main'}`} disabled={busy || !editorReady} title={instance?.key_editor_detail ?? t('游戏内也可按 F2 打开按键设置。')} onClick={() => openControls(game)}><Key>{dashboard ? 'X' : 'A'}</Key>{t('按键设置')}</button>;
       return <>{dashboard}{controls}{moreMenu(game)}</>;
     }
     return <>
-      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? '启动游戏' : game.detail} onClick={() => void act('library.launch', game)}><Key>A</Key>开始游戏</button>
-      <button class="pill" disabled={busy || importing} onClick={() => openGameSettings(game)}><Key>Y</Key>游戏设置</button>
+      <button ref={primary} class="pill main" disabled={busy || !game.can_launch} title={game.can_launch ? t('启动游戏') : game.detail} onClick={() => void act('library.launch', game)}><Key>A</Key>{t('开始游戏')}</button>
+      <button class="pill" disabled={busy || importing} onClick={() => openGameSettings(game)}><Key>Y</Key>{t('游戏设置')}</button>
       {moreMenu(game)}
     </>;
   };
@@ -283,36 +285,36 @@ function App() {
     target.style.setProperty('--tilt-x', `${(-y * 16).toFixed(2)}deg`);
   };
   const hero = () => {
-    if (loading) return <div class="hero-text"><h1 class="small">正在读取游戏库…</h1></div>;
+    if (loading) return <div class="hero-text"><h1 class="small">{t('正在读取游戏库…')}</h1></div>;
     if (library.items.length === 0) return <>
-      <div class="hero-text"><div class="kicker"><i />Welcome to OGPlay</div><h1>把经典游戏<br />带回来</h1>
-        <div class="sub">安卓老游戏，在桌面上原生运行</div>
-        <div class="cta"><button ref={primary} class="pill main" disabled={importing} onClick={startImport}><Key>A</Key>选择安装包</button></div>
-        <div class="state">也可以直接把 APK 拖进窗口 · 支持单体 APK，分包格式暂不支持</div></div>
-      <div class="showcase"><button class="ghost-cart" aria-label="选择安装包" disabled={importing} onClick={startImport}>＋</button><div class="floor" /></div>
+      <div class="hero-text"><div class="kicker"><i />Welcome to OGPlay</div><h1>{t('把经典游戏')}<br />{t('带回来')}</h1>
+        <div class="sub">{t('安卓老游戏，在桌面上原生运行')}</div>
+        <div class="cta"><button ref={primary} class="pill main" disabled={importing} onClick={startImport}><Key>A</Key>{t('选择安装包')}</button></div>
+        <div class="state">{t('也可以直接把 APK 拖进窗口 · 支持单体 APK，分包格式暂不支持')}</div></div>
+      <div class="showcase"><button class="ghost-cart" aria-label={t('选择安装包')} disabled={importing} onClick={startImport}>＋</button><div class="floor" /></div>
     </>;
-    if (!item) return <div class="hero-text"><h1 class="small">{query ? '没有符合条件的游戏' : '这个分类里没有游戏'}</h1>
-      <div class="sub">按 Q / E 切换分类，或换个关键词。</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>清除筛选</button></div></div>;
+    if (!item) return <div class="hero-text"><h1 class="small">{query ? t('没有符合条件的游戏') : t('这个分类里没有游戏')}</h1>
+      <div class="sub">{t('按 Q / E 切换分类，或换个关键词。')}</div><div class="cta"><button class="pill" onClick={resetFilters}><Key>B</Key>{t('清除筛选')}</button></div></div>;
     const status = statusOf(item);
     const position = items.indexOf(item) + 1;
-    const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>选择数据包 →</button> :
-      item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>移除后重新导入 →</button> : null;
-    const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? ` · MCP 端口 ${instance.port}` : ''}` : '';
+    const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>{t('选择数据包 →')}</button> :
+      item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('移除后重新导入 →')}</button> : null;
+    const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? t(' · MCP 端口 {port}', { port: instance.port }) : ''}` : '';
     return <>
       <div class="hero-text" key={item.installation_id}>
-        <div class="kicker"><i />No.{String(position).padStart(2, '0')} / {String(items.length).padStart(2, '0')}{item.imported_at ? ` · 导入于 ${item.imported_at.slice(0, 10)}` : ''}</div>
+        <div class="kicker"><i />No.{String(position).padStart(2, '0')} / {String(items.length).padStart(2, '0')}{item.imported_at ? t(' · 导入于 {date}', { date: item.imported_at.slice(0, 10) }) : ''}</div>
         <h1 title={item.display_name}>{item.display_name}</h1>
-        <div class="sub"><span class="mono">{item.package || '包名不可用'}</span></div>
+        <div class="sub"><span class="mono">{item.package || t('包名不可用')}</span></div>
         <div class="stats">
-          <div title={item.version_code === null ? undefined : `versionCode ${item.version_code}`}><b>{item.version_name || (item.version_code === null ? item.version : String(item.version_code))}</b><small>{item.version_name && item.version_code !== null ? `版本 · ${item.version_code}` : '版本'}</small></div>
+          <div title={item.version_code === null ? undefined : `versionCode ${item.version_code}`}><b>{item.version_name || (item.version_code === null ? item.version : String(item.version_code))}</b><small>{item.version_name && item.version_code !== null ? t('版本 · {code}', { code: item.version_code }) : t('版本')}</small></div>
           {item.profile && <div title={item.profile.detail}><b>{item.profile.value}</b><small>Profile</small></div>}
-          <div title={item.external.detail}><b>{item.external.value || '—'}</b><small>数据包</small></div>
+          <div title={item.external.detail}><b>{item.external.value || '—'}</b><small>{t('数据包')}</small></div>
         </div>
         <div class="state"><span class={`led ${item.running ? 'running' : status.tone}`} /><span>{status.label}{item.detail ? ` · ${item.detail}` : ''}{runtime}</span>{fix}</div>
         <div class="cta">{actions(item)}</div>
       </div>
       <div class="showcase" onPointerMove={tilt} onPointerLeave={tilt}>
-        {(item.running || status.tone !== 'ready') && <span class={`flag ${item.running ? 'running' : status.tone}`}>{item.running ? '● 运行中' : status.label}</span>}
+        {(item.running || status.tone !== 'ready') && <span class={`flag ${item.running ? 'running' : status.tone}`}>{item.running ? t('● 运行中') : status.label}</span>}
         {cart3d ? <Hero3D api={cart3d} item={item} tone={item.running ? 'running' : status.tone} shown={() => setHeroShown(true)}
           neighbours={[items[(position - 2 + items.length) % items.length], items[position % items.length]].filter(game => game !== item)
             .map(game => [game, game.running ? 'running' : statusOf(game).tone] as [LibraryItem, string])} /> :
@@ -328,49 +330,49 @@ function App() {
     <Backdrop item={loading ? undefined : item} />
     <header class="top">
       <Brand />
-      <nav class="tabs" aria-label="筛选游戏">
+      <nav class="tabs" aria-label={t('筛选游戏')}>
         <span class="shoulder" aria-hidden="true" title="Q">L</span>
         {filters.map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
-          {label}<span class="count">{visibleItems(library.items, '', value, 'name').length}</span></button>)}
+          {t(label)}<span class="count">{visibleItems(library.items, '', value, 'name').length}</span></button>)}
         <span class="shoulder" aria-hidden="true" title="E">R</span>
       </nav>
       <div class="tools">
         <div class={`search ${searchOpen || query ? 'open' : ''}`}>
-          <button class="round" aria-label="搜索游戏" title="搜索（⌘K / Ctrl+K）" onClick={() => searchOpen || query ? search.current?.focus() : openSearch()}>⌕</button>
-          <input ref={search} type="search" placeholder="名称、包名或版本" aria-label="搜索游戏" value={query} tabIndex={searchOpen || query ? 0 : -1}
+          <button class="round" aria-label={t('搜索游戏')} title={t('搜索（⌘K / Ctrl+K）')} onClick={() => searchOpen || query ? search.current?.focus() : openSearch()}>⌕</button>
+          <input ref={search} type="search" placeholder={t('名称、包名或版本')} aria-label={t('搜索游戏')} value={query} tabIndex={searchOpen || query ? 0 : -1}
             onInput={event => setQuery(event.currentTarget.value)} onBlur={() => { if (!query) setSearchOpen(false); }} />
         </div>
-        <button class={`running-pill ${runningCount ? 'live' : ''}`} onClick={() => setDashboardListOpen(true)}><span class={`led ${runningCount ? 'running' : 'idle'}`} />{runningCount} 运行中</button>
-        <button class="round" aria-label="刷新游戏库" title="刷新" disabled={busy || loading} onClick={() => void refresh().catch(report)}>⟳</button>
-        <button class="round" aria-label="设置" title="设置" disabled={busy || importing} onClick={() => setSettingsOpen(true)}>⚙</button>
+        <button class={`running-pill ${runningCount ? 'live' : ''}`} onClick={() => setDashboardListOpen(true)}><span class={`led ${runningCount ? 'running' : 'idle'}`} />{t('{n} 运行中', { n: runningCount })}</button>
+        <button class="round" aria-label={t('刷新游戏库')} title={t('刷新')} disabled={busy || loading} onClick={() => void refresh().catch(report)}>⟳</button>
+        <button class="round" aria-label={t('设置')} title={t('设置')} disabled={busy || importing} onClick={() => setSettingsOpen(true)}>⚙</button>
         <Clock />
       </div>
     </header>
-    <section class="stage" aria-label="游戏详情" aria-busy={loading}>{hero()}</section>
-    <section class="rail" aria-label="游戏条目">
-      <div class="rail-head"><b>{filterLabel}</b><span role="status">{items.length} 个安装实例{query ? ` · 搜索“${query}”` : ''}</span>
-        <label class="sort">排序<select aria-label="排序" value={sort} onChange={event => setSort(event.currentTarget.value as Sort)}><option value="name">名称</option><option value="newest">最近导入</option><option value="oldest">最早导入</option></select></label>
+    <section class="stage" aria-label={t('游戏详情')} aria-busy={loading}>{hero()}</section>
+    <section class="rail" aria-label={t('游戏条目')}>
+      <div class="rail-head"><b>{filterLabel}</b><span role="status">{t('{n} 个安装实例', { n: items.length })}{query ? t(' · 搜索“{query}”', { query }) : ''}</span>
+        <label class="sort">{t('排序')}<select aria-label={t('排序')} value={sort} onChange={event => setSort(event.currentTarget.value as Sort)}><option value="name">{t('名称')}</option><option value="newest">{t('最近导入')}</option><option value="oldest">{t('最早导入')}</option></select></label>
       </div>
       <div class="strip" ref={strip} onWheel={event => { if (strip.current && Math.abs(event.deltaY) > Math.abs(event.deltaX)) strip.current.scrollLeft += event.deltaY; }}>
         {items.map(game => {
           const status = statusOf(game);
           const tone = game.running ? 'running' : status.tone;
           return <button key={game.installation_id} class="tile" data-instance={game.installation_id}
-            aria-pressed={item?.installation_id === game.installation_id} aria-label={`${game.display_name}，${status.label}`} title={`${game.display_name} · ${versionLabel(game)}`}
+            aria-pressed={item?.installation_id === game.installation_id} aria-label={t('{name}，{status}', { name: game.display_name, status: status.label })} title={`${game.display_name} · ${versionLabel(game)}`}
             onClick={() => setSelected(game.installation_id)} onDblClick={() => { if (game.can_launch && !game.running) void act('library.launch', game); }}>
             <TileCart api={cart3d} item={game} tone={tone} ready={() => tileReady(game.installation_id)} /><span class="name">{game.display_name}</span>
           </button>;
         })}
-        <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>导入游戏<small>选择 APK</small></button>
+        <button class="tile add" disabled={importing} onClick={startImport}><b>＋</b>{t('导入游戏')}<small>{t('选择 APK')}</small></button>
       </div>
     </section>
     <footer class="foot">
-      <span class="hint"><Key>← →</Key>选择</span><span class="hint"><Key>A</Key>开始<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>返回<kbd>Esc</kbd></span>
-      <span class="hint"><Key>X</Key>按键设置</span><span class="hint"><Key>Y</Key>游戏设置</span><span class="hint"><Key>L R</Key>切换分类<kbd>Q E</kbd></span>
+      <span class="hint"><Key>← →</Key>{t('选择')}</span><span class="hint"><Key>A</Key>{t('开始')}<kbd>Enter</kbd></span><span class="hint"><Key>B</Key>{t('返回')}<kbd>Esc</kbd></span>
+      <span class="hint"><Key>X</Key>{t('按键设置')}</span><span class="hint"><Key>Y</Key>{t('游戏设置')}</span><span class="hint"><Key>L R</Key>{t('切换分类')}<kbd>Q E</kbd></span>
       <span class="path" title={library.library_root}><span dir="ltr">{library.library_root}</span></span>
     </footer>
     {splash && <Splash ready={startReady} onDone={() => setSplash(false)} />}
-    {dragging && <div class="drop" aria-live="polite"><div class="slot" /><h2>松开，插入卡槽</h2><p>单体 APK · 一次一个文件</p></div>}
+    {dragging && <div class="drop" aria-live="polite"><div class="slot" /><h2>{t('松开，插入卡槽')}</h2><p>{t('单体 APK · 一次一个文件')}</p></div>}
     {importing && <ImportWizard defaultExternal={String(settings?.values.default_external_dir ?? '')} file={pendingFile} onClose={() => { setImporting(false); setPendingFile(null); }} onImported={async id => {
       setQuery(''); setFilter('all'); setSearchOpen(false); await refresh(); setSelected(id); setImporting(false); setPendingFile(null);
     }} />}
@@ -381,31 +383,37 @@ function App() {
         setDataHint(null); await refresh();
         if (relaunch) await rpc('library.launch', { installation_id: id });
       }} />}
-    {removing && <Modal title="移除库中实例" onDismiss={() => { if (!busy) setRemoving(null); }}>
-      <p>确认移除「{removing.display_name}」？</p><p class="mono">{removing.installation_id}</p>
-      <p>删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。</p>
-      <label class="import-confirm"><input type="checkbox" checked={deleteSaves} disabled={busy} onChange={event => setDeleteSaves(event.currentTarget.checked)} />同时删除存档（不可恢复）</label>
-      <p>{deleteSaves ? '存档将被永久删除；重新导入后从头开始。' : '存档保留在沙盒中；重新导入同一游戏时自动恢复。'}</p>
-      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? '移除并删除存档' : '确认移除'}</button>
+    {removing && <Modal title={t('移除库中实例')} onDismiss={() => { if (!busy) setRemoving(null); }}>
+      <p>{t('确认移除「{name}」？', { name: removing.display_name })}</p><p class="mono">{removing.installation_id}</p>
+      <p>{t('删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。')}</p>
+      <label class="import-confirm"><input type="checkbox" checked={deleteSaves} disabled={busy} onChange={event => setDeleteSaves(event.currentTarget.checked)} />{t('同时删除存档（不可恢复）')}</label>
+      <p>{deleteSaves ? t('存档将被永久删除；重新导入后从头开始。') : t('存档保留在沙盒中；重新导入同一游戏时自动恢复。')}</p>
+      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? t('移除并删除存档') : t('确认移除')}</button>
     </Modal>}
-    {infoOpen && item && <Modal title="安装信息" onDismiss={() => setInfoOpen(false)}>
-      <dl class="info"><dt>游戏</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>
-        <dt>安装实例</dt><dd class="mono">{item.installation_id}</dd><dt>包名</dt><dd class="mono">{item.package || '包名不可用'}</dd>
-        {item.profile && <><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd></>}<dt>数据包</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
-        <dt>沙盒路径</dt><dd class="mono">{item.sandbox_path}</dd><dt>日志目录</dt><dd class="mono">{item.log_directory}</dd><dt>导入时间</dt><dd>{item.imported_at || '未记录'}</dd>
-        <dt>Dashboard</dt><dd>{instance?.detail ?? '游戏尚未运行'}</dd>
-        <dt>按键设置</dt><dd>{instance?.key_editor_detail ?? '先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。'}</dd></dl>
+    {infoOpen && item && <Modal title={t('安装信息')} onDismiss={() => setInfoOpen(false)}>
+      <dl class="info"><dt>{t('游戏')}</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>
+        <dt>{t('安装实例')}</dt><dd class="mono">{item.installation_id}</dd><dt>{t('包名')}</dt><dd class="mono">{item.package || t('包名不可用')}</dd>
+        {item.profile && <><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd></>}<dt>{t('数据包')}</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
+        <dt>{t('沙盒路径')}</dt><dd class="mono">{item.sandbox_path}</dd><dt>{t('日志目录')}</dt><dd class="mono">{item.log_directory}</dd><dt>{t('导入时间')}</dt><dd>{item.imported_at || t('未记录')}</dd>
+        <dt>Dashboard</dt><dd>{instance?.detail ?? t('游戏尚未运行')}</dd>
+        <dt>{t('按键设置')}</dt><dd>{instance?.key_editor_detail ?? t('先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。')}</dd></dl>
     </Modal>}
-    {dashboardListOpen && <Modal title="运行实例" onDismiss={() => setDashboardListOpen(false)}>
-      {dashboards.length === 0 ? <p>当前启动器没有运行中的游戏。</p> : dashboards.map(instance => <section key={instance.installation_id}>
+    {dashboardListOpen && <Modal title={t('运行实例')} onDismiss={() => setDashboardListOpen(false)}>
+      {dashboards.length === 0 ? <p>{t('当前启动器没有运行中的游戏。')}</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>
-        <p class="mono">PID {instance.process_id} · {instance.port ? `端口 ${instance.port}` : 'MCP 未启用'}</p>
+        <p class="mono">PID {instance.process_id} · {instance.port ? t('端口 {port}', { port: instance.port }) : t('MCP 未启用')}</p>
         <p>{instance.detail}</p>
-        <button disabled={instance.status !== 'ready'} onClick={() => void rpc('dashboard.open', { installation_id: instance.installation_id }).catch(report)}>打开 Dashboard</button>
-        <button disabled={instance.key_editor_status !== 'ready'} title={instance.key_editor_detail} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>按键设置</button>
+        <button disabled={instance.status !== 'ready'} onClick={() => void rpc('dashboard.open', { installation_id: instance.installation_id }).catch(report)}>{t('打开 Dashboard')}</button>
+        <button disabled={instance.key_editor_status !== 'ready'} title={instance.key_editor_detail} onClick={() => void rpc('controls.open', { installation_id: instance.installation_id }).catch(report)}>{t('按键设置')}</button>
       </section>)}
     </Modal>}
-    {!importing && errors.length > 0 && <Modal title="操作提示" onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
+    {!importing && errors.length > 0 && <Modal title={t('操作提示')} onDismiss={() => setErrors(queue => queue.slice(1))}><pre>{errors[0]}</pre></Modal>}
   </div>;
 }
+// The host's setting decides; the last one used is remembered so the splash does not flash the other language.
+function applyLanguage(value: unknown) {
+  setLanguage(value);
+  try { localStorage.setItem('ogplay.language', String(value)); } catch { /* storage unavailable: the setting still applies */ }
+}
+try { setLanguage(localStorage.getItem('ogplay.language')); } catch { /* first run or blocked storage: Chinese until settings load */ }
 render(<App />, document.getElementById('app')!);

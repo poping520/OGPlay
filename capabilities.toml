@@ -273,6 +273,11 @@ status = "partial"
 test = "tests/runtime/vfs_tests.cpp#ADR-0146; tests/frontend/run_apk_vfs_tests.cpp#ADR-0146; tests/frontend/data_hint_tests.cpp; tests/frontend/gui_launch_tests.cpp; frontend.run_apk_options"
 note = "GUI-13/ADR-0146：运行时记录 /sdcard 只读查找缺失，退出写报告；库按缺失路径与数据包实际文件推断挂载点，GUI 退出后提示，用户确认才改 external_guest_dir（可重新启动）；未配置数据包时只提示需要数据包。不分析 APK。macOS DH 真实复跑已验；OGPlay.app 内实际点击、游戏内提示与 Windows/Linux 未验。"
 
+[frontend.gui_language]
+status = "partial"
+test = "webui/apps/gui/i18n.test.ts"
+note = "GUI-14：全局设置“语言”切换启动器主窗口（游戏库、导入向导、数据包提示、全局/实例设置、3D 卡带印刷）中英文，设置页草稿即时预览。前端以中文原文为键翻译，宿主设置字段文字同表覆盖。宿主下发的状态详情、错误与 next_step、原生选择器、按键设置窗口、Dashboard、CLI 与游戏窗口仍为中文。"
+
 [frontend.gui_shell]
 status = "complete"
 test = "frontend.app_entrypoints; frontend.gui_dashboard_window; frontend.gui_options; frontend.gui_smoke; frontend.gui_library_smoke; frontend.gui_webui_manifest; tests/frontend/gui_rpc_tests.cpp; webui/apps/gui/rpc.test.ts; webui/apps/gui/library.test.ts; webui/apps/gui/import.test.ts; webui/apps/gui/settings.test.ts; webui/apps/gui/game-settings.test.ts"

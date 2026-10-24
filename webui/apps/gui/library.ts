@@ -1,4 +1,5 @@
 import type { LibraryItem } from './rpc';
+import { t } from './i18n';
 
 export type Filter = 'all' | 'launchable' | 'running' | 'attention';
 export type Sort = 'name' | 'newest' | 'oldest';
@@ -38,9 +39,9 @@ export function versionLabel(item: LibraryItem): string {
     item.version_name ? `${item.version_name} (${item.version_code})` : `versionCode ${item.version_code}`;
 }
 export function validatePackageSelection(files: Pick<File, 'name' | 'size'>[]): string | null {
-  if (files.length !== 1) return '请一次选择一个 APK、XAPK、APKM 或 APKS 文件。';
-  if (!/\.(apk|xapk|apkm|apks)$/i.test(files[0].name)) return '文件格式不支持，请选择 APK、XAPK、APKM 或 APKS。';
-  if (files[0].size === 0) return '文件为空，请选择完整的安装包。';
+  if (files.length !== 1) return t('请一次选择一个 APK、XAPK、APKM 或 APKS 文件。');
+  if (!/\.(apk|xapk|apkm|apks)$/i.test(files[0].name)) return t('文件格式不支持，请选择 APK、XAPK、APKM 或 APKS。');
+  if (files[0].size === 0) return t('文件为空，请选择完整的安装包。');
   return null;
 }
 // Wraps around so L/R and arrow keys can cycle without dead ends.

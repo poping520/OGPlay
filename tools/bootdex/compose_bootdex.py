@@ -50,6 +50,7 @@ def measure_sources(document):
     cls['surface'], cls['surface_sha256'] = policy['surface'], policy['surface_sha256']
     document['classes'].append(json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8')))
     document['classes'].append(json.loads(Path(__file__).with_name('view-system-sources.json').read_text(encoding='utf-8')))
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-frame-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -75,7 +76,7 @@ def build(measure=False):
         # ADR-0155 still audits every retained DEX body, including disabled
         # composition bodies. These pure-Java helpers are admitted by the
         # unchanged default selector; keep them only in this test counterpart.
-        hierarchy = {group['owner'], 'Landroid/view/View$ListenerInfo;',
+        hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/view/View$ListenerInfo;',
                      'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
                      'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',
                      'Landroid/view/ViewGroup$ViewLocationHolder;'}

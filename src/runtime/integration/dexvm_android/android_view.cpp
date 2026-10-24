@@ -3158,6 +3158,8 @@ Decl Declare_android_view_Window(const Context& context) {
     const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
     const auto content_parent = builder.BoundInstanceField(
         "mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        context->ui_java_window_content = content_parent;
     const auto parent_for = [context, owner, content_parent](dx::IntrinsicContext& call) {
         const dx::IntrinsicCall fields(call);
         auto parent = fields.GetRef(content_parent);
@@ -3178,6 +3180,11 @@ Decl Declare_android_view_Window(const Context& context) {
         if (!constructor) throw std::logic_error("Window content FrameLayout constructor is missing");
         checked(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(parent), dx::VmValue::Ref(activity)}));
         const auto node = *FindViewUiNode(*context, parent.Value());
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            static_cast<void>(CallAndroidMethod(call.vm, parent, "setId", "(I)V", {dx::VmValue::Int(0x01020002)}));
+            fields.SetRef(content_parent, parent);
+            return parent;
+        }
         context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
         context->ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
         // API19 framework public.xml: android.R.id.content.
@@ -3214,11 +3221,25 @@ Decl Declare_android_view_Window(const Context& context) {
                     (context->activity_stack.empty() || context->activity == activity);
             };
             if (replace) {
-                const auto count = context->ui_tree.Get(node)->children.size();
-                if (count != 0) static_cast<void>(CallAndroidMethod(call.vm, parent, "removeViews", "(II)V",
-                    {dx::VmValue::Int(0), dx::VmValue::Int(static_cast<std::int32_t>(count))}));
+                const auto count =
+                    context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                        ? static_cast<std::size_t>(CallAndroidMethod(call.vm, parent, "getChildCount", "()I").AsInt())
+                        : context->ui_tree.Get(node)->children.size();
+                if (count != 0) {
+                    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+                        static_cast<void>(CallAndroidMethod(call.vm, parent, "removeAllViews", "()V"));
+                    else
+                        static_cast<void>(CallAndroidMethod(
+                            call.vm, parent, "removeViews", "(II)V",
+                            {dx::VmValue::Int(0), dx::VmValue::Int(static_cast<std::int32_t>(count))}));
+                }
                 if (!current()) return dx::VmValue::Void();
                 context->content_view = dx::VmObjectRef{};
+            }
+            if (xml && context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_window_xml", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Experimental Window XML unsupported"};
             }
             if (xml) {
                 try {
@@ -3237,10 +3258,18 @@ Decl Declare_android_view_Window(const Context& context) {
                     "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)}));
             }
             if (!current()) return dx::VmValue::Void();
-            const auto children = context->ui_tree.Get(node)->children;
-            context->content_view = children.empty() ? dx::VmObjectRef{} : ViewObjectForUiNode(*context, children.front());
+            if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                context->content_view =
+                    CallAndroidMethod(call.vm, parent, "getChildAt", "(I)Landroid/view/View;", {dx::VmValue::Int(0)})
+                        .ref;
+            } else {
+                const auto children = context->ui_tree.Get(node)->children;
+                context->content_view =
+                    children.empty() ? dx::VmObjectRef{} : ViewObjectForUiNode(*context, children.front());
+            }
             static_cast<void>(CallAndroidMethod(call.vm, activity, "onContentChanged", "()V"));
             if (!current()) return dx::VmValue::Void();
+            if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return dx::VmValue::Void();
             if (context->defer_content_surface_callbacks) {
                 context->surface_traversal_pending.insert(node);
             } else if (const auto error = AttachSurfaceViewSubtree(call.vm, *context, node)) {
@@ -3425,7 +3454,8 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                                                         static_cast<std::int32_t>(context.surface_height)});
         if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff)
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid traversal viewport"};
-        const auto root = context.content_view;
+        const auto root = AndroidUiTraversalRoot(vm, context);
+        const auto content = context.content_view;
         const auto node = FindViewUiNode(context, root.Value());
         const auto generation = context.ui_tree.Generation();
         const auto revision = context.ui_content_revision;
@@ -3433,9 +3463,10 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         const auto height = context.surface_height;
         const auto roots = vm.ProtectReferences(std::array{root});
         const auto current = [&] {
-            return root == context.content_view && revision == context.ui_content_revision &&
-                   generation == context.ui_tree.Generation() && width == context.surface_width &&
-                   height == context.surface_height && node && FindViewUiNode(context, root.Value()) == node;
+            return root == AndroidUiTraversalRoot(vm, context) && content == context.content_view &&
+                   revision == context.ui_content_revision && generation == context.ui_tree.Generation() &&
+                   width == context.surface_width && height == context.surface_height && node &&
+                   FindViewUiNode(context, root.Value()) == node;
         };
         if (!current())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound test root"};

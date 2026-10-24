@@ -101,7 +101,7 @@
       "entry": "META-INF/ogplay/member-sources.json",
       "manifest_sha256": "bc54a5a6f754098ab7e0daaa76eb2d84476bfafe78bec785dcb5121ae6c138e6",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "5dbe22782a010e9613f8f016a6420706dd89cab9f84eeeacd1c753dd515c560c"
+      "composer_sha256": "67e1174c1ef580519e4e11c3e7fb60eb3ecb60c12d8540e4adeda0460c5cdd40"
     }
   },
   "icu": {

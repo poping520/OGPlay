@@ -147,7 +147,10 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         if (!field || vm.Linker().Field(*field).is_unimplemented)
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                      "JavaTraversal requires its paired measure payload"};
-        if (android_intrinsics::UiClassForObject(vm, view) != ui::UiClass::View) {
+        const auto kind = android_intrinsics::UiClassForObject(vm, view);
+        const auto frame = vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;");
+        if (kind != ui::UiClass::View &&
+            !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view)))) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_measure_nonleaf", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                      "JavaTraversal only supports plain Views and test ViewGroups"};
@@ -209,6 +212,20 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     ProjectViewLayoutInputs(vm, context, view);
 }
 
+dexvm::VmObjectRef AndroidUiTraversalRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    // The Window owns this strong reference. These tokens only read its identity.
+    if (context.activity.IsValid() && context.ui_java_activity_window && context.ui_java_window_content) {
+        dexvm::IntrinsicContext activity_call{vm, context.activity, {}};
+        const auto window = dexvm::IntrinsicCall(activity_call).GetRef(*context.ui_java_activity_window);
+        if (window.IsValid()) {
+            dexvm::IntrinsicContext window_call{vm, window, {}};
+            const auto root = dexvm::IntrinsicCall(window_call).GetRef(*context.ui_java_window_content);
+            if (root.IsValid()) return root;
+        }
+    }
+    return context.content_view;  // VD-04/05 standalone test roots.
+}
+
 bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                               const bool visible) {
     std::set<dexvm::VmObjectRef> seen;
@@ -222,7 +239,7 @@ bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         dexvm::IntrinsicContext call{vm, view, {}};
         dexvm::IntrinsicCall fields(call);
         if (visible && (fields.GetInt(context.view_java_measure_fields->view_flags) & 0x0c) == 8) return false;
-        if (view == context.content_view) return true;
+        if (view == AndroidUiTraversalRoot(vm, context)) return true;
         view = fields.GetRef(context.view_java_hierarchy_fields->parent);
     }
     return false;
@@ -235,7 +252,7 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
     if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
         (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection requires Java owner thread"};
-    if (root != context.content_view || target.content_revision != context.ui_content_revision ||
+    if (root != AndroidUiTraversalRoot(vm, context) || target.content_revision != context.ui_content_revision ||
         target.window_generation != context.ui_tree.Generation())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
     dexvm::IntrinsicContext root_call{vm, root, {}};

@@ -5,6 +5,7 @@
 #include <map>
 #include <optional>
 #include <span>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,7 @@ private:
     std::map<std::uint32_t, std::string> registered_names_;
     std::map<std::string, std::string, std::less<>> unregistered_;
     std::map<ThemeToken, State> themes_;
+    std::set<std::uint32_t> drawable_attributes_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

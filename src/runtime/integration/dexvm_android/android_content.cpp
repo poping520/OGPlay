@@ -1387,7 +1387,44 @@ void LoadPreferencesOnce(const Context &context, const std::string &name) {
 Decl Declare_android_content_Context(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;",
                                                   "Ljava/lang/Object;");
-  const auto inflater = builder.BoundInstanceField("mOgplayInflater", "Landroid/view/LayoutInflater;", dx::kAccPrivate);
+  const auto inflater = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                            ? std::optional<dx::IntrinsicFieldHandle>{}
+                            : std::optional{builder.BoundInstanceField(
+                                  "mOgplayInflater", "Landroid/view/LayoutInflater;", dx::kAccPrivate)};
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      builder.VirtualMethod(
+          "getTheme", "()Landroid/content/res/Resources$Theme;", [context](dx::IntrinsicContext& call) {
+              constexpr auto key = "application_theme";
+              const auto cached = context->singletons.find(key);
+              if (cached != context->singletons.end()) return dx::VmValue::Ref(cached->second);
+              const auto resources = ResourceObject(call, context, false);
+              const auto roots = call.vm.ProtectReferences(std::array{resources});
+              const auto theme =
+                  CallAndroidMethod(call.vm, resources, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
+              const auto theme_root = call.vm.ProtectReferences(std::array{theme});
+              const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/Resources;");
+              const auto select = call.vm.Linker().FindDirectMethod(type, "selectDefaultTheme", "(II)I");
+              if (!select) throw std::logic_error("ROM selectDefaultTheme missing");
+              const auto info = CallAndroidMethod(call.vm, call.receiver, "getApplicationInfo",
+                                                  "()Landroid/content/pm/ApplicationInfo;")
+                                    .ref;
+              const auto sdk =
+                  call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(info), "targetSdkVersion", "I");
+              if (!sdk) throw std::logic_error("ApplicationInfo targetSdkVersion missing");
+              const auto selected = call.vm.Call(
+                  *select,
+                  std::array{dx::VmValue::Int(static_cast<std::int32_t>(context->application_theme)),
+                             dx::VmValue::Int(static_cast<std::int32_t>(
+                                 call.vm.Model().InstanceSlots(info)[call.vm.Linker().Field(*sdk).slot].bits))});
+              if (selected.exception.IsValid())
+                  throw dx::VmJavaThrow{call.vm.Linker().Class(selected.exception_class).descriptor,
+                                        selected.exception_message, selected.exception};
+              static_cast<void>(
+                  CallAndroidMethod(call.vm, theme, "applyStyle", "(IZ)V", {selected.value, dx::VmValue::Int(1)}));
+              context->singletons.emplace(key, theme);
+              return dx::VmValue::Ref(theme);
+          });
+  }
   constexpr std::int32_t kGuestProcessId = 1;
   constexpr std::int32_t kPermissionGranted = 0;
   constexpr std::int32_t kPermissionDenied = -1;
@@ -1726,8 +1763,13 @@ Decl Declare_android_content_Context(const Context &context) {
             return dx::VmValue::Ref(
                 Singleton(call, context, std::string(service->singleton_key), service->descriptor.data()));
         case dx::ServiceFactory::inflater: {
+            if (!inflater) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.experimental_inflater", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "experimental inflater awaits VD-09a-5"};
+            }
             dx::IntrinsicCall fields(call);
-            auto value = fields.GetRef(inflater);
+            auto value = fields.GetRef(*inflater);
             if (!value.IsValid()) {
                 const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LayoutInflater;");
                 const auto factory = call.vm.Linker().FindDirectMethod(
@@ -1740,7 +1782,7 @@ Decl Declare_android_content_Context(const Context &context) {
                     return dx::VmValue::Ref(dx::VmObjectRef{});
                 }
                 value = result.value.ref;
-                fields.SetRef(inflater, value);
+                fields.SetRef(*inflater, value);
             }
             return dx::VmValue::Ref(value);
         }
@@ -2004,6 +2046,8 @@ Decl Declare_android_content_ContextWrapper(const Context &context) {
   delegate("openFileOutput", "(Ljava/lang/String;I)Ljava/io/FileOutputStream;");
   delegate("getCacheDir", "()Ljava/io/File;");
   delegate("getResources", "()Landroid/content/res/Resources;");
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+      delegate("getTheme", "()Landroid/content/res/Resources$Theme;");
   delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
   delegate("bindService",
            "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z");

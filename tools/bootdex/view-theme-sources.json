@@ -2098,7 +2098,7 @@
           "signature": "getDrawable(I)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "ce77de5de8be9b1b365c488fbd9c12a2ac898f7762ae3d0e9518d5d086b92e5d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getFloat(IF)F",

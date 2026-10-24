@@ -93,6 +93,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-relative-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml.surface.json.gz"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-context-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-context.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-theme-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-theme.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme_projection.py"

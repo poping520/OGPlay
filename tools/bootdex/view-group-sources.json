@@ -413,7 +413,7 @@
     {
       "signature": "mLayoutTransitionListener:Landroid/animation/LayoutTransition$TransitionListener;",
       "flags": 2,
-      "source": "failure",
+      "source": "rom",
       "initialization": "vm-zero-before-selected-constructor/rom-clinit"
     },
     {
@@ -431,7 +431,7 @@
     {
       "signature": "mPersistentDrawingCache:I",
       "flags": 4,
-      "source": "failure",
+      "source": "rom",
       "initialization": "vm-zero-before-selected-constructor/rom-clinit"
     },
     {
@@ -495,13 +495,13 @@
       "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
       "flags": 65537,
       "body_sha256": "7dd6597202c163a7f5782a32d4b69f706badd68512fd8db9d3398883a11715fc",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
       "flags": 65537,
       "body_sha256": "83375d402bb863702eef32f724338d097ddd8206845f413d1dabb780ffbeba4a",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "access$000(Landroid/view/ViewGroup;)V",
@@ -636,7 +636,7 @@
       "signature": "debugDraw()Z",
       "flags": 2,
       "body_sha256": "ead13a25d35b8a37ab9343123f1a85af0ac784573881c04e481a3427d9ac5352",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "dipsToPixels(I)I",
@@ -726,13 +726,13 @@
       "signature": "initFromAttributes(Landroid/content/Context;Landroid/util/AttributeSet;)V",
       "flags": 2,
       "body_sha256": "271fc904861fa0ef6d1bf667cc55053e55e27e12289405f8312b56c69f3cf3d9",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "initViewGroup()V",
       "flags": 2,
       "body_sha256": "8bf5c8ef1fce068a3cd4e33c8fb6d75e6d0459b304a097b728b899e2745c9da1",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "notifyAnimationListener()V",
@@ -1297,7 +1297,7 @@
       "signature": "generateLayoutParams(Landroid/util/AttributeSet;)Landroid/view/ViewGroup$LayoutParams;",
       "flags": 1,
       "body_sha256": "618a70789dc997ab0638d1f783e30b108aa5033ae394544090e294afb3985d75",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "generateLayoutParams(Landroid/view/ViewGroup$LayoutParams;)Landroid/view/ViewGroup$LayoutParams;",
@@ -1910,13 +1910,13 @@
       "signature": "setAlwaysDrawnWithCacheEnabled(Z)V",
       "flags": 1,
       "body_sha256": "eef1b280646577c9bc327686623038d0b5aad6903abf9749d5100db51d5ca013",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setAnimationCacheEnabled(Z)V",
       "flags": 1,
       "body_sha256": "98eb933fa3d3f952b1d82bd9493a2e796b78ab33a11804fa607beec9c0cedf97",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setChildrenDrawingCacheEnabled(Z)V",
@@ -1940,13 +1940,13 @@
       "signature": "setClipChildren(Z)V",
       "flags": 1,
       "body_sha256": "a3d2615634300145d32327dd24748d70c5545150bb63c658313d3df2c856dfa4",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setClipToPadding(Z)V",
       "flags": 1,
       "body_sha256": "efce4cc36b11f03a578c499ba38a71e52a528580a7e24d26493d4d7013764999",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setDescendantFocusability(I)V",
@@ -1982,7 +1982,7 @@
       "signature": "setMotionEventSplittingEnabled(Z)V",
       "flags": 1,
       "body_sha256": "ac9e4e2083f09089f0b0b14e963d1b77603b674ae91ec3ad2a389f91b8a2ee81",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setOnHierarchyChangeListener(Landroid/view/ViewGroup$OnHierarchyChangeListener;)V",
@@ -1994,7 +1994,7 @@
       "signature": "setPersistentDrawingCache(I)V",
       "flags": 1,
       "body_sha256": "9b084f6d36b0bfbb0c24e5c94c3122c4e9ddaf7f5c1c40b652d9bfa84e44b4e3",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setStaticTransformationsEnabled(Z)V",

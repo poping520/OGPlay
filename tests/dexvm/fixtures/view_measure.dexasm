@@ -49,6 +49,16 @@
     invoke-direct {v0, v1}, Landroid/view/ViewGroup;-><init>(Landroid/content/Context;)V
     return-void
 .end method
+.method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+.registers 3
+    invoke-direct {v0, v1, v2}, Landroid/view/ViewGroup;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+    return-void
+.end method
+.method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V
+.registers 4
+    invoke-direct {v0, v1, v2, v3}, Landroid/view/ViewGroup;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V
+    return-void
+.end method
 .method protected onMeasure(II)V
 .registers 9
     const/4 v0, 0

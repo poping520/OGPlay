@@ -57,6 +57,16 @@ void ThemeResources::Load(std::string_view projection) {
     if (Text(Member(root, "schema")) != "ogplay.bounded-theme" || Number(Member(root, "schema_version")) != 1 ||
         Number(Member(root, "api_level")) != 19 || Text(Member(root, "configuration")) != "values")
         throw std::runtime_error("unsupported theme projection schema/configuration");
+    std::set<std::uint32_t> drawables;
+    const auto styleables = Member(root, "styleables");
+    if (!styleables.IsArray() || styleables.Size() > 1024) throw std::runtime_error("invalid styleable bounds");
+    for (std::size_t i = 0; i < styleables.Size(); ++i) {
+        const auto row = *styleables.Element(i);
+        const auto name = Text(Member(row, "name"));
+        if (name == "background" || name == "foreground" || name == "divider" || name.starts_with("scrollbarThumb") ||
+            name.starts_with("scrollbarTrack"))
+            drawables.insert(Number(Member(row, "resource_id")));
+    }
     const auto registered = Member(root, "registered");
     const auto unregistered = Member(root, "unregistered");
     if (!registered.IsArray() || registered.Size() > 512 || !unregistered.IsArray() || unregistered.Size() > 512)
@@ -96,6 +106,7 @@ void ThemeResources::Load(std::string_view projection) {
         if (!rejected.emplace(Text(Member(row, "name")), Text(Member(row, "reason"))).second)
             throw std::runtime_error("duplicate unregistered theme");
     }
+    drawable_attributes_ = std::move(drawables);
     projection_ = std::move(projected);
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
@@ -336,6 +347,8 @@ std::vector<ThemeValue> ThemeResources::Styled(ThemeToken token, std::uint32_t d
             value.type = 0;
             value.cookie = -1;
         }
+        if (drawable_attributes_.contains(attr) && value.type != 0)
+            throw std::runtime_error("requested drawable attribute is unsupported");
         cookie = value.cookie;
         result.push_back(value);
     }

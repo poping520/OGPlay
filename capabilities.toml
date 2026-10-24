@@ -1995,8 +1995,8 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-288/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。无系统 AssetManager、资源文件/span、控件属性构造或实验 inflater；Legacy 不变。"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "DVM-288/289/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。ROM Context/主题链、五类及 LP 属性构造已接通，缺尺寸/不支持 drawable 明确失败。无系统 AssetManager、资源文件/span 或实验 inflater；Legacy 不变。"
 
 [runtime.guest_proc_maps]
 status = "partial"

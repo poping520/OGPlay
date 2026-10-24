@@ -147,12 +147,10 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         if (!field || vm.Linker().Field(*field).is_unimplemented)
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                      "JavaTraversal requires its paired measure payload"};
-        if (android_intrinsics::UiClassForObject(vm, view) != ui::UiClass::View ||
-            vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
-                                     vm.Model().ObjectClass(view))) {
+        if (android_intrinsics::UiClassForObject(vm, view) != ui::UiClass::View) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_measure_nonleaf", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                     "JavaTraversal only supports plain test roots/leaves"};
+                                     "JavaTraversal only supports plain Views and test ViewGroups"};
         }
     }
     dexvm::IntrinsicContext call{vm, view, {}};
@@ -190,6 +188,8 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         fields.SetInt(measure.flags[1], 0x22408);
         fields.SetInt(measure.flags[2], 0);
         fields.SetInt(measure.view_flags, 0x18000000);
+        fields.SetInt(context.view_java_hierarchy_fields->id, -1);
+        fields.SetInt(context.view_java_hierarchy_fields->label_for_id, -1);
     }
     if (android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
         // Preserve the existing bounded Widget.Button background projection.
@@ -209,6 +209,25 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     ProjectViewLayoutInputs(vm, context, view);
 }
 
+bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                              const bool visible) {
+    std::set<dexvm::VmObjectRef> seen;
+    while (view.IsValid()) {
+        if (!vm.Model().IsValidRef(view)) return false;
+        if (!seen.insert(view).second || seen.size() > ui::UiTree::kMaxNodes)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Cyclic Java View parent chain"};
+        if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/View;"),
+                                      vm.Model().ObjectClass(view)))
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "System ViewParent is not enabled"};
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall fields(call);
+        if (visible && (fields.GetInt(context.view_java_measure_fields->view_flags) & 0x0c) == 8) return false;
+        if (view == context.content_view) return true;
+        view = fields.GetRef(context.view_java_hierarchy_fields->parent);
+    }
+    return false;
+}
+
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                          const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
                                          const std::uint64_t epoch) {
@@ -219,38 +238,65 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
     if (root != context.content_view || target.content_revision != context.ui_content_revision ||
         target.window_generation != context.ui_tree.Generation())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
-    const auto node = FindViewUiNode(context, root.Value());
-    if (!node || android_intrinsics::UiClassForObject(vm, root) != ui::UiClass::View ||
-        vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
-                                 vm.Model().ObjectClass(root)))
-        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                 "Measured projection requires a plain root"};
-    dexvm::IntrinsicContext call{vm, root, {}};
-    dexvm::IntrinsicCall fields(call);
-    const auto& measure = *context.view_java_measure_fields;
-    if ((fields.GetInt(measure.flags[0]) & 0x800) == 0)
+    dexvm::IntrinsicContext root_call{vm, root, {}};
+    if ((dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x800) == 0)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
-    const ui::Size measured{fields.GetInt(measure.measured[0]) & 0x00ffffff,
-                            fields.GetInt(measure.measured[1]) & 0x00ffffff};
-    // Never write these bindings: ROM layout/setFrame owns local geometry.
-    const auto& bounds = measure.frame;
-    const auto left = fields.GetInt(bounds[0]);
-    const auto top = fields.GetInt(bounds[1]);
-    const ui::Rect frame{left, top, fields.GetInt(bounds[2]), fields.GetInt(bounds[3])};
-    const auto visibility_bits = fields.GetInt(measure.view_flags) & 0x0c;
-    const auto visibility = visibility_bits == 8   ? ui::Visibility::Gone
-                            : visibility_bits == 4 ? ui::Visibility::Invisible
-                                                   : ui::Visibility::Visible;
-    const ui::UiGeometryProjection projection{
-        target,
-        epoch,
-        {{target.root,
-          std::nullopt,
-          {0, 0, target.metrics.width, target.metrics.height},
-          {target.metrics.width, target.metrics.height},
-          ui::Visibility::Visible,
-          {}},
-         {*node, target.root, frame, measured, visibility, ReadAndroidViewPadding(vm, context, root)}}};
+    const auto roots = vm.ProtectReferences(std::array{root});
+    ui::UiGeometryProjection projection{target,
+                                        epoch,
+                                        {{target.root,
+                                          std::nullopt,
+                                          {0, 0, target.metrics.width, target.metrics.height},
+                                          {target.metrics.width, target.metrics.height},
+                                          ui::Visibility::Visible,
+                                          {}}}};
+    std::set<dexvm::VmObjectRef> seen;
+    const auto collect = [&](auto&& self, dexvm::VmObjectRef view, dexvm::VmObjectRef expected_parent,
+                             ui::UiNodeId parent, std::size_t depth) -> void {
+        if (!seen.insert(view).second || depth > ui::UiTree::kMaxDepth || seen.size() >= ui::UiTree::kMaxNodes)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Invalid Java View hierarchy"};
+        const auto node = FindViewUiNode(context, view.Value());
+        if (!node) throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Unbound Java child"};
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall fields(call);
+        const auto& h = *context.view_java_hierarchy_fields;
+        const auto& m = *context.view_java_measure_fields;
+        if (fields.GetRef(h.parent) != expected_parent)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Java child parent mismatch"};
+        const auto bits = fields.GetInt(m.view_flags) & 0x0c;
+        const auto visibility = bits == 8   ? ui::Visibility::Gone
+                                : bits == 4 ? ui::Visibility::Invisible
+                                            : ui::Visibility::Visible;
+        const auto& f = m.frame;
+        ui::UiProjectedNode entry{*node,
+                                  parent,
+                                  {fields.GetInt(f[0]), fields.GetInt(f[1]), fields.GetInt(f[2]), fields.GetInt(f[3])},
+                                  {fields.GetInt(m.measured[0]) & 0xffffff, fields.GetInt(m.measured[1]) & 0xffffff},
+                                  visibility,
+                                  ReadAndroidViewPadding(vm, context, view)};
+        entry.android_id = fields.GetInt(h.id);
+        const bool group = vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
+                                                    vm.Model().ObjectClass(view));
+        if (group) {
+            const auto flags = fields.GetInt(context.view_group_java_fields->flags);
+            entry.clip_children = (flags & 1) != 0;
+            entry.clip_to_padding = (flags & 2) != 0;
+        }
+        projection.nodes.push_back(entry);
+        if (!group) return;
+        const auto& g = *context.view_group_java_fields;
+        const auto children = fields.GetRef(g.children);
+        const auto count = fields.GetInt(g.count);
+        if (!children.IsValid() || count < 0 || count > vm.Model().ArrayLength(children) ||
+            static_cast<std::size_t>(count) > ui::UiTree::kMaxChildren)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Invalid Java children array/count"};
+        for (std::int32_t i = 0; i < count; ++i) {
+            const auto child = vm.Model().GetObjectElement(children, i);
+            if (!child.IsValid()) throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Null Java child"};
+            self(self, child, view, *node, depth + 1);
+        }
+    };
+    collect(collect, root, dexvm::VmObjectRef{}, target.root, 0);
     context.ui_tree.CommitProjection(projection);
     context.ui_measure_epoch = epoch;
 }

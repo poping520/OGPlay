@@ -145,6 +145,7 @@ struct UiProjectedNode final {
     std::int32_t scroll_y{};
     bool clip_children{true};
     bool clip_to_padding{true};
+    std::optional<std::int32_t> android_id{};
 };
 
 struct UiGeometryProjection final {
@@ -293,6 +294,7 @@ public:
     // dirty is marked; callers dispatch requestLayout/invalidate themselves.
     [[nodiscard]] bool BringChildToFront(UiNodeId parent, UiNodeId child);
     void DestroySubtree(UiNodeId node);
+    void RetireProjectedIdentity(UiNodeId node);
     void Reset();
 
     [[nodiscard]] UiNode* Get(UiNodeId id);

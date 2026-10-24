@@ -56,7 +56,7 @@ note = "LUI-2/DVM-278：宿主布局与每窗口外部投影分区固定 owner�
 [runtime.ui_dexvm_binding]
 status = "complete"
 test = "tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/egl_facade_tests.cpp#DVM-233"
-note = "LUI-3、DVM-121/138/233：guest View 与 UiNodeId 一一绑定，findViewById/id/visibility 只读写 UiTree，listener 以 node 为 key；UI kind 按真实继承链解析。View.getParent 从 UiTree 反查，detached/synthetic root 返回 null；ViewGroup.removeViewInLayout 与普通移除共享层级/焦点/Surface 退役。不含动画、accessibility 与 hierarchy listener。"
+note = "Legacy：LUI-3、DVM-121/138/233：guest View 与 UiNodeId 一一绑定，findViewById/id/visibility 只读写 UiTree，listener 以 node 为 key；UI kind 按真实继承链解析。View.getParent 从 UiTree 反查，detached/synthetic root 返回 null；ViewGroup.removeViewInLayout 与普通移除共享层级/焦点/Surface 退役。不含动画、accessibility 与 hierarchy listener。"
 
 [runtime.ui_inflater]
 status = "partial"
@@ -2120,5 +2120,5 @@ note = "DVM-255/265/266/267、ADR-0148/0154/0155/0156：固定ROM规则准入，
 
 [dexvm.bootdex_member_composition]
 status = "partial"
-note = "DVM-276/277/279/280、ADR-0158/0159：固定 ROM 形状/clinit 与成员来源封存；未知接收者虚派列全目标及 failure 来源，字段接收者须全 BootDex null-writer 审计；精确调用/字段/动态入口/clinit 仍严格。Legacy 唯一生产默认；实验 plain View 支持 ROM measure/layout/frame、同步尺寸回调、两轮请求/下一 tick、受检 epoch。ViewGroup/控件与生产遍历未启用。"
-test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280"
+note = "DVM-276..281、ADR-0158/0159：固定成员组合与全目标虚派账；a/b/unproven 仅封存信息，failure 动态记账。组合父成员引用审计限 rom/clinit 活动体，形状和默认整类规则不变。Legacy 唯一生产默认。实验测试 ViewGroup 的 Java hierarchy/参数、ROM measure/layout、两轮调度及 ID/层级原子投影、GC 强边已覆盖；系统附着、焦点/listener、控件算法与生产切换未启用。"
+test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/runtime/ui_tree_tests.cpp#VD-06a"

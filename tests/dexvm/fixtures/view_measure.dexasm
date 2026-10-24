@@ -37,3 +37,110 @@
     iput-boolean v0, v1, Ltest/MeasuredLeaf;->omit:Z
     return-void
 .end method
+
+.class public Ltest/HierarchyGroup;
+.super Landroid/view/ViewGroup;
+.field private layouts:I
+.field private requester:Landroid/view/View;
+.field private requestMode:I
+.field private hook:Ljava/lang/Runnable;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/ViewGroup;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 9
+    const/4 v0, 0
+:measure_loop
+    invoke-virtual {v6}, Landroid/view/ViewGroup;->getChildCount()I
+    move-result v1
+    if-ge v0, v1, :measure_done
+    invoke-virtual {v6, v0}, Landroid/view/ViewGroup;->getChildAt(I)Landroid/view/View;
+    move-result-object v2
+    invoke-virtual {v2}, Landroid/view/View;->getVisibility()I
+    move-result v3
+    const/16 v4, 8
+    if-eq v3, v4, :measure_next
+    invoke-virtual {v6, v2, v7, v8}, Landroid/view/ViewGroup;->measureChild(Landroid/view/View;II)V
+:measure_next
+    add-int/lit8 v0, v0, 1
+    goto :measure_loop
+:measure_done
+    const/16 v0, 120
+    invoke-static {v0, v7}, Landroid/view/View;->getDefaultSize(II)I
+    move-result v1
+    const/16 v0, 90
+    invoke-static {v0, v8}, Landroid/view/View;->getDefaultSize(II)I
+    move-result v2
+    invoke-virtual {v6, v1, v2}, Landroid/view/View;->setMeasuredDimension(II)V
+    return-void
+.end method
+.method protected onLayout(ZIIII)V
+.registers 12
+    iget v0, v6, Ltest/HierarchyGroup;->layouts:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v6, Ltest/HierarchyGroup;->layouts:I
+    const/4 v0, 0
+:layout_loop
+    invoke-virtual {v6}, Landroid/view/ViewGroup;->getChildCount()I
+    move-result v1
+    if-ge v0, v1, :layout_done
+    invoke-virtual {v6, v0}, Landroid/view/ViewGroup;->getChildAt(I)Landroid/view/View;
+    move-result-object v1
+    invoke-virtual {v1}, Landroid/view/View;->getMeasuredWidth()I
+    move-result v2
+    invoke-virtual {v1}, Landroid/view/View;->getMeasuredHeight()I
+    move-result v3
+    const/4 v4, 0
+    invoke-virtual {v1, v4, v4, v2, v3}, Landroid/view/View;->layout(IIII)V
+    add-int/lit8 v0, v0, 1
+    goto :layout_loop
+:layout_done
+    iget-object v1, v6, Ltest/HierarchyGroup;->hook:Ljava/lang/Runnable;
+    if-eqz v1, :request_check
+    invoke-interface {v1}, Ljava/lang/Runnable;->run()V
+:request_check
+    iget v0, v6, Ltest/HierarchyGroup;->requestMode:I
+    if-eqz v0, :finish
+    invoke-virtual {v6}, Landroid/view/View;->isInLayout()Z
+    move-result v1
+    if-eqz v1, :finish
+    iget-object v1, v6, Ltest/HierarchyGroup;->requester:Landroid/view/View;
+    invoke-virtual {v1}, Landroid/view/View;->requestLayout()V
+    const/4 v1, 1
+    if-ne v0, v1, :finish
+    const/4 v0, 0
+    iput v0, v6, Ltest/HierarchyGroup;->requestMode:I
+:finish
+    return-void
+.end method
+.method public layouts()I
+.registers 2
+    iget v0, v1, Ltest/HierarchyGroup;->layouts:I
+    return v0
+.end method
+.method public requestDuringLayout(Landroid/view/View;I)V
+.registers 3
+    iput-object v1, v0, Ltest/HierarchyGroup;->requester:Landroid/view/View;
+    iput v2, v0, Ltest/HierarchyGroup;->requestMode:I
+    invoke-virtual {v0}, Landroid/view/View;->requestLayout()V
+    return-void
+.end method
+.method public setHook(Ljava/lang/Runnable;)V
+.registers 2
+    iput-object v1, v0, Ltest/HierarchyGroup;->hook:Ljava/lang/Runnable;
+    return-void
+.end method
+.method public margins(Landroid/view/View;II)V
+.registers 11
+    const/4 v0, 0
+    move-object v1, v7
+    move-object v2, v8
+    move v3, v9
+    move v4, v0
+    move v5, v10
+    move v6, v0
+    invoke-virtual/range {v1 .. v6}, Landroid/view/ViewGroup;->measureChildWithMargins(Landroid/view/View;IIII)V
+    return-void
+.end method

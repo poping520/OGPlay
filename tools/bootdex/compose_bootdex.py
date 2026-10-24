@@ -10,7 +10,6 @@ import argparse
 import copy
 import io
 import json
-import json
 from pathlib import Path
 import tempfile
 import zipfile
@@ -49,6 +48,7 @@ def measure_sources(document):
         if field['signature'] in policy['rom_fields']:
             field['source'] = 'rom'
     cls['surface'], cls['surface_sha256'] = policy['surface'], policy['surface_sha256']
+    document['classes'].append(json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8')))
     return document
 
 
@@ -69,6 +69,16 @@ def assemble(recipe, work, measure=False):
 
 def build(measure=False):
     recipe = builder.load_recipe()
+    if measure:
+        group = json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8'))
+        # ADR-0155 still audits every retained DEX body, including disabled
+        # composition bodies. These pure-Java helpers are admitted by the
+        # unchanged default selector; keep them only in this test counterpart.
+        hierarchy = {group['owner'], 'Landroid/view/View$ListenerInfo;',
+                     'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
+                     'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',
+                     'Landroid/view/ViewGroup$ViewLocationHolder;'}
+        recipe['framework.jar'] = tuple(sorted(set(recipe['framework.jar']) | hierarchy))
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
             tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:

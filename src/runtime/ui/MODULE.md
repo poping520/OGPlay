@@ -44,13 +44,16 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   `UiNodeId` 永不重新变为有效。
 - `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
   每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy；
-  实验 plain View 测量投影可提交 measured 与空 frame，表示尚未 layout，本层不补算 guest bounds。
+  实验 View/ViewGroup 投影提交 Java 局部 frame、hierarchy 与 ID，本层不补算 guest bounds。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
   当前 target、严格递增非零 epoch 的完整窗口批次。节点必须存在、唯一、全树连通且满足
   node/child/depth 上限；非法 geometry、visibility、坐标溢出、旧代/旧 revision/旧 epoch 明确失败。
   先在副本验证 hierarchy/id index 并计算局部 frame/scroll 到 screen_frame/screen_clip，成功才整体替换；
-  失败批次零修改，遗漏节点退出层级与 id index。measured 与 frame 独立保存，不反向写语义 owner。
+  失败批次零修改，遗漏节点退出层级与 id index。批次可显式携带 android_id（包括 NO_ID），
+  与 parent/children 一起验证并原子替换；未携带则沿用构建属性。measured 与 frame 独立保存，不反向写语义 owner。
+- `RetireProjectedIdentity` 只用于外部分区的弱绑定 GC sweep，拒绝合成根及宿主分区；
+  删除构建缓存身份/相关边并清构建索引，最后已发布快照不变，下一完整批次重建索引。
 - `PublishedProjection` 仅发布完整成功的不可变快照；target 失效或待发布状态不覆盖上一完整 epoch。
   外部分区 render 与 `HitTestProjection` 只接受同一快照，读取已解析 screen_frame/screen_clip；
   presenter 不访问构建中的树；快照指针原子发布/获取。上层串行执行 target/commit，

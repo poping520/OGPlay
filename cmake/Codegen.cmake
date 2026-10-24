@@ -87,6 +87,7 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-group-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/api19.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/data/android/19/framework/bootdex.jar"

@@ -1716,6 +1716,7 @@ WU9-5a 确认部分已有 intrinsic 的算法本为 ROM 纯 Java；ADR-0148 决�
 2. 本类自身全部方法的字节码不得触及父类链 intrinsic 或 overlay 部分未实现的构造器、
    方法或字段；不只分析 `<clinit>`。此条件比普通方法“到达时明确失败”更严格。
    报告分别使用 `parent-intrinsic-unimplemented-member` 和 `overrides-nonoverridable`。
+   组合类按 ADR-0158 VD-06a 补充。
 3. ADR-0148 其余规则不变：本类无 native、初始化闭包唯一且已实现、Binder 排除、
    intrinsic 交互排除和日期冻结；ADR-0155 的 closure 范围、零缺口与索引预算不变。
    ADR-0154 的显式撤换规则不变，不新增 intrinsic 撤换或 native。
@@ -1775,6 +1776,20 @@ VD-03 只启用测试 ROM 样例；生产 manifest 为空，closure 增量为零
 逐字段来源 rom 表示 Java 唯一事实来源且已正确维护，failure 保留形状并在访问时走
 ADR-0147 记账失败；构建依赖检查及运行期 linker 共用此可用性，被选 ROM 读写 failure 字段
 视为漏依赖。构造器 overlay 可作受审初始化 adapter，逐字段列出 ROM 默认值依据。
+
+
+### VD-06a 补充（编排方决定，2026-10-24）
+
+ADR-0156 决定2面向整类准入；ADR-0158 组合中 failure/overlay 的原字节码在运行期禁用，
+分别明确失败或执行受审 handler。因此组合类的 own-body 父成员审计只覆盖 source=rom
+的活动方法体和 clinit；failure/overlay 原方法体不进入引用审计。
+ADR-0156 决定1的 overrides-nonoverridable 形状检查仍覆盖全部成员；决定3、4及非组合类
+默认 selector 的全部方法体审计完全不变。
+活动体的 direct/static/super/精确接收者 failure 调用及本类 failure 字段仍按 ADR-0159
+决定1严格拒绝；普通未知接收者虚派按 ADR-0159 及其修订入 ledger，支持路径动态命中须为0。
+自测要求：组合 failure 体触及父未实现成员可通过；同体改为 rom 的严格父调用以
+parent-intrinsic-unimplemented-member 拒绝；禁用成员也不能覆写不可覆盖方法；
+非组合类原全 own-body 用例保持。
 
 
 <a id="adr-0157"></a>
@@ -1871,3 +1886,49 @@ mDisplayList 初值真实为 null，只有 HardwareRenderer/getDisplayList 创�
    配方全部类、寄存器别名与分支汇合，任务单逐字段列账，不靠测试对象碰巧为 null。
 4. 自测覆盖唯一 failure 未知接收者通过并入账、精确接收者仍拒绝、字段约束正反例及严格
    clinit；保留关闭修订时真实 setFrame 候选按原错误拒绝的负对照。支持路径运行记账必须为0。
+
+
+### VD-06a 修订（编排方决定，2026-10-24）
+
+编排方按用户授权决定：VD-05 修订第3条的全 BootDex null-writer 约束为充分条件，
+不是必要条件。真实 Java hierarchy 允许 mParent 非 null；字段仍必须为 rom 可用性。
+对字段接收者的每个 failure 虚派目标，以下两条满足其一即可：
+
+1. **(a) 原条件**：该字段的全部 BootDex 写入者为 failure，或 ROM 字节码只写 null；
+   overlay 写入者不借原版方法体证明 null，继续校验 encoded 初值、别名与 CFG 分支汇合。
+2. **(b) 不可分配条件**：该 failure 目标的声明类，以及提供该分派目标的全部子类，在
+   当前进程不能存在实例。全部构造器均为 failure；abstract/interface 本身不可实例化，
+   且不存在可实例化的实现子类提供该目标。宿主 C++ 不分配这些类型，必须机器扫描
+   NewIntrinsicInstance、按名/按 class-id 及对象模型分配点，不接受人工声明。
+   构造器失败仍沿 ADR-0147；不能把不可分配目标标为 implemented。
+3. 无法证明宿主分配参数的值域时，不能宣称“没有该类型分配”。JNI AllocObject、
+   Unsafe.allocateInstance 等跳过构造器的入口同样属于宿主分配审计，不由构造器 failure
+   自动覆盖。任一条件不能成立仍拒绝，不能靠测试中没有创建该对象放行。
+4. 构建检查对每个按 (b) 放行的目标封存确定性不可分配证据：提供该目标的类型、
+   构造器来源及宿主分配扫描结果/源码身份；check 重算并拒绝过期证据。
+   自测含全部构造器 failure 正例、已实现构造器/可实例化子类反例、宿主直接或动态分配
+   反例、确定性及篡改证据拒绝；保留仅启用 VD-05 条件时 assignParent 被拒绝的负对照。
+5. View/ViewGroup 的实例真实存在，getTextDirection/getTextAlignment 等 failure getter
+   不能借 (b) 获得信用，必须迁移 ROM 或受审 adapter。其他精确调用、字段可用性、
+   clinit 严格闭包、默认 selector 与 ADR-0156 均不变。支持路径动态未实现命中仍须为0。
+
+#### VD-06a 第三次修订（编排方决定，2026-10-24）
+
+编排方按用户授权决定：Unsafe.allocateInstance、JNI AllocObject 和宿主原始分配均可绕过
+构造器，因此 (b) 通常不能证明实例不存在；真实父链又不满足 (a)。正确性由运行期
+ADR-0147 明确失败与支持路径动态零命中保证，字段接收者证明只用于封存信心分类。
+
+1. VD-05 修订第3条及 VD-06a 的 (a)/(b) 不再作为准入门槛。检查器仍对每个字段接收者的
+   failure 目标计算 `a` / `b` / `unproven` 分类，确定性封存字段来源、初始化、writer、
+   构造器及宿主分配证据；不能证明时记录 unproven，不据此拒绝或将目标标 implemented。
+   共用宿主扫描只存一份，逐目标证据以哈希和索引引用；check 重算并拒绝过期账。
+2. 决定1的 direct/static/super、同方法 new-instance 精确接收者指向 failure、本类 failure
+   字段、DYNAMIC_TARGETS 与 clinit 传递闭包仍严格拒绝。支持路径动态未实现命中必须为0；
+   默认 selector 与 ADR-0156 全 own-body 父成员审计不变。
+3. hierarchy 支持路径必须包含 root→ViewGroup→ViewGroup→叶的真实父链；可达的
+   View/ViewGroup failure getter 必须迁移 ROM 或受审 adapter，不得缩小路径回避。
+   OGPlay 根 View 的 mParent 为真实 null，没有 ViewRootImpl；作为已列账的系统接缝偏差，
+   不以构造虚假系统对象补齐。未闭合的 WU 不宣称此路径已支持。
+4. 保留宿主分配扫描及 raw-host-allocation 运行负对照，作为信息和回归；
+   自测要求 unproven 进入 ledger 且不拒绝、failure 来源不变、严格拒绝仍在、
+   封存两次逐字节一致及篡改证据拒绝。

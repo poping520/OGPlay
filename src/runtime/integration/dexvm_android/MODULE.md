@@ -159,22 +159,28 @@ reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutPara
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
 owner 模式在 context 构造时固定且运行中不可切换，生产默认唯一为 Legacy，无用户配置。
-JavaTraversal 仅供固定实验 payload 的 plain View 根/叶测试：ROM 执行 measure/RTL/缓存及
+JavaTraversal 仅供固定实验 payload 的 plain View 与测试 ViewGroup：ROM 执行 hierarchy、参数、measure/RTL/缓存及
 layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
 onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
 OwnerTick/ResolveOnly 在 owner guest token 和初始化绑定的宿主线程、VM 锁下执行根
-EXACTLY managed viewport measure→layout。首轮仅剩余 FORCE_LAYOUT 的非 GONE 请求触发本帧
+EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧
 第二轮；第二轮请求不置 FORCE_LAYOUT，延至下一 tick。连续跨 tick 请求超过8次明确失败，
 保留队列并记录 requester/epoch。系统接缝不构造 AttachInfo/ViewRootImpl/Binder。
 初始化/requestLayout/invalidate/无变换矩阵及 ApplicationInfo 接缝逐项受审；invalidate 只标记
 本进程 dirty 并维护软件 Java flags，已有硬件/动画/变换/附着系统对象记账拒绝，不能当 null。
-`CommitAndroidMeasuredRootProjection` 经只读绑定 token 读取 Java measured/bounds/padding，
-完整成功后提交同一 epoch；合成根使用 viewport。回调异常保留原异常和已发生的 Java 修改，
+`CommitAndroidMeasuredRootProjection` 在同一受检批次经绑定 token 读取 Java parent/children/count、
+ID、measured/bounds/padding/clip，检查双向父子、数组计数、环与深度，再发布完整 hierarchy/id/geometry
+同一 epoch；合成根使用 viewport。mParent、mChildren 数组与 mLayoutParams 引用均为 Java 唯一权威，
+其强边由 VM 正常追踪。绑定/请求/watchdog 仅保存弱身份，不作为 JavaTraversal GC roots；
+GC sweep 仅退役构建缓存身份，最后不可变投影保持到下一完整发布，发布期间使用 RootScope。
+实验根 mParent 为真实 null，不存在 ViewRootImpl。回调异常保留原异常和已发生的 Java 修改，
 不发布半成品；换根、binding、内容/窗口代际或 managed metrics 改变取消旧发布。
 C++ 不写 measured/bounds，不重排外部树；ui 不获得 VM、Java 字段或引用。
-其他 reason/phase 明确拒绝，未接生产 traversal；ViewGroup/控件、输入/呈现/Surface 留后续阶段。
-实验来源表只开放受审根/叶方法，其他成员继续 failure；字段接收者 failure 虚派须满足
-ADR-0159 的全 BootDex null-writer 约束，getDisplayList/硬件创建保持 failure。
+其他 reason/phase 明确拒绝，未接生产 traversal；控件算法、焦点/listener、输入/呈现/Surface 留后续阶段。
+实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
+空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
+AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
+failure 虚派按 ADR-0159 封存 a/b/unproven 信息，运行期仍明确失败；支持路径须动态零命中。
 HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
@@ -191,9 +197,9 @@ UiNode.padding/minimum 对 guest 仅为输入投影；所有 traversal 入口先
 getResources、上下 padding 与 minimum getter 执行 ROM；左右 absolute padding getter 和
 minimum setter 保留受审 adapter，后者真实虚派 requestLayout。完整 RTL/scrollbar padding
 解析和原版 setter 的 CHA 闭包仍未启用，相关未选成员继续明确失败。
-ui 不读取 Java 字段；measured/bounds 与遍历权威仍在宿主。
+ui 不读取 Java 字段；Legacy measured/bounds 与遍历权威仍在宿主。
 
-live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
+Legacy live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
 Java 字段修改不自动 traversal，getContext 是构造/inflation 的 mContext。addView(width,height)
 虚派默认 LayoutParams、写原 Java 字段再统一 attach，不复制参数。
 

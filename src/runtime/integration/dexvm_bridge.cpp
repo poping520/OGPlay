@@ -175,9 +175,11 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.renderer_egl); root(context.renderer_display); root(context.renderer_config);
     root(context.renderer_context); root(context.renderer_surface); root(context.renderer_gl);
     root(context.content_view);
-    root(context.ui_java_watchdog_root);
-    for (const auto requester : context.ui_measure_requests)
-        root(requester);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy) {
+        root(context.ui_java_watchdog_root);
+        for (const auto requester : context.ui_measure_requests)
+            root(requester);
+    }
     for (const auto& presentation : context.dialog_presentations) {
         root(presentation.dialog); root(presentation.owner);
     }
@@ -223,7 +225,9 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     root(context.ui_touch_activity);
     for (const auto& [_, ref] : context.ui_touch_targets) root(ref);
-    for (const auto& [_, ref] : context.ui_node_to_object) root(ref);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
+        for (const auto& [_, ref] : context.ui_node_to_object)
+            root(ref);
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
     for (const auto& [_, ref] : context.ui_view_images) root(ref);
 }

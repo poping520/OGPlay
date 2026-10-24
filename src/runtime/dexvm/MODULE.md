@@ -25,6 +25,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   implemented/failure 目标 ledger，应用覆写不在构建期集合。direct/static/super、精确接收者、
   failure 字段及动态入口仍严格检查，clinit 传递闭包与默认 selector 不变。
   runtime 不将 ledger 中的 failure 目标升为实现；支持路径须以运行记账零命中验收。
+  字段接收者按 ADR-0159 VD-06a 第三次修订封存 null-writer / 不可分配 / unproven 分类；
+  构造器和宿主分配证据只提供信心，不拒绝 unproven，也不把 failure 目标升为实现。
+  严格调用/字段/clinit 不变；组合类按 ADR-0158 VD-06a 补充只审计 rom/clinit 活动体的
+  父成员引用，全部成员形状仍检查。非组合类默认 selector 保持全 own-body 审计。
 
   DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合

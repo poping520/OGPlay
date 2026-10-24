@@ -165,7 +165,11 @@ function App() {
   }, []);
   useEffect(() => { setMenuOpen(false); }, [item?.installation_id]);
   useEffect(() => {
-    strip.current?.querySelector('.tile[aria-pressed=true]')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    // Scroll only the strip: scrollIntoView would also shift the page once the strip hits its end.
+    const rail = strip.current, tile = rail?.querySelector<HTMLElement>('.tile[aria-pressed=true]');
+    if (!rail || !tile) return;
+    const offset = tile.getBoundingClientRect().left - rail.getBoundingClientRect().left;
+    rail.scrollTo({ left: rail.scrollLeft + offset - (rail.clientWidth - tile.offsetWidth) / 2, behavior: 'smooth' });
   }, [item?.installation_id, filter]);
   async function act(method: string, game: LibraryItem, kind?: string, extra: Record<string, unknown> = {}) {
     if (inFlight.current) return;

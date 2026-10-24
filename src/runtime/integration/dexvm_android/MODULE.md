@@ -162,7 +162,7 @@ owner 模式在 context 构造时固定且运行中不可切换，生产默认�
 JavaTraversal 仅供固定实验 payload 的 plain View 与测试 ViewGroup：ROM 执行 hierarchy、参数、measure/RTL/缓存及
 layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
 onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
-OwnerTick/ResolveOnly 在 owner guest token 和初始化绑定的宿主线程、VM 锁下执行根
+OwnerTick/BeforeInput 的 ResolveOnly 在 owner guest token 和初始化绑定的宿主线程、VM 锁下执行根
 EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧
 第二轮；第二轮请求不置 FORCE_LAYOUT，延至下一 tick。连续跨 tick 请求超过8次明确失败，
 保留队列并记录 requester/epoch。系统接缝不构造 AttachInfo/ViewRootImpl/Binder。
@@ -176,7 +176,17 @@ GC sweep 仅退役构建缓存身份，最后不可变投影保持到下一完�
 实验根 mParent 为真实 null，不存在 ViewRootImpl。回调异常保留原异常和已发生的 Java 修改，
 不发布半成品；换根、binding、内容/窗口代际或 managed metrics 改变取消旧发布。
 C++ 不写 measured/bounds，不重排外部树；ui 不获得 VM、Java 字段或引用。
-其他 reason/phase 明确拒绝，未接生产 traversal；控件算法、焦点/listener、输入/呈现/Surface 留后续阶段。
+实验 flags/listener/focus 以 Java mViewFlags、mListenerInfo、PFLAG_FOCUSED 与 ViewGroup.mFocused
+为唯一权威。ROM setter/getter 和 requestFocus/clearFocus/父链转移执行字节码；integration
+通过逐字段绑定 token 读取 ListenerInfo 强边，不复制到 Legacy listener/focus 表。visibility、
+enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事务提交；ui 不持 listener。
+输入沿既有单目标、不 split 协议，捕获仅保存服务身份；提交后发现 detach、隐藏、禁用或换根
+即清捕获。InputMethodManager 每次服务调用从 Java findFocus 捕获候选，不建立宿主焦点 owner。
+测试容器显式注入 disabled accessibility provider，singleton 与 enabled 值仍在 Java；未配置、
+非 null AttachInfo、动画/硬件、accessibility focus、背景状态等未支持服务明确记账失败。
+不宣称构造完整 AccessibilityManager 服务；除受审 getInstance/isEnabled 外其成员均 failure。
+输入重入未完成 traversal 明确拒绝；其他 reason/phase、生产 traversal、控件算法、呈现与 Surface
+仍未启用；Legacy 仍为唯一生产默认。
 实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
@@ -187,7 +197,7 @@ View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留�
 未迁移、仍由宿主维护的 ROM 实例字段在 guest 访问时明确失败；integration 的受审 adapter
 可访问自身绑定槽，不以这些槽宣称 Java 已拥有整组状态。mContext 由构造/inflation 写入；
 SDK 兼容静态 flags 从注入的当前进程 targetSdk 按 API19 条件初始化。
-非 ROM decor owner、focus/system-UI listener 由 integration 的 owner-attached 引用表保存，
+Legacy 的非 ROM decor owner、focus/system-UI listener 由 integration 的 owner-attached 引用表保存，
 从 View trace、随 View sweep，脱离 UiTree 后仍保持引用；不向 View 添加额外字段。
 mResources 是构造时 Context.getResources 的 Java 强引用；Context 预绑定只写 mContext，
 构造每次解析资源且异常透传，失败不提前置位 SDK 兼容标志。padding 四边、minimum 两维及有界 absolute user-padding/defined
@@ -257,7 +267,7 @@ takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner，首次遍�
 Callback2 changed 后 redraw，首次/dirty traversal 向 attached observer 发 global layout，
 getLocationInWindow 用 UiTree screen frame。
 
-焦点唯一归 lifecycle/UiTree，requestFocus 共用可聚焦/触摸模式/祖先状态/转移/清除/listener。
+Legacy 焦点唯一归 lifecycle/UiTree，requestFocus 共用可聚焦/触摸模式/祖先状态/转移/清除/listener。
 clickable 方法可覆盖；setOnClickListener 先虚派 isClickable/setClickable(true)，null 仍设 clickable
 但解绑，setClickable(false) 不删 listener；触摸点击需 clickable、InvokeViewOnClick 不需，基础
 onTouchEvent 只消费、不伪造点击/禁用子类。setText/Editable/host EditText 共用过滤/区间变更/

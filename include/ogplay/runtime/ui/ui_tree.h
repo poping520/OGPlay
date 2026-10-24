@@ -146,6 +146,10 @@ struct UiProjectedNode final {
     bool clip_children{true};
     bool clip_to_padding{true};
     std::optional<std::int32_t> android_id{};
+    std::optional<bool> enabled{};
+    std::optional<bool> clickable{};
+    std::optional<bool> focusable{};
+    std::optional<bool> focusable_in_touch_mode{};
 };
 
 struct UiGeometryProjection final {

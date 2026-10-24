@@ -4,7 +4,7 @@
   "rom_input": ".local/aosp/framework.jar",
   "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
   "surface": "tools/bootdex/view-measure.surface.json.gz",
-  "surface_sha256": "1b856ffa9c11bef431f62c99334e693b7dc82e7a1e554e91ada8d4f4e9bc6c0a",
+  "surface_sha256": "c545073ce6d475b16d27455963212d5636d643be154f7d1558bce4e73f58b1ce",
   "owner": "Landroid/view/ViewGroup;",
   "smali_sha256": "584d5f2dcdd5b89b8d125aeacd12a5781c765b7546d26d87e76ae245a6b9b065",
   "fields": [
@@ -305,7 +305,7 @@
     {
       "signature": "mCurrentDrag:Landroid/view/DragEvent;",
       "flags": 2,
-      "source": "failure",
+      "source": "rom",
       "initialization": "vm-zero-before-selected-constructor/rom-clinit"
     },
     {
@@ -613,11 +613,11 @@
       "body_sha256": "88e58bf0346f04546e0d480f392b6ffb9657169886774ea57244e7a94006a31e",
       "source": "overlay",
       "review": {
-        "reason": "Unattached test container input-service seam",
-        "inputs": "mFirstTouchTarget",
-        "outputs": "Original empty-target path only",
-        "state_owner": "Java fields only; no second hierarchy or geometry storage",
-        "failure_boundary": "Non-null target records and throws; input dispatch capability is not enabled"
+        "reason": "VD-06b original null Java target and process-local capture cancellation seam",
+        "inputs": "Actual Java mFirstTouchTarget and removed child identity; current process captured Java parent chain",
+        "outputs": "Clear integration capture for the removed subtree; no Java touch target or listener copy",
+        "state_owner": "Java hierarchy and listener state; integration capture identities only",
+        "failure_boundary": "Non-null original Java touch target records and throws; no split or full ROM dispatchTouchEvent"
       }
     },
     {
@@ -912,7 +912,7 @@
       "signature": "childDrawableStateChanged(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "9e2375a3941c7c8cf324a8fc439a59cb5c086ad2050ddf882366e17a6871d416",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "childHasTransientStateChanged(Landroid/view/View;Z)V",
@@ -930,7 +930,7 @@
       "signature": "clearChildFocus(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "5ad29cdd6957a38b60e1e3d34a88fca0adf241f8e5e00d82249d08c9c6d330f9",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "clearDisappearingChildren()V",
@@ -942,7 +942,7 @@
       "signature": "clearFocus()V",
       "flags": 1,
       "body_sha256": "5262b33957d7f6388cb00b2145f7f395edfe90f0aab38f1d9a6b196d920d7805",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "computeOpticalInsets()Landroid/graphics/Insets;",
@@ -996,7 +996,7 @@
       "signature": "dispatchCancelPendingInputEvents()V",
       "flags": 0,
       "body_sha256": "df9d627d929bf8ffa060bdd8e93fdd1707514870335a35010546f6a8cc99c72a",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "dispatchCollectViewAttributes(Landroid/view/View$AttachInfo;I)V",
@@ -1152,7 +1152,14 @@
       "signature": "dispatchTouchEvent(Landroid/view/MotionEvent;)Z",
       "flags": 1,
       "body_sha256": "9d381160c11a93d5bf8c3caceacc0b563873bc8477e55fa7036a22f42c53386e",
-      "source": "failure"
+      "source": "overlay",
+      "review": {
+        "reason": "VD-06b bounded process input / accessibility seam",
+        "inputs": "Actual Java receiver fields and single-target non-split input event",
+        "outputs": "Existing integration capture/listener protocol, no independent Java state copy",
+        "state_owner": "Java flags/listeners/focus; integration capture identity only",
+        "failure_boundary": "Only unattached test-container software path; system accessibility, attachment and unsupported actions explicitly fail"
+      }
     },
     {
       "signature": "dispatchTrackballEvent(Landroid/view/MotionEvent;)Z",
@@ -1170,7 +1177,7 @@
       "signature": "dispatchVisibilityChanged(Landroid/view/View;I)V",
       "flags": 4,
       "body_sha256": "03a0269e6d3d9a5d0daedd01889dad95fe81d52dd35a7c83ad8cd6edf7eb50eb",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "dispatchWindowFocusChanged(Z)V",
@@ -1200,7 +1207,7 @@
       "signature": "drawableStateChanged()V",
       "flags": 4,
       "body_sha256": "83c30a92d724a65e084aae1eac27724238eda6fcbeeb049e418dd89b5da6ba48",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "endViewTransition(Landroid/view/View;)V",
@@ -1212,7 +1219,7 @@
       "signature": "findFocus()Landroid/view/View;",
       "flags": 1,
       "body_sha256": "9ea5f7c4f6fb5e4db35c55f8d2802e97f235667aa4c7b5d0aeb00f8666921313",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "findFrontmostDroppableChildAt(FFLandroid/graphics/PointF;)Landroid/view/View;",
@@ -1272,7 +1279,7 @@
       "signature": "focusableViewAvailable(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "594405156c1e3a161a0008512f3d1bc326c88bf361d7db1d6136f796be944104",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "gatherTransparentRegion(Landroid/graphics/Region;)Z",
@@ -1344,13 +1351,13 @@
       "signature": "getDescendantFocusability()I",
       "flags": 1,
       "body_sha256": "c513170bd79180f230fd35ba6c67643750b0a0dec593795c3c39e705aeef1fa9",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "getFocusedChild()Landroid/view/View;",
       "flags": 1,
       "body_sha256": "d9c1d4b674ea2e63bb62ba0c21a99002b03acc404283b7c8dc764aeb2da22c13",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "getLayoutAnimation()Landroid/view/animation/LayoutAnimationController;",
@@ -1398,7 +1405,7 @@
       "signature": "handleFocusGainInternal(ILandroid/graphics/Rect;)V",
       "flags": 0,
       "body_sha256": "6db70f6a236a14422a5ff576ee9b6c207d1afa4cf8f2df666d4e3b2639f0d9f9",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "hasFocus()Z",
@@ -1614,7 +1621,14 @@
       "signature": "onChildVisibilityChanged(Landroid/view/View;II)V",
       "flags": 4,
       "body_sha256": "0d35ff8a64b674ede2d9adef3dffe518a8177e2dc9a045c3222a6472a1566d17",
-      "source": "failure"
+      "source": "overlay",
+      "review": {
+        "reason": "VD-06b transition/drag service seam",
+        "inputs": "Actual Java transition and current drag fields",
+        "outputs": "No work only when both services are genuinely absent",
+        "state_owner": "Java only",
+        "failure_boundary": "Non-null transition or drag records and throws UOE"
+      }
     },
     {
       "signature": "onCreateDrawableState(I)[I",
@@ -1662,7 +1676,7 @@
       "signature": "onInterceptTouchEvent(Landroid/view/MotionEvent;)Z",
       "flags": 1,
       "body_sha256": "f39fd8343dfd0a8bdefd9fc4e55077ca941cfdb85f84787e43981c97b14e1fb6",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "onLayout(ZIIII)V",
@@ -1674,7 +1688,7 @@
       "signature": "onRequestFocusInDescendants(ILandroid/graphics/Rect;)Z",
       "flags": 4,
       "body_sha256": "923b971cc854b37769da5dca190f63ac7c1dfad0f9f6dd095b2aa4afde2f95b3",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "onRequestSendAccessibilityEvent(Landroid/view/View;Landroid/view/accessibility/AccessibilityEvent;)Z",
@@ -1764,7 +1778,7 @@
       "signature": "requestChildFocus(Landroid/view/View;Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "625c08fc6136418dd2ec5e0e245469b2657bb48bc6b3bf6de8eccfce41c55182",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "requestChildRectangleOnScreen(Landroid/view/View;Landroid/graphics/Rect;Z)Z",
@@ -1782,7 +1796,7 @@
       "signature": "requestFocus(ILandroid/graphics/Rect;)Z",
       "flags": 1,
       "body_sha256": "6981b99d8d70fe0c9900dd57a75bad9b95d36604233179f17afebba225b6f8f1",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "requestSendAccessibilityEvent(Landroid/view/View;Landroid/view/accessibility/AccessibilityEvent;)Z",
@@ -1938,7 +1952,7 @@
       "signature": "setDescendantFocusability(I)V",
       "flags": 1,
       "body_sha256": "08c1149f0d32c8e985bffba2ac82e1f1df724c7d2eaecb04dc63afef3e78266f",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "setLayoutAnimation(Landroid/view/animation/LayoutAnimationController;)V",
@@ -2028,7 +2042,7 @@
       "signature": "unFocus()V",
       "flags": 0,
       "body_sha256": "27193614dfd259437bfa824b6a6969059df37b8916e3bc90b777c22db142ed05",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "updateLocalSystemUiVisibility(II)Z",

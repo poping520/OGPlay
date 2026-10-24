@@ -215,9 +215,15 @@ void CheckInputFocusWithoutConnection(dx::IntrinsicContext& call,
         context->window_focus_activity.load() != context->activity.Value()) {
         return;
     }
-    const auto focused = context->ui_tree.Focused();
-    if (!focused.has_value() || !context->ui_tree.IsAttached(*focused)) {
-        return;
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto root = context->content_view;
+        if (!root.IsValid()) return;
+        const auto roots = call.vm.ProtectReferences(std::array{root});
+        const auto focused = CallAndroidMethod(call.vm, root, "findFocus", "()Landroid/view/View;").ref;
+        if (!focused.IsValid() || !AndroidViewBelongsToRoot(call.vm, *context, focused)) return;
+    } else {
+        const auto focused = context->ui_tree.Focused();
+        if (!focused.has_value() || !context->ui_tree.IsAttached(*focused)) return;
     }
     // A non-editor View can also supply a dummy InputConnection on API19.
     // Do not silently skip it based on onCheckIsTextEditor or the request's
@@ -1417,6 +1423,10 @@ Decl Declare_android_view_ViewParent(const Context& context) {
         for (const auto* name : {"canResolveLayoutDirection", "isLayoutDirectionResolved", "canResolveTextDirection",
                                  "isTextDirectionResolved", "canResolveTextAlignment", "isTextAlignmentResolved"})
             builder.UnimplementedVirtual(name, "()Z", dx::kAccPublic | dx::kAccAbstract);
+        for (const auto* name : {"clearChildFocus", "focusableViewAvailable", "childDrawableStateChanged"})
+            builder.UnimplementedVirtual(name, "(Landroid/view/View;)V", dx::kAccPublic | dx::kAccAbstract);
+        builder.UnimplementedVirtual("requestChildFocus", "(Landroid/view/View;Landroid/view/View;)V",
+                                     dx::kAccPublic | dx::kAccAbstract);
         for (const auto* name : {"getLayoutDirection", "getTextDirection", "getTextAlignment"})
             builder.UnimplementedVirtual(name, "()I", dx::kAccPublic | dx::kAccAbstract);
     }
@@ -1601,6 +1611,10 @@ Decl Declare_android_view_View(const Context& context) {
         "mSystemUiVisibility", "I", dx::kAccNone);
     const auto view_flags = builder.BoundInstanceField(
         "mViewFlags", "I", dx::kAccNone);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        context->view_java_input_fields = std::array{
+            builder.BoundInstanceField("mListenerInfo", "Landroid/view/View$ListenerInfo;", dx::kAccNone),
+            builder.BoundInstanceField("mBackground", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate)};
     context->view_java_hierarchy_fields = DexVmAndroidContext::ViewJavaHierarchyFields{
         builder.BoundInstanceField("mParent", "Landroid/view/ViewParent;", dx::kAccNone),
         builder.BoundInstanceField("mLayoutParams", "Landroid/view/ViewGroup$LayoutParams;", dx::kAccNone),
@@ -2069,13 +2083,82 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("notifySubtreeAccessibilityStateChangedIfNeeded", "()V", software_dirty);
     if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
         builder.VirtualMethod("needGlobalAttributesUpdate", "(Z)V", software_dirty, dx::kAccNone);
-        const auto reject_focus = [](dx::IntrinsicContext& call) -> dx::VmValue {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_group_focus_service", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "Container focus service is not enabled"};
-        };
-        builder.VirtualMethod("notifyGlobalFocusCleared", "(Landroid/view/View;)V", reject_focus, dx::kAccNone);
-        builder.VirtualMethod("rootViewRequestFocus", "()Z", reject_focus, dx::kAccNone);
+        builder.DirectMethod(
+            "initialAwakenScrollBars", "()Z",
+            [](dx::IntrinsicContext& call) -> dx::VmValue {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_attached_scrollbars", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Attached scrollbars unsupported"};
+            },
+            dx::kAccPrivate);
+        builder.VirtualMethod("clearAccessibilityFocus", "()V", [context, software_dirty](dx::IntrinsicContext& call) {
+            static_cast<void>(software_dirty(call));
+            if (dx::IntrinsicCall(call).GetInt(context->view_java_measure_fields->flags[1]) & 0x04000000) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_accessibility_focus", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Accessibility focus unsupported"};
+            }
+            return dx::VmValue::Void();
+        });
+        builder.VirtualMethod("isInTouchMode", "()Z", [context](dx::IntrinsicContext& call) {
+            if (dx::IntrinsicCall(call).GetRef(context->view_java_measure_fields->unsupported_state[4]).IsValid()) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_touch_mode", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "System touch mode unsupported"};
+            }
+            return dx::VmValue::Int(0);
+        });
+        builder.VirtualMethod(
+            "drawableStateChanged", "()V",
+            [context, software_dirty](dx::IntrinsicContext& call) {
+                static_cast<void>(software_dirty(call));
+                dx::IntrinsicCall fields(call);
+                if (fields.GetRef((*context->view_java_input_fields)[1]).IsValid()) {
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_drawable_state", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state unsupported"};
+                }
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+        builder.VirtualMethod(
+            "onFocusChanged", "(ZILandroid/graphics/Rect;)V",
+            [context, software_dirty](dx::IntrinsicContext& call) {
+                if (!context->ui_test_accessibility_disabled) {
+                    if (auto* ledger = call.vm.Ledger())
+                        ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "Focus requires configured test accessibility provider"};
+                }
+                static_cast<void>(software_dirty(call));
+                dx::IntrinsicCall fields(call);
+                if (fields.GetInt(context->view_java_measure_fields->flags[0]) & 0x4000) {
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_pressed_focus", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "Pressed focus callbacks unsupported"};
+                }
+                const auto listener =
+                    ReadAndroidViewListener(call.vm, *context, call.receiver, AndroidViewListener::FocusChange);
+                if (listener.IsValid())
+                    static_cast<void>(CallAndroidMethod(call.vm, listener, "onFocusChange", "(Landroid/view/View;Z)V",
+                                                        {dx::VmValue::Ref(call.receiver), call.arguments[0]}));
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+        builder.VirtualMethod(
+            "onCancelPendingInputEvents", "()V", [context, software_dirty](dx::IntrinsicContext& call) {
+                static_cast<void>(software_dirty(call));
+                dx::IntrinsicCall fields(call);
+                const auto flags = context->view_java_measure_fields->flags[2];
+                fields.SetInt(flags, fields.GetInt(flags) | 0x10);  // PFLAG3_CALLED_SUPER
+                auto captured = dx::VmObjectRef{static_cast<std::uint32_t>(context->ui_touch_capture)};
+                for (std::size_t depth = 0; captured.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+                    if (captured == call.receiver) {
+                        context->ui_touch_capture = 0;
+                        context->ui_touch_targets.clear();
+                        context->ui_touch_clicks.clear();
+                        break;
+                    }
+                    captured = fields.GetRef(context->view_java_hierarchy_fields->parent, captured);
+                }
+                return dx::VmValue::Void();
+            });
         builder.VirtualMethod("isInLayout", "()Z", [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(context->ui_java_layout_pass != 0 &&
                                     AndroidViewBelongsToRoot(call.vm, *context, call.receiver));
@@ -2623,9 +2706,38 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
                     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                           "Container input targets are not enabled"};
                 }
+                if (touch && context->ui_touch_capture) {
+                    dx::IntrinsicCall fields(call);
+                    auto captured = dx::VmObjectRef{static_cast<std::uint32_t>(context->ui_touch_capture)};
+                    for (std::size_t depth = 0; captured.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+                        if (captured == call.arguments[0].ref) {
+                            context->ui_touch_capture = 0;
+                            context->ui_touch_targets.clear();
+                            context->ui_touch_clicks.clear();
+                            break;
+                        }
+                        captured = fields.GetRef(context->view_java_hierarchy_fields->parent, captured);
+                    }
+                }
                 return dx::VmValue::Void();
             });
         };
+        const auto transition =
+            builder.BoundInstanceField("mTransition", "Landroid/animation/LayoutTransition;", dx::kAccPrivate);
+        const auto drag = builder.BoundInstanceField("mCurrentDrag", "Landroid/view/DragEvent;", dx::kAccPrivate);
+        builder.VirtualMethod(
+            "onChildVisibilityChanged", "(Landroid/view/View;II)V",
+            [transition, drag](dx::IntrinsicContext& call) {
+                dx::IntrinsicCall fields(call);
+                if (fields.GetRef(transition).IsValid() || fields.GetRef(drag).IsValid()) {
+                    if (auto* ledger = call.vm.Ledger())
+                        ledger->RecordUnimplemented("dexvm.view_visibility_services", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "Transition or drag service unsupported"};
+                }
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
         builder.DirectMethod(
             "addDisappearingView", "(Landroid/view/View;)V",
             [](dx::IntrinsicContext& call) -> dx::VmValue {
@@ -3297,8 +3409,16 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
-        if (context.ui_layout_dispatching) return false;
-        if (reason != AndroidUiTraversalReason::OwnerTick || phase != AndroidUiTraversalPhase::ResolveOnly)
+        if (context.ui_layout_dispatching) {
+            if (reason == AndroidUiTraversalReason::BeforeInput) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_reentrant_input", 0);
+                throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                         "Input during test traversal unsupported"};
+            }
+            return false;
+        }
+        if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput) ||
+            phase != AndroidUiTraversalPhase::ResolveOnly)
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                      "Only test-root traversal is enabled"};
         const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
@@ -3495,3 +3615,59 @@ void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& co
         static_cast<void>(android_intrinsics::CallAndroidMethod(vm, callback, "onGlobalLayout", "()V"));
 }
 }
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_test_AccessibilityManager(const Context& context) {
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/view/accessibility/AccessibilityManager;", "Ljava/lang/Object;");
+    const auto singleton =
+        builder.BoundStaticField("sInstance", "Landroid/view/accessibility/AccessibilityManager;", dx::kAccPrivate);
+    const auto enabled = builder.BoundInstanceField("mIsEnabled", "Z", dx::kAccNone);
+    builder.StaticMethod(
+        "getInstance", "(Landroid/content/Context;)Landroid/view/accessibility/AccessibilityManager;",
+        [context, singleton, enabled](dx::IntrinsicContext& call) {
+            if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
+                !context->ui_test_accessibility_disabled) {
+                if (auto* ledger = call.vm.Ledger())
+                    ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Test accessibility provider is not configured"};
+            }
+            if (!call.arguments[0].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Accessibility Context is null"};
+            dx::IntrinsicCall fields(call);
+            auto instance = fields.GetRef(singleton);
+            if (!instance.IsValid()) {
+                instance = call.vm.NewIntrinsicInstance("Landroid/view/accessibility/AccessibilityManager;");
+                const auto root = call.vm.ProtectReferences(std::array{instance});
+                fields.SetInt(enabled, instance, 0);
+                fields.SetRef(singleton, instance);
+            }
+            return dx::VmValue::Ref(instance);
+        });
+    builder.VirtualMethod("isEnabled", "()Z", [context, enabled](dx::IntrinsicContext& call) {
+        if (!context->ui_test_accessibility_disabled) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Test accessibility provider is not configured"};
+        }
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(enabled));
+    });
+    return std::move(builder).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_test_ListenerInfo(const Context& context) {
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/view/View$ListenerInfo;", "Ljava/lang/Object;", {}, dx::kAccNone);
+    context->view_java_listener_fields = std::array{
+        builder.BoundInstanceField("mOnClickListener", "Landroid/view/View$OnClickListener;", dx::kAccPublic),
+        builder.BoundInstanceField("mOnTouchListener", "Landroid/view/View$OnTouchListener;", dx::kAccPrivate),
+        builder.BoundInstanceField("mOnLongClickListener", "Landroid/view/View$OnLongClickListener;",
+                                   dx::kAccProtected),
+        builder.BoundInstanceField("mOnFocusChangeListener", "Landroid/view/View$OnFocusChangeListener;",
+                                   dx::kAccProtected)};
+    return std::move(builder).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics

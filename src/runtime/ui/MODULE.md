@@ -30,7 +30,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   变更证据，以 force_rebuild 同步另一层；平面改变本身也使 cache 失效。
 - `SetVisibility`：VISIBLE/INVISIBLE 只标 draw dirty；任意 GONE 转换同时从 node 到 root
   标 layout/draw dirty。
-- 焦点归 `UiTree` 单一 owner；请求需节点及祖先可见/启用并满足 focusable，转移、隐藏、
+- HostLayout 焦点归 `UiTree` 单一 owner；请求需节点及祖先可见/启用并满足 focusable，转移、隐藏、
   禁用、detach、destroy/reset 会清除旧 owner。`isFocused` 只认自身，`hasFocus` 包含子孙。
 - dirty 消费严格分相：`LayoutUiTree` 只清 `layout_dirty`；`UiOverlayRenderer` 只在 overlay
   成功重建后清 `draw_dirty`。layout traversal 不得吞掉尚未 rasterize 的 mutation。
@@ -51,7 +51,10 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   node/child/depth 上限；非法 geometry、visibility、坐标溢出、旧代/旧 revision/旧 epoch 明确失败。
   先在副本验证 hierarchy/id index 并计算局部 frame/scroll 到 screen_frame/screen_clip，成功才整体替换；
   失败批次零修改，遗漏节点退出层级与 id index。批次可显式携带 android_id（包括 NO_ID），
-  与 parent/children 一起验证并原子替换；未携带则沿用构建属性。measured 与 frame 独立保存，不反向写语义 owner。
+  与 parent/children 一起验证并原子替换；未携带则沿用构建属性。enabled/clickable/focusable/
+  focusable_in_touch_mode 可随同批次显式提交，guest collector 必须提交其全部 Java 值。
+  ExternalProjection 不保存独立焦点 owner，RequestFocus 明确拒绝；焦点语义由上层 Java 持有。
+  measured 与 frame 独立保存，不反向写语义 owner。
 - `RetireProjectedIdentity` 只用于外部分区的弱绑定 GC sweep，拒绝合成根及宿主分区；
   删除构建缓存身份/相关边并清构建索引，最后已发布快照不变，下一完整批次重建索引。
 - `PublishedProjection` 仅发布完整成功的不可变快照；target 失效或待发布状态不覆盖上一完整 epoch。

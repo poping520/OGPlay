@@ -253,7 +253,8 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
         };
         f.context->ui_tree.Get(node)->frame = {3, 4, 333, 444};
         f.context->ui_tree.Get(node)->background_color = 0xff0000ff;
-        f.context->ui_tree.Get(node)->clickable = true;
+        f.context->ui_test_accessibility_disabled = true;
+        f.On(view, "setClickable", "(Z)V", {VmValue::Int(1)});
         REQUIRE(tick());
         CHECK(events == std::vector<int>{0, 1, 2});
         CHECK(sizes == std::vector<std::array<int, 4>>{{80, 50, 0, 0}});

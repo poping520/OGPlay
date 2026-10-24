@@ -49,6 +49,7 @@ def measure_sources(document):
             field['source'] = 'rom'
     cls['surface'], cls['surface_sha256'] = policy['surface'], policy['surface_sha256']
     document['classes'].append(json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8')))
+    document['classes'].append(json.loads(Path(__file__).with_name('view-system-sources.json').read_text(encoding='utf-8')))
     return document
 
 

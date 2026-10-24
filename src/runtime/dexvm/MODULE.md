@@ -21,6 +21,10 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   组合字段逐项选择 rom/failure：前者由 Java 唯一维护，后者保持 ROM 布局但访问经
   is_unimplemented/RequireImplementedField 记账失败；被选字节码不得读写 failure 字段。
   clinit 必须执行原版 ROM，其依赖按常规规则准入；无空初始化或自动跳过。
+  ADR-0159 仅对组合普通方法的非唯一 virtual/interface 调用开放：构建封存逐调用点的全部
+  implemented/failure 目标 ledger，应用覆写不在构建期集合。direct/static/super、精确接收者、
+  failure 字段及动态入口仍严格检查，clinit 传递闭包与默认 selector 不变。
+  runtime 不将 ledger 中的 failure 目标升为实现；支持路径须以运行记账零命中验收。
 
   DEX 解析失败保留 loader 的 reason/offset，并标识 boot/application 来源及输入字节数。
 - APK class_def 经同源重复校验；已登记 bootstrap 身份按 parent-first 胜出，不登记或混合

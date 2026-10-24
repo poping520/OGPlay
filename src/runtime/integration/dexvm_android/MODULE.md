@@ -158,9 +158,16 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutParams，BeforePresent
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
-owner 模式在 VM 启动前固定且运行中不可切换；当前编译期只选择 Legacy，JavaTraversal
-保留明确失败的选择点，无用户配置。外部投影 API 尚只交付测试分区；未来 integration 收集
-Java 字段与 hierarchy 并校验 binding/代际，再提交 ui，不将 VM/Java 引用交给下层。
+owner 模式在 context 构造时固定且运行中不可切换，生产默认唯一为 Legacy，无用户配置。
+JavaTraversal 仅供固定实验 payload 的 plain View 根/叶测试：ROM 执行 measure/RTL/测量缓存，
+Java 唯一拥有 measured、旧 specs、缓存及相关 flags；初始化和 requestLayout 系统接缝逐项受审。
+requestLayout 清真实 Java cache、置 0x80001000 flags，integration 仅持 owner tick 请求队列
+（GC 强根，Reset 清除），不构造 AttachInfo/ViewRootImpl/Binder，不承诺 during-layout 协议。
+OwnerTick/ResolveOnly 可测量一个测试根；其他 reason/phase 明确拒绝，未接生产 traversal。
+`CommitAndroidMeasuredRootProjection` 在 owner 线程经绑定 token 读 Java measured/padding，
+按外部投影代际/epoch 提交；guest frame 留空，合成窗口根使用 viewport。C++ 不写 measured/bounds、
+不重排外部树；异常不发布。ViewGroup/控件、layout/setFrame、输入/呈现/Surface 留后续阶段。
+ui 不获得 VM、Java 字段或引用。实验来源表仅开放已审根/叶方法，其他 View 成员明确 failure。
 HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。

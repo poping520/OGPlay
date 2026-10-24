@@ -43,6 +43,137 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java authority") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto sdk : {17U, 18U, 19U}) {
+            AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+                             OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+            f.context->target_sdk_version = sdk;
+            const auto owner = f.New("Landroid/app/Activity;");
+            const auto make = [&](const char* type) {
+                return f.New(type, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            };
+            const auto measure = [&](const VmObjectRef view, const std::int32_t mode, const std::int32_t width = 80,
+                                     const std::int32_t height = 50) {
+                return f.OnOutcome(view, "measure", "(II)V", {VmValue::Int(mode | width), VmValue::Int(mode | height)});
+            };
+            const auto get = [&](const VmObjectRef view, const char* name) { return f.On(view, name, "()I").AsInt(); };
+            const auto base = make("Landroid/view/View;");
+            f.On(base, "setMinimumWidth", "(I)V", {VmValue::Int(7)});
+            f.On(base, "setMinimumHeight", "(I)V", {VmValue::Int(9)});
+            f.On(base, "setPadding", "(IIII)V", {VmValue::Int(3), VmValue::Int(4), VmValue::Int(5), VmValue::Int(6)});
+            const auto insets = f.On(base, "getOpticalInsets", "()Landroid/graphics/Insets;").ref;
+            REQUIRE(insets.IsValid());
+            CHECK(f.On(base, "getOpticalInsets", "()Landroid/graphics/Insets;").ref == insets);
+            for (const auto mode : {0, 0x40000000, static_cast<int>(0x80000000U)}) {
+                const auto result = measure(base, mode);
+                REQUIRE_FALSE_MESSAGE(result.exception.IsValid(), result.exception_message);
+                CHECK(get(base, "getMeasuredWidth") == (mode == 0 ? 7 : 80));
+                CHECK(get(base, "getMeasuredHeight") == (mode == 0 ? 9 : 50));
+                CHECK(get(base, "getMeasuredState") == 0);
+                CHECK(get(base, "getPaddingLeft") == 3);
+                CHECK(get(base, "getPaddingRight") == 5);
+            }
+            const auto leaf = make("Ltest/MeasuredLeaf;");
+            const auto node = *FindViewUiNode(*f.context, leaf.Value());
+            // A contradictory host value proves that neither ROM measurement
+            // nor its getters consult the Legacy layout result.
+            f.context->ui_tree.Get(node)->measured = {333, 444};
+            for (const auto mode : {0, 0x40000000, static_cast<int>(0x80000000U)}) {
+                const auto result = measure(leaf, mode);
+                REQUIRE_FALSE_MESSAGE(result.exception.IsValid(), result.exception_message);
+                const auto small = mode == static_cast<int>(0x80000000U);
+                CHECK(get(leaf, "getMeasuredWidth") == (mode == 0 ? 120 : 80));
+                CHECK(get(leaf, "getMeasuredHeight") == (mode == 0 ? 90 : 50));
+                CHECK(get(leaf, "getMeasuredWidthAndState") == ((mode == 0 ? 120 : 80) | (small ? 0x01000000 : 0)));
+                CHECK(get(leaf, "getMeasuredHeightAndState") == ((mode == 0 ? 90 : 50) | (small ? 0x01000000 : 0)));
+                CHECK(get(leaf, "getMeasuredState") == (small ? 0x01000100 : 0));
+            }
+            CHECK(f.context->ui_tree.Get(node)->measured == ui::Size{333, 444});
+            const auto cached = make("Ltest/MeasuredLeaf;");
+            REQUIRE_FALSE(measure(cached, static_cast<int>(0x80000000U)).exception.IsValid());
+            REQUIRE_FALSE(measure(cached, static_cast<int>(0x80000000U), 100, 70).exception.IsValid());
+            REQUIRE_FALSE(measure(cached, static_cast<int>(0x80000000U)).exception.IsValid());
+            CHECK(get(cached, "count") == (sdk < 19 ? 3 : 2));
+            CHECK(get(cached, "getMeasuredWidth") == 80);
+            CHECK(get(cached, "getMeasuredWidthAndState") == 0x01000050);
+            CHECK(get(cached, "getMeasuredState") == 0x01000100);
+            REQUIRE_FALSE(measure(cached, static_cast<int>(0x80000000U)).exception.IsValid());
+            CHECK(get(cached, "count") == (sdk < 19 ? 3 : 2));
+            const auto broken = f.Static("Landroid/view/View$MeasureSpec;", "makeMeasureSpec", "(II)I",
+                                         {VmValue::Int(0x40000005), VmValue::Int(0x40000000)})
+                                    .AsInt();
+            CHECK(broken == (sdk <= 17 ? static_cast<int>(0x80000005U) : 0x40000005));
+            CHECK(f.Static("Landroid/view/View$MeasureSpec;", "getSize", "(I)I", {VmValue::Int(broken)}).AsInt() == 5);
+            CHECK(f.Static("Landroid/view/View$MeasureSpec;", "getMode", "(I)I", {VmValue::Int(broken)}).AsInt() ==
+                  (sdk <= 17 ? static_cast<int>(0x80000000U) : 0x40000000));
+
+            f.context->content_view = leaf;
+            const ui::UiProjectionTarget target{f.context->ui_tree.Root(), 1, 0, 1, {320, 200}};
+            f.context->ui_tree.SetProjectionTarget(target);
+            CommitAndroidMeasuredRootProjection(f.vm, *f.context, leaf, target, 1);
+            const auto snapshot = f.context->ui_tree.PublishedProjection();
+            REQUIRE(snapshot);
+            CHECK(snapshot->Get(node)->measured == ui::Size{80, 50});
+            CHECK(snapshot->Get(node)->frame == ui::Rect{});
+            CHECK_THROWS_AS(ui::LayoutUiTree(f.context->ui_tree, {320, 200}), std::runtime_error);
+            CHECK_THROWS_AS(CommitAndroidMeasuredRootProjection(f.vm, *f.context, leaf, target, 1), std::runtime_error);
+            CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
+            CHECK(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                           AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 60}));
+            CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->measured == ui::Size{100, 60});
+            f.On(leaf, "requestLayout", "()V");
+            CHECK(f.context->ui_measure_requests.contains(leaf));
+            CHECK(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                           AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 60}));
+            CHECK_FALSE(f.context->ui_measure_requests.contains(leaf));
+
+            const auto view_class = f.linker.ResolveDescriptor("Landroid/view/View;");
+            CHECK(f.linker
+                      .Method(
+                          f.linker.Class(view_class).vtable[*f.linker.FindVtableIndex(view_class, "measure", "(II)V")])
+                      .kind == MethodKind::interpreted);
+            const auto leaf_class = f.linker.ResolveDescriptor("Ltest/MeasuredLeaf;");
+            CHECK(
+                f.linker
+                    .Method(
+                        f.linker.Class(leaf_class).vtable[*f.linker.FindVtableIndex(leaf_class, "onMeasure", "(II)V")])
+                    .kind == MethodKind::interpreted);
+            const auto trace = f.vm.Trace("", 8192);
+            CHECK(std::any_of(trace.begin(), trace.end(), [](const auto& event) {
+                return event.class_descriptor == "Ltest/MeasuredLeaf;" && event.method_name == "onMeasure";
+            }));
+            const auto trace_path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/view-measure-" +
+                                    (backend == InterpreterBackend::threaded ? "threaded-" : "switch-") +
+                                    std::to_string(sdk) + ".trace.json";
+            std::ofstream(trace_path) << RenderDexVmTraceJson(trace);
+            const auto bad = make("Ltest/MeasuredLeaf;");
+            f.On(bad, "omitNext", "()V");
+            const auto failed = measure(bad, 0x40000000);
+            REQUIRE(failed.exception.IsValid());
+            CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+            CHECK(failed.exception_message.find("setMeasuredDimension") != std::string::npos);
+            const auto before_failure = f.context->ui_tree.PublishedProjection();
+            f.context->content_view = bad;
+            CHECK_THROWS_AS(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                     AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 60}),
+                            VmJavaThrow);
+            CHECK(f.context->ui_tree.PublishedProjection() == before_failure);
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}
+
+TEST_CASE("DVM-279 owner payload pairing is fixed before VM creation") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CHECK_THROWS_AS(AndroidValueVm(backend, {}, false, nullptr, false, AndroidUiTraversalOwner::JavaTraversal),
+                        std::invalid_argument);
+        CHECK_THROWS_AS(AndroidValueVm(backend, {}, false, nullptr, false, AndroidUiTraversalOwner::Legacy,
+                                       OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar"),
+                        std::invalid_argument);
+    }
+}
+
 TEST_CASE("DVM-277 ROM View shape preserves adapters and rejects host-owned fields") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend, {}, false, "view_field_access.dex");

@@ -34,10 +34,9 @@ struct AndroidValueVm final {
     VmThreadRuntime threads;
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-                   const std::vector<IntrinsicClassDecl>& extras = {},
-                   bool force_all_bridge = false,
-                   const char* dex_fixture = nullptr,
-                   bool include_skeleton = false);
+                   const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
+                   const char* dex_fixture = nullptr, bool include_skeleton = false,
+                   AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy, const char* test_bootdex = nullptr);
 
     VmObjectRef New(const char* descriptor,
                     const char* constructor = "()V",

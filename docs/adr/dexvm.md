@@ -57,6 +57,7 @@
 - [ADR-0156 · intrinsic 与 overlay 父类的 ROM 子类准入](#adr-0156)
 - [ADR-0157 · 进程内 Java View 遍历与宿主投影](#adr-0157)
 - [ADR-0158 · 固定 ROM 成员级行为组合](#adr-0158)
+- [ADR-0159 · 组合 ROM 普通方法的开放世界虚派闭包](#adr-0159)
 
 <a id="adr-0017"></a>
 
@@ -1811,3 +1812,44 @@ ADR-0147 记账失败；构建依赖检查及运行期 linker 共用此可用性
 
 本决定不等于遍历已落地。VD-J1 仅使用逐字段投影授权；遍历、发布协议、宿主根隔离及
 最终 owner 切换由后续 WU 实施，各阶段以任务单及实际验证为准。
+
+
+<a id="adr-0159"></a>
+
+## ADR-0159 · 组合 ROM 普通方法的开放世界虚派闭包
+
+- 状态：Accepted（编排方按用户授权于 2026-10-24 决定）
+- 日期：2026-10-24
+- Supersedes：精确修订 [ADR-0158](#adr-0158) 决定6对普通方法的依赖检查；
+  [ADR-0148](#adr-0148) 决定2的 clinit 规则不变。
+- 关联：[DVM-279](../tasks/dexvm/DVM-279.md)。
+
+### 理由
+
+ADR-0148 决定1允许普通方法引用未实现成员，执行到时沿 ADR-0147 明确失败。
+ADR-0158 决定6对组合普通方法复用 clinit 级“虚派目标唯一”分析，严于该约定，
+使 View.measure→onMeasure 这类框架可覆盖回调无法组合。Android 4.4 本身采用开放世界虚派。
+
+### 决定
+
+1. 构建期仍拒绝被选 ROM 方法中的 invoke-direct/static/super、同方法 new-instance 精确
+   接收者调用指向 failure；目标必须已实现（rom/overlay/intrinsic/BootDex 字节码）或本批一起
+   迁移。本类 failure 字段读写仍是漏依赖，DYNAMIC_TARGETS 反射/动态入口仍拒绝。
+   clinit 及其传递闭包使用原规则，不复用普通方法的放宽摘要。
+2. 普通方法的 invoke-virtual/interface 目标不唯一时不再拒绝。build/check 在 BootDex
+   可链接类集合（BootDex 字节码类、组合类、intrinsic/骨架类）上枚举所有可能目标，按调用点
+   签名记录完整目标签名及 implemented/failure 来源，确定性封存为 manifest dispatch ledger。
+   guest 应用类覆写属于应用代码，不在构建期集合内。failure 目标仍按 ADR-0147 运行记账并
+   明确失败，不静默返回、不因进入 ledger 改为 implemented。
+3. 每批声明的支持路径必须以运行记账证明动态未实现命中为0；任务单列明支持路径实际命中的
+   虚派目标。静态 ledger 不是运行覆盖证明。
+4. ADR-0155 closure 零缺口及单 DEX 预算、ADR-0156 父成员审计、ADR-0158 其他决定不变。
+   surface 反映真实来源；cha_precise 仍仅作敏感性分析，不用于准入。
+5. 自测覆盖非唯一虚派通过及全目标/来源 ledger；direct/static/super 指向 failure、精确
+   接收者 failure、本类 failure 字段读写、DYNAMIC_TARGETS、clinit 非唯一虚派仍拒绝；
+   同输入 ledger 两次逐字节相同。保留关闭放宽时 View.measure 候选按旧错误拒绝的负对照。
+
+### 后果
+
+本决定只调整显式组合普通方法的证明边界，不改变默认 selector，不承诺所有 ROM 虚派目标
+可运行。每批仍须以有界支持路径和动态记账验收，未闭合的阶段不得借此扩大类准入或默认启用。

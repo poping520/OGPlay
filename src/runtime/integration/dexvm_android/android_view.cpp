@@ -1592,6 +1592,52 @@ Decl Declare_android_view_View(const Context& context) {
         "mSystemUiVisibility", "I", dx::kAccNone);
     const auto view_flags = builder.BoundInstanceField(
         "mViewFlags", "I", dx::kAccNone);
+    context->view_java_measure_fields = DexVmAndroidContext::ViewJavaMeasureFields{
+        {builder.BoundInstanceField("mMeasuredWidth", "I", dx::kAccPrivate),
+         builder.BoundInstanceField("mMeasuredHeight", "I", dx::kAccPrivate)},
+        {builder.BoundInstanceField("mOldWidthMeasureSpec", "I", dx::kAccNone),
+         builder.BoundInstanceField("mOldHeightMeasureSpec", "I", dx::kAccNone)},
+        {builder.BoundInstanceField("mPrivateFlags", "I", dx::kAccNone),
+         builder.BoundInstanceField("mPrivateFlags2", "I", dx::kAccNone),
+         builder.BoundInstanceField("mPrivateFlags3", "I", dx::kAccNone)},
+        builder.BoundInstanceField("mMeasureCache", "Landroid/util/LongSparseLongArray;", dx::kAccPrivate),
+        view_flags};
+    builder.StaticMethod("isLayoutModeOptical", "(Ljava/lang/Object;)Z", [](dx::IntrinsicContext& call) {
+        const auto object = call.arguments[0].ref;
+        if (object.IsValid() &&
+            call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
+                                          call.vm.Model().ObjectClass(object))) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_measure_optical_group", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Optical ViewGroup measurement is not supported"};
+        }
+        return dx::VmValue::Int(0);
+    });
+    builder.VirtualMethod(
+        "internalSetPadding", "(IIII)V",
+        [context](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
+                (fields.GetInt(context->view_java_measure_fields->view_flags) & 0x03000300) != 0) {
+                if (auto* ledger = call.vm.Ledger())
+                    ledger->RecordUnimplemented("dexvm.view_measure_scrollbar_padding", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Scrollbar padding is not supported"};
+            }
+            const auto& tokens = *context->view_java_layout_fields;
+            bool changed{};
+            for (std::size_t i = 0; i < 4; ++i) {
+                const auto value = call.arguments[i].AsInt();
+                changed = changed || fields.GetInt(tokens.padding[i]) != value;
+                fields.SetInt(tokens.padding[i], value);
+            }
+            fields.SetInt(tokens.user_padding[0], call.arguments[0].AsInt());
+            fields.SetInt(tokens.user_padding[1], call.arguments[2].AsInt());
+            fields.SetInt(tokens.user_padding[2], call.arguments[3].AsInt());
+            if (changed) return CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V");
+            return dx::VmValue::Void();
+        },
+        dx::kAccNone);
     context->view_context_field = builder.BoundInstanceField(
         "mContext", "Landroid/content/Context;", dx::kAccProtected);
     context->view_java_layout_fields = DexVmAndroidContext::ViewJavaLayoutFields{
@@ -1951,6 +1997,18 @@ Decl Declare_android_view_View(const Context& context) {
     });
     builder.VirtualMethod("setId", "(I)V", ViewSetIdHandler(context));
     builder.VirtualMethod("requestLayout", "()V", [context](dx::IntrinsicContext& call) {
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            if (call.vm.CurrentContextToken() != 1U)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                      "View measure requests require owner thread"};
+            dx::IntrinsicCall fields(call);
+            const auto& tokens = *context->view_java_measure_fields;
+            const auto cache = fields.GetRef(tokens.cache);
+            if (cache.IsValid()) static_cast<void>(CallAndroidMethod(call.vm, cache, "clear", "()V"));
+            fields.SetInt(tokens.flags[0], fields.GetInt(tokens.flags[0]) | static_cast<std::int32_t>(0x80001000U));
+            if (context->content_view == call.receiver) context->ui_measure_requests.insert(call.receiver);
+            return dx::VmValue::Void();
+        }
         RefreshAndroidLayoutParams(call.vm, *context);
         context->ui_tree.MarkLayoutDirty(ViewNode(call, context));
         return dx::VmValue::Void();
@@ -3076,10 +3134,35 @@ namespace ogplay::runtime {
 bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                               const AndroidUiTraversalReason reason, const AndroidUiTraversalPhase phase,
                               const std::optional<ui::Size> viewport) {
-    switch (kAndroidUiTraversalOwner) {
+    switch (context.ui_traversal_owner) {
     case AndroidUiTraversalOwner::Legacy: break;
-    case AndroidUiTraversalOwner::JavaTraversal:
-        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Java UI traversal is not enabled"};
+    case AndroidUiTraversalOwner::JavaTraversal: {
+        if (reason != AndroidUiTraversalReason::OwnerTick || phase != AndroidUiTraversalPhase::ResolveOnly)
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                     "Only test-root measurement is enabled"};
+        if (vm.CurrentContextToken() != 1U)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View measurement requires owner thread"};
+        const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
+                                                        static_cast<std::int32_t>(context.surface_height)});
+        if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff)
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid measurement viewport"};
+        const auto root = context.content_view;
+        const auto roots = vm.ProtectReferences(std::array{root});
+        context.ui_measure_requests.erase(root);
+        static_cast<void>(android_intrinsics::CallAndroidMethod(
+            vm, root, "measure", "(II)V",
+            {dexvm::VmValue::Int(metrics.width | 0x40000000), dexvm::VmValue::Int(metrics.height | 0x40000000)}));
+        const auto epoch = context.ui_measure_epoch + 1;
+        const ui::UiProjectionTarget target{context.ui_tree.Root(),
+                                            context.ui_tree.Generation(),
+                                            context.ui_content_revision,
+                                            epoch,
+                                            {metrics.width, metrics.height}};
+        context.ui_tree.SetProjectionTarget(target);
+        CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+        context.ui_measure_epoch = epoch;
+        return true;
+    }
     }
     auto metrics = viewport.value_or(
         ui::Size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});

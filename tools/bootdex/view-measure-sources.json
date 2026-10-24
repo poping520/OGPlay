@@ -1,0 +1,138 @@
+{
+  "rom_methods": [
+    "<clinit>()V",
+    "access$2500()Z",
+    "canResolveLayoutDirection()Z",
+    "canResolveTextAlignment()Z",
+    "canResolveTextDirection()Z",
+    "computeOpticalInsets()Landroid/graphics/Insets;",
+    "getDefaultSize(II)I",
+    "getLayoutDirection()I",
+    "getMeasuredHeight()I",
+    "getMeasuredHeightAndState()I",
+    "getMeasuredState()I",
+    "getMeasuredWidth()I",
+    "getMeasuredWidthAndState()I",
+    "getMinimumHeight()I",
+    "getMinimumWidth()I",
+    "getOpticalInsets()Landroid/graphics/Insets;",
+    "getPaddingBottom()I",
+    "getPaddingTop()I",
+    "getRawLayoutDirection()I",
+    "getRawTextAlignment()I",
+    "getRawTextDirection()I",
+    "getResources()Landroid/content/res/Resources;",
+    "getSuggestedMinimumHeight()I",
+    "getSuggestedMinimumWidth()I",
+    "hasRtlSupport()Z",
+    "isDrawablesResolved()Z",
+    "isLayoutDirectionResolved()Z",
+    "isPaddingResolved()Z",
+    "isRtlCompatibilityMode()Z",
+    "isTextAlignmentResolved()Z",
+    "isTextDirectionResolved()Z",
+    "measure(II)V",
+    "needRtlPropertiesResolution()Z",
+    "onMeasure(II)V",
+    "onResolveDrawables(I)V",
+    "onRtlPropertiesChanged(I)V",
+    "resolveDrawables()V",
+    "resolveLayoutDirection()Z",
+    "resolveLayoutParams()V",
+    "resolvePadding()V",
+    "resolveRtlPropertiesIfNeeded()Z",
+    "resolveSizeAndState(III)I",
+    "resolveTextAlignment()Z",
+    "resolveTextDirection()Z",
+    "setMeasuredDimension(II)V"
+  ],
+  "rom_fields": [
+    "mBackground:Landroid/graphics/drawable/Drawable;",
+    "mLayoutInsets:Landroid/graphics/Insets;",
+    "mLayoutParams:Landroid/view/ViewGroup$LayoutParams;",
+    "mMeasureCache:Landroid/util/LongSparseLongArray;",
+    "mMeasuredHeight:I",
+    "mMeasuredWidth:I",
+    "mOldHeightMeasureSpec:I",
+    "mOldWidthMeasureSpec:I",
+    "mParent:Landroid/view/ViewParent;",
+    "mPrivateFlags2:I",
+    "mPrivateFlags3:I",
+    "mPrivateFlags:I",
+    "mViewFlags:I"
+  ],
+  "overlays": {
+    "<init>(Landroid/content/Context;)V": {
+      "reason": "Reviewed initialization adapter; ROM constructor system-service closure is outside this batch.",
+      "inputs": "<init>(Landroid/content/Context;)V; injected process services and receiver binding",
+      "outputs": "Context resources identity, ROM initial View layout fields, and existing bounded widget background defaults; no full ROM constructor claim.",
+      "state_owner": "Java resources/padding/minimum and ROM measurement fields; host binds only node identity. Pinned old specs MIN_VALUE, privateFlags=0, privateFlags2=0x22408, privateFlags3=0, viewFlags=0x18000000; VM-null parent/background/layoutInsets/layoutParams/cache. ViewConfiguration-dependent touchSlop stays failure, no zero service substitute.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "getContext()Landroid/content/Context;": {
+      "reason": "Preserve the existing bounded View handler while ROM owns the complete shape.",
+      "inputs": "getContext()Landroid/content/Context;; injected process services and receiver binding",
+      "outputs": "Existing return/exception and dirty/callback protocol; no ROM behavior claim.",
+      "state_owner": "UiTree/integration legacy state; mContext is Java-owned; bound slots for scroll-bar style/system-UI are adapter-private while guest field access fails.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "getPaddingLeft()I": {
+      "reason": "Bounded absolute-padding getter; ROM getter requires unselected RTL/flags resolution. No relative-padding API is enabled.",
+      "inputs": "getPaddingLeft()I; receiver Java fields",
+      "outputs": "Return the actual Java absolute padding field; no host storage or RTL guess.",
+      "state_owner": "Java mPaddingLeft/mPaddingRight only; UiNode.padding is a projection.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "getPaddingRight()I": {
+      "reason": "Bounded absolute-padding getter; ROM getter requires unselected RTL/flags resolution. No relative-padding API is enabled.",
+      "inputs": "getPaddingRight()I; receiver Java fields",
+      "outputs": "Return the actual Java absolute padding field; no host storage or RTL guess.",
+      "state_owner": "Java mPaddingLeft/mPaddingRight only; UiNode.padding is a projection.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "requestLayout()V": {
+      "reason": "Process-local root request queue replaces AttachInfo/ViewRootImpl seam for measure-only test roots",
+      "inputs": "receiver and Java measure cache/flags",
+      "outputs": "clear real LongSparseLongArray cache; flags |= 0x80001000; queue requester for next owner tick",
+      "state_owner": "Java fields; integration owns scheduling queue only",
+      "failure_boundary": "owner thread and unattached plain roots only; no during-layout protocol before VD-05; no fake ViewRootImpl/Binder"
+    },
+    "setMinimumHeight(I)V": {
+      "reason": "Retain exact default CHA dependency policy: ROM setters have non-unique requestLayout targets.",
+      "inputs": "setMinimumHeight(I)V; receiver Java fields",
+      "outputs": "Java minimum written before actual virtual requestLayout dispatch; integration imports layout inputs.",
+      "state_owner": "Java mMinWidth/mMinHeight only; UiNode.minimum is a projection.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "setMinimumWidth(I)V": {
+      "reason": "Retain exact default CHA dependency policy: ROM setters have non-unique requestLayout targets.",
+      "inputs": "setMinimumWidth(I)V; receiver Java fields",
+      "outputs": "Java minimum written before actual virtual requestLayout dispatch; integration imports layout inputs.",
+      "state_owner": "Java mMinWidth/mMinHeight only; UiNode.minimum is a projection.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "setPadding(IIII)V": {
+      "reason": "Retain bounded absolute padding adapter: ROM internalSetPadding/resolvePadding depend on unselected flags and scrollbar/RTL machinery.",
+      "inputs": "setPadding(IIII)V; nonnegative absolute dimensions",
+      "outputs": "Write Java padding and user/defined fields; project inputs and dispatch requestLayout on change.",
+      "state_owner": "Java padding/user-padding/defined fields only. UiNode.padding is a derived layout/render input.",
+      "failure_boundary": "JavaTraversal plain root/leaf only; no hierarchy, layout or widget support. Legacy uses its unchanged production source table."
+    },
+    "isLayoutModeOptical(Ljava/lang/Object;)Z": {
+      "reason": "Bounded optical system boundary; plain View cannot be optical",
+      "inputs": "actual object runtime type or null",
+      "outputs": "false for non-ViewGroup; reject every ViewGroup",
+      "state_owner": "no duplicated optical state",
+      "failure_boundary": "ViewGroup optical traversal records unimplemented and throws UOE"
+    },
+    "internalSetPadding(IIII)V": {
+      "reason": "Reuse existing Java absolute padding state without admitting scrollbar rendering",
+      "inputs": "four padding integers and real view flags",
+      "outputs": "write padding and user left/right/bottom; virtual requestLayout only on change",
+      "state_owner": "Java fields only",
+      "failure_boundary": "reject scrollbar/inset flags; only experimental plain View"
+    }
+  },
+  "surface": "tools/bootdex/view-measure.surface.json.gz",
+  "surface_sha256": "8a03617edfa00104603830500e68dafbc6a693ca4169f9a60c229563ca27fb37"
+}

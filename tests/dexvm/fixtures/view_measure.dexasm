@@ -1,0 +1,39 @@
+.class public Ltest/MeasuredLeaf;
+.super Landroid/view/View;
+.field private calls:I
+.field private omit:Z
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 8
+    iget v0, v5, Ltest/MeasuredLeaf;->calls:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v5, Ltest/MeasuredLeaf;->calls:I
+    iget-boolean v0, v5, Ltest/MeasuredLeaf;->omit:Z
+    if-nez v0, :done
+    const/16 v0, 120
+    const/4 v1, 0
+    invoke-static {v0, v6, v1}, Landroid/view/View;->resolveSizeAndState(III)I
+    move-result v2
+    const/16 v0, 90
+    invoke-static {v0, v7, v1}, Landroid/view/View;->resolveSizeAndState(III)I
+    move-result v3
+    invoke-virtual {v5, v2, v3}, Landroid/view/View;->setMeasuredDimension(II)V
+:done
+    return-void
+.end method
+.method public count()I
+.registers 2
+    iget v0, v1, Ltest/MeasuredLeaf;->calls:I
+    return v0
+.end method
+.method public omitNext()V
+.registers 2
+    const/4 v0, 1
+    iput-boolean v0, v1, Ltest/MeasuredLeaf;->omit:Z
+    return-void
+.end method

@@ -40,17 +40,31 @@
 
 namespace ogplay::test::android_value {
 
-AndroidValueVm::AndroidValueVm(InterpreterBackend backend,
-               const std::vector<IntrinsicClassDecl>& extras,
-               bool force_all_bridge,
-               const char* dex_fixture,
-               bool include_skeleton)
-    : vm(
-          [this, &extras, dex_fixture, include_skeleton]() -> DexClassLinker& {
+AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<IntrinsicClassDecl>& extras,
+                               bool force_all_bridge, const char* dex_fixture, bool include_skeleton,
+                               AndroidUiTraversalOwner owner, const char* test_bootdex)
+    : context(std::make_shared<DexVmAndroidContext>(owner)),
+      vm(
+          [this, &extras, dex_fixture, include_skeleton, owner, test_bootdex]() -> DexClassLinker& {
+              if ((owner == AndroidUiTraversalOwner::JavaTraversal) != (test_bootdex != nullptr))
+                  throw std::invalid_argument("test View owner/payload must be paired before VM creation");
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(
                   AndroidCoreIntrinsicServices(context)));
               linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-              ogplay::test::RegisterBootDex(linker);
+              if (test_bootdex) {
+                  ogplay::test::BindBootDexPlatformNatives(linker);
+                  std::ifstream stream(test_bootdex, std::ios::binary);
+                  REQUIRE(stream.good());
+                  const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+                  const std::span<const std::byte> archive{reinterpret_cast<const std::byte*>(raw.data()), raw.size()};
+                  const auto dex =
+                      ogplay::loader::ReadApkEntry(archive, ogplay::loader::ParseApkArchive(archive), "classes.dex");
+                  std::vector<std::uint8_t> bytes(dex.size());
+                  std::memcpy(bytes.data(), dex.data(), dex.size());
+                  linker.RegisterBootDex(std::move(bytes), DexClassLinker::BootDexMemberSources(archive));
+              } else {
+                  ogplay::test::RegisterBootDex(linker);
+              }
               if (include_skeleton) ogplay::test::RegisterBootDexSkeleton(linker);
               linker.RegisterIntrinsics(extras);
               if (dex_fixture != nullptr) {
@@ -63,7 +77,11 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend,
               linker.Link();
               return linker;
           }(),
-          model, nullptr, ledger, {.backend = backend, .force_all_bridge = force_all_bridge}),
+          model, nullptr, ledger,
+          {.backend = backend,
+           .force_all_bridge = force_all_bridge,
+           .diagnostics = {.trace_capacity = owner == AndroidUiTraversalOwner::JavaTraversal ? 8192U : 0U,
+                           .event_mask = DexVmTraceBit(DexVmTraceKind::method_enter)}}),
       threads(vm) {
     context->threads = &threads;
     vm.SetLogger(&logger);

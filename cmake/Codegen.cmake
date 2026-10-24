@@ -91,6 +91,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-frame-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-linear-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-relative-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-system-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/api19.json"

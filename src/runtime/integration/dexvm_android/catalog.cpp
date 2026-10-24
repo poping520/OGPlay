@@ -311,6 +311,8 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_app_Application(context),
   };
   if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      result.push_back(Declare_android_content_res_XmlBlock(context));
+      result.push_back(Declare_android_content_res_StringBlock(context));
       result.push_back(Declare_test_AccessibilityManager(context));
       result.push_back(Declare_test_ListenerInfo(context));
   }

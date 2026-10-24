@@ -94,6 +94,8 @@ public:
 
     [[nodiscard]] std::span<const CompiledXmlNode> Nodes() const { return nodes_; }
 
+    [[nodiscard]] bool HasStringStyles() const { return has_string_styles_; }
+
     [[nodiscard]] std::size_t StringCount() const { return string_offsets_.size(); }
 
     // Missing index, invalid index and invalid encoding are distinct. Legacy
@@ -107,7 +109,7 @@ private:
     std::vector<std::byte> bytes_;
     std::vector<std::size_t> string_offsets_;
     std::size_t string_end_{};
-    bool utf8_{};
+    bool utf8_{}, has_string_styles_{};
     std::vector<std::uint32_t> resource_map_;
     std::vector<CompiledXmlNode> nodes_;
 };
@@ -116,6 +118,8 @@ private:
 // indices and unpaired tags. Legacy adapters use the same decoder with their
 // existing permissive structural policy.
 [[nodiscard]] std::shared_ptr<const CompiledXmlDocument> ParseCompiledXmlDocument(std::span<const std::byte> bytes);
+
+[[nodiscard]] std::shared_ptr<const CompiledXmlDocument> ParseCompiledStringPool(std::span<const std::byte> bytes);
 
 // Flat document order (parents before children). Throws std::runtime_error
 // on malformed input.

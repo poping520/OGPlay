@@ -6,6 +6,8 @@
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_test_ListenerInfo(const Context& context);
 Decl Declare_test_AccessibilityManager(const Context& context);
+Decl Declare_android_content_res_XmlBlock(const Context& context);
+Decl Declare_android_content_res_StringBlock(const Context& context);
 using DebugMemoryInfoFields = std::vector<dx::IntrinsicFieldHandle>;
 [[nodiscard]] Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields&);
 [[nodiscard]] Decl Declare_android_os_Debug(const Context&, const DebugMemoryInfoFields&);

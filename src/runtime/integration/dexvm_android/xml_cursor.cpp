@@ -31,6 +31,39 @@ std::shared_ptr<const loader::CompiledXmlDocument> XmlCursorRegistry::Document(X
     return found->second;
 }
 
+XmlStringPoolToken XmlCursorRegistry::CreateStringPool(std::span<const std::byte> bytes) {
+    if (stopped_) throw std::logic_error("XML registry is shut down");
+    auto document = loader::ParseCompiledStringPool(bytes);
+    const XmlStringPoolToken token{NewToken()};
+    pools_.emplace(token, Pool{{}, std::move(document)});
+    return token;
+}
+
+XmlStringPoolToken XmlCursorRegistry::DocumentPool(XmlDocumentToken owner) {
+    const auto document = Document(owner);
+    for (const auto& [token, pool] : pools_)
+        if (pool.owner == owner) return token;
+    const XmlStringPoolToken token{NewToken()};
+    pools_.emplace(token, Pool{owner, document});
+    return token;
+}
+
+std::shared_ptr<const loader::CompiledXmlDocument> XmlCursorRegistry::StringPool(XmlStringPoolToken token) const {
+    const auto found = pools_.find(token);
+    if (found == pools_.end()) throw std::invalid_argument("string pool token is not live in this context");
+    return found->second.document;
+}
+
+void XmlCursorRegistry::DestroyStringPool(XmlStringPoolToken token) {
+    static_cast<void>(StringPool(token));
+    if (pools_.at(token).owner) throw std::logic_error("borrowed XML string pool cannot be destroyed");
+    pools_.erase(token);
+}
+
+XmlDocumentToken XmlCursorRegistry::CursorDocument(XmlCursorToken token) const {
+    return Require(token).owner;
+}
+
 XmlCursorToken XmlCursorRegistry::CreateCursor(XmlDocumentToken owner) {
     static_cast<void>(Document(owner));
     const XmlCursorToken token{NewToken()};
@@ -104,12 +137,14 @@ void XmlCursorRegistry::Close(XmlCursorToken token) {
 void XmlCursorRegistry::RetireOwner(XmlDocumentToken owner) {
     static_cast<void>(Document(owner));
     std::erase_if(cursors_, [owner](const auto& item) { return item.second.owner == owner; });
+    std::erase_if(pools_, [owner](const auto& item) { return item.second.owner == owner; });
     documents_.erase(owner);
 }
 
 void XmlCursorRegistry::Shutdown() {
     cursors_.clear();
     documents_.clear();
+    pools_.clear();
     stopped_ = true;
 }
 }  // namespace ogplay::runtime

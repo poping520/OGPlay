@@ -146,6 +146,7 @@ struct DexVmAndroidContext final {
     std::shared_ptr<NativeActivityRuntime> native_activity;
     std::uint64_t application_class_loader_token{1U};
     XmlCursorRegistry xml_cursors;
+    bool xml_gc_registered{};
     loader::ArscTable arsc;
     std::vector<std::byte> apk_bytes;
     loader::ApkArchive archive;

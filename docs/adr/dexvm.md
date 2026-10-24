@@ -1952,7 +1952,7 @@ ADR-0147 明确失败与支持路径动态零命中保证，字段接收者证�
 
 - 状态：Accepted（编排方按用户授权于 2026-10-24 决定）
 - 日期：2026-10-24
-- 实施：[DVM-286 / VD-09a-1](../tasks/dexvm/DVM-286.md)
+- 实施：[DVM-286 / VD-09a-1](../tasks/dexvm/DVM-286.md)、[DVM-287 / VD-09a-2](../tasks/dexvm/DVM-287.md)
 - 依据：[VD-09a 分析](../../.local/analysis/vd-09a/REPORT.md) §5、§7、§8；
   [编排方方案决定](../../.local/analysis/view-dir/DECISION.md)“VD-09a 方案决定”。
 - 关系：精确修订 ADR-0048/0051 的主题值提供方式；保留禁止完整 framework-res/完整

@@ -131,7 +131,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
   AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
   执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
-  Legacy getXml/inflater 不变；实验控件属性构造及 inflater 接入仍不在支持范围。
+  Legacy getXml/inflater 不变；实验 inflater 接入仍不在支持范围。
 - 实验 JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
   32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
   API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
@@ -148,7 +148,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   makeStringBlocks 将唯一 APK 原池绑定真实 ROM StringBlock，不合成 system AssetManager；
   原池由 context 保活至 Shutdown，StringBlock 不拥有该借用池。
   native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner，init(true)、系统池、
-  drawable/selector/ninepatch/animation/spans 与 TypedArray getDrawable/getColorStateList 失败。
+  drawable/selector/ninepatch/animation/spans 请求失败；TypedArray.getDrawable 执行 ROM，
+  缺席或 @null 返回 null，非空 drawable 属性在六槽发布前明确失败。属性类别按封存
+  styleable 的名称/ID 绑定，不能把不支持值降为缺席；scrollbars 初始化仍为 failure。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
   清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。Legacy 不加载投影。
 
@@ -332,19 +334,30 @@ Window 的默认参数、增添/替换内容沿真实 Java hierarchy；替换复
 FrameLayout 的 Context 构造（含 Rect/ArrayList）、measure/layout、默认/复制参数、foreground
 padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。未启用容器的 own
 onMeasure/onLayout 在实验表面显式 failure，不能继承基础算法取得实现信用。
-仅测试窗口；XML/AttributeSet 构造、foreground Drawable 设置/绘制与系统附着仍明确失败。
+仅测试窗口；foreground Drawable 设置/绘制与系统附着仍明确失败。
 完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，Legacy 路径保持。
 LinearLayout 的 Context 构造、weight/baseline/largest-child 状态、双方向测量/布局、参数生成/
 复制与 Gravity/RTL 解析归 ROM；共享 View/Group adapter 只初始化既有基础字段，不写
 LinearLayout 的算法状态或几何。Context-only 默认 weightSum=0，与属性构造的 -1 不混用。
-AttributeSet/style 构造、divider Drawable 设置/绘制与动画接缝继续记账失败；divider 测量
+非空 divider 属性/绘制与动画接缝继续记账失败；divider 测量
 helper 只读取 Java 输入，测试直接写尺寸不代表 Drawable 服务。叶类型不扩充。
 RelativeLayout 的非属性构造、双轴依赖图排序、size/position/center/baseline、onMeasure/onLayout
 及 LayoutParams addRule/removeRule/getRules/resolveRules/resolveLayoutDirection 归固定 ROM；
 MarginLayoutParams 方向解析继续执行 ROM。缺失锚点与 GONE 链按原算法回退，依赖环由 ROM
 抛 ISE；不套用 Legacy host 的缺失锚点拒绝。SDK 测量兼容字段由原构造查询真实 ApplicationInfo，
-宿主只扩大实验初始化类型守卫，不写 RelativeLayout 算法字段。属性/XML 构造与系统
+宿主只扩大实验初始化类型守卫，不写 RelativeLayout 算法字段。系统
 accessibility 入口保持 failure，Window 整树仍经同一事务投影。
+
+实验属性构造沿原 ROM Context 四个 obtainStyledAttributes、ContextThemeWrapper 的主题初始化/
+覆盖与 Resources/Theme/TypedArray。基础 Context 的进程主题 adapter 只缓存真实 Java Theme
+身份，采用 Manifest application theme 与 ROM 默认主题选择；wrapper 保留真实虚派与 setTo。
+ROM Context 没有 mOgplayInflater，实验 catalog 不再声明该额外字段；基础 Context 的实验
+inflater 服务明确失败，等待独立 inflater 接入。Legacy 字段及缓存行为保持。
+View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
+属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
+抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
+基础主题不支持的 scrollbar drawable；未覆盖的实际请求明确失败。LinearLayout 属性构造
+缺席 weightSum=-1，与 Context-only 的0保持区分；null divider 设置沿 ROM，绘制仍失败。
 
 ## GLES/EGL 与消息调度
 

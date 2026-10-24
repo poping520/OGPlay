@@ -56,11 +56,32 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-relative-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-xml-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-theme-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-context-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
 def assemble(recipe, work, measure=False):
-    dex = builder.assemble(recipe, work)
+    if measure:
+        # Replace the Legacy bounded wrapper only in this fixed ROM counterpart.
+        for source, classes in recipe.items():
+            for offset in range(0, len(classes), 100):
+                builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
+                             'disassemble', '--api', '19', '--jobs', '1', '--classes',
+                             ','.join(classes[offset:offset + 100]), '--output',
+                             str(work / (source + '-smali')), str(builder.source_path(source))])
+        guest, custom = builder.compile_guest_java(work)
+        replacement = 'Landroid/view/ContextThemeWrapper;'
+        duplicates = {v for values in recipe.values() for v in values} & set(custom)
+        if duplicates != {replacement}:
+            raise builder.BuildError('unexpected paired guest Java replacement')
+        (guest / (replacement[1:-1] + '.smali')).unlink()
+        output = work / 'classes.dex'
+        roots = [str(work / (source + '-smali')) for source in recipe] + [str(guest)]
+        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'smali.jar'), 'assemble',
+                     '--api', '19', '--jobs', '1', '--output', str(output), *roots])
+        dex = output.read_bytes()
+    else:
+        dex = builder.assemble(recipe, work)
     document = member_sources.load()
     if measure:
         document = measure_sources(document)
@@ -84,6 +105,7 @@ def build(measure=False):
         hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
                      *(c['owner'] for c in measure_sources(member_sources.load())['classes']
                        if c['owner'].startswith(('Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
+                     'Landroid/content/Context;', 'Landroid/view/ContextThemeWrapper;',
                      'Landroid/content/res/AssetManager;', 'Landroid/content/res/Resources;',
                      'Landroid/content/res/Resources$Theme;', 'Landroid/content/res/TypedArray;',
                      'Landroid/content/res/AssetManager$AssetInputStream;',
@@ -103,7 +125,11 @@ def build(measure=False):
         if (dex, payload) != assemble(recipe, Path(second), measure):
             raise builder.BuildError('two BootDex DEX/member source assemblies differ')
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
-        selected = builder.compile_expected_class_names(recipe, Path(work))
+        if measure:
+            _, custom = builder.compile_guest_java(Path(work))
+            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c != 'Landroid/view/ContextThemeWrapper;'))
+        else:
+            selected = builder.compile_expected_class_names(recipe, Path(work))
     if builder.class_names(dex) != selected:
         raise builder.BuildError('generated classes differ from recipe')
     resources = builder.resource_payload(builder.load_resources())

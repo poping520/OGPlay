@@ -350,9 +350,10 @@ TEST_CASE("DVM-284 LinearLayout default copy parameters and explicit unsupported
         CHECK(f.ledger.Unimplemented().empty());  // ROM rejects weighted predecessor, rather than an unsupported hit.
         REQUIRE(f.OnOutcome(ll, "onDraw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})})
                     .exception.IsValid());
-        REQUIRE(f.OnOutcome(ll, "setDividerDrawable", "(Landroid/graphics/drawable/Drawable;)V",
-                            {VmValue::Ref(VmObjectRef{})})
-                    .exception.IsValid());
+        CHECK_FALSE(f.OnOutcome(ll, "setDividerDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+                                {VmValue::Ref(VmObjectRef{})})
+                        .exception.IsValid());
+        CHECK(slot(ll, "mDivider", "Landroid/graphics/drawable/Drawable;").bits == 0);
         const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(ll), "<init>",
                                                     "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
         REQUIRE(ctor);

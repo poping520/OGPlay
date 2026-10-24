@@ -22,11 +22,30 @@ std::string DumpDexSurface(const std::filesystem::path& boot_archive_path) {
     const auto bytes = loader::ReadApkEntry(archive, loader::ParseApkArchive(archive), "classes.dex");
     std::vector<std::uint8_t> dex(bytes.size());
     std::memcpy(dex.data(), bytes.data(), bytes.size());
-    const auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    const auto sources = runtime::dexvm::DexClassLinker::BootDexMemberSources(archive);
+    auto owner = runtime::AndroidUiTraversalOwner::Legacy;
+    if (!sources.empty()) {
+        core::JsonParseError parse_error;
+        const auto policy = core::JsonDocument::ParseStrict(sources, parse_error);
+        if (!policy) throw std::runtime_error("invalid member source diagnostic input");
+        const auto classes = policy->Root().Member("classes").value_or(core::JsonValue{});
+        for (std::size_t i = 0; i < classes.Size(); ++i) {
+            const auto cls = classes.Element(i).value_or(core::JsonValue{});
+            if (cls.Member("owner").value_or(core::JsonValue{}).String() != "Landroid/view/View;") continue;
+            const auto fields = cls.Member("fields").value_or(core::JsonValue{});
+            for (std::size_t j = 0; j < fields.Size(); ++j) {
+                const auto field = fields.Element(j).value_or(core::JsonValue{});
+                if (field.Member("signature").value_or(core::JsonValue{}).String() == "mMeasuredWidth:I" &&
+                    field.Member("source").value_or(core::JsonValue{}).String() == "rom")
+                    owner = runtime::AndroidUiTraversalOwner::JavaTraversal;
+            }
+        }
+    }
+    const auto context = std::make_shared<runtime::DexVmAndroidContext>(owner);
     runtime::dexvm::DexClassLinker linker;
     linker.RegisterIntrinsics(runtime::BoundCoreIntrinsicCatalog(context));
     linker.RegisterIntrinsics(runtime::AndroidIntrinsicCatalog(context));
-    linker.RegisterBootDex(std::move(dex), runtime::dexvm::DexClassLinker::BootDexMemberSources(archive));
+    linker.RegisterBootDex(std::move(dex), sources);
     const auto skeleton_path = BundledDataPaths().root / "dexvm/api19-skeleton.bin";
     std::ifstream skeleton(skeleton_path, std::ios::binary);
     if (!skeleton) throw std::runtime_error("cannot open skeleton surface");

@@ -159,13 +159,89 @@ def reference_flow(body, own_field, signature, access_flags):
     return invokes, writes
 
 
-def validate(document, texts, surface, boot_texts=None):
+def scan_host_allocations(root):
+    """Conservative allocation inventory: unresolved by-name/class-id calls deny (b).
+
+    Scan production sources, not test declarations or a hand-maintained allowlist.
+    No absence claim is made for an argument whose value is not a descriptor literal.
+    Raw object-model and JNI/Unsafe entry points matter even when constructors fail.
+    """
+    files, sites = {}, []
+    token = re.compile(r'''"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|/\*.*?\*/''', re.S)
+    calls = re.compile(r'\b(NewIntrinsicInstance|AllocateJniObject|NewInstance)\s*\(')
+    for directory in ('src', 'include'):
+        for path in sorted((root / directory).rglob('*')):
+            if path.suffix not in ('.cpp', '.cc', '.cxx', '.c', '.h', '.hh', '.hpp', '.hxx', '.mm', '.m', '.inl', '.inc', '.ipp'):
+                continue
+            raw = path.read_bytes()
+            relative = path.relative_to(root).as_posix()
+            files[relative] = digest(raw)
+            # Preserve strings; replacing comments with spaces retains line numbers.
+            text = token.sub(lambda m: re.sub(r'[^\n]', ' ', m[0])
+                             if m[0].startswith(('//', '/*')) else m[0], raw.decode('utf-8'))
+            for match in re.finditer(r'&\s*(?:\w+::)*(NewIntrinsicInstance|AllocateJniObject|NewInstance)\b', text):
+                sites.append(dict(file=relative, line=text.count('\n', 0, match.start()) + 1,
+                                  api=match[1], descriptor=None, argument='indirect allocator reference'))
+            if re.search(r'\b(?:u8|u|U|L)?R"', text):
+                sites.append(dict(file=relative, line=1, api='unresolved-source', descriptor=None,
+                                  argument='raw string syntax: conservative allocation audit'))
+            for match in calls.finditer(text):
+                # Qualified definitions are not allocation calls. Unresolved
+                # declarations/references remain conservative denial evidence.
+                if text[max(0, match.start() - 2):match.start()] == '::':
+                    continue
+                start = match.end()
+                literal = re.match(r'\s*"(L[^"\s]+;)"\s*\)', text[start:])
+                sites.append(dict(file=relative, line=text.count('\n', 0, match.start()) + 1,
+                                  api=match[1], descriptor=literal[1] if literal else None,
+                                  argument=text[start:text.find(')', start)].strip()))
+    return dict(files=files, sites=sites)
+
+
+def allocation_proof(signature, analyzer, host_allocations):
+    """Prove all platform receivers providing this failure target unallocatable."""
+    owner, member = signature.split('->', 1)
+    name, desc = member.split('(', 1)
+    key = name, '(' + desc
+    providers = []
+    reasons = []
+    for receiver in sorted(analyzer.subtypes(owner)):
+        if analyzer.find_method(receiver, key) != owner:
+            continue
+        cls = analyzer.cls[receiver]
+        abstract = bool(cls['access_flags'] & (512 | 1024))
+        constructors = [dict(signature=receiver + '->' + n + d,
+                             source='failure' if analyzer.method_kind(receiver, (n, d)) == 'unimpl'
+                             else analyzer.method_kind(receiver, (n, d)))
+                        for n, d in sorted(analyzer.meth.get(receiver, {})) if n == '<init>']
+        providers.append(dict(receiver=receiver, abstract=abstract, constructors=constructors))
+        if not abstract and (not constructors or any(c['source'] != 'failure' for c in constructors)):
+            reasons.append('constructible receiver: ' + receiver)
+    if not providers:
+        reasons.append('missing target declaration: ' + owner)
+    # Even an abstract receiver cannot be accepted when a raw host allocator can
+    # instantiate it. NewIntrinsicInstance intentionally bypasses construction.
+    receivers = {p['receiver'] for p in providers}
+    if host_allocations is None:
+        scan = None
+        reasons.append('host allocation inventory unavailable')
+    else:
+        possible = [site for site in host_allocations['sites']
+                    if site['descriptor'] is None or site['descriptor'] in receivers]
+        scan = dict(files=host_allocations['files'], possible_allocations=possible)
+        if possible:
+            reasons.append('host allocation is possible or unresolved')
+    return dict(target=signature, accepted=not reasons, providers=providers,
+                host_scan=scan, reasons=reasons)
+
+
+def validate(document, texts, surface, boot_texts=None, host_allocations=None):
     """Validate exact ownership, byte identity, reviewed handlers and references.
 
     `surface` is a pinned dump-surface; no dependency receives future-implementation
     credit. All selected bodies, including constructors/clinit, are audited.
     """
-    if not {'schema', 'classes'} <= set(document) or set(document) - {'schema', 'classes', 'dispatch_ledger'} or document['schema'] != 1:
+    if not {'schema', 'classes'} <= set(document) or set(document) - {'schema', 'classes', 'dispatch_ledger', 'allocation_ledger', 'host_allocation_scan'} or document['schema'] != 1:
         raise ValueError('invalid member source schema')
     classes = document['classes']
     if not isinstance(classes, list):
@@ -276,8 +352,22 @@ def validate(document, texts, surface, boot_texts=None):
         for m in cls['methods']:
             m.setdefault('access_flags', 1)
     analyzer = selector.Analyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
-    # VD-05: field-based failure receivers require a whole-BootDex null-writer
-    # proof. Overlay writers are not trusted to preserve a ROM body invariant.
+    # Only composition owns disabled bodies. Preserve the default selector's
+    # all-body policy, and preserve override shape checks for every declaration.
+    parent_bodies = copy.deepcopy(parsed)
+    for owner, cls in parent_bodies.items():
+        for key, body in cls['methods'].items():
+            if tables[owner][''.join(key)]['source'] != 'rom':
+                body['ops'] = []
+            elif key[0] != '<clinit>':
+                # Open virtual targets are audited and sealed by OrdinaryAnalyzer.
+                # Exact receivers still take its strict dependency path.
+                body['ops'] = [op for op in body['ops'] if not (
+                    op[0] == 'invoke' and op[1].split('/')[0] in ('invoke-virtual', 'invoke-interface'))]
+    parent_analyzer = selector.Analyzer(list(normalized.values()), parent_bodies, {}, set(parsed), set(), set())
+
+    # VD-06a third revision: field receiver proofs classify confidence only.
+    # Failure targets keep their runtime failure source regardless of (a)/(b).
     guarded_fields = set()
     guarded_sites = {}
     flows = {}
@@ -315,7 +405,7 @@ def validate(document, texts, surface, boot_texts=None):
     ordinary = OrdinaryAnalyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
     dispatch_ledger = {}
     for owner in parsed:
-        reasons = analyzer.parent_member_reasons(owner)
+        reasons = parent_analyzer.parent_member_reasons(owner)
         if reasons:
             raise ValueError('ADR-0156: ' + repr(reasons))
         for key, row in tables[owner].items():
@@ -336,33 +426,49 @@ def validate(document, texts, surface, boot_texts=None):
             if reasons:
                 raise ValueError('selected-ROM-dependency: ' + repr(reasons))
 
-    if guarded_fields:
-        for owner, key in guarded_fields:
-            declaration = next(f for c in classes if c['owner'] == owner
-                               for f in c['fields'] if f['signature'] == key)
-            if declaration['initialization'].startswith('rom-encoded:') and declaration['initialization'] != 'rom-encoded:null':
-                raise ValueError('failure-receiver-field-initial-value: ' + owner + '->' + key)
-            if not implemented(owner, key, True):
-                raise ValueError('failure-receiver-field-unavailable: ' + owner + '->' + key)
-        # payload() supplies every class in the actual recipe, including classes
-        # overlaid by intrinsics. Direct validate() fixtures supply their bodies.
-        needles = ['->' + key for _, key in guarded_fields]
-        for writer_owner, text in {**(boot_texts or {}), **texts}.items():
-            if not any(needle in text for needle in needles): continue
-            for key, method in inventory(text)[0].items():
-                if not any(needle in method['body'] for needle in needles): continue
-                source = tables.get(writer_owner, {}).get(key, {}).get('source')
-                if source is None:
-                    match = next((m for m in runtime.get(writer_owner, {}).get('methods', [])
-                                  if m['name'] + m['descriptor'] == key), None)
-                    source = ('failure' if match and match['status'] != 'implemented' else
-                              'rom' if match and match['binding'] == 'bytecode' else 'overlay')
-                if source == 'failure': continue
-                _, writes = reference_flow(method['body'], own_field, key, method['flags'])
-                for field, only_null in writes.items():
-                    if field in guarded_fields and (not only_null or source != 'rom'):
-                        raise ValueError('failure-receiver-field-writer: ' + field[0] + '->' + field[1]
-                                         + ' <- ' + writer_owner + '->' + key + ' at ' + repr(sorted(guarded_sites[field])))
+    allocation_ledger = {}
+    writers = {field: [] for field in guarded_fields}
+    needles = ['->' + key for _, key in guarded_fields]
+    for writer_owner, text in sorted({**(boot_texts or {}), **texts}.items()):
+        if not any(needle in text for needle in needles):
+            continue
+        for key, method in inventory(text)[0].items():
+            if not any(needle in method['body'] for needle in needles):
+                continue
+            source = tables.get(writer_owner, {}).get(key, {}).get('source')
+            if source is None:
+                match = next((m for m in runtime.get(writer_owner, {}).get('methods', [])
+                              if m['name'] + m['descriptor'] == key), None)
+                source = ('failure' if match and match['status'] != 'implemented' else
+                          'rom' if match and match['binding'] == 'bytecode' else 'overlay')
+            _, writes = reference_flow(method['body'], own_field, key, method['flags'])
+            for field, only_null in writes.items():
+                if field in writers:
+                    writers[field].append(dict(method=writer_owner + '->' + key,
+                                               source=source, only_null=only_null))
+    for owner, key in sorted(guarded_fields):
+        declaration = next(f for c in classes if c['owner'] == owner
+                           for f in c['fields'] if f['signature'] == key)
+        if not implemented(owner, key, True):
+            raise ValueError('failure-receiver-field-unavailable: ' + owner + '->' + key)
+        null_initial = (not declaration['initialization'].startswith('rom-encoded:') or
+                        declaration['initialization'] == 'rom-encoded:null')
+        rows = writers[owner, key]
+        null_writers = null_initial and all(w['source'] == 'failure' or
+                                           w['source'] == 'rom' and w['only_null'] for w in rows)
+        for site in sorted(guarded_sites[owner, key]):
+            for target in dispatch_ledger[site]:
+                if target['source'] != 'failure':
+                    continue
+                signature = target['signature']
+                if signature not in allocation_ledger:
+                    allocation_ledger[signature] = allocation_proof(signature, ordinary, host_allocations)
+                proof = allocation_ledger[signature]
+                target.setdefault('field_receivers', []).append(dict(
+                    field=owner + '->' + key,
+                    classification='a' if null_writers else 'b' if proof['accepted'] else 'unproven',
+                    initialization=declaration['initialization'], writers=rows,
+                    allocation_evidence=signature))
 
     # Fields retain exact availability checks. Invocation checks above preserve
     # direct/static/super and exact-receiver guarantees while recording open
@@ -381,11 +487,32 @@ def validate(document, texts, surface, boot_texts=None):
                 if not implemented(owner, member, '(' not in member):
                     raise ValueError('parent-intrinsic-unimplemented-member/missing-dependency: '
                                      + cls['owner'] + '->' + key + ' -> ' + owner + '->' + member)
+    # Shared host evidence is sealed once, rather than repeated for every
+    # failure target. Keep the manifest within the existing runtime JSON limit.
+    shared_host_scan = host_allocations if allocation_ledger and host_allocations is not None else None
+    if shared_host_scan is not None:
+        inventory_hash = digest(canonical(shared_host_scan))
+        for proof in allocation_ledger.values():
+            possible = proof['host_scan']['possible_allocations']
+            proof['host_scan'] = dict(inventory_sha256=inventory_hash,
+                                     possible_allocation_indices=[shared_host_scan['sites'].index(s) for s in possible])
     sealed = copy.deepcopy(document)
+    if shared_host_scan is not None:
+        sealed['host_allocation_scan'] = shared_host_scan
+    else:
+        sealed.pop('host_allocation_scan', None)
+    if 'host_allocation_scan' in document and document['host_allocation_scan'] != shared_host_scan:
+        raise ValueError('stale host allocation scan')
     if dispatch_ledger:
         sealed['dispatch_ledger'] = dispatch_ledger
     else:
         sealed.pop('dispatch_ledger', None)
+    if allocation_ledger:
+        sealed['allocation_ledger'] = allocation_ledger
+    else:
+        sealed.pop('allocation_ledger', None)
+    if 'allocation_ledger' in document and document['allocation_ledger'] != allocation_ledger:
+        raise ValueError('stale allocation ledger')
     if 'dispatch_ledger' in document and document['dispatch_ledger'] != dispatch_ledger:
         raise ValueError('stale dispatch ledger')
     return canonical(sealed)
@@ -432,7 +559,7 @@ def payload(document, roots, root, writer_owners=None):
         if len(matches) != 1:
             raise ValueError('BootDex writer audit requires one body: ' + owner)
         boot_texts[owner] = matches[0].read_text(encoding='utf-8')
-    return validate(document, texts, surfaces, boot_texts)
+    return validate(document, texts, surfaces, boot_texts, scan_host_allocations(root))
 
 
 def fixture(text):
@@ -538,6 +665,8 @@ def self_test():
     assert payload({'schema': 1, 'classes': []}, [], Path('.')) is None
     dispatch_self_test()
     singleton_dispatch_self_test()
+    allocation_dispatch_self_test()
+    active_body_self_test()
     print('member_sources self-test passed (identity, ownership, conflicts, dependencies, native, overlay, deterministic, disabled)')
 
 
@@ -689,6 +818,8 @@ return-void
     field_call = 'iget-object v0, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;\n' + call.replace('{p0}', '{v0}')
     doc, texts, surface = sample(field_call)
     encoded = validate(doc, texts, surface)
+    target_row = next(iter(json.loads(encoded)['dispatch_ledger'].values()))[0]
+    assert target_row['source'] == 'failure' and target_row['field_receivers'][0]['classification'] == 'a'
     assert encoded == validate(copy.deepcopy(doc), texts, list(reversed(surface)))
     # A writer in a different BootDex class must be audited too.
     writer_owner = 'Ltest/OtherWriter;'
@@ -703,9 +834,8 @@ return-void
     other = dict(descriptor=writer_owner, superclass='Ljava/lang/Object;', source='bootdex', fields=[], methods=[
         dict(name='write', descriptor='(Ltest/MemberComposition;Ltest/OnlyTarget;)V', access_flags=9,
              status='implemented', binding='bytecode')])
-    try: validate(doc, texts, surface+[other], {writer_owner:writer_text})
-    except ValueError as error: assert 'failure-receiver-field-writer' in str(error)
-    else: raise AssertionError('accepted cross-class non-null writer')
+    cross = json.loads(validate(doc, texts, surface+[other], {writer_owner:writer_text}))
+    assert next(iter(cross['dispatch_ledger'].values()))[0]['field_receivers'][0]['classification'] == 'unproven'
     other['methods'][0]['status'] = 'unimplemented-ledger'
     validate(doc, texts, surface+[other], {writer_owner:writer_text})
     negatives = [
@@ -722,10 +852,141 @@ return-void
         if name == 'clinit':
             text=bodies[owner].replace('.registers 1\nreturn-void', '.registers 1\n'+call+'\nreturn-void',1)
             bad, _ = fixture(text);bodies={owner:text}
-        try: validate(bad, bodies, classes)
-        except ValueError: pass
-        else: raise AssertionError('accepted singleton negative: '+name)
+        if name in ('nonnull', 'branch', 'alias'):
+            result = json.loads(validate(bad, bodies, classes))
+            assert next(iter(result['dispatch_ledger'].values()))[0]['field_receivers'][0]['classification'] == 'unproven'
+        else:
+            try: validate(bad, bodies, classes)
+            except ValueError: pass
+            else: raise AssertionError('accepted singleton negative: '+name)
     print('VD-05 singleton dispatch self-test passed (unknown failure ledger, exact/clinit rejection, null/nonnull/branch/alias/cross-class writers, field availability)')
+
+
+def allocation_dispatch_self_test():
+    import tempfile
+    import select_rom_java as selector
+    target = 'Ltest/NoInstances;'
+    def surface(implemented=False, child=False):
+        classes = [dict(descriptor=target, source='skeleton', superclass=None, access_flags=1, interfaces=[],
+                        fields=[], methods=[dict(name='<init>', descriptor='()V', access_flags=1,
+                        status='implemented' if implemented else 'unimplemented-ledger', binding='intrinsic'),
+                        dict(name='target', descriptor='()V', access_flags=1,
+                             status='unimplemented-ledger', binding='intrinsic')])]
+        if child:
+            classes.append(dict(descriptor='Ltest/Child;', source='skeleton', superclass=target, access_flags=1, interfaces=[],
+                                fields=[], methods=[dict(name='<init>', descriptor='()V', access_flags=1,
+                                status='implemented', binding='intrinsic')]))
+        return selector.Analyzer(classes, {}, {}, set(), set(), set())
+    signature = target + '->target()V'
+    with tempfile.TemporaryDirectory(prefix='ogplay-host-allocation-') as directory:
+        root = Path(directory)
+        (root / 'src').mkdir()
+        source = root / 'src/probe.cpp'
+        source.write_text('vm.NewIntrinsicInstance("Ltest/Other;");\n', encoding='utf-8')
+        empty = scan_host_allocations(root)
+        proof = allocation_proof(signature, surface(), empty)
+        assert proof['accepted']
+        assert not allocation_proof(signature, surface(True), empty)['accepted']
+        assert not allocation_proof(signature, surface(child=True), empty)['accepted']
+        assert not allocation_proof(signature, surface(), None)['accepted']
+        for expression in ('vm.NewIntrinsicInstance("Ltest/NoInstances;");',
+                           'vm.NewIntrinsicInstance(descriptor);', 'NewIntrinsicInstance(descriptor);',
+                           'NewIntrinsicInstance("Ltest/NoInstances;");', 'vm.AllocateJniObject(type);',
+                           'vm.Model().NewInstance(type, slots);',
+                           'auto allocate = &Interpreter::NewIntrinsicInstance;',
+                           'const char* text = R"(unresolved raw string)";'):
+            source.write_text(expression, encoding='utf-8')
+            assert not allocation_proof(signature, surface(), scan_host_allocations(root))['accepted']
+        source.write_text('// vm.NewIntrinsicInstance("Ltest/NoInstances;");\n', encoding='utf-8')
+        assert allocation_proof(signature, surface(), scan_host_allocations(root))['accepted']
+    # Exercise the complete validator/sealing path with a non-null field writer.
+    text = """.class public Ltest/MemberComposition;
+.super Ljava/lang/Object;
+.field private receiver:Ltest/NoInstances;
+.method static constructor <clinit>()V
+.registers 1
+return-void
+.end method
+.method public run()V
+.registers 2
+iget-object v0, p0, Ltest/MemberComposition;->receiver:Ltest/NoInstances;
+invoke-virtual {v0}, Ltest/NoInstances;->target()V
+return-void
+.end method
+.method public write(Ltest/NoInstances;)V
+.registers 2
+iput-object p1, p0, Ltest/MemberComposition;->receiver:Ltest/NoInstances;
+return-void
+.end method
+"""
+    document, _ = fixture(text)
+    classes = [dict(descriptor='Ltest/MemberComposition;', superclass='Ljava/lang/Object;',
+                    fields=[], methods=[]), *surface().cls.values()]
+    none = dict(files={}, sites=[])
+    encoded = validate(document, {'Ltest/MemberComposition;': text}, classes, host_allocations=none)
+    sealed = json.loads(encoded)
+    assert sealed['allocation_ledger'][signature]['accepted']
+    assert next(iter(sealed['dispatch_ledger'].values()))[0]['field_receivers'][0]['classification'] == 'b'
+    unproven = json.loads(validate(document, {'Ltest/MemberComposition;': text}, classes))
+    unproven_target = next(iter(unproven['dispatch_ledger'].values()))[0]
+    assert unproven_target['field_receivers'][0]['classification'] == 'unproven'
+    assert unproven_target['source'] == 'failure'
+    assert validate(document, {'Ltest/MemberComposition;': text}, classes) == validate(
+        document, {'Ltest/MemberComposition;': text}, list(reversed(classes)))
+    assert encoded == validate(document, {'Ltest/MemberComposition;': text}, list(reversed(classes)), host_allocations=none)
+    assert encoded == validate(sealed, {'Ltest/MemberComposition;': text}, classes, host_allocations=none)
+    sealed['allocation_ledger'][signature]['accepted'] = False
+    try:
+        validate(sealed, {'Ltest/MemberComposition;': text}, classes, host_allocations=none)
+    except ValueError as error:
+        assert 'stale allocation ledger' in str(error)
+    else:
+        raise AssertionError('accepted stale allocation evidence')
+    print('VD-06a informational dispatch self-test passed (a/b/unproven, failure source retained, constructor/host evidence, strict rejection controls, deterministic sealing, stale evidence)')
+
+
+def active_body_self_test():
+    import select_rom_java as selector
+    owner = 'Ltest/MemberComposition;'
+    parent = 'Ltest/Parent;'
+    text = """.class public Ltest/MemberComposition;
+.super Ltest/Parent;
+.method static constructor <clinit>()V
+.registers 1
+return-void
+.end method
+.method public inactive()V
+.registers 1
+invoke-super {p0}, Ltest/Parent;->missing()V
+return-void
+.end method
+"""
+    doc, _ = fixture(text)
+    rows = doc['classes'][0]['methods']
+    next(r for r in rows if r['signature'] == 'inactive()V')['source'] = 'failure'
+    classes = [dict(descriptor=owner, superclass=parent, source='bootdex', access_flags=1,
+                    interfaces=[], fields=[], methods=[]),
+               dict(descriptor=parent, superclass=None, source='intrinsic', access_flags=1,
+                    interfaces=[], fields=[], methods=[dict(name='missing', descriptor='()V',
+                    access_flags=1, overridable=True, status='unimplemented-ledger', binding='intrinsic')])]
+    encoded = validate(doc, {owner:text}, classes)
+    assert encoded == validate(doc, {owner:text}, list(reversed(classes)))
+    parsed = {owner: selector.parse_smali_class(text)}
+    normal = selector.Analyzer(classes, parsed, {}, {owner}, set(), set())
+    assert ('parent-intrinsic-unimplemented-member', parent+'->missing()V') in normal.parent_member_reasons(owner)
+    next(r for r in rows if r['signature'] == 'inactive()V')['source'] = 'rom'
+    try: validate(doc, {owner:text}, classes)
+    except ValueError as error: assert 'parent-intrinsic-unimplemented-member' in str(error)
+    else: raise AssertionError('accepted active parent direct failure')
+    # Shape checking cannot be hidden by failure/overlay source.
+    shape = text.replace('inactive()V', 'missing()V')
+    bad, _ = fixture(shape)
+    next(r for r in bad['classes'][0]['methods'] if r['signature'] == 'missing()V')['source'] = 'failure'
+    classes[1]['methods'][0]['overridable'] = False
+    try: validate(bad, {owner:shape}, classes)
+    except ValueError as error: assert 'overrides-nonoverridable' in str(error)
+    else: raise AssertionError('accepted disabled nonoverridable shape')
+    print('VD-06a active-body self-test passed (disabled pass, active parent reject, all-member shape, default selector unchanged)')
 
 
 def main():

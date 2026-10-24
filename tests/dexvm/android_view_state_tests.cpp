@@ -44,6 +44,33 @@ using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
+TEST_CASE("DVM-281 raw host allocation bypasses failure constructors and class initialization") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", true, AndroidUiTraversalOwner::JavaTraversal,
+                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        for (const auto descriptor : {"Landroid/view/ViewRootImpl;", "Landroid/view/ViewOverlay$OverlayViewGroup;"}) {
+            const auto type = f.linker.ResolveDescriptor(descriptor);
+            const auto signature = std::string_view(descriptor) == "Landroid/view/ViewRootImpl;"
+                                       ? "(Landroid/content/Context;Landroid/view/Display;)V"
+                                       : "(Landroid/content/Context;Landroid/view/View;)V";
+            const auto constructor = f.linker.FindDirectMethod(type, "<init>", signature);
+            REQUIRE(constructor.has_value());
+            REQUIRE(f.linker.Method(*constructor).kind != MethodKind::interpreted);
+            REQUIRE_FALSE(f.linker.Method(*constructor).implementation);
+            // Existing by-name host allocation performs neither clinit nor
+            // construction; failure constructors alone cannot prove absence.
+            const auto object = f.vm.NewIntrinsicInstance(descriptor);
+            const auto roots = f.vm.ProtectReferences(std::array{object});
+            REQUIRE(object.IsValid());
+            CHECK(f.model.ObjectClass(object) == type);
+            const auto rejected = f.vm.Call(*constructor, std::array{VmValue::Ref(object), VmValue::Ref(VmObjectRef{}),
+                                                                     VmValue::Ref(VmObjectRef{})});
+            CHECK(rejected.exception.IsValid());
+            CHECK(f.model.ObjectClass(object) == type);
+        }
+    }
+}
+
 TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java authority") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         for (const auto sdk : {17U, 18U, 19U}) {

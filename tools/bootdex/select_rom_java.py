@@ -602,19 +602,19 @@ def disassemble(cache: Path) -> dict[str, dict]:
     return texts
 
 
-def disassemble_bootdex(cache: Path, surface: list[dict]) -> dict[str, dict]:
+def disassemble_bootdex(cache: Path, surface: list[dict], payload: Path = builder.OUTPUT) -> dict[str, dict]:
     """Traverse the actual payload too: ROM overrides, Conscrypt and guest Java.
 
     Keep this separate from the unchanged ADR-0148 initialization admission audit.
     """
-    digest = builder.file_sha256(builder.OUTPUT)
+    digest = builder.file_sha256(payload)
     dest = cache / ('bootdex-' + digest[:16])
     stamp = dest / '.complete'
     if not stamp.exists():
         dest.mkdir(parents=True, exist_ok=True)
         subprocess.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
                         'disassemble', '--api', '19', '--jobs', '1', '--output', str(dest),
-                        str(builder.OUTPUT)], check=True)
+                        str(payload)], check=True)
         stamp.write_text(digest, encoding='utf-8')
     out = {}
     for c in surface:
@@ -726,7 +726,7 @@ def run(args) -> int:
     analyzer = Analyzer(surface, smali, jar_of, recipe_classes, guest_descriptors(), reserved,
                         source_tokens(builder.ROOT), cha_precise=args.cha_precise,
                         replacements=replacements, native_bindings=native_bindings,
-                        boot_smali=disassemble_bootdex(args.cache, surface))
+                        boot_smali=disassemble_bootdex(args.cache, surface, args.bootdex))
     for d in sorted(reserved & set(analyzer.candidates)):
         analyzer.cand_set.discard(d)
     analyzer.candidates = [d for d in analyzer.candidates if d not in reserved]
@@ -756,6 +756,7 @@ def run(args) -> int:
     report = dict(
         schema=1, policy='ADR-0154 explicit replacement' if replacements else 'ADR-0148 rule-based admission',
         replacements=sorted(replacements), retained_native_bindings=sorted(native_bindings),
+        bootdex_sha256=builder.file_sha256(args.bootdex),
         runtime_classes=dict(owner_runtime), skeleton_classes=skeleton_total,
         candidates=len(analyzer.candidates), admitted=len(admitted), rejected=len(analyzer.rejected),
         rejection_by_primary=dict(by_primary.most_common()),
@@ -1037,6 +1038,8 @@ def self_test():
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--surface', type=Path)
+    p.add_argument('--bootdex', type=Path, default=builder.OUTPUT,
+                   help='payload paired with --surface; alternate payload is read-only evidence')
     p.add_argument('--scan-dir', type=Path)
     p.add_argument('--report', type=Path)
     p.add_argument('--cache', type=Path, default=builder.ROOT / '.local/analysis/preflight/wu2a/smali')
@@ -1058,6 +1061,8 @@ def main():
         return 0
     if not (args.surface and args.report):
         p.error('--surface and --report required')
+    if args.apply and args.bootdex.resolve() != builder.OUTPUT.resolve():
+        p.error('alternate --bootdex cannot modify the production recipe')
     if args.scope == 'closure' and (args.only or args.replace_intrinsic or args.cha_precise):
         p.error('--scope closure requires default admission rules without explicit selection')
     if args.check_closure and (args.apply or args.only or args.replace_intrinsic or args.cha_precise):

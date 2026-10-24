@@ -1674,6 +1674,19 @@ void RegisterAndroidValueStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        vm.RegisterIntrinsicStateTable({"android.java-view-binding",
+                                        [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
+                                        [context](dexvm::VmObjectRef object) {
+                                            const auto found = context->object_to_ui_node.find(object.Value());
+                                            if (found == context->object_to_ui_node.end()) return;
+                                            const auto node = found->second;
+                                            context->ui_node_to_object.erase(node);
+                                            context->object_to_ui_node.erase(found);
+                                            context->ui_tree.RetireProjectedIdentity(node);
+                                        },
+                                        {}});
+    }
     vm.RegisterIntrinsicStateTable({
         "android.preference-editors",
         [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},

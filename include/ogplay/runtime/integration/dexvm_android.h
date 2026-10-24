@@ -110,6 +110,7 @@ struct DexVmAndroidContext final {
 
     const AndroidUiTraversalOwner ui_traversal_owner;
     std::uint64_t ui_measure_epoch{};
+    // Weak identities in JavaTraversal; live hierarchy edges belong to Java.
     std::set<dexvm::VmObjectRef> ui_measure_requests;
     // 0 outside layout, 1 first pass, 2 deferred-request pass (API19 ViewRootImpl).
     std::optional<std::thread::id> ui_java_owner_thread;
@@ -869,6 +870,28 @@ struct DexVmAndroidContext final {
   };
 
   std::optional<ViewJavaMeasureFields> view_java_measure_fields;
+
+  struct ViewJavaHierarchyFields final {
+      dexvm::IntrinsicFieldHandle parent;
+      dexvm::IntrinsicFieldHandle params;
+      dexvm::IntrinsicFieldHandle id;
+      dexvm::IntrinsicFieldHandle label_for_id;
+  };
+
+  struct ViewGroupJavaFields final {
+      dexvm::IntrinsicFieldHandle children;
+      dexvm::IntrinsicFieldHandle count;
+      dexvm::IntrinsicFieldHandle flags;
+      dexvm::IntrinsicFieldHandle mode;
+      dexvm::IntrinsicFieldHandle last_touch_index;
+      dexvm::IntrinsicFieldHandle touch_target;
+      dexvm::IntrinsicFieldHandle hover_target;
+  };
+
+  std::optional<ViewJavaHierarchyFields> view_java_hierarchy_fields;
+  std::optional<ViewGroupJavaFields> view_group_java_fields;
+  bool ui_java_propagating_request{};
+
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
 };
@@ -1298,4 +1321,9 @@ void DispatchAndroidSurfaceStreamEvents(dexvm::Interpreter&, DexVmAndroidContext
 void ReleaseAndroidSurfaceStreams(DexVmAndroidContext&);
 void InitializeManagedJavaSurface(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef, std::uint32_t holder);
 std::shared_ptr<SurfaceStream> ResolveAndroidSurfaceStream(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef);
+}
+
+namespace ogplay::runtime {
+[[nodiscard]] bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                            dexvm::VmObjectRef view, bool visible = false);
 }

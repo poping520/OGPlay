@@ -101,6 +101,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         node.scroll_y = input.scroll_y;
         node.clip_children = input.clip_children;
         node.clip_to_padding = input.clip_to_padding;
+        if (input.android_id) node.android_id = *input.android_id;
     }
     if (!entries.contains(root_)) throw std::runtime_error("UI projection has no window root");
     for (const auto& input : projection.nodes) {
@@ -277,6 +278,20 @@ void UiTree::DestroySubtree(const UiNodeId node) {
                        found->second.children.end());
         nodes_.erase(found);
     }
+}
+
+void UiTree::RetireProjectedIdentity(const UiNodeId id) {
+    if (geometry_owner_ != UiGeometryOwner::ExternalProjection || id == root_)
+        throw std::runtime_error("Invalid projected identity retirement");
+    if (!nodes_.contains(id)) return;
+    // Only the construction cache is retired. The last immutable epoch stays
+    // valid until a later complete Java projection replaces it.
+    for (auto& [_, node] : nodes_) {
+        std::erase(node.children, id);
+        if (node.parent == id) node.parent.reset();
+    }
+    nodes_.erase(id);
+    id_index_.clear();
 }
 
 void UiTree::Reset() {

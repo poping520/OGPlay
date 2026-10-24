@@ -556,6 +556,30 @@ TEST_CASE("VD-02 complete projection commits hierarchy and geometry in one epoch
     CHECK(f.tree.PublishedProjection()->ProjectionEpoch() == 2);
 }
 
+TEST_CASE("VD-06a projected identity retirement preserves the published epoch") {
+    ProjectionFixture f;
+    auto batch = f.Batch();
+    batch.nodes[2].android_id = 77;
+    f.tree.CommitProjection(batch);
+    const auto before = f.tree.PublishedProjection();
+    CHECK(before->FindByAndroidId(77) == f.leaf);
+    CHECK_FALSE(before->FindByAndroidId(42));
+    CHECK_THROWS(f.tree.RetireProjectedIdentity(f.tree.Root()));
+    f.tree.RetireProjectedIdentity(f.leaf);
+    CHECK(f.tree.Get(f.leaf) == nullptr);
+    CHECK(f.tree.PublishedProjection() == before);
+    CHECK(before->Get(f.leaf)->parent == f.parent);
+    CHECK(before->FindByAndroidId(77) == f.leaf);
+    auto next = f.Batch(2);
+    CHECK_THROWS(f.tree.CommitProjection(next));
+    CHECK(f.tree.PublishedProjection() == before);
+    next.nodes.resize(2);
+    f.tree.CommitProjection(next);
+    CHECK_FALSE(f.tree.PublishedProjection()->FindByAndroidId(77));
+    ui::UiTree legacy;
+    CHECK_THROWS(legacy.RetireProjectedIdentity(legacy.CreateNode(ui::UiClass::View)));
+}
+
 TEST_CASE("VD-02 stale window content metrics and epoch batches change nothing") {
     ProjectionFixture f;
     f.tree.CommitProjection(f.Batch());

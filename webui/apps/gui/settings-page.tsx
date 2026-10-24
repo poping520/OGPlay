@@ -48,8 +48,8 @@ export function SettingsPage({ onBack, onSaved }: { onBack: () => void; onSaved:
   } : {};
   const end: Record<string, ComponentChildren> = {
     audio: <Note icon="audio"><p>{t('采样率与块大小：启动器不创建音频设备；当前无运行时探测数据。')}</p></Note>,
-    diagnostics: <Note icon="diagnostics"><p>{t('每个实例的日志写入其目录下的 last-run.log。')}</p>{actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('打开日志所在库目录')}</button>)}</Note>,
-    control: <Note icon="control"><p>{t('MCP 只监听本机。固定端口被其他实例占用时启动失败；端口范围自动分配待后续接入。')}</p></Note>,
+    diagnostics: <Note icon="diagnostics"><p>{t('每个游戏的日志写入其目录下的 last-run.log。')}</p>{actions(<button class="mini" disabled={busy} onClick={openLibrary}>{t('打开日志所在库目录')}</button>)}</Note>,
+    control: <Note icon="control"><p>{t('MCP 只监听本机。固定端口被其他游戏占用时启动失败；端口范围自动分配待后续接入。')}</p></Note>,
   };
   // The style setting previews while it is still a draft.
   const skin = (draft.settings_style ?? saved?.values.settings_style) === 'glass' ? 'glass' : 'console';

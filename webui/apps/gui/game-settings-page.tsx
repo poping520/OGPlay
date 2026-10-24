@@ -60,15 +60,15 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
       <div class="seg" role="radiogroup" aria-label={t('启动模式')}>{modes.map(([key, label]) =>
         <button key={key} role="radio" aria-checked={mode === key} class={mode === key ? 'on' : ''} onClick={() => setMode(key)}>{t(label)}</button>)}</div></div>
     {preview?.error ? <pre class="term" role="alert">{preview.error}</pre> : <Argv argv={preview?.argv ?? []} />}
-    <div class="launch-f"><span>{mode === 'preflight' ? t('预检不会启用 MCP，结果写入实例日志。') : t('参数由宿主生成，前端不拼接自由参数。')}</span>
+    <div class="launch-f"><span>{mode === 'preflight' ? t('预检不会启用 MCP，结果写入游戏日志。') : t('参数由宿主生成，前端不拼接自由参数。')}</span>
       <button class="pill main" disabled={busy || dirty || !!preview?.error} title={dirty ? t('先保存设置') : undefined}
-        onClick={() => void run(async () => { await rpc('library.launch', { installation_id: id, mode }); say(t('已启动子进程；预检结果与诊断信息见实例日志')); })}>
+        onClick={() => void run(async () => { await rpc('library.launch', { installation_id: id, mode }); say(t('已启动游戏进程；预检结果与诊断信息见游戏日志')); })}>
         {mode === 'preflight' ? t('执行预检') : t('执行启动')}</button></div>
   </div>;
   const top: Record<string, ComponentChildren> = saved ? {
     device: <Note icon="device" title="Android 4.4.4 · API 19"><p>{t('系统版本固定。CPU 核数和标称主频在下次启动生效，供游戏查询；主频不限制实际执行速度。机型预设尚未接入，其他预留项仅保存配置。')}</p>
       {actions(<button class="mini" disabled>{t('ANDROID_ID 查看 / 重新生成')}<em>{t('管理接口待接入')}</em></button>)}</Note>,
-    data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('实例配置'), saved.config_path]]} />
+    data: <Note icon="data" title={t('存档与目录')}><Paths rows={[...(item ? [[t('沙盒'), item.sandbox_path], [t('日志'), item.log_directory]] as [string, string][] : []), [t('游戏配置'), saved.config_path]]} />
       {actions(<button class="mini" disabled={busy} onClick={() => open('sandbox')}>{t('打开沙盒目录')}</button>, <button class="mini" disabled={busy} onClick={() => open('log')}>{t('打开日志目录')}</button>,
         <button class="mini" disabled={busy} onClick={() => open('external')}>{t('打开数据包目录')}</button>, <button class="mini" disabled>{t('导出 / 导入存档')}<em>{t('预留')}</em></button>,
         <button class="mini" disabled>{t('重置沙盒')}<em>{t('暂未开放')}</em></button>)}</Note>,
@@ -83,7 +83,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
       <div><b>{name}</b><small>{id}</small>
         <span class="chip"><i class={`led ${tone}`} />{item ? versionLabel(item) : ''}{saved ? t(' · 已覆盖 {n} 项', { n: Object.keys(saved.values).length }) : ''}</span></div>
     </div>}
-    groupsTitle={t('实例设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
+    groupsTitle={t('游戏设置')} groups={gameGroups} group={group} setGroup={setGroup} fields={saved?.fields ?? []}
     sectionBefore={{ brand: t('设备身份 · 预留') }}
     model={field => {
       const overridden = Object.hasOwn(draft, field.key);
@@ -96,7 +96,7 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
     change={(field, value) => setDraft(current => ({ ...current, [field.key]: value }))}
     toggleInherit={field => { if (!saved || busy) return; setDraft(current => Object.hasOwn(current, field.key) ? inheritSetting(current, field.key) : { ...current, [field.key]: saved.inherited[field.key] }); }}
     browse={field => void run(async () => { const path = await pickPath('directory'); if (path) setDraft(current => ({ ...current, [field.key]: path })); })}
-    fileLabel={t('实例配置')} filePath={saved?.config_path ?? ''} kicker={t('Game settings · 下次启动生效')} note={t('运行中可保存，下次启动生效')}
+    fileLabel={t('游戏配置')} filePath={saved?.config_path ?? ''} kicker={t('Game settings · 下次启动生效')} note={t('运行中可保存，下次启动生效')}
     top={top[group]} end={group === 'advanced' || group === 'compatibility' ? launch : undefined} error={error} toast={toast}
     discard={discard} keep={() => setDiscard(null)} confirmDiscard={() => {
       const action = discard; setDiscard(null);
@@ -107,6 +107,6 @@ export function GameSettingsPage({ id, item, skin, cart3d, onBack }: {
     save={() => { if (!saved || busy || !dirty) return; void run(async () => {
       const invalid = gameSettingsError(saved, draft); if (invalid) throw new Error(invalid);
       accept(await rpc<GameSettings>('game_settings.set', { installation_id: id, revision: saved.revision, values: draft }));
-      say(t('实例设置已保存 · 下次启动生效'));
+      say(t('游戏设置已保存 · 下次启动生效'));
     }); }} />;
 }

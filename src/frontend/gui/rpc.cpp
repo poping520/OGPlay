@@ -88,10 +88,10 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "controls.open") {
             CheckFields(params, {"installation_id"});
             const auto id = RequiredString(params, "installation_id");
-            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行实例查询。");
+            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
             const auto running = host_.dashboards();
             const auto found = std::find_if(running.begin(), running.end(), [&](const auto& value) { return value.installation_id == id; });
-            if (found == running.end()) return Error(-32004, "实例未运行", "先启动游戏，再打开按键设置。");
+            if (found == running.end()) return Error(-32004, "游戏未运行", "先启动游戏，再打开按键设置。");
             if (found->editor_status != "ready") return Error(-32002, found->editor_detail, "等待游戏启动完成后重试。");
             if (!host_.open_key_editor) throw std::runtime_error("宿主不支持按键设置窗口。");
             host_.open_key_editor(id);
@@ -103,12 +103,12 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             if (method == "dashboard.list") CheckFields(params, {});
             else CheckFields(params, {"installation_id"});
             const auto id = method == "dashboard.open" ? RequiredString(params, "installation_id") : std::string{};
-            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行实例查询。");
+            if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
             const auto dashboards = host_.dashboards();
             app::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
             if (method == "dashboard.open") {
                 const auto found = std::find_if(dashboards.begin(), dashboards.end(), [&](const auto& value) { return value.installation_id == id; });
-                if (found == dashboards.end()) return Error(-32004, "实例未运行", "启动游戏后重试。");
+                if (found == dashboards.end()) return Error(-32004, "游戏未运行", "启动游戏后重试。");
                 if (found->status != "ready" || !found->port) return Error(-32002, found->detail, "检查 MCP 设置或等待服务启动。");
                 if (!host_.open_dashboard) throw std::runtime_error("宿主不支持 Dashboard 窗口。");
                 host_.open_dashboard(id); writer.AddBool(result, "opened", true);
@@ -215,7 +215,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             if (entry == entries.end()) return Error(-32004, "installation not found", "刷新游戏库后重试。");
             if (method == "library.remove") {
                 const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
-                if (tile->running) return Error(-32002, "实例正在运行", "退出游戏后再移除。");
+                if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再删除。");
                 store_.Remove(key, delete_saves);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "removed", true);
@@ -233,7 +233,7 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 auto path = kind == "sandbox" ? LauncherSandboxRoot(store_.Root()) / entry->key : entry->directory;
                 if (kind == "external") {
                     if (!entry->metadata || !entry->metadata->external_dir)
-                        return Error(-32004, "external directory is not configured", "先为该实例配置数据包目录。");
+                        return Error(-32004, "external directory is not configured", "先为这个游戏配置数据包目录。");
                     path = *entry->metadata->external_dir;
                 }
                 if (!std::filesystem::is_directory(path))

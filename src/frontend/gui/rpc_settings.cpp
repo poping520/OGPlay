@@ -103,7 +103,7 @@ app::ConsoleResponse GuiRpcService::GameSettingsRequest(std::string_view method,
         return writer.Serialize(root);
     };
     if (save) {
-        if (revision() != expected) throw std::runtime_error("实例或全局设置已变化，请重新载入后保存。");
+        if (revision() != expected) throw std::runtime_error("游戏或全局设置已变化，请重新载入后保存。");
         ValidateGameSettings(replacement, true);
         if (std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_manual_step")) &&
             !std::get<bool>(EffectiveGameSetting(replacement, global, entry, "mcp_enabled")))

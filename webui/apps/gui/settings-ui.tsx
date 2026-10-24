@@ -236,7 +236,8 @@ export function SettingsFrame(props: FrameProps) {
     <div class="cfg-bg" aria-hidden="true"><div class={`art ${props.art ? '' : 'plain'}`} style={props.art ? { backgroundImage: `url("${props.art}")` } : {}} /><div class="fade" /><div class="grain" /></div>
     <header class="cfg-top">
       <Brand />
-      <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>{t('游戏库')}</button>
+      <button class="back" disabled={props.busy} onClick={props.back}><Key>B</Key>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>{t('返回游戏库')}</button>
       <span class="crumb">{props.crumb}</span>
       <span class="spacer" />
       <span class={`dirty ${changed.length ? 'on' : ''}`} role="status"><i />{changed.length ? t('{n} 项未保存', { n: changed.length }) : props.idle}</span>

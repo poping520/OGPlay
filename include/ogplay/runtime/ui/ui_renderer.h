@@ -46,6 +46,8 @@ struct DrawText final {
     float alpha{1.0F};
     std::uint32_t style{};
     std::shared_ptr<const UiFallbackFont> fallback_font;
+    // When present, all text/font/metrics come from this immutable plan.
+    std::shared_ptr<const TextLinePlan> line_plan{};
 };
 
 struct PushClip final { Rect rect; };
@@ -63,23 +65,6 @@ struct UiOverlayFrame final {
     // for frames assembled by other producers.
     bool fully_transparent{};
 };
-
-struct FixedTextMetrics final {
-    std::int32_t width{};
-    std::int32_t height{};
-    std::int32_t scale{};
-
-    constexpr auto operator<=>(const FixedTextMetrics&) const = default;
-};
-
-// Deterministic built-in 5x7 ASCII font, with optional trusted API19 BMP
-// fallback. Unsupported glyphs and invalid sizes fail explicitly.
-[[nodiscard]] FixedTextMetrics MeasureFixedText(std::u16string_view text,
-                                                float size_px, std::uint32_t style = 0, const UiFallbackFont* fallback = nullptr);
-[[nodiscard]] std::u16string WrapFixedText(std::u16string_view text,
-                                           float size_px, std::uint32_t style,
-                                           std::int32_t width_px,
-                                           std::int32_t max_lines, const UiFallbackFont* fallback = nullptr);
 
 enum class UiRenderPlane : std::uint8_t { all, normal, modal };
 [[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,

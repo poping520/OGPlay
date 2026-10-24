@@ -54,38 +54,25 @@ void Measure(UiTree& tree, const UiNodeId id, const MeasureSpec width_spec,
         node.measured = {};
         return;
     }
-    std::int32_t desired_width = node.intrinsic.width + node.padding.left +
-                                 node.padding.right;
-    std::int32_t desired_height = node.intrinsic.height + node.padding.top +
-                                  node.padding.bottom;
-    desired_width = std::max(desired_width, node.minimum.width);
-    desired_height = std::max(desired_height, node.minimum.height);
-    if (node.kind == UiClass::TextView || node.kind == UiClass::EditText ||
-        node.kind == UiClass::Button) {
-        auto laid_out_value = node.text.empty() ? std::u16string(u"M")
-                                                : node.text;
-        if (node.max_lines > 1 && width_spec.mode != MeasureMode::Unspecified) {
-            const auto content_width = std::max(
-                1, width_spec.size - node.padding.left - node.padding.right);
-            laid_out_value = WrapFixedText(laid_out_value, node.text_size_px,
-                                           node.text_style, content_width,
-                                           node.max_lines, node.fallback_font.get());
+    auto leaf = MeasureImageLeaf({node.intrinsic, node.padding, node.minimum}, width_spec, height_spec);
+    if (node.kind == UiClass::TextView || node.kind == UiClass::EditText || node.kind == UiClass::Button) {
+        TextLeafInput input;
+        input.text = node.text;
+        input.size_px = node.text_size_px;
+        input.style = node.text_style;
+        input.fallback_font = node.fallback_font;
+        input.max_lines = node.max_lines;
+        input.padding = node.padding;
+        input.minimum = node.minimum;
+        input.intrinsic = node.intrinsic;
+        input.wrap_width = TextWrapWidth::LegacyPadding;
+        for (std::size_t slot = 0; slot < input.compound.size(); ++slot) {
+            input.compound[slot] = {node.compound_drawables[slot].width, node.compound_drawables[slot].height};
         }
-        const auto laid_out_text = MeasureFixedText(
-            laid_out_value, node.text_size_px, node.text_style, node.fallback_font.get());
-        // API19 TextView.onMeasure/getDesiredHeight: top/bottom contribute
-        // to the text band's width; left/right contribute to its height.
-        // Compound padding is then added on both axes, even with empty text.
-        const auto& c = node.compound_drawables;
-        desired_width = std::max(
-            desired_width,
-            std::max({laid_out_text.width, c[1].width, c[3].width}) +
-                c[0].width + c[2].width + node.padding.left + node.padding.right);
-        desired_height = std::max(
-            desired_height,
-            std::max({laid_out_text.height, c[0].height, c[2].height}) +
-                c[1].height + c[3].height + node.padding.top + node.padding.bottom);
+        leaf = MeasureTextLeaf(input, width_spec, height_spec);
     }
+    auto desired_width = leaf.desired.width;
+    auto desired_height = leaf.desired.height;
     // Android View.getDefaultSize uses the bounded MeasureSpec size for a
     // plain leaf View. This lets a custom drawing/input View without explicit
     // LayoutParams fill the available content instead of collapsing to 0x0.

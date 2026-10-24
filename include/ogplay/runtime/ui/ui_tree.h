@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -85,34 +87,9 @@ struct DimensionSpec final {
     std::int32_t px{};
 };
 
-struct Insets final {
-    std::int32_t left{};
-    std::int32_t top{};
-    std::int32_t right{};
-    std::int32_t bottom{};
-    constexpr auto operator<=>(const Insets&) const = default;
-};
-
-struct Size final {
-    std::int32_t width{};
-    std::int32_t height{};
-    constexpr auto operator<=>(const Size&) const = default;
-};
-
 struct UiMetrics final {
     std::int32_t width{};
     std::int32_t height{};
-};
-
-enum class MeasureMode : std::uint8_t {
-    Exactly,
-    AtMost,
-    Unspecified,
-};
-
-struct MeasureSpec final {
-    MeasureMode mode{MeasureMode::Unspecified};
-    std::int32_t size{};
 };
 
 struct Rect final {

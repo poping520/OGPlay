@@ -1,5 +1,6 @@
 #include "ogplay/runtime/ui/ui_fallback_font.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
+#include "ui_fixed_font.h"
 
 #include <algorithm>
 #include <array>
@@ -9,91 +10,6 @@
 
 namespace ogplay::runtime::ui {
 namespace {
-
-using Glyph = std::array<std::uint8_t, 7>;
-
-[[nodiscard]] Glyph GlyphRows(char16_t value) {
-    switch (value) {
-        case u' ': return {};
-        case u'A': return {14, 17, 17, 31, 17, 17, 17};
-        case u'B': return {30, 17, 17, 30, 17, 17, 30};
-        case u'C': return {14, 17, 16, 16, 16, 17, 14};
-        case u'D': return {30, 17, 17, 17, 17, 17, 30};
-        case u'E': return {31, 16, 16, 30, 16, 16, 31};
-        case u'F': return {31, 16, 16, 30, 16, 16, 16};
-        case u'G': return {14, 17, 16, 23, 17, 17, 15};
-        case u'H': return {17, 17, 17, 31, 17, 17, 17};
-        case u'I': return {14, 4, 4, 4, 4, 4, 14};
-        case u'J': return {7, 2, 2, 2, 18, 18, 12};
-        case u'K': return {17, 18, 20, 24, 20, 18, 17};
-        case u'L': return {16, 16, 16, 16, 16, 16, 31};
-        case u'M': return {17, 27, 21, 21, 17, 17, 17};
-        case u'N': return {17, 25, 21, 19, 17, 17, 17};
-        case u'O': return {14, 17, 17, 17, 17, 17, 14};
-        case u'P': return {30, 17, 17, 30, 16, 16, 16};
-        case u'Q': return {14, 17, 17, 17, 21, 18, 13};
-        case u'R': return {30, 17, 17, 30, 20, 18, 17};
-        case u'S': return {15, 16, 16, 14, 1, 1, 30};
-        case u'T': return {31, 4, 4, 4, 4, 4, 4};
-        case u'U': return {17, 17, 17, 17, 17, 17, 14};
-        case u'V': return {17, 17, 17, 17, 17, 10, 4};
-        case u'W': return {17, 17, 17, 21, 21, 21, 10};
-        case u'X': return {17, 17, 10, 4, 10, 17, 17};
-        case u'Y': return {17, 17, 10, 4, 4, 4, 4};
-        case u'Z': return {31, 1, 2, 4, 8, 16, 31};
-        case u'a': return {0, 0, 14, 1, 15, 17, 15};
-        case u'b': return {16, 16, 30, 17, 17, 17, 30};
-        case u'c': return {0, 0, 14, 16, 16, 17, 14};
-        case u'd': return {1, 1, 15, 17, 17, 17, 15};
-        case u'e': return {0, 0, 14, 17, 31, 16, 14};
-        case u'f': return {6, 8, 8, 30, 8, 8, 8};
-        case u'g': return {0, 0, 15, 17, 15, 1, 14};
-        case u'h': return {16, 16, 30, 17, 17, 17, 17};
-        case u'i': return {4, 0, 12, 4, 4, 4, 14};
-        case u'j': return {2, 0, 6, 2, 2, 18, 12};
-        case u'k': return {16, 16, 18, 20, 24, 20, 18};
-        case u'l': return {12, 4, 4, 4, 4, 4, 14};
-        case u'm': return {0, 0, 26, 21, 21, 21, 21};
-        case u'n': return {0, 0, 30, 17, 17, 17, 17};
-        case u'o': return {0, 0, 14, 17, 17, 17, 14};
-        case u'p': return {0, 0, 30, 17, 30, 16, 16};
-        case u'q': return {0, 0, 15, 17, 15, 1, 1};
-        case u'r': return {0, 0, 22, 25, 16, 16, 16};
-        case u's': return {0, 0, 15, 16, 14, 1, 30};
-        case u't': return {8, 8, 30, 8, 8, 9, 6};
-        case u'u': return {0, 0, 17, 17, 17, 19, 13};
-        case u'v': return {0, 0, 17, 17, 17, 10, 4};
-        case u'w': return {0, 0, 17, 17, 21, 21, 10};
-        case u'x': return {0, 0, 17, 10, 4, 10, 17};
-        case u'y': return {0, 0, 17, 17, 15, 1, 14};
-        case u'z': return {0, 0, 31, 2, 4, 8, 31};
-        case u'0': return {14, 17, 19, 21, 25, 17, 14};
-        case u'1': return {4, 12, 4, 4, 4, 4, 14};
-        case u'2': return {14, 17, 1, 2, 4, 8, 31};
-        case u'3': return {30, 1, 1, 14, 1, 1, 30};
-        case u'4': return {2, 6, 10, 18, 31, 2, 2};
-        case u'5': return {31, 16, 16, 30, 1, 1, 30};
-        case u'6': return {14, 16, 16, 30, 17, 17, 14};
-        case u'7': return {31, 1, 2, 4, 8, 8, 8};
-        case u'8': return {14, 17, 17, 14, 17, 17, 14};
-        case u'9': return {14, 17, 17, 15, 1, 1, 14};
-        case u'.': return {0, 0, 0, 0, 0, 6, 6};
-        case u',': return {0, 0, 0, 0, 0, 6, 4};
-        case u':': return {0, 6, 6, 0, 6, 6, 0};
-        case u';': return {0, 6, 6, 0, 6, 4, 8};
-        case u'!': return {4, 4, 4, 4, 4, 0, 4};
-        case u'?': return {14, 17, 1, 2, 4, 0, 4};
-        case u'-': return {0, 0, 0, 31, 0, 0, 0};
-        case u'_': return {0, 0, 0, 0, 0, 0, 31};
-        case u'/': return {1, 2, 2, 4, 8, 8, 16};
-        case u'+': return {0, 4, 4, 31, 4, 4, 0};
-        case u'=': return {0, 31, 0, 31, 0, 0, 0};
-        case u'(': return {2, 4, 8, 8, 8, 4, 2};
-        case u')': return {8, 4, 2, 2, 2, 4, 8};
-        default:
-            throw std::runtime_error("unsupported fixed-font glyph");
-    }
-}
 
 [[nodiscard]] Rect Intersect(const Rect a, const Rect b) {
     return {std::max(a.left, b.left), std::max(a.top, b.top),
@@ -355,117 +271,6 @@ void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip,
 
 }  // namespace
 
-FixedTextMetrics MeasureFixedText(const std::u16string_view text,
-                                  const float size_px, const std::uint32_t style, const UiFallbackFont* fallback) {
-    if (style > 3U) throw std::runtime_error("invalid built-in font style");
-    if (!std::isfinite(size_px) || size_px < 1.0F || size_px > 128.0F) {
-        throw std::runtime_error("fixed-font text size is outside 1..128 px");
-    }
-    if (text.size() > 1024U) {
-        throw std::runtime_error("fixed-font text exceeds 1024 code units");
-    }
-    for (const auto unit : text) {
-        if (unit == u'\n' || unit == u'\r') continue;
-        if (unit > 127 && fallback) static_cast<void>(fallback->Glyph(unit, std::max(1, static_cast<int>(std::lround(size_px / 8.0F))) * 8 - 1));
-        else static_cast<void>(GlyphRows(unit));
-    }
-    const auto scale = std::max(1, static_cast<std::int32_t>(
-                                       std::lround(size_px / 8.0F)));
-    const auto extra = ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0);
-    std::int64_t columns = 0;
-    std::int64_t max_columns = 0;
-    std::int32_t lines = text.empty() ? 0 : 1;
-    for (const auto unit : text) {
-        if (unit == u'\n') {
-            max_columns = std::max(max_columns, columns);
-            columns = 0;
-            ++lines;
-        } else if (unit != u'\r') {
-            columns += (unit > 127 ? 8 : 6) + extra;
-        }
-    }
-    max_columns = std::max(max_columns, columns);
-    const auto width = max_columns == 0 ? 0 :
-        (max_columns - 1) * scale;
-    if (width > std::numeric_limits<std::int32_t>::max()) {
-        throw std::runtime_error("fixed-font measured width overflows");
-    }
-    return {static_cast<std::int32_t>(width),
-            lines == 0 ? 0 : (lines * 8 - 1) * scale,
-            scale};
-}
-
-std::u16string WrapFixedText(const std::u16string_view text,
-                             const float size_px, const std::uint32_t style,
-                             const std::int32_t width_px,
-                             const std::int32_t max_lines, const UiFallbackFont* fallback) {
-    if (fallback && std::any_of(text.begin(), text.end(), [](const auto c) { return c > 127; })) {
-        const auto metrics = MeasureFixedText(text, size_px, style, fallback);
-        std::u16string result;
-        std::int32_t x{}, line = 1;
-        for (const auto unit : text) {
-            if (unit == u'\r') continue;
-            if (unit == u'\n') { result.push_back(unit); x = 0; ++line; continue; }
-            const auto advance = ((unit > 127 ? 8 : 6) + ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0)) * metrics.scale;
-            if (width_px > 0 && x > 0 && x + advance > width_px && line < max_lines) {
-                result.push_back(u'\n'); x = 0; ++line;
-            }
-            result.push_back(unit); x += advance;
-        }
-        return result;
-    }
-    if (text.empty() || max_lines <= 1 || width_px <= 0) {
-        return std::u16string(text);
-    }
-    const auto probe = MeasureFixedText(u"M", size_px, style);
-    const auto cell = std::max(1, probe.width + probe.scale);
-    const auto columns = std::max(1, width_px / cell);
-    std::u16string result;
-    result.reserve(text.size() + text.size() /
-                                   static_cast<std::size_t>(columns));
-    std::int32_t line = 1;
-    std::int32_t column = 0;
-    std::size_t index = 0;
-    while (index < text.size()) {
-        if (text[index] == u'\n') {
-            result.push_back(text[index++]);
-            column = 0;
-            ++line;
-            continue;
-        }
-        if (text[index] == u' ') {
-            if (column > 0) {
-                result.push_back(u' ');
-                ++column;
-            }
-            ++index;
-            continue;
-        }
-        auto end = index;
-        while (end < text.size() && text[end] != u' ' &&
-               text[end] != u'\n') {
-            ++end;
-        }
-        const auto length = static_cast<std::int32_t>(end - index);
-        if (column > 0 && column + length > columns && line < max_lines) {
-            if (!result.empty() && result.back() == u' ') result.pop_back();
-            result.push_back(u'\n');
-            column = 0;
-            ++line;
-        }
-        for (; index < end; ++index) {
-            if (column == columns && line < max_lines) {
-                result.push_back(u'\n');
-                column = 0;
-                ++line;
-            }
-            result.push_back(text[index]);
-            ++column;
-        }
-    }
-    return result;
-}
-
 UiRenderList BuildUiRenderList(const UiTree& tree,
                                const UiBitmapCache& bitmaps, UiRenderPlane plane) {
     if (tree.GeometryOwner() == UiGeometryOwner::ExternalProjection && !tree.IsProjectionSnapshot())
@@ -570,9 +375,13 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 Blend(dst, src[0], src[1], src[2], alpha);
             });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
-            const auto text_metrics = MeasureFixedText(text->text, text->size_px, text->style, text->fallback_font.get());
-            const int bold = (text->style & 1U) ? 1 : 0;
-            const int italic = (text->style & 2U) ? 2 : 0;
+            const auto& value = text->line_plan ? text->line_plan->text : text->text;
+            const auto style = text->line_plan ? text->line_plan->style : text->style;
+            const auto& fallback = text->line_plan ? text->line_plan->fallback_font : text->fallback_font;
+            const auto text_metrics = text->line_plan ? text->line_plan->metrics
+                                                      : MeasureFixedText(value, text->size_px, style, fallback.get());
+            const int bold = (style & 1U) ? 1 : 0;
+            const int italic = (style & 2U) ? 2 : 0;
             const auto alpha = static_cast<std::uint8_t>(
                 (static_cast<std::uint32_t>(text->rgba & 0xffU) *
                      AlphaByte(text->alpha) +
@@ -580,18 +389,18 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                 255U);
             std::int32_t column_index = 0;
             std::int32_t line_index = 0;
-            for (std::size_t index = 0; index < text->text.size(); ++index) {
-                if (text->text[index] == u'\n') {
+            for (std::size_t index = 0; index < value.size(); ++index) {
+                if (value[index] == u'\n') {
                     column_index = 0;
                     ++line_index;
                     continue;
                 }
-                if (text->text[index] == u'\r') continue;
-                const auto unit = text->text[index];
+                if (value[index] == u'\r') continue;
+                const auto unit = value[index];
                 const auto origin_x = text->x + column_index * text_metrics.scale;
                 column_index += (unit > 127 ? 8 : 6) + bold + italic;
-                if (unit > 127 && text->fallback_font) {
-                    const auto glyph = text->fallback_font->Glyph(unit, text_metrics.scale * 8 - 1);
+                if (unit > 127 && fallback) {
+                    const auto glyph = fallback->Glyph(unit, text_metrics.scale * 8 - 1);
                     for (std::int32_t row = 0; row < glyph->height; ++row) {
                         const auto skew = italic ? std::max(0, (glyph->height - row) / 3) : 0;
                         for (std::int32_t col = 0; col < glyph->width; ++col) {
@@ -609,7 +418,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                     }
                     continue;
                 }
-                const auto glyph = GlyphRows(text->text[index]);
+                const auto glyph = GlyphRows(value[index]);
 
                 for (std::int32_t row = 0; row < 7; ++row) {
                     const auto row_bits = static_cast<unsigned>(glyph[static_cast<std::size_t>(row)]);

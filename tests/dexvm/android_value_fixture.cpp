@@ -57,6 +57,8 @@ AndroidValueVm::AndroidValueVm(InterpreterBackend backend, const std::vector<Int
                   REQUIRE(stream.good());
                   const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
                   const std::span<const std::byte> archive{reinterpret_cast<const std::byte*>(raw.data()), raw.size()};
+                  context->boot_classpath_bytes.assign(archive.begin(), archive.end());
+                  context->boot_classpath_archive = ogplay::loader::ParseApkArchive(archive);
                   const auto dex =
                       ogplay::loader::ReadApkEntry(archive, ogplay::loader::ParseApkArchive(archive), "classes.dex");
                   std::vector<std::uint8_t> bytes(dex.size());

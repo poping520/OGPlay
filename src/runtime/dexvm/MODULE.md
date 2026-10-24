@@ -18,6 +18,7 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   或缺口失败。ROM 来源清除旧 handler，失败来源禁用旧 handler 与字节码；额外 intrinsic
   成员、未批准 overlay/native 拒绝。未启用时沿用既有 overlay 契约。
   构建期固定输入、flags、方法体 hash、字段初始化策略并验证依赖；运行时不接受动态配置。
+  member-sources 严格 JSON 解析上限为 4 MiB，诊断 surface 入口使用相同上限。
   组合字段逐项选择 rom/failure：前者由 Java 唯一维护，后者保持 ROM 布局但访问经
   is_unimplemented/RequireImplementedField 记账失败；被选字节码不得读写 failure 字段。
   clinit 必须执行原版 ROM，其依赖按常规规则准入；无空初始化或自动跳过。

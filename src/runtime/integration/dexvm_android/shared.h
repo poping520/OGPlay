@@ -12,6 +12,8 @@ namespace dx = dexvm;
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;
+void InitializeThemeResourceOwner(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef resources,
+                                  dx::VmObjectRef assets);
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context);
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context,
     dx::IntrinsicFieldHandle generation);

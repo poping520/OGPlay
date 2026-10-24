@@ -131,7 +131,26 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
   AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
   执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
-  Legacy getXml/inflater 不变；无 Theme/applyStyle/TypedArray 或成功控件属性构造。
+  Legacy getXml/inflater 不变；实验控件属性构造及 inflater 接入仍不在支持范围。
+- 实验 JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
+  32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
+  API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
+  查询域冲突在构建期校验。仅登记投影主题及消费闭包属性可报告确证缺席；无 ROM ID 绑定
+  的主题按名称明确失败，未知 ID/属性、不支持值与循环不回退成缺席。
+  APK ARSC bag 与投影统一 parent/reference/?attr 有界解析；applyStyle 顺序为显式 XML、
+  XML style、默认 style、theme，同名 defStyleAttr reference 替代 defStyleRes；@null 遮蔽、
+  force 与独立 copy 遵循 API19。retrieveAttributes 只读 XML/资源，不套 style/theme。
+  六槽 type/data/cookie/resourceId/configFlags/density 和 indices 先受检容量再写 Java int[]；
+  XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。未知类型/资源文件明确失败。
+  ROM Theme/TypedArray 独占字段、缓存与 recycle；selectDefaultTheme 执行 ROM targetSdk 算法。
+  AssetManager 普通构造 adapter 初始化真实 mOpen/mNumRefs/mValue/mOffsets，Resources 应用
+  对象工厂初始化 mAccessLock/mMetrics，原 clinit 与 Theme/TypedArray 构造执行 ROM。
+  makeStringBlocks 将唯一 APK 原池绑定真实 ROM StringBlock，不合成 system AssetManager；
+  原池由 context 保活至 Shutdown，StringBlock 不拥有该借用池。
+  native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner，init(true)、系统池、
+  drawable/selector/ninepatch/animation/spans 与 TypedArray getDrawable/getColorStateList 失败。
+  GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
+  清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。Legacy 不加载投影。
 
 - Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，

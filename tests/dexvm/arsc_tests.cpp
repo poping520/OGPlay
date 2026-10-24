@@ -123,6 +123,15 @@ std::vector<std::uint8_t> SyntheticArsc(bool bag = false) {
     PatchU32(package, key_strings_offset_at,
              static_cast<std::uint32_t>(package.size()));
     package.insert(package.end(), key_pool.begin(), key_pool.end());
+    PushU16(package, 0x0202);
+    PushU16(package, 16);
+    PushU32(package, 24);
+    package.push_back(1);
+    package.push_back(0);
+    PushU16(package, 0);
+    PushU32(package, 2);
+    PushU32(package, 0x200);
+    PushU32(package, 0);
     package.insert(package.end(), type_chunk.begin(), type_chunk.end());
     PatchU32(package, 4, static_cast<std::uint32_t>(package.size()));
 
@@ -153,6 +162,11 @@ TEST_CASE("arsc reader maps ids, names and file paths") {
     CHECK(*by_id->string_value == "res/raw/raw_000.ogg");
     CHECK(by_id->value_type == 0x03);
     CHECK(by_id->value_data == 0);
+    CHECK(by_id->changing_configurations == 0x200);
+    const auto pool = Utf8Pool({"res/raw/raw_000.ogg"});
+    REQUIRE(table.global_string_pool.size() == pool.size());
+    for (std::size_t i = 0; i < pool.size(); ++i)
+        CHECK(std::to_integer<std::uint8_t>(table.global_string_pool[i]) == pool[i]);
     const auto* by_name = table.FindByName("raw", "raw_000");
     REQUIRE(by_name != nullptr);
     CHECK(by_name->resource_id == 0x7f010000);

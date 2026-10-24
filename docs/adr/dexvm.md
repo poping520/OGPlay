@@ -1990,3 +1990,14 @@ ADR-0147 明确失败与支持路径动态零命中保证，字段接收者证�
 
 每阶段独立机器验收；生产默认继续 Legacy。后续阶段未完成不得以本 ADR 视为已实现。
 不引入 Binder/WMS/system_server、完整 TextView 栈或第二份宿主几何权威。
+
+### VD-09a-3 补充（编排方决定，2026-10-24）
+
+投影登记范围精确为 values 中可由固定 ROM R 字段证明名→ID 的
+Theme/Theme.Holo/Theme.DeviceDefault 及其派生 Theme.* 变体（当前92个）。
+其余无 ROM 绑定依据的主题（当前22个）为未登记主题，请求即明确失败，
+诊断包含主题名及“无 ROM ID 绑定”；不猜ID、不生成别名、不当作缺席。
+未登记主题的 parent XML 可按名称参与已登记主题合并；若必须依赖其ID
+才能确定合并，则将受影响主题也降为未登记并列账。
+生成器逐项输出已登记与未登记主题及原因。missing-rom-style-field
+仅使该主题不登记；public-id-mismatch 等ID不符仍拒绝整个构建。

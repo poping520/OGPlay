@@ -372,6 +372,7 @@ ogplay_add_module(ogplay_runtime Runtime
     ${OGPLAY_DEXVM_ANDROID_SOURCES}
     src/runtime/integration/surface_stream.cpp
     src/runtime/integration/bitmap_pixels.cpp
+    src/runtime/integration/theme_resources.cpp
     src/runtime/integration/apk_assets.cpp
     src/runtime/integration/dexvm_bridge.cpp
     src/runtime/integration/dexvm_io_vfs.cpp

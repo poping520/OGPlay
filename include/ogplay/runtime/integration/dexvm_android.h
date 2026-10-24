@@ -31,6 +31,7 @@
 #include "ogplay/loader/arsc.h"
 #include "ogplay/loader/binary_xml.h"
 #include "ogplay/runtime/integration/xml_cursor.h"
+#include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
@@ -145,6 +146,12 @@ struct DexVmAndroidContext final {
     NativeLibraryLoader* native_libraries{};
     std::shared_ptr<NativeActivityRuntime> native_activity;
     std::uint64_t application_class_loader_token{1U};
+    ThemeResources theme_resources;
+    std::set<dexvm::VmObjectRef> theme_asset_owners;
+    std::map<ThemeToken, dexvm::VmObjectRef> theme_owners;
+    bool theme_projection_loaded{};
+    bool theme_gc_registered{};
+    XmlStringPoolToken resource_string_pool;
     XmlCursorRegistry xml_cursors;
     bool xml_gc_registered{};
     loader::ArscTable arsc;

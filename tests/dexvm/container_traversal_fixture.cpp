@@ -13,6 +13,7 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
     context->boot_classpath_bytes.resize(raw.size());
     std::memcpy(context->boot_classpath_bytes.data(), raw.data(), raw.size());
+    context->boot_classpath_archive = ogplay::loader::ParseApkArchive(context->boot_classpath_bytes);
     const auto dex = ogplay::loader::ReadApkEntry(
         context->boot_classpath_bytes, ogplay::loader::ParseApkArchive(context->boot_classpath_bytes), "classes.dex");
     ogplay::session::AndroidAppProcessRequest request;

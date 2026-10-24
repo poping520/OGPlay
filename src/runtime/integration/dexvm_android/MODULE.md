@@ -114,6 +114,16 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 
 ## 资源、图像与存储
 
+- DexVmAndroidContext::xml_cursors 为 context 独占的受检 document/cursor registry，
+  VM 锁串行访问。document/cursor token 分型，32 位 ID 不含指针、跨 context/生命周期不复用；
+  空间耗尽明确失败。cursor 独立推进 START/TEXT/END，namespace 节点仅内部保留；
+  END depth 在下一事件才递减，行号及当前 start-tag 属性来自原事实，非 start-tag 查询失败。
+  查询返回值/不可变所有权，不发布可悬空的可变引用。close 立即退役 cursor，owner 退役
+  同时撤销其 parsers；bridge teardown Shutdown 后活跃数为零，context 析构也释放所有权。
+  旧/关闭/跨 context token、错误属性索引均抛确定的 C++ 异常。
+  本阶段只提供内部接缝，不暴露 XmlBlock native、不绑定 guest owner/GC、不准入
+  Theme/applyStyle/属性构造；后续 native 必须显式连接 RetireOwner 与 GC 生命周期。
+
 - Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，
   与 NDK 共用校验/逻辑 FD/区间，错误 IOException/NotFoundException。AssetFileDescriptor.close

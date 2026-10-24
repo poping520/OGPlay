@@ -72,6 +72,14 @@
   signed priority、label/icon，供上层查询返回与排序。
   Manifest 顶层 supports-gl-texture 按 ADR-0128 保留 android:name 原始声明，按声明序去重，
   包括未知扩展，供上层压缩纹理策略使用；缺名、空名或名称取值失败跳过该条并记诊断，不拒包。
+- ParseCompiledXmlDocument：拥有输入 bytes 的不可变编译 XML 事实，保留原 string pool
+  索引/受检按需 WTF-8 转换、resource map、namespace/line/comment、完整 typed/raw 值、
+  id/class/style 原始一基索引、namespace/标签 start/end 与 parent node 关联。
+  不按名称猜资源 ID，不合并同名不同 namespace 属性，不解引用资源或补布局默认值。
+  新接口拒绝不支持的 chunk/位置、非法 pool/special 索引及未配对标签/namespace；
+  字符串转换失败抛异常，缺席索引单独返回 nullopt，空串仍为有效值。
+  Elements/PullEvents 为同一事实的单向 Legacy 适配；旧入口复用 decoder 并保留
+  原有宽松结构策略与坏字符串 fallback，不因新 cursor 准入收紧生产 Legacy。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

@@ -2144,6 +2144,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
 
     if (impl_->android_context) {
+        impl_->android_context->xml_cursors.Shutdown();
         impl_->android_context->wifi_lock_leases.clear();
         if (impl_->vm) ShutdownPendingIntents(*impl_->vm, *impl_->android_context);
     }

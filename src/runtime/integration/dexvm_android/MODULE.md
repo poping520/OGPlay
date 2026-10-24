@@ -158,6 +158,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutParams，BeforePresent
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
+owner 模式在 VM 启动前固定且运行中不可切换；当前编译期只选择 Legacy，JavaTraversal
+保留明确失败的选择点，无用户配置。外部投影 API 尚只交付测试分区；未来 integration 收集
+Java 字段与 hierarchy 并校验 binding/代际，再提交 ui，不将 VM/Java 引用交给下层。
 HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。

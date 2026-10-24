@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "ogplay/runtime/ui/ui_tree.h"
+#include "ogplay/runtime/ui/ui_renderer.h"
 
 namespace ui = ogplay::runtime::ui;
 
@@ -467,4 +468,282 @@ TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget")
     tree.Detach(child);
     tree.Attach(tree.Root(), child);
     CHECK(tree.IsAttached(leaf));
+}
+
+namespace {
+
+struct ProjectionFixture {
+    ui::UiTree tree{ui::UiGeometryOwner::ExternalProjection};
+    ui::UiNodeId parent = tree.CreateNode(ui::UiClass::FrameLayout);
+    ui::UiNodeId leaf = tree.CreateNode(ui::UiClass::View);
+    ui::UiProjectionTarget target{tree.Root(), 7, 11, 13, {100, 100}};
+
+    ProjectionFixture() {
+        tree.SetProjectionTarget(target);
+        tree.SetAndroidId(leaf, 42);
+        tree.Get(leaf)->clickable = true;
+        tree.Get(leaf)->background_color = 0xff0000ffU;
+    }
+
+    ui::UiGeometryProjection Batch(std::uint64_t epoch = 1) const {
+        return {target,
+                epoch,
+                {{tree.Root(), std::nullopt, {10, 20, 90, 80}, {80, 60}},
+                 {parent, tree.Root(), {5, 6, 35, 36}, {30, 30}},
+                 {leaf, parent, {-2, 4, 40, 20}, {42, 16}}}};
+    }
+
+    void Reject(const ui::UiGeometryProjection& batch) {
+        const auto before = tree.PublishedProjection();
+        const auto epoch = tree.ProjectionEpoch();
+        std::vector<ui::UiNode> nodes;
+        for (const auto id : {tree.Root(), parent, leaf})
+            nodes.push_back(*tree.Get(id));
+        const auto indexed = tree.FindByAndroidId(42);
+        CHECK_THROWS(tree.CommitProjection(batch));
+        CHECK(tree.PublishedProjection() == before);
+        CHECK(tree.ProjectionEpoch() == epoch);
+        CHECK(tree.FindByAndroidId(42) == indexed);
+        for (const auto& old : nodes) {
+            const auto& now = *tree.Get(old.id);
+            CHECK(now.parent == old.parent);
+            CHECK(now.children == old.children);
+            CHECK(now.frame == old.frame);
+            CHECK(now.screen_frame == old.screen_frame);
+            CHECK(now.screen_clip == old.screen_clip);
+            CHECK(now.measured == old.measured);
+            CHECK(now.visibility == old.visibility);
+            CHECK(now.padding == old.padding);
+            CHECK(now.scroll_y == old.scroll_y);
+            CHECK(now.clip_children == old.clip_children);
+            CHECK(now.clip_to_padding == old.clip_to_padding);
+            CHECK(now.layout_dirty == old.layout_dirty);
+            CHECK(now.draw_dirty == old.draw_dirty);
+        }
+    }
+};
+
+}  // namespace
+
+TEST_CASE("VD-02 complete projection commits hierarchy and geometry in one epoch") {
+    ProjectionFixture f;
+    CHECK_FALSE(f.tree.PublishedProjection());
+    auto batch = f.Batch();
+    batch.nodes[2].parent = f.tree.Root();
+    // A duplicate near the end must not partially apply the earlier reparent.
+    auto invalid = batch;
+    invalid.nodes.push_back(invalid.nodes.back());
+    f.Reject(invalid);
+    CHECK_FALSE(f.tree.FindByAndroidId(42));
+    f.tree.CommitProjection(batch);
+    const auto first = f.tree.PublishedProjection();
+    REQUIRE(first);
+    CHECK(first->ProjectionEpoch() == 1);
+    CHECK(first->Get(f.leaf)->parent == f.tree.Root());
+    CHECK(first->Get(f.tree.Root())->children == std::vector<ui::UiNodeId>{f.parent, f.leaf});
+    CHECK(first->FindByAndroidId(42) == f.leaf);
+    CHECK_FALSE(first->Get(f.tree.Root())->layout_dirty);
+    CHECK(first->Get(f.tree.Root())->draw_dirty);
+    // Full replacement detaches omitted nodes and removes their id index entry.
+    auto next = f.Batch(2);
+    next.nodes.resize(2);
+    f.tree.CommitProjection(next);
+    CHECK_FALSE(f.tree.FindByAndroidId(42));
+    CHECK_FALSE(f.tree.IsAttached(f.leaf));
+    CHECK_FALSE(f.tree.Get(f.leaf)->parent);
+    CHECK(first->FindByAndroidId(42) == f.leaf);
+    CHECK(first->ProjectionEpoch() == 1);
+    CHECK(f.tree.PublishedProjection()->ProjectionEpoch() == 2);
+}
+
+TEST_CASE("VD-02 stale window content metrics and epoch batches change nothing") {
+    ProjectionFixture f;
+    f.tree.CommitProjection(f.Batch());
+    for (const int field : {0, 1, 2, 3, 4, 5}) {
+        auto batch = f.Batch(2);
+        switch (field) {
+        case 0: --batch.target.window_generation; break;
+        case 1: --batch.target.content_revision; break;
+        case 2: --batch.target.metrics_revision; break;
+        case 3: ++batch.target.content_revision; break;
+        case 4: ++batch.target.metrics.width; break;
+        case 5: batch.target.root = f.parent; break;
+        }
+        f.Reject(batch);
+    }
+    f.Reject(f.Batch(0));
+    f.Reject(f.Batch(1));
+    // A target invalidation is independent of a traversal: old complete snapshot survives.
+    const auto old = f.tree.PublishedProjection();
+    auto next = f.target;
+    ++next.content_revision;
+    ++next.metrics_revision;
+    next.metrics.width = 120;
+    f.tree.SetProjectionTarget(next);
+    f.Reject(f.Batch(2));
+    auto valid = f.Batch(2);
+    valid.target = next;
+    f.tree.CommitProjection(valid);
+    CHECK(f.tree.PublishedProjection() != old);
+    CHECK(old->ProjectionTarget()->content_revision == f.target.content_revision);
+    CHECK(f.tree.PublishedProjection()->ProjectionTarget()->metrics.width == 120);
+    CHECK_THROWS(f.tree.SetProjectionTarget(f.target));
+    ++next.window_generation;
+    next.content_revision = 0;
+    next.metrics_revision = 0;
+    f.tree.SetProjectionTarget(next);
+    f.Reject(valid);
+    valid.target = next;
+    valid.epoch = 3;
+    f.tree.CommitProjection(valid);
+    CHECK(f.tree.ProjectionEpoch() == 3);
+    f.tree.Reset();
+    CHECK_FALSE(f.tree.PublishedProjection());
+    CHECK_THROWS(f.tree.CommitProjection(valid));
+    CHECK(f.tree.ProjectionEpoch() == 0);
+}
+
+TEST_CASE("VD-02 invalid complete batches preserve all published and live state") {
+    ProjectionFixture f;
+    f.tree.CommitProjection(f.Batch());
+    for (int fault = 0; fault < 11; ++fault) {
+        auto batch = f.Batch(2);
+        batch.nodes[0].frame.left = 3;  // Detect partial application before a later error.
+        switch (fault) {
+        case 0: batch.nodes[2].id = ui::UiNodeId{123}; break;
+        case 1: batch.nodes[2].parent = ui::UiNodeId{456}; break;
+        case 2: batch.nodes[1].parent = f.leaf; break;  // Disconnected cycle.
+        case 3: batch.nodes[2].parent.reset(); break;
+        case 4: batch.nodes[2].frame.right = -3; break;
+        case 5: batch.nodes[2].measured.height = -1; break;
+        case 6: batch.nodes[2].padding.left = -1; break;
+        case 7: batch.nodes[2].visibility = static_cast<ui::Visibility>(255); break;
+        case 8: batch.nodes.erase(batch.nodes.begin()); break;
+        case 9: batch.nodes[2].frame = {2147483640, 0, 2147483647, 10}; break;
+        case 10: batch.nodes[0].parent = f.leaf; break;
+        }
+        f.Reject(batch);
+    }
+    auto valid = f.Batch(2);
+    valid.nodes[2].visibility = ui::Visibility::Invisible;
+    f.tree.CommitProjection(valid);
+    CHECK(f.tree.Get(f.leaf)->visibility == ui::Visibility::Invisible);
+    CHECK_FALSE(f.tree.PublishedProjection()->HitTestProjection(20, 32));
+}
+
+TEST_CASE("VD-02 local frames scroll and padding resolve one screen geometry and clip") {
+    ProjectionFixture f;
+    auto batch = f.Batch();
+    batch.nodes[0].padding = {2, 3, 4, 5};
+    batch.nodes[0].scroll_y = 4;
+    batch.nodes[1].padding = {3, 2, 4, 1};
+    batch.nodes[1].scroll_y = 7;
+    f.tree.CommitProjection(batch);
+    auto snapshot = f.tree.PublishedProjection();
+    CHECK(snapshot->Get(f.parent)->screen_frame == ui::Rect{15, 22, 45, 52});
+    CHECK(snapshot->Get(f.leaf)->screen_frame == ui::Rect{13, 19, 55, 35});
+    CHECK(snapshot->Get(f.leaf)->screen_clip == ui::Rect{18, 24, 41, 35});
+    CHECK(snapshot->Get(f.leaf)->measured == ui::Size{42, 16});
+    CHECK(snapshot->HitTestProjection(18, 24) == f.leaf);
+    CHECK_FALSE(snapshot->HitTestProjection(17, 24));
+    CHECK_FALSE(snapshot->HitTestProjection(41, 24));
+    CHECK_FALSE(snapshot->HitTestProjection(18, 35));
+    // Negative controls: removing padding clip and scroll changes the result.
+    batch.epoch = 2;
+    batch.nodes[1].clip_to_padding = false;
+    batch.nodes[1].scroll_y = 0;
+    f.tree.CommitProjection(batch);
+    snapshot = f.tree.PublishedProjection();
+    CHECK(snapshot->Get(f.leaf)->screen_frame == ui::Rect{13, 26, 55, 42});
+    CHECK(snapshot->Get(f.leaf)->screen_clip == ui::Rect{15, 26, 45, 42});
+    CHECK(snapshot->HitTestProjection(17, 30) == f.leaf);
+}
+
+TEST_CASE("VD-02 external owner rejects C++ layout and direct hierarchy mutation") {
+    ProjectionFixture f;
+    f.tree.CommitProjection(f.Batch());
+    const auto old = *f.tree.Get(f.leaf);
+    f.tree.MarkLayoutDirty(f.leaf);
+    CHECK_THROWS_WITH(ui::LayoutUiTree(f.tree, {200, 300}), "LayoutUiTree cannot rearrange an external geometry owner");
+    CHECK(f.tree.Get(f.leaf)->frame == old.frame);
+    CHECK(f.tree.Get(f.leaf)->measured == old.measured);
+    CHECK(f.tree.Get(f.leaf)->screen_frame == old.screen_frame);
+    CHECK(f.tree.Get(f.tree.Root())->layout_dirty);
+    CHECK_THROWS(f.tree.Attach(f.tree.Root(), f.leaf));
+    CHECK_THROWS(f.tree.Detach(f.leaf));
+    CHECK_THROWS(static_cast<void>(f.tree.BringChildToFront(f.parent, f.leaf)));
+    CHECK_THROWS(f.tree.SetVisibility(f.leaf, ui::Visibility::Gone));
+    ui::UiTree host;
+    CHECK_NOTHROW(ui::LayoutUiTree(host, {200, 300}));
+    CHECK(host.Get(host.Root())->measured == ui::Size{200, 300});
+    auto batch = f.Batch();
+    batch.target.root = host.Root();
+    CHECK_THROWS(host.SetProjectionTarget(batch.target));
+    CHECK_THROWS(host.CommitProjection(batch));
+}
+
+TEST_CASE("VD-02 render and hit test consume the same retained complete epoch") {
+    ProjectionFixture f;
+    CHECK_THROWS(static_cast<void>(ui::BuildUiRenderList(f.tree, {})));
+    CHECK_THROWS(static_cast<void>(f.tree.HitTestProjection(20, 32)));
+    f.tree.CommitProjection(f.Batch());
+    const auto old = f.tree.PublishedProjection();
+    REQUIRE(old);
+    CHECK_THROWS(static_cast<void>(ui::BuildUiRenderList(f.tree, {})));
+    const auto pixel = [](const ui::UiTree& snapshot, int x, int y) {
+        const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(snapshot, {}), {100, 100});
+        return frame.rgba8[(static_cast<std::size_t>(y) * frame.width + static_cast<std::size_t>(x)) * 4 + 3];
+    };
+    CHECK(old->ProjectionEpoch() == 1);
+    CHECK(old->HitTestProjection(20, 32) == f.leaf);
+    CHECK(pixel(*old, 20, 32) == 255);
+    CHECK_FALSE(old->HitTestProjection(14, 32));
+    CHECK(pixel(*old, 14, 32) == 0);
+    auto next = f.Batch(2);
+    next.nodes[2].frame = {10, 12, 20, 22};
+    f.tree.CommitProjection(next);
+    const auto current = f.tree.PublishedProjection();
+    CHECK(current->ProjectionEpoch() == 2);
+    CHECK_FALSE(current->HitTestProjection(20, 32));
+    CHECK(pixel(*current, 20, 32) == 0);
+    CHECK(current->HitTestProjection(26, 39) == f.leaf);
+    CHECK(pixel(*current, 26, 39) == 255);
+    // Presenter retaining epoch 1 still sees all old nodes, clip and pixels.
+    CHECK(old->HitTestProjection(20, 32) == f.leaf);
+    CHECK(pixel(*old, 20, 32) == 255);
+    auto invalid = next;
+    invalid.epoch = 3;
+    invalid.nodes[2].measured.width = -1;
+    f.Reject(invalid);
+    CHECK(f.tree.PublishedProjection()->ProjectionEpoch() == 2);
+    CHECK(pixel(*current, 26, 39) == 255);
+}
+
+TEST_CASE("VD-02 hierarchy bounds reject excess depth and fanout before publishing") {
+    for (const bool deep : {true, false}) {
+        ProjectionFixture f;
+        f.tree.CommitProjection(f.Batch());
+        auto batch = f.Batch(2);
+        batch.nodes.resize(1);
+        auto parent = f.tree.Root();
+        const auto limit = deep ? ui::UiTree::kMaxDepth : ui::UiTree::kMaxChildren;
+        for (std::size_t i = 0; i < limit; ++i) {
+            const auto id = f.tree.CreateNode(ui::UiClass::View);
+            batch.nodes.push_back({id, parent, {0, 0, 1, 1}, {1, 1}});
+            if (deep) parent = id;
+        }
+        if (!deep) {
+            // Exactly kMaxChildren is valid; the next child is the negative control.
+            f.tree.CommitProjection(batch);
+            batch.epoch = 3;
+            const auto extra = f.tree.CreateNode(ui::UiClass::View);
+            batch.nodes.push_back({extra, parent, {0, 0, 1, 1}, {1, 1}});
+        }
+        f.Reject(batch);
+        batch.nodes.pop_back();
+        if (deep) {
+            f.tree.CommitProjection(batch);
+            CHECK(f.tree.ProjectionEpoch() == 2);
+        }
+    }
 }

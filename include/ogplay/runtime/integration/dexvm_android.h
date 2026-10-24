@@ -98,6 +98,10 @@ struct AndroidInputDevice final {
 // code-defined immutable list; handlers bind to the running guest session
 // (sound mixer, VFS, platform identity) through this shared context.
 
+// Fixed before VM startup. JavaTraversal is reserved and deliberately unavailable.
+enum class AndroidUiTraversalOwner : std::uint8_t { Legacy, JavaTraversal };
+inline constexpr AndroidUiTraversalOwner kAndroidUiTraversalOwner = AndroidUiTraversalOwner::Legacy;
+
 struct DexVmAndroidContext final {
   std::atomic_bool process_stopping{};
   // Set from the owning native process before linking/startup. No host query.

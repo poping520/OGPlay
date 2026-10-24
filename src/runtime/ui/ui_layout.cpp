@@ -615,6 +615,9 @@ void LayoutNode(UiTree& tree, const UiNodeId id, const std::int32_t screen_x,
 }  // namespace
 
 void LayoutUiTree(UiTree& tree, const UiMetrics metrics) {
+    // Check before touching any node, even when the external tree is dirty.
+    if (tree.GeometryOwner() == UiGeometryOwner::ExternalProjection)
+        throw std::runtime_error("LayoutUiTree cannot rearrange an external geometry owner");
     if (metrics.width < 0 || metrics.height < 0) {
         throw std::runtime_error("UI surface metrics must be non-negative");
     }

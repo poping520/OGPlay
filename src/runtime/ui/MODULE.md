@@ -2,8 +2,8 @@
 
 ## 职责
 
-持有有界 Android View/Layout 的宿主侧 hierarchy、state、resolved geometry、dirty、
-render 与 hit-test 事实。本模块不执行 guest Java，不保存 DexVM object/listener，也不拥有
+管理有界 View/Layout 的宿主布局分区和外部窗口投影分区，提供 resolved geometry、dirty、
+render 与 hit-test 快照。本模块不执行 guest Java，不保存 DexVM object/listener，也不拥有
 SDL、ANGLE 或视频解码。
 
 `UiFallbackFont` 只解析 SHA-256 固定的 API19 system font，由上层 bytes 注入每 tree；
@@ -14,14 +14,14 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
   detach/destroy node，并以 android id 查找已接入 content root 的 node。
-- `UiNode`：唯一保存 parent/children、class、android id（NO_ID=-1）、visibility、
+- `UiNode`：在宿主分区拥有、在外部窗口分区投影 parent/children、class、android id（NO_ID=-1）、visibility、
   enabled/clickable、focusable/touch-mode、scroll-container、滚动条开关、orientation、
   gravity、image resource、layout params、
   `clipChildren`/`clipToPadding`（默认 true）、measured/frame/screen frame、alpha 与
   dirty state。
 - guest View 的 `padding` / `minimum` 是 integration 从 Java 权威导入的布局、渲染输入，
   本层不维护另一份 setter 状态，不读取 Java 或执行回调。纯宿主节点（如 Dialog 平面）
-  继续直接拥有这两个输入；guest measured/frame 等几何仍由现有宿主遍历计算。
+  继续直接拥有这两个输入；Legacy guest measured/frame 仍由现有宿主遍历计算。
 - `window_visible` 及 `SetWindowVisible` 保存独立窗口可见性；隐藏窗口保留 hierarchy，
   不改变 guest View.visibility。有效可见性包含祖先窗口状态，绘制、输入、焦点共同使用。
 - direct content-root child 的 `modal_layer` 标记合成平面；render-list 可选 all/normal/modal，
@@ -42,6 +42,20 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   requestLayout/invalidate 由调用方派发。
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
+- `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
+  每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy。
+- `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
+  同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
+  当前 target、严格递增非零 epoch 的完整窗口批次。节点必须存在、唯一、全树连通且满足
+  node/child/depth 上限；非法 geometry、visibility、坐标溢出、旧代/旧 revision/旧 epoch 明确失败。
+  先在副本验证 hierarchy/id index 并计算局部 frame/scroll 到 screen_frame/screen_clip，成功才整体替换；
+  失败批次零修改，遗漏节点退出层级与 id index。measured 与 frame 独立保存，不反向写语义 owner。
+- `PublishedProjection` 仅发布完整成功的不可变快照；target 失效或待发布状态不覆盖上一完整 epoch。
+  外部分区 render 与 `HitTestProjection` 只接受同一快照，读取已解析 screen_frame/screen_clip；
+  presenter 不访问构建中的树；快照指针原子发布/获取。上层串行执行 target/commit，
+  本 API 不以 VM 锁代替 owner 线程，也不提供可并发修改的 UiTree。
+- `LayoutUiTree` 在修改前拒绝外部分区；外部层级/visibility 只能经整批提交更新。
+  `Get` 的可变访问仅供 owner 构建宿主绘制属性；consumer 只能持有 const 完整快照。
 - `LayoutUiTree`：以 surface `UiMetrics` 的 EXACTLY root constraint 执行有界
   MeasureSpec + FrameLayout traversal；fixed/match/wrap、padding/margin、child
   gravity 与 screen-frame propagation 共用一条路径。无 intrinsic 的普通叶子 `View`
@@ -88,8 +102,10 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 
 ## 不变量
 
-- hierarchy、android id、visibility、layout params、geometry 与 clip 开关只有 UiTree
-  一份权威事实。
+- 纯宿主分区的 hierarchy、visibility、layout params、geometry 与 clip 由 UiTree 拥有。
+  JavaTraversal 的 guest hierarchy/geometry 由 Java 唯一拥有，integration 收集并受检发布，
+  UiTree 只保存宿主投影，不回填 Java measured/bounds。Legacy 迁移阶段仍保留宿主遍历。
+  本层不执行 guest、不持 Java 引用、不读 Java 字段；未迁移文本/样式仍沿既有宿主单一存储。
 - renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
 - integration/session 的 Legacy 布局由 integration 统一调度；本层仍只接收 UiTree/UiMetrics，
   不获取解释器、guest 回调或 Java 引用。

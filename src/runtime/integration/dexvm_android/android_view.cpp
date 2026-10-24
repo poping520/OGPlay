@@ -3076,6 +3076,11 @@ namespace ogplay::runtime {
 bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                               const AndroidUiTraversalReason reason, const AndroidUiTraversalPhase phase,
                               const std::optional<ui::Size> viewport) {
+    switch (kAndroidUiTraversalOwner) {
+    case AndroidUiTraversalOwner::Legacy: break;
+    case AndroidUiTraversalOwner::JavaTraversal:
+        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Java UI traversal is not enabled"};
+    }
     auto metrics = viewport.value_or(
         ui::Size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
     const auto resolve = [&] {

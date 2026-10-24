@@ -300,7 +300,13 @@ LinearLayout 的 Context 构造、weight/baseline/largest-child 状态、双方�
 复制与 Gravity/RTL 解析归 ROM；共享 View/Group adapter 只初始化既有基础字段，不写
 LinearLayout 的算法状态或几何。Context-only 默认 weightSum=0，与属性构造的 -1 不混用。
 AttributeSet/style 构造、divider Drawable 设置/绘制与动画接缝继续记账失败；divider 测量
-helper 只读取 Java 输入，测试直接写尺寸不代表 Drawable 服务。RelativeLayout/叶类型不扩充。
+helper 只读取 Java 输入，测试直接写尺寸不代表 Drawable 服务。叶类型不扩充。
+RelativeLayout 的非属性构造、双轴依赖图排序、size/position/center/baseline、onMeasure/onLayout
+及 LayoutParams addRule/removeRule/getRules/resolveRules/resolveLayoutDirection 归固定 ROM；
+MarginLayoutParams 方向解析继续执行 ROM。缺失锚点与 GONE 链按原算法回退，依赖环由 ROM
+抛 ISE；不套用 Legacy host 的缺失锚点拒绝。SDK 测量兼容字段由原构造查询真实 ApplicationInfo，
+宿主只扩大实验初始化类型守卫，不写 RelativeLayout 算法字段。属性/XML 构造与系统
+accessibility 入口保持 failure，Window 整树仍经同一事务投影。
 
 ## GLES/EGL 与消息调度
 

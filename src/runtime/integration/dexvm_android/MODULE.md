@@ -492,7 +492,7 @@ Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/�
 measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
 测量只向纯固定字体服务传值，fallback 与 Legacy 共用 UiTree 注入事实，不写 guest 几何。
 固定ASCII字表/基本CJK、1024单位、1..128px、flags位集0x501以外明确失败并记账；
-完整 shaping、Paint 绘制、TextPaint/Layout/Editor 与 TextView 构造保持 failure。
+完整 shaping、Paint 绘制与 TextPaint/Layout/Editor 保持 failure。
 真实finalize及GC sweep/teardown 删除实例测量状态；生产 Legacy handler 与 payload 保持原行为。
 
 ## 实验 TextView 构造输入
@@ -501,5 +501,17 @@ ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，
 属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
 UiNode 的文本、字号、颜色、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
 View adapter 状态另存独立 singleLine 位，并保活 Typeface/Drawable 身份及其不可变 backing，随 View trace/sweep。
-不写 mText/mLayout/mEditor，不开放 getPaint singleton 或 TextView measure/setter/getter。
+不写 mText/mLayout/mEditor，不开放 getPaint singleton。
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。
+
+实验 TextView onMeasure 为 overlay：读取宿主输入及虚派 Java compound padding/suggested minimum，
+调用纯文本叶服务，再虚派 setMeasuredDimension；不写 measured/bounds/flags、不遍历子树。
+setText/getText、字号、Typeface、纯色/单态颜色、gravity、singleLine/maxLines、四位图 compound
+按逐签名 review 开放，setter 经 Java requestLayout/invalidate，owner tick 重测后完整发布。
+每输入版本按最终宽度保存 immutable plan，以兼容 ROM measure cache/补测；baseline 读取同一服务结果，
+附加 Java 高度下的 gravity offset。构造/输入与 plan 随 View sweep 退役；无宿主全局强根。
+投影中的 text/style/plan/geometry 同 epoch 冻结，presenter 不再测量；失败保留旧发布快照，不回滚 guest 回调。
+子类 onMeasure 不调用 super 时保留其 Java 自定尺寸，owner 发布阶段只按最终尺寸准备光栅 plan，
+不进入 adapter、不写 guest 几何；没有叶测量结果时基线沿 View 缺席值 -1。
+有限 plain text 的 onLayout/setFrame/RTL/drawable-state/padding 回调执行真实 View 父协议；RTL、Editor/状态 Drawable
+等未覆盖语义仍失败，ROM 原 TextView 方法不获实现信用。Legacy 公式和路径不变。

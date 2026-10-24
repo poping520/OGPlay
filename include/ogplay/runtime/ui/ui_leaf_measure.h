@@ -79,6 +79,9 @@ struct TextLeafInput final {
     Size minimum;
     Size intrinsic;
     TextWrapWidth wrap_width{TextWrapWidth::CompoundPadding};
+    // API19 TextView chooses width before layout and clamps without TOO_SMALL.
+    bool java_text_view{};
+    bool single_line{};
 };
 
 struct LeafMeasureResult final {
@@ -87,7 +90,7 @@ struct LeafMeasureResult final {
     // Per-axis Android TOO_SMALL bit for AT_MOST; Legacy ignores state.
     std::uint32_t width_state{};
     std::uint32_t height_state{};
-    // Android baseline is not implemented by this fixed-cell service.
+    // Fixed-cell baseline for the bounded Java TextView service; absent for Legacy.
     std::optional<std::int32_t> baseline;
     std::shared_ptr<const TextLinePlan> line_plan;
 };

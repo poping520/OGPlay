@@ -798,6 +798,9 @@ struct DexVmAndroidContext final {
       // Text/style live in UiNode. Keep the distinct constructor line policy
       // and owner-traced identities here; no Java text/layout mirror.
       bool text_single_line{};
+      std::optional<ui::LeafMeasureResult> text_measure;
+      std::unordered_map<std::int32_t, ui::LeafMeasureResult> text_measure_cache;
+      std::uint64_t text_revision{};
       dexvm::VmObjectRef text_typeface{};
       std::array<dexvm::VmObjectRef, 4> text_compounds{dexvm::VmObjectRef{}, dexvm::VmObjectRef{}, dexvm::VmObjectRef{},
                                                        dexvm::VmObjectRef{}};

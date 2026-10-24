@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
+      "surface": "tools/bootdex/view-text.surface.json.gz",
+      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "b9326994375bd4796481ce695e5a6a36ff4c9c0a975615e36cc931ba59139841",
       "methods": [
@@ -1299,8 +1299,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
+      "surface": "tools/bootdex/view-text.surface.json.gz",
+      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -1851,7 +1851,14 @@
           "signature": "drawableStateChanged()V",
           "flags": 4,
           "body_sha256": "ea28a43b3e182244196f503183dd7d403e5f23ef218374ba595378e94d321418",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "endBatchEdit()V",
@@ -1893,7 +1900,14 @@
           "signature": "getBaseline()I",
           "flags": 1,
           "body_sha256": "542eaf35373cc9c0e067579f7b9d9361469cb12e3e27dedaed44d5b4ef7e8299",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getBottomPaddingOffset()I",
@@ -1923,7 +1937,14 @@
           "signature": "getCompoundPaddingBottom()I",
           "flags": 1,
           "body_sha256": "f2f82cdd6d031ec8dbcc87a09030e4d4b0ffe38ff8071f26ac4932a5b1f1399e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getCompoundPaddingEnd()I",
@@ -1935,13 +1956,27 @@
           "signature": "getCompoundPaddingLeft()I",
           "flags": 1,
           "body_sha256": "7a2a9ead88ad9dde7b9042083712f873da6d38bf1a5d065446e2566ddaa63ddc",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getCompoundPaddingRight()I",
           "flags": 1,
           "body_sha256": "e202923ba0fc994a2b0bfcd9d0c0764e65c8eff3f8354b0bf1d82c48988cdce3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getCompoundPaddingStart()I",
@@ -1953,7 +1988,14 @@
           "signature": "getCompoundPaddingTop()I",
           "flags": 1,
           "body_sha256": "a3c55eb8a4b1af1b71ca43a36396b9c952b097641c0a1c802b237a6de5081b19",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getCurrentHintTextColor()I",
@@ -1965,7 +2007,14 @@
           "signature": "getCurrentTextColor()I",
           "flags": 17,
           "body_sha256": "f1acab87da2642687cf4ecd60f522d85cb2a239f67628c28ac60a6153d615532",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getCustomSelectionActionModeCallback()Landroid/view/ActionMode$Callback;",
@@ -2049,7 +2098,14 @@
           "signature": "getGravity()I",
           "flags": 1,
           "body_sha256": "fc55b116112b4a34a0527c7088a0455fc98f183d68c2f4c56d4fb68d09aeb1a6",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getHighlightColor()I",
@@ -2229,7 +2285,14 @@
           "signature": "getMaxLines()I",
           "flags": 1,
           "body_sha256": "0bfc7984ffccc070c198a1f650c8382d14098bb912562e6bce3fab021c16f045",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getMaxWidth()I",
@@ -2355,13 +2418,27 @@
           "signature": "getText()Ljava/lang/CharSequence;",
           "flags": 1,
           "body_sha256": "369909bdc5cf48039f420bcdf72746013d4eb66014c4524612a895e94e993bc4",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getTextColors()Landroid/content/res/ColorStateList;",
           "flags": 17,
           "body_sha256": "c967197b6f1f3411ed80048a6448050406693af009549e8a31b36106323e8687",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getTextDirectionHeuristic()Landroid/text/TextDirectionHeuristic;",
@@ -2397,7 +2474,14 @@
           "signature": "getTextSize()F",
           "flags": 1,
           "body_sha256": "5fdd7faa6e2401344f7b6bd242c6c7f6a5bcae4f5fe24654f1ffd40adf10071d",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getTopPaddingOffset()I",
@@ -2457,7 +2541,14 @@
           "signature": "getTypeface()Landroid/graphics/Typeface;",
           "flags": 1,
           "body_sha256": "cab160698b3ce7d5c3e20c65fd565b34b95027a4380fac77655dc6b6f8e0d85e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "getUndoManager()Landroid/content/UndoManager;",
@@ -2745,7 +2836,14 @@
           "signature": "onLayout(ZIIII)V",
           "flags": 4,
           "body_sha256": "53374cd39e9084afc2f98bff5e22d8f8fa74105f3b59b2255f8dc06b76d9389f",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "onLocaleChanged()V",
@@ -2757,7 +2855,14 @@
           "signature": "onMeasure(II)V",
           "flags": 4,
           "body_sha256": "32a8639a79dfeb422a56f0d0782030b4f673ed7aa268edd8c62ccafbc12b582e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "onPopulateAccessibilityEvent(Landroid/view/accessibility/AccessibilityEvent;)V",
@@ -2781,7 +2886,14 @@
           "signature": "onResolveDrawables(I)V",
           "flags": 1,
           "body_sha256": "7c62a6911f203747ee67d88009b34cc2ffdb3a3642a14084982d560e385a824e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "onRestoreInstanceState(Landroid/os/Parcelable;)V",
@@ -2793,7 +2905,14 @@
           "signature": "onRtlPropertiesChanged(I)V",
           "flags": 1,
           "body_sha256": "629481f18aa0ec157f095e0d0dd953f5ac58d6721a6c899914a11f3e6857c476",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "onSaveInstanceState()Landroid/os/Parcelable;",
@@ -2919,7 +3038,14 @@
           "signature": "resetResolvedDrawables()V",
           "flags": 4,
           "body_sha256": "bc64d07f762fba173a72d8da8742ccaaca9e0aec9fe3500d1f4065727ea0ee47",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "selectAllText()Z",
@@ -3003,13 +3129,27 @@
           "signature": "setCompoundDrawablesWithIntrinsicBounds(IIII)V",
           "flags": 1,
           "body_sha256": "a0e590982d0ab0f7850bf60e40e58e74bda27eefa9e0b59eb05f649e43a1619b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setCompoundDrawablesWithIntrinsicBounds(Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
           "flags": 1,
           "body_sha256": "b7cb8fc36c8eb883135d132d14dbb7f7d8e9ce3d6a18bd85bea2e3f876f9f067",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setCursorPosition_internal(II)V",
@@ -3087,7 +3227,14 @@
           "signature": "setFrame(IIII)Z",
           "flags": 4,
           "body_sha256": "6789dcff74dc9257e12a780f0c1f9ef9c2f9b9127577c0422f62e4bf445406f0",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setFreezesText(Z)V",
@@ -3099,7 +3246,14 @@
           "signature": "setGravity(I)V",
           "flags": 1,
           "body_sha256": "daf8dcc5e4890a5bc12651f0f63c20e6dcf3e40d8a1320b8ad6fab615e39a6a1",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setHeight(I)V",
@@ -3231,7 +3385,14 @@
           "signature": "setMaxLines(I)V",
           "flags": 1,
           "body_sha256": "4582e7fe2c720e1c786eaaa3cf38e94bb9a475248958229a259026a4630f2fb1",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setMaxWidth(I)V",
@@ -3279,13 +3440,27 @@
           "signature": "setPadding(IIII)V",
           "flags": 1,
           "body_sha256": "82223be6477263f81f6a029689b0281d80a9ec7b2393a4a0ada9d9dbe0f94259",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setPaddingRelative(IIII)V",
           "flags": 1,
           "body_sha256": "8123425cec56ff0c99c204f002b9dfdb8e6981b4fe9489317cbb83c9de96ccec",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setPaintFlags(I)V",
@@ -3339,13 +3514,27 @@
           "signature": "setSingleLine()V",
           "flags": 1,
           "body_sha256": "9162585fa8633cdee748a013c8fb8e1757b634711c5d64202117d963009813fa",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setSingleLine(Z)V",
           "flags": 1,
           "body_sha256": "7ef25e8bae459e613a23dced292886ea70dc53bb8ea977776c94e2eb899c3386",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setSpan_internal(Ljava/lang/Object;III)V",
@@ -3375,7 +3564,14 @@
           "signature": "setText(Ljava/lang/CharSequence;)V",
           "flags": 17,
           "body_sha256": "c90c0b02b59d22c199967cc50912a1486289a5efeacc8ad5468621c47105dcf6",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setText(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
@@ -3399,13 +3595,27 @@
           "signature": "setTextColor(I)V",
           "flags": 1,
           "body_sha256": "584304c3e77c1b2137b9ea948658b3c4ac769be5b25517e2a0c784e8d9aee80b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setTextColor(Landroid/content/res/ColorStateList;)V",
           "flags": 1,
           "body_sha256": "0b4bc6fb7e5f767d5362c1de44e4ecc58c21a78cd396695a69a769bfc97bee21",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setTextIsSelectable(Z)V",
@@ -3441,13 +3651,27 @@
           "signature": "setTextSize(F)V",
           "flags": 1,
           "body_sha256": "01ea5d4ef77073022c3426667373c8c705aafb60f7b0a3eaccbc50c3bd880b26",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setTextSize(IF)V",
           "flags": 1,
           "body_sha256": "3a42a1a02f090583d5bd7306df66300439a5d066b1c407f10e54c4f7d1dbdf14",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setTransformationMethod(Landroid/text/method/TransformationMethod;)V",
@@ -3459,13 +3683,27 @@
           "signature": "setTypeface(Landroid/graphics/Typeface;)V",
           "flags": 1,
           "body_sha256": "69ba4c111dcf2f2e900b37fd2a998f59907c062864a92dc24d5172107c87b67b",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setTypeface(Landroid/graphics/Typeface;I)V",
           "flags": 1,
           "body_sha256": "1c19d6432f4370d2f77e7839de4793a030b2eff6e8b567516018677f5adb20c8",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
+            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+          }
         },
         {
           "signature": "setUndoManager(Landroid/content/UndoManager;Ljava/lang/String;)V",
@@ -4154,8 +4392,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
+      "surface": "tools/bootdex/view-text.surface.json.gz",
+      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4438,8 +4676,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
+      "surface": "tools/bootdex/view-text.surface.json.gz",
+      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

@@ -206,6 +206,7 @@ struct UiNode final {
     std::uint32_t background_resource_id{};
     float background_alpha{1.0F};
     std::u16string text;
+    std::shared_ptr<const TextLinePlan> text_line_plan;  // Frozen with Java projection geometry.
     std::uint32_t text_color{0xffffffffU};
     float text_size_px{8.0F};
     std::uint32_t text_style{}; // Built-in font: BOLD=1, ITALIC=2.

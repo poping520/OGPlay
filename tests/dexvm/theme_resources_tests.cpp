@@ -1804,6 +1804,24 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
         CHECK(f.On(view, "isFocusable", "()Z").AsInt() == 1);
         CHECK(f.On(view, "isClickable", "()Z").AsInt() == 1);
         CHECK(f.On(view, "isLongClickable", "()Z").AsInt() == 1);
+        for (const auto container :
+             {"Landroid/widget/FrameLayout;", "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
+            const auto group = f.New(container, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto group_root = f.vm.ProtectReferences(std::array{group});
+            f.On(group, "addView", "(Landroid/view/View;II)V",
+                 {VmValue::Ref(view), VmValue::Int(-2), VmValue::Int(-2)});
+            f.context->content_view = group;
+            ++f.context->ui_content_revision;
+            CHECK(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                           AndroidUiTraversalPhase::ResolveOnly, ui::Size{96, 128}));
+            const auto projected = f.context->ui_tree.PublishedProjection();
+            REQUIRE(projected);
+            const auto id = *FindViewUiNode(*f.context, view.Value());
+            CHECK(projected->Get(id)->measured.width == f.On(view, "getMeasuredWidth", "()I").AsInt());
+            REQUIRE(projected->Get(id)->text_line_plan);
+            f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        }
+        f.context->content_view = VmObjectRef{};
         const auto trace = f.vm.Trace("", 10000);
         for (
             const auto signature :
@@ -1827,8 +1845,9 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
             CHECK(f.linker.Field(*field).is_unimplemented);
         }
         CHECK(f.OnOutcome(view, "getPaint", "()Landroid/text/TextPaint;").exception.IsValid());
-        CHECK(f.OnOutcome(view, "getText", "()Ljava/lang/CharSequence;").exception.IsValid());
-        CHECK(f.OnOutcome(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.model.StringValue(f.On(view, "getText", "()Ljava/lang/CharSequence;").ref) == u"Plain text");
+        f.On(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+        CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() > 0);
     }
 }
 
@@ -1952,11 +1971,17 @@ TEST_CASE("DVM-294 absolute bitmap compounds retain identities and inflater fail
             static_cast<void>(f.vm.CollectGarbage("text-compound-rooted"));
             for (const auto ref : refs)
                 CHECK(f.context->ui_drawables.contains(ref.Value()));
+            f.On(view, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
+                 {VmValue::Int(image), VmValue::Int(0), VmValue::Int(image), VmValue::Int(0)});
+            CHECK(f.On(view, "getCompoundPaddingLeft", "()I").AsInt() == 2);
+            CHECK(f.On(view, "getCompoundPaddingTop", "()I").AsInt() == 0);
+            f.On(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+            CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() == 4);
             CHECK(f.ledger.Unimplemented().empty());
         }
         static_cast<void>(f.vm.CollectGarbage("text-compound-unrooted"));
         CHECK_FALSE(f.context->view_adapter_references.contains(view.Value()));
-        // Inflate into an unattached tree: measurement is intentionally unopened.
+        // Inflate into an unattached tree using the same host text input.
         f.context->activity = owner;
         // The ARSC serializer used by this fixture has no styled-string bag pool.
         for (auto& entry : f.context->arsc.entries)

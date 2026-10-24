@@ -15,15 +15,17 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - `ui_leaf_measure.h` 的 `MeasureTextLeaf` / `MeasureImageLeaf` 只收 const 值输入与两轴
   MeasureSpec；不依赖 tree/node/VM/children，不写 geometry。Size/Insets/MeasureSpec 与固定
   字体测量声明归此独立头。输出 desired/constrained 与每轴 AT_MOST TOO_SMALL 位；这是
-  有界服务状态，不声称完整 TextView state。baseline 明确为缺席，尚不支持 Android baseline。
+  有界服务状态。java_text_view 模式按 AOSP TextView 先选宽再断行，直接裁剪尺寸且不置 TOO_SMALL；
+  返回固定字形首行 baseline，未实现完整 Android 字体排版。Legacy baseline 仍缺席。
   intrinsic+padding/minimum 可独立供 image/video 使用；不提供 adjustViewBounds/比例算法。
 - 文本输入包含固定字号/四样式、固定 fallback、行数策略及四槽 compound 尺寸。默认按
   spec 扣 padding 与左右 compound 生成 immutable `TextLinePlan`，记录实际行文本、字体及
   metrics；空串 desired 仍留 M cell，plan 不绘制占位字。DrawText 携带 plan 时只消费其
   文本/字体/metrics，不重新换行。plan 的生命周期独立于输入和树。
   Legacy 显式选择 `LegacyPadding` 保留原测量公式，仍由原遍历写 node.measured；现有
-  renderer 继续按最终 text band 换行，compound/spec/最终宽度导致的历史差异留待 VD-10a-4，
-  不将 Legacy 路径称为统一 line-plan；实验 JavaTraversal 支持面不变。
+  renderer 继续按最终 text band 换行，不将 Legacy 路径称为统一 line-plan。
+  JavaTraversal 节点携带与完整 projection epoch 一起冻结的 text_line_plan，presenter 不再测量/断行；
+  Java 模式空串宽度为0，maxLines 截断可见行，singleLine 转换由 integration 提供。
 
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
   detach/destroy node，并以 android id 查找已接入 content root 的 node。

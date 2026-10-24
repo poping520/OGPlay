@@ -152,8 +152,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         const auto linear = vm.Linker().ResolveDescriptor("Landroid/widget/LinearLayout;");
         const auto relative = vm.Linker().ResolveDescriptor("Landroid/widget/RelativeLayout;");
         const auto text = vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
-        // Construction/input only. TextView's own ROM-shape onMeasure remains
-        // failure until the separately reviewed leaf measurement adapter.
+        // TextView uses its reviewed pure leaf adapter, never host tree layout.
         if (kind != ui::UiClass::View &&
             !(kind == ui::UiClass::TextView && vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
@@ -312,6 +311,39 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
             const auto flags = fields.GetInt(context.view_group_java_fields->flags);
             entry.clip_children = (flags & 1) != 0;
             entry.clip_to_padding = (flags & 2) != 0;
+        }
+        if (context.ui_tree.Get(*node)->kind == ui::UiClass::TextView && visibility != ui::Visibility::Gone) {
+            const auto& refs = context.view_adapter_references.at(view.Value());
+            const auto cached = refs.text_measure_cache.find(entry.measured.width);
+            auto& text = *context.ui_tree.Get(*node);
+            if (cached != refs.text_measure_cache.end() && cached->second.line_plan) {
+                text.text_line_plan = cached->second.line_plan;
+            } else {
+                const auto type = vm.Model().ObjectClass(view);
+                const auto measure = vm.Linker().FindVtableIndex(type, "onMeasure", "(II)V");
+                if (vm.Linker().Method(vm.Linker().Class(type).vtable.at(*measure)).owner ==
+                    vm.Linker().ResolveDescriptor("Landroid/widget/TextView;"))
+                    throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                             "Text input changed after measurement"};
+                // A guest onMeasure override may set its own dimensions without
+                // calling super. Prepare only its raster plan on the owner,
+                // after Java layout; do not call the adapter or write geometry.
+                ui::TextLeafInput input;
+                input.text = text.text;
+                input.size_px = text.text_size_px;
+                input.style = text.text_style;
+                input.fallback_font = text.fallback_font;
+                input.max_lines = text.max_lines;
+                input.padding = entry.padding;
+                input.java_text_view = true;
+                input.single_line = refs.text_single_line;
+                if (input.single_line) std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
+                for (std::size_t i = 0; i < 4; ++i)
+                    input.compound[i] = {text.compound_drawables[i].width, text.compound_drawables[i].height};
+                text.text_line_plan = ui::MeasureTextLeaf(input, {ui::MeasureMode::Exactly, entry.measured.width},
+                                                          {ui::MeasureMode::Exactly, entry.measured.height})
+                                          .line_plan;
+            }
         }
         projection.nodes.push_back(entry);
         if (!group) return;

@@ -143,13 +143,15 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
                                 content.top + compound[1].height,
                                 content.right - compound[2].width,
                                 content.bottom - compound[3].height};
-        if (node.max_lines > 1 && !rendered_text.empty()) {
+        if (!node.text_line_plan && node.max_lines > 1 && !rendered_text.empty()) {
             rendered_text = WrapFixedText(
                 rendered_text, node.text_size_px, node.text_style,
                 text_content.right - text_content.left, node.max_lines, node.fallback_font.get());
         }
-        const auto metrics = MeasureFixedText(rendered_text, node.text_size_px,
-                                              node.text_style, node.fallback_font.get());
+        if (node.text_line_plan) rendered_text = node.text_line_plan->text;
+        const auto metrics = node.text_line_plan ? node.text_line_plan->metrics
+                                                 : MeasureFixedText(rendered_text, node.text_size_px, node.text_style,
+                                                                    node.fallback_font.get());
         const auto drawable_rect =
             [&text_content](const std::size_t index, const Rect content_box,
                         const std::int32_t width, const std::int32_t height) {
@@ -205,8 +207,8 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
             y = text_content.bottom - metrics.height;
         }
         if (!rendered_text.empty()) {
-            out.emplace_back(DrawText{x, y, rendered_text, node.text_color,
-                                      node.text_size_px, node.alpha, node.text_style, node.fallback_font});
+            out.emplace_back(DrawText{x, y, rendered_text, node.text_color, node.text_size_px, node.alpha,
+                                      node.text_style, node.fallback_font, node.text_line_plan});
         }
     }
     // clipToPadding clips descendants to the padding box (AOSP dispatchDraw),

@@ -4,6 +4,7 @@
 #include "catalog.h"
 #include <array>
 #include <map>
+#include <cmath>
 #include <set>
 #include <algorithm>
 #include <stdexcept>
@@ -1201,6 +1202,281 @@ Decl ExperimentalTextView(const Context& context) {
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     });
+    const auto changed = [context](dx::IntrinsicContext& c) {
+        auto& refs = context->view_adapter_references.at(c.receiver.Value());
+        ++refs.text_revision;
+        refs.text_measure.reset();
+        refs.text_measure_cache.clear();
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "requestLayout", "()V"));
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V"));
+        return dx::VmValue::Void();
+    };
+    const auto validate = [](dx::IntrinsicContext& c, const ui::UiNode& node, const std::u16string& text, float size,
+                             std::uint32_t style) {
+        if (text.size() > 1024 || !std::isfinite(size) || size < 1 || size > 128 || style > 3)
+            TextInputFailure(c.vm, "text outside bounded service");
+        for (auto ch : text)
+            if (!(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff)))
+                TextInputFailure(c.vm, "unsupported text glyph/shaping");
+        try {
+            static_cast<void>(ui::MeasureFixedText(text, size, style, node.fallback_font.get()));
+        } catch (const std::runtime_error& e) {
+            TextInputFailure(c.vm, e.what());
+        }
+    };
+    builder.FinalMethod(
+        "setText", "(Ljava/lang/CharSequence;)V", [context, changed, validate](dx::IntrinsicContext& c) {
+            const auto ref = c.arguments[0].ref;
+            if (ref.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(ref)).descriptor != "Ljava/lang/String;")
+                TextInputFailure(c.vm, "plain String required");
+            auto text = ref.IsValid() ? c.vm.Model().StringValue(ref) : std::u16string{};
+            auto& n = *context->ui_tree.Get(TextNode(c, context));
+            validate(c, n, text, n.text_size_px, n.text_style);
+            n.text = std::move(text);
+            return changed(c);
+        });
+    builder.VirtualMethod("getText", "()Ljava/lang/CharSequence;", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Ref(c.vm.Model().NewString(context->ui_tree.Get(TextNode(c, context))->text));
+    });
+    builder.VirtualMethod("getTextSize", "()F", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_size_px);
+    });
+    builder.VirtualMethod("setTextSize", "(F)V", [](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, c.receiver, "setTextSize", "(IF)V", {dx::VmValue::Int(2), c.arguments[0]});
+    });
+    builder.VirtualMethod("setTextSize", "(IF)V", [context, changed, validate](dx::IntrinsicContext& c) {
+        const auto unit = c.arguments[0].AsInt();
+        if (unit < 0 || unit > 2) TextInputFailure(c.vm, "unsupported dimension unit");
+        const auto size = c.arguments[1].AsFloat() * (unit == 0   ? 1.F
+                                                      : unit == 1 ? context->ui_density
+                                                                  : context->ui_scaled_density);
+        auto& n = *context->ui_tree.Get(TextNode(c, context));
+        validate(c, n, n.text, size, n.text_style);
+        n.text_size_px = size;
+        return changed(c);
+    });
+    builder.VirtualMethod(
+        "setTypeface", "(Landroid/graphics/Typeface;)V", [context, changed, validate](dx::IntrinsicContext& c) {
+            const auto ref = c.arguments[0].ref;
+            const auto style = ref.IsValid() ? CallAndroidMethod(c.vm, ref, "getStyle", "()I").AsInt() : 0;
+            auto& n = *context->ui_tree.Get(TextNode(c, context));
+            validate(c, n, n.text, n.text_size_px, static_cast<std::uint32_t>(style));
+            context->view_adapter_references.at(c.receiver.Value()).text_typeface = ref;
+            n.text_style = static_cast<std::uint32_t>(style);
+            return changed(c);
+        });
+    builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;I)V", [](dx::IntrinsicContext& c) {
+        const auto style = c.arguments[1].AsInt();
+        if (style < 0 || style > 3) TextInputFailure(c.vm, "unsupported Typeface style");
+        const auto ref =
+            TextStatic(c.vm, "Landroid/graphics/Typeface;", "create",
+                       "(Landroid/graphics/Typeface;I)Landroid/graphics/Typeface;", {c.arguments[0], c.arguments[1]})
+                .ref;
+        const auto root = c.vm.ProtectReferences(std::array{ref});
+        return CallAndroidMethod(c.vm, c.receiver, "setTypeface", "(Landroid/graphics/Typeface;)V",
+                                 {dx::VmValue::Ref(ref)});
+    });
+    builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Ref(context->view_adapter_references.at(c.receiver.Value()).text_typeface);
+    });
+    builder.VirtualMethod("setTextColor", "(I)V", [context, changed](dx::IntrinsicContext& c) {
+        context->ui_tree.Get(TextNode(c, context))->text_color =
+            AndroidColorToRgba(static_cast<std::uint32_t>(c.arguments[0].AsInt()));
+        return changed(c);
+    });
+    builder.VirtualMethod("setTextColor", "(Landroid/content/res/ColorStateList;)V", [](dx::IntrinsicContext& c) {
+        const auto ref = c.arguments[0].ref;
+        if (!ref.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text colors"};
+        if (CallAndroidMethod(c.vm, ref, "isStateful", "()Z").AsInt()) TextInputFailure(c.vm, "stateful text color");
+        return CallAndroidMethod(c.vm, c.receiver, "setTextColor", "(I)V",
+                                 {CallAndroidMethod(c.vm, ref, "getDefaultColor", "()I")});
+    });
+    builder.FinalMethod("getCurrentTextColor", "()I", [context](dx::IntrinsicContext& c) {
+        const auto rgba = context->ui_tree.Get(TextNode(c, context))->text_color;
+        return dx::VmValue::Int(static_cast<std::int32_t>((rgba >> 8U) | (rgba << 24U)));
+    });
+    builder.FinalMethod("getTextColors", "()Landroid/content/res/ColorStateList;", [](dx::IntrinsicContext& c) {
+        return TextStatic(c.vm, "Landroid/content/res/ColorStateList;", "valueOf",
+                          "(I)Landroid/content/res/ColorStateList;",
+                          {CallAndroidMethod(c.vm, c.receiver, "getCurrentTextColor", "()I")});
+    });
+    builder.VirtualMethod("setGravity", "(I)V", [context, changed](dx::IntrinsicContext& c) {
+        auto gravity = c.arguments[0].AsInt();
+        if ((gravity & ~0x77) ||
+            ((gravity & 7) != 0 && (gravity & 7) != 1 && (gravity & 7) != 3 && (gravity & 7) != 5) ||
+            ((gravity & 0x70) != 0 && (gravity & 0x70) != 0x10 && (gravity & 0x70) != 0x30 && (gravity & 0x70) != 0x50))
+            TextInputFailure(c.vm, "unsupported gravity");
+        if (!(gravity & 7)) gravity |= 3;
+        if (!(gravity & 0x70)) gravity |= 0x30;
+        context->ui_tree.Get(TextNode(c, context))->gravity = static_cast<std::uint32_t>(gravity);
+        return changed(c);
+    });
+    builder.VirtualMethod("getGravity", "()I", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(context->ui_tree.Get(TextNode(c, context))->gravity));
+    });
+    builder.VirtualMethod("setMaxLines", "(I)V", [context, changed](dx::IntrinsicContext& c) {
+        if (c.arguments[0].AsInt() < 1) TextInputFailure(c.vm, "non-positive maxLines");
+        context->ui_tree.Get(TextNode(c, context))->max_lines = c.arguments[0].AsInt();
+        return changed(c);
+    });
+    builder.VirtualMethod("getMaxLines", "()I", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(context->ui_tree.Get(TextNode(c, context))->max_lines);
+    });
+    builder.VirtualMethod("setSingleLine", "()V", [](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, c.receiver, "setSingleLine", "(Z)V", {dx::VmValue::Int(1)});
+    });
+    builder.VirtualMethod("setSingleLine", "(Z)V", [context, changed](dx::IntrinsicContext& c) {
+        const auto single = c.arguments[0].AsInt() != 0;
+        auto& n = *context->ui_tree.Get(TextNode(c, context));
+        context->view_adapter_references.at(c.receiver.Value()).text_single_line = single;
+        n.max_lines = single ? 1 : 0x7fffffff;
+        return changed(c);
+    });
+    builder.VirtualMethod("setCompoundDrawablesWithIntrinsicBounds", "(IIII)V", [](dx::IntrinsicContext& c) {
+        const auto resources =
+            CallAndroidMethod(c.vm, c.receiver, "getResources", "()Landroid/content/res/Resources;").ref;
+        std::array<dx::VmObjectRef, 4> refs{dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{}};
+        const auto retained = c.vm.Model().NewObjectArray(c.vm.Linker().ResolveDescriptor("[Ljava/lang/Object;"),
+                                                          c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), 4);
+        const auto roots = c.vm.ProtectReferences(std::array{retained});
+        std::vector<dx::VmValue> args;
+        for (std::size_t i = 0; i < 4; ++i) {
+            if (c.arguments[i].AsInt())
+                refs[i] = CallAndroidMethod(c.vm, resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                            {c.arguments[i]})
+                              .ref;
+            c.vm.Model().SetObjectElement(retained, static_cast<JniSize>(i), refs[i]);
+            args.push_back(dx::VmValue::Ref(refs[i]));
+        }
+        return CallAndroidMethod(
+            c.vm, c.receiver, "setCompoundDrawablesWithIntrinsicBounds",
+            "(Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
+            args);
+    });
+    builder.VirtualMethod(
+        "setCompoundDrawablesWithIntrinsicBounds",
+        "(Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
+        [context, changed](dx::IntrinsicContext& c) {
+            std::array<ui::CompoundDrawable, 4> values{};
+            std::array<dx::VmObjectRef, 4> refs{dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
+                                                dx::VmObjectRef{}};
+            for (std::size_t i = 0; i < 4; ++i) {
+                const auto ref = c.arguments[i].ref;
+                refs[i] = ref;
+                if (!ref.IsValid()) continue;
+                const auto found = context->ui_drawables.find(ref.Value());
+                if (found == context->ui_drawables.end() || !found->second.bitmap_drawable ||
+                    !found->second.leaf_pixels)
+                    TextInputFailure(c.vm, "compound requires APK bitmap");
+                values[i] = {found->second.resource_id,
+                             CallAndroidMethod(c.vm, ref, "getIntrinsicWidth", "()I").AsInt(),
+                             CallAndroidMethod(c.vm, ref, "getIntrinsicHeight", "()I").AsInt()};
+            }
+            context->ui_tree.Get(TextNode(c, context))->compound_drawables = values;
+            context->view_adapter_references.at(c.receiver.Value()).text_compounds = refs;
+            return changed(c);
+        });
+    for (std::size_t i = 0; i < 4; ++i) {
+        builder.VirtualMethod(std::array{"getCompoundPaddingLeft", "getCompoundPaddingTop", "getCompoundPaddingRight",
+                                         "getCompoundPaddingBottom"}[i],
+                              "()I", [context, i](dx::IntrinsicContext& c) {
+                                  const auto pad = ReadAndroidViewPadding(c.vm, *context, c.receiver);
+                                  const auto& compound =
+                                      context->ui_tree.Get(TextNode(c, context))->compound_drawables[i];
+                                  return dx::VmValue::Int(std::array{pad.left, pad.top, pad.right, pad.bottom}[i] +
+                                                          (i % 2 ? compound.height : compound.width));
+                              });
+    }
+    builder.VirtualMethod("onMeasure", "(II)V", [context](dx::IntrinsicContext& c) {
+        if (c.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text measure requires owner"};
+        const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
+        const auto& n = *context->ui_tree.Get(TextNode(c, context));
+        ui::TextLeafInput input;
+        input.text = n.text;
+        if (context->view_adapter_references.at(c.receiver.Value()).text_single_line)
+            std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
+        input.size_px = n.text_size_px;
+        input.style = n.text_style;
+        input.fallback_font = n.fallback_font;
+        input.max_lines = n.max_lines;
+        input.java_text_view = true;
+        input.single_line = context->view_adapter_references.at(c.receiver.Value()).text_single_line;
+        for (std::size_t i = 0; i < 4; ++i)
+            input.compound[i] = {n.compound_drawables[i].width, n.compound_drawables[i].height};
+        std::array<int, 4> pads{};
+        for (std::size_t i = 0; i < 4; ++i)
+            pads[i] = CallAndroidMethod(c.vm, c.receiver,
+                                        std::array{"getCompoundPaddingLeft", "getCompoundPaddingTop",
+                                                   "getCompoundPaddingRight", "getCompoundPaddingBottom"}[i],
+                                        "()I")
+                          .AsInt() -
+                      (i % 2 ? input.compound[i].height : input.compound[i].width);
+        input.padding = {pads[0], pads[1], pads[2], pads[3]};
+        input.minimum = {CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumWidth", "()I").AsInt(),
+                         CallAndroidMethod(c.vm, c.receiver, "getSuggestedMinimumHeight", "()I").AsInt()};
+        const auto spec = [&](int bits) {
+            const auto mode = static_cast<std::uint32_t>(bits) >> 30U;
+            if (mode == 3) TextInputFailure(c.vm, "invalid MeasureSpec mode");
+            return ui::MeasureSpec{mode == 1   ? ui::MeasureMode::Exactly
+                                   : mode == 2 ? ui::MeasureMode::AtMost
+                                               : ui::MeasureMode::Unspecified,
+                                   bits & 0x3fffffff};
+        };
+        auto result = ui::MeasureTextLeaf(input, spec(c.arguments[0].AsInt()), spec(c.arguments[1].AsInt()));
+        static_cast<void>(CallAndroidMethod(
+            c.vm, c.receiver, "setMeasuredDimension", "(II)V",
+            {dx::VmValue::Int(result.constrained.width), dx::VmValue::Int(result.constrained.height)}));
+        auto& refs = context->view_adapter_references.at(c.receiver.Value());
+        if (revision != refs.text_revision)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Text changed during measurement"};
+        refs.text_measure_cache[result.constrained.width] = result;
+        refs.text_measure = std::move(result);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getBaseline", "()I", [context](dx::IntrinsicContext& c) {
+        const auto width = CallAndroidMethod(c.vm, c.receiver, "getMeasuredWidth", "()I").AsInt();
+        const auto& cache = context->view_adapter_references.at(c.receiver.Value()).text_measure_cache;
+        const auto found = cache.find(width);
+        if (found == cache.end()) return dx::VmValue::Int(-1);
+        const auto result = found->second;
+        const auto gravity = context->ui_tree.Get(TextNode(c, context))->gravity;
+        auto baseline = *result.baseline;
+        const auto height = CallAndroidMethod(c.vm, c.receiver, "getMeasuredHeight", "()I").AsInt();
+        const auto top = CallAndroidMethod(c.vm, c.receiver, "getCompoundPaddingTop", "()I").AsInt();
+        const auto bottom = CallAndroidMethod(c.vm, c.receiver, "getCompoundPaddingBottom", "()I").AsInt();
+        const auto extra = std::max(0, height - top - bottom - result.line_plan->metrics.height);
+        if ((gravity & 0x70) == 0x10) baseline += extra / 2;
+        if ((gravity & 0x70) == 0x50) baseline += extra;
+        return dx::VmValue::Int(baseline);
+    });
+    // No Editor/Layout/Drawables object graph is installed. These callbacks
+    // execute the genuine View protocol; all text work belongs to the leaf owner.
+    for (const auto& [name, sig] :
+         std::array<std::pair<const char*, const char*>, 8>{{{"onLayout", "(ZIIII)V"},
+                                                             {"onRtlPropertiesChanged", "(I)V"},
+                                                             {"drawableStateChanged", "()V"},
+                                                             {"setPadding", "(IIII)V"},
+                                                             {"setPaddingRelative", "(IIII)V"},
+                                                             {"setFrame", "(IIII)Z"},
+                                                             {"resetResolvedDrawables", "()V"},
+                                                             {"onResolveDrawables", "(I)V"}}}) {
+        builder.VirtualMethod(name, sig, [name, sig](dx::IntrinsicContext& c) {
+            if ((std::string_view(name) == "onRtlPropertiesChanged" ||
+                 std::string_view(name) == "onResolveDrawables") &&
+                c.arguments[0].AsInt() != 0)
+                TextInputFailure(c.vm, "RTL text unsupported");
+            const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto method = c.vm.Linker().FindVtableIndex(type, name, sig);
+            std::vector<dx::VmValue> args(c.arguments.begin(), c.arguments.end());
+            args.insert(args.begin(), dx::VmValue::Ref(c.receiver));
+            const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable.at(*method), args);
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        });
+    }
     return std::move(builder).Build();
 }
 }  // namespace

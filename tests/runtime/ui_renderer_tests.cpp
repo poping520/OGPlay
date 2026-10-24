@@ -693,3 +693,42 @@ TEST_CASE("DVM-291 compound line plan preserves Legacy formula and drives raster
     text.text = u"M";
     CHECK(unified.line_plan->text == u"HI\nHI");
 }
+
+TEST_CASE("DVM-295 Java TextView compound plan uses final width and TextView state policy") {
+    ui::TextLeafInput input;
+    input.java_text_view = true;
+    input.text = u"HI HI";
+    input.size_px = 8;
+    input.max_lines = 3;
+    input.padding = {1, 2, 1, 2};
+    input.compound = {ui::Size{6, 7}, ui::Size{}, ui::Size{6, 7}, ui::Size{}};
+    const auto result = ui::MeasureTextLeaf(input, {ui::MeasureMode::AtMost, 32}, {ui::MeasureMode::AtMost, 10});
+    CHECK(result.desired == ui::Size{43, 19});
+    CHECK(result.constrained == ui::Size{32, 10});
+    CHECK(result.width_state == 0);
+    CHECK(result.height_state == 0);
+    CHECK(result.baseline == 9);
+    REQUIRE(result.line_plan);
+    CHECK(result.line_plan->text == u"HI\nHI");
+    ui::UiTree tree;
+    tree.Get(tree.Root())->frame = tree.Get(tree.Root())->screen_frame = {0, 0, 64, 32};
+    const auto id = tree.CreateNode(ui::UiClass::TextView);
+    tree.Attach(tree.Root(), id);
+    auto& n = *tree.Get(id);
+    n.text = u"HI HI";
+    n.text_size_px = 8;
+    n.text_line_plan = result.line_plan;
+    n.frame = n.screen_frame = {0, 0, 64, 32};  // Deliberately wider than measured: presenter must not rewrap.
+    const auto commands = ui::BuildUiRenderList(tree, {});
+    bool found{};
+    for (const auto& command : commands)
+        if (const auto* draw = std::get_if<ui::DrawText>(&command)) {
+            CHECK(draw->text == u"HI\nHI");
+            CHECK(draw->line_plan == result.line_plan);
+            found = true;
+        }
+    CHECK(found);
+    const auto frame = ui::RasterizeUiOverlay(commands, {64, 32});
+    const auto golden = ui::RasterizeUiOverlay({ui::DrawText{0, 0, u"HI\nHI", 0xffffffffU, 8}}, {64, 32});
+    CHECK(frame.rgba8 == golden.rgba8);
+}

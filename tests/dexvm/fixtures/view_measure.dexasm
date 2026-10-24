@@ -282,3 +282,76 @@
     const/4 v0, 0
     return-object v0
 .end method
+
+.class public Ltest/TextMeasureOverride;
+.super Landroid/widget/TextView;
+.field private counter:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 6
+    iget v0, v3, Ltest/TextMeasureOverride;->counter:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v3, Ltest/TextMeasureOverride;->counter:I
+    const/16 v0, 37
+    const/16 v1, 19
+    invoke-virtual {v3, v0, v1}, Landroid/view/View;->setMeasuredDimension(II)V
+    return-void
+.end method
+.method public calls()I
+.registers 2
+    iget v0, v1, Ltest/TextMeasureOverride;->counter:I
+    return v0
+.end method
+
+.class public Ltest/TextMeasureSuper;
+.super Landroid/widget/TextView;
+.field private counter:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 6
+    iget v0, v3, Ltest/TextMeasureSuper;->counter:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v3, Ltest/TextMeasureSuper;->counter:I
+    invoke-super {v3, v4, v5}, Landroid/widget/TextView;->onMeasure(II)V
+    return-void
+.end method
+.method public calls()I
+.registers 2
+    iget v0, v1, Ltest/TextMeasureSuper;->counter:I
+    return v0
+.end method
+
+.class public Ltest/TextMeasureFails;
+.super Landroid/widget/TextView;
+.field private counter:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/TextView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 6
+    iget v0, v3, Ltest/TextMeasureFails;->counter:I
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v3, Ltest/TextMeasureFails;->counter:I
+    invoke-super {v3, v4, v5}, Landroid/widget/TextView;->onMeasure(II)V
+    const/4 v0, 0
+    throw v0
+    return-void
+.end method
+.method public calls()I
+.registers 2
+    iget v0, v1, Ltest/TextMeasureFails;->counter:I
+    return v0
+.end method

@@ -237,6 +237,38 @@ LeafMeasureResult MeasureImageLeaf(const ImageLeafInput& input, MeasureSpec widt
 }
 
 LeafMeasureResult MeasureTextLeaf(const TextLeafInput& input, MeasureSpec width, MeasureSpec height) {
+    if (input.java_text_view) {
+        const auto& c = input.compound;
+        const auto raw = MeasureFixedText(input.text, input.size_px, input.style, input.fallback_font.get());
+        const auto horizontal = input.padding.left + input.padding.right + c[0].width + c[2].width;
+        const auto vertical = input.padding.top + input.padding.bottom + c[1].height + c[3].height;
+        const auto desired_width =
+            std::max(input.minimum.width, std::max({raw.width, c[1].width, c[3].width}) + horizontal);
+        const auto actual_width = Constrain(desired_width, width);
+        auto text = input.single_line
+                        ? input.text
+                        : WrapFixedText(input.text, input.size_px, input.style,
+                                        std::max(1, actual_width - horizontal + raw.scale),
+                                        std::numeric_limits<std::int32_t>::max(), input.fallback_font.get());
+        // maxLines caps visible layout height, including explicit newlines.
+        std::int32_t lines = 1;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == u'\n' && ++lines > input.max_lines) {
+                text.resize(i);
+                break;
+            }
+        }
+        const auto metrics = MeasureFixedText(text, input.size_px, input.style, input.fallback_font.get());
+        LeafMeasureResult result;
+        result.desired = {desired_width, std::max(input.minimum.height,
+                                                  std::max({metrics.height, c[0].height, c[2].height}) + vertical)};
+        result.constrained = {actual_width, Constrain(result.desired.height, height)};
+        // TextView.java:6278-6454 uses min, not resolveSizeAndState.
+        result.baseline = input.padding.top + c[1].height + 7 * metrics.scale;
+        result.line_plan = std::make_shared<const TextLinePlan>(
+            TextLinePlan{text, metrics, input.size_px, input.style, input.fallback_font});
+        return result;
+    }
     auto result = MeasureImageLeaf({input.intrinsic, input.padding, input.minimum}, width, height);
     auto measured_text = input.text.empty() ? std::u16string(u"M") : input.text;
     const auto& c = input.compound;

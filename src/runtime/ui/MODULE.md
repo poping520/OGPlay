@@ -12,6 +12,19 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 
 ## 公共 API
 
+- `ui_leaf_measure.h` 的 `MeasureTextLeaf` / `MeasureImageLeaf` 只收 const 值输入与两轴
+  MeasureSpec；不依赖 tree/node/VM/children，不写 geometry。Size/Insets/MeasureSpec 与固定
+  字体测量声明归此独立头。输出 desired/constrained 与每轴 AT_MOST TOO_SMALL 位；这是
+  有界服务状态，不声称完整 TextView state。baseline 明确为缺席，尚不支持 Android baseline。
+  intrinsic+padding/minimum 可独立供 image/video 使用；不提供 adjustViewBounds/比例算法。
+- 文本输入包含固定字号/四样式、固定 fallback、行数策略及四槽 compound 尺寸。默认按
+  spec 扣 padding 与左右 compound 生成 immutable `TextLinePlan`，记录实际行文本、字体及
+  metrics；空串 desired 仍留 M cell，plan 不绘制占位字。DrawText 携带 plan 时只消费其
+  文本/字体/metrics，不重新换行。plan 的生命周期独立于输入和树。
+  Legacy 显式选择 `LegacyPadding` 保留原测量公式，仍由原遍历写 node.measured；现有
+  renderer 继续按最终 text band 换行，compound/spec/最终宽度导致的历史差异留待 VD-10a-4，
+  不将 Legacy 路径称为统一 line-plan；实验 JavaTraversal 支持面不变。
+
 - `UiTree`：每 generation 建立唯一 synthetic `ContentRoot`；创建、按稳定顺序 attach、
   detach/destroy node，并以 android id 查找已接入 content root 的 node。
 - `UiNode`：在宿主分区拥有、在外部窗口分区投影 parent/children、class、android id（NO_ID=-1）、visibility、
@@ -90,7 +103,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   输出 `fully_transparent` 只在所有实际绘制后的 alpha 均为零时为 true，并随缓存重建；
   其他 producer 创建的帧默认 false，消费者不得从命令数量猜测透明性。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
-  内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，两者共用按词换行结果；空文本
+  内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，共用固定字体算法；空文本
   控件仍保留一行字体高度。wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
   resolved intrinsic 存于 UiNode（left/top/right/bottom）；measure 的内容宽为

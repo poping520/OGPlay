@@ -59,6 +59,7 @@
 - [ADR-0158 · 固定 ROM 成员级行为组合](#adr-0158)
 - [ADR-0159 · 组合 ROM 普通方法的开放世界虚派闭包](#adr-0159)
 - [ADR-0160 · 有界生成式主题投影与属性构造 native 接缝](#adr-0160)
+- [ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界](#adr-0161)
 
 <a id="adr-0017"></a>
 
@@ -2015,3 +2016,65 @@ include/merge 执行原 ROM，Window XML 通过未发布父容器隔离失败后
 LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无 native，
 其他受审 ABI 逐签名/flags 不变。构建器的原生产审计、成员调用及 clinit 规则不变。
 这不授权新 native、完整控件栈或未实现成员伪成功。
+
+
+<a id="adr-0161"></a>
+
+## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
+
+- 状态：Accepted（编排方按用户授权于 2026-10-25 决定）
+- 日期：2026-10-25
+- 依据：[VD-10 分析](../../.local/analysis/vd-10/REPORT.md) §2、§3、§7、§8；
+  [编排方方案决定](../../.local/analysis/view-dir/DECISION.md)“VD-10 方案决定”。
+- Supersedes：仅精确修订 [ADR-0160](#adr-0160) 决定5，见决定2。
+- 实施：[DVM-291 / VD-10a-1](../tasks/dexvm/DVM-291.md)。
+
+### 决定
+
+1. 叶构造、onMeasure 与 clinit 所需的有状态 Paint 测量采用逐签名受审 adapter，
+   不迁完整 ROM TextView/Paint/TextPaint 栈。保留 ADR-0158 的完整 ROM shape、原 clinit
+   owner 与成员来源账；clinit 实际调用的 Paint 默认状态、antiAlias、measureText 必须真实
+   执行，不能因结果未用而跳过。文本语义由宿主服务单一拥有；纯叶测量只收不可变值，
+   返回 desired/constrained、明确 state/baseline 与不可变 line-plan，不接树或 VM、不写几何。
+   Java adapter 真实调用 setMeasuredDimension，Java 独占 measure/cache/layout/bounds/flags；
+   自定义覆写正常虚派，invoke-super 才进入 adapter，同次遍历允许 ROM 补测。
+2. 对 ADR-0160 决定5作精确修订：仅允许叶 src/compound 消费所需的有界 APK
+   BitmapDrawable、ColorDrawable 与单态 ColorStateList（ROM valueOf）。仍拒绝 selector、
+   stateful colors、资源 NinePatchDrawable、系统默认皮肤、scrollbar Drawable、光学布局、
+   动画及任意 Drawable/custom draw；Legacy ninepatch 像素支持不等于 Java 对象支持。
+   值桥必须闭合登记 styleable/主题消费集、有类型文件/reference 六槽解析、ROM ID/cookie/
+   density/config、对象身份/GC/backing 与失败原子性；未知或不支持值不得降为 @null。
+   background/foreground/divider 非空值仅在其完整消费契约另行验收后开放。
+3. 默认 Button/EditText 主题不要求立即可用；按真实优先级解析并对不支持请求明确失败，
+   允许应用显式受支持主题覆盖。不得偷改 defStyleAttr、删默认请求或复制 Legacy 固定皮肤。
+   完整系统皮肤/selector 如有需求，先开独立资源与状态对象能力包。
+4. Java mScrollX/Y 是唯一位置事实；宿主只提交输入 delta，由 Java scrollTo/clamp。
+   VD-02 投影扩 XY，同 epoch 统一 screen/clip/raster/hit，不重写 child local geometry。
+   保留有界拖动/CANCEL；完整 dispatchTouchEvent、fling、EdgeEffect 与 scrollbar 不随之开放。
+5. Surface fixed-size 不解除 managed buffer 限制；受审转换 holder 0 与 ROM −1 的 layout
+   sentinel，不匹配正 fixed-size 继续失败。managed viewport、guest bounds、holder frame/
+   真实 buffer 与呈现超采样分开记账；不得由 View bounds 推造 buffer，不启 WMS/updateWindow。
+6. Video 保持现有播放协议与 intrinsic 叶测量的显式 adapter，不给 ROM 比例算法实现信用。
+   源320×240、双 EXACT200×100：旧服务200×100，ROM133×100，差异单列；改变比例须另议。
+   metadata 仅在 owner 校验 generation 后失效布局，工作线程不写 geometry 或发布中快照。
+7. ProgressBar 进度实现明确延后，不能将旧 noop/空白光栅带入实验成功面。EditText 独立
+   WU，保留真实编辑事务、焦点/监听与输入；完整 Editor/IME/StaticLayout、shaping/bidi 等
+   长尾另开能力包。未支持成员一律按 ADR-0147 记账并明确失败。
+8. Dialog 每 modal 独立 HostLayout 树，与 guest 窗口通过共同 presentation epoch 合成。
+   快照包含 guest window epoch refs、host modal revision、metrics revision 与 modal stack，
+   render/input 原子使用同一快照；纯 modal 变更不推进 guest epoch。宿主按钮焦点独立，
+   guest 恢复使用身份/generation。禁止整棵 guest 树 LayoutUiTree 或切换 geometry owner；
+   构建失败保留旧快照，不执行 guest 布局回调。
+
+### 顺序与验收边界
+
+10a-1 纯叶接口 → 10a-2 值消费边界 / 10a-P clinit Paint 前置 →
+10a-3 Text 构造形状 → 10a-4 Text 测量/光栅 → 10a-5 Image / 10a-6 Button →
+10a-7 EditText → 10b-1 两 Scroll 构造 → 10b-2 纵向容器 → 10b-3 横向容器 →
+10b-4 Surface → 10b-5 Video → 10c-1 宿主树隔离 → 10c-2 发布/输入合成 → VD-11。
+10c-1 可先独立开发，发布整合依赖前序边界。每 WU 单独验收，不因本 ADR 扩大当前成功面。
+
+10a-1 保持 Legacy 逐值结果；compound 可用宽度修正如改变旧结果，则保留旧公式，
+新服务提供统一 line-plan，差异列入 DVM-291 留待10a-4。Java 叶构造/adapter 本轮不开放。
+支持路径动态未实现命中须为0；严格 direct/static/super/精确接收者、本类 failure 字段与
+clinit 审计不变。生产默认继续 Legacy，不引入 Binder/WMS/system_server 或完整 Android。

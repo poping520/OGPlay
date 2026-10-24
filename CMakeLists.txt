@@ -303,6 +303,7 @@ ogplay_add_module(ogplay_runtime Runtime
     src/runtime/database/database_runtime.cpp
     src/runtime/database/sqlite_vfs.cpp
     src/runtime/debug/stall_diagnostics.cpp
+    src/runtime/ui/ui_leaf_measure.cpp
     src/runtime/ui/ui_layout.cpp
     src/runtime/ui/ui_renderer.cpp
     src/runtime/ui/ui_fallback_font.cpp

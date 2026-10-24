@@ -600,3 +600,96 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     CHECK(Pixel(renderer.Render(live, bitmaps, {6, 4}), 0, 1) == kRed);
     CHECK(renderer.BuildCount() == 2);
 }
+
+TEST_CASE("DVM-291 pure leaf specs intrinsic padding minimum and explicit state") {
+    const ui::ImageLeafInput image{{20, 10}, {2, 3, 4, 5}, {30, 12}};
+    for (const auto mode : {ui::MeasureMode::Exactly, ui::MeasureMode::AtMost, ui::MeasureMode::Unspecified}) {
+        const auto measured = ui::MeasureImageLeaf(image, {mode, 25}, {mode, 16});
+        CHECK(measured.desired == ui::Size{30, 18});
+        CHECK(measured.constrained == (mode == ui::MeasureMode::Unspecified ? ui::Size{30, 18} : ui::Size{25, 16}));
+        CHECK(measured.width_state == (mode == ui::MeasureMode::AtMost ? 0x01000000U : 0U));
+        CHECK(measured.height_state == measured.width_state);
+        CHECK_FALSE(measured.baseline.has_value());
+        CHECK_FALSE(measured.line_plan);
+    }
+    CHECK(ui::MeasureImageLeaf({{-1, -1}, {}, {4, 6}}, {}, {}).desired == ui::Size{4, 6});
+    ui::TextLeafInput text;
+    text.padding = {2, 3, 4, 5};
+    auto empty = ui::MeasureTextLeaf(text, {}, {});
+    CHECK(empty.desired == ui::Size{11, 15});
+    REQUIRE(empty.line_plan);
+    CHECK(empty.line_plan->text.empty());
+    CHECK(empty.line_plan->metrics == ui::FixedTextMetrics{0, 0, 1});
+    text.minimum = {30, 20};
+    for (const auto mode : {ui::MeasureMode::Exactly, ui::MeasureMode::AtMost, ui::MeasureMode::Unspecified}) {
+        const auto result = ui::MeasureTextLeaf(text, {mode, 12}, {mode, 10});
+        CHECK(result.desired == ui::Size{30, 20});
+        CHECK(result.constrained == (mode == ui::MeasureMode::Unspecified ? ui::Size{30, 20} : ui::Size{12, 10}));
+        CHECK(result.width_state == (mode == ui::MeasureMode::AtMost ? 0x01000000U : 0U));
+        CHECK_FALSE(result.baseline);
+    }
+    text.text = u"HI\nM";
+    text.minimum = {};
+    text.compound = {{{3, 20}, {25, 4}, {5, 21}, {30, 6}}};
+    const auto compound = ui::MeasureTextLeaf(text, {}, {});
+    CHECK(compound.desired == ui::Size{44, 39});
+    CHECK(compound.line_plan->text == u"HI\nM");
+    CHECK(compound.line_plan->metrics == ui::FixedTextMetrics{11, 15, 1});
+    text.text.clear();
+    CHECK(ui::MeasureTextLeaf(text, {}, {}).desired == ui::Size{44, 39});
+    text.text = u"\u0301";
+    CHECK_THROWS(static_cast<void>(ui::MeasureTextLeaf(text, {}, {})));
+    text.text = u"M";
+    text.size_px = 0;
+    CHECK_THROWS(static_cast<void>(ui::MeasureTextLeaf(text, {}, {})));
+}
+
+TEST_CASE("DVM-291 compound line plan preserves Legacy formula and drives raster") {
+    ui::TextLeafInput text;
+    text.text = u"HI HI";
+    text.max_lines = 3;
+    text.padding = {1, 2, 1, 2};
+    text.compound[0] = {6, 7};
+    text.compound[2] = {6, 7};
+    const ui::MeasureSpec width{ui::MeasureMode::AtMost, 32};
+    const auto unified = ui::MeasureTextLeaf(text, width, {});
+    CHECK(unified.line_plan->text == u"HI\nHI");
+    CHECK(unified.desired == ui::Size{25, 19});
+    CHECK(unified.line_plan->metrics.height == 15);
+    text.wrap_width = ui::TextWrapWidth::LegacyPadding;
+    const auto legacy = ui::MeasureTextLeaf(text, width, {});
+    CHECK(legacy.line_plan->text == u"HI HI");
+    CHECK(legacy.desired == ui::Size{43, 11});
+    CHECK(legacy.constrained == ui::Size{32, 11});
+    // The original caller still commits its original measured dimensions.
+    ui::UiTree tree;
+    const auto id = tree.CreateNode(ui::UiClass::TextView);
+    auto& node = *tree.Get(id);
+    node.text = text.text;
+    node.text_size_px = text.size_px;
+    node.max_lines = text.max_lines;
+    node.padding = text.padding;
+    node.compound_drawables[0].width = 6;
+    node.compound_drawables[0].height = 7;
+    node.compound_drawables[2].width = 6;
+    node.compound_drawables[2].height = 7;
+    tree.Attach(tree.Root(), id);
+    ui::LayoutUiTree(tree, {32, 40});
+    CHECK(node.measured == legacy.constrained);
+    ui::DrawText planned;
+    planned.rgba = 0xffffffffU;
+    planned.text = u"INVALID\u0301";  // plan exclusively supplies raster inputs
+    planned.size_px = 0;
+    planned.line_plan = unified.line_plan;
+    ui::DrawText explicit_lines;
+    explicit_lines.rgba = planned.rgba;
+    explicit_lines.text = u"HI\nHI";
+    const auto rendered = ui::RasterizeUiOverlay({planned}, {32, 24});
+    const auto expected = ui::RasterizeUiOverlay({explicit_lines}, {32, 24});
+    CHECK(rendered.rgba8 == expected.rgba8);
+    CHECK(rendered.rgba8[(8U * 32U) * 4U + 3U] == 255);
+    CHECK(rendered.rgba8[(7U * 32U) * 4U + 3U] == 0);
+    // A later value mutation cannot alter the frozen plan.
+    text.text = u"M";
+    CHECK(unified.line_plan->text == u"HI\nHI");
+}

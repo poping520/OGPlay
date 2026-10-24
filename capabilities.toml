@@ -101,7 +101,7 @@ note = "LUI-11 实现 horizontal/vertical LinearLayout 的 padding/margin/finite
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp"
-note = "LUI-12、DVM-121/148/149：TextView/Button 的文字、颜色、字号、gravity 与 compound drawable 收敛到 UiNode，内置 5x7 ASCII 字体，measure/raster 共用换行；支持 legacy 默认样式与主题继承、NinePatch、EditText 编辑事务及 ScrollView slop/CANCEL。完整字体排版、状态色列表与 Dialog 主题不在范围内。"
+note = "LUI-12、DVM-121/148/149：TextView/Button 的文字、颜色、字号、gravity 与 compound drawable 收敛到 UiNode，内置 5x7 ASCII 字体，纯叶服务提供不可变 line-plan；Legacy compound 换行差异保留待迁移；支持 legacy 默认样式与主题继承、NinePatch、EditText 编辑事务及 ScrollView slop/CANCEL。完整字体排版、状态色列表与 Dialog 主题不在范围内。"
 
 [runtime.ui_relative_layout]
 status = "complete"

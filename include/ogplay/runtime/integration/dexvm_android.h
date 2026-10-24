@@ -828,6 +828,17 @@ struct DexVmAndroidContext final {
   // and is traced by GC; this is not a host-side Context table.
   std::optional<dexvm::IntrinsicFieldHandle> view_context_field;
   std::optional<std::array<dexvm::IntrinsicFieldHandle, 3>> view_compatibility_fields;
+
+  struct ViewJavaLayoutFields final {
+      dexvm::IntrinsicFieldHandle resources;
+      std::array<dexvm::IntrinsicFieldHandle, 4> padding;
+      std::array<dexvm::IntrinsicFieldHandle, 2> minimum;
+      // left, right, bottom, start, end, initial left, initial right.
+      std::array<dexvm::IntrinsicFieldHandle, 7> user_padding;
+      std::array<dexvm::IntrinsicFieldHandle, 2> padding_defined;
+  };
+
+  std::optional<ViewJavaLayoutFields> view_java_layout_fields;
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
 };
@@ -870,6 +881,16 @@ ExpandUiIncludes(std::span<const loader::BinaryXmlElement> elements,
                  std::optional<std::uint32_t> root_layout_id = std::nullopt);
 void AssignViewContext(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                        dexvm::VmObjectRef view, dexvm::VmObjectRef owner);
+void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view);
+[[nodiscard]] ui::Insets ReadAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                dexvm::VmObjectRef view);
+[[nodiscard]] ui::Size ReadAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                              dexvm::VmObjectRef view);
+void WriteAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                             ui::Insets padding, std::optional<bool> explicit_padding = true);
+void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                             ui::Size minimum);
+void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context);
 [[nodiscard]] dexvm::VmObjectRef
 InflateUiElements(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                   std::span<const loader::BinaryXmlElement> elements,

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -108,6 +109,138 @@ TEST_CASE("DVM-277 View constructor initializes ROM SDK compatibility flags once
             CHECK(flag("sUseBrokenMakeMeasureSpec") == (sdk <= 17U));
             CHECK(flag("sIgnoreMeasureCache") == (sdk < 19U));
         }
+    }
+}
+
+TEST_CASE("DVM-277B Java View layout fields feed ROM getters and host projections") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        VmObjectRef supplied_resources;
+        int resource_calls = 0;
+        auto owner_class = IntrinsicClassBuilder::Class("Ltest/ViewResourcesOwner;", "Landroid/content/Context;");
+        owner_class.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        owner_class.OverrideMethod("getResources", "()Landroid/content/res/Resources;", [&](IntrinsicContext&) {
+            ++resource_calls;
+            return VmValue::Ref(supplied_resources);
+        });
+        AndroidValueVm f(backend, {std::move(owner_class).Build()}, false, "view_java_layout.dex");
+        const auto base = f.New("Landroid/content/Context;");
+        supplied_resources = f.On(base, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto expected_resources = supplied_resources;
+        const auto owner = f.New("Ltest/ViewResourcesOwner;");
+        // The production adapter must propagate a genuinely unattached
+        // ContextWrapper failure; only valid UI fixtures attach a test base.
+        const auto empty_wrapper = f.New("Landroid/content/ContextWrapper;");
+        const auto uninitialized_view = f.vm.NewIntrinsicInstance("Landroid/view/View;");
+        const auto view_type = f.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto constructor = f.linker.FindDirectMethod(view_type, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor.has_value());
+        const auto failed =
+            f.vm.Call(*constructor, std::array{VmValue::Ref(uninitialized_view), VmValue::Ref(empty_wrapper)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto retried =
+            f.vm.Call(*constructor, std::array{VmValue::Ref(uninitialized_view), VmValue::Ref(empty_wrapper)});
+        REQUIRE(retried.exception.IsValid());
+        CHECK(f.linker.Class(retried.exception_class).descriptor == "Ljava/lang/NullPointerException;");
+        const auto compatibility = f.linker.FindFieldRecursive(view_type, "sCompatibilityDone", "Z");
+        REQUIRE(compatibility.has_value());
+        CHECK(f.linker.Class(view_type).static_storage[f.linker.Field(*compatibility).slot] == 0);
+        const auto view = f.New("Ltest/ViewJavaLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{view, owner});
+        CHECK(resource_calls == 1);
+        supplied_resources =
+            f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
+        CHECK(f.On(view, "getResources", "()Landroid/content/res/Resources;").ref == expected_resources);
+        CHECK(resource_calls == 1);
+        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 0);
+        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 0);
+        const auto type = f.linker.ResolveDescriptor("Landroid/view/View;");
+        for (const auto name : {"getPaddingTop", "getPaddingBottom", "getMinimumWidth", "getMinimumHeight"}) {
+            const auto slot = f.linker.FindVtableIndex(type, name, "()I");
+            REQUIRE(slot.has_value());
+            CHECK(f.linker.Method(f.linker.Class(type).vtable[*slot]).kind == MethodKind::interpreted);
+        }
+        const auto resources_slot = f.linker.FindVtableIndex(type, "getResources", "()Landroid/content/res/Resources;");
+        REQUIRE(resources_slot.has_value());
+        CHECK(f.linker.Method(f.linker.Class(type).vtable[*resources_slot]).kind == MethodKind::interpreted);
+        const auto int_field = [&](const char* name, const char* descriptor = "I") {
+            const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
+            REQUIRE(field.has_value());
+            CHECK_FALSE(f.linker.Field(*field).is_unimplemented);
+            return static_cast<std::int32_t>(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits);
+        };
+        CHECK(int_field("mUserPaddingStart") == std::numeric_limits<std::int32_t>::min());
+        CHECK(int_field("mUserPaddingEnd") == std::numeric_limits<std::int32_t>::min());
+        CHECK(int_field("mLeftPaddingDefined", "Z") == 0);
+        f.On(view, "setPadding", "(IIII)V", {VmValue::Int(3), VmValue::Int(4), VmValue::Int(5), VmValue::Int(6)});
+        const std::array names{"Left", "Top", "Right", "Bottom"};
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            CHECK(f.On(view, (std::string("padding") + names[i]).c_str(), "()I").AsInt() == static_cast<int>(i + 3));
+            CHECK(f.On(view, (std::string("getPadding") + names[i]).c_str(), "()I").AsInt() == static_cast<int>(i + 3));
+        }
+        CHECK(int_field("mUserPaddingLeft") == 3);
+        CHECK(int_field("mUserPaddingRightInitial") == 5);
+        CHECK(int_field("mUserPaddingBottom") == 6);
+        CHECK(int_field("mLeftPaddingDefined", "Z") == 1);
+        f.On(view, "setMinimumWidth", "(I)V", {VmValue::Int(31)});
+        f.On(view, "setMinimumHeight", "(I)V", {VmValue::Int(19)});
+        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 31);
+        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 19);
+        CHECK(f.Static("Ltest/ViewJavaLayout;", "requestCount", "()I").AsInt() == 3);
+        const auto node = FindViewUiNode(*f.context, view.Value());
+        REQUIRE(node.has_value());
+        const auto params =
+            f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(-2), VmValue::Int(-2)});
+        f.On(view, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(params)});
+        f.context->ui_tree.Attach(f.context->ui_tree.Root(), *node);
+        const auto resolve = [&] {
+            static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                       AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 80}));
+        };
+        resolve();
+        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{31, 19}));
+        CHECK_FALSE(f.context->ui_tree.Get(f.context->ui_tree.Root())->layout_dirty);
+        f.On(view, "storePadding", "(IIII)V", {VmValue::Int(40), VmValue::Int(11), VmValue::Int(9), VmValue::Int(12)});
+        CHECK(f.On(view, "getPaddingLeft", "()I").AsInt() == 40);
+        // A direct guest field store must invalidate an otherwise clean input projection.
+        resolve();
+        CHECK(f.context->ui_tree.Get(*node)->padding == (ui::Insets{40, 11, 9, 12}));
+        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{49, 23}));
+        static_cast<void>(f.vm.CollectGarbage("dvm277b-java-layout"));
+        CHECK(f.On(view, "getResources", "()Landroid/content/res/Resources;").ref == expected_resources);
+    }
+}
+
+TEST_CASE("DVM-277B XML padding and minimum are Java-owned layout inputs") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto owner = f.New("Landroid/content/Context;");
+        const auto attribute = [](const char* name, const std::uint8_t type, const std::uint32_t value) {
+            ogplay::loader::BinaryXmlAttribute result;
+            result.namespace_uri = "http://schemas.android.com/apk/res/android";
+            result.name = name;
+            result.value_type = type;
+            result.data = value;
+            return result;
+        };
+        std::vector<ogplay::loader::BinaryXmlElement> xml(1);
+        xml[0].name = "FrameLayout";
+        xml[0].attributes = {
+            attribute("layout_width", 0x10, 0xfffffffeU), attribute("layout_height", 0x10, 0xfffffffeU),
+            attribute("paddingLeft", 5, 3U << 8U),        attribute("paddingTop", 5, 4U << 8U),
+            attribute("paddingRight", 5, 5U << 8U),       attribute("paddingBottom", 5, 6U << 8U),
+            attribute("minWidth", 5, 31U << 8U),          attribute("minHeight", 5, 19U << 8U)};
+        const auto view = InflateUiElements(f.vm, *f.context, xml, owner);
+        const auto node = FindViewUiNode(*f.context, view.Value());
+        REQUIRE(node.has_value());
+        CHECK(f.On(view, "getPaddingLeft", "()I").AsInt() == 3);
+        CHECK(f.On(view, "getPaddingTop", "()I").AsInt() == 4);
+        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 31);
+        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 19);
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                   AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 80}));
+        CHECK(f.context->ui_tree.Get(*node)->padding == (ui::Insets{3, 4, 5, 6}));
+        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{31, 19}));
     }
 }
 
@@ -551,6 +684,7 @@ TEST_CASE("DVM-177 LinearLayout programmatic AttributeSet constructor") {
         AndroidValueVm fixture(backend, {std::move(subclass).Build()});
         const auto context = fixture.New("Landroid/content/Context;");
         const auto activity = fixture.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(fixture.vm, activity);
         const auto two_arg = fixture.linker.FindDirectMethod(
             fixture.linker.ResolveDescriptor("Landroid/widget/LinearLayout;"),
             "<init>", kTwoArg);

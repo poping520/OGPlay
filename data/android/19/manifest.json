@@ -88,8 +88,8 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 6151584,
-    "sha256": "0234ac808ed0da0bc60d06a156a9edf36b0ba0861c03b50c25d9dfec68eccb27",
+    "size": 6153572,
+    "sha256": "909a702b3ec2a483c473778c3a405d43917b87100a5d7b0709fc4bf61c1acbe8",
     "dex_entry": "classes.dex",
     "dex_size": 5957980,
     "dex_sha256": "f0bf35f2fb3fe4e0a2dd81f1c7c1fe0c143199ae7177b3d8e47588c9daee4763",
@@ -99,7 +99,7 @@
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "d1e65c7b4187cd67e3a3b8cf1bdad69f278342c597f995ecaa35944a4d528efb",
+      "manifest_sha256": "bc54a5a6f754098ab7e0daaa76eb2d84476bfafe78bec785dcb5121ae6c138e6",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "5b406379540ef8800cf968a54230458434a753f59f8b594b1d0d9d592efa133e"
     }

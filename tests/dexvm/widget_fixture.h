@@ -92,7 +92,8 @@ struct ClickVm final {
     VmObjectRef skip_button;
     VmObjectRef other_button;
 
-    explicit ClickVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch);
+    explicit ClickVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                     bool attach_activity = true);
     VmValue CallOn(const VmObjectRef receiver, const std::string& name,
                    const std::string& descriptor,
                    std::vector<VmValue> arguments = {});

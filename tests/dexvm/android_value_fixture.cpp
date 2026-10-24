@@ -77,6 +77,11 @@ VmObjectRef AndroidValueVm::New(const char* descriptor,
     const auto initialized = vm.EnsureClassInitialized(klass);
     REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
     const auto object = vm.NewIntrinsicInstance(descriptor);
+    const auto roots = vm.ProtectReferences(std::array{object});
+    if (std::string_view(constructor).starts_with("(Landroid/content/Context;") && !arguments.empty() &&
+        linker.IsAssignable(linker.ResolveDescriptor("Landroid/view/View;"), klass)) {
+        ogplay::test::AttachViewTestContext(vm, arguments.front().ref);
+    }
     const auto method = linker.FindDirectMethod(klass, "<init>", constructor);
     REQUIRE(method.has_value());
     arguments.insert(arguments.begin(), VmValue::Ref(object));

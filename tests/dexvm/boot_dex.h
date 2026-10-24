@@ -41,6 +41,9 @@ inline void BindBootDexArchive(runtime::DexVmAndroidContext& context) {
 // declarations remain explicit overrides; callers install Core first.
 void BindBootDexPlatformNatives(runtime::dexvm::DexClassLinker& linker);
 void RegisterBootDexSkeleton(runtime::dexvm::DexClassLinker& linker);
+// View constructors now call Context.getResources. UI fixtures must supply
+// attached wrappers, just as the production Activity driver does.
+void AttachViewTestContext(runtime::dexvm::Interpreter& vm, runtime::dexvm::VmObjectRef owner);
 inline void RegisterBootDex(runtime::dexvm::DexClassLinker& linker) {
     BindBootDexPlatformNatives(linker);
     const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar";

@@ -834,6 +834,7 @@ dx::IntrinsicHandler ViewInitHandler(const Context& context) {
         InitializeDefaultViewBackground(call.vm, *context, call.receiver, node);
         AssignViewContext(call.vm, *context, call.receiver,
                           call.arguments[0].ref);
+        InitializeAndroidViewJavaLayout(call.vm, *context, call.receiver);
         return dx::VmValue::Void();
     });
 }

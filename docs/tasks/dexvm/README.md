@@ -306,4 +306,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 
 - [DVM-253 · API19 骨架生成与 Java 懒合并（WU2b-1）](DVM-253.md)
 
-- [DVM-277 · View ROM 形状与首批 Java 状态（VD-J1，A 段）](DVM-277.md)
+- [DVM-277 · View ROM 形状与首批 Java 状态（VD-J1）](DVM-277.md)

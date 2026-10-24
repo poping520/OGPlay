@@ -242,6 +242,7 @@ TEST_CASE("SurfaceView null-attribute constructors initialize DEX subclasses and
         const auto type = vm.linker.ResolveDescriptor(subclass);
         const auto context = vm.interpreter.NewIntrinsicInstance(
             "Landroid/app/Application;");
+        ogplay::test::AttachViewTestContext(vm.interpreter, context);
         const auto construct = [&](const VmObjectRef view,
                                    const char* signature,
                                    std::vector<VmValue> arguments) {

@@ -10,6 +10,7 @@
 #include <tuple>
 #include <bit>
 #include <cmath>
+#include <limits>
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 
 namespace ogplay::runtime {
@@ -65,12 +66,103 @@ void RefreshAndroidImageDrawables(DexVmAndroidContext& context) {
 void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                        const dexvm::VmObjectRef view,
                        const dexvm::VmObjectRef owner) {
-    if (!context.view_context_field.has_value() ||
-        !context.view_context_field->IsValid()) {
+    if (!context.view_context_field.has_value() || !context.view_context_field->IsValid() ||
+        !context.view_java_layout_fields) {
         throw std::runtime_error("View mContext field is unbound");
     }
     dexvm::IntrinsicContext call{vm, view, {}};
     dexvm::IntrinsicCall(call).SetRef(*context.view_context_field, view, owner);
+}
+
+ui::Insets ReadAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view) {
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto& tokens = context.view_java_layout_fields->padding;
+    return {fields.GetInt(tokens[0]), fields.GetInt(tokens[1]), fields.GetInt(tokens[2]), fields.GetInt(tokens[3])};
+}
+
+ui::Size ReadAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view) {
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto& tokens = context.view_java_layout_fields->minimum;
+    return {fields.GetInt(tokens[0]), fields.GetInt(tokens[1])};
+}
+
+namespace {
+void ProjectViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view) {
+    const auto node = FindViewUiNode(context, view.Value());
+    if (!node) return;
+    const auto padding = ReadAndroidViewPadding(vm, context, view);
+    const auto minimum = ReadAndroidViewMinimum(vm, context, view);
+    auto* state = context.ui_tree.Get(*node);
+    if (state->padding == padding && state->minimum == minimum) return;
+    state->padding = padding;
+    state->minimum = minimum;
+    context.ui_tree.MarkLayoutDirty(*node);
+}
+}  // namespace
+
+void WriteAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
+                             const ui::Insets padding, const std::optional<bool> explicit_padding) {
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto& tokens = *context.view_java_layout_fields;
+    const std::array values{padding.left, padding.top, padding.right, padding.bottom};
+    for (std::size_t i = 0; i < values.size(); ++i)
+        fields.SetInt(tokens.padding[i], values[i]);
+    const std::array user{padding.left,
+                          padding.right,
+                          padding.bottom,
+                          std::numeric_limits<std::int32_t>::min(),
+                          std::numeric_limits<std::int32_t>::min(),
+                          padding.left,
+                          padding.right};
+    for (std::size_t i = 0; i < user.size(); ++i)
+        fields.SetInt(tokens.user_padding[i], user[i]);
+    if (explicit_padding)
+        for (const auto token : tokens.padding_defined)
+            fields.SetInt(token, *explicit_padding ? 1 : 0);
+    ProjectViewLayoutInputs(vm, context, view);
+}
+
+void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
+                             const ui::Size minimum) {
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto& tokens = context.view_java_layout_fields->minimum;
+    fields.SetInt(tokens[0], minimum.width);
+    fields.SetInt(tokens[1], minimum.height);
+    ProjectViewLayoutInputs(vm, context, view);
+}
+
+void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                     const dexvm::VmObjectRef view) {
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    // View.java:3438. Context prebinding is separate from construction:
+    // a failed constructor must never suppress a later resource exception.
+    const auto owner = fields.GetRef(*context.view_context_field);
+    const auto roots = vm.ProtectReferences(std::array{view, owner});
+    const auto resources =
+        owner.IsValid()
+            ? android_intrinsics::CallAndroidMethod(vm, owner, "getResources", "()Landroid/content/res/Resources;").ref
+            : dexvm::VmObjectRef{};
+    fields.SetRef(context.view_java_layout_fields->resources, resources);
+    const auto& tokens = *context.view_java_layout_fields;
+    for (const auto token : tokens.padding)
+        fields.SetInt(token, 0);
+    for (const auto token : tokens.minimum)
+        fields.SetInt(token, 0);
+    for (const auto token : tokens.user_padding)
+        fields.SetInt(token, 0);
+    fields.SetInt(tokens.user_padding[3], std::numeric_limits<std::int32_t>::min());
+    fields.SetInt(tokens.user_padding[4], std::numeric_limits<std::int32_t>::min());
+    for (const auto token : tokens.padding_defined)
+        fields.SetInt(token, 0);
+    if (android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
+        // Preserve the existing bounded Widget.Button background projection.
+        WriteAndroidViewPadding(vm, context, view, {6, 4, 6, 4}, false);
+    }
     // API19 View.java:3453-3463. The sealed process target SDK is the
     // ApplicationInfo fact exposed by this bounded Context implementation.
     if (owner.IsValid() && context.view_compatibility_fields) {
@@ -82,6 +174,12 @@ void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
             fields.SetInt(handles[0], 1);
         }
     }
+    ProjectViewLayoutInputs(vm, context, view);
+}
+
+void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    for (const auto& [_, view] : context.ui_node_to_object)
+        ProjectViewLayoutInputs(vm, context, view);
 }
 
 void BindViewToUiNode(DexVmAndroidContext& context,
@@ -509,8 +607,7 @@ namespace {
     return static_cast<std::int32_t>(attribute.data);
 }
 
-void ApplyInflatedWidgetDefaults(const DexVmAndroidContext& context,
-                                 ui::UiNode& node) {
+void ApplyInflatedWidgetDefaults(dexvm::Interpreter& vm, DexVmAndroidContext& context, ui::UiNode& node) {
     const auto dp = [&context](const float value) {
         return static_cast<std::int32_t>(
             std::lround(value * context.ui_density));
@@ -522,13 +619,12 @@ void ApplyInflatedWidgetDefaults(const DexVmAndroidContext& context,
         node.text_size_px = sp(14.0F);
     } else if (node.kind == ui::UiClass::Button) {
         node.text_size_px = sp(14.0F);
-        node.minimum.width = dp(64.0F);
-        node.minimum.height = dp(48.0F);
+        WriteAndroidViewMinimum(vm, context, ViewObjectForUiNode(context, node.id), {dp(64.0F), dp(48.0F)});
         node.gravity = 0x11U;
         node.clickable = true;
     } else if (node.kind == ui::UiClass::EditText) {
         node.text_size_px = sp(18.0F);
-        node.minimum.height = dp(48.0F);
+        WriteAndroidViewMinimum(vm, context, ViewObjectForUiNode(context, node.id), {0, dp(48.0F)});
         node.gravity = 0x10U;
         node.clickable = true;
     }
@@ -623,9 +719,8 @@ void ApplyStyleAttribute(const DexVmAndroidContext& context,
     return value;
 }
 
-void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
-                    const loader::BinaryXmlAttribute& attribute,
-                    std::uint32_t& drawable_id) {
+void ApplyAttribute(dexvm::Interpreter& vm, DexVmAndroidContext& context, const ui::UiNodeId node_id,
+                    const loader::BinaryXmlAttribute& attribute, std::uint32_t& drawable_id) {
     if (attribute.namespace_uri.empty() && attribute.name == "style") return;
     if (attribute.namespace_uri != kAndroidNamespace) return;
     auto& node = *context.ui_tree.Get(node_id);
@@ -682,15 +777,31 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
         node.layout.weight = std::bit_cast<float>(attribute.data);
     } else if (name == "padding") {
         const auto value = DimensionValue(context, attribute);
-        node.padding = ui::Insets{value, value, value, value};
+        WriteAndroidViewPadding(vm, context, ViewObjectForUiNode(context, node_id), {value, value, value, value});
     } else if (name == "paddingLeft") {
-        node.padding.left = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto padding = ReadAndroidViewPadding(vm, context, view);
+        padding.left = DimensionValue(context, attribute);
+        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall(call).SetInt(context.view_java_layout_fields->padding_defined[0], 1);
     } else if (name == "paddingTop") {
-        node.padding.top = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto padding = ReadAndroidViewPadding(vm, context, view);
+        padding.top = DimensionValue(context, attribute);
+        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
     } else if (name == "paddingRight") {
-        node.padding.right = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto padding = ReadAndroidViewPadding(vm, context, view);
+        padding.right = DimensionValue(context, attribute);
+        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall(call).SetInt(context.view_java_layout_fields->padding_defined[1], 1);
     } else if (name == "paddingBottom") {
-        node.padding.bottom = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto padding = ReadAndroidViewPadding(vm, context, view);
+        padding.bottom = DimensionValue(context, attribute);
+        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
     } else if (name == "layout_margin") {
         const auto value = DimensionValue(context, attribute);
         node.layout.margin = ui::Insets{value, value, value, value};
@@ -703,9 +814,15 @@ void ApplyAttribute(DexVmAndroidContext& context, const ui::UiNodeId node_id,
     } else if (name == "layout_marginBottom") {
         node.layout.margin.bottom = DimensionValue(context, attribute);
     } else if (name == "minWidth") {
-        node.minimum.width = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto minimum = ReadAndroidViewMinimum(vm, context, view);
+        minimum.width = DimensionValue(context, attribute);
+        WriteAndroidViewMinimum(vm, context, view, minimum);
     } else if (name == "minHeight") {
-        node.minimum.height = DimensionValue(context, attribute);
+        const auto view = ViewObjectForUiNode(context, node_id);
+        auto minimum = ReadAndroidViewMinimum(vm, context, view);
+        minimum.height = DimensionValue(context, attribute);
+        WriteAndroidViewMinimum(vm, context, view, minimum);
     } else if (name == "text") {
         node.text = attribute.value_type == kTypeReference
                         ? ResolveUiString(context, attribute.data)
@@ -1301,7 +1418,7 @@ dexvm::VmObjectRef BuildUiElementsAt(
             if (initialized.exception.IsValid())
                 throw dexvm::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
                     initialized.exception_message, initialized.exception};
-            ApplyInflatedWidgetDefaults(context, *context.ui_tree.Get(node));
+            ApplyInflatedWidgetDefaults(vm, context, *context.ui_tree.Get(node));
             InitializeDefaultViewBackground(vm, context, view, node);
             std::uint32_t drawable_id = element.src;
             const loader::BinaryXmlAttribute* style = nullptr;
@@ -1339,9 +1456,9 @@ dexvm::VmObjectRef BuildUiElementsAt(
                         resolved.value_type = kTypeReference;
                         resolved.data = android_intrinsics::ResolveTextAppearanceAttribute(
                             vm, context, inflater_context, attribute.data);
-                        ApplyAttribute(context, node, resolved, drawable_id);
+                        ApplyAttribute(vm, context, node, resolved, drawable_id);
                     } else {
-                        ApplyAttribute(context, node, attribute, drawable_id);
+                        ApplyAttribute(vm, context, node, attribute, drawable_id);
                     }
                 } catch (const std::runtime_error&) {
                     if (auto* ledger = vm.Ledger(); ledger != nullptr) {

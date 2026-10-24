@@ -1594,6 +1594,40 @@ Decl Declare_android_view_View(const Context& context) {
         "mViewFlags", "I", dx::kAccNone);
     context->view_context_field = builder.BoundInstanceField(
         "mContext", "Landroid/content/Context;", dx::kAccProtected);
+    context->view_java_layout_fields = DexVmAndroidContext::ViewJavaLayoutFields{
+        builder.BoundInstanceField("mResources", "Landroid/content/res/Resources;", dx::kAccPrivate | dx::kAccFinal),
+        {builder.BoundInstanceField("mPaddingLeft", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mPaddingTop", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mPaddingRight", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mPaddingBottom", "I", dx::kAccProtected)},
+        {builder.BoundInstanceField("mMinWidth", "I", dx::kAccPrivate),
+         builder.BoundInstanceField("mMinHeight", "I", dx::kAccPrivate)},
+        {builder.BoundInstanceField("mUserPaddingLeft", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mUserPaddingRight", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mUserPaddingBottom", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mUserPaddingStart", "I", dx::kAccNone),
+         builder.BoundInstanceField("mUserPaddingEnd", "I", dx::kAccNone),
+         builder.BoundInstanceField("mUserPaddingLeftInitial", "I", dx::kAccNone),
+         builder.BoundInstanceField("mUserPaddingRightInitial", "I", dx::kAccNone)},
+        {builder.BoundInstanceField("mLeftPaddingDefined", "Z", dx::kAccPrivate),
+         builder.BoundInstanceField("mRightPaddingDefined", "Z", dx::kAccPrivate)}};
+    // Absolute padding only. ROM left/right getters require the unselected
+    // RTL resolution state machine; these adapters read the Java authority.
+    builder.VirtualMethod("getPaddingLeft", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(ReadAndroidViewPadding(call.vm, *context, call.receiver).left);
+    });
+    builder.VirtualMethod("getPaddingRight", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(ReadAndroidViewPadding(call.vm, *context, call.receiver).right);
+    });
+    for (const auto width : {true, false}) {
+        builder.VirtualMethod(width ? "setMinimumWidth" : "setMinimumHeight", "(I)V",
+                              [context, width](dx::IntrinsicContext& call) {
+                                  auto minimum = ReadAndroidViewMinimum(call.vm, *context, call.receiver);
+                                  (width ? minimum.width : minimum.height) = call.arguments[0].AsInt();
+                                  WriteAndroidViewMinimum(call.vm, *context, call.receiver, minimum);
+                                  return CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V");
+                              });
+    }
     context->view_compatibility_fields =
         std::array{builder.BoundStaticField("sCompatibilityDone", "Z", dx::kAccPrivate),
                    builder.BoundStaticField("sUseBrokenMakeMeasureSpec", "Z", dx::kAccPrivate),
@@ -1950,9 +1984,10 @@ Decl Declare_android_view_View(const Context& context) {
         if (padding.left < 0 || padding.top < 0 || padding.right < 0 || padding.bottom < 0) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "View padding cannot be negative"};
         }
-        const auto node = ViewNode(call, context);
-        context->ui_tree.Get(node)->padding = padding;
-        context->ui_tree.MarkLayoutDirty(node);
+        static_cast<void>(ViewNode(call, context));
+        const bool changed = ReadAndroidViewPadding(call.vm, *context, call.receiver) != padding;
+        WriteAndroidViewPadding(call.vm, *context, call.receiver, padding);
+        if (changed) return CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V");
         return dx::VmValue::Void();
     });
     const auto geometry = [context](const auto member) {
@@ -2089,7 +2124,7 @@ Decl Declare_android_view_View(const Context& context) {
             state->background_resource_id = resource_id;
             state->background_alpha = 1.0F;
             if (bitmap->nine_patch) {
-                state->padding = bitmap->nine_patch_padding;
+                WriteAndroidViewPadding(call.vm, *context, call.receiver, bitmap->nine_patch_padding, false);
             }
         }
         context->ui_tree.MarkLayoutDirty(node);
@@ -2901,6 +2936,9 @@ Decl Declare_android_view_Window(const Context& context) {
         auto value = fields.GetRef(decor);
         if (!value.IsValid()) {
             value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
+            const auto roots = call.vm.ProtectReferences(std::array{value});
+            AssignViewContext(call.vm, *context, value, fields.GetRef(owner));
+            InitializeAndroidViewJavaLayout(call.vm, *context, value);
             context->view_adapter_references[value.Value()].window_owner = fields.GetRef(owner);
             fields.SetRef(decor, value);
         }
@@ -3041,6 +3079,7 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     auto metrics = viewport.value_or(
         ui::Size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
     const auto resolve = [&] {
+        RefreshAndroidViewLayoutInputs(vm, context);
         if (!context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return false;
         // Only geometry getters imported Java LayoutParams on the Legacy path.
         if (reason == AndroidUiTraversalReason::GeometryRead) {

@@ -72,33 +72,34 @@ namespace ogplay::test::widget {
         .name = "style", .value_type = type, .data = data};
 }
 
-ClickVm::ClickVm(const InterpreterBackend backend)
-    : model(strings, arrays),
-      context(std::make_shared<DexVmAndroidContext>()),
+ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
+    : model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()),
       interpreter(
           [this]() -> DexClassLinker& {
               linker.RegisterIntrinsics(CoreIntrinsicCatalog());
               auto android = AndroidIntrinsicCatalog(context);
-              for (auto& owner : android) for (auto& method : owner.methods) {
-                  if (owner.descriptor == "Landroid/view/View;" && method.name == "onFinishInflate") {
-                      method.implementation = [this](IntrinsicContext& call) {
-                          const auto node = *FindViewUiNode(*context, call.receiver.Value());
-                          inflater_finish_ids.push_back(context->ui_tree.Get(node)->android_id);
-                          CHECK_FALSE(context->ui_tree.Get(node)->parent.has_value());
-                          static_cast<void>(call.vm.CollectGarbage("inflater-finish"));
-                          if (inflater_finish_hook) inflater_finish_hook(call);
-                          return VmValue::Void();
-                      };
+              for (auto& owner : android)
+                  for (auto& method : owner.methods) {
+                      if (owner.descriptor == "Landroid/view/View;" && method.name == "onFinishInflate") {
+                          method.implementation = [this](IntrinsicContext& call) {
+                              const auto node = *FindViewUiNode(*context, call.receiver.Value());
+                              inflater_finish_ids.push_back(context->ui_tree.Get(node)->android_id);
+                              CHECK_FALSE(context->ui_tree.Get(node)->parent.has_value());
+                              static_cast<void>(call.vm.CollectGarbage("inflater-finish"));
+                              if (inflater_finish_hook) inflater_finish_hook(call);
+                              return VmValue::Void();
+                          };
+                      }
+                      if (owner.descriptor == "Landroid/view/LayoutInflater;" && method.name == "nativeInflate") {
+                          const auto original = method.implementation;
+                          method.implementation = [this, original](IntrinsicContext& call) {
+                              if (inflater_elements.empty()) return original(call);
+                              return VmValue::Ref(BuildUiElements(call.vm, *context, inflater_elements,
+                                                                  call.arguments[0].ref, call.arguments[2].ref,
+                                                                  call.arguments[3].AsInt() != 0));
+                          };
+                      }
                   }
-                  if (owner.descriptor == "Landroid/view/LayoutInflater;" && method.name == "nativeInflate") {
-                      const auto original = method.implementation;
-                      method.implementation = [this, original](IntrinsicContext& call) {
-                          if (inflater_elements.empty()) return original(call);
-                          return VmValue::Ref(BuildUiElements(call.vm, *context, inflater_elements,
-                              call.arguments[0].ref, call.arguments[2].ref, call.arguments[3].AsInt() != 0));
-                      };
-                  }
-              }
               linker.RegisterIntrinsics(android);
               std::vector<IntrinsicClassDecl> touch_probes;
               auto activity_probe = IntrinsicClassBuilder::Class("LTouchActivityProbe;", "Landroid/app/Activity;");
@@ -343,6 +344,7 @@ ClickVm::ClickVm(const InterpreterBackend backend)
     video_view =
         interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
     activity = interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
+    if (attach_activity) ogplay::test::AttachViewTestContext(interpreter, activity);
     const auto bar = interpreter.NewIntrinsicInstance(
         "Landroid/widget/LinearLayout;");
     skip_button = interpreter.NewIntrinsicInstance(
@@ -377,12 +379,14 @@ ClickVm::ClickVm(const InterpreterBackend backend)
     bar_state->padding.top = 4;
     context->ui_tree.Get(other_node)->intrinsic = {20, 10};
     context->ui_tree.Get(skip_node)->intrinsic = {20, 10};
-
 }
 
 VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name,
                const std::string& descriptor,
                std::vector<VmValue> arguments) {
+    if (name == "getWindow" || name == "getDecorView" || name == "findViewById" || name == "setContentView" ||
+        name == "addContentView")
+        ogplay::test::AttachViewTestContext(interpreter, receiver);
     const auto receiver_class = model.ObjectClass(receiver);
     const auto index =
         linker.FindVtableIndex(receiver_class, name, descriptor);
@@ -419,6 +423,9 @@ VmValue ClickVm::CallDirect(const VmObjectRef receiver,
                    const std::string& name,
                    const std::string& descriptor,
                    std::vector<VmValue> arguments) {
+    if (name == "<init>" && descriptor.starts_with("(Landroid/content/Context;") && !arguments.empty()) {
+        ogplay::test::AttachViewTestContext(interpreter, arguments.front().ref);
+    }
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
     const auto method =

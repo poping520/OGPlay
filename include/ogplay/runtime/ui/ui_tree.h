@@ -123,6 +123,37 @@ struct Rect final {
     constexpr auto operator<=>(const Rect&) const = default;
 };
 
+// Ownership is fixed when a partition is created. External partitions represent
+// one window root; host UI uses a separate HostLayout partition.
+enum class UiGeometryOwner : std::uint8_t { HostLayout, ExternalProjection };
+
+struct UiProjectionTarget final {
+    UiNodeId root;
+    std::uint64_t window_generation{};
+    std::uint64_t content_revision{};
+    std::uint64_t metrics_revision{};
+    UiMetrics metrics;
+};
+
+struct UiProjectedNode final {
+    UiNodeId id;
+    std::optional<UiNodeId> parent;
+    Rect frame;
+    Size measured;
+    Visibility visibility{Visibility::Visible};
+    Insets padding;
+    std::int32_t scroll_y{};
+    bool clip_children{true};
+    bool clip_to_padding{true};
+};
+
+struct UiGeometryProjection final {
+    UiProjectionTarget target;
+    std::uint64_t epoch{};
+    // Complete window hierarchy; sibling order is the order in this vector.
+    std::vector<UiProjectedNode> nodes;
+};
+
 struct RelativeRules final {
     std::optional<std::int32_t> left_of;
     std::optional<std::int32_t> right_of;
@@ -209,6 +240,8 @@ struct UiNode final {
     Size minimum;
     Rect frame;
     Rect screen_frame;
+    // Resolved render/input clip for external projections, in screen coordinates.
+    Rect screen_clip;
     std::int32_t scroll_y{};
     float alpha{1.0F};
     bool layout_dirty{true};
@@ -223,7 +256,28 @@ public:
     static constexpr std::size_t kMaxChildren = 1024;
     static constexpr std::size_t kMaxDepth = 128;
 
-    UiTree();
+    explicit UiTree(UiGeometryOwner owner = UiGeometryOwner::HostLayout);
+
+    [[nodiscard]] UiGeometryOwner GeometryOwner() const { return geometry_owner_; }
+
+    // Owner-thread APIs. Target revisions come from integration, never from a
+    // batch itself. Stale/invalid submissions throw without modifying the tree.
+    void SetProjectionTarget(const UiProjectionTarget& target);
+    void CommitProjection(const UiGeometryProjection& projection);
+
+    [[nodiscard]] const std::optional<UiProjectionTarget>& ProjectionTarget() const { return projection_target_; }
+
+    [[nodiscard]] bool IsProjectionSnapshot() const { return projection_snapshot_; }
+
+    [[nodiscard]] std::uint64_t ProjectionEpoch() const { return projection_epoch_; }
+
+    // Only successful, complete commits are published. Consumers retain this
+    // immutable snapshot for both rendering and hit testing; null before first commit.
+    [[nodiscard]] std::shared_ptr<const UiTree> PublishedProjection() const {
+        return std::atomic_load(&published_projection_);
+    }
+
+    [[nodiscard]] std::optional<UiNodeId> HitTestProjection(std::int32_t x, std::int32_t y) const;
 
     [[nodiscard]] UiNodeId Root() const { return root_; }
     [[nodiscard]] std::uint32_t Generation() const { return generation_; }
@@ -273,6 +327,11 @@ private:
     void IndexSubtree(UiNodeId node);
     void MarkAncestors(UiNodeId node, bool layout, bool draw);
 
+    const UiGeometryOwner geometry_owner_;
+    bool projection_snapshot_{};
+    std::optional<UiProjectionTarget> projection_target_;
+    std::uint64_t projection_epoch_{};
+    std::shared_ptr<const UiTree> published_projection_;
     std::uint32_t generation_{};
     std::shared_ptr<const UiFallbackFont> fallback_font_;
     std::uint32_t next_node_{};

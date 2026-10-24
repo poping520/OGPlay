@@ -172,9 +172,10 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     const auto& node = *tree.Get(id);
     if (!node.window_visible || node.visibility != Visibility::Visible) return;
     // Parent clipChildren clips this view to its bounds (AOSP View.draw).
-    const bool clip_to_bounds = parent_clips_children;
+    const bool external = tree.GeometryOwner() == UiGeometryOwner::ExternalProjection;
+    const bool clip_to_bounds = external || parent_clips_children;
     if (clip_to_bounds) {
-        out.emplace_back(PushClip{node.screen_frame});
+        out.emplace_back(PushClip{external ? node.screen_clip : node.screen_frame});
     }
     if (node.surface_has_frame && node.surface_layer != SurfaceLayer::on_top) {
         out.emplace_back(ClearSurfaceRect{node.screen_frame});
@@ -294,8 +295,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     }
     // clipToPadding clips descendants to the padding box (AOSP dispatchDraw),
     // not this node's background or onDraw content.
-    const bool clip_children_to_padding =
-        node.clip_to_padding && HasPadding(node.padding);
+    const bool clip_children_to_padding = !external && node.clip_to_padding && HasPadding(node.padding);
     if (clip_children_to_padding) {
         out.emplace_back(PushClip{ContentBox(node)});
     }
@@ -468,6 +468,8 @@ std::u16string WrapFixedText(const std::u16string_view text,
 
 UiRenderList BuildUiRenderList(const UiTree& tree,
                                const UiBitmapCache& bitmaps, UiRenderPlane plane) {
+    if (tree.GeometryOwner() == UiGeometryOwner::ExternalProjection && !tree.IsProjectionSnapshot())
+        throw std::runtime_error("UI rendering requires a complete projection snapshot");
     UiRenderList commands;
     // The window clips the content root to its bounds, matching default
     // parent clipChildren=true.

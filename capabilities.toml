@@ -51,7 +51,7 @@ note = "LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string
 [runtime.ui_tree]
 status = "complete"
 test = "tests/runtime/ui_tree_tests.cpp"
-note = "LUI-2 建立 generation-scoped synthetic content root、唯一 hierarchy/id/visibility/layout/geometry/dirty state；detach/destroy/reset 立即退出 id index，node/child/depth 上限明确失败"
+note = "LUI-2/DVM-278：宿主布局与每窗口外部投影分区固定 owner；外部批次按 generation、content/metrics revision、递增 epoch 原子校验，失败零修改，render/hit-test 读同一完整快照。detach/遗漏/destroy/reset 退出 id index，层级上限明确失败。生产仍仅 Legacy，Java 遍历未接入。"
 
 [runtime.ui_dexvm_binding]
 status = "complete"

@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { settingsError, type SettingField, type SettingValue } from './settings';
 export interface GameSettings {
   schema: number; installation_id: string; display_name: string; profile_id: string | null;
@@ -20,5 +21,5 @@ export function gameSettingsError(saved: Pick<GameSettings, 'fields' | 'inherite
   const effective = { ...saved.inherited, ...draft };
   const error = settingsError(saved.fields, effective);
   if (error) return error;
-  return effective.mcp_manual_step === true && effective.mcp_enabled !== true ? 'MCP 手动步进需要启用 MCP。' : null;
+  return effective.mcp_manual_step === true && effective.mcp_enabled !== true ? t('MCP 手动步进需要启用 MCP。') : null;
 }

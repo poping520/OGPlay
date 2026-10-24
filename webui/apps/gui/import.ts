@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { rpc } from './rpc';
 export interface ImportSummary {
   display_name: string; package: string; version_name: string; version_code: number;
@@ -19,9 +20,9 @@ export function formatBytes(value: number): string {
 /** Stage text while a commit runs; byte counts appear once data copying reports a total. */
 export function importingStage(job: ImportJob): string {
   const progress = job.progress;
-  if (!progress || !progress.total_bytes) return '正在加入游戏库，请勿关闭…';
+  if (!progress || !progress.total_bytes) return t('正在加入游戏库，请勿关闭…');
   const percent = Math.min(100, Math.floor(progress.copied_bytes / progress.total_bytes * 100));
-  return `正在复制数据包… ${percent}%（${formatBytes(progress.copied_bytes)} / ${formatBytes(progress.total_bytes)}）`;
+  return t('正在复制数据包… {percent}%（{copied} / {total}）', { percent, copied: formatBytes(progress.copied_bytes), total: formatBytes(progress.total_bytes) });
 }
 export type Call = <T>(method: string, params?: Record<string, unknown>) => Promise<T>;
 export const pause = () => new Promise<void>(resolve => setTimeout(resolve, 150));
@@ -34,8 +35,8 @@ export async function pickPath(kind: 'file' | 'directory', call: Call = rpc): Pr
   }
 }
 export async function upload(file: File, onJob: (job: string) => void, progress: (value: number) => void, call: Call = rpc): Promise<ImportJob> {
-  if (!/\.apk$/i.test(file.name)) throw new Error('当前仅支持单体 APK；XAPK、APKM、APKS 分包安装尚未实现。');
-  if (!file.size || file.size > 1024 ** 3) throw new Error('APK 必须非空且不超过 1 GiB。');
+  if (!/\.apk$/i.test(file.name)) throw new Error(t('当前仅支持单体 APK；XAPK、APKM、APKS 分包安装尚未实现。'));
+  if (!file.size || file.size > 1024 ** 3) throw new Error(t('APK 必须非空且不超过 1 GiB。'));
   const result = await call<ImportJob>('library.upload.begin', { name: file.name, size: file.size });
   onJob(result.job);
   for (let offset = 0; offset < file.size; offset += 192 * 1024) {
@@ -55,16 +56,17 @@ export interface DataDirectory {
 }
 /** Mirrors the host rule: /sdcard or a directory below it, no empty/dot segments or control characters. */
 export function guestPathError(value: string): string | null {
-  if (value !== '/sdcard' && !value.startsWith('/sdcard/')) return '挂载位置必须是 /sdcard 或其下的目录。';
+  if (value !== '/sdcard' && !value.startsWith('/sdcard/')) return t('挂载位置必须是 /sdcard 或其下的目录。');
   const parts = value.slice(1).split('/');
   if (parts.some(part => !part || part === '.' || part === '..' || part.includes('\\') || /[\u0000-\u001f]/.test(part)))
-    return '路径含空段、. / .. 、反斜杠或控制字符。';
+    return t('路径含空段、. / .. 、反斜杠或控制字符。');
   return null;
 }
 /** Trailing slashes are a typing habit, not a different directory. */
 export const normalizeGuestPath = (value: string) => value.trim().replace(/(?<=.)\/+$/, '');
 export function describeData(data: DataDirectory): string {
-  return `${data.truncated ? '超过 ' : ''}${data.files} 个文件 · ${formatBytes(data.bytes)}${data.truncated ? '（统计已截断）' : ''}`;
+  const params = { files: data.files, size: formatBytes(data.bytes) };
+  return data.truncated ? t('超过 {files} 个文件 · {size}（统计已截断）', params) : t('{files} 个文件 · {size}', params);
 }
 export interface DataMountCandidate { guest_dir: string; explained: number; examples: string[] }
 /** ADR-0146: host suggestion computed from what the last run failed to find. */

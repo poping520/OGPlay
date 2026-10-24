@@ -29,8 +29,13 @@
 /* top bar */
 .cfg-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 32px; }
 .cfg .brand { width: 228px; }
-.cfg .back { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px 0 7px; border-radius: 999px; background: var(--glass); font-weight: 800; color: var(--soft); flex: none; }
-.cfg .back:hover:not(:disabled) { background: var(--glass2); color: var(--ink); }
+/* the way back is the first thing after the brand: outlined, full contrast, sized like the save pills, set off from the crumb */
+.cfg .back { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px 0 8px; border: 1.5px solid rgba(255,255,255,.22); border-radius: 999px;
+  background: var(--glass2); font-weight: 900; font-size: 14px; line-height: 1; color: var(--ink); flex: none; white-space: nowrap; transition: border-color .12s, background .12s; }
+.cfg .back .chev { width: 18px; height: 18px; margin-left: 2px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .12s; }
+.cfg .back:hover:not(:disabled) { border-color: var(--yellow); background: rgba(255,255,255,.14); }
+.cfg .back:hover:not(:disabled) .chev { transform: translateX(-2px); }
+.cfg .back + .crumb { padding-left: 14px; border-left: 1px solid rgba(255,255,255,.14); }
 .crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-weight: 800; }
 .crumb b { color: var(--ink); font-weight: 900; }
 .cfg-top .spacer { flex: 1; }
@@ -240,8 +245,8 @@ details.fact pre { margin: 8px 0 2px; font: 11.5px/1.6 var(--code); color: var(-
   background: radial-gradient(120% 90% at 30% 15%, color-mix(in oklab, var(--g1) 70%, #fff), var(--g1) 40%, var(--g2) 100%); }
 .skin-glass .kicker { color: var(--mint); }
 .skin-glass .cfg-top { gap: 10px; }
-.cfg.skin-glass .back { height: 36px; padding: 0 14px 0 6px; border-radius: 14px; background: rgba(255,255,255,.1); }
-.cfg.skin-glass .back:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+.cfg.skin-glass .back { height: 40px; padding: 0 16px 0 6px; border-radius: 14px; border-color: rgba(255,255,255,.32); background: rgba(255,255,255,.16); }
+.cfg.skin-glass .back:hover:not(:disabled) { border-color: #fff; background: rgba(255,255,255,.24); }
 .skin-glass .dirty.on { color: #ffe39a; background: rgba(255,194,26,.18); }
 .cfg.skin-glass .pill { height: 42px; padding: 0 18px 0 8px; border-radius: 14px; background: rgba(255,255,255,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); backdrop-filter: none; font-weight: 800; }
 .cfg.skin-glass .pill:hover:not(:disabled) { background: rgba(255,255,255,.2); }

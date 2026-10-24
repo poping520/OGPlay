@@ -80,9 +80,9 @@ GuiProcessManager::~GuiProcessManager() {
 }
 
 void GuiProcessManager::Launch(const LaunchPlan& plan) {
-    if (plan.mcp_port && std::any_of(active_.begin(), active_.end(), [&](const auto& active) {
-        return active.dashboard.port == plan.mcp_port;
-    })) throw std::runtime_error("MCP 端口已被其他运行实例使用，请在游戏设置中选择其他端口。");
+    if (plan.mcp_port && std::any_of(active_.begin(), active_.end(),
+                                     [&](const auto& active) { return active.dashboard.port == plan.mcp_port; }))
+        throw std::runtime_error("MCP 端口已被其他运行中的游戏使用，请在游戏设置中选择其他端口。");
     tracker_.Begin(plan.package, plan.log_path);
     SDL_IOStream* error_stream{};
     try {
@@ -198,7 +198,7 @@ std::vector<GuiDashboard> GuiProcessManager::Dashboards() const {
 }
 std::uint16_t GuiProcessManager::DashboardPort(std::string_view instance) const {
     const auto found = std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
-    if (found == active_.end()) throw std::runtime_error("实例已退出，请重新启动。");
+    if (found == active_.end()) throw std::runtime_error("游戏已退出，请重新启动。");
     if (found->dashboard.status != "ready" || !found->dashboard.port) throw std::runtime_error(found->dashboard.detail);
     return *found->dashboard.port;
 }
@@ -212,7 +212,7 @@ std::vector<std::string> GuiProcessManager::TakeAutoOpen() {
 
 GuiProcessManager::KeyEditorAddress GuiProcessManager::KeyEditor(const std::string_view instance) const {
     const auto found = std::find_if(active_.begin(), active_.end(), [&](const auto& active) { return active.package == instance; });
-    if (found == active_.end()) throw std::runtime_error("实例已退出，请重新启动。");
+    if (found == active_.end()) throw std::runtime_error("游戏已退出，请重新启动。");
     if (found->dashboard.editor_status != "ready" || !found->editor_port) throw std::runtime_error(found->dashboard.editor_detail);
     return {*found->editor_port, found->control_token};
 }

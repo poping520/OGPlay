@@ -61,11 +61,11 @@ DashboardProbe DecodeDashboardProbe(std::string_view response, std::uint64_t pid
     const auto schema = result ? result->Member("schema_version") : std::nullopt;
     if (!root.Member("jsonrpc") || root.Member("jsonrpc")->String() != "2.0" || root.Member("error") || !root.Member("id") || root.Member("id")->UnsignedInteger() != 1 || !schema || schema->UnsignedInteger() != 1)
         return {false, "Dashboard 协议不匹配。"};
-    if (!id || id->UnsignedInteger() != pid) return {false, "端口属于其他进程，不能打开此实例的 Dashboard。"};
+    if (!id || id->UnsignedInteger() != pid) return {false, "端口属于其他进程，不能打开这个游戏的 Dashboard。"};
     return {true, "Dashboard 已就绪。"};
 }
 DashboardProbe ProbeDashboard(std::uint16_t port, std::uint64_t pid) {
-    if (!port || !pid) return {false, "无效的运行实例。"};
+    if (!port || !pid) return {false, "运行中的游戏信息无效。"};
     try {
         std::string response;
         switch (LoopbackExchange(port, PostRequest(port, "/dash/rpc", R"({"jsonrpc":"2.0","id":1,"method":"dash.snapshot","params":{"sections":[]}})"), response)) {
@@ -95,7 +95,7 @@ KeyEditorProbe DecodeKeyEditorProbe(const std::string_view response) {
     return {true, *count, "按键设置可用。"};
 }
 KeyEditorProbe ProbeKeyEditor(const std::uint16_t port, const std::string_view token) {
-    if (!port || token.empty()) return {false, 0, "无效的运行实例。"};
+    if (!port || token.empty()) return {false, 0, "运行中的游戏信息无效。"};
     try {
         std::string response;
         const auto request = PostRequest(port, "/controls/rpc",

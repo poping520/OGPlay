@@ -260,7 +260,7 @@ function App() {
       <button role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); void act('library.open_dir', game, 'log'); }}>{t('打开日志目录')}</button>
       <button role="menuitem" onClick={() => { setMenuOpen(false); setInfoOpen(true); }}>{t('安装信息')}</button>
       <hr />
-      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能移除。') : undefined} onClick={() => requestRemoval(game)}>{t('移除库中实例')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
+      <button role="menuitem" class="danger" disabled={busy || importing || game.running} title={game.running ? t('游戏运行中，退出后才能删除。') : undefined} onClick={() => requestRemoval(game)}>{t('删除游戏')}<small>{t('默认保留存档，重新导入时恢复')}</small></button>
     </div>}
   </div>;
   const actions = (game: LibraryItem) => {
@@ -298,7 +298,7 @@ function App() {
     const status = statusOf(item);
     const position = items.indexOf(item) + 1;
     const fix = item.status === 'missing_external' ? <button class="link" onClick={() => openGameSettings(item)}>{t('选择数据包 →')}</button> :
-      item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('移除后重新导入 →')}</button> : null;
+      item.status === 'damaged' && !item.running ? <button class="link" onClick={() => requestRemoval(item)}>{t('删除后重新导入 →')}</button> : null;
     const runtime = instance ? ` · PID ${instance.process_id}${instance.port ? t(' · MCP 端口 {port}', { port: instance.port }) : ''}` : '';
     return <>
       <div class="hero-text" key={item.installation_id}>
@@ -383,22 +383,22 @@ function App() {
         setDataHint(null); await refresh();
         if (relaunch) await rpc('library.launch', { installation_id: id });
       }} />}
-    {removing && <Modal title={t('移除库中实例')} onDismiss={() => { if (!busy) setRemoving(null); }}>
-      <p>{t('确认移除「{name}」？', { name: removing.display_name })}</p><p class="mono">{removing.installation_id}</p>
+    {removing && <Modal title={t('删除游戏')} onDismiss={() => { if (!busy) setRemoving(null); }}>
+      <p>{t('确认删除「{name}」？', { name: removing.display_name })}</p><p class="mono">{removing.installation_id}</p>
       <p>{t('删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。')}</p>
       <label class="import-confirm"><input type="checkbox" checked={deleteSaves} disabled={busy} onChange={event => setDeleteSaves(event.currentTarget.checked)} />{t('同时删除存档（不可恢复）')}</label>
       <p>{deleteSaves ? t('存档将被永久删除；重新导入后从头开始。') : t('存档保留在沙盒中；重新导入同一游戏时自动恢复。')}</p>
-      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? t('移除并删除存档') : t('确认移除')}</button>
+      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? t('删除游戏和存档') : t('确认删除')}</button>
     </Modal>}
     {infoOpen && item && <Modal title={t('安装信息')} onDismiss={() => setInfoOpen(false)}>
       <dl class="info"><dt>{t('游戏')}</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>
-        <dt>{t('安装实例')}</dt><dd class="mono">{item.installation_id}</dd><dt>{t('包名')}</dt><dd class="mono">{item.package || t('包名不可用')}</dd>
+        <dt>{t('安装 ID')}</dt><dd class="mono">{item.installation_id}</dd><dt>{t('包名')}</dt><dd class="mono">{item.package || t('包名不可用')}</dd>
         {item.profile && <><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd></>}<dt>{t('数据包')}</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
         <dt>{t('沙盒路径')}</dt><dd class="mono">{item.sandbox_path}</dd><dt>{t('日志目录')}</dt><dd class="mono">{item.log_directory}</dd><dt>{t('导入时间')}</dt><dd>{item.imported_at || t('未记录')}</dd>
         <dt>Dashboard</dt><dd>{instance?.detail ?? t('游戏尚未运行')}</dd>
         <dt>{t('按键设置')}</dt><dd>{instance?.key_editor_detail ?? t('先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。')}</dd></dl>
     </Modal>}
-    {dashboardListOpen && <Modal title={t('运行实例')} onDismiss={() => setDashboardListOpen(false)}>
+    {dashboardListOpen && <Modal title={t('运行中的游戏')} onDismiss={() => setDashboardListOpen(false)}>
       {dashboards.length === 0 ? <p>{t('当前启动器没有运行中的游戏。')}</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>
         <p class="mono">PID {instance.process_id} · {instance.port ? t('端口 {port}', { port: instance.port }) : t('MCP 未启用')}</p>

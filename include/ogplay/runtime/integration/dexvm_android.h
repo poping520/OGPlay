@@ -795,6 +795,12 @@ struct DexVmAndroidContext final {
   // Traced from the owning View and swept with it, including detached Views.
   struct ViewAdapterReferences final {
       dexvm::VmObjectRef window_owner, focus_listener, system_ui_listener;
+      // Text/style live in UiNode. Keep the distinct constructor line policy
+      // and owner-traced identities here; no Java text/layout mirror.
+      bool text_single_line{};
+      dexvm::VmObjectRef text_typeface{};
+      std::array<dexvm::VmObjectRef, 4> text_compounds{dexvm::VmObjectRef{}, dexvm::VmObjectRef{}, dexvm::VmObjectRef{},
+                                                       dexvm::VmObjectRef{}};
   };
 
   std::unordered_map<std::uint32_t, ViewAdapterReferences> view_adapter_references;

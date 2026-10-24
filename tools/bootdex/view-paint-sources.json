@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "882a6232adf311c7bb4dcc4fd4e32d003fff27f047618c94dbe1b6027de74d73",
+      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "b9326994375bd4796481ce695e5a6a36ff4c9c0a975615e36cc931ba59139841",
       "methods": [
@@ -1300,7 +1300,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "882a6232adf311c7bb4dcc4fd4e32d003fff27f047618c94dbe1b6027de74d73",
+      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -1314,19 +1314,40 @@
           "signature": "<init>(Landroid/content/Context;)V",
           "flags": 65537,
           "body_sha256": "4e6f2be693ffbe8b3cb520963d6caab3f3566dac89355e0ec4b0088f6c4eb2e9",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
+            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
+            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
+            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
+            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+          }
         },
         {
           "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
           "flags": 65537,
           "body_sha256": "57887375504f4aee92348db0b2a3abe27e151b855bb42fda24e2c3b9088a198c",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
+            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
+            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
+            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
+            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+          }
         },
         {
           "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
           "flags": 65537,
           "body_sha256": "455a6450fe1187e9cbacf70436d96655fc7041854b9383a51a7ad6861930d6d7",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
+            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
+            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
+            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
+            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+          }
         },
         {
           "signature": "access$1000(Landroid/widget/TextView;)Landroid/content/Context;",
@@ -4134,7 +4155,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "882a6232adf311c7bb4dcc4fd4e32d003fff27f047618c94dbe1b6027de74d73",
+      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4418,7 +4439,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-paint.surface.json.gz",
-      "surface_sha256": "882a6232adf311c7bb4dcc4fd4e32d003fff27f047618c94dbe1b6027de74d73",
+      "surface_sha256": "6dadcf7e841416fa97f6f59d590ad57e9126dc1701858d0d30b56fd99a866ddf",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

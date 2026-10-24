@@ -331,6 +331,7 @@ struct DexVmAndroidContext final {
   std::function<void()> wake_gl_surface_thread;
   bool gl_surface_thread_stopped{};
   dexvm::VmObjectRef content_view;
+  std::optional<dexvm::IntrinsicFieldHandle> ui_java_activity_window, ui_java_window_content;
   // Compatibility projection of the first installed View; traversal uses the
   // window root, including its stable guest content container and all children.
   std::uint64_t ui_content_revision{};
@@ -1329,6 +1330,7 @@ std::shared_ptr<SurfaceStream> ResolveAndroidSurfaceStream(dexvm::Interpreter&, 
 }
 
 namespace ogplay::runtime {
+[[nodiscard]] dexvm::VmObjectRef AndroidUiTraversalRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context);
 [[nodiscard]] bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                             dexvm::VmObjectRef view, bool visible = false);
 }

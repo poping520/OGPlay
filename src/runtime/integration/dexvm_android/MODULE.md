@@ -288,6 +288,15 @@ SDL scancode 映射 keyCode/Unicode/meta/repeat；AndroidBoundaryInput 快照物
 归 VM/GC、保存触点/轴/offset/精度/纳秒时间/历史，getter 不读 host、API19 毫秒/纳秒转换、越界 IAE，
 recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/source。
 
+实验 JavaTraversal 的 Window 根从 Activity.mWindow→Window.mContentParent 的受审只读 token
+取得真实 FrameLayout，content_view 仅保留首个内容身份；无 Window 的旧测试根沿用原夹具。
+Window 的默认参数、增添/替换内容沿真实 Java hierarchy；替换复用 ROM removeAllViews。
+FrameLayout 的 Context 构造（含 Rect/ArrayList）、measure/layout、默认/复制参数、foreground
+padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。非 FrameLayout 容器的 own
+onMeasure/onLayout 在实验表面显式 failure，不能继承基础算法取得实现信用。
+仅测试窗口；XML/AttributeSet 构造、foreground Drawable 设置/绘制与系统附着仍明确失败。
+完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，Legacy 路径保持。
+
 ## GLES/EGL 与消息调度
 
 Java GLES/EGL 经 session managed 冷入口共享 [native boundary](../../boundary/MODULE.md) 的 binding/

@@ -62,6 +62,12 @@ Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout;", "Landroid/view/ViewGroup;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 
@@ -398,6 +404,12 @@ Decl Declare_android_widget_LinearLayout(const Context& context) {
         },
         dx::kAccProtected);
 
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 
@@ -480,6 +492,12 @@ Decl Declare_android_widget_RelativeLayout(const Context& context) {
         }
         return dx::VmValue::Void();
     });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 
@@ -504,6 +522,12 @@ Decl Declare_android_widget_ScrollView(const Context& context) {
                                   result.exception};
         return result.value;
     });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 
@@ -530,6 +554,12 @@ Decl Declare_android_widget_TableLayout(const Context& context) {
                                   result.exception};
         return result.value;
     });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 
@@ -556,6 +586,12 @@ Decl Declare_android_widget_TableRow(const Context& context) {
                                   result.exception};
         return result.value;
     });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Retain these containers' own ROM failure boundary instead of inheriting
+        // the experimental View/FrameLayout algorithms through a missing overlay.
+        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
+        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
+    }
     return std::move(builder).Build();
 }
 

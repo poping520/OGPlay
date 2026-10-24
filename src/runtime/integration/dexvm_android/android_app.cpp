@@ -292,6 +292,8 @@ Decl Declare_android_app_Activity(const Context& context) {
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
     const auto window = builder.BoundInstanceField("mWindow", "Landroid/view/Window;", dx::kAccPrivate);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        context->ui_java_activity_window = window;
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",
         [window](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);

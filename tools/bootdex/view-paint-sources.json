@@ -1299,8 +1299,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-text.surface.json.gz",
-      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
+      "surface": "tools/bootdex/view-button.surface.json.gz",
+      "surface_sha256": "cf4469c7f4640f27c1cad8ce317b04664d9f286487655438b3a6fbe9e0cccbbc",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -2782,7 +2782,14 @@
           "signature": "onFocusChanged(ZILandroid/graphics/Rect;)V",
           "flags": 4,
           "body_sha256": "c8fe38787e1afb2cf100a8a7503c1e2f4668a2b7c8d738238fc54e85a1af872e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-297 plain TextView focus callback; AOSP TextView.java:7619-7640",
+            "inputs": "focused, direction and prior Rect; existing plain text input excludes Editor, spans, marquee and transformation",
+            "outputs": "genuine View.onFocusChanged including listener, invalidation and parent protocol",
+            "state_owner": "Java View focus flags/listeners and parent chain; host single plain text owner; no TextView editor/layout state",
+            "failure_boundary": "Editor/IME, Spannable, marquee, transformations, accessibility and temporary detach remain failure; no unsupported instance fields read or initialized"
+          }
         },
         {
           "signature": "onGenericMotionEvent(Landroid/view/MotionEvent;)Z",

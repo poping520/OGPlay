@@ -398,3 +398,6 @@ UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布�
 文本/样式在 UiNode，独立 singleLine 策略在同一 View adapter 状态中；
 Typeface/compound Drawable 身份由 View adapter 强边 trace/sweep，不镜像 Java mText/mLayout。
 测量及 TextPaint/Editor 保持明确失败；不改变生产 Legacy 路径。
+
+实验 Button 三个 ROM 薄构造保留真实 buttonStyle，复用 TextView 输入/测量和身份 owner；
+默认不支持资源明确失败，应用可显式覆盖。Legacy 固定控件投影仅作用于 Legacy owner。

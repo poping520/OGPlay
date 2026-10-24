@@ -1,0 +1,47 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-button.surface.json.gz",
+      "surface_sha256": "cf4469c7f4640f27c1cad8ce317b04664d9f286487655438b3a6fbe9e0cccbbc",
+      "clinit_owner": "rom-absent",
+      "owner": "Landroid/widget/Button;",
+      "smali_sha256": "8d7683b1925f2989305ecf3198838ef5817088ff149ef8197af6db3c14bf5eb7",
+      "fields": [],
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "363e703ffbe585a96ed8cd4b2911b9cd92d23d392c9ff715e2e9fa362961ebf0",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+          "flags": 65537,
+          "body_sha256": "a3df415ec89195921a3cc4c8182e7f509f9ea134f78fe2010dfcccdd28c200b9",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+          "flags": 65537,
+          "body_sha256": "6622f3e690531cca0d3c3c8e281a0b8a3ceab08d6cbf11dddb629f7d4d299a9b",
+          "source": "rom"
+        },
+        {
+          "signature": "onInitializeAccessibilityEvent(Landroid/view/accessibility/AccessibilityEvent;)V",
+          "flags": 1,
+          "body_sha256": "26e7b4de735cf21accebd0e7b28b03a60c25514e5bb23cd429aa028355f84327",
+          "source": "failure"
+        },
+        {
+          "signature": "onInitializeAccessibilityNodeInfo(Landroid/view/accessibility/AccessibilityNodeInfo;)V",
+          "flags": 1,
+          "body_sha256": "c7211fc569a7ac5da91b5a06959893582ff4b023ce7bdbe8edb2480704d89d28",
+          "source": "failure"
+        }
+      ]
+    }
+  ]
+}

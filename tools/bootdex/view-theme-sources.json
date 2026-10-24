@@ -1571,7 +1571,14 @@
           "signature": "getLayout(I)Landroid/content/res/XmlResourceParser;",
           "flags": 1,
           "body_sha256": "8992f3c0c4870e34d7ff0bb0a1eada6d8f6154acb741250abbdcf5600a784be9",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-290 bounded layout resource seam",
+            "inputs": "current APK resource id",
+            "outputs": "ROM XmlBlock.Parser opened from selected compiled layout bytes",
+            "state_owner": "existing XML registry and ROM parser owner",
+            "failure_boundary": "missing/non-layout/system XML fails; no resource fallback"
+          }
         },
         {
           "signature": "getMovie(I)Landroid/graphics/Movie;",

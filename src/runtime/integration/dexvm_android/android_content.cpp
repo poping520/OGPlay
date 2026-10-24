@@ -1764,9 +1764,24 @@ Decl Declare_android_content_Context(const Context &context) {
                 Singleton(call, context, std::string(service->singleton_key), service->descriptor.data()));
         case dx::ServiceFactory::inflater: {
             if (!inflater) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.experimental_inflater", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "experimental inflater awaits VD-09a-5"};
+                constexpr auto key = "experimental_layout_inflater";
+                const auto cached = context->singletons.find(key);
+                if (cached != context->singletons.end()) return dx::VmValue::Ref(cached->second);
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LocalLayoutInflater;");
+                const auto initialized = call.vm.EnsureClassInitialized(type);
+                if (initialized.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                          initialized.exception_message, initialized.exception};
+                const auto value = call.vm.NewIntrinsicInstance("Landroid/view/LocalLayoutInflater;");
+                const auto roots = call.vm.ProtectReferences(std::array{value});
+                const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+                const auto result =
+                    call.vm.Call(*init, std::array{dx::VmValue::Ref(value), dx::VmValue::Ref(call.receiver)});
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                context->singletons.emplace(key, value);
+                return dx::VmValue::Ref(value);
             }
             dx::IntrinsicCall fields(call);
             auto value = fields.GetRef(*inflater);

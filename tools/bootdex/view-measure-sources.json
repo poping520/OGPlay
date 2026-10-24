@@ -155,7 +155,8 @@
     "setBackground(Landroid/graphics/drawable/Drawable;)V",
     "setBackgroundDrawable(Landroid/graphics/drawable/Drawable;)V",
     "scrollTo(II)V",
-    "setScrollContainer(Z)V"
+    "setScrollContainer(Z)V",
+    "onFinishInflate()V"
   ],
   "rom_fields": [
     "ACCESSIBILITY_CURSOR_POSITION_UNDEFINED:I",

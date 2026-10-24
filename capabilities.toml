@@ -60,8 +60,8 @@ note = "Legacy：LUI-3、DVM-121/138/233：guest View 与 UiNodeId 一一绑定�
 
 [runtime.ui_inflater]
 status = "partial"
-test = "tests/dexvm/widget_inflater_tests.cpp#DVM-247; tests/runtime/ui_tree_tests.cpp#DVM-247; tests/runtime/jni_android_platform_tests.cpp#DVM-247; tests/dexvm/widget_inflater_tests.cpp#registry inflater; tests/dexvm/widget_inflater_tests.cpp#include expansion"
-note = "LUI-4/DVM-247/ADR-0126：固定注册控件、typed AXML、include/merge 与样式投影共用同一 builder；支持 Activity/Window/from 获取、每 Context 缓存、wrapper 克隆及 resource inflate 两种重载，局部失败清理。不支持 parser 重载、自定义 Factory、完整 AttributeSet/theme；未知属性/style/tag 记账失败。跨平台未验收。"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-290; tests/dexvm/widget_inflater_tests.cpp#DVM-247; tests/runtime/ui_tree_tests.cpp#DVM-247; tests/runtime/jni_android_platform_tests.cpp#DVM-247; tests/dexvm/widget_inflater_tests.cpp#registry inflater; tests/dexvm/widget_inflater_tests.cpp#include expansion"
+note = "Legacy 保持固定 registry、typed AXML、include/merge 与有界样式。DVM-290 实验配对接入 ROM inflate/Factory/Filter 与 guest 反射 adapter，五类容器及应用子类、include/merge；Window XML 完整膨胀后替换内容，失败保留旧代。其他框架控件构造明确失败；生产仍默认 Legacy，GPU/跨平台未验收。"
 
 [dexvm.window_content]
 status = "partial"
@@ -1996,7 +1996,7 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 [dexvm.bounded_theme]
 status = "partial"
 test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-288/289/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。ROM Context/主题链、五类及 LP 属性构造已接通，缺尺寸/不支持 drawable 明确失败。无系统 AssetManager、资源文件/span 或实验 inflater；Legacy 不变。"
+note = "DVM-288/289/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。ROM Context/主题链、五类及 LP 属性构造已接通，缺尺寸/不支持 drawable 明确失败。无系统 AssetManager、资源文件/span；Legacy 不变。"
 
 [runtime.guest_proc_maps]
 status = "partial"

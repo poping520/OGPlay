@@ -1735,3 +1735,25 @@ Decl Declare_android_os_MessageQueue(const Context&) {
     return dx::IntrinsicClassBuilder::Class("Landroid/os/MessageQueue;", "Ljava/lang/Object;").Build();
 }
 }
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_os_Trace(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/Trace;", "Ljava/lang/Object;", {},
+                                                    dx::kAccPublic | dx::kAccFinal);
+    const auto trace = [](const bool begin) {
+        return [begin](dx::IntrinsicContext& call) {
+            if (call.arguments[0].AsLong() != 8) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.trace.tag", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "only View trace tag is connected"};
+            }
+            GuestLog(call, core::LogLevel::debug,
+                     begin ? "android.view.trace.begin " + call.vm.StringUtf8(call.arguments[1].ref)
+                           : "android.view.trace.end");
+            return dx::VmValue::Void();
+        };
+    };
+    builder.StaticMethod("traceBegin", "(JLjava/lang/String;)V", trace(true));
+    builder.StaticMethod("traceEnd", "(J)V", trace(false));
+    return std::move(builder).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics

@@ -1492,6 +1492,24 @@ Decl Declare_android_content_res_Resources(const Context &context) {
               throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.message};
           }
       });
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      builder.VirtualMethod(
+          "getLayout", "(I)Landroid/content/res/XmlResourceParser;", [context](dx::IntrinsicContext& call) {
+              const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+              const auto* entry = context->arsc.FindById(id);
+              if (IsSystemResources(context, call.receiver) || !entry || entry->type_name != "layout" ||
+                  !entry->string_value)
+                  throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                        "layout XML resource is unavailable: " + std::to_string(id)};
+              const auto assets =
+                  CallAndroidMethod(call.vm, call.receiver, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+              const auto path = call.vm.NewStringUtf8(*entry->string_value);
+              const auto roots = call.vm.ProtectReferences(std::array{assets, path});
+              return CallAndroidMethod(call.vm, assets, "openXmlResourceParser",
+                                       "(Ljava/lang/String;)Landroid/content/res/XmlResourceParser;",
+                                       {dx::VmValue::Ref(path)});
+          });
+  }
   // 按资源 ID 打开编译后的 XML pull parser。
   builder.VirtualMethod(
       "getXml", "(I)Landroid/content/res/XmlResourceParser;",

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <span>
@@ -31,6 +32,11 @@ struct ThemeValue final {
 class ThemeResources final {
 public:
     void Load(std::string_view projection);
+    // Selection and file validation are injected by the APK owner, never by UI.
+    using ResourceSelector = std::function<const loader::ArscEntry*(std::uint32_t)>;
+    using FileValidator = std::function<void(const loader::ArscEntry&)>;
+    void SetResourceHooks(ResourceSelector select, FileValidator validate);
+
     [[nodiscard]] ThemeToken New();
     void Delete(ThemeToken token);
     [[nodiscard]] bool Has(ThemeToken token) const;
@@ -68,6 +74,10 @@ private:
     [[nodiscard]] ThemeValue Resolve(ThemeValue value, const State* theme, bool resources,
                                      const loader::ArscTable& table) const;
     [[nodiscard]] std::optional<ThemeValue> Lookup(const State& theme, std::uint32_t attr) const;
+    [[nodiscard]] const loader::ArscEntry* Entry(std::uint32_t id, const loader::ArscTable& table) const;
+    void ValidateFile(const ThemeValue& value, const loader::ArscTable& table) const;
+    ResourceSelector select_;
+    FileValidator validate_file_;
     std::map<std::uint32_t, Bag> projection_;
     std::map<std::uint32_t, std::string> registered_names_;
     std::map<std::string, std::string, std::less<>> unregistered_;

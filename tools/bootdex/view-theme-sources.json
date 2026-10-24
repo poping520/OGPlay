@@ -1074,8 +1074,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-theme.surface.json.gz",
-      "surface_sha256": "89a1f82963ed1119883994af2f684d8c8e1dfca860dd9b58f71904885b9b128c",
+      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
+      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
       "owner": "Landroid/content/res/Resources;",
       "smali_sha256": "b1efcad3806f9c44845bb8f780b1c37620e7e024e16641ced0a8af086ca10cf8",
       "fields": [
@@ -1220,7 +1220,7 @@
         {
           "signature": "mComposedIconInfo:Landroid/app/ComposedIconInfo;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1238,7 +1238,7 @@
         {
           "signature": "mIcons:Landroid/util/SparseArray;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1286,7 +1286,7 @@
         {
           "signature": "mTmpValue:Landroid/util/TypedValue;",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1440,7 +1440,7 @@
           "signature": "getColorStateList(I)Landroid/content/res/ColorStateList;",
           "flags": 1,
           "body_sha256": "118f5508637d14b53962a290cf3e9725d9772d6e6db3ccf84b9ff3241c3ec7b5",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getCompatibilityInfo()Landroid/content/res/CompatibilityInfo;",
@@ -1502,20 +1502,13 @@
           "signature": "getDrawable(I)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "f0706fc783a38f82efb73795a4b3dd6799b1655cfe2f5d8aad2d5346eac95803",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
-            "inputs": "current APK resource owner, live typed Theme/XML token, checked attribute/output arrays or resource ID",
-            "outputs": "real resource values and TypedArray six-slot ABI; absent only for registered queries",
-            "state_owner": "context ThemeResources owns theme state; original ROM fields own TypedArray, caches and reference counts",
-            "failure_boundary": "unknown/unbound themes, unsupported projected values, invalid tokens/indices, drawable/selector/spans and system AssetManager fail with ledger"
-          }
+          "source": "rom"
         },
         {
           "signature": "getDrawable(IZ)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "91c907866ebc04ff459d320f52d9b167e371014e615790a309fc14422f27ce54",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getDrawableForDensity(II)Landroid/graphics/drawable/Drawable;",
@@ -1707,13 +1700,20 @@
           "signature": "getValue(ILandroid/util/TypedValue;Z)V",
           "flags": 1,
           "body_sha256": "9b11b26d34df2695fac4980fd4cc453101f5fb4cf917a02ac12ead91f4e34a03",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getValue(ILandroid/util/TypedValue;ZZ)V",
           "flags": 1,
           "body_sha256": "eb9b03d9f8d330879f3fee992992eff2e39faa1403bc8f14f8e737a24b428df2",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 scalar APK resource adapter; reject populated ROM composed-icon state instead of importing system icon customization",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
         },
         {
           "signature": "getValue(Ljava/lang/String;Landroid/util/TypedValue;Z)V",
@@ -1750,13 +1750,27 @@
           "signature": "loadColorStateList(Landroid/util/TypedValue;I)Landroid/content/res/ColorStateList;",
           "flags": 0,
           "body_sha256": "f03021b59a985971b3e6a1b6e988804b2aff5accc54fcf64d087c37deccf1c1c",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
         },
         {
           "signature": "loadDrawable(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
           "flags": 0,
           "body_sha256": "62f021f6118af60676c17e5eb5897133cd2082e9f259d702b9226f42ba3c8e6e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
         },
         {
           "signature": "loadXmlResourceParser(ILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
@@ -2081,7 +2095,7 @@
           "signature": "getColorStateList(I)Landroid/content/res/ColorStateList;",
           "flags": 1,
           "body_sha256": "92d857565d427cf7909e2edb9f72628432484edefb6b1d58f6abd11fa2269890",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getDimension(IF)F",

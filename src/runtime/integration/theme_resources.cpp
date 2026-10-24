@@ -74,11 +74,13 @@ void ThemeResources::Load(std::string_view projection) {
     decltype(projection_) projected;
     decltype(registered_names_) names;
     decltype(unregistered_) rejected;
-    for (std::size_t i = 0; i < registered.Size(); ++i) {
-        const auto row = *registered.Element(i);
+    const auto closure = Member(root, "style_closure");
+    if (!closure.IsArray() || closure.Size() > 1024) throw std::runtime_error("invalid style closure bounds");
+    for (std::size_t i = 0; i < registered.Size() + closure.Size(); ++i) {
+        const auto row = i < registered.Size() ? *registered.Element(i) : *closure.Element(i - registered.Size());
         const auto id = Number(Member(row, "id"));
         if ((id >> 24U) != 1 || projected.contains(id)) throw std::runtime_error("invalid/duplicate theme ID");
-        names.emplace(id, Text(Member(row, "name")));
+        if (i < registered.Size()) names.emplace(id, Text(Member(row, "name")));
         const auto attrs = Member(row, "attributes");
         if (!attrs.IsArray() || attrs.Size() > 1024) throw std::runtime_error("invalid theme attributes");
         Bag bag;
@@ -111,6 +113,26 @@ void ThemeResources::Load(std::string_view projection) {
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
     loaded_ = true;
+}
+
+void ThemeResources::SetResourceHooks(ResourceSelector select, FileValidator validate) {
+    select_ = std::move(select);
+    validate_file_ = std::move(validate);
+}
+
+const loader::ArscEntry* ThemeResources::Entry(std::uint32_t id, const loader::ArscTable& table) const {
+    return select_ ? select_(id) : table.FindById(id);
+}
+
+void ThemeResources::ValidateFile(const ThemeValue& value, const loader::ArscTable& table) const {
+    const auto* entry = value.resource_id ? Entry(value.resource_id, table) : nullptr;
+    if (!entry || !entry->string_value || !entry->string_value->starts_with("res/")) return;
+    const auto& path = *entry->string_value;
+    if (entry->type_name != "drawable" || path.ends_with(".9.png") ||
+        !(path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg")))
+        throw std::runtime_error("unsupported selector/ninepatch/XML/unknown resource file: " + path);
+    if (!validate_file_) throw std::runtime_error("APK bitmap file validator unavailable");
+    validate_file_(*entry);
 }
 
 ThemeToken ThemeResources::New() {
@@ -173,7 +195,7 @@ ThemeResources::Bag ThemeResources::Style(std::uint32_t style, const loader::Ars
         std::erase_if(result, [](const auto& row) { return row.second.type == 0 && row.second.unsupported.empty(); });
         return result;
     }
-    const auto* entry = table.FindById(style);
+    const auto* entry = Entry(style, table);
     if (!entry) throw std::runtime_error("unknown APK style " + std::to_string(style));
     if (!entry->is_complex) {
         if (entry->value_type == 1 && entry->value_data) return Style(entry->value_data, table, std::move(seen));
@@ -205,7 +227,7 @@ void ThemeResources::Apply(ThemeToken token, std::uint32_t style, bool force, co
             result.values[id] = std::move(replacement);
         }
     }
-    if ((style >> 24U) == 1 || (table.FindById(style) && table.FindById(style)->parent)) {
+    if ((style >> 24U) == 1 || (Entry(style, table) && Entry(style, table)->parent)) {
         // Projected coverage is established only by actually merging a system
         // bag. APK-only themes still permit their own absent attributes.
         for (const auto& [id, value] : bag) {
@@ -246,17 +268,33 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
             value.flags |= flags;
             continue;
         }
-        if (value.type != 1 || !value.data || !resources) return value;
+        if (value.type != 1 || !value.data || !resources) {
+            if (value.type == 3) ValidateFile(value, table);
+            return value;
+        }
         if (!seen.emplace(1, value.data).second) throw std::runtime_error("resource reference cycle");
         const auto id = value.data;
-        if ((id >> 24U) == 1)
-            throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
-        const auto* entry = table.FindById(id);
+        if ((id >> 24U) == 1) {
+            if (!projection_.contains(id))
+                throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
+            // A style bag is a terminal reference, consumed by getResourceId,
+            // never converted into a scalar or a successful Drawable.
+            value.resource_id = id;
+            value.cookie = 1;
+            return value;
+        }
+        const auto* entry = Entry(id, table);
         if (!entry) throw std::runtime_error("unknown resource reference");
-        if (entry->is_complex) throw std::runtime_error("cannot resolve bag as a scalar");
-        if (entry->type_name == "drawable" || entry->type_name == "anim" || entry->type_name == "animation" ||
-            (entry->string_value && entry->string_value->starts_with("res/")))
-            throw std::runtime_error("unsupported drawable/selector/animation/file value");
+        if (entry->is_complex) {
+            if (entry->type_name != "style") throw std::runtime_error("cannot resolve non-style bag as a scalar");
+            value.resource_id = id;
+            value.cookie = 1;
+            value.flags |= entry->changing_configurations;
+            value.density = entry->density;
+            return value;
+        }
+        if (entry->type_name == "anim" || entry->type_name == "animation")
+            throw std::runtime_error("unsupported animation value");
         value.type = entry->value_type;
         value.data = entry->value_data;
         value.cookie = 1;
@@ -275,14 +313,13 @@ std::optional<ThemeValue> ThemeResources::Attribute(ThemeToken token, std::uint3
 }
 
 ThemeValue ThemeResources::Resource(std::uint32_t resource, bool resolve, const loader::ArscTable& table) const {
-    const auto* entry = table.FindById(resource);
+    const auto* entry = Entry(resource, table);
     if ((resource >> 24U) == 1 || !entry || entry->is_complex)
         throw std::runtime_error("unknown or non-scalar resource");
     ThemeValue value{
         entry->value_type, entry->value_data, 1, resource, entry->changing_configurations, entry->density, {}};
-    if (entry->type_name == "drawable" || entry->type_name == "anim" ||
-        (entry->string_value && entry->string_value->starts_with("res/")))
-        throw std::runtime_error("unsupported resource file value");
+    if (entry->type_name == "anim" || entry->type_name == "animation")
+        throw std::runtime_error("unsupported animation resource");
     return Resolve(value, nullptr, resolve, table);
 }
 
@@ -378,6 +415,8 @@ std::vector<ThemeValue> ThemeResources::Retrieve(const loader::CompiledXmlNode& 
 
 void ThemeResources::Shutdown() {
     themes_.clear();
+    select_ = {};
+    validate_file_ = {};
     stopped_ = true;
 }
 }  // namespace ogplay::runtime

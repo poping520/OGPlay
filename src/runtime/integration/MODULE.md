@@ -43,6 +43,10 @@ syscall/execution/vfs 及下层；下层不得反向依赖 integration。不直�
 内容树触摸分发、reverse-Z hit-test、intercept/CANCEL 与非 split 捕获归 integration，
 session 宿主输入和 guest Window 入口共用相同状态与算法；integration 不消费宿主设备。
 
+实验主题 provider 的资源选择与文件验证通过 APK owner 显式回调注入；六槽与 indices
+完整解析、校验后发布。叶 drawable 的不可变像素按 Java 对象身份持有并随 sweep/teardown
+释放，不建立全局强根；布局与几何不在值桥写入。
+
 Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 [DexVM](../dexvm/MODULE.md)拥有解释/GC/线程，[session](../../session/MODULE.md)编排生命周期，
 [capabilities](../../../capabilities.toml)登记支持范围。普通 Java 算法不得在 integration 重建。

@@ -141,16 +141,27 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   XML style、默认 style、theme，同名 defStyleAttr reference 替代 defStyleRes；@null 遮蔽、
   force 与独立 copy 遵循 API19。retrieveAttributes 只读 XML/资源，不套 style/theme。
   六槽 type/data/cookie/resourceId/configFlags/density 和 indices 先受检容量再写 Java int[]；
-  XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。未知类型/资源文件明确失败。
+  XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。APK owner 注入单 entry 配置
+  选择与文件验证回调，与 Legacy 共用候选优先级；引用链保留累计 flags 和最终资源 ID。
+  仅 APK drawable PNG/JPEG 与 TYPE_INT_COLOR_* 可供叶消费；文件编码/扩展名、解码边界、
+  ninepatch/光学布局 chunk 在六槽发布前验证，未知文件和类型明确失败。
   ROM Theme/TypedArray 独占字段、缓存与 recycle；selectDefaultTheme 执行 ROM targetSdk 算法。
   AssetManager 普通构造 adapter 初始化真实 mOpen/mNumRefs/mValue/mOffsets，Resources 应用
   对象工厂初始化 mAccessLock/mMetrics，原 clinit 与 Theme/TypedArray 构造执行 ROM。
   makeStringBlocks 将唯一 APK 原池绑定真实 ROM StringBlock，不合成 system AssetManager；
   原池由 context 保活至 Shutdown，StringBlock 不拥有该借用池。
   native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner，init(true)、系统池、
-  drawable/selector/ninepatch/animation/spans 请求失败；TypedArray.getDrawable 执行 ROM，
-  缺席或 @null 返回 null，非空 drawable 属性在六槽发布前明确失败。属性类别按封存
-  styleable 的名称/ID 绑定，不能把不支持值降为缺席；scrollbars 初始化仍为 failure。
+  selector/ninepatch/animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
+  执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
+  缺席或 @null 返回 null；background/foreground/divider/scrollbar 非空仍在六槽发布前失败。
+  styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
+  三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
+  受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
+  资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
+  换算；ColorDrawable 仅宿主 color 为值 owner，未启用的 mPaint/mState 访问明确失败。
+  不支持 draw、inflateFromXml、StateListDrawable、NinePatchDrawable；无叶控件构造准入。
+  不可变 leaf_pixels 由 Java Drawable 身份拥有，不进入 ui_bitmaps 缓存；mBitmap 为 Java 强边，
+  sweep/teardown 退役 backing。Legacy 构造/像素/主题路径保持。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
   清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。Legacy 不加载投影。
 

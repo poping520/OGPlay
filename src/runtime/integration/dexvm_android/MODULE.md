@@ -121,8 +121,17 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   查询返回值/不可变所有权，不发布可悬空的可变引用。close 立即退役 cursor，owner 退役
   同时撤销其 parsers；bridge teardown Shutdown 后活跃数为零，context 析构也释放所有权。
   旧/关闭/跨 context token、错误属性索引均抛确定的 C++ 异常。
-  本阶段只提供内部接缝，不暴露 XmlBlock native、不绑定 guest owner/GC、不准入
-  Theme/applyStyle/属性构造；后续 native 必须显式连接 RetireOwner 与 GC 生命周期。
+  实验 JavaTraversal 配对逐签名批准 XmlBlock native 与 StringBlock 四个 plain-string native；
+  Parser typed getter/event/depth/open-count/close 执行原 ROM。document/cursor/string-pool token
+  分型且共用不复用 ID 域；XML 借用池随 document 退役，不能由 StringBlock 销毁。
+  独立池由 StringBlock owner/原 finalizer 退役；GC hooks 只读原 owner 字段，Java 强边保活
+  Parser→XmlBlock→StringBlock，无 native 强根。sweep 检查是否已退役，不重复销毁；Shutdown 清零。
+  StringBlock.get 为受审 plain-string adapter，缓存身份只存原 mStrings/mSparseStrings 字段；
+  mUseSparse=true 且池大于250时复用 Java SparseArray。每次查询含缓存命中都检查活 token、
+  索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
+  AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
+  执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
+  Legacy getXml/inflater 不变；无 Theme/applyStyle/TypedArray 或成功控件属性构造。
 
 - Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，

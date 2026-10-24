@@ -134,7 +134,8 @@ struct StringPool final {
     bool utf8{};
 };
 
-StringPool ParseStringPool(std::span<const std::byte> bytes, std::size_t offset, std::uint32_t size) {
+StringPool ParseStringPool(std::span<const std::byte> bytes, std::size_t offset, std::uint32_t size,
+                           bool strict = false) {
     RequireRange(bytes, offset, size);
     if (size < 28) throw std::runtime_error("binary XML string pool is truncated");
     StringPool pool;
@@ -145,8 +146,16 @@ StringPool ParseStringPool(std::span<const std::byte> bytes, std::size_t offset,
     const auto start = Read32(bytes, offset + 20);
     if (header > size || count > (size - header) / 4U || start > size)
         throw std::runtime_error("binary XML string pool field is out of range");
-    for (std::uint32_t i = 0; i < count; ++i)
-        pool.offsets.push_back(offset + start + Read32(bytes, offset + header + i * 4U));
+    const auto styles = Read32(bytes, offset + 12), style_start = Read32(bytes, offset + 24);
+    if (strict && (header < 28 || styles > (size - header) / 4U - count ||
+                   start < header + (static_cast<std::uint64_t>(count) + styles) * 4U ||
+                   (styles != 0 && (style_start < start || style_start > size)) || (styles == 0 && style_start != 0)))
+        throw std::runtime_error("compiled string pool bounds are invalid");
+    if (strict && styles != 0) pool.end = offset + style_start;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const auto relative = Read32(bytes, offset + header + i * 4U);
+        pool.offsets.push_back(offset + start + relative);
+    }
     return pool;
 }
 
@@ -166,6 +175,19 @@ std::int32_t LayoutSize(const std::uint8_t type, const std::uint32_t data) {
 }  // namespace
 
 struct CompiledXmlDocumentBuilder final {
+    static std::shared_ptr<const CompiledXmlDocument> Pool(std::span<const std::byte> bytes) {
+        if (Read16(bytes, 0) != kStringPoolType) throw std::runtime_error("not a compiled string pool");
+        const auto size = Read32(bytes, 4);
+        const auto pool = ParseStringPool(bytes, 0, size, true);
+        auto result = std::make_shared<CompiledXmlDocument>();
+        result->bytes_.assign(bytes.begin(), bytes.begin() + size);
+        result->string_offsets_ = pool.offsets;
+        result->string_end_ = pool.end;
+        result->utf8_ = pool.utf8;
+        result->has_string_styles_ = Read32(bytes, 12) != 0;
+        return result;
+    }
+
     static std::shared_ptr<const CompiledXmlDocument> Parse(const std::span<const std::byte> input, bool strict) {
         auto result = std::make_shared<CompiledXmlDocument>();
         result->bytes_.assign(input.begin(), input.end());
@@ -197,7 +219,8 @@ struct CompiledXmlDocumentBuilder final {
             const auto ext = offset + header;
             if (type == kStringPoolType && !saw_node) {
                 try {
-                    pool = ParseStringPool(bytes, offset, size);
+                    pool = ParseStringPool(bytes, offset, size, strict);
+                    result->has_string_styles_ = Read32(bytes, offset + 12) != 0;
                     saw_pool = true;
                     pool_error.clear();
                 } catch (const std::runtime_error& error) {
@@ -407,6 +430,10 @@ std::vector<BinaryXmlPullEvent> CompiledXmlDocument::PullEvents() const {
 
 std::shared_ptr<const CompiledXmlDocument> ParseCompiledXmlDocument(std::span<const std::byte> bytes) {
     return CompiledXmlDocumentBuilder::Parse(bytes, true);
+}
+
+std::shared_ptr<const CompiledXmlDocument> ParseCompiledStringPool(std::span<const std::byte> bytes) {
+    return CompiledXmlDocumentBuilder::Pool(bytes);
 }
 
 std::vector<BinaryXmlElement> ParseBinaryXmlElements(std::span<const std::byte> bytes) {

@@ -46,7 +46,7 @@ note = "BND-25/39/40、ADR-0076：dlopen/dlsym/dlclose/dlerror 接进程 ELF nam
 [loader.binary_xml_typed_attributes]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"
-note = "LUI-1/DVM-286：不可变 compiled XML 保留原 bytes/string pool/resource map、namespace/line、typed/raw 与特殊一基索引、start/end 关联；新接口受检失败，Elements/PullEvents 共用事实并保持 Legacy 输出。context 强类型 cursor 支持独立推进/关闭/owner 退役/teardown；未暴露 XmlBlock native 或属性构造。"
+note = "LUI-1/DVM-286：不可变 compiled XML 保留原 bytes/string pool/resource map、namespace/line、typed/raw 与特殊一基索引、start/end 关联；新接口受检失败，Elements/PullEvents 共用事实并保持 Legacy 输出。context 强类型 document/cursor/string-pool 支持独立推进/关闭/owner 退役/teardown；独立 plain pool 复用受检 WTF-8 查询。XmlBlock 接缝仅实验，未接通控件属性构造。"
 
 [runtime.ui_tree]
 status = "complete"
@@ -1990,8 +1990,8 @@ note = "DVM-195/ADR-0075：原版 API19 NativeActivity 接入 ARMv7 进程，提
 
 [dexvm.xml_pull_bootdex]
 status = "partial"
-test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tools/bootdex/build_bootdex.py check"
-note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；XmlResourceParser 仍只支持 AXML 事件子集，其余方法记账失败。"
+test = "tests/dexvm/file_assets_resources_tests.cpp#XML Pull original factory parses BOM APK assets through KXml on both backends; tests/dexvm/file_assets_resources_tests.cpp#Resources getXml exposes compiled APK XML as pull events; tests/dexvm/xml_block_tests.cpp#DVM-287; tools/bootdex/build_bootdex.py check"
+note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工厂反射创建 parser/serializer，无解析 intrinsic；验证 AssetManager InputStream、namespace、UTF-8 BOM 与畸形 XML 异常。serializer 长尾未验收；Legacy XmlResourceParser 为事件子集。DVM-287 实验 ROM XmlBlock/Parser 支持 APK compiled XML typed/raw 查询与生命周期；StringBlock 仅无样式池，系统 XML/span 失败。"
 
 [runtime.guest_proc_maps]
 status = "partial"

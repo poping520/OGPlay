@@ -1,0 +1,1299 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-xml.surface.json.gz",
+      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "owner": "Landroid/content/res/XmlBlock;",
+      "smali_sha256": "5dbcf4b0b135484389d44d41bfa5c2edcf72533ac29a0bfbc80840ac7e4357a3",
+      "fields": [
+        {
+          "signature": "DEBUG:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mAssets:Landroid/content/res/AssetManager;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNative:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOpen:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOpenCount:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStrings:Landroid/content/res/StringBlock;",
+          "flags": 16,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ],
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/res/AssetManager;I)V",
+          "flags": 65536,
+          "body_sha256": "c4cc14fd2d1ae7c1e7abfa0f1bd6ef26aed1bf85e788894a5a92c940150cb347",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>([B)V",
+          "flags": 65537,
+          "body_sha256": "84744122f53435ae44165405898bd9a04b6705655d0a21cea37a93306bf8f253",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>([BII)V",
+          "flags": 65537,
+          "body_sha256": "c1a587f18b50dab06b7c4b454059a155487b87eb85457afae568cc01f1556d89",
+          "source": "rom"
+        },
+        {
+          "signature": "access$008(Landroid/content/res/XmlBlock;)I",
+          "flags": 4104,
+          "body_sha256": "c2e18acbc97a0e5227ccd5b792b26d609f472624a483a72b67581a588923dc71",
+          "source": "rom"
+        },
+        {
+          "signature": "access$100(I)I",
+          "flags": 4104,
+          "body_sha256": "caba7c88435e2243aaef09c3a7a71bc01613891c5d5c2fe7940ef97fa656e6ef",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1000(ILjava/lang/String;Ljava/lang/String;)I",
+          "flags": 4104,
+          "body_sha256": "ec447cd53f3dc99d0ac5c1b7ab835273f7ae255b0f786a5d32d6ce436f8b3472",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1100(II)I",
+          "flags": 4104,
+          "body_sha256": "5da460b8ff7415a68d9eff2f15af9f4230afbcbd4c808711490b873071a74615",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1200(I)I",
+          "flags": 4104,
+          "body_sha256": "03f869378091e770ef9efe7697bb582f1e728364c997dc35c4695a761bbaf773",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1300(I)I",
+          "flags": 4104,
+          "body_sha256": "8908bdfd2482ad52cfd9f67d47324c4e9e72e5082252872eda2fbc8dd34e1a38",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1400(I)I",
+          "flags": 4104,
+          "body_sha256": "23f332bd0905074fcc20286d9e701177cae39a185db2ab3b128a5b62ece1550e",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1500(I)V",
+          "flags": 4104,
+          "body_sha256": "fd0569e3256c125ec5cd87e62ef20ac9a4c22d4a2f078af2cd832afe083b94eb",
+          "source": "rom"
+        },
+        {
+          "signature": "access$1600(Landroid/content/res/XmlBlock;)V",
+          "flags": 4104,
+          "body_sha256": "6823b955ad9db046afec7cf77312c25d9f6d3feb769f110ee7497cdc95c31077",
+          "source": "rom"
+        },
+        {
+          "signature": "access$200(I)I",
+          "flags": 4104,
+          "body_sha256": "a0e8e15ea8533124be1a58ff81d517eb612eb1d03f3acac58c2508458ef034e1",
+          "source": "rom"
+        },
+        {
+          "signature": "access$300(I)I",
+          "flags": 4104,
+          "body_sha256": "1a777c11360528740988d7a3288e30286aec3370e2363e06bd1d70ac64985a43",
+          "source": "rom"
+        },
+        {
+          "signature": "access$400(II)I",
+          "flags": 4104,
+          "body_sha256": "4157b5773190366df4aeb9556093bd367dfd97483b3cb7ea196f7a8aa9ef4504",
+          "source": "rom"
+        },
+        {
+          "signature": "access$500(II)I",
+          "flags": 4104,
+          "body_sha256": "95474cbfbfcd0a2dad39af57bf7488081b8770b2f1d13bc647e3866b09a127c8",
+          "source": "rom"
+        },
+        {
+          "signature": "access$600(I)I",
+          "flags": 4104,
+          "body_sha256": "a57f033771681ac62b18c2f51ef7e87b11f06aab0a83847d240185697550bc8d",
+          "source": "rom"
+        },
+        {
+          "signature": "access$700(II)I",
+          "flags": 4104,
+          "body_sha256": "385c02718d6f774d1dc5d2bb69ba3bdf1f834e8f6a4241ca5152502f6fff2c81",
+          "source": "rom"
+        },
+        {
+          "signature": "access$800(II)I",
+          "flags": 4104,
+          "body_sha256": "5a270e86e0f148365d4c62cd0c345db9b2240b1396cad464acc129e4c2c351a6",
+          "source": "rom"
+        },
+        {
+          "signature": "access$900(II)I",
+          "flags": 4104,
+          "body_sha256": "4187e184138c09aba836d402a4880ff9e668fb0826c1e7641caed6553eab0b0d",
+          "source": "rom"
+        },
+        {
+          "signature": "close()V",
+          "flags": 1,
+          "body_sha256": "05a3409756065b00e21478f79b46f7b84dd0b79d9b03bccdc64d68aa9b68dc43",
+          "source": "rom"
+        },
+        {
+          "signature": "decOpenCountLocked()V",
+          "flags": 2,
+          "body_sha256": "5867c8bbdf27bcb12dfc987c70d678fff044cdc8357b27762812b1e839638e1f",
+          "source": "rom"
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "ae656415482a42a9eed9db8cc12a9032f154ea8cae628dbfd3891f4c325adc8c",
+          "source": "rom"
+        },
+        {
+          "signature": "nativeCreate([BII)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeCreateParseState(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeDestroy(I)V",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeDestroyParseState(I)V",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeCount(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeData(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeDataType(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeIndex(ILjava/lang/String;Ljava/lang/String;)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeName(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeNamespace(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeResource(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetAttributeStringValue(II)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetClassAttribute(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetIdAttribute(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetLineNumber(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetName(I)I",
+          "flags": 280,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetNamespace(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetStringBlock(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetStyleAttribute(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetText(I)I",
+          "flags": 282,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeNext(I)I",
+          "flags": 280,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "newParser()Landroid/content/res/XmlResourceParser;",
+          "flags": 1,
+          "body_sha256": "26689805eb657f77fb7a8140dd423eb3d96a82a230112a8a0a9539eeef64ec7a",
+          "source": "rom"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-xml.surface.json.gz",
+      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "owner": "Landroid/content/res/XmlBlock$Parser;",
+      "smali_sha256": "4b07eab2c142215666a8dd74744d73b13ba7842e2ec9adf7407a1ae247290a9f",
+      "fields": [
+        {
+          "signature": "mBlock:Landroid/content/res/XmlBlock;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDecNextDepth:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDepth:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEventType:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mParseState:I",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStarted:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "this$0:Landroid/content/res/XmlBlock;",
+          "flags": 4112,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ],
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/res/XmlBlock;ILandroid/content/res/XmlBlock;)V",
+          "flags": 65536,
+          "body_sha256": "30da4f04f81bfc78b3436d0fb3a22ed75830654d765e49c8cce60734654c7de3",
+          "source": "rom"
+        },
+        {
+          "signature": "close()V",
+          "flags": 1,
+          "body_sha256": "c0817a6358b6bace5524490f3267d9e8081adb6d9ecb93f616a88fecd5a38d43",
+          "source": "rom"
+        },
+        {
+          "signature": "defineEntityReplacementText(Ljava/lang/String;Ljava/lang/String;)V",
+          "flags": 1,
+          "body_sha256": "8fc26c55a5d1fd812fbf35af813590d7819fb8ee8bd523bf8bb449dbf1f631b2",
+          "source": "rom"
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "c8152a0a88242b743691008150f13f20a00ab81cccdd66baa76dad15cbe89d31",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeBooleanValue(IZ)Z",
+          "flags": 1,
+          "body_sha256": "f25e184aa2ffd866d45080e9b563a68848f6b6fc429b0812f7eff2b20dbce476",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeBooleanValue(Ljava/lang/String;Ljava/lang/String;Z)Z",
+          "flags": 1,
+          "body_sha256": "67b4dab4eb4c4e690da1068d93eab20ecec2dd9f8ba366056904e4ed7d468d51",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeCount()I",
+          "flags": 1,
+          "body_sha256": "2623828d81f268d3ba2818a4286636332d5497a2dd4e606c73f2736d96f31a16",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeFloatValue(IF)F",
+          "flags": 1,
+          "body_sha256": "ea4c8d604965f88bc6f21bdbf229628287fb3f249659f6cc5c0167ae482ba772",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeFloatValue(Ljava/lang/String;Ljava/lang/String;F)F",
+          "flags": 1,
+          "body_sha256": "b295fb06c77d47aeaae12f0388da4426f84d8310f740c89321ec7afa9c1894f9",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeIntValue(II)I",
+          "flags": 1,
+          "body_sha256": "82de34cc772b5cd92c0beb86b06ce620d0314d51790c65341cfb84b4210278d8",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeIntValue(Ljava/lang/String;Ljava/lang/String;I)I",
+          "flags": 1,
+          "body_sha256": "584ea1af1c44223baf1e15e5b530d0362854093311d4f5a7e0468866f0f705ea",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeListValue(I[Ljava/lang/String;I)I",
+          "flags": 1,
+          "body_sha256": "6f194ccb9a8ee138b64a7352d3a32037b047bef933047e2da3b9d248ce48d6aa",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeListValue(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;I)I",
+          "flags": 1,
+          "body_sha256": "426b016ff4795bbe8485d251eef287b62678032268c7fd13d493160020e83986",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeName(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "fd976aa07c349ed0392eff94c514fe344da39c802e0ed5185494d11aec675dba",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeNameResource(I)I",
+          "flags": 1,
+          "body_sha256": "b579595c6ed726ae4a95764642856d10a4c39ea0401893411507ade8eac71228",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeNamespace(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "35b38feecd71efc0ddb5743dc9b49b3f48cce93995c46171dc347ba08edc2088",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributePrefix(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "289445d046ad5e986660b9fd0c92f9f6881c31842e334dcb24d146cf7c284e21",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeResourceValue(II)I",
+          "flags": 1,
+          "body_sha256": "719389f69959701e7a3516e685e01ad5485c3825b668fb3fad767ec26180a7a6",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeResourceValue(Ljava/lang/String;Ljava/lang/String;I)I",
+          "flags": 1,
+          "body_sha256": "1c6a783f1b9f0edb748e7b2b8001b8be5182c6e9fbdad9436c81f7d4725cc031",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeType(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "28a279b43c8c3c3999fb0730494c733de6d6c0254f277eaac12d491729a6b0c4",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeUnsignedIntValue(II)I",
+          "flags": 1,
+          "body_sha256": "210aa4bb0b0be8da306b0a54704c346f1c5c5dc4de901f8507d8b4a301689299",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeUnsignedIntValue(Ljava/lang/String;Ljava/lang/String;I)I",
+          "flags": 1,
+          "body_sha256": "19f06fb042e16dc2afda8f276544b6d2e4a21b84ff2504de22068c15284ded03",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeValue(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "05c3ad14ce82a2297dcbf406e0d045de6c49e21af90779bbaa32c72760c5877f",
+          "source": "rom"
+        },
+        {
+          "signature": "getAttributeValue(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "18d286d72ac83cf01b4b44c985c6be5223c5343146f236226125382ee7a6ac33",
+          "source": "rom"
+        },
+        {
+          "signature": "getClassAttribute()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "65fb00b997fb72c41e8b3177da0a122eb0e901f1f70f8820fa271ed56b33b280",
+          "source": "rom"
+        },
+        {
+          "signature": "getColumnNumber()I",
+          "flags": 1,
+          "body_sha256": "b5a088a81cd27430e41bee422aa3b24a238eb6b95f20e125ff5924cf3faa44ed",
+          "source": "rom"
+        },
+        {
+          "signature": "getDepth()I",
+          "flags": 1,
+          "body_sha256": "cc3c2f5531fb477bb7e2669fd12a500412d8bca5a6021f37c7d583771b349934",
+          "source": "rom"
+        },
+        {
+          "signature": "getEventType()I",
+          "flags": 1,
+          "body_sha256": "1de0cf0514c7d642217ad2bbe9434092eeb03502abfe4bd0d17626d8c002e979",
+          "source": "rom"
+        },
+        {
+          "signature": "getFeature(Ljava/lang/String;)Z",
+          "flags": 1,
+          "body_sha256": "e55d8c77dfcd56c77d6bc4dac91ef91cb450a7f0795c8cb03eb360deac52ed2e",
+          "source": "rom"
+        },
+        {
+          "signature": "getIdAttribute()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "69a92f5929b30951b79e1cdf499269c242547326b625859713a47dfc1aca8671",
+          "source": "rom"
+        },
+        {
+          "signature": "getIdAttributeResourceValue(I)I",
+          "flags": 1,
+          "body_sha256": "a0b72031dc29a1e679475e3e1341fce5e457c3ed40eb061c9620ed9b65b203fd",
+          "source": "rom"
+        },
+        {
+          "signature": "getInputEncoding()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "2ce9ffa4e42cadbb58ae87c085b4aa18a6eca470ed59b77d3da06a1ae5aeb58a",
+          "source": "rom"
+        },
+        {
+          "signature": "getLineNumber()I",
+          "flags": 1,
+          "body_sha256": "966209bc0b746693e84a24b5ebab62b7bbef62488ceb1c54b762e8d7fbe1cb2c",
+          "source": "rom"
+        },
+        {
+          "signature": "getName()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "515335b519eaa44675a0b3f9d1acf2983c5468ec6f1538228714a8a4eef2bd8f",
+          "source": "rom"
+        },
+        {
+          "signature": "getNamespace()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "1c682ea6dfdc7c130bc8f3ed04a5c1c69295a0eae43f377c82f9fe88452e40e9",
+          "source": "rom"
+        },
+        {
+          "signature": "getNamespace(Ljava/lang/String;)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "f952fdab7001221a180028b4c06b739466d3b6f94e41eb8cd11c1e552f9a2118",
+          "source": "rom"
+        },
+        {
+          "signature": "getNamespaceCount(I)I",
+          "flags": 1,
+          "body_sha256": "14833264c5b1a7056d939a8958e6fd2b8d7c497afeb1b8b53cefe3734ed9ba87",
+          "source": "rom"
+        },
+        {
+          "signature": "getNamespacePrefix(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "56a2c7e93cf74f14b65a941ec5f547c99e30d1b2ca378ef9e16e29da47b8824a",
+          "source": "rom"
+        },
+        {
+          "signature": "getNamespaceUri(I)Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "f4c1c4bd6f63bd2089f4d9394d8d1d52885e52cf8ba8791abbbe5fe0551ed12d",
+          "source": "rom"
+        },
+        {
+          "signature": "getPooledString(I)Ljava/lang/CharSequence;",
+          "flags": 16,
+          "body_sha256": "0f855a1de46f8836d198139898e722ca0e876f182b0a039434f733913d177f3c",
+          "source": "rom"
+        },
+        {
+          "signature": "getPositionDescription()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "caa45d10cabd419719fc0e3d55d0ee646ea7c8c8d2e029d6748ddcded52f77ff",
+          "source": "rom"
+        },
+        {
+          "signature": "getPrefix()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "4d6413ae1a70c42b727b0e6d8d1d7a94bb4300009ff07b8d68884ce0dd3965c2",
+          "source": "rom"
+        },
+        {
+          "signature": "getProperty(Ljava/lang/String;)Ljava/lang/Object;",
+          "flags": 1,
+          "body_sha256": "35848f4c84902c3d1d034872f74aa40c6d77d8faa8b29b2141066b01a38c3491",
+          "source": "rom"
+        },
+        {
+          "signature": "getStyleAttribute()I",
+          "flags": 1,
+          "body_sha256": "b7c4c12e995f4580beaddb51714a3f0804e03671c9b6dedbfb9827aba65f0a8a",
+          "source": "rom"
+        },
+        {
+          "signature": "getText()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "bb1be3179b844f2e8d211e546271799755ae269135b25f6e19d6307c76a29bcf",
+          "source": "rom"
+        },
+        {
+          "signature": "getTextCharacters([I)[C",
+          "flags": 1,
+          "body_sha256": "c5921f98d222042461bff7e32d79dd5c9b062c3f5bf13ef46c5e23ff00a8c08c",
+          "source": "rom"
+        },
+        {
+          "signature": "isAttributeDefault(I)Z",
+          "flags": 1,
+          "body_sha256": "46d28d28ee5a71728e41947238bfbef60908d58efc91df570cb6297ebaaabe9c",
+          "source": "rom"
+        },
+        {
+          "signature": "isEmptyElementTag()Z",
+          "flags": 1,
+          "body_sha256": "445feb9853bea52f84d8a1668ade08dd4adba71d215107edd99da62bacb5aaf7",
+          "source": "rom"
+        },
+        {
+          "signature": "isWhitespace()Z",
+          "flags": 1,
+          "body_sha256": "081c01d062123343910d20a8b86a2a4670485b6f2b3232123560f65cae44cb58",
+          "source": "rom"
+        },
+        {
+          "signature": "next()I",
+          "flags": 1,
+          "body_sha256": "bf53a47df0ab01bcecb6d7e9c5b2514ac187cc9343e337ba4653180c31f333a3",
+          "source": "rom"
+        },
+        {
+          "signature": "nextTag()I",
+          "flags": 1,
+          "body_sha256": "06dbeee66ffc6052dcfa4feb29a020aa76c15eab9c1711447a21a8793d556386",
+          "source": "rom"
+        },
+        {
+          "signature": "nextText()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "485857d2979a1185fab6a099c5705e40c2c6c29a0f0c51b245da0bc3c7409a4e",
+          "source": "rom"
+        },
+        {
+          "signature": "nextToken()I",
+          "flags": 1,
+          "body_sha256": "f258de5cd91cfd383b7986ef643dd311b712a77c88dad797d37bef1e67e29315",
+          "source": "rom"
+        },
+        {
+          "signature": "require(ILjava/lang/String;Ljava/lang/String;)V",
+          "flags": 1,
+          "body_sha256": "6439d4244df6e4df3b3da9ff70a79951de4f246dd895bb45d958d229a1fde134",
+          "source": "failure"
+        },
+        {
+          "signature": "setFeature(Ljava/lang/String;Z)V",
+          "flags": 1,
+          "body_sha256": "52f65976ca6820af64c8bd090684a7db47cefba72e4289f828325c3b0b462530",
+          "source": "rom"
+        },
+        {
+          "signature": "setInput(Ljava/io/InputStream;Ljava/lang/String;)V",
+          "flags": 1,
+          "body_sha256": "284e617b0dae77f4a5db40bbf60f2e22641ba3231cb7e203680591b3a7e7c601",
+          "source": "rom"
+        },
+        {
+          "signature": "setInput(Ljava/io/Reader;)V",
+          "flags": 1,
+          "body_sha256": "b307758b90628f540fbf6a989ad4ccc6a3d76c99ac69d1fe02dc3aafb06fd8c2",
+          "source": "rom"
+        },
+        {
+          "signature": "setProperty(Ljava/lang/String;Ljava/lang/Object;)V",
+          "flags": 1,
+          "body_sha256": "efa75ad127748a06802dbce97ad00a7be5311b189942c2e6f75ce47c9e8a02fe",
+          "source": "rom"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-xml.surface.json.gz",
+      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "owner": "Landroid/content/res/StringBlock;",
+      "smali_sha256": "a55829d65e9ea0e1b6c44b26e09f0b7549e3ba9288208543ddffaebd041e37b6",
+      "fields": [
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"AssetManager\""
+        },
+        {
+          "signature": "localLOGV:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNative:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOwnsNative:Z",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSparseStrings:Landroid/util/SparseArray;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStrings:[Ljava/lang/CharSequence;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStyleIDs:Landroid/content/res/StringBlock$StyleIDs;",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mUseSparse:Z",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ],
+      "methods": [
+        {
+          "signature": "<init>(IZ)V",
+          "flags": 65536,
+          "body_sha256": "99fb6b0fb848c12aab8d500b2f11097d3da8750bdc6b57c112e6354875a8d7ec",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>([BIIZ)V",
+          "flags": 65537,
+          "body_sha256": "2e8f55c3a5d22d3cf6d7dd72318f4c3dac13a0f75446524099c8771da429103f",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>([BZ)V",
+          "flags": 65537,
+          "body_sha256": "7905f585f4add7f1b54da43bc1538a0825fd41cb02f3e44b0d9cfb3887fafbdd",
+          "source": "rom"
+        },
+        {
+          "signature": "addParagraphSpan(Landroid/text/Spannable;Ljava/lang/Object;II)V",
+          "flags": 10,
+          "body_sha256": "722f7d6d686bd14060858c306d56c15851d0dea24aee2f0f946f55dcb8c82cdf",
+          "source": "failure"
+        },
+        {
+          "signature": "applyStyles(Ljava/lang/String;[ILandroid/content/res/StringBlock$StyleIDs;)Ljava/lang/CharSequence;",
+          "flags": 2,
+          "body_sha256": "8f1221be36c6bd9113260616476f0cf87fefc5285c78ffcc884572b289dfb312",
+          "source": "failure"
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "9f1af7dd675975ae1127c2dbae976f050b0066c5de83eea2b4fbefe42f711897",
+          "source": "rom"
+        },
+        {
+          "signature": "get(I)Ljava/lang/CharSequence;",
+          "flags": 1,
+          "body_sha256": "51f3e81963d561b948f68ee428144dde15d0e5ff08e314dd71288f35f9a3a9ec",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-287 bounded plain-string adapter preserves ROM cache identity; nativeGetStyle remains unapproved failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "ROM mStrings/mSparseStrings cache and mUseSparse/mNative fields; integration token registry owns immutable plain pool only",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "getColor(Ljava/lang/String;Z)Landroid/text/style/CharacterStyle;",
+          "flags": 10,
+          "body_sha256": "309dcff0217be71ba24ee303b0fbc03d28a146706cb7015f51fadc7e3755f354",
+          "source": "failure"
+        },
+        {
+          "signature": "nativeCreate([BII)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeDestroy(I)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetSize(I)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetString(II)Ljava/lang/String;",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-287 ADR-0158/0160 bounded compiled XML plain-string seam; nativeGetStyle stays failure",
+            "inputs": "checked byte slice or live context-local typed token and pool/attribute index",
+            "outputs": "original pool index, typed bits or WTF-8 string; no resource or theme resolution",
+            "state_owner": "DexVmAndroidContext.xml_cursors; ROM Parser owns depth/event/open counts; GC reads ROM owner fields",
+            "failure_boundary": "invalid/closed/stale/cross-context token throws; styled pools reject and ledger; no system XML"
+          }
+        },
+        {
+          "signature": "nativeGetStyle(II)[I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "subtag(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+          "flags": 10,
+          "body_sha256": "2e9a08fb12f0d30d0577f3dc7b7a2ec2315f0af2489bb1eca5b1e46a8e817709",
+          "source": "rom"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-xml.surface.json.gz",
+      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "owner": "Landroid/content/res/StringBlock$StyleIDs;",
+      "smali_sha256": "dc1094191ea81032b66166acba7a70f04433b264f365db5736685a1539e880e6",
+      "fields": [
+        {
+          "signature": "bigId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "boldId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "italicId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "listItemId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "marqueeId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "smallId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "strikeId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "subId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "supId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "ttId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "underlineId:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ],
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65536,
+          "body_sha256": "a7af87cf5b28ec6c5e15c2312b98347ee03b083b3527180c44a567edb0cc16f6",
+          "source": "failure"
+        },
+        {
+          "signature": "access$000(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "923a7ba7aa44775d7875167d8b85b9537b5915ce880abe745bd2dffa6c69f9f3",
+          "source": "failure"
+        },
+        {
+          "signature": "access$002(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "56425d26da0f96ade2afa9db27b842dec221e96de6bfc712216f18ee796b293b",
+          "source": "failure"
+        },
+        {
+          "signature": "access$100(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "387c778e08c694582af3f63dff42ec42a0e17aae56b42b340c97f9c648a5acac",
+          "source": "failure"
+        },
+        {
+          "signature": "access$1000(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "ba20a8f843d0d231ce13b4b3217e33dd532d31c5ef049bf34f73ba5036d7ad1a",
+          "source": "failure"
+        },
+        {
+          "signature": "access$1002(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "b98f44ab24371a7322c971a1aeb2eace2c45d61de67e748cd8a806ebc763fdee",
+          "source": "failure"
+        },
+        {
+          "signature": "access$102(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "2c39d13dda6d8a666b1691fcf1aab11e0368b69fdcdf4c5d5a8268c70b4ab634",
+          "source": "failure"
+        },
+        {
+          "signature": "access$200(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "6edd87d07bd9dd1afa23434161590be1996d10bf74cf25754512f69b72071195",
+          "source": "failure"
+        },
+        {
+          "signature": "access$202(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "f8f65f2a7ba7494fb666309ab094db369851344e4bfd1a63c84dffdbe06d1bb2",
+          "source": "failure"
+        },
+        {
+          "signature": "access$300(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "d73a5892872b943f1e8cc8e3afbe0389a1de9eba8c2c82930b5e86753443e964",
+          "source": "failure"
+        },
+        {
+          "signature": "access$302(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "c51f344134d7e576d299a4e4d0e68835cb64ecccb587bf243d811b2c2e680476",
+          "source": "failure"
+        },
+        {
+          "signature": "access$400(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "2953bae1c0133d1a6b9809db03c7e36ff3679811a97009cc01a42bb2855b23f7",
+          "source": "failure"
+        },
+        {
+          "signature": "access$402(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "fac7440a8e4aad10b8f25ef9bbae45ea7288bd5e0188b6ef086159a027fada34",
+          "source": "failure"
+        },
+        {
+          "signature": "access$500(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "f67206893e48e12ca97e9e7633655b17cbae00c5a89d0b13d1ed4cdccd1244ed",
+          "source": "failure"
+        },
+        {
+          "signature": "access$502(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "e7e1b582f6614805861628f6a4a65246528f90cedaa8ce2a8837a4bd60fa22a1",
+          "source": "failure"
+        },
+        {
+          "signature": "access$600(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "322fc782f3808c72142552b2a2c89057d5cfadb5e2180280d1bd6d68b35e7614",
+          "source": "failure"
+        },
+        {
+          "signature": "access$602(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "d240fdd56fa0323292152ac23f3c5ec6d1b86cd5853fb7d1effd1e1cc94d877f",
+          "source": "failure"
+        },
+        {
+          "signature": "access$700(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "671951250f8b75d5cca6c3a6bff2cd10aa139bc6dc9fd5cd1f382900a6e931a2",
+          "source": "failure"
+        },
+        {
+          "signature": "access$702(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "6ab8d2824a48ee9ea7f4b08413a3a6fa927573075c3bd61c03e09b60b95efc84",
+          "source": "failure"
+        },
+        {
+          "signature": "access$800(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "546b8e5114a008d74b854a237cbffff89f5db9691b5dc0926ec70d85e0cceb05",
+          "source": "failure"
+        },
+        {
+          "signature": "access$802(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "e458012207aede9ae54c8cb279645534a9af0d739814bd6b6bf823d74347fe8b",
+          "source": "failure"
+        },
+        {
+          "signature": "access$900(Landroid/content/res/StringBlock$StyleIDs;)I",
+          "flags": 4104,
+          "body_sha256": "da307c9a28e88bec00d1ed5dffb15cb519246a33e7d0b6430cee8f7f1c8e64db",
+          "source": "failure"
+        },
+        {
+          "signature": "access$902(Landroid/content/res/StringBlock$StyleIDs;I)I",
+          "flags": 4104,
+          "body_sha256": "e8fb58d9265ffb2038601c6ff3fc1bb011dc6c0cace15cea84c5232be60c6eb2",
+          "source": "failure"
+        }
+      ]
+    }
+  ]
+}

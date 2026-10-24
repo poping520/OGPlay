@@ -80,6 +80,10 @@
   字符串转换失败抛异常，缺席索引单独返回 nullopt，空串仍为有效值。
   Elements/PullEvents 为同一事实的单向 Legacy 适配；旧入口复用 decoder 并保留
   原有宽松结构策略与坏字符串 fallback，不因新 cursor 准入收紧生产 Legacy。
+- ParseCompiledStringPool：独立 ResStringPool byte slice 复用不可变文档的字符串查询，
+  不产生 XML 节点。新入口及 strict XML 检查池 header/index/data/style 区间；
+  HasStringStyles 表示池含样式数据，integration 的 plain-string 接缝必须拒绝该池，
+  不将 span 当普通字符串。旧 Elements/PullEvents 的宽松解码边界不变。
 - `ParseBinaryXmlElements`：受检遍历通用 Android binary XML，按文档序返回标签、父索引
   与 generic typed attributes；每个 attribute 保留 namespace/name、value type/data 与
   raw/typed string。旧布局字段暂作单向兼容 adapter，新 widget 语义不得进入 loader。

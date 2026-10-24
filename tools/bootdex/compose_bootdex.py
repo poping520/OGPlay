@@ -53,6 +53,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-frame-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-linear-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-relative-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-xml-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -80,11 +81,13 @@ def build(measure=False):
         # unchanged default selector; keep them only in this test counterpart.
         hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
                      *(c['owner'] for c in measure_sources(member_sources.load())['classes']
-                       if c['owner'].startswith('Landroid/widget/RelativeLayout')),
+                       if c['owner'].startswith(('Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
                      'Landroid/view/View$ListenerInfo;',
                      'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
                      'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',
-                     'Landroid/view/ViewGroup$ViewLocationHolder;'}
+                     'Landroid/view/ViewGroup$ViewLocationHolder;',
+                     'Landroid/content/res/StringBlock$Height;', 'Landroid/text/Annotation;',
+                     'Landroid/text/style/BulletSpan;'}
         recipe['framework.jar'] = tuple(sorted(set(recipe['framework.jar']) | hierarchy))
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \

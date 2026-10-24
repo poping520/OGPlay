@@ -163,6 +163,280 @@ dx::VmObjectRef MakeStoredApkAssetFileDescriptor(
 
 } // namespace
 
+namespace {
+template <class T>
+dx::VmValue XmlInt(T value) {
+    return dx::VmValue::Int(static_cast<std::int32_t>(value));
+}
+
+void RequireXmlExperiment(dx::IntrinsicContext& call, const Context& context) {
+    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.xml_block.experimental", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "XML block requires experimental payload"};
+    }
+}
+
+std::uint32_t XmlField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type = "I") {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+    if (!field) throw std::logic_error("ROM XML field missing");
+    return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits;
+}
+
+void RegisterXmlGc(dx::Interpreter& vm, const Context& context) {
+    if (context->xml_gc_registered) return;
+    vm.RegisterIntrinsicStateTable({"android.compiled-xml",
+                                    {},
+                                    [&vm, context](dx::VmObjectRef owner) {
+                                        const auto& type = vm.Linker().Class(vm.Model().ObjectClass(owner)).descriptor;
+                                        auto& registry = context->xml_cursors;
+                                        if (type == "Landroid/content/res/XmlBlock;") {
+                                            XmlDocumentToken token{XmlField(vm, owner, "mNative")};
+                                            if (registry.HasDocument(token)) registry.RetireOwner(token);
+                                        } else if (type == "Landroid/content/res/XmlBlock$Parser;") {
+                                            XmlCursorToken token{XmlField(vm, owner, "mParseState")};
+                                            if (registry.HasCursor(token)) registry.Close(token);
+                                        } else if (type == "Landroid/content/res/StringBlock;" &&
+                                                   XmlField(vm, owner, "mOwnsNative", "Z")) {
+                                            XmlStringPoolToken token{XmlField(vm, owner, "mNative")};
+                                            if (registry.HasStringPool(token)) registry.DestroyStringPool(token);
+                                        }
+                                    },
+                                    {}});
+    context->xml_gc_registered = true;
+}
+
+std::vector<std::byte> XmlBytes(dx::IntrinsicContext& call) {
+    dx::IntrinsicCall c(call);
+    const auto array = c.NonNullRef(0, "data");
+    const auto offset = c.Int(1), size = c.Int(2);
+    const auto length = static_cast<std::size_t>(call.vm.Model().ArrayLength(array));
+    if (offset < 0 || size < 0 || static_cast<std::size_t>(offset) >= length ||
+        static_cast<std::size_t>(size) > length - static_cast<std::size_t>(offset))
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "compiled XML byte slice"};
+    std::vector<std::byte> result(static_cast<std::size_t>(size));
+    for (std::size_t i = 0; i < result.size(); ++i)
+        result[i] = static_cast<std::byte>(call.vm.Model().GetPrimitiveElement(
+            array, static_cast<std::int32_t>(static_cast<std::size_t>(offset) + i)));
+    return result;
+}
+
+template <class F>
+dx::VmValue XmlChecked(dx::IntrinsicContext& call, const Context& context, F operation) {
+    RequireXmlExperiment(call, context);
+    RegisterXmlGc(call.vm, context);
+    try {
+        return operation();
+    } catch (const dx::VmJavaThrow&) {
+        throw;
+    } catch (const std::out_of_range& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", error.what()};
+    } catch (const std::invalid_argument& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
+    } catch (const std::logic_error& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", error.what()};
+    } catch (const std::runtime_error& error) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()};
+    }
+}
+
+dx::VmValue PlainPoolString(dx::IntrinsicContext& call, const Context& context, XmlStringPoolToken token, int index) {
+    const auto pool = context->xml_cursors.StringPool(token);
+    if (index < 0 || static_cast<std::size_t>(index) >= pool->StringCount())
+        throw std::out_of_range("compiled string pool index");
+    // No span can enter a plain-string consumer, even via nativeGetString.
+    if (pool->HasStringStyles()) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.xml_block.string_styles", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "compiled string pool spans are unsupported"};
+    }
+    return dx::VmValue::Ref(call.vm.NewStringUtf8(*pool->String(static_cast<std::uint32_t>(index))));
+}
+}  // namespace
+
+Decl Declare_android_content_res_XmlBlock(const Context& context) {
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/content/res/XmlBlock;", "Ljava/lang/Object;", {}, dx::kAccFinal);
+    const auto bind = [&](const char* name, const char* desc, auto operation) {
+        builder.StaticMethod(
+            name, desc,
+            [context, operation](dx::IntrinsicContext& call) {
+                return XmlChecked(call, context, [&] { return operation(call, context->xml_cursors); });
+            },
+            (std::string_view(name) == "nativeNext" || std::string_view(name) == "nativeGetName" ? 0U
+                                                                                                 : dx::kAccPrivate) |
+                dx::kAccStatic | dx::kAccFinal | dx::kAccNative);
+    };
+    bind("nativeCreate", "([BII)I", [](auto& call, auto& registry) {
+        const auto bytes = XmlBytes(call);
+        return XmlInt(registry.CreateDocument(bytes).value);
+    });
+    bind("nativeGetStringBlock", "(I)I", [](auto& c, auto& r) {
+        return XmlInt(r.DocumentPool(XmlDocumentToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())}).value);
+    });
+    bind("nativeCreateParseState", "(I)I", [](auto& c, auto& r) {
+        return XmlInt(r.CreateCursor(XmlDocumentToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())}).value);
+    });
+    bind("nativeDestroy", "(I)V", [](auto& c, auto& r) {
+        r.RetireOwner(XmlDocumentToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+        return dx::VmValue::Void();
+    });
+    bind("nativeDestroyParseState", "(I)V", [](auto& c, auto& r) {
+        r.Close(XmlCursorToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+        return dx::VmValue::Void();
+    });
+    bind("nativeNext", "(I)I", [](auto& c, auto& r) {
+        return XmlInt(
+            static_cast<int>(r.Next(XmlCursorToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())}).event));
+    });
+    for (const auto* name :
+         {"nativeGetNamespace", "nativeGetName", "nativeGetText", "nativeGetLineNumber", "nativeGetAttributeCount",
+          "nativeGetIdAttribute", "nativeGetClassAttribute", "nativeGetStyleAttribute"}) {
+        bind(name, "(I)I", [name = std::string_view(name)](auto& c, auto& r) {
+            const auto position = r.Current(XmlCursorToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+            const auto& node = position.node;
+            const bool tag = node && (node->type == 0x0102 || node->type == 0x0103);
+            const bool start = node && node->type == 0x0102;
+            if (name == "nativeGetLineNumber") return XmlInt(node ? node->line : 0xffffffffU);
+            if (name == "nativeGetNamespace") return XmlInt(tag ? node->namespace_index : 0xffffffffU);
+            if (name == "nativeGetName") return XmlInt(tag ? node->name_index : 0xffffffffU);
+            if (name == "nativeGetText") return XmlInt(node && node->type == 0x0104 ? node->text_index : 0xffffffffU);
+            if (name == "nativeGetAttributeCount") return XmlInt(start ? node->attributes.size() : 0);
+            const auto index = !start                              ? 0
+                               : name == "nativeGetIdAttribute"    ? node->id_index
+                               : name == "nativeGetClassAttribute" ? node->class_index
+                                                                   : node->style_index;
+            if (name == "nativeGetStyleAttribute") {
+                if (!index) return XmlInt(0);
+                const auto value = node->attributes.at(static_cast<std::size_t>(index - 1)).value;
+                return XmlInt(value.type == 1 || value.type == 2 ? value.data : 0);
+            }
+            return XmlInt(index ? node->attributes.at(static_cast<std::size_t>(index - 1)).raw_value_index
+                                : 0xffffffffU);
+        });
+    }
+    for (const auto* name : {"nativeGetAttributeNamespace", "nativeGetAttributeName", "nativeGetAttributeResource",
+                             "nativeGetAttributeDataType", "nativeGetAttributeData", "nativeGetAttributeStringValue"}) {
+        bind(name, "(II)I", [name = std::string_view(name)](auto& c, auto& r) {
+            const auto position = r.Current(XmlCursorToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+            const auto index = static_cast<std::uint32_t>(c.arguments[1].AsInt());
+            const bool valid =
+                position.node && position.node->type == 0x0102 && index < position.node->attributes.size();
+            const auto attr = valid ? position.node->attributes[index] : loader::CompiledXmlAttribute{};
+            if (name == "nativeGetAttributeNamespace") return XmlInt(valid ? attr.namespace_index : 0xfffffffeU);
+            if (name == "nativeGetAttributeName") return XmlInt(valid ? attr.name_index : 0xffffffffU);
+            if (name == "nativeGetAttributeStringValue") return XmlInt(valid ? attr.raw_value_index : 0xffffffffU);
+            if (name == "nativeGetAttributeResource") return XmlInt(valid ? attr.resource_id : 0);
+            if (name == "nativeGetAttributeDataType") return XmlInt(valid ? attr.value.type : 0);
+            return XmlInt(valid ? attr.value.data : 0);
+        });
+    }
+    bind("nativeGetAttributeIndex", "(ILjava/lang/String;Ljava/lang/String;)I", [](auto& c, auto& r) {
+        const XmlCursorToken token{static_cast<std::uint32_t>(c.arguments[0].AsInt())};
+        const auto position = r.Current(token);
+        dx::IntrinsicCall args(c);
+        const auto name = args.NonNullRef(2, "name");
+        if (position.event != loader::BinaryXmlPullEventType::start_tag) return XmlInt(-1);
+        const auto ns = args.Ref(1);
+        const auto ns_text = ns.IsValid() ? std::optional(c.vm.Model().StringValue(ns)) : std::nullopt;
+        const auto doc = r.Document(r.CursorDocument(token));
+        const auto wanted = c.vm.Model().StringValue(name);
+        // Compare UTF-16 units through the same VM WTF-8 conversion as pool strings.
+        for (std::size_t i = 0; i < position.node->attributes.size(); ++i) {
+            const auto& attr = position.node->attributes[i];
+            const auto attr_ns = doc->String(attr.namespace_index);
+            if (attr_ns.has_value() != ns_text.has_value()) continue;
+            if (c.vm.Model().StringValue(c.vm.NewStringUtf8(*doc->String(attr.name_index))) != wanted) continue;
+            if (!attr_ns || c.vm.Model().StringValue(c.vm.NewStringUtf8(*attr_ns)) == *ns_text) return XmlInt(i);
+        }
+        return XmlInt(-1);
+    });
+    return std::move(builder).Build();
+}
+
+Decl Declare_android_content_res_StringBlock(const Context& context) {
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/content/res/StringBlock;", "Ljava/lang/Object;", {}, dx::kAccFinal);
+    const auto bind = [&](const char* name, const char* desc, auto operation) {
+        builder.StaticMethod(
+            name, desc,
+            [context, operation](dx::IntrinsicContext& call) {
+                return XmlChecked(call, context, [&] { return operation(call, context->xml_cursors); });
+            },
+            dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+    };
+    bind("nativeCreate", "([BII)I", [](auto& c, auto& r) { return XmlInt(r.CreateStringPool(XmlBytes(c)).value); });
+    bind("nativeDestroy", "(I)V", [](auto& c, auto& r) {
+        r.DestroyStringPool(XmlStringPoolToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())});
+        return dx::VmValue::Void();
+    });
+    bind("nativeGetSize", "(I)I", [](auto& c, auto& r) {
+        return XmlInt(
+            r.StringPool(XmlStringPoolToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())})->StringCount());
+    });
+    bind("nativeGetString", "(II)Ljava/lang/String;", [context](auto& c, auto&) {
+        return PlainPoolString(c, context, XmlStringPoolToken{static_cast<std::uint32_t>(c.arguments[0].AsInt())},
+                               c.arguments[1].AsInt());
+    });
+    const auto native = builder.BoundInstanceField("mNative", "I", dx::kAccPrivate | dx::kAccFinal);
+    const auto use_sparse = builder.BoundInstanceField("mUseSparse", "Z", dx::kAccPrivate | dx::kAccFinal);
+    const auto strings = builder.BoundInstanceField("mStrings", "[Ljava/lang/CharSequence;", dx::kAccPrivate);
+    const auto sparse_strings =
+        builder.BoundInstanceField("mSparseStrings", "Landroid/util/SparseArray;", dx::kAccPrivate);
+    builder.VirtualMethod(
+        "get", "(I)Ljava/lang/CharSequence;",
+        [context, native, use_sparse, strings, sparse_strings](dx::IntrinsicContext& call) {
+            return XmlChecked(call, context, [&] {
+                dx::IntrinsicCall args(call);
+                const XmlStringPoolToken token{static_cast<std::uint32_t>(args.GetInt(native))};
+                const auto pool = context->xml_cursors.StringPool(token);
+                const auto index = args.Int(0);
+                if (index < 0 || static_cast<std::size_t>(index) >= pool->StringCount())
+                    throw std::out_of_range("compiled string pool index");
+                // Validate lifetime and the plain-pool boundary even on a cache hit.
+                if (pool->HasStringStyles()) return PlainPoolString(call, context, token, index);
+                auto array = args.GetRef(strings), sparse = args.GetRef(sparse_strings);
+                if (!array.IsValid() && !sparse.IsValid()) {
+                    if (args.GetInt(use_sparse) && pool->StringCount() > 250) {
+                        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/util/SparseArray;");
+                        const auto initialized = call.vm.EnsureClassInitialized(type);
+                        if (initialized.exception.IsValid())
+                            throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                                  initialized.exception_message, initialized.exception};
+                        sparse = call.vm.NewIntrinsicInstance("Landroid/util/SparseArray;");
+                        const auto roots = call.vm.ProtectReferences(std::array{sparse});
+                        const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "()V");
+                        if (!init) throw std::logic_error("SparseArray constructor missing");
+                        const auto outcome = call.vm.Call(*init, std::array{dx::VmValue::Ref(sparse)});
+                        if (outcome.exception.IsValid())
+                            throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                                  outcome.exception_message, outcome.exception};
+                        args.SetRef(sparse_strings, sparse);
+                    } else {
+                        array = call.vm.Model().NewObjectArray(
+                            call.vm.Linker().ResolveDescriptor("[Ljava/lang/CharSequence;"),
+                            call.vm.Linker().ResolveDescriptor("Ljava/lang/CharSequence;"),
+                            static_cast<std::int32_t>(pool->StringCount()));
+                        args.SetRef(strings, array);
+                    }
+                }
+                const auto cached =
+                    array.IsValid()
+                        ? call.vm.Model().GetObjectElement(array, index)
+                        : CallAndroidMethod(call.vm, sparse, "get", "(I)Ljava/lang/Object;", {XmlInt(index)}).ref;
+                if (cached.IsValid()) return dx::VmValue::Ref(cached);
+                const auto result = PlainPoolString(call, context, token, index);
+                const auto root = call.vm.ProtectReferences(std::array{result.ref});
+                if (array.IsValid())
+                    call.vm.Model().SetObjectElement(array, index, result.ref);
+                else
+                    static_cast<void>(
+                        CallAndroidMethod(call.vm, sparse, "put", "(ILjava/lang/Object;)V", {XmlInt(index), result}));
+                return result;
+            });
+        });
+    return std::move(builder).Build();
+}
+
 Decl Declare_android_content_res_AssetFileDescriptor(const Context &) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/res/AssetFileDescriptor;", "Ljava/lang/Object;",
                                                     {"Landroid/os/Parcelable;", "Ljava/io/Closeable;"});
@@ -236,6 +510,51 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_content_res_AssetManager(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class(
       "Landroid/content/res/AssetManager;", "Ljava/lang/Object;");
+  // Equivalent APK-only opening boundary. Construction/counts stay in ROM;
+  // no AssetManager native declaration is admitted by this adapter.
+  const auto open_xml = [context](dx::IntrinsicContext& call, int cookie, dx::VmObjectRef file) {
+      RequireXmlExperiment(call, context);
+      if (IsSystemAssets(context, call.receiver) || (cookie != 0 && cookie != 1)) {
+          if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.xml_block.system_xml", 0);
+          throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "system XML/cookie is unsupported"};
+      }
+      if (!file.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "fileName"};
+      const auto path = call.vm.StringUtf8(file);
+      if (!path.starts_with("res/") || path.find("..") != std::string::npos)
+          throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "APK XML path must be under res/"};
+      std::vector<std::byte> bytes;
+      try {
+          bytes = loader::ReadApkEntry(context->apk_bytes, context->archive, path);
+      } catch (const std::exception& error) {
+          throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", error.what()};
+      }
+      const auto type = call.vm.Linker().ResolveDescriptor("Landroid/content/res/XmlBlock;");
+      const auto require = [&call](const dx::VmCallOutcome& outcome) {
+          if (outcome.exception.IsValid())
+              throw dx::VmJavaThrow{call.vm.Linker().Class(call.vm.Model().ObjectClass(outcome.exception)).descriptor,
+                                    outcome.exception_message, outcome.exception};
+      };
+      require(call.vm.EnsureClassInitialized(type));
+      auto array = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                                                     static_cast<std::int32_t>(bytes.size()));
+      auto block = call.vm.NewIntrinsicInstance("Landroid/content/res/XmlBlock;");
+      const auto roots = call.vm.ProtectReferences(std::array{array, block});
+      call.vm.Model().FillPrimitiveData(array, bytes);
+      const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "([B)V");
+      if (!constructor) throw std::logic_error("ROM XmlBlock constructor missing");
+      require(call.vm.Call(*constructor, std::array{dx::VmValue::Ref(block), dx::VmValue::Ref(array)}));
+      const auto parser = CallAndroidMethod(call.vm, block, "newParser", "()Landroid/content/res/XmlResourceParser;");
+      const auto parser_root = call.vm.ProtectReferences(std::array{parser.ref});
+      static_cast<void>(CallAndroidMethod(call.vm, block, "close", "()V"));
+      return parser;
+  };
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      builder.FinalMethod(
+          "openXmlResourceParser", "(ILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
+          [open_xml](dx::IntrinsicContext& c) { return open_xml(c, c.arguments[0].AsInt(), c.arguments[1].ref); });
+      builder.FinalMethod("openXmlResourceParser", "(Ljava/lang/String;)Landroid/content/res/XmlResourceParser;",
+                          [open_xml](dx::IntrinsicContext& c) { return open_xml(c, 0, c.arguments[0].ref); });
+  }
   builder.FinalMethod(
       "openFd", "(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
       [context](dx::IntrinsicContext &call) {

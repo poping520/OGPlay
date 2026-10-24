@@ -194,3 +194,17 @@
     iput-object v3, v2, Ltest/StateListener;->last:Landroid/view/View;
     return-void
 .end method
+
+.class public Ltest/BaselineLeaf;
+.super Ltest/MeasuredLeaf;
+.field public baseline:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Ltest/MeasuredLeaf;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public getBaseline()I
+.registers 2
+    iget v0, v1, Ltest/BaselineLeaf;->baseline:I
+    return v0
+.end method

@@ -231,7 +231,7 @@ root=null 不附着、attach=false 只生成参数、attach=true 返回 root；m
 可空 merge。onFinishInflate 按文档顺序子到父、加入父容器前执行，GC/节点/总深度受检；失败仅清
 本次节点/绑定、保留容器/旧窗口/Dialog。仅固定控件及登记属性/样式，无 parser 重载、完整
 AttributeSet/theme、Factory/反射。属性按默认/textAppearance/ProgressBar→style→显式 XML 覆盖，
-未知 style 失败；LinearLayout(Context,null) 默认水平、null Context NPE、非空 AttributeSet 构造失败。
+未知 style 失败；Legacy LinearLayout(Context,null) 默认水平、null Context NPE、非空 AttributeSet 构造失败。
 
 removeViewInLayout 为 public virtual，复用普通移除的退役/层级/焦点；只失效绘制、不调
 requestLayout/invalidate，普通移除仍虚派 requestLayout。ViewGroup 子节点 API 按 API19 public virtual，以 UiTree children
@@ -292,10 +292,15 @@ recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/sourc
 取得真实 FrameLayout，content_view 仅保留首个内容身份；无 Window 的旧测试根沿用原夹具。
 Window 的默认参数、增添/替换内容沿真实 Java hierarchy；替换复用 ROM removeAllViews。
 FrameLayout 的 Context 构造（含 Rect/ArrayList）、measure/layout、默认/复制参数、foreground
-padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。非 FrameLayout 容器的 own
+padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。未启用容器的 own
 onMeasure/onLayout 在实验表面显式 failure，不能继承基础算法取得实现信用。
 仅测试窗口；XML/AttributeSet 构造、foreground Drawable 设置/绘制与系统附着仍明确失败。
 完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，Legacy 路径保持。
+LinearLayout 的 Context 构造、weight/baseline/largest-child 状态、双方向测量/布局、参数生成/
+复制与 Gravity/RTL 解析归 ROM；共享 View/Group adapter 只初始化既有基础字段，不写
+LinearLayout 的算法状态或几何。Context-only 默认 weightSum=0，与属性构造的 -1 不混用。
+AttributeSet/style 构造、divider Drawable 设置/绘制与动画接缝继续记账失败；divider 测量
+helper 只读取 Java 输入，测试直接写尺寸不代表 Drawable 服务。RelativeLayout/叶类型不扩充。
 
 ## GLES/EGL 与消息调度
 

@@ -223,6 +223,8 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/android_view_state_tests.cpp
     tests/dexvm/viewgroup_traversal_tests.cpp
     tests/dexvm/framelayout_traversal_tests.cpp
+    tests/dexvm/container_traversal_fixture.cpp
+    tests/dexvm/linearlayout_traversal_tests.cpp
     tests/dexvm/android_pending_notifications_tests.cpp
     tests/dexvm/android_value_tests.cpp
     tests/dexvm/android_logging_tests.cpp

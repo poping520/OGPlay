@@ -1,107 +1,8 @@
-#include "../runtime/native_library_fixture.h"
-#include "ogplay/runtime/bionic/bionic_profile.h"
-#include <cstring>
-#include "boot_dex.h"
-#include <doctest/doctest.h>
-#include <array>
-#include <fstream>
-#include <string>
-#include <vector>
-
-using namespace ogplay::runtime;
-using namespace ogplay::runtime::dexvm;
-
-namespace {
-// Real pinned ICU/JNI is required by Rect.<clinit> in the original FrameLayout constructor.
-// Create initializes the process only; no Activity lifecycle, APK, EGL or display is started.
-struct FrameVm {
-    VirtualFileSystem filesystem;
-    ogplay::core::CapabilityLedger ledger;
-    ogplay::core::Logger logger;
-    std::shared_ptr<DexVmAndroidContext> context{
-        std::make_shared<DexVmAndroidContext>(AndroidUiTraversalOwner::JavaTraversal)};
-    std::unique_ptr<ogplay::session::AndroidAppProcess> app;
-    Interpreter& vm;
-    DexClassLinker& linker;
-    JavaObjectModel& model;
-
-    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend) {
-        using namespace ogplay::test::native_library;
-        std::vector<std::vector<std::byte>> bytes;
-        std::vector<BionicModuleSource> sources;
-        for (const auto name : SelectBionicProfile(19).guest_libraries) {
-            bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
-            sources.push_back({std::string(name), bytes.back()});
-        }
-        std::ifstream stream(OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar", std::ios::binary);
-        const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
-        context->boot_classpath_bytes.resize(raw.size());
-        std::memcpy(context->boot_classpath_bytes.data(), raw.data(), raw.size());
-        const auto dex =
-            ogplay::loader::ReadApkEntry(context->boot_classpath_bytes,
-                                         ogplay::loader::ParseApkArchive(context->boot_classpath_bytes), "classes.dex");
-        ogplay::session::AndroidAppProcessRequest request;
-        request.manifest = AppManifest("fixture.MainActivity");
-        request.system_libraries = sources;
-        request.dex_bytes = ReadDexFixture("view_measure.dex");
-        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
-        request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
-        request.boot_dex_bytes.resize(dex.size());
-        std::memcpy(request.boot_dex_bytes.data(), dex.data(), dex.size());
-        request.context = context;
-        request.dexvm.interpreter.backend = backend;
-        request.dexvm.interpreter.diagnostics.trace_capacity = 10000;
-        request.dexvm.interpreter.diagnostics.event_mask = DexVmTraceBit(DexVmTraceKind::method_enter);
-        request.maximum_ticks_per_call = UINT64_C(100000000);
-        request.filesystem = &filesystem;
-        request.ledger = &ledger;
-        request.logger = &logger;
-        return ogplay::session::AndroidAppProcess::Create(std::move(request));
-    }
-
-    explicit FrameVm(InterpreterBackend backend)
-        : app(Create(backend)), vm(app->DexVm().Vm()), linker(vm.Linker()), model(vm.Model()) {}
-
-    VmValue Checked(const VmCallOutcome& result) {
-        REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
-        return result.value;
-    }
-
-    VmCallOutcome OnOutcome(VmObjectRef object, const char* name, const char* descriptor,
-                            std::vector<VmValue> args = {}) {
-        const auto type = model.ObjectClass(object);
-        const auto index = linker.FindVtableIndex(type, name, descriptor);
-        REQUIRE(index);
-        args.insert(args.begin(), VmValue::Ref(object));
-        return vm.Call(linker.Class(type).vtable[*index], args);
-    }
-
-    VmValue On(VmObjectRef object, const char* name, const char* descriptor, std::vector<VmValue> args = {}) {
-        return Checked(OnOutcome(object, name, descriptor, std::move(args)));
-    }
-
-    VmValue Static(const char* owner, const char* name, const char* descriptor, std::vector<VmValue> args = {}) {
-        const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
-        REQUIRE(method);
-        return Checked(vm.Call(*method, args));
-    }
-
-    VmObjectRef New(const char* owner, const char* descriptor = "()V", std::vector<VmValue> args = {}) {
-        Checked(vm.EnsureClassInitialized(linker.ResolveDescriptor(owner)));
-        const auto result = vm.NewIntrinsicInstance(owner);
-        const auto roots = vm.ProtectReferences(std::array{result});
-        if (std::string_view(descriptor).starts_with("(Landroid/content/Context;") && !args.empty())
-            ogplay::test::AttachViewTestContext(vm, args.front().ref);
-        args.insert(args.begin(), VmValue::Ref(result));
-        Static(owner, "<init>", descriptor, std::move(args));
-        return result;
-    }
-};
-}  // namespace
-
+#include "container_traversal_fixture.h"
+using ogplay::test::container_traversal::ContainerVm;
 TEST_CASE("DVM-283 ROM FrameLayout Window bounds state RTL and match-parent remeasure") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        FrameVm f(backend);
+        ContainerVm f(backend);
         f.context->target_sdk_version = 19;
         f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
@@ -337,11 +238,11 @@ TEST_CASE("DVM-283 ROM FrameLayout Window bounds state RTL and match-parent reme
 
 TEST_CASE("DVM-283 experimental unsupported containers foreground and attribute constructors reject") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        FrameVm f(backend);
+        ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         for (const auto type :
-             {"Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;", "Landroid/widget/ScrollView;",
-              "Landroid/widget/TableLayout;", "Landroid/widget/TableRow;", "Landroid/widget/AbsoluteLayout;"}) {
+             {"Landroid/widget/RelativeLayout;", "Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;",
+              "Landroid/widget/TableRow;", "Landroid/widget/AbsoluteLayout;"}) {
             const auto object = f.vm.NewIntrinsicInstance(type);
             const auto ctor =
                 f.linker.FindDirectMethod(f.linker.ResolveDescriptor(type), "<init>", "(Landroid/content/Context;)V");

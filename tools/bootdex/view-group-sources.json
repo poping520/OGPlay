@@ -4,7 +4,7 @@
   "rom_input": ".local/aosp/framework.jar",
   "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
   "surface": "tools/bootdex/view-measure.surface.json.gz",
-  "surface_sha256": "886eb4f00c5d1f3191d1f2360d3b193bbccff8a7c8386ddd487884bb4342d122",
+  "surface_sha256": "1a09bfa69251060de591ef9881a49197891c7a32841fb68c8bebc7a7d2087500",
   "owner": "Landroid/view/ViewGroup;",
   "smali_sha256": "584d5f2dcdd5b89b8d125aeacd12a5781c765b7546d26d87e76ae245a6b9b065",
   "fields": [

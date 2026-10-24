@@ -44,7 +44,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   `UiNodeId` 永不重新变为有效。
 - `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
   每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy；
-  实验 View/ViewGroup 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
+  实验 View/ViewGroup、LinearLayout 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
   本层不补算 guest bounds；render/hit-test 消费同一完整窗口 epoch。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配

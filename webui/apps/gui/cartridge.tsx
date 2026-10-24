@@ -19,10 +19,11 @@ export function useIconColor(icon: string): Rgb {
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 16;
+      // 32 px keeps the background ring and the subject apart; at 16 px small icons blur them together.
+      canvas.width = canvas.height = 32;
       const context = canvas.getContext('2d', { willReadFrequently: true });
       let value = fallback;
-      try { if (context) { context.drawImage(image, 0, 0, 16, 16); value = vividIconColor(context.getImageData(0, 0, 16, 16).data); } }
+      try { if (context) { context.drawImage(image, 0, 0, 32, 32); value = vividIconColor(context.getImageData(0, 0, 32, 32).data, 32); } }
       catch { /* Keep the neutral shell if a resource cannot be sampled. */ }
       sampled.set(icon, value);
       if (live) setColor(value);

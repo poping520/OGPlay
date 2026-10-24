@@ -52,6 +52,21 @@ describe('console navigation and cartridge tint', () => {
     expect(vividIconColor(pixels)).toEqual([40, 120, 230]);
     expect(vividIconColor(new Uint8ClampedArray(4))).toEqual([124, 156, 255]);
   });
+  // 8×8 icon: a 2 px frame around a 4×4 centre, the shape of a bordered launcher icon.
+  const framed = (frame: number[], centre: number[], dot?: number[]) => new Uint8ClampedArray(Array.from({ length: 64 }, (_, i) => {
+    const x = i % 8, y = Math.floor(i / 8), inner = Math.min(x, y, 7 - x, 7 - y) >= 2;
+    return dot && x === 4 && y === 4 ? dot : inner ? centre : frame;
+  }).flat());
+  const yellow = [230, 190, 20, 255], green = [70, 170, 50, 255], grey = [90, 90, 90, 255];
+  it('lets the subject decide over a frame or background hue', () => {
+    expect(vividIconColor(framed(yellow, green), 8)).toEqual([70, 170, 50]);
+  });
+  it('keeps the frame colour when the rest has too little colour', () => {
+    expect(vividIconColor(framed(yellow, yellow, green), 8)).toEqual([230, 190, 20]);
+  });
+  it('turns a neutral icon into a cool graphite so warm light does not read it as gold', () => {
+    expect(vividIconColor(framed(grey, grey), 8)).toEqual([84, 90, 104]);
+  });
   it('derives ordered light, base and dark shell tones from the icon colour', () => {
     const luminance = (value: string) => value.match(/\d+/g)!.map(Number).reduce((sum, part) => sum + part, 0);
     for (const color of [[0, 0, 0], [255, 255, 255], [124, 156, 255]] as [number, number, number][]) {

@@ -49,19 +49,41 @@ export function cycle<T>(values: readonly T[], current: T, delta: number): T {
   const index = values.indexOf(current);
   return values.length ? values[((index < 0 ? 0 : index) + delta + values.length * Math.abs(delta)) % values.length] : current;
 }
-// Picks the dominant hue (weighted by saturation) so white highlights, outlines and small accents do not muddy the tint.
-export function vividIconColor(pixels: Uint8ClampedArray): [number, number, number] {
-  const bins = Array.from({ length: 13 }, () => [0, 0, 0, 0]);
+// Cartridge colour from the icon's subject. Pixels fall into twelve 30° hue bins plus a neutral one, weighted by chroma
+// and by closeness to the centre. When one hue covers most of the outer ring it is the background or frame (a yellow
+// border, a sky) and is left out, so the character or object in front decides; it only counts again when the rest
+// carries too little colour (a single-colour icon). Neutral wins only then too, and becomes a cool graphite so warm
+// studio light does not read it as gold.
+const NEUTRAL = 12, RING = 2, RING_SHARE = 0.35, SUBJECT_SHARE = 0.12;
+export function vividIconColor(pixels: Uint8ClampedArray, width = Math.round(Math.sqrt(pixels.length / 4))): [number, number, number] {
+  const bins = Array.from({ length: 13 }, () => [0, 0, 0, 0]), ring = new Array<number>(13).fill(0);
+  const height = Math.ceil(pixels.length / 4 / width);
+  let ringTotal = 0;
   for (let i = 0; i + 3 < pixels.length; i += 4) {
-    const [red, green, blue] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    const [red, green, blue] = [pixels[i], pixels[i + 1], pixels[i + 2]], alpha = pixels[i + 3] / 255;
     const max = Math.max(red, green, blue), chroma = max - Math.min(red, green, blue);
     const hue = !chroma ? 0 : max === red ? ((green - blue) / chroma + 6) % 6 : max === green ? (blue - red) / chroma + 2 : (red - green) / chroma + 4;
-    const bin = bins[chroma < 24 ? 12 : Math.floor(hue * 2) % 12];
-    const weight = pixels[i + 3] / 255 * (0.04 + (chroma / 255) ** 2);
+    const index = chroma < 24 ? NEUTRAL : Math.floor(hue * 2) % 12;
+    const x = (i / 4) % width, y = Math.floor(i / 4 / width);
+    if (Math.min(x, y, width - 1 - x, height - 1 - y) < RING) { ring[index] += alpha; ringTotal += alpha; }
+    const dx = (x + 0.5) / width - 0.5, dy = (y + 0.5) / height - 0.5;
+    const weight = alpha * Math.exp(-(dx * dx + dy * dy) / 0.18) * (0.04 + chroma / 255);
+    const bin = bins[index];
     bin[0] += red * weight; bin[1] += green * weight; bin[2] += blue * weight; bin[3] += weight;
   }
-  const best = bins.reduce((left, right) => right[3] > left[3] ? right : left);
-  return best[3] ? [0, 1, 2].map(channel => Math.round(best[channel] / best[3])) as [number, number, number] : [124, 156, 255];
+  const top = ring.indexOf(Math.max(...ring));
+  const background = ringTotal && ring[top] / ringTotal > RING_SHARE ? top : -1;
+  const colour = (keep: (index: number) => boolean) => bins.slice(0, NEUTRAL).reduce((sum, bin, index) => sum + (keep(index) ? bin[3] : 0), 0);
+  const total = colour(() => true);
+  const subject = background >= 0 && total > 0 && colour(index => index !== background) >= SUBJECT_SHARE * total;
+  const candidates = bins.map((_, index) => index).filter(index => subject ? index !== background && index !== NEUTRAL : true);
+  const best = candidates.reduce((left, right) => bins[right][3] > bins[left][3] ? right : left);
+  const [red, green, blue, weight] = bins[best];
+  if (!weight) return [124, 156, 255];
+  const rgb = [red, green, blue].map(value => Math.round(value / weight)) as [number, number, number];
+  if (best !== NEUTRAL) return rgb;
+  const grey = Math.round((rgb[0] + rgb[1] + rgb[2]) / 3);
+  return [Math.max(0, grey - 6), grey, Math.min(255, grey + 14)];
 }
 // Cartridge shell tints from the icon colour: very dark or very pale icons are pulled toward a printable plastic tone.
 export function shellPalette([red, green, blue]: [number, number, number]): { shell: string; light: string; dark: string } {

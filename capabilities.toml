@@ -125,8 +125,8 @@ note = "DVM-246/ADR-0125：managed Dialog 缓存与创建、AlertDialog.Builder 
 
 [dexvm.drawable_resource]
 status = "partial"
-test = "tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "DVM-229：Resources.getDrawable 返回真实 BitmapDrawable/ColorDrawable，ImageView 保持身份与 GC 强边，像素版本驱动 UI 投影；setImageBitmap 按 API19 新建包装并虚派 setImageDrawable。XML Drawable、资源 NinePatch 对象与任意自定义 Drawable 绘制记账拒绝；系统 Drawable 不回退应用 APK。"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "Legacy DVM-229 保持真实 BitmapDrawable/ColorDrawable 与像素版本。DVM-292 实验配对：受审 ROM 形状叶对象、APK PNG/JPEG/纯色、density intrinsic、单态 ColorStateList.valueOf 与对象 GC；无叶控件构造。selector/XML/资源 NinePatch/系统皮肤/custom draw 明确失败，系统资源不回退 APK。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -1995,8 +1995,8 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-288/289/ADR-0160：仅实验配对，固定 ROM 绑定主题及登记属性三态投影；APK style parent/reference/?attr、force/copy、applyStyle 优先级与 retrieveAttributes 六槽 ABI；双后端 ROM Theme/TypedArray 与 targetSdk 默认主题。未知主题/属性及不支持值明确失败。ROM Context/主题链、五类及 LP 属性构造已接通，缺尺寸/不支持 drawable 明确失败。无系统 AssetManager、资源文件/span；Legacy 不变。"
+test = "tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "DVM-288..292/ADR-0160/0161：实验配对固定 ROM 主题、styleable 与默认 style/?attr 消费闭包三态投影；完整优先级/@null 与六槽，APK PNG/JPEG/纯色叶 Drawable、ROM valueOf 单态颜色列表，配置/density/ID/cookie 与对象 GC。selector/ninepatch/系统皮肤/背景/前景/divider/scrollbar 非空值明确失败，无叶控件构造；Legacy 不变。"
 
 [runtime.guest_proc_maps]
 status = "partial"

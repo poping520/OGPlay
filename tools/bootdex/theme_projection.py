@@ -57,9 +57,65 @@ def generate(negative_rom_id=False):
                        for i in node.findall('item')})
         return result
 
-    def value(text):
+    demanded_styles = set()
+    scalar_resources = {}
+    for path in sorted(values.glob('*.xml')):
+        for node in ET.parse(path).getroot():
+            kind = node.get('type') if node.tag == 'item' else node.tag
+            if kind in ('color', 'dimen', 'integer', 'bool') and node.get('name'):
+                scalar_resources[(kind, node.get('name'))] = ''.join(node.itertext()).strip()
+
+    # Constructor defStyleAttr inputs are demands even though they are not
+    # members of the styleable arrays. Follow ?attr and style edges to a fixed
+    # point, proving every ID against the same pinned ROM field inventory.
+    implicit = ('textViewStyle', 'buttonStyle', 'editTextStyle', 'imageButtonStyle',
+                'scrollViewStyle', 'horizontalScrollViewStyle')
+    extra_demands = set(implicit)
+    pending_styles = {row['name'] for row in report['themes'] if row['resource_id'] is not None}
+    while True:
+        before = (len(extra_demands), len(pending_styles))
+        for name in sorted(extra_demands):
+            if name not in report['attr_bindings']:
+                raise ValueError('unbound demanded ROM attr: ' + name)
+            attrs[name] = report['attr_bindings'][name]
+        for name in sorted(pending_styles):
+            inherited = merge(name)
+            for attr_name in sorted(attrs):
+                text = inherited.get(attr_name, '')
+                ref = re.fullmatch(r'\?(?:android:)?(?:attr/)?(.+)', text)
+                if ref and ref[1] in report['attr_bindings']:
+                    extra_demands.add(ref[1])
+                ref = re.fullmatch(r'@(?:android:)?style/(.+)', text)
+                if ref and ref[1] in report['style_bindings'] and ref[1] in styles:
+                    pending_styles.add(ref[1])
+        if before == (len(extra_demands), len(pending_styles)):
+            break
+    attribute_demands = [dict(name=name, resource_id=attrs[name]) for name in sorted(extra_demands)]
+
+    def value(text, seen=()):
+        if text in seen or len(seen) >= 64:
+            raise ValueError('projected scalar reference cycle/depth: ' + text)
+        ref = re.fullmatch(r'@(?:android:)?(color|dimen|integer|bool)/(.+)', text)
+        if ref and (ref[1], ref[2]) in scalar_resources:
+            return value(scalar_resources[(ref[1], ref[2])], seen + (text,))
+        style = re.fullmatch(r'@(?:android:)?style/(.+)', text)
+        if style and style[1] in report['style_bindings'] and style[1] in styles:
+            demanded_styles.add(style[1])
+            return dict(state='known', type=1, data=report['style_bindings'][style[1]])
+        attr = re.fullmatch(r'\?(?:android:)?(?:attr/)?(.+)', text)
+        if attr and attr[1] in attrs and attr[1] in report['attr_bindings']:
+            return dict(state='known', type=2, data=report['attr_bindings'][attr[1]])
+
         if text == '@null':
             return dict(state='known', type=1, data=0)
+        if re.fullmatch(r'#[0-9a-fA-F]{3,8}', text) and len(text) in (4, 5, 7, 9):
+            digits = text[1:]
+            kind = {3:31, 4:30, 6:29, 8:28}[len(digits)]
+            if len(digits) in (3, 4):
+                digits = ''.join(c * 2 for c in digits)
+            if len(digits) == 6:
+                digits = 'ff' + digits
+            return dict(state='known', type=kind, data=int(digits, 16))
         if re.fullmatch(r'-?\d+', text):
             n = int(text)
             if not -2**31 <= n < 2**31:
@@ -90,6 +146,17 @@ def generate(negative_rom_id=False):
             counts[result['state']] += 1
             projected.append(dict(id=ident, name=name, **result))
         themes.append(dict(id=row['resource_id'], name=row['name'], attributes=projected))
+    style_closure = []
+    visited = {row['name'] for row in themes}
+    while demanded_styles - visited:
+        name = sorted(demanded_styles - visited)[0]
+        visited.add(name)
+        inherited = merge(name)
+        projected = []
+        for attr_name, ident in sorted(attrs.items(), key=lambda x: x[1]):
+            result = value(inherited[attr_name]) if attr_name in inherited else dict(state='absent')
+            projected.append(dict(id=ident, name=attr_name, **result))
+        style_closure.append(dict(id=report['style_bindings'][name], name=name, attributes=projected))
     ids = [row['id'] for row in themes]
     if len(ids) != len(set(ids)):
         raise ValueError('theme resource ID alias')
@@ -102,8 +169,8 @@ def generate(negative_rom_id=False):
         raise ValueError('system/theme provider name conflict')
     document = dict(schema='ogplay.bounded-theme', schema_version=1, api_level=19,
                     configuration='values', input_sha256=report['input_sha256'],
-                    styleables=report['styleable_slot_checks'],
-                    registered=themes, unregistered=unregistered,
+                    styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
+                    registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs))
     return canonical(document)
 

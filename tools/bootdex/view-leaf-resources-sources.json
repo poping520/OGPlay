@@ -1,0 +1,940 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
+      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "owner": "Landroid/graphics/drawable/Drawable;",
+      "smali_sha256": "19a924b772dd354f6697ff3ff28e6d259ea0f430fa6318153ffeed930eb218da",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "2598689a3dee606d32a6a1c7c2cd600316b4e0355a7f7436975e28d4a4e47384",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "6f593f87a199f74a4e5918e4edb628fd789e259739e755e43f845d8f82860d3b",
+          "source": "rom"
+        },
+        {
+          "signature": "clearColorFilter()V",
+          "flags": 1,
+          "body_sha256": "36110b9e225dfbf32ea8f7192ccd805dc2a807932156ab4707f974688516bb37",
+          "source": "failure"
+        },
+        {
+          "signature": "copyBounds()Landroid/graphics/Rect;",
+          "flags": 17,
+          "body_sha256": "957cd8d2ebe7eb1e17e1f8bf16fdcc372ddbf1afafb860750471554bd0d3a8e2",
+          "source": "failure"
+        },
+        {
+          "signature": "copyBounds(Landroid/graphics/Rect;)V",
+          "flags": 17,
+          "body_sha256": "b27d5694413f399df5d7105167a9d1e26984f193b206eb370e17aab91c82b360",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromPath(Ljava/lang/String;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "ab97dadb235a8ee3df63dfe20b2bca5465d5dd2820d81645830d1d8cc94bfd3d",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromResourceStream(Landroid/content/res/Resources;Landroid/util/TypedValue;Ljava/io/InputStream;Ljava/lang/String;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "9c4aae4865da549758b62100016558664a3e7ba7e5076b747bc4371179256c59",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromResourceStream(Landroid/content/res/Resources;Landroid/util/TypedValue;Ljava/io/InputStream;Ljava/lang/String;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "8c8664d0df949f8aab7e2bccb9d30fafe46903e3dca49471b339560c192dea5c",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromStream(Ljava/io/InputStream;Ljava/lang/String;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "ecc9fdb576782276fb0f59b5ebdfb5d17b376ff6b478b477a8f16dffc4c73830",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromXml(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "f6b3de93d9b605a08b475c1ccac145cfc89f9a8012c1c23cbdd407af2524db42",
+          "source": "failure"
+        },
+        {
+          "signature": "createFromXmlInner(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)Landroid/graphics/drawable/Drawable;",
+          "flags": 9,
+          "body_sha256": "effbaed45bcb6bb326a060c9bb0ff26c2a531f6bdb7df6eb9316f16d24f7f25f",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1025,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "drawableFromBitmap(Landroid/content/res/Resources;Landroid/graphics/Bitmap;[BLandroid/graphics/Rect;Landroid/graphics/Rect;Ljava/lang/String;)Landroid/graphics/drawable/Drawable;",
+          "flags": 10,
+          "body_sha256": "e1b53a33c7a08f51ed46d71ba09464c34849d129cc08530a53b3d85752392bb2",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "0ba22067a000f62cb33204249f653b61507119817d4032b31d3435c569db9e91",
+          "source": "failure"
+        },
+        {
+          "signature": "getBounds()Landroid/graphics/Rect;",
+          "flags": 17,
+          "body_sha256": "e664fd78775c3b8daf01b11a78713e8c827f43c363e59611eecacc33e0a9c952",
+          "source": "failure"
+        },
+        {
+          "signature": "getCallback()Landroid/graphics/drawable/Drawable$Callback;",
+          "flags": 1,
+          "body_sha256": "f7a0db4c6bcb6a9045d49e19340ec428f9ec7c60d8e6b36e612662b5f0861da9",
+          "source": "failure"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "6ed7f23545e549616b4c98186034d34762709d033b50c78659af6363806d5590",
+          "source": "failure"
+        },
+        {
+          "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
+          "flags": 1,
+          "body_sha256": "bee62755b6320ff938569a1dfb55a6cd9f32d609061d0e9b13977e4538f84ae2",
+          "source": "failure"
+        },
+        {
+          "signature": "getCurrent()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "ec8f78e6b3d8ceebd0d9df36b182969f85d94dfd649286d918d4a27c492b8ffe",
+          "source": "failure"
+        },
+        {
+          "signature": "getIntrinsicHeight()I",
+          "flags": 1,
+          "body_sha256": "d05b812e6862d4431fd8ed58b6be6200dfc0c496f2deee1a56c81615f906da61",
+          "source": "rom"
+        },
+        {
+          "signature": "getIntrinsicWidth()I",
+          "flags": 1,
+          "body_sha256": "7e660c4c31c971082501a202b7fa89ead05960207ee167f7650931ae10a43282",
+          "source": "rom"
+        },
+        {
+          "signature": "getLayoutDirection()I",
+          "flags": 1,
+          "body_sha256": "248dcbbe112379cc23f26b42fb6621635c87d492c0cccd2ac21831d3361b8a8a",
+          "source": "failure"
+        },
+        {
+          "signature": "getLevel()I",
+          "flags": 17,
+          "body_sha256": "7b03a99b839aaaccbb2c1c7cd184336a902666ecbbb52e55d2013cbf1d326d8d",
+          "source": "failure"
+        },
+        {
+          "signature": "getMinimumHeight()I",
+          "flags": 1,
+          "body_sha256": "91b2921bcba2df5781ef37a42a1dfe6a0e7528a280d68a360a6da6ed2d688f6d",
+          "source": "failure"
+        },
+        {
+          "signature": "getMinimumWidth()I",
+          "flags": 1,
+          "body_sha256": "afa529ffd6b9818d4c291575f3c0b0445a33240a88815e022e9f2edf9415c5b9",
+          "source": "failure"
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1025,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getOpticalInsets()Landroid/graphics/Insets;",
+          "flags": 1,
+          "body_sha256": "1f4cf9b5a6047737955b169c8064169fddd5bfc20300d32eb9d35ab5be1a439a",
+          "source": "failure"
+        },
+        {
+          "signature": "getPadding(Landroid/graphics/Rect;)Z",
+          "flags": 1,
+          "body_sha256": "52ea0159a9727256b3f0b2f9d7b367edf27ebca2527cd5f224824b7f9a2488e1",
+          "source": "failure"
+        },
+        {
+          "signature": "getState()[I",
+          "flags": 1,
+          "body_sha256": "5965308b3994e36b6e83e22a9b2b3b32c83e2bcaedd84058f4280fde535b2b63",
+          "source": "failure"
+        },
+        {
+          "signature": "getTransparentRegion()Landroid/graphics/Region;",
+          "flags": 1,
+          "body_sha256": "b7ea913301201477a232fdc1ed51f275f7987a0a348a48b77c6091aaf9428fb9",
+          "source": "failure"
+        },
+        {
+          "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+          "flags": 1,
+          "body_sha256": "36eb1bb62476246d13b10b9659383def89c746f035ab594e5d130d66d06169ef",
+          "source": "failure"
+        },
+        {
+          "signature": "inflateWithAttributes(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/content/res/TypedArray;I)V",
+          "flags": 0,
+          "body_sha256": "55c30c4d4f47f52890be235cf47869abe9094a8a2e965ac1b251e1b2f50cbd53",
+          "source": "failure"
+        },
+        {
+          "signature": "invalidateSelf()V",
+          "flags": 1,
+          "body_sha256": "6c362c91ecea728f8b228d4533718bae4d29ea0579a3053bf05557781935ed11",
+          "source": "failure"
+        },
+        {
+          "signature": "isAutoMirrored()Z",
+          "flags": 1,
+          "body_sha256": "7ed0886f7c0aea643d6169dd97ec27c03b72d4d1a9cfa5c79db61c13ef403101",
+          "source": "failure"
+        },
+        {
+          "signature": "isStateful()Z",
+          "flags": 1,
+          "body_sha256": "f03756b0c937f9de52c549c34ae49812d5477d2ec5d06c31518a3cfad7d277e9",
+          "source": "failure"
+        },
+        {
+          "signature": "isVisible()Z",
+          "flags": 17,
+          "body_sha256": "dadc9708ee81c0884ddf535c593972f87571f9cb46a1f7a49c49aaffee2ef190",
+          "source": "failure"
+        },
+        {
+          "signature": "jumpToCurrentState()V",
+          "flags": 1,
+          "body_sha256": "ac25f1ee73d01609a73eb45af3e1ccd4bf029e3dfbb676c9cf906903467b4a0b",
+          "source": "failure"
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "5c3b77092b0427d0ea027417d8e3c8055525e7d561b5e6f823362f871a64f6ae",
+          "source": "failure"
+        },
+        {
+          "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
+          "flags": 4,
+          "body_sha256": "a444aab815ea6aff13d87032d314fc71f5ae0115ec4cf70c1e37b276c5a1bf84",
+          "source": "failure"
+        },
+        {
+          "signature": "onLevelChange(I)Z",
+          "flags": 4,
+          "body_sha256": "e1998e49cf77864fbb9c61da3fc236d69edfd61cf9363f682facd4ddf1223757",
+          "source": "failure"
+        },
+        {
+          "signature": "onStateChange([I)Z",
+          "flags": 4,
+          "body_sha256": "0c797ddca981d8d5becb623b209c972e531a8eb3a88e2fc1d32f0dd0082e6eef",
+          "source": "failure"
+        },
+        {
+          "signature": "resolveOpacity(II)I",
+          "flags": 9,
+          "body_sha256": "73320f49cfe3b765b2bd32d5f0b2364ac799423de1b9dcf181e6b5474be418ad",
+          "source": "failure"
+        },
+        {
+          "signature": "scheduleSelf(Ljava/lang/Runnable;J)V",
+          "flags": 1,
+          "body_sha256": "175adac2e8e67a773117c3c18ecc32a60a88f70bdee4ae4a367a42442c5a4015",
+          "source": "failure"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1025,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "setAutoMirrored(Z)V",
+          "flags": 1,
+          "body_sha256": "8c10151f549525c64649e5c46e3870615b6bd9085b1af0b0777473c49cdb032b",
+          "source": "failure"
+        },
+        {
+          "signature": "setBounds(IIII)V",
+          "flags": 1,
+          "body_sha256": "0d4c49e97d3b592e2ffed52781c819f4abd267f57007eec692ebb0e67b6b65b7",
+          "source": "failure"
+        },
+        {
+          "signature": "setBounds(Landroid/graphics/Rect;)V",
+          "flags": 1,
+          "body_sha256": "c160b75b3d3071f9c4951b4fa480c5e2d4bd4464a9ba8c6c91e6f3bb1465fd5a",
+          "source": "failure"
+        },
+        {
+          "signature": "setCallback(Landroid/graphics/drawable/Drawable$Callback;)V",
+          "flags": 17,
+          "body_sha256": "96d8bebc22aeecdc93888746f13c310c8d1e3b405871703f1886be119eda2445",
+          "source": "failure"
+        },
+        {
+          "signature": "setChangingConfigurations(I)V",
+          "flags": 1,
+          "body_sha256": "cfac5d493b94118445381cbb095b827ee292f1940108b1f702b78245ff1f123f",
+          "source": "failure"
+        },
+        {
+          "signature": "setColorFilter(ILandroid/graphics/PorterDuff$Mode;)V",
+          "flags": 1,
+          "body_sha256": "2565056d0a7783fe8ed109d6a092da3a699db52c7b2d22e4dba9bce0bf78ad71",
+          "source": "failure"
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1025,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "setDither(Z)V",
+          "flags": 1,
+          "body_sha256": "99dd1965b0a3a229faa92eefdf57ccf4e0dcd8212c155e2d9e82acabaf9c5c1f",
+          "source": "failure"
+        },
+        {
+          "signature": "setFilterBitmap(Z)V",
+          "flags": 1,
+          "body_sha256": "0e610f5e565b2d065b7a3fddb9e525f94c5bedf1a4297c5145ae65b668ab20d1",
+          "source": "failure"
+        },
+        {
+          "signature": "setLayoutDirection(I)V",
+          "flags": 1,
+          "body_sha256": "13b0cd760aed2deeee1758c3c3a06604aa84f128c3be8aab675838014c92cd84",
+          "source": "failure"
+        },
+        {
+          "signature": "setLevel(I)Z",
+          "flags": 17,
+          "body_sha256": "283f91b99c3c1484a77fc53e16d0a9f2474bdc01364cd3bd8a8d750e7208b253",
+          "source": "failure"
+        },
+        {
+          "signature": "setState([I)Z",
+          "flags": 1,
+          "body_sha256": "339465589ee8ef13d8832f634024bbaf81ba71a934ff3736e89ef1521e7a5760",
+          "source": "failure"
+        },
+        {
+          "signature": "setVisible(ZZ)Z",
+          "flags": 1,
+          "body_sha256": "02af002d5378311c8f2a0493c5de223528e2e3546dee17a4a47843d752de9447",
+          "source": "failure"
+        },
+        {
+          "signature": "setXfermode(Landroid/graphics/Xfermode;)V",
+          "flags": 1,
+          "body_sha256": "4afbbcd2a30257f012cd83bb1588d028cf3a8bb362cb2f9e7d15dd8be5a15270",
+          "source": "failure"
+        },
+        {
+          "signature": "unscheduleSelf(Ljava/lang/Runnable;)V",
+          "flags": 1,
+          "body_sha256": "a540f149e2fe5f03d88dd98bfd19e8b481144e5eb328bbbc14b7abaa6786a4aa",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "ZERO_BOUNDS_RECT:Landroid/graphics/Rect;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBounds:Landroid/graphics/Rect;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mCallback:Ljava/lang/ref/WeakReference;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mChangingConfigurations:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLayoutDirection:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLevel:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStateSet:[I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVisible:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
+      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "owner": "Landroid/graphics/drawable/BitmapDrawable;",
+      "smali_sha256": "660a01d12ebeb584153e3c3567af510ef4c1343f4e67b400701978b3b73a1cae",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "c0a96ade0779ce725ad3a6cc22519110acc3b1fe51e8cb0382758ba7418d6ea3",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;)V",
+          "flags": 65537,
+          "body_sha256": "a482eb2b8481bd3ffe25954bed7c55b1cb26ddfbb90972bef1815f4addb9801e",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V",
+          "flags": 65537,
+          "body_sha256": "359c26ead32196c77b6636a758841378127ea29942cdabe0a17d2202ee6c49a7",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Ljava/io/InputStream;)V",
+          "flags": 65537,
+          "body_sha256": "dbaba59cced60bebc7230d0bdd353c5e24f2e61ee31132384603042e63fe2f2a",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Ljava/lang/String;)V",
+          "flags": 65537,
+          "body_sha256": "c6f869bffcd853cecef931a32e155aff2e1bdb6bf83a200a501526a64a2e6dff",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/Bitmap;)V",
+          "flags": 65537,
+          "body_sha256": "07a60fa71f98ae9ed733c686e2ddf00d175626df63465ab2f766779adddced98",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/BitmapDrawable$BitmapState;Landroid/content/res/Resources;)V",
+          "flags": 65538,
+          "body_sha256": "2c8cb344a5bc68bc68ed33747ba71c38a1655db2c1b9ef0466e736755c8bd070",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/BitmapDrawable$BitmapState;Landroid/content/res/Resources;Landroid/graphics/drawable/BitmapDrawable$1;)V",
+          "flags": 69632,
+          "body_sha256": "968da30738a3907ca6420902b0db048452b3749216fd0ff4451cafaac882954e",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Ljava/io/InputStream;)V",
+          "flags": 65537,
+          "body_sha256": "ae6e6041d8a32ea261df0dcb2a099e893c42eb50bb127d6ac0863661cb8e2a4f",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Ljava/lang/String;)V",
+          "flags": 65537,
+          "body_sha256": "3a62e37cc8019463ed977929437ebc58facb62c294c9d4ea2f0c53ee0d0c7175",
+          "source": "failure"
+        },
+        {
+          "signature": "computeBitmapSize()V",
+          "flags": 2,
+          "body_sha256": "fafd59b4922c37fa39d88ea0577ce90cc936404869a87a625229bb27e04e06ba",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "6173de65ccc903cc8d5a58d14d5f55c509ba54b9efa0a4d1cb1ca05cca442ac4",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "46bab1b6ecaafd235ad761aabdacdec9889200dbf3eb725ad8c134ab2a210897",
+          "source": "failure"
+        },
+        {
+          "signature": "getBitmap()Landroid/graphics/Bitmap;",
+          "flags": 17,
+          "body_sha256": "4ea5286c07e8d74a5d2270a2cf92905b5bf8987dae6b70612ae6e9e3e5d78867",
+          "source": "rom"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "8ddcaef428afa74b891ac41569e58026021401cc1b2791a82ffa2e833169c4a6",
+          "source": "failure"
+        },
+        {
+          "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
+          "flags": 17,
+          "body_sha256": "40d96c796bed400d2dc7e4d452335dc2c3c4eb397418b268942f929e3e6bfea9",
+          "source": "failure"
+        },
+        {
+          "signature": "getGravity()I",
+          "flags": 1,
+          "body_sha256": "46cc3ae4606aedf011b5be8272e2ec97d2c10c824c4c364860facc31a194d151",
+          "source": "failure"
+        },
+        {
+          "signature": "getIntrinsicHeight()I",
+          "flags": 1,
+          "body_sha256": "7b64c8f8b16204a541bd43ee014ac1bfc01a5522b3ffb0e6056d857eee0d7913",
+          "source": "rom"
+        },
+        {
+          "signature": "getIntrinsicWidth()I",
+          "flags": 1,
+          "body_sha256": "7187890a4dd8cc3cc204db49e31a958b538cd720d12f307bb4dc1b56a3769619",
+          "source": "rom"
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1,
+          "body_sha256": "b236773d261d439acae50d86d780fac20ccd221739eb78c21982521e73a86a6b",
+          "source": "failure"
+        },
+        {
+          "signature": "getPaint()Landroid/graphics/Paint;",
+          "flags": 17,
+          "body_sha256": "d8f6546446e8e6660c352d32bf9d744a413d83ba0bdd40d52329336366c78c38",
+          "source": "failure"
+        },
+        {
+          "signature": "getTileModeX()Landroid/graphics/Shader$TileMode;",
+          "flags": 1,
+          "body_sha256": "478ed30ca6d388bb90f887657fb508fb0dc86ea400ffa44f4665be81fa4e503d",
+          "source": "failure"
+        },
+        {
+          "signature": "getTileModeY()Landroid/graphics/Shader$TileMode;",
+          "flags": 1,
+          "body_sha256": "6549d38bbc2d7b81f23d64eb81a62b4c960237c39f12bbb5fc5b4348260aa235",
+          "source": "failure"
+        },
+        {
+          "signature": "hasAntiAlias()Z",
+          "flags": 1,
+          "body_sha256": "d4ee917121ed2b800acded1b5429f071059f4dcbfa8ca7686cd087fe02bebb0d",
+          "source": "failure"
+        },
+        {
+          "signature": "hasMipMap()Z",
+          "flags": 1,
+          "body_sha256": "0a392a349dd40e79483cd7541e8a504f4198047a9189ec4570d5a184eef87540",
+          "source": "failure"
+        },
+        {
+          "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+          "flags": 1,
+          "body_sha256": "77601cdc487b6e751118f66690c8c028f99fa660197c631d6e8d91c64b80d67d",
+          "source": "failure"
+        },
+        {
+          "signature": "isAutoMirrored()Z",
+          "flags": 17,
+          "body_sha256": "fedf6da1bd075de64fdc3b841e86ef2269e3be0ef10bc7f62cdcaa925d81e9ec",
+          "source": "failure"
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "3275adef71f1b90ca074ec2432bf25af6d96d09767e87a02201815bb4ac65838",
+          "source": "failure"
+        },
+        {
+          "signature": "needMirroring()Z",
+          "flags": 2,
+          "body_sha256": "5da70f26d0fc0d76ff0e002628aff42068d7f59b0a643d776250896e24913619",
+          "source": "failure"
+        },
+        {
+          "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
+          "flags": 4,
+          "body_sha256": "63e9bca1f8b1245c5502dba8b4637553c3350cad13eb4d37349f33a611963b56",
+          "source": "failure"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1,
+          "body_sha256": "e6594d7009e419a84b02bb005d9358b7f015e5afe90ee2af07ced837378d5d8b",
+          "source": "failure"
+        },
+        {
+          "signature": "setAntiAlias(Z)V",
+          "flags": 1,
+          "body_sha256": "831293e838530f213665ac8055948e368f930154f46bd3eab77aaa79df397047",
+          "source": "failure"
+        },
+        {
+          "signature": "setAutoMirrored(Z)V",
+          "flags": 1,
+          "body_sha256": "f113be879180e6c3c75b4e8f295625d3e6a4b1ee931ee1a63db222d629fd5be8",
+          "source": "failure"
+        },
+        {
+          "signature": "setBitmap(Landroid/graphics/Bitmap;)V",
+          "flags": 2,
+          "body_sha256": "3dca6e834d47c3bd8a00b25590fe01cd7010979949f38f7750ad98745623b180",
+          "source": "failure"
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1,
+          "body_sha256": "31af46be3b8c2b60a890c2d2b3a4cc01532ab850000c707b1941fe35f67e366b",
+          "source": "failure"
+        },
+        {
+          "signature": "setDither(Z)V",
+          "flags": 1,
+          "body_sha256": "9c86860a6fd2f2dc85a961ec0c7b2d14527d70af0a8d237cc4b1a4a25f63b506",
+          "source": "failure"
+        },
+        {
+          "signature": "setFilterBitmap(Z)V",
+          "flags": 1,
+          "body_sha256": "4536467494c4662e8ca34431ad27120e7fa69de67fabfa10b95a8a0f52e83c0c",
+          "source": "failure"
+        },
+        {
+          "signature": "setGravity(I)V",
+          "flags": 1,
+          "body_sha256": "200ed1664c10e22c529f6e2e2491dff7b0ff4ac4c1e5336a66fbd200bf6722e1",
+          "source": "failure"
+        },
+        {
+          "signature": "setMipMap(Z)V",
+          "flags": 1,
+          "body_sha256": "4d04d8433da36e922e508eded3adb05a4ea55654eb232afb2250b6a582213713",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(I)V",
+          "flags": 1,
+          "body_sha256": "e504def7b629ac522fc862949f7760b9315120d57cc21c521d4a7f76ba644e80",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "66a8c5658ee22a860f390c222477bf6f19266cd5fac96997d5665d22be4c63c2",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(Landroid/util/DisplayMetrics;)V",
+          "flags": 1,
+          "body_sha256": "2ac89672c9f566aaa432a3000019fb824af8f0614ad74fb44e1a54b61151512a",
+          "source": "failure"
+        },
+        {
+          "signature": "setTileModeX(Landroid/graphics/Shader$TileMode;)V",
+          "flags": 1,
+          "body_sha256": "8a406798dfaeb422611a21410eff6e9ce92a54f3f6c7078a14913d24da6712fd",
+          "source": "failure"
+        },
+        {
+          "signature": "setTileModeXY(Landroid/graphics/Shader$TileMode;Landroid/graphics/Shader$TileMode;)V",
+          "flags": 1,
+          "body_sha256": "c310fc3dfa52f6fc5cc7b08fbdf274b74426129fe718e61f97ec98e313bd28c6",
+          "source": "failure"
+        },
+        {
+          "signature": "setTileModeY(Landroid/graphics/Shader$TileMode;)V",
+          "flags": 17,
+          "body_sha256": "203a86e84614fc23d2a14546b787dc22f74bd27dfff8a2766a7b81ed4f8dcab1",
+          "source": "failure"
+        },
+        {
+          "signature": "setXfermode(Landroid/graphics/Xfermode;)V",
+          "flags": 1,
+          "body_sha256": "d6ee780dcf539123bf07a66e16bc0374cc22169e67a44cae5b83e5e61e267c9b",
+          "source": "failure"
+        },
+        {
+          "signature": "updateMirrorMatrix(F)V",
+          "flags": 2,
+          "body_sha256": "83f2dd1b8b2c9d64292e62815bb36fe54ff6f4ca93202ec9ffbb2adfcee1ac04",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEFAULT_PAINT_FLAGS:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x6"
+        },
+        {
+          "signature": "mApplyGravity:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmap:Landroid/graphics/Bitmap;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmapHeight:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmapState:Landroid/graphics/drawable/BitmapDrawable$BitmapState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmapWidth:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDstRect:Landroid/graphics/Rect;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMirrorMatrix:Landroid/graphics/Matrix;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMutated:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTargetDensity:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
+      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "owner": "Landroid/graphics/drawable/ColorDrawable;",
+      "smali_sha256": "02bc11f751baccc3d315a606ff50186e588a0b02683a5d5b599de585bf42e0b6",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "2e12da851831a863a08341d1c9963063330ca26baf71b0cf824c60d9bffda753",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "<init>(I)V",
+          "flags": 65537,
+          "body_sha256": "2ca75986e1de2fcbe025c3169984354b833907fb20b38576342bc1789fcc6299",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/ColorDrawable$ColorState;)V",
+          "flags": 65538,
+          "body_sha256": "dbf371d0c544f98c47e1a7819f4ec2590a8e6c1a967303096d8e3d2cb5338f9e",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/ColorDrawable$ColorState;Landroid/graphics/drawable/ColorDrawable$1;)V",
+          "flags": 69632,
+          "body_sha256": "93c135797516ccbfcebd55a5b3d9e252a9065f7c5c2359e94b33cbd1124dcea1",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "a2a83e88608d62dcca959cb500e0d70eaa908649c3d08035941662e961e48728",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "32ceb3debf8e05dff12ab83d23695b372fbd2ae506cf9a8522d9cb2f4a72e582",
+          "source": "failure"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "2abd2d887a31c47c8d0ecf3546ffdd5092909db34fa29bb4f89d173aad76f616",
+          "source": "failure"
+        },
+        {
+          "signature": "getColor()I",
+          "flags": 1,
+          "body_sha256": "d713a5f3e8967a6c68eba9f16a0b86de5659a4c7b1702503cc57df5aa0381284",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
+          "flags": 1,
+          "body_sha256": "8ab6aefefb57b77a3c4f58019d14c11127752d51032901a3023048c3dcc1bb83",
+          "source": "failure"
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1,
+          "body_sha256": "70f4a0544c65c8ce32afe159436f85664ddb42aeed1474878cbe9d052befbd55",
+          "source": "failure"
+        },
+        {
+          "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+          "flags": 1,
+          "body_sha256": "eedc559d6d616f7521dad524b565c121e8c6518725e569358a5eac989bc12843",
+          "source": "failure"
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "5f5b2493c7ed04471fc212c9aedbe0f2a56095c85e8521e4f89afeccd796780d",
+          "source": "failure"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1,
+          "body_sha256": "8c34ccd556f4459a096c77831d7747a10960a934de47ab1edb3355ec260bbfbc",
+          "source": "failure"
+        },
+        {
+          "signature": "setColor(I)V",
+          "flags": 1,
+          "body_sha256": "4ed95aefa722448427cac7d34b59613124bbeefaadfc03f41e61e672b25be130",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
+            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
+            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
+            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
+            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+          }
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1,
+          "body_sha256": "f82134e5cc237e1f6e32032cab0b905eecde6936b73e78066642c142210c406d",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mMutated:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPaint:Landroid/graphics/Paint;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mState:Landroid/graphics/drawable/ColorDrawable$ColorState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

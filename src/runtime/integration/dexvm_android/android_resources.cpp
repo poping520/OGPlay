@@ -13,6 +13,7 @@
 #include <variant>
 #include "ogplay/runtime/dexvm/io_runtime.h"
 #include "ogplay/runtime/integration/apk_assets.h"
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -528,6 +529,11 @@ void ThemeLoad(dx::IntrinsicContext& call, const Context& context) {
         context->theme_resources.Load(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
         context->theme_projection_loaded = true;
     }
+    context->theme_resources.SetResourceHooks(
+        [owner = context.get()](std::uint32_t id) { return SelectUiResourceEntry(*owner, id); },
+        [owner = context.get()](const loader::ArscEntry& entry) {
+            static_cast<void>(DecodeLeafBitmap(*owner, entry));
+        });
     if (!context->theme_gc_registered) {
         call.vm.RegisterIntrinsicStateTable(
             {"android.theme",
@@ -1318,6 +1324,111 @@ Decl Declare_android_content_res_Resources(const Context &context) {
               throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
           }
       });
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      builder.VirtualMethod("getValue", "(ILandroid/util/TypedValue;ZZ)V", [context](dx::IntrinsicContext& call) {
+          return ThemeChecked(call, context, [&] {
+              if (XmlField(call.vm, call.receiver, "mIcons", "Landroid/util/SparseArray;") ||
+                  XmlField(call.vm, call.receiver, "mComposedIconInfo", "Landroid/app/ComposedIconInfo;"))
+                  throw std::runtime_error("system composed icons are unsupported");
+              const auto assets =
+                  CallAndroidMethod(call.vm, call.receiver, "getAssets", "()Landroid/content/res/AssetManager;").ref;
+              const auto found =
+                  CallAndroidMethod(call.vm, assets, "getResourceValue", "(IILandroid/util/TypedValue;Z)Z",
+                                    {call.arguments[0], XmlInt(0), call.arguments[1], call.arguments[2]});
+              if (!found.AsInt()) throw std::runtime_error("unknown scalar resource");
+              return dx::VmValue::Void();
+          });
+      });
+      builder.VirtualMethod(
+          "loadColorStateList", "(Landroid/util/TypedValue;I)Landroid/content/res/ColorStateList;",
+          [context](dx::IntrinsicContext& call) {
+              return ThemeChecked(call, context, [&] {
+                  const auto value = call.arguments[0].ref;
+                  const auto type = XmlField(call.vm, value, "type");
+                  if (type < 28 || type > 31) throw std::runtime_error("only scalar single-state colors are supported");
+                  const auto method = call.vm.Linker().FindDirectMethod(
+                      call.vm.Linker().ResolveDescriptor("Landroid/content/res/ColorStateList;"), "valueOf",
+                      "(I)Landroid/content/res/ColorStateList;");
+                  if (!method) throw std::logic_error("ROM ColorStateList.valueOf unavailable");
+                  const auto initialized = call.vm.EnsureClassInitialized(
+                      call.vm.Linker().ResolveDescriptor("Landroid/content/res/ColorStateList;"));
+                  if (initialized.exception.IsValid())
+                      throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                            initialized.exception_message, initialized.exception};
+                  const auto result = call.vm.Call(*method, std::array{XmlInt(XmlField(call.vm, value, "data"))});
+                  if (result.exception.IsValid())
+                      throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                            result.exception_message, result.exception};
+                  return result.value;
+              });
+          });
+      builder.VirtualMethod(
+          "loadDrawable", "(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
+          [context](dx::IntrinsicContext& call) {
+              return ThemeChecked(call, context, [&] {
+                  const auto value = call.arguments[0].ref;
+                  const auto type = XmlField(call.vm, value, "type");
+                  const auto data = XmlField(call.vm, value, "data");
+                  const bool color = type >= 28 && type <= 31;
+                  const auto id = XmlField(call.vm, value, "resourceId");
+                  std::shared_ptr<const ui::UiBitmap> pixels;
+                  if (!color) {
+                      if (type != 3 || !id || XmlField(call.vm, value, "assetCookie") != 1)
+                          throw std::runtime_error("leaf Drawable requires APK bitmap or scalar color");
+                      const auto* entry = SelectUiResourceEntry(*context, id);
+                      if (entry->value_type != type || entry->value_data != data ||
+                          entry->density != XmlField(call.vm, value, "density"))
+                          throw std::runtime_error("leaf Drawable resource facts disagree");
+                      pixels = DecodeLeafBitmap(*context, *entry);
+                  }
+                  const auto* descriptor = color ? "Landroid/graphics/drawable/ColorDrawable;"
+                                                 : "Landroid/graphics/drawable/BitmapDrawable;";
+                  const auto klass = call.vm.Linker().ResolveDescriptor(descriptor);
+                  const auto initialized = call.vm.EnsureClassInitialized(klass);
+                  if (initialized.exception.IsValid())
+                      throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                            initialized.exception_message, initialized.exception};
+                  const auto object = call.vm.NewIntrinsicInstance(descriptor);
+                  const auto root = call.vm.ProtectReferences(std::array{object});
+                  std::vector<dx::VmValue> args{dx::VmValue::Ref(object)};
+                  const char* signature = "(I)V";
+                  dx::VmObjectRef bitmap;
+                  if (color)
+                      args.push_back(XmlInt(data));
+                  else {
+                      bitmap = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+                      std::vector<std::uint32_t> argb;
+                      for (std::size_t i = 0; i < pixels->rgba8.size(); i += 4)
+                          argb.push_back((static_cast<std::uint32_t>(pixels->rgba8[i + 3]) << 24U) |
+                                         (static_cast<std::uint32_t>(pixels->rgba8[i]) << 16U) |
+                                         (static_cast<std::uint32_t>(pixels->rgba8[i + 1]) << 8U) |
+                                         pixels->rgba8[i + 2]);
+                      auto& backing = context->bitmaps[bitmap.Value()];
+                      backing.width = pixels->width;
+                      backing.height = pixels->height;
+                      backing.mutable_pixels = false;
+                      backing.pixels =
+                          std::make_shared<BitmapPixels>(pixels->width, pixels->height, 5, std::move(argb));
+                      const auto density = XmlField(call.vm, value, "density");
+                      backing.density = density == 65535 ? 0 : density == 0 ? 160 : static_cast<std::int32_t>(density);
+                      signature = "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V";
+                      args.push_back(dx::VmValue::Ref(call.receiver));
+                      args.push_back(dx::VmValue::Ref(bitmap));
+                  }
+                  const auto bitmap_root = call.vm.ProtectReferences(std::array{bitmap});
+                  const auto ctor = call.vm.Linker().FindDirectMethod(klass, "<init>", signature);
+                  if (!ctor) throw std::logic_error("leaf Drawable constructor unavailable");
+                  const auto outcome = call.vm.Call(*ctor, args);
+                  if (outcome.exception.IsValid())
+                      throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                            outcome.exception_message, outcome.exception};
+                  auto& state = context->ui_drawables.at(object.Value());
+                  state.resource_id = id;
+                  state.leaf_pixels = std::move(pixels);
+                  return dx::VmValue::Ref(object);
+              });
+          });
+  }
   builder.StaticMethod("getSystem", "()Landroid/content/res/Resources;",
                        [context](dx::IntrinsicContext &call) {
                          return dx::VmValue::Ref(ResourceObject(call, context, true));

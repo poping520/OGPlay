@@ -810,7 +810,10 @@ struct DexVmAndroidContext final {
         bool bitmap_drawable{false};
     std::shared_ptr<const ui::UiBitmap> image_projection;
     std::uint64_t bitmap_revision{};
+    std::shared_ptr<const ui::UiBitmap> leaf_pixels;
   };
+
+  // Immutable leaf-resource backing belongs to its Java Drawable, never to a cache.
   // View owns the guest Drawable reference; immutable decoded pixels remain
   // shared in ui_bitmaps while alpha/bounds stay per Drawable instance.
   std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
@@ -994,6 +997,10 @@ ResolveUiDimension(const DexVmAndroidContext &context,
                    std::uint32_t resource_id, bool scaled);
 [[nodiscard]] std::shared_ptr<const ui::UiBitmap>
 ResolveUiDrawable(DexVmAndroidContext &context, std::uint32_t resource_id);
+[[nodiscard]] const loader::ArscEntry* SelectUiResourceEntry(const DexVmAndroidContext& context,
+                                                             std::uint32_t resource_id);
+[[nodiscard]] std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& context,
+                                                                   const loader::ArscEntry& entry);
 [[nodiscard]] const loader::ArscEntry &
 ResolveUiResourceEntry(const DexVmAndroidContext &context,
                        std::uint32_t resource_id);

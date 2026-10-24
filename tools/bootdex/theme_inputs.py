@@ -17,7 +17,9 @@ import dexdis
 
 GROUPS = ('View', 'ViewGroup', 'FrameLayout', 'LinearLayout', 'RelativeLayout',
           'ViewGroup_Layout', 'ViewGroup_MarginLayout', 'FrameLayout_Layout',
-          'LinearLayout_Layout', 'RelativeLayout_Layout')
+          'LinearLayout_Layout', 'RelativeLayout_Layout',
+          'TextViewAppearance', 'TextAppearance', 'TextView', 'ImageView',
+          'ScrollView', 'HorizontalScrollView')
 PINNED = {
     '.local/aosp/framework.jar': '90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48',
     '.local/aosp/framework2.jar': 'b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea',
@@ -173,6 +175,22 @@ def inspect_inputs(negative_rom_id=False):
             require(expected is None or expected == resource_id, 'public attr/styleable ID mismatch: ' + group + '.' + name)
             styleable_checks.append(dict(group=group, name=name, index=index, resource_id=resource_id,
                                          source_public_id=expected, rom_attr_fields=fields))
+    all_styles = {}
+    for file in sorted(values_dir.glob('*.xml')):
+        for node in ET.parse(file).getroot().findall('style'):
+            name = node.attrib['name']
+            field = name.replace('.', '_')
+            ids = {rom[o][field] for o in ('Landroid/R$style;', 'Lcom/android/internal/R$style;') if field in rom[o]}
+            if len(ids) > 1:
+                errors.append(dict(reason='conflicting-rom-style-binding', name=name))
+                continue
+            if ids:
+                all_styles[name] = next(iter(ids))
+    attr_ids = {}
+    for owner in ('Landroid/R$attr;', 'Lcom/android/internal/R$attr;'):
+        for name, ident in rom[owner].items():
+            require(name not in attr_ids or attr_ids[name] == ident, 'conflicting ROM attr: ' + name)
+            attr_ids[name] = ident
     report = dict(schema_version=1, task='DVM-288', status='rejected' if errors else 'preflight-passed',
                   accepted_projection=False, input_sha256=hashes, rom_shapes=shapes,
                   themes=bindings, theme_count=len(bindings),
@@ -180,5 +198,5 @@ def inspect_inputs(negative_rom_id=False):
                   missing_theme_count=sum(not t['rom_fields'] for t in bindings),
                   public_id_checks=public_checks, styleable_slot_checks=styleable_checks,
                   styleable_group_count=len(GROUPS), styleable_slot_count=len(styleable_checks), errors=errors,
-                  negative_control=negative_rom_id)
+                  negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids)
     return report

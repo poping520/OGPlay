@@ -4,6 +4,7 @@
 #include "ogplay/loader/apk.h"
 
 #include <bit>
+#include "../fixtures/bitmap_decode_data.h"
 #include <fstream>
 
 using namespace ogplay::runtime;
@@ -1411,5 +1412,297 @@ TEST_CASE("DVM-290 ROM include nonmerge overrides and merge parent constraints")
         CHECK(JavaField(f, extra, "mMeasuredWidth").bits == 7);
         CHECK(JavaField(f, extra, "mMeasuredHeight").bits == 9);
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both backends") {
+    // TextViewAppearance must retain a style ID for ROM getResourceId instead
+    // of trying to materialize the bag as a scalar drawable/color.
+    ThemeResources projection;
+    projection.Load(Projection());
+    const auto projected = projection.New();
+    auto projected_table = Table();
+    projection.Apply(projected, 0x01030005, true, projected_table);
+    const auto appearance =
+        projection.Styled(projected, 0, 0, nullptr, std::array<std::uint32_t, 1>{0x01010034}, projected_table);
+    CHECK(appearance[0].type == 1);
+    CHECK(appearance[0].data == 0x0103003e);
+    CHECK(appearance[0].resource_id == appearance[0].data);
+    projected_table.entries.push_back(Style(0x7f020020, 0, {{a, 1, default_id, {}}}));
+    projection.Apply(projected, 0x7f020020, true, projected_table);
+    CHECK(projection.Styled(projected, 0, 0, nullptr, std::array{a}, projected_table)[0].resource_id == default_id);
+    using ogplay::test::container_traversal::ContainerVm;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->ui_density = 2;
+        f.context->apk_bytes = ogplay::test::BitmapDecodeApk();
+        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+        f.context->arsc = Table();
+        f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png", "res/drawable/leaf.jpg"}, true);
+        constexpr std::uint32_t image = 0x7f030001, color = 0x7f030002, alias = 0x7f030003;
+        f.context->arsc.entries.push_back({.resource_id = image,
+                                           .type_name = "drawable",
+                                           .entry_name = "leaf",
+                                           .string_value = "res/drawable/fixture.png",
+                                           .value_type = 3,
+                                           .changing_configurations = 0x100,
+                                           .density = 160});
+        f.context->arsc.entries.push_back({.resource_id = color,
+                                           .type_name = "color",
+                                           .entry_name = "color",
+                                           .value_type = 28,
+                                           .value_data = 0xff123456,
+                                           .changing_configurations = 0x200});
+        f.context->arsc.entries.push_back({.resource_id = alias,
+                                           .type_name = "drawable",
+                                           .entry_name = "alias",
+                                           .value_type = 1,
+                                           .value_data = image,
+                                           .changing_configurations = 0x400});
+        f.context->arsc.entries.push_back(Style(0x7f020020, 0, {{a, 1, alias, {}}, {b, 1, color, {}}, {c, 1, 0, {}}}));
+        const auto owner = f.New("Landroid/content/Context;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
+        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
+        for (int i = 0; i < 3; ++i)
+            f.model.SetPrimitiveElement(attrs, i, a + static_cast<std::uint32_t>(i));
+        const auto attrs_root = f.vm.ProtectReferences(std::array{attrs});
+        const auto typed =
+            f.On(theme, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
+        const auto typed_root = f.vm.ProtectReferences(std::array{typed});
+        const auto ref_field = [&](VmObjectRef obj, const char* name, const char* type) {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(obj), name, type);
+            REQUIRE(id);
+            return VmObjectRef{f.model.InstanceSlots(obj)[f.linker.Field(*id).slot].bits};
+        };
+        const auto data = ref_field(typed, "mData", "[I");
+        const std::array<std::uint32_t, 18> expected{3,     0,     1, image, 0x500, 160,         28, 0xff123456, 1,
+                                                     color, 0x200, 0, 0,     0,     0xffffffffU, 0,  0,          0};
+        for (int i = 0; i < 18; ++i)
+            CHECK(static_cast<std::uint32_t>(f.model.GetPrimitiveElement(data, i)) ==
+                  expected[static_cast<std::size_t>(i)]);
+        VmObjectRef drawable;
+        std::weak_ptr<const ogplay::runtime::ui::UiBitmap> weak_pixels;
+        {
+            drawable = f.On(typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)}).ref;
+            const auto solid =
+                f.On(typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(1)}).ref;
+            const auto list =
+                f.On(typed, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(1)}).ref;
+            const auto values_root = f.vm.ProtectReferences(std::array{drawable, solid, list});
+            CHECK(f.linker.Class(f.model.ObjectClass(drawable)).descriptor ==
+                  "Landroid/graphics/drawable/BitmapDrawable;");
+            CHECK(f.linker.Class(f.model.ObjectClass(solid)).descriptor == "Landroid/graphics/drawable/ColorDrawable;");
+            CHECK(f.On(drawable, "getIntrinsicWidth", "()I").AsInt() == 4);
+            CHECK(f.On(drawable, "getIntrinsicHeight", "()I").AsInt() == 2);
+            CHECK(f.On(solid, "getIntrinsicWidth", "()I").AsInt() == -1);
+            CHECK(f.On(solid, "getIntrinsicHeight", "()I").AsInt() == -1);
+            CHECK(static_cast<std::uint32_t>(f.On(solid, "getColor", "()I").AsInt()) == 0xff123456);
+            CHECK(static_cast<std::uint32_t>(f.On(list, "getDefaultColor", "()I").AsInt()) == 0xff123456);
+            CHECK_FALSE(f.On(list, "isStateful", "()Z").AsInt());
+            CHECK(f.Static("Landroid/content/res/ColorStateList;", "valueOf", "(I)Landroid/content/res/ColorStateList;",
+                           {VmValue::Int(static_cast<std::int32_t>(0xff123456))})
+                      .ref == list);
+            CHECK_FALSE(
+                f.On(typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(2)}).ref.IsValid());
+            CHECK_FALSE(f.On(typed, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(2)})
+                            .ref.IsValid());
+            const auto bitmap = f.On(drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+            CHECK_FALSE(f.On(bitmap, "isMutable", "()Z").AsInt());
+            CHECK(f.On(bitmap, "getDensity", "()I").AsInt() == 160);
+            const auto& state = f.context->ui_drawables.at(drawable.Value());
+            REQUIRE(state.leaf_pixels);
+            CHECK(state.leaf_pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+            weak_pixels = state.leaf_pixels;
+            CHECK(f.context->ui_bitmaps.empty());
+            static_cast<void>(f.vm.CollectGarbage("leaf-rooted"));
+            CHECK_FALSE(weak_pixels.expired());
+            const auto direct =
+                f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(alias)}).ref;
+            const auto direct_list =
+                f.On(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(color)}).ref;
+            const auto direct_roots = f.vm.ProtectReferences(std::array{direct, direct_list});
+            CHECK(direct != drawable);
+            CHECK(f.On(direct, "getIntrinsicWidth", "()I").AsInt() == 4);
+            CHECK(direct_list == list);
+            // The same selected entry facts drive both native six-slot entry points.
+            ogplay::loader::CompiledXmlNode xml;
+            xml.attributes = {Attr(a, 1, alias), Attr(b, 1, color), Attr(c, 1, 0)};
+            const auto retrieved = f.context->theme_resources.Retrieve(xml, std::array{a, b, c}, f.context->arsc);
+            for (std::size_t i = 0; i < retrieved.size(); ++i)
+                CHECK(retrieved[i].Slots() == std::array<std::uint32_t, 6>{expected[i * 6], expected[i * 6 + 1],
+                                                                           expected[i * 6 + 2], expected[i * 6 + 3],
+                                                                           expected[i * 6 + 4], expected[i * 6 + 5]});
+        }
+        static_cast<void>(f.vm.CollectGarbage("leaf-unrooted"));
+        CHECK(weak_pixels.expired());
+        CHECK_FALSE(f.context->ui_drawables.contains(drawable.Value()));
+        // Configuration and density selection: requested 320 chooses 240 over 160;
+        // a nonmatching orientation and a newer API cannot steal the resource.
+        auto variant = f.context->arsc.entries[3];
+        variant.density = 240;
+        variant.changing_configurations = 0x800;
+        f.context->arsc.entries.push_back(variant);
+        variant.density = 320;
+        variant.orientation = 1;
+        f.context->arsc.entries.push_back(variant);
+        variant.orientation = 0;
+        variant.sdk_version = 20;
+        f.context->arsc.entries.push_back(variant);
+        const auto chosen =
+            f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
+        const auto chosen_root = f.vm.ProtectReferences(std::array{chosen});
+        CHECK(f.On(chosen, "getIntrinsicWidth", "()I").AsInt() == 3);
+        CHECK(f.context->theme_resources.Resource(image, true, f.context->arsc).Slots() ==
+              std::array<std::uint32_t, 6>{3, 0, 1, image, 0x800, 240});
+        for (auto& entry : f.context->arsc.entries)
+            if (entry.resource_id == image) entry.density = 65535;
+        const auto nodpi =
+            f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
+        const auto nodpi_root = f.vm.ProtectReferences(std::array{nodpi});
+        CHECK(f.On(nodpi, "getIntrinsicWidth", "()I").AsInt() == 2);
+        // JPEG uses the same typed file path and immutable backing contract.
+        const std::array<unsigned char, 288> jpeg_bytes{
+            0xff, 0xd8, 0xff, 0xe0, 0x0,  0x10, 0x4a, 0x46, 0x49, 0x46, 0x0,  0x1,  0x1,  0x0,  0x0,  0x1,  0x0,  0x1,
+            0x0,  0x0,  0xff, 0xdb, 0x0,  0x43, 0x0,  0x3,  0x2,  0x2,  0x3,  0x2,  0x2,  0x3,  0x3,  0x3,  0x3,  0x4,
+            0x3,  0x3,  0x4,  0x5,  0x8,  0x5,  0x5,  0x4,  0x4,  0x5,  0xa,  0x7,  0x7,  0x6,  0x8,  0xc,  0xa,  0xc,
+            0xc,  0xb,  0xa,  0xb,  0xb,  0xd,  0xe,  0x12, 0x10, 0xd,  0xe,  0x11, 0xe,  0xb,  0xb,  0x10, 0x16, 0x10,
+            0x11, 0x13, 0x14, 0x15, 0x15, 0x15, 0xc,  0xf,  0x17, 0x18, 0x16, 0x14, 0x18, 0x12, 0x14, 0x15, 0x14, 0xff,
+            0xdb, 0x0,  0x43, 0x1,  0x3,  0x4,  0x4,  0x5,  0x4,  0x5,  0x9,  0x5,  0x5,  0x9,  0x14, 0xd,  0xb,  0xd,
+            0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14,
+            0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14,
+            0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0xff, 0xc0, 0x0,  0x11,
+            0x8,  0x0,  0x1,  0x0,  0x2,  0x3,  0x1,  0x22, 0x0,  0x2,  0x11, 0x1,  0x3,  0x11, 0x1,  0xff, 0xc4, 0x0,
+            0x15, 0x0,  0x1,  0x1,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
+            0x0,  0x8,  0xff, 0xc4, 0x0,  0x14, 0x10, 0x1,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
+            0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0xff, 0xc4, 0x0,  0x15, 0x1,  0x1,  0x1,  0x0,  0x0,  0x0,  0x0,  0x0,
+            0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x7,  0x9,  0xff, 0xc4, 0x0,  0x14, 0x11, 0x1,  0x0,
+            0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0xff, 0xda, 0x0,
+            0xc,  0x3,  0x1,  0x0,  0x2,  0x11, 0x3,  0x11, 0x0,  0x3f, 0x0,  0x9d, 0x0,  0x6,  0x2a, 0x9b, 0xff, 0xd9};
+        std::vector<std::byte> jpeg;
+        for (auto byte : jpeg_bytes)
+            jpeg.push_back(static_cast<std::byte>(byte));
+        f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/drawable/leaf.jpg", jpeg);
+        f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+        f.context->arsc.entries.push_back({.resource_id = 0x7f030010,
+                                           .type_name = "drawable",
+                                           .entry_name = "jpeg",
+                                           .string_value = "res/drawable/leaf.jpg",
+                                           .value_type = 3,
+                                           .value_data = 1,
+                                           .density = 160});
+        const auto jpeg_drawable =
+            f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x7f030010)}).ref;
+        const auto jpeg_root = f.vm.ProtectReferences(std::array{jpeg_drawable});
+        CHECK(f.On(jpeg_drawable, "getIntrinsicWidth", "()I").AsInt() == 4);
+        CHECK(f.context->ui_drawables.at(jpeg_drawable.Value()).leaf_pixels->rgba8.size() == 8);
+        for (const auto& hit : f.ledger.Unimplemented())
+            CHECK_MESSAGE(hit.count == 0, hit.id);
+        for (const auto& [object, name, descriptor] : std::vector<std::tuple<VmObjectRef, const char*, const char*>>{
+                 {typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;"},
+                 {typed, "getColorStateList", "(I)Landroid/content/res/ColorStateList;"},
+                 {res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;"},
+                 {res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;"},
+                 {chosen, "getIntrinsicWidth", "()I"}}) {
+            const auto method = f.linker.FindVtableIndex(f.model.ObjectClass(object), name, descriptor);
+            REQUIRE(method);
+            CHECK(f.linker.Method(f.linker.Class(f.model.ObjectClass(object)).vtable[*method]).kind ==
+                  MethodKind::interpreted);
+        }
+    }
+}
+
+TEST_CASE("DVM-292 unsupported leaf resources fail before publishing six slots") {
+    using ogplay::test::container_traversal::ContainerVm;
+    using namespace ogplay::runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->arsc = Table();
+        f.context->arsc.global_string_pool = StringPool({"res/drawable/fixture.png"}, true);
+        const auto owner = f.New("Landroid/content/Context;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto theme = f.On(res, "newTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, res, theme});
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(theme_id), VmValue::Int(1)});
+        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+        const auto data = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 6);
+        const auto indices = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 2);
+        const auto arrays_root = f.vm.ProtectReferences(std::array{attrs, data, indices});
+        f.model.SetPrimitiveElement(attrs, 0, a);
+        const auto token_field = f.linker.FindFieldRecursive(f.model.ObjectClass(theme), "mTheme", "I");
+        REQUIRE(token_field);
+        const auto token = f.model.InstanceSlots(theme)[f.linker.Field(*token_field).slot].bits;
+        const auto apply = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Landroid/content/res/AssetManager;"),
+                                                     "applyStyle", "(IIII[I[I[I)Z");
+        REQUIRE(apply);
+        const auto before = f.context->ui_tree.PublishedProjection();
+        const auto before_count = f.context->ui_drawables.size();
+        for (const auto* path :
+             {"res/color/selector.xml", "res/drawable/image.9.png", "res/drawable/shape.xml",
+              "res/drawable/unknown.bin", "res/drawable/fixture.png", "res/drawable/optical.png", "cycle"}) {
+            f.context->arsc.entries.resize(3);
+            auto bytes = ogplay::test::BitmapDecodePng();
+            // Hidden compiled ninepatch chunk, even when its filename is ordinary PNG.
+            if (std::string_view(path).ends_with("fixture.png")) {
+                const std::array<std::byte, 12> chunk{std::byte{0},   std::byte{0},   std::byte{0},   std::byte{0},
+                                                      std::byte{'n'}, std::byte{'p'}, std::byte{'T'}, std::byte{'c'}};
+                bytes.insert(bytes.begin() + 33, chunk.begin(), chunk.end());
+            }
+            if (std::string_view(path).ends_with("optical.png")) {
+                std::array<std::byte, 28> chunk{};
+                chunk[3] = std::byte{16};
+                chunk[4] = std::byte{'n'};
+                chunk[5] = std::byte{'p'};
+                chunk[6] = std::byte{'L'};
+                chunk[7] = std::byte{'b'};
+                bytes.insert(bytes.begin() + 33, chunk.begin(), chunk.end());
+            }
+            f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip(path, bytes);
+            f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+            f.context->arsc.entries.push_back(
+                {.resource_id = 0x7f030001,
+                 .type_name = std::string_view(path).starts_with("res/color") ? "color" : "drawable",
+                 .entry_name = "unsupported",
+                 .string_value = path,
+                 .value_type = 3});
+            if (std::string_view(path) == "cycle") {
+                f.context->arsc.entries.back().value_type = 1;
+                f.context->arsc.entries.back().value_data = 0x7f030001;
+            }
+            f.context->arsc.entries.push_back(Style(0x7f020020, 0, {{a, 1, 0x7f030001, {}}}));
+            f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020020), VmValue::Int(1)});
+            for (int i = 0; i < 6; ++i)
+                f.model.SetPrimitiveElement(data, i, 0x77777777);
+            for (int i = 0; i < 2; ++i)
+                f.model.SetPrimitiveElement(indices, i, 0x55555555);
+            const auto failed = f.vm.Call(*apply, std::array{VmValue::Int(static_cast<int>(token)), VmValue::Int(0),
+                                                             VmValue::Int(0), VmValue::Int(0), VmValue::Ref(attrs),
+                                                             VmValue::Ref(data), VmValue::Ref(indices)});
+            REQUIRE(failed.exception.IsValid());
+            CHECK(failed.exception_message.size() > 0);
+            for (int i = 0; i < 6; ++i)
+                CHECK(f.model.GetPrimitiveElement(data, i) == 0x77777777);
+            for (int i = 0; i < 2; ++i)
+                CHECK(f.model.GetPrimitiveElement(indices, i) == 0x55555555);
+            CHECK(f.OnOutcome(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x7f030001)})
+                      .exception.IsValid());
+            CHECK(f.OnOutcome(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;",
+                              {VmValue::Int(0x7f030001)})
+                      .exception.IsValid());
+            if (std::string_view(path) != "cycle")
+                CHECK_THROWS(
+                    static_cast<void>(f.context->theme_resources.Resource(0x7f030001, false, f.context->arsc)));
+            CHECK(f.context->ui_drawables.size() == before_count);
+            CHECK(f.context->ui_tree.PublishedProjection() == before);
+            // Explicit @null masks an unsupported lower-priority reference.
+            ogplay::loader::CompiledXmlNode xml;
+            xml.attributes = {Attr(a, 1, 0)};
+            CHECK(f.context->theme_resources.Styled({token}, 0, 0, &xml, std::array{a}, f.context->arsc)[0].type == 0);
+        }
     }
 }

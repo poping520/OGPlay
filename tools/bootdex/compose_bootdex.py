@@ -58,6 +58,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-theme-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-context-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-inflater-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-leaf-resources-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -124,6 +125,8 @@ def build(measure=False):
                      'Landroid/content/res/AssetManager$AssetInputStream;',
                      'Landroid/app/IconPackHelper;', 'Landroid/app/IconPackHelper$ColorFilterUtils;',
                      'Landroid/app/IconPackHelper$ColorFilterUtils$Builder;',
+                     'Landroid/graphics/drawable/Drawable;', 'Landroid/graphics/drawable/BitmapDrawable;',
+                     'Landroid/graphics/drawable/ColorDrawable;',
                      'Landroid/view/View$ListenerInfo;',
                      'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
                      'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',

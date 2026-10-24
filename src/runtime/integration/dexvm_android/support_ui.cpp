@@ -646,93 +646,80 @@ constexpr std::array<UiWidgetDescriptor, 17> kWidgets{{
 
 }  // namespace
 
-[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(
-    const DexVmAndroidContext& context, std::uint32_t resource_id) {
+const loader::ArscEntry* SelectUiResourceEntry(const DexVmAndroidContext& context, std::uint32_t resource_id) {
+    const loader::ArscEntry* entry = nullptr;
+    const auto width_dp = static_cast<int>(std::lround(context.surface_width / context.ui_density));
+    const auto height_dp = static_cast<int>(std::lround(context.surface_height / context.ui_density));
+    const auto smallest_dp = std::min(width_dp, height_dp);
+    const auto orientation = width_dp > height_dp ? 2U : 1U;
+    const auto density = static_cast<int>(std::lround(context.ui_density * 160.0F));
+    const auto long_dp = std::max(width_dp, height_dp);
+    const auto short_dp = std::min(width_dp, height_dp);
+    const auto screen_size = long_dp < 470                       ? 1U
+                             : long_dp >= 960 && short_dp >= 720 ? 4U
+                             : long_dp >= 640 && short_dp >= 480 ? 3U
+                                                                 : 2U;
+    const auto density_better = [density](const std::uint16_t lhs, const std::uint16_t rhs) {
+        if (lhs == rhs) return false;
+        int high = lhs != 0 ? lhs : 160;
+        int low = rhs != 0 ? rhs : 160;
+        bool lhs_high = true;
+        if (low > high) {
+            std::swap(low, high);
+            lhs_high = false;
+        }
+        const int requested = density != 0 ? density : 160;
+        if (requested >= high) return lhs_high;
+        if (low >= requested) return !lhs_high;
+        return (((2 * low) - requested) * high > requested * requested) ? !lhs_high : lhs_high;
+    };
+    const auto better = [&](const loader::ArscEntry& lhs, const loader::ArscEntry& rhs) {
+        if (lhs.smallest_width_dp != rhs.smallest_width_dp) return lhs.smallest_width_dp > rhs.smallest_width_dp;
+        const auto lhs_delta = width_dp - lhs.screen_width_dp + height_dp - lhs.screen_height_dp;
+        const auto rhs_delta = width_dp - rhs.screen_width_dp + height_dp - rhs.screen_height_dp;
+        if (lhs_delta != rhs_delta) return lhs_delta < rhs_delta;
+        auto lhs_size = lhs.screen_layout & 0x0fU;
+        auto rhs_size = rhs.screen_layout & 0x0fU;
+        const auto lhs_raw_size = lhs_size;
+        const auto rhs_raw_size = rhs_size;
+        if (screen_size >= 2U) {
+            if (lhs_size == 0U) lhs_size = 2U;
+            if (rhs_size == 0U) rhs_size = 2U;
+        }
+        if (lhs_size != rhs_size) return lhs_size > rhs_size;
+        if (lhs_raw_size != rhs_raw_size) return lhs_raw_size != 0U;
+        if (lhs.orientation != rhs.orientation) return lhs.orientation != 0U;
+        if (lhs.density != rhs.density) return density_better(lhs.density, rhs.density);
+        if (lhs.sdk_version != rhs.sdk_version) return lhs.sdk_version > rhs.sdk_version;
+        return std::tie(lhs.screen_layout, lhs.value_type, lhs.value_data, lhs.string_value) <
+               std::tie(rhs.screen_layout, rhs.value_type, rhs.value_data, rhs.string_value);
+    };
+    for (const auto& candidate : context.arsc.entries) {
+        if (candidate.resource_id != resource_id || (candidate.sdk_version != 0 && candidate.sdk_version > 19) ||
+            (candidate.orientation != 0 && candidate.orientation != orientation) ||
+            candidate.smallest_width_dp > smallest_dp || candidate.screen_width_dp > width_dp ||
+            candidate.screen_height_dp > height_dp ||
+            ((candidate.screen_layout & 0x0fU) != 0U && (candidate.screen_layout & 0x0fU) > screen_size)) {
+            continue;
+        }
+        if (entry == nullptr || better(candidate, *entry)) {
+            entry = &candidate;
+        }
+    }
+    if (entry == nullptr) {
+        throw std::runtime_error("UI resource id is missing: " + std::to_string(resource_id));
+    }
+    return entry;
+}
+
+[[nodiscard]] const loader::ArscEntry& ResolveUiResourceEntry(const DexVmAndroidContext& context,
+                                                              std::uint32_t resource_id) {
     std::unordered_set<std::uint32_t> seen;
     for (std::size_t depth = 0; depth < 16; ++depth) {
         if (!seen.insert(resource_id).second) {
             throw std::runtime_error("UI resource reference cycle");
         }
-        const loader::ArscEntry* entry = nullptr;
-        const auto width_dp = static_cast<int>(
-            std::lround(context.surface_width / context.ui_density));
-        const auto height_dp = static_cast<int>(
-            std::lround(context.surface_height / context.ui_density));
-        const auto smallest_dp = std::min(width_dp, height_dp);
-        const auto orientation = width_dp > height_dp ? 2U : 1U;
-        const auto density = static_cast<int>(
-            std::lround(context.ui_density * 160.0F));
-        const auto long_dp = std::max(width_dp, height_dp);
-        const auto short_dp = std::min(width_dp, height_dp);
-        const auto screen_size = long_dp < 470 ? 1U
-            : long_dp >= 960 && short_dp >= 720 ? 4U
-            : long_dp >= 640 && short_dp >= 480 ? 3U : 2U;
-        const auto density_better = [density](const std::uint16_t lhs,
-                                              const std::uint16_t rhs) {
-            if (lhs == rhs) return false;
-            int high = lhs != 0 ? lhs : 160;
-            int low = rhs != 0 ? rhs : 160;
-            bool lhs_high = true;
-            if (low > high) {
-                std::swap(low, high);
-                lhs_high = false;
-            }
-            const int requested = density != 0 ? density : 160;
-            if (requested >= high) return lhs_high;
-            if (low >= requested) return !lhs_high;
-            return (((2 * low) - requested) * high >
-                    requested * requested) ? !lhs_high : lhs_high;
-        };
-        const auto better = [&](const loader::ArscEntry& lhs,
-                                const loader::ArscEntry& rhs) {
-            if (lhs.smallest_width_dp != rhs.smallest_width_dp)
-                return lhs.smallest_width_dp > rhs.smallest_width_dp;
-            const auto lhs_delta = width_dp - lhs.screen_width_dp +
-                                   height_dp - lhs.screen_height_dp;
-            const auto rhs_delta = width_dp - rhs.screen_width_dp +
-                                   height_dp - rhs.screen_height_dp;
-            if (lhs_delta != rhs_delta) return lhs_delta < rhs_delta;
-            auto lhs_size = lhs.screen_layout & 0x0fU;
-            auto rhs_size = rhs.screen_layout & 0x0fU;
-            const auto lhs_raw_size = lhs_size;
-            const auto rhs_raw_size = rhs_size;
-            if (screen_size >= 2U) {
-                if (lhs_size == 0U) lhs_size = 2U;
-                if (rhs_size == 0U) rhs_size = 2U;
-            }
-            if (lhs_size != rhs_size) return lhs_size > rhs_size;
-            if (lhs_raw_size != rhs_raw_size) return lhs_raw_size != 0U;
-            if (lhs.orientation != rhs.orientation)
-                return lhs.orientation != 0U;
-            if (lhs.density != rhs.density)
-                return density_better(lhs.density, rhs.density);
-            if (lhs.sdk_version != rhs.sdk_version)
-                return lhs.sdk_version > rhs.sdk_version;
-            return std::tie(lhs.screen_layout, lhs.value_type, lhs.value_data,
-                            lhs.string_value) <
-                   std::tie(rhs.screen_layout, rhs.value_type, rhs.value_data,
-                            rhs.string_value);
-        };
-        for (const auto& candidate : context.arsc.entries) {
-            if (candidate.resource_id != resource_id ||
-                (candidate.sdk_version != 0 && candidate.sdk_version > 19) ||
-                (candidate.orientation != 0 &&
-                 candidate.orientation != orientation) ||
-                candidate.smallest_width_dp > smallest_dp ||
-                candidate.screen_width_dp > width_dp ||
-                candidate.screen_height_dp > height_dp ||
-                ((candidate.screen_layout & 0x0fU) != 0U &&
-                 (candidate.screen_layout & 0x0fU) > screen_size)) {
-                continue;
-            }
-            if (entry == nullptr || better(candidate, *entry)) {
-                entry = &candidate;
-            }
-        }
-        if (entry == nullptr) {
-            throw std::runtime_error("UI resource id is missing: " +
-                                     std::to_string(resource_id));
-        }
+        const auto* entry = SelectUiResourceEntry(context, resource_id);
         if (entry->value_type != kTypeReference) return *entry;
         if (entry->value_data == 0U) {
             throw std::runtime_error("UI resource reference is null");
@@ -1140,6 +1127,49 @@ std::int32_t ResolveUiDimension(const DexVmAndroidContext& context,
         throw std::runtime_error("UI resource is not a dimension");
     }
     return ComplexDimensionPx(context, entry.value_data, scaled);
+}
+
+std::shared_ptr<const ui::UiBitmap> DecodeLeafBitmap(const DexVmAndroidContext& context,
+                                                     const loader::ArscEntry& entry) {
+    if (entry.is_complex || entry.value_type != kTypeString || !entry.string_value)
+        throw std::runtime_error("leaf bitmap requires a scalar APK file");
+    const auto& path = *entry.string_value;
+    if (entry.type_name != "drawable" || !path.starts_with("res/") || path.ends_with(".9.png") ||
+        !(path.ends_with(".png") || path.ends_with(".jpg") || path.ends_with(".jpeg")))
+        throw std::runtime_error("unsupported selector/ninepatch/XML/unknown bitmap file: " + path);
+    const auto bytes = loader::ReadApkEntry(context.apk_bytes, context.archive, path);
+    const auto u8 = [&](std::size_t i) { return std::to_integer<std::uint32_t>(bytes[i]); };
+    const bool png = bytes.size() >= 8 && u8(0) == 137 && u8(1) == 80 && u8(2) == 78 && u8(3) == 71 && u8(4) == 13 &&
+                     u8(5) == 10 && u8(6) == 26 && u8(7) == 10;
+    const bool jpeg = bytes.size() >= 3 && u8(0) == 255 && u8(1) == 216 && u8(2) == 255;
+    if ((path.ends_with(".png") && !png) || (!path.ends_with(".png") && !jpeg))
+        throw std::runtime_error("bitmap extension and encoding disagree");
+    if (png) {
+        for (std::size_t at = 8; at < bytes.size();) {
+            if (bytes.size() - at < 12) throw std::runtime_error("truncated PNG chunk");
+            const auto length = (u8(at) << 24U) | (u8(at + 1) << 16U) | (u8(at + 2) << 8U) | u8(at + 3);
+            if (length > bytes.size() - at - 12) throw std::runtime_error("invalid PNG chunk length");
+            if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'T' && u8(at + 7) == 'c')
+                throw std::runtime_error("ninepatch PNG chunk is unsupported");
+            if (u8(at + 4) == 'n' && u8(at + 5) == 'p' && u8(at + 6) == 'L' && u8(at + 7) == 'b')
+                throw std::runtime_error("optical layout PNG chunk is unsupported");
+            at += length + 12U;
+        }
+    }
+    const auto decoded = DecodeImageToArgb(bytes);
+    if (!decoded || decoded->width <= 0 || decoded->height <= 0 || decoded->width > 4096 || decoded->height > 4096)
+        throw std::runtime_error("leaf bitmap decode failed or exceeds bounds");
+    auto result = std::make_shared<ui::UiBitmap>();
+    result->width = decoded->width;
+    result->height = decoded->height;
+    result->rgba8.reserve(decoded->argb.size() * 4U);
+    for (auto pixel : decoded->argb) {
+        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 16U));
+        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 8U));
+        result->rgba8.push_back(static_cast<std::uint8_t>(pixel));
+        result->rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
+    }
+    return result;
 }
 
 std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(

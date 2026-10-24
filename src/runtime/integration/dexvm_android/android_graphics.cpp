@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cctype>
 #include <cmath>
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
 
 // ---- migrated from android_graphics_Bitmap_Config.cpp ----
 #include "catalog.h"
@@ -759,7 +760,146 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+[[noreturn]] void UnsupportedPaint(dx::IntrinsicContext& call, const std::string& detail) {
+    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.paint_measure", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", detail};
+}
+}  // namespace
+
 Decl Declare_android_graphics_Paint(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
+        const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
+        const auto state = [context](dx::IntrinsicContext& call) -> DexVmAndroidContext::PaintMeasureState& {
+            const auto found = context->paint_measure_states.find(call.receiver.Value());
+            if (found == context->paint_measure_states.end())
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Paint measurement requires construction"};
+            return found->second;
+        };
+        const auto flags = [](dx::IntrinsicContext& call, std::int32_t value) {
+            // Only AA and the two API19 default text flags have defined semantics here.
+            if ((value & ~0x501) != 0) UnsupportedPaint(call, "unsupported Paint flags");
+            return value;
+        };
+        const auto init = [context, face, flags](dx::IntrinsicContext& call) {
+            DexVmAndroidContext::PaintMeasureState value;
+            value.flags = flags(call, (call.arguments.empty() ? 0 : call.arguments[0].AsInt()) | 0x500);
+            context->paint_measure_states.insert_or_assign(call.receiver.Value(), std::move(value));
+            dx::IntrinsicCall(call).SetRef(face, dx::VmObjectRef{});
+            return dx::VmValue::Void();
+        };
+        builder.Constructor("()V", init).Constructor("(I)V", init);
+        builder.VirtualMethod(
+            "finalize", "()V",
+            [context](dx::IntrinsicContext& c) {
+                context->paint_measure_states.erase(c.receiver.Value());
+                const auto object = c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;");
+                const auto index = c.vm.Linker().FindVtableIndex(object, "finalize", "()V");
+                if (!index) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Object.finalize missing");
+                const auto outcome =
+                    c.vm.Call(c.vm.Linker().Class(object).vtable[*index], std::array{dx::VmValue::Ref(c.receiver)});
+                if (outcome.exception.IsValid())
+                    throw dx::VmJavaThrow{c.vm.Linker().Class(outcome.exception_class).descriptor,
+                                          outcome.exception_message, outcome.exception};
+                return outcome.value;
+            },
+            dx::kAccProtected);
+        builder.VirtualMethod("getFlags", "()I",
+                              [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags); });
+        builder.VirtualMethod("setFlags", "(I)V", [state, flags](dx::IntrinsicContext& c) {
+            state(c).flags = flags(c, c.arguments[0].AsInt());
+            return dx::VmValue::Void();
+        });
+        builder.FinalMethod("isAntiAlias", "()Z",
+                            [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags & 1); });
+        builder.VirtualMethod("setAntiAlias", "(Z)V", [state](dx::IntrinsicContext& c) {
+            auto& value = state(c);
+            value.flags = (value.flags & ~1) | (c.arguments[0].AsInt() != 0);
+            return dx::VmValue::Void();
+        });
+        builder.VirtualMethod("getTextSize", "()F",
+                              [state](dx::IntrinsicContext& c) { return dx::VmValue::Float(state(c).text_size); });
+        builder.VirtualMethod("setTextSize", "(F)V", [state](dx::IntrinsicContext& c) {
+            const auto size = c.arguments[0].AsFloat();
+            if (!std::isfinite(size) || size < 1 || size > 128)
+                UnsupportedPaint(c, "Paint text size outside 1..128 px");
+            state(c).text_size = size;
+            return dx::VmValue::Void();
+        });
+        builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [face, state](dx::IntrinsicContext& c) {
+            static_cast<void>(state(c));
+            return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(face));
+        });
+        builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+                              [face, state](dx::IntrinsicContext& c) {
+                                  static_cast<void>(state(c));
+                                  const auto ref = c.arguments[0].ref;
+                                  if (ref.IsValid()) static_cast<void>(CallAndroidMethod(c.vm, ref, "getStyle", "()I"));
+                                  dx::IntrinsicCall(c).SetRef(face, ref);
+                                  return dx::VmValue::Ref(ref);
+                              });
+        const auto measure = [context, state, face](int kind) {
+            return dx::IntrinsicHandler([context, state, face, kind](dx::IntrinsicContext& c) {
+                auto& value = state(c);
+                const auto ref = c.arguments[0].ref;
+                if (!ref.IsValid())
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "text cannot be null"};
+                std::int32_t length{};
+                const bool chars = kind == 2;
+                if (chars)
+                    length = c.vm.Model().ArrayLength(ref);
+                else if (kind == 3)
+                    length = CallAndroidMethod(c.vm, ref, "length", "()I").AsInt();
+                else
+                    length = c.vm.Model().StringLength(ref);
+                const auto start = kind == 0 ? 0 : c.arguments[1].AsInt();
+                const std::int64_t end = kind == 0 ? length
+                                         : chars   ? static_cast<std::int64_t>(start) + c.arguments[2].AsInt()
+                                                   : c.arguments[2].AsInt();
+                if (start < 0 || end < start || end > length)
+                    throw dx::VmJavaThrow{chars ? "Ljava/lang/ArrayIndexOutOfBoundsException;"
+                                                : "Ljava/lang/IndexOutOfBoundsException;",
+                                          "Paint text range"};
+                if (end - start > 1024) UnsupportedPaint(c, "Paint text exceeds 1024 units");
+                std::u16string text;
+                if (chars) {
+                    for (auto i = start; i < end; ++i)
+                        text.push_back(static_cast<char16_t>(c.vm.Model().GetPrimitiveElement(ref, i)));
+                } else if (kind == 3) {
+                    for (auto i = start; i < end; ++i)
+                        text.push_back(static_cast<char16_t>(
+                            CallAndroidMethod(c.vm, ref, "charAt", "(I)C", {dx::VmValue::Int(i)}).AsInt()));
+                } else
+                    text = c.vm.Model().StringRegion(ref, start, static_cast<JniSize>(end - start));
+                // No shaping, bidi, combining marks or multi-line layout in this seam.
+                for (const auto unit : text)
+                    if (!((unit >= 0x20 && unit <= 0x7e) || (unit >= 0x4e00 && unit <= 0x9fff)))
+                        UnsupportedPaint(c, "unsupported Paint glyph or shaping");
+                const auto typeface = dx::IntrinsicCall(c).GetRef(face);
+                const auto style =
+                    typeface.IsValid() ? CallAndroidMethod(c.vm, typeface, "getStyle", "()I").AsInt() : 0;
+                float width{};
+                try {
+                    width = static_cast<float>(ui::MeasureFixedText(text, value.text_size,
+                                                                    static_cast<std::uint32_t>(style),
+                                                                    context->ui_tree.FallbackFont().get())
+                                                   .width);
+                } catch (const std::runtime_error& error) {
+                    UnsupportedPaint(c, error.what());
+                }
+                ++value.measurements;
+                value.last_text = text;
+                value.last_width = width;
+                return dx::VmValue::Float(width);
+            });
+        };
+        builder.VirtualMethod("measureText", "(Ljava/lang/String;)F", measure(0));
+        builder.VirtualMethod("measureText", "(Ljava/lang/String;II)F", measure(1));
+        builder.VirtualMethod("measureText", "([CII)F", measure(2));
+        builder.VirtualMethod("measureText", "(Ljava/lang/CharSequence;II)F", measure(3));
+        return std::move(builder).Build();
+    }
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
     builder.Constructor("()V", GraphicsNoopHandler());

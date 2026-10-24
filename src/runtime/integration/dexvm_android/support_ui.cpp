@@ -446,6 +446,7 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_view_backgrounds.clear();
     context.ui_view_images.clear();
     context.ui_drawables.clear();
+    context.paint_measure_states.clear();
     context.text_watchers.clear();
     context.focused_edit_text = dexvm::VmObjectRef{};
 }

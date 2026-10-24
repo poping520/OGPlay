@@ -354,6 +354,7 @@ void RegisterAndroidOwnerAttachedStateTable(
                 context->ui_view_backgrounds.erase(background);
             }
             context->ui_drawables.erase(key);
+            context->paint_measure_states.erase(key);
             if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
                 if (const auto state = context->ui_drawables.find(image->second.Value()); state != context->ui_drawables.end()) state->second.callback_node.reset();
                 context->ui_view_images.erase(image);

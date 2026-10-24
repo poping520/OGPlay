@@ -819,6 +819,17 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_backgrounds;
   std::unordered_map<std::uint64_t, dexvm::VmObjectRef> ui_view_images;
   std::unordered_map<std::uint64_t, UiDrawableState> ui_drawables;
+
+  // Experimental bounded measurement state; Typeface remains a Java strong field.
+  struct PaintMeasureState final {
+      std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
+      float text_size{12.0F};     // API19 SkPaint default.
+      std::uint64_t measurements{};
+      std::u16string last_text;
+      float last_width{};
+  };
+
+  std::unordered_map<std::uint64_t, PaintMeasureState> paint_measure_states;
   // Real VideoView playback (ADR-0021). The factory is injected by the
   // frontend. Preparation and errors are deferred to the guest main pump;
   // listeners and the bound MediaPlayer identity are ordinary Java fields.

@@ -391,3 +391,5 @@ Stop 采样另记 store 的 pin_count/pinned_arrays/pinned_bytes，不与 provid
 统计与 kind=8 的长度分桶（沿用 0、1..16、17..64、65..256、257..1024、1025..8192、>8192）；
 committed/slab_free/应急池与尺寸级别属于共享 provider，不按 String/array 重复归属。
 UTF-16 direct pin 的未配对/阈值诊断经 logger 与 warning ledger 发布；MUTF-8 复制协议不变。
+
+实验 Paint 测量状态按 Java 对象身份拥有，GC sweep 退役；Typeface 强边仅由 Java 字段追踪。

@@ -2132,3 +2132,8 @@ note = "DVM-255/265/266/267、ADR-0148/0154/0155/0156：固定ROM规则准入，
 status = "partial"
 note = "DVM-276..285：成员组合/虚派账，failure 动态失败；Legacy 唯一生产默认。实验 Java hierarchy/参数/flags/focus、ROM measure/layout、调度/投影/GC/输入；accessibility 需显式 disabled。Window FrameLayout、LinearLayout weight/baseline/largest-child 与 RelativeLayout 双轴依赖/居中/baseline、START/END/RTL/margin、GONE/缺锚/环沿 ROM。XML/Drawable/系统附着及生产切换未启用。"
 test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
+
+[dexvm.paint_measure]
+status = "partial"
+test = "tests/dexvm/paint_measure_tests.cpp"
+note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定ASCII字表与有fallback字形的基本CJK；完整shaping、绘制特性、TextPaint/Layout/Editor及TextView构造明确失败。生产Legacy保持。"

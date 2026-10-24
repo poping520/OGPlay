@@ -484,3 +484,13 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 未提供的服务记账并抛 UOE。DisplayManager 只查询既有 managed Display；不提供
 外接/虚拟显示及监听。属性来源经显式 core 回调注入；有 ICU 导出时查询 guest，
 无导出时保留随附 manifest 元数据生成的默认值，不隐式加载或访问宿主 ICU。
+
+## 实验 Paint 测量接缝
+
+固定 JavaTraversal 配对中，ROM TextView clinit 原样执行 Paint 默认构造、antiAlias 与测量。
+Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
+measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
+测量只向纯固定字体服务传值，fallback 与 Legacy 共用 UiTree 注入事实，不写 guest 几何。
+固定ASCII字表/基本CJK、1024单位、1..128px、flags位集0x501以外明确失败并记账；
+完整 shaping、Paint 绘制、TextPaint/Layout/Editor 与 TextView 构造保持 failure。
+真实finalize及GC sweep/teardown 删除实例测量状态；生产 Legacy handler 与 payload 保持原行为。

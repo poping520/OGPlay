@@ -348,3 +348,211 @@ TEST_CASE("DVM-281 animated removal explicitly fails and is accounted") {
         CHECK(hits[0].id == "dexvm.view_group_animation");
     }
 }
+
+TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        f.vm.SetGcIntegration(
+            {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = 160;
+        f.context->surface_height = 100;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto make = [&](bool group) {
+            return f.New(group ? "Ltest/HierarchyGroup;" : "Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V",
+                         {VmValue::Ref(owner)});
+        };
+        const auto root = make(true), parent = make(true), leaf = make(false), sibling = make(false);
+        const auto roots = f.vm.ProtectReferences(std::array{root, parent, leaf, sibling});
+        f.context->content_view = root;
+        const auto add = [&](auto p, auto c) { f.On(p, "addView", "(Landroid/view/View;)V", {VmValue::Ref(c)}); };
+        add(root, parent);
+        add(parent, leaf);
+        add(parent, sibling);
+        std::vector<DexVmTraceEntry> entered;
+        const auto capture = [&] {
+            for (const auto& entry : f.vm.Trace("", 8192))
+                if (entered.empty() || entry.sequence > entered.back().sequence) entered.push_back(entry);
+        };
+        const auto tick = [&] {
+            const auto result = EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 100});
+            capture();
+            return result;
+        };
+        REQUIRE(tick());
+        const auto first = f.New("Ltest/StateListener;"), second = f.New("Ltest/StateListener;");
+        const auto set = [&](auto view, auto listener) {
+            for (const auto* type :
+                 {"OnClickListener", "OnTouchListener", "OnLongClickListener", "OnFocusChangeListener"}) {
+                const auto name = std::string("set") + type;
+                const auto sig = std::string("(Landroid/view/View$") + type + ";)V";
+                f.On(view, name.c_str(), sig.c_str(), {VmValue::Ref(listener)});
+            }
+        };
+        set(leaf, first);
+        set(sibling, second);
+        const auto bits = [&](auto object, const char* name, const char* type = "I") {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+            REQUIRE(field);
+            return f.model.InstanceSlots(object)[f.linker.Field(*field).slot].bits;
+        };
+        CHECK(ReadAndroidViewListener(f.vm, *f.context, leaf, AndroidViewListener::Click) == first);
+        CHECK(ReadAndroidViewListener(f.vm, *f.context, sibling, AndroidViewListener::Click) == second);
+        CHECK_FALSE(InvokeViewOnClick(f.vm, *f.context, sibling.Value()).has_value());
+        CHECK(bits(first, "clicks") == 0);
+        CHECK(bits(second, "clicks") == 1);
+        CHECK(bits(second, "last", "Landroid/view/View;") == sibling.Value());
+        CHECK(f.On(leaf, "isClickable", "()Z").AsInt());
+        CHECK(f.On(leaf, "isLongClickable", "()Z").AsInt());
+        CHECK_FALSE(f.On(leaf, "isFocusable", "()Z").AsInt());
+        f.On(leaf, "setFocusableInTouchMode", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(leaf, "isFocusable", "()Z").AsInt());
+        CHECK(f.On(leaf, "isFocusableInTouchMode", "()Z").AsInt());
+        f.On(leaf, "setFocusable", "(Z)V", {VmValue::Int(0)});
+        CHECK_FALSE(f.On(leaf, "isFocusableInTouchMode", "()Z").AsInt());
+        CHECK_FALSE(f.On(leaf, "requestFocus", "()Z").AsInt());
+        f.On(leaf, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(leaf, "requestFocus", "()Z").AsInt());
+        CHECK(f.On(root, "findFocus", "()Landroid/view/View;").ref == leaf);
+        CHECK(f.On(root, "getFocusedChild", "()Landroid/view/View;").ref == parent);
+        CHECK(f.On(parent, "getFocusedChild", "()Landroid/view/View;").ref == leaf);
+        CHECK(f.On(root, "hasFocus", "()Z").AsInt());
+        CHECK_FALSE(f.context->ui_tree.Focused());
+        f.On(sibling, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(sibling, "requestFocus", "()Z").AsInt());
+        CHECK(f.On(root, "findFocus", "()Landroid/view/View;").ref == sibling);
+        CHECK_FALSE(f.On(leaf, "isFocused", "()Z").AsInt());
+        f.On(root, "setDescendantFocusability", "(I)V", {VmValue::Int(0x60000)});
+        f.On(sibling, "clearFocus", "()V");
+        CHECK_FALSE(f.On(root, "findFocus", "()Landroid/view/View;").ref.IsValid());
+        CHECK_FALSE(f.On(leaf, "requestFocus", "()Z").AsInt());
+        CHECK(bits(first, "focuses") == 2);
+        CHECK(bits(second, "focuses") == 2);
+        f.On(root, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(root, "requestFocus", "()Z").AsInt());
+        CHECK(f.On(root, "findFocus", "()Landroid/view/View;").ref == root);
+        f.On(root, "setFocusable", "(Z)V", {VmValue::Int(0)});
+        CHECK_FALSE(f.On(root, "findFocus", "()Landroid/view/View;").ref.IsValid());
+        f.On(root, "setDescendantFocusability", "(I)V", {VmValue::Int(0x20000)});
+        static_cast<void>(f.vm.CollectGarbage("vd06b-java-listeners"));
+        CHECK(f.model.IsValidRef(first));
+        CHECK(f.model.IsValidRef(second));
+        REQUIRE(tick());
+        const auto node = *FindViewUiNode(*f.context, leaf.Value());
+        for (const auto visibility : {4, 8, 0}) {
+            f.On(leaf, "setVisibility", "(I)V", {VmValue::Int(visibility)});
+            f.context->ui_tree.Get(node)->visibility = ui::Visibility::Visible;
+            REQUIRE(tick());
+            CHECK(f.On(leaf, "getVisibility", "()I").AsInt() == visibility);
+            CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->visibility ==
+                  (visibility == 4   ? ui::Visibility::Invisible
+                   : visibility == 8 ? ui::Visibility::Gone
+                                     : ui::Visibility::Visible));
+            CHECK(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 1, 1) == (visibility == 0));
+        }
+        f.On(sibling, "setVisibility", "(I)V", {VmValue::Int(4)});
+        const auto touch = [&](int action) {
+            const auto event = MakeMotionEvent(f.vm, action, 1, 1, 0);
+            const auto result = DispatchAndroidViewTouch(f.vm, *f.context, root, event, true);
+            capture();
+            return result;
+        };
+        CHECK(touch(0));
+        CHECK(f.context->ui_touch_capture == leaf.Value());
+        CHECK(touch(1));
+        CHECK(bits(first, "clicks") == 1);
+        CHECK(bits(second, "clicks") == 1);
+        CHECK(bits(first, "last", "Landroid/view/View;") == leaf.Value());
+        f.On(leaf, "setEnabled", "(Z)V", {VmValue::Int(0)});
+        f.context->ui_tree.Get(node)->enabled = true;
+        f.context->ui_tree.Get(node)->clickable = false;
+        REQUIRE(tick());
+        CHECK_FALSE(f.context->ui_tree.PublishedProjection()->Get(node)->enabled);
+        CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->clickable);
+        CHECK_FALSE(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 1, 1));
+        static_cast<void>(touch(0));
+        static_cast<void>(touch(1));
+        CHECK(bits(first, "clicks") == 1);
+        f.On(leaf, "setEnabled", "(Z)V", {VmValue::Int(1)});
+        CHECK(touch(0));
+        f.On(parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+        CHECK(f.context->ui_touch_capture == 0);
+        REQUIRE(tick());
+        CHECK(f.context->ui_touch_capture == 0);
+        add(parent, leaf);
+        CHECK(touch(0));
+        const auto replacement = make(true);
+        f.context->content_view = replacement;
+        ++f.context->ui_content_revision;
+        REQUIRE(tick());
+        CHECK(f.context->ui_touch_capture == 0);
+        CHECK(f.context->ui_touch_targets.empty());
+        CHECK(f.context->ui_click_listeners.empty());
+        CHECK(f.context->ui_touch_listeners.empty());
+        CHECK(f.context->ui_view_layout_params.empty());
+        CHECK_FALSE(f.context->ui_tree.Focused());
+        for (const auto& [_, references] : f.context->view_adapter_references)
+            CHECK_FALSE(references.focus_listener.IsValid());
+        CHECK_THROWS_AS(static_cast<void>(f.context->ui_tree.RequestFocus(node, false)), std::runtime_error);
+        set(leaf, VmObjectRef{});
+        set(sibling, VmObjectRef{});
+        static_cast<void>(f.vm.CollectGarbage("vd06b-unbound-listeners"));
+        CHECK_FALSE(f.model.IsValidRef(first));
+        CHECK_FALSE(f.model.IsValidRef(second));
+        CHECK(f.ledger.Unimplemented().empty());
+        capture();
+        REQUIRE_FALSE(entered.empty());
+        CHECK(entered.front().sequence == 1);
+        for (std::size_t i = 1; i < entered.size(); ++i)
+            CHECK(entered[i].sequence == entered[i - 1].sequence + 1);
+        std::ofstream trace(std::string(OGPLAY_SOURCE_DIR) + "/.local/analysis/vd-06b/state-" +
+                            (backend == InterpreterBackend::threaded ? "threaded" : "switch") + ".trace.json");
+        trace << RenderDexVmTraceJson(entered);
+    }
+}
+
+TEST_CASE("DVM-282 absent providers and real attached system state fail explicitly") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
+                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto root = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.context->content_view = root;
+        const auto denied = f.OnOutcome(root, "setClickable", "(Z)V", {VmValue::Int(1)});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        CHECK_FALSE(f.On(root, "isClickable", "()Z").AsInt());
+        f.context->ui_test_accessibility_disabled = true;
+        f.On(root, "setClickable", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(root, "isClickable", "()Z").AsInt());
+        f.context->activity = owner;
+        f.context->window_has_focus = true;
+        f.context->window_focus_activity = owner.Value();
+        const auto input = f.vm.NewIntrinsicInstance("Landroid/view/inputmethod/InputMethodManager;");
+        f.On(root, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(root, "requestFocus", "()Z").AsInt());
+        const auto focused = f.OnOutcome(input, "restartInput", "(Landroid/view/View;)V", {VmValue::Ref(root)});
+        REQUIRE(focused.exception.IsValid());
+        CHECK(f.linker.Class(focused.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK_FALSE(f.context->ui_tree.Focused());
+        f.On(root, "setFocusable", "(Z)V", {VmValue::Int(0)});
+        f.On(root, "clearFocus", "()V");
+        CHECK_FALSE(f.On(root, "findFocus", "()Landroid/view/View;").ref.IsValid());
+        CHECK_FALSE(
+            f.OnOutcome(input, "restartInput", "(Landroid/view/View;)V", {VmValue::Ref(root)}).exception.IsValid());
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 100}));
+        const auto before = f.context->ui_tree.PublishedProjection();
+        const auto attach = f.vm.NewIntrinsicInstance("Landroid/view/View$AttachInfo;");
+        IntrinsicContext call{f.vm, root, {}};
+        IntrinsicCall(call).SetRef(f.context->view_java_measure_fields->unsupported_state[4], attach);
+        const auto attached = f.OnOutcome(root, "setVisibility", "(I)V", {VmValue::Int(4)});
+        REQUIRE(attached.exception.IsValid());
+        CHECK(f.linker.Class(attached.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.context->ui_tree.PublishedProjection() == before);
+        CHECK(f.On(root, "getVisibility", "()I").AsInt() == 4);
+    }
+}

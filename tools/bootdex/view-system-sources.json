@@ -1,0 +1,244 @@
+{
+  "shape_owner": "rom",
+  "clinit_owner": "rom",
+  "rom_input": ".local/aosp/framework.jar",
+  "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+  "surface": "tools/bootdex/view-measure.surface.json.gz",
+  "surface_sha256": "c545073ce6d475b16d27455963212d5636d643be154f7d1558bce4e73f58b1ce",
+  "owner": "Landroid/view/accessibility/AccessibilityManager;",
+  "smali_sha256": "f5e5f6f7a4c174af21896346276c4dd56bd7d8b29c28ae0209c0728f1fc20ae4",
+  "fields": [
+    {
+      "signature": "DEBUG:Z",
+      "flags": 26,
+      "source": "rom",
+      "initialization": "rom-encoded:false"
+    },
+    {
+      "signature": "DO_SET_STATE:I",
+      "flags": 26,
+      "source": "rom",
+      "initialization": "rom-encoded:0xa"
+    },
+    {
+      "signature": "LOG_TAG:Ljava/lang/String;",
+      "flags": 26,
+      "source": "rom",
+      "initialization": "rom-encoded:\"AccessibilityManager\""
+    },
+    {
+      "signature": "STATE_FLAG_ACCESSIBILITY_ENABLED:I",
+      "flags": 25,
+      "source": "rom",
+      "initialization": "rom-encoded:0x1"
+    },
+    {
+      "signature": "STATE_FLAG_TOUCH_EXPLORATION_ENABLED:I",
+      "flags": 25,
+      "source": "rom",
+      "initialization": "rom-encoded:0x2"
+    },
+    {
+      "signature": "mAccessibilityStateChangeListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+      "flags": 18,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mClient:Landroid/view/accessibility/IAccessibilityManagerClient$Stub;",
+      "flags": 16,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mHandler:Landroid/os/Handler;",
+      "flags": 16,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mIsEnabled:Z",
+      "flags": 0,
+      "source": "rom",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mIsTouchExplorationEnabled:Z",
+      "flags": 0,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mService:Landroid/view/accessibility/IAccessibilityManager;",
+      "flags": 16,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mTouchExplorationStateChangeListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+      "flags": 18,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "mUserId:I",
+      "flags": 16,
+      "source": "failure",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "sInstance:Landroid/view/accessibility/AccessibilityManager;",
+      "flags": 10,
+      "source": "rom",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    },
+    {
+      "signature": "sInstanceSync:Ljava/lang/Object;",
+      "flags": 24,
+      "source": "rom",
+      "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+    }
+  ],
+  "methods": [
+    {
+      "signature": "<clinit>()V",
+      "flags": 65544,
+      "body_sha256": "469656d576c2cb7f36bb67339ddf78605214328c73abcaf7d787b617f0aa0989",
+      "source": "rom"
+    },
+    {
+      "signature": "<init>(Landroid/content/Context;Landroid/view/accessibility/IAccessibilityManager;I)V",
+      "flags": 65537,
+      "body_sha256": "0d4c2c51fb7e567aef28fa1707ae046c0142357f14a6da43d68634548c8e81f2",
+      "source": "failure"
+    },
+    {
+      "signature": "access$000(Landroid/view/accessibility/AccessibilityManager;I)V",
+      "flags": 4104,
+      "body_sha256": "c547262573e65fc42ae13fa71f20b192a3292e84678b772adec280c07110a8f5",
+      "source": "failure"
+    },
+    {
+      "signature": "addAccessibilityInteractionConnection(Landroid/view/IWindow;Landroid/view/accessibility/IAccessibilityInteractionConnection;)I",
+      "flags": 1,
+      "body_sha256": "71a5681f29150d4137098af5002d3eab5c7fad47449737924578a674942a869d",
+      "source": "failure"
+    },
+    {
+      "signature": "addAccessibilityStateChangeListener(Landroid/view/accessibility/AccessibilityManager$AccessibilityStateChangeListener;)Z",
+      "flags": 1,
+      "body_sha256": "e0401db9d3dc91a40a71db03cf98a99636dba2fc8105515577df1af79a932f8a",
+      "source": "failure"
+    },
+    {
+      "signature": "addTouchExplorationStateChangeListener(Landroid/view/accessibility/AccessibilityManager$TouchExplorationStateChangeListener;)Z",
+      "flags": 1,
+      "body_sha256": "0b35995c5ecc322ab2ef82374620ad153e84dee8bcd53a427b867311e7cdf8b7",
+      "source": "failure"
+    },
+    {
+      "signature": "getAccessibilityServiceList()Ljava/util/List;",
+      "flags": 1,
+      "body_sha256": "5ccc2c158e4760963e327cba884faac5fa761f35ef82884ba082f9bbb45166ec",
+      "source": "failure"
+    },
+    {
+      "signature": "getClient()Landroid/view/accessibility/IAccessibilityManagerClient;",
+      "flags": 1,
+      "body_sha256": "e663e738f8b0bb916a0b5e17ecb44b1be0dce741022f561b1b8c1f058ebc5f0c",
+      "source": "failure"
+    },
+    {
+      "signature": "getEnabledAccessibilityServiceList(I)Ljava/util/List;",
+      "flags": 1,
+      "body_sha256": "f97c042d3de39f8abe3d37b3f550279e1d1697a4d717e8311b7271024a8d6517",
+      "source": "failure"
+    },
+    {
+      "signature": "getInstalledAccessibilityServiceList()Ljava/util/List;",
+      "flags": 1,
+      "body_sha256": "ccff85716024585b60fcf8aedb6e8b8bc19d83d873d573f2d931d0a71874e882",
+      "source": "failure"
+    },
+    {
+      "signature": "getInstance(Landroid/content/Context;)Landroid/view/accessibility/AccessibilityManager;",
+      "flags": 9,
+      "body_sha256": "bb2c9d3120931a7968ece21661be24b422b8def7c01ff212c1c90839962bd44a",
+      "source": "overlay",
+      "review": {
+        "reason": "Explicit disabled accessibility provider for JavaTraversal test containers",
+        "inputs": "Non-null Context and explicit ui_test_accessibility_disabled test input",
+        "outputs": "Stable Java singleton with actual mIsEnabled=false; no Binder service or subscriber state",
+        "state_owner": "Java sInstance/mIsEnabled only",
+        "failure_boundary": "Unconfigured or Legacy provider records and throws; constructors and all other manager APIs remain failure"
+      }
+    },
+    {
+      "signature": "interrupt()V",
+      "flags": 1,
+      "body_sha256": "7f571450816f877f9dc71e57a939ca22ffa85d88880b422e5a6c30d3aecede58",
+      "source": "failure"
+    },
+    {
+      "signature": "isEnabled()Z",
+      "flags": 1,
+      "body_sha256": "ee80c39525f2e9cf628358bda95611199412e8d2a4c6b6b8f2253c4e333d1cf5",
+      "source": "overlay",
+      "review": {
+        "reason": "Explicit disabled accessibility provider for JavaTraversal test containers",
+        "inputs": "Non-null Context and explicit ui_test_accessibility_disabled test input",
+        "outputs": "Stable Java singleton with actual mIsEnabled=false; no Binder service or subscriber state",
+        "state_owner": "Java sInstance/mIsEnabled only",
+        "failure_boundary": "Unconfigured or Legacy provider records and throws; constructors and all other manager APIs remain failure"
+      }
+    },
+    {
+      "signature": "isTouchExplorationEnabled()Z",
+      "flags": 1,
+      "body_sha256": "fd361f205e7694ad74f84c1f561b4301c545e74a79198377404556e42826c480",
+      "source": "failure"
+    },
+    {
+      "signature": "notifyAccessibilityStateChangedLh()V",
+      "flags": 2,
+      "body_sha256": "cec89f40fdc7665c3cea8bc9afb3d12789a96518a319e41da102cff8b46bd6d8",
+      "source": "failure"
+    },
+    {
+      "signature": "notifyTouchExplorationStateChangedLh()V",
+      "flags": 2,
+      "body_sha256": "cd5b2717afd21575cf3205ca8b51fe0c11125742142d30d3b93891153a5f2dd2",
+      "source": "failure"
+    },
+    {
+      "signature": "removeAccessibilityInteractionConnection(Landroid/view/IWindow;)V",
+      "flags": 1,
+      "body_sha256": "f9819f93f1d57b09dd4eb2b3e4fe71fb3764dff54b8c1fc566b644b603292782",
+      "source": "failure"
+    },
+    {
+      "signature": "removeAccessibilityStateChangeListener(Landroid/view/accessibility/AccessibilityManager$AccessibilityStateChangeListener;)Z",
+      "flags": 1,
+      "body_sha256": "27b5a04147198dd1366eb7e1c308548365031174ee8d57d5095f02340131a1ad",
+      "source": "failure"
+    },
+    {
+      "signature": "removeTouchExplorationStateChangeListener(Landroid/view/accessibility/AccessibilityManager$TouchExplorationStateChangeListener;)Z",
+      "flags": 1,
+      "body_sha256": "d7bf4ca1afb8738efcac165d29e84efc838ffa344ad9084eab53f815bcdfa6b0",
+      "source": "failure"
+    },
+    {
+      "signature": "sendAccessibilityEvent(Landroid/view/accessibility/AccessibilityEvent;)V",
+      "flags": 1,
+      "body_sha256": "5eca0f124c298ca3a801db34132e7d3e175f4e7986db82bbffb9e27e3dae862e",
+      "source": "failure"
+    },
+    {
+      "signature": "setState(I)V",
+      "flags": 2,
+      "body_sha256": "279a362d69a275e04fd2b830e57a515f83c018866b29281018712be7e18feebd",
+      "source": "failure"
+    }
+  ]
+}

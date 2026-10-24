@@ -275,6 +275,11 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
                                   visibility,
                                   ReadAndroidViewPadding(vm, context, view)};
         entry.android_id = fields.GetInt(h.id);
+        const auto view_flags = fields.GetInt(m.view_flags);
+        entry.enabled = (view_flags & 0x20) == 0;
+        entry.clickable = (view_flags & 0x4000) != 0;
+        entry.focusable = (view_flags & 1) != 0;
+        entry.focusable_in_touch_mode = (view_flags & 0x40000) != 0;
         const bool group = vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
                                                     vm.Model().ObjectClass(view));
         if (group) {
@@ -298,7 +303,28 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
     };
     collect(collect, root, dexvm::VmObjectRef{}, target.root, 0);
     context.ui_tree.CommitProjection(projection);
+    if (context.ui_touch_capture) {
+        const auto capture = dexvm::VmObjectRef{static_cast<std::uint32_t>(context.ui_touch_capture)};
+        const auto id = FindViewUiNode(context, capture.Value());
+        if (!id || !context.ui_tree.IsAttached(*id) || !context.ui_tree.IsVisible(*id) ||
+            !context.ui_tree.Get(*id)->enabled || !AndroidViewBelongsToRoot(vm, context, capture)) {
+            context.ui_touch_capture = 0;
+            context.ui_touch_targets.clear();
+            context.ui_touch_clicks.clear();
+        }
+    }
     context.ui_measure_epoch = epoch;
+}
+
+dexvm::VmObjectRef ReadAndroidViewListener(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                           dexvm::VmObjectRef view, AndroidViewListener listener) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal)
+        throw std::logic_error("Java listener read requires JavaTraversal");
+    dexvm::IntrinsicContext call{vm, view, {}};
+    dexvm::IntrinsicCall fields(call);
+    const auto info = fields.GetRef((*context.view_java_input_fields)[0]);
+    if (!info.IsValid()) return dexvm::VmObjectRef{};
+    return fields.GetRef((*context.view_java_listener_fields)[static_cast<std::size_t>(listener)], info);
 }
 
 void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
@@ -1795,9 +1821,8 @@ namespace {
            y < static_cast<float>(rect.bottom);
 }
 
-[[nodiscard]] std::optional<ui::UiNodeId> HitClickable(
-    const DexVmAndroidContext& context, const ui::UiNodeId id, const float x,
-    const float y) {
+[[nodiscard]] std::optional<ui::UiNodeId> HitClickable(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                       const ui::UiNodeId id, const float x, const float y) {
     const auto* node = context.ui_tree.Get(id);
     if (node == nullptr || !node->window_visible || node->visibility != ui::Visibility::Visible ||
         !node->enabled || !Contains(node->screen_frame, x, y)) {
@@ -1805,10 +1830,16 @@ namespace {
     }
     for (auto child = node->children.rbegin(); child != node->children.rend();
          ++child) {
-        if (const auto hit = HitClickable(context, *child, x, y);
-            hit.has_value()) {
+        if (const auto hit = HitClickable(vm, context, *child, x, y); hit.has_value()) {
             return hit;
         }
+    }
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto view = ViewObjectForUiNode(context, id);
+        if (!view.IsValid() || !Contains(node->screen_clip, x, y)) return std::nullopt;
+        const auto touch = ReadAndroidViewListener(vm, context, view, AndroidViewListener::Touch);
+        const auto click = ReadAndroidViewListener(vm, context, view, AndroidViewListener::Click);
+        return (touch.IsValid() || (click.IsValid() && node->clickable)) ? std::optional{id} : std::nullopt;
     }
     const auto click = context.ui_click_listeners.find(id);
     const auto touch = context.ui_touch_listeners.find(id);
@@ -1846,8 +1877,7 @@ void CollectTouchReceivers(const DexVmAndroidContext& context,
 std::optional<std::uint64_t> FindClickableViewAt(dexvm::Interpreter& vm, DexVmAndroidContext& context, const float x,
                                                  const float y) {
     EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
-    const auto hit = android_intrinsics::HitClickable(
-        context, context.ui_tree.Root(), x, y);
+    const auto hit = android_intrinsics::HitClickable(vm, context, context.ui_tree.Root(), x, y);
     if (!hit.has_value()) return std::nullopt;
     const auto view = ViewObjectForUiNode(context, *hit);
     return view.IsValid() ? std::optional<std::uint64_t>{view.Value()}
@@ -1862,6 +1892,20 @@ std::vector<std::uint64_t> FindTouchReceiversAt(dexvm::Interpreter& vm, DexVmAnd
         context, context.ui_tree.Root(), x, y, receivers);
     return receivers;
 }
+
+namespace {
+dexvm::VmObjectRef InputListener(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                                 bool touch) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return ReadAndroidViewListener(vm, context, view,
+                                       touch ? AndroidViewListener::Touch : AndroidViewListener::Click);
+    const auto id = FindViewUiNode(context, view.Value());
+    if (!id) return dexvm::VmObjectRef{};
+    const auto& listeners = touch ? context.ui_touch_listeners : context.ui_click_listeners;
+    const auto found = listeners.find(*id);
+    return found == listeners.end() ? dexvm::VmObjectRef{} : found->second;
+}
+}  // namespace
 
 namespace {
 using dexvm::VmObjectRef;
@@ -1882,7 +1926,8 @@ bool TouchCall(dexvm::Interpreter& vm, VmObjectRef view, VmObjectRef event, cons
 }
 bool TouchLive(DexVmAndroidContext& context, VmObjectRef view) {
     const auto node = FindViewUiNode(context, view.Value());
-    return node && context.ui_tree.IsAttached(*node) && context.ui_tree.IsVisible(*node);
+    return node && context.ui_tree.IsAttached(*node) && context.ui_tree.IsVisible(*node) &&
+           context.ui_tree.Get(*node)->enabled;
 }
 void ClearTouch(DexVmAndroidContext& context) {
     context.ui_touch_capture = 0;
@@ -1952,17 +1997,29 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     // API19 View dispatch: an enabled OnTouchListener gets first refusal.
     const auto state = *context.ui_tree.Get(*node);
     bool listener_handled = false;
-    const auto listener = context.ui_touch_listeners.find(*node);
-    if (state.enabled && listener != context.ui_touch_listeners.end() && listener->second.IsValid()) {
-        listener_handled = android_intrinsics::CallAndroidMethod(vm, listener->second, "onTouch",
-            "(Landroid/view/View;Landroid/view/MotionEvent;)Z", {VmValue::Ref(view), VmValue::Ref(event)}).AsInt() != 0;
+    const auto listener = InputListener(vm, context, view, true);
+    const auto listener_root = vm.ProtectReferences(std::array{listener});
+    if (state.enabled && listener.IsValid()) {
+        listener_handled = android_intrinsics::CallAndroidMethod(vm, listener, "onTouch",
+                                                                 "(Landroid/view/View;Landroid/view/MotionEvent;)Z",
+                                                                 {VmValue::Ref(view), VmValue::Ref(event)})
+                               .AsInt() != 0;
     }
     const bool handled = listener_handled || TouchCall(vm, view, event, "onTouchEvent");
     auto click = context.ui_touch_clicks[key];
-    if (action == 0) click.eligible = state.enabled && state.clickable;
+    bool enabled = state.enabled, clickable = state.clickable;
+    bool live = TouchLive(context, view);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        dexvm::IntrinsicContext call{vm, view, {}};
+        const auto flags = dexvm::IntrinsicCall(call).GetInt(context.view_java_measure_fields->view_flags);
+        enabled = (flags & 0x20) == 0;
+        clickable = (flags & 0x4000) != 0;
+        live = (flags & 0x0c) == 0 && AndroidViewBelongsToRoot(vm, context, view);
+    }
+    if (action == 0) click.eligible = enabled && clickable && live;
     click.consumed |= listener_handled;
-    if (action == 1 && click.eligible && !click.consumed &&
-        context.ui_click_listeners.contains(*node)) {
+    if (action == 1 && enabled && clickable && live && click.eligible && !click.consumed &&
+        InputListener(vm, context, view, false).IsValid()) {
         const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
         const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
         if (ViewContainsPoint(vm, context, key, x, y)) {
@@ -1972,7 +2029,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     }
     if (action == 1 || action == 3) context.ui_touch_clicks.erase(key);
     else context.ui_touch_clicks[key] = click;
-    if (action == 0 && handled) context.ui_touch_capture = key;
+    if (action == 0 && handled && enabled && live) context.ui_touch_capture = key;
     return handled;
 }
 
@@ -2034,11 +2091,11 @@ bool ViewContainsPoint(dexvm::Interpreter& vm, DexVmAndroidContext& context, con
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value()) return false;
     const auto* state = context.ui_tree.Get(*node);
-    return state != nullptr && context.ui_tree.IsAttached(*node) &&
-           state->visibility == ui::Visibility::Visible &&
-           state->enabled &&
-           android_intrinsics::Contains(
-               state->screen_frame, x, y);
+    return state != nullptr && context.ui_tree.IsAttached(*node) && context.ui_tree.IsVisible(*node) &&
+           state->visibility == ui::Visibility::Visible && state->enabled &&
+           (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
+            android_intrinsics::Contains(state->screen_clip, x, y)) &&
+           android_intrinsics::Contains(state->screen_frame, x, y);
 }
 
 ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
@@ -2046,26 +2103,25 @@ ViewTouchResult InvokeViewOnTouch(dexvm::Interpreter& vm,
                                   const std::uint64_t handle,
                                   const std::int32_t action, const float x,
                                   const float y, const AndroidBoundaryInput* snapshot) {
+    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeInput, AndroidUiTraversalPhase::ResolveOnly);
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value() || context.ui_tree.Get(*node) == nullptr) return {};
-    const auto found = context.ui_touch_listeners.find(*node);
-    if (found == context.ui_touch_listeners.end() ||
-        !found->second.IsValid()) return {};
     const auto view = ViewObjectForUiNode(context, *node);
+    const auto listener = InputListener(vm, context, view, true);
+    if (!listener.IsValid() || !context.ui_tree.Get(*node)->enabled) return {};
+    const auto roots = vm.ProtectReferences(std::array{view, listener});
     auto adjusted = snapshot ? *snapshot : AndroidBoundaryInput{};
     if (snapshot && action == 3) adjusted.action = 3;
     const auto event = snapshot ? MakeMotionEvent(vm, adjusted) : MakeMotionEvent(vm, action, x, y, 0);
     auto& linker = vm.Linker();
-    const auto listener_class = vm.Model().ObjectClass(found->second);
+    const auto listener_class = vm.Model().ObjectClass(listener);
     const auto index = linker.FindVtableIndex(
         listener_class, "onTouch",
         "(Landroid/view/View;Landroid/view/MotionEvent;)Z");
     if (!index.has_value()) return {false, "touch listener has no onTouch method"};
-    const auto outcome = vm.Call(
-        linker.Class(listener_class).vtable[*index],
-        std::vector<dexvm::VmValue>{dexvm::VmValue::Ref(found->second),
-                                    dexvm::VmValue::Ref(view),
-                                    dexvm::VmValue::Ref(event)});
+    const auto outcome = vm.Call(linker.Class(listener_class).vtable[*index],
+                                 std::vector<dexvm::VmValue>{dexvm::VmValue::Ref(listener), dexvm::VmValue::Ref(view),
+                                                             dexvm::VmValue::Ref(event)});
     if (outcome.exception.IsValid()) {
         return {false, "onTouch raised: " + outcome.exception_message};
     }
@@ -2089,9 +2145,7 @@ ViewGestureDispatchResult DispatchViewGestureEvent(
         if (!node.has_value() || context.ui_tree.Get(*node) == nullptr) {
             return false;
         }
-        const auto found = context.ui_click_listeners.find(*node);
-        return found != context.ui_click_listeners.end() &&
-               found->second.IsValid();
+        return InputListener(vm, context, ViewObjectForUiNode(context, *node), false).IsValid();
     }();
     const auto is_clickable = [&]() {
         if (!node.has_value()) return false;
@@ -2127,15 +2181,12 @@ std::optional<std::string> InvokeViewOnClick(dexvm::Interpreter& vm,
                                              const std::uint64_t handle) {
     const auto node = FindViewUiNode(context, handle);
     if (!node.has_value()) return "view has no UI binding";
-    const auto listener_binding = context.ui_click_listeners.find(*node);
-    if (listener_binding == context.ui_click_listeners.end() ||
-        !listener_binding->second.IsValid()) {
-        return "view has no click listener";
-    }
     const auto view = ViewObjectForUiNode(context, *node);
     if (!view.IsValid()) return "UI node has no guest View";
+    const auto listener = InputListener(vm, context, view, false);
+    if (!listener.IsValid()) return "view has no click listener";
+    const auto roots = vm.ProtectReferences(std::array{view, listener});
     auto& linker = vm.Linker();
-    const auto listener = listener_binding->second;
     const auto listener_class = vm.Model().ObjectClass(listener);
     const auto index = linker.FindVtableIndex(listener_class, "onClick",
                                               "(Landroid/view/View;)V");

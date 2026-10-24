@@ -97,6 +97,10 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         node.frame = input.frame;
         node.measured = input.measured;
         node.visibility = input.visibility;
+        if (input.enabled) node.enabled = *input.enabled;
+        if (input.clickable) node.clickable = *input.clickable;
+        if (input.focusable) node.focusable = *input.focusable;
+        if (input.focusable_in_touch_mode) node.focusable_in_touch_mode = *input.focusable_in_touch_mode;
         node.padding = input.padding;
         node.scroll_y = input.scroll_y;
         node.clip_children = input.clip_children;
@@ -400,6 +404,8 @@ bool UiTree::HasFocus(const UiNodeId node) const {
 }
 
 bool UiTree::RequestFocus(const UiNodeId node, const bool touch_mode) {
+    if (geometry_owner_ == UiGeometryOwner::ExternalProjection)
+        throw std::runtime_error("Java focus cannot be mutated by UiTree");
     const auto& target = Require(node);
     if (!target.focusable || (touch_mode && !target.focusable_in_touch_mode)) {
         return false;

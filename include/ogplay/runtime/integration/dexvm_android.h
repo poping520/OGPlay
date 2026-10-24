@@ -891,6 +891,11 @@ struct DexVmAndroidContext final {
   std::optional<ViewJavaHierarchyFields> view_java_hierarchy_fields;
   std::optional<ViewGroupJavaFields> view_group_java_fields;
   bool ui_java_propagating_request{};
+  // Test-container input: explicitly disabled accessibility, never a production default.
+  bool ui_test_accessibility_disabled{};
+  // Declaration tokens only, never guest listener identities or semantic state.
+  std::optional<std::array<dexvm::IntrinsicFieldHandle, 2>> view_java_input_fields;
+  std::optional<std::array<dexvm::IntrinsicFieldHandle, 4>> view_java_listener_fields;
 
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
@@ -1327,3 +1332,9 @@ namespace ogplay::runtime {
 [[nodiscard]] bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                             dexvm::VmObjectRef view, bool visible = false);
 }
+
+namespace ogplay::runtime {
+enum class AndroidViewListener : std::size_t { Click, Touch, LongClick, FocusChange };
+[[nodiscard]] dexvm::VmObjectRef ReadAndroidViewListener(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                         dexvm::VmObjectRef view, AndroidViewListener listener);
+}  // namespace ogplay::runtime

@@ -111,7 +111,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
   auto debug = Declare_android_os_Debug(context, memory_fields);
   std::vector<dx::IntrinsicFieldHandle> bitmap_options;
   auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
-  return {
+  std::vector<dexvm::IntrinsicClassDecl> result{
       std::move(debug_memory_info),
       std::move(debug),
       Declare_android_app_NativeActivity(context),
@@ -310,6 +310,11 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_com_google_android_gles_jni_GLImpl(context),
       Declare_android_app_Application(context),
   };
+  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      result.push_back(Declare_test_AccessibilityManager(context));
+      result.push_back(Declare_test_ListenerInfo(context));
+  }
+  return result;
 }
 
 } // namespace ogplay::runtime

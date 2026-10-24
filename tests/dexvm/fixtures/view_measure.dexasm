@@ -218,3 +218,67 @@
     iget v0, v1, Ltest/BaselineLeaf;->baseline:I
     return v0
 .end method
+
+.class public Ltest/InflatedLeaf;
+.super Landroid/view/View;
+.method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+.registers 3
+    invoke-direct {v0, v1, v2}, Landroid/view/View;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+    return-void
+.end method
+
+.class public Ltest/ThrowingInflatedLeaf;
+.super Landroid/view/View;
+.method public constructor <init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+.registers 5
+    invoke-direct {v2, v3, v4}, Landroid/view/View;-><init>(Landroid/content/Context;Landroid/util/AttributeSet;)V
+    new-instance v0, Ljava/lang/IllegalStateException;
+    const-string v1, "inflater constructor failure"
+    invoke-direct {v0, v1}, Ljava/lang/IllegalStateException;-><init>(Ljava/lang/String;)V
+    throw v0
+.end method
+
+.class public Ltest/InflaterFilter;
+.super Ljava/lang/Object;
+.implements Landroid/view/LayoutInflater$Filter;
+.field public calls:I
+.field public allowed:Z
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onLoadClass(Ljava/lang/Class;)Z
+.registers 3
+    iget v0, v1, Ltest/InflaterFilter;->calls:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/InflaterFilter;->calls:I
+    iget-boolean v0, v1, Ltest/InflaterFilter;->allowed:Z
+    return v0
+.end method
+
+.class public Ltest/InflaterFactory;
+.super Ljava/lang/Object;
+.implements Landroid/view/LayoutInflater$Factory2;
+.field public calls:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onCreateView(Ljava/lang/String;Landroid/content/Context;Landroid/util/AttributeSet;)Landroid/view/View;
+.registers 5
+    iget v0, v1, Ltest/InflaterFactory;->calls:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/InflaterFactory;->calls:I
+    const/4 v0, 0
+    return-object v0
+.end method
+.method public onCreateView(Landroid/view/View;Ljava/lang/String;Landroid/content/Context;Landroid/util/AttributeSet;)Landroid/view/View;
+.registers 6
+    iget v0, v1, Ltest/InflaterFactory;->calls:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v1, Ltest/InflaterFactory;->calls:I
+    const/4 v0, 0
+    return-object v0
+.end method

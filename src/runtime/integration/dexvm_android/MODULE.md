@@ -131,7 +131,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
   AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
   执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
-  Legacy getXml/inflater 不变；实验 inflater 接入仍不在支持范围。
+  Legacy getXml/inflater 不变；实验 inflater 的有界接入见下文。
 - 实验 JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
   32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
   API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
@@ -351,13 +351,25 @@ accessibility 入口保持 failure，Window 整树仍经同一事务投影。
 实验属性构造沿原 ROM Context 四个 obtainStyledAttributes、ContextThemeWrapper 的主题初始化/
 覆盖与 Resources/Theme/TypedArray。基础 Context 的进程主题 adapter 只缓存真实 Java Theme
 身份，采用 Manifest application theme 与 ROM 默认主题选择；wrapper 保留真实虚派与 setTo。
-ROM Context 没有 mOgplayInflater，实验 catalog 不再声明该额外字段；基础 Context 的实验
-inflater 服务明确失败，等待独立 inflater 接入。Legacy 字段及缓存行为保持。
+ROM Context 没有 mOgplayInflater，实验 catalog 不声明额外字段；基础进程 Context 服务
+缓存本地 ROM inflater 子类，ContextThemeWrapper 沿 ROM 每实例 cloneInContext/缓存。
+Legacy 字段及缓存行为保持。
 View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
 属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
 抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
 基础主题不支持的 scrollbar drawable；未覆盖的实际请求明确失败。LinearLayout 属性构造
 缺席 weightSum=-1，与 Context-only 的0保持区分；null divider 设置沿 ROM，绘制仍失败。
+
+实验 LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
+createView 为受审反射 adapter，真实虚派 guest ClassLoader.loadClass/Class.asSubclass/
+getConstructor/Constructor.newInstance。sConstructorMap、mFilterMap、mConstructorArgs 为唯一
+Java 状态，参数恢复及 onFinishInflate 时序归 ROM；异常类型/文本/cause 沿 ROM 分支。
+固定 ROM 无 PhoneLayoutInflater，独立实验 companion 只实现 AOSP 前缀顺序和复制克隆协议。
+Resources.getLayout 在当前 APK 选择已知 layout，返回既有受检 XmlBlock.Parser；不读系统 XML。
+Window XML 先膨胀到未发布 FrameLayout，完整成功后转移到稳定 mContentParent；失败保留
+旧 Java 内容及旧代投影。View/LP 重载仍沿真实 Java hierarchy，无第二份几何写入。
+仅五类基础容器及应用 View/ViewGroup 子类可成功构造；其他控件、特殊 blink 动画记账失败。
+View tag trace begin/end 仅转结构化 debug 日志，其他 tag 明确失败，无系统 atrace。
 
 ## GLES/EGL 与消息调度
 

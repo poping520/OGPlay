@@ -948,3 +948,468 @@ TEST_CASE("DVM-289 missing dimensions unsupported drawables and themes explicitl
         REQUIRE(f.OnOutcome(owner, "setTheme", "(I)V", {VmValue::Int(0x0103ffff)}).exception.IsValid());
     }
 }
+
+namespace {
+struct InflateNode {
+    std::string tag;
+    std::vector<XmlValue> attrs;
+    std::vector<InflateNode> children;
+};
+
+std::vector<std::byte> InflateXml(const InflateNode& root) {
+    std::vector<std::string> strings{"layout_width", "layout_height", "layout", "padding", "id"};
+    const auto intern = [&](const std::string& name) {
+        auto it = std::ranges::find(strings, name);
+        if (it == strings.end()) {
+            strings.push_back(name);
+            return static_cast<std::uint32_t>(strings.size() - 1);
+        }
+        return static_cast<std::uint32_t>(it - strings.begin());
+    };
+    const auto collect = [&](const auto& self, const InflateNode& node) -> void {
+        intern(node.tag);
+        for (const auto& child : node.children)
+            self(self, child);
+    };
+    collect(collect, root);
+    std::vector<std::byte> bytes;
+    Append16(bytes, 3);
+    Append16(bytes, 8);
+    Append32(bytes, 0);
+    const auto pool = StringPool(strings, true);
+    bytes.insert(bytes.end(), pool.begin(), pool.end());
+    Append16(bytes, 0x0180);
+    Append16(bytes, 8);
+    Append32(bytes, 28);
+    for (auto id : {0x010100f4U, 0x010100f5U, 0U, 0x010100d5U, 0x010100d0U})
+        Append32(bytes, id);
+    const auto emit = [&](const auto& self, const InflateNode& node) -> void {
+        const auto tag = intern(node.tag);
+        Append16(bytes, 0x0102);
+        Append16(bytes, 16);
+        Append32(bytes, static_cast<std::uint32_t>(36 + node.attrs.size() * 20));
+        Append32(bytes, 7);
+        Append32(bytes, 0xffffffffU);
+        Append32(bytes, 0xffffffffU);
+        Append32(bytes, tag);
+        Append16(bytes, 20);
+        Append16(bytes, 20);
+        Append16(bytes, static_cast<std::uint16_t>(node.attrs.size()));
+        Append16(bytes, 0);
+        Append16(bytes, 0);
+        Append16(bytes, 0);
+        for (const auto& attr : node.attrs) {
+            const auto index = attr.id == 0x010100f4   ? 0U
+                               : attr.id == 0x010100f5 ? 1U
+                               : attr.id == 0          ? 2U
+                               : attr.id == 0x010100d5 ? 3U
+                                                       : 4U;
+            Append32(bytes, 0xffffffffU);
+            Append32(bytes, index);
+            Append32(bytes, 0xffffffffU);
+            Append16(bytes, 8);
+            bytes.push_back(std::byte{0});
+            bytes.push_back(static_cast<std::byte>(attr.type));
+            Append32(bytes, attr.data);
+        }
+        for (const auto& child : node.children)
+            self(self, child);
+        Append16(bytes, 0x0103);
+        Append16(bytes, 16);
+        Append32(bytes, 24);
+        Append32(bytes, 7);
+        Append32(bytes, 0xffffffffU);
+        Append32(bytes, 0xffffffffU);
+        Append32(bytes, tag);
+    };
+    emit(emit, root);
+    Set32(bytes, 4, static_cast<std::uint32_t>(bytes.size()));
+    return bytes;
+}
+
+std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& table) {
+    std::vector<std::string> values{"from APK"}, keys;
+    for (const auto& entry : table.entries) {
+        keys.push_back(entry.entry_name);
+        if (entry.string_value) values.push_back(*entry.string_value);
+    }
+    std::vector<std::byte> chunks;
+    for (const auto type : {2U, 3U, 4U}) {
+        std::uint32_t count{};
+        for (const auto& entry : table.entries)
+            if (((entry.resource_id >> 16U) & 0xffU) == type)
+                count = std::max(count, (entry.resource_id & 0xffffU) + 1);
+        std::vector<std::uint32_t> offsets(count, 0xffffffffU);
+        std::vector<std::byte> data;
+        for (std::size_t i = 0; i < table.entries.size(); ++i) {
+            const auto& entry = table.entries[i];
+            if (((entry.resource_id >> 16U) & 0xffU) != type) continue;
+            offsets[entry.resource_id & 0xffffU] = static_cast<std::uint32_t>(data.size());
+            Append16(data, entry.is_complex ? 16 : 8);
+            Append16(data, entry.is_complex ? 1 : 0);
+            Append32(data, static_cast<std::uint32_t>(i));
+            if (entry.is_complex) {
+                Append32(data, entry.parent);
+                Append32(data, static_cast<std::uint32_t>(entry.bag.size()));
+                for (const auto& item : entry.bag) {
+                    Append32(data, item.name);
+                    Append16(data, 8);
+                    data.push_back(std::byte{0});
+                    data.push_back(static_cast<std::byte>(item.value_type));
+                    Append32(data, item.value_data);
+                }
+            } else {
+                Append16(data, 8);
+                data.push_back(std::byte{0});
+                data.push_back(static_cast<std::byte>(entry.value_type));
+                Append32(data, entry.string_value ? static_cast<std::uint32_t>(
+                                                        std::ranges::find(values, *entry.string_value) - values.begin())
+                                                  : entry.value_data);
+            }
+        }
+        std::vector<std::byte> chunk;
+        Append16(chunk, 0x0201);
+        Append16(chunk, 56);
+        Append32(chunk, static_cast<std::uint32_t>(56 + offsets.size() * 4 + data.size()));
+        chunk.push_back(static_cast<std::byte>(type));
+        chunk.push_back(std::byte{0});
+        Append16(chunk, 0);
+        Append32(chunk, count);
+        Append32(chunk, static_cast<std::uint32_t>(56 + offsets.size() * 4));
+        Append32(chunk, 36);
+        chunk.resize(56);
+        for (const auto offset : offsets)
+            Append32(chunk, offset);
+        chunk.insert(chunk.end(), data.begin(), data.end());
+        chunks.insert(chunks.end(), chunk.begin(), chunk.end());
+    }
+    auto global = StringPool(values, true), types = StringPool({"attr", "style", "layout", "id"}, true),
+         names = StringPool(keys, true);
+    std::vector<std::byte> package;
+    Append16(package, 0x0200);
+    Append16(package, 288);
+    Append32(package, 0);
+    Append32(package, 0x7f);
+    package.resize(268);
+    Append32(package, 288);
+    Append32(package, 0);
+    Append32(package, 288 + static_cast<std::uint32_t>(types.size()));
+    Append32(package, 0);
+    Append32(package, 0);
+    for (const auto* part : {&types, &names, &chunks})
+        package.insert(package.end(), part->begin(), part->end());
+    Set32(package, 4, static_cast<std::uint32_t>(package.size()));
+    std::vector<std::byte> bytes;
+    Append16(bytes, 2);
+    Append16(bytes, 12);
+    Append32(bytes, static_cast<std::uint32_t>(12 + global.size() + package.size()));
+    Append32(bytes, 1);
+    for (const auto* part : {&global, &package})
+        bytes.insert(bytes.end(), part->begin(), part->end());
+    return bytes;
+}
+
+void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layouts) {
+    std::vector<std::pair<std::string, std::vector<std::byte>>> files;
+    std::erase_if(f.context->arsc.entries, [](const auto& entry) { return entry.type_name == "layout"; });
+    for (std::size_t i = 0; i < layouts.size(); ++i) {
+        const auto path = "res/layout/inflate" + std::to_string(i) + ".xml";
+        files.emplace_back(path, InflateXml(layouts[i]));
+        ogplay::loader::ArscEntry entry;
+        entry.resource_id = 0x7f030001U + static_cast<std::uint32_t>(i);
+        entry.type_name = "layout";
+        entry.entry_name = "inflate" + std::to_string(i);
+        entry.string_value = path;
+        entry.value_type = 3;
+        f.context->arsc.entries.push_back(entry);
+    }
+    files.emplace_back("resources.arsc", InflateResourceTable(f.context->arsc));
+    std::vector<std::byte> zip, central;
+    for (const auto& [path, bytes] : files) {
+        const auto single = ogplay::test::file_vfs::MakeStoredZip(path, bytes);
+        const auto local_size = 30U + path.size() + bytes.size();
+        std::vector<std::byte> directory(single.begin() + static_cast<std::ptrdiff_t>(local_size), single.end() - 22);
+        Set32(directory, 42, static_cast<std::uint32_t>(zip.size()));
+        central.insert(central.end(), directory.begin(), directory.end());
+        zip.insert(zip.end(), single.begin(), single.begin() + static_cast<std::ptrdiff_t>(local_size));
+    }
+    const auto offset = static_cast<std::uint32_t>(zip.size());
+    zip.insert(zip.end(), central.begin(), central.end());
+    Append32(zip, 0x06054b50);
+    Append16(zip, 0);
+    Append16(zip, 0);
+    Append16(zip, static_cast<std::uint16_t>(files.size()));
+    Append16(zip, static_cast<std::uint16_t>(files.size()));
+    Append32(zip, static_cast<std::uint32_t>(central.size()));
+    Append32(zip, offset);
+    Append16(zip, 0);
+    f.context->apk_bytes = std::move(zip);
+    f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
+    const auto arsc = ogplay::loader::ReadApkEntry(f.context->apk_bytes, f.context->archive, "resources.arsc");
+    f.context->arsc = ogplay::loader::ParseArsc({reinterpret_cast<const std::uint8_t*>(arsc.data()), arsc.size()});
+}
+
+VmObjectRef InflaterActivity(ContainerVm& f) {
+    f.context->ui_test_accessibility_disabled = true;
+    f.context->arsc = Table(
+        {Style(0x7f020004, theme_id, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
+    ogplay::loader::ArscEntry id;
+    id.resource_id = 0x7f040001;
+    id.type_name = "id";
+    id.entry_name = "included";
+    id.value_type = 16;
+    f.context->arsc.entries.push_back(id);
+    f.context->application_theme = 0x7f020004;
+    const auto owner = f.New("Landroid/app/Activity;");
+    f.context->activity = owner;
+    ogplay::test::AttachViewTestContext(f.vm, owner);
+    f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
+    return owner;
+}
+
+std::vector<XmlValue> InflateSize(std::uint32_t width, std::uint32_t height) {
+    return {{0x010100f4, 16, width}, {0x010100f5, 16, height}};
+}
+}  // namespace
+
+TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic failure") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = InflaterActivity(f);
+        const auto full = InflateSize(0xffffffffU, 0xffffffffU), small = InflateSize(40, 20);
+        std::vector<InflateNode> layouts = {
+            {"FrameLayout",
+             full,
+             {{"LinearLayout",
+               full,
+               {{"RelativeLayout", full, {{"test.HierarchyGroup", full, {{"test.InflatedLeaf", small, {}}}}}}}},
+              {"include", {{0, 1, 0x7f030002}}, {}}}},
+            {"merge", {}, {{"View", small, {}}}},
+            {"merge", {}, {{"View", small, {}}, {"TextView", small, {}}}}};
+        for (const auto* tag : {"ImageView", "Button", "EditText", "ScrollView", "ViewStub", "blink"})
+            layouts.push_back({"merge", {}, {{"View", small, {}}, {tag, small, {}}}});
+        InstallInflateLayouts(f, layouts);
+        f.On(owner, "setContentView", "(I)V", {VmValue::Int(0x7f030001)});
+        const auto root = f.context->content_view;
+        CHECK(f.linker.Class(f.model.ObjectClass(root)).descriptor == "Landroid/widget/FrameLayout;");
+        CHECK(f.On(root, "getChildCount", "()I").AsInt() == 2);
+        auto child = root;
+        for (const auto* type : {"Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;",
+                                 "Ltest/HierarchyGroup;", "Ltest/InflatedLeaf;"}) {
+            child = f.On(child, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(0)}).ref;
+            CHECK(f.linker.Class(f.model.ObjectClass(child)).descriptor == type);
+        }
+        CHECK(f.On(child, "getContext", "()Landroid/content/Context;").ref == owner);
+        const auto lp = f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
+        CHECK(JavaField(f, lp, "width").bits == 40);
+        CHECK(JavaField(f, lp, "height").bits == 20);
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
+        CHECK(JavaField(f, child, "mMeasuredWidth").bits == 40);
+        CHECK(JavaField(f, child, "mMeasuredHeight").bits == 20);
+        CHECK(JavaField(f, child, "mMinWidth").bits == 6);
+        CHECK(JavaField(f, child, "mLeft").bits == 0);
+        CHECK(JavaField(f, child, "mRight").bits == 40);
+        const auto visible = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(1)}).ref;
+        f.On(visible, "setClickable", "(Z)V", {VmValue::Int(1)});
+        const auto visible_id = *FindViewUiNode(*f.context, visible.Value());
+        f.context->ui_tree.Get(visible_id)->background_color = 0x123456ff;
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
+        const auto old_projection = f.context->ui_tree.PublishedProjection();
+        CHECK(old_projection->Get(visible_id)->frame == ui::Rect{0, 0, 40, 20});
+        CHECK(old_projection->HitTestProjection(1, 1) == visible_id);
+        const auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*old_projection, {}), {200, 140});
+        CHECK(pixels.rgba8[(1 * 200 + 1) * 4 + 3] == 255);
+        CHECK(pixels.rgba8[(1 * 200 + 40) * 4 + 3] == 0);
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto revision = f.context->ui_content_revision;
+        for (std::size_t i = 2; i < layouts.size(); ++i) {
+            const auto error =
+                f.OnOutcome(owner, "setContentView", "(I)V", {VmValue::Int(static_cast<int>(0x7f030001 + i))});
+            REQUIRE(error.exception.IsValid());
+            CHECK(f.linker.Class(error.exception_class).descriptor == (i == layouts.size() - 1
+                                                                           ? "Ljava/lang/UnsupportedOperationException;"
+                                                                           : "Landroid/view/InflateException;"));
+            CHECK(f.context->content_view == root);
+            CHECK(f.context->ui_content_revision == revision);
+            CHECK(f.context->ui_tree.PublishedProjection() == old_projection);
+            CHECK(f.On(root, "getChildCount", "()I").AsInt() == 2);
+        }
+    }
+}
+
+TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = InflaterActivity(f);
+        const auto inflater =
+            f.Static("Landroid/view/LayoutInflater;", "from",
+                     "(Landroid/content/Context;)Landroid/view/LayoutInflater;", {VmValue::Ref(owner)})
+                .ref;
+        CHECK(f.Static("Landroid/view/LayoutInflater;", "from",
+                       "(Landroid/content/Context;)Landroid/view/LayoutInflater;", {VmValue::Ref(owner)})
+                  .ref == inflater);
+        const auto parser = OpenAttributeXml(f, owner, AttributeXml({{}}));
+        const auto roots = f.vm.ProtectReferences(std::array{owner, inflater, parser});
+        const auto args = VmObjectRef{JavaField(f, inflater, "mConstructorArgs", "[Ljava/lang/Object;").bits};
+        f.model.SetObjectElement(args, 0, owner);
+        const auto create = [&](const char* name) {
+            const auto text = f.vm.NewStringUtf8(name);
+            return f.OnOutcome(inflater, "createView",
+                               "(Ljava/lang/String;Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;",
+                               {VmValue::Ref(text), VmValue::Ref(VmObjectRef{}), VmValue::Ref(parser)});
+        };
+        CHECK(f.Checked(create("test.InflatedLeaf")).ref.IsValid());
+        const auto inflater_type = f.linker.ResolveDescriptor("Landroid/view/LayoutInflater;");
+        const auto cache_field = f.linker.FindFieldRecursive(inflater_type, "sConstructorMap", "Ljava/util/HashMap;");
+        REQUIRE(cache_field);
+        for (const auto& [method, descriptor] : std::vector<std::pair<const char*, const char*>>{
+                 {"inflate", "(ILandroid/view/ViewGroup;)Landroid/view/View;"},
+                 {"inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;"},
+                 {"inflate", "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/ViewGroup;)Landroid/view/View;"},
+                 {"inflate", "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/ViewGroup;Z)Landroid/view/View;"},
+                 {"rInflate", "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/View;Landroid/util/AttributeSet;Z)V"},
+                 {"createViewFromTag",
+                  "(Landroid/view/View;Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;"}}) {
+            const auto selected = f.linker.FindVtableIndex(inflater_type, method, descriptor);
+            REQUIRE(selected);
+            CHECK(f.linker.Method(f.linker.Class(inflater_type).vtable[*selected]).kind == MethodKind::interpreted);
+        }
+        const auto cache = VmObjectRef{f.linker.Class(inflater_type).static_storage[f.linker.Field(*cache_field).slot]};
+        const auto name = f.vm.NewStringUtf8("test.InflatedLeaf");
+        const auto cached = f.On(cache, "get", "(Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(name)}).ref;
+        REQUIRE(cached.IsValid());
+        const auto count = f.On(cache, "size", "()I").AsInt();
+        CHECK(f.Checked(create("test.InflatedLeaf")).ref.IsValid());
+        CHECK(f.On(cache, "get", "(Ljava/lang/Object;)Ljava/lang/Object;", {VmValue::Ref(name)}).ref == cached);
+        CHECK(f.On(cache, "size", "()I").AsInt() == count);
+        CHECK(f.model.GetObjectElement(args, 1) == parser);
+        const auto cause = [&](const VmCallOutcome& result, const char* type) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Landroid/view/InflateException;");
+            const auto nested = f.On(result.exception, "getCause", "()Ljava/lang/Throwable;").ref;
+            REQUIRE(nested.IsValid());
+            CHECK(f.linker.Class(f.model.ObjectClass(nested)).descriptor == type);
+            return nested;
+        };
+        const auto missing = create("test.DoesNotExist");
+        CHECK(f.linker.Class(missing.exception_class).descriptor == "Ljava/lang/ClassNotFoundException;");
+        const auto no_ctor = create("test.MeasuredLeaf");
+        cause(no_ctor, "Ljava/lang/NoSuchMethodException;");
+        CHECK(no_ctor.exception_message == "Binary XML file line #1: Error inflating class test.MeasuredLeaf");
+        const auto thrown = create("test.ThrowingInflatedLeaf");
+        const auto target = cause(thrown, "Ljava/lang/reflect/InvocationTargetException;");
+        const auto original = f.On(target, "getCause", "()Ljava/lang/Throwable;").ref;
+        REQUIRE(original.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(original)).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(thrown.exception_message == "Binary XML file line #1: Error inflating class test.ThrowingInflatedLeaf");
+        const auto filter = f.New("Ltest/InflaterFilter;");
+        f.On(inflater, "setFilter", "(Landroid/view/LayoutInflater$Filter;)V", {VmValue::Ref(filter)});
+        const auto rejected = create("test.InflatedLeaf");
+        const auto denial = cause(rejected, "Landroid/view/InflateException;");
+        CHECK(f.vm.StringUtf8(f.On(denial, "getMessage", "()Ljava/lang/String;").ref) ==
+              "Binary XML file line #1: Class not allowed to be inflated test.InflatedLeaf");
+        CHECK(JavaField(f, filter, "calls").bits == 1);
+        cause(create("test.InflatedLeaf"), "Landroid/view/InflateException;");
+        CHECK(JavaField(f, filter, "calls").bits == 1);
+        f.On(inflater, "setFilter", "(Landroid/view/LayoutInflater$Filter;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto factory = f.New("Ltest/InflaterFactory;");
+        f.On(inflater, "setFactory2", "(Landroid/view/LayoutInflater$Factory2;)V", {VmValue::Ref(factory)});
+        const auto clone = f.On(inflater, "cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;",
+                                {VmValue::Ref(owner)})
+                               .ref;
+        CHECK(clone != inflater);
+        CHECK(f.On(clone, "getFactory2", "()Landroid/view/LayoutInflater$Factory2;").ref == factory);
+        const auto factory2 = f.New("Ltest/InflaterFactory;");
+        f.On(clone, "setFactory", "(Landroid/view/LayoutInflater$Factory;)V", {VmValue::Ref(factory2)});
+        InstallInflateLayouts(f, {{"View", InflateSize(40, 20), {}}});
+        const auto inflated = f.On(clone, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                                   {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
+                                  .ref;
+        CHECK(inflated.IsValid());
+        CHECK(JavaField(f, factory, "calls").bits == 1);
+        CHECK(JavaField(f, factory2, "calls").bits == 0);
+        const auto clone_args = VmObjectRef{JavaField(f, clone, "mConstructorArgs", "[Ljava/lang/Object;").bits};
+        CHECK_FALSE(f.model.GetObjectElement(clone_args, 0).IsValid());
+        CHECK_FALSE(f.model.GetObjectElement(clone_args, 1).IsValid());
+        const auto plain =
+            f.New("Landroid/view/LocalLayoutInflater;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto first = f.New("Ltest/InflaterFactory;");
+        f.On(plain, "setFactory", "(Landroid/view/LayoutInflater$Factory;)V", {VmValue::Ref(first)});
+        const auto merged = f.On(plain, "cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;",
+                                 {VmValue::Ref(owner)})
+                                .ref;
+        const auto second = f.New("Ltest/InflaterFactory;");
+        f.On(merged, "setFactory", "(Landroid/view/LayoutInflater$Factory;)V", {VmValue::Ref(second)});
+        const auto private_factory = f.New("Ltest/InflaterFactory;");
+        f.On(merged, "setPrivateFactory", "(Landroid/view/LayoutInflater$Factory2;)V", {VmValue::Ref(private_factory)});
+        CHECK(f.On(merged, "inflate", "(ILandroid/view/ViewGroup;)Landroid/view/View;",
+                   {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{})})
+                  .ref.IsValid());
+        CHECK(JavaField(f, first, "calls").bits == 1);
+        CHECK(JavaField(f, second, "calls").bits == 1);
+        CHECK(JavaField(f, private_factory, "calls").bits == 1);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-290 ROM include nonmerge overrides and merge parent constraints") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = InflaterActivity(f);
+        InstallInflateLayouts(
+            f, {{"FrameLayout",
+                 InflateSize(100, 80),
+                 {{"include",
+                   {{0, 1, 0x7f030002}, {0x010100f4, 16, 30}, {0x010100f5, 16, 12}, {0x010100d0, 1, 0x7f040001}},
+                   {}}}},
+                {"View", InflateSize(60, 40), {}},
+                {"merge", {}, {{"View", InflateSize(10, 10), {}}}}});
+        const auto inflater =
+            f.Static("Landroid/view/LayoutInflater;", "from",
+                     "(Landroid/content/Context;)Landroid/view/LayoutInflater;", {VmValue::Ref(owner)})
+                .ref;
+        const auto root = f.On(inflater, "inflate", "(ILandroid/view/ViewGroup;)Landroid/view/View;",
+                               {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{})})
+                              .ref;
+        const auto child = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(0)}).ref;
+        const auto lp = f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
+        CHECK(JavaField(f, lp, "width").bits == 30);
+        CHECK(JavaField(f, lp, "height").bits == 12);
+        CHECK(f.On(child, "getId", "()I").AsInt() == 0x7f040001);
+        const auto error = f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                                       {VmValue::Int(0x7f030003), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        REQUIRE(error.exception.IsValid());
+        CHECK(f.linker.Class(error.exception_class).descriptor == "Landroid/view/InflateException;");
+        CHECK(error.exception_message ==
+              "<merge /> can be used only with a valid ViewGroup root and attachToRoot=true");
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto parser =
+            f.On(resources, "getLayout", "(I)Landroid/content/res/XmlResourceParser;", {VmValue::Int(0x7f030002)}).ref;
+        CHECK(f.On(inflater, "inflate", "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/ViewGroup;)Landroid/view/View;",
+                   {VmValue::Ref(parser), VmValue::Ref(VmObjectRef{})})
+                  .ref.IsValid());
+        f.On(parser, "close", "()V");
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(root)});
+        const auto parent = f.On(root, "getParent", "()Landroid/view/ViewParent;").ref;
+        REQUIRE(parent.IsValid());
+        const auto extra = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto params =
+            f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(7), VmValue::Int(9)});
+        f.On(owner, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(extra), VmValue::Ref(params)});
+        CHECK(f.On(parent, "getChildCount", "()I").AsInt() == 2);
+        CHECK(f.On(extra, "getParent", "()Landroid/view/ViewParent;").ref == parent);
+        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+        f.On(window, "setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(extra), VmValue::Ref(params)});
+        CHECK(f.context->content_view == extra);
+        CHECK(f.On(parent, "getChildCount", "()I").AsInt() == 1);
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
+        CHECK(JavaField(f, extra, "mMeasuredWidth").bits == 7);
+        CHECK(JavaField(f, extra, "mMeasuredHeight").bits == 9);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

@@ -43,6 +43,145 @@ Decl Declare_android_view_ContextThemeWrapper(const Context&) {
 
 Decl Declare_android_view_LayoutInflater(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/LayoutInflater;");
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto owner =
+            builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccProtected | dx::kAccFinal);
+        const auto args = builder.BoundInstanceField("mConstructorArgs", "[Ljava/lang/Object;", dx::kAccFinal);
+        const auto filter =
+            builder.BoundInstanceField("mFilter", "Landroid/view/LayoutInflater$Filter;", dx::kAccPrivate);
+        const auto filters = builder.BoundInstanceField("mFilterMap", "Ljava/util/HashMap;", dx::kAccPrivate);
+        const auto cache =
+            builder.BoundStaticField("sConstructorMap", "Ljava/util/HashMap;", dx::kAccPrivate | dx::kAccFinal);
+        const auto signature =
+            builder.BoundStaticField("mConstructorSignature", "[Ljava/lang/Class;", dx::kAccPrivate | dx::kAccFinal);
+        builder.FinalMethod(
+            "createView", "(Ljava/lang/String;Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;",
+            [owner, args, filter, filters, cache, signature](dx::IntrinsicContext& call) {
+                dx::IntrinsicCall fields(call);
+                const auto name = call.arguments[0].ref;
+                const auto prefix = call.arguments[1].ref;
+                const auto attrs = call.arguments[2].ref;
+                const auto full =
+                    (prefix.IsValid() ? call.vm.StringUtf8(prefix) : std::string{}) + call.vm.StringUtf8(name);
+                auto constructor = CallAndroidMethod(call.vm, fields.GetRef(cache), "get",
+                                                     "(Ljava/lang/Object;)Ljava/lang/Object;", {dx::VmValue::Ref(name)})
+                                       .ref;
+                dx::VmObjectRef clazz;
+                const auto position = [&] {
+                    return call.vm.StringUtf8(
+                        CallAndroidMethod(call.vm, attrs, "getPositionDescription", "()Ljava/lang/String;").ref);
+                };
+                const auto load = [&] {
+                    const auto loader =
+                        CallAndroidMethod(call.vm, fields.GetRef(owner), "getClassLoader", "()Ljava/lang/ClassLoader;")
+                            .ref;
+                    const auto text = call.vm.NewStringUtf8(full);
+                    const auto roots = call.vm.ProtectReferences(std::array{loader, text});
+                    const auto loaded =
+                        CallAndroidMethod(call.vm, loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;",
+                                          {dx::VmValue::Ref(text)})
+                            .ref;
+                    const auto loaded_root = call.vm.ProtectReferences(std::array{loaded});
+                    return CallAndroidMethod(call.vm, loaded, "asSubclass", "(Ljava/lang/Class;)Ljava/lang/Class;",
+                                             {dx::VmValue::Ref(call.vm.Model().ClassObject(
+                                                 call.vm.Linker().ResolveDescriptor("Landroid/view/View;")))})
+                        .ref;
+                };
+                try {
+                    const auto check_filter = [&] {
+                        if (!CallAndroidMethod(call.vm, fields.GetRef(filter), "onLoadClass", "(Ljava/lang/Class;)Z",
+                                               {dx::VmValue::Ref(clazz)})
+                                 .AsInt())
+                            throw dx::VmJavaThrow{"Landroid/view/InflateException;",
+                                                  position() + ": Class not allowed to be inflated " + full};
+                    };
+                    if (!constructor.IsValid()) {
+                        clazz = load();
+                        const auto roots = call.vm.ProtectReferences(std::array{clazz});
+                        if (fields.GetRef(filter).IsValid()) check_filter();
+                        constructor = CallAndroidMethod(call.vm, clazz, "getConstructor",
+                                                        "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;",
+                                                        {dx::VmValue::Ref(fields.GetRef(signature))})
+                                          .ref;
+                        const auto constructor_root = call.vm.ProtectReferences(std::array{constructor});
+                        static_cast<void>(CallAndroidMethod(call.vm, fields.GetRef(cache), "put",
+                                                            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                                                            {dx::VmValue::Ref(name), dx::VmValue::Ref(constructor)}));
+                    } else if (fields.GetRef(filter).IsValid()) {
+                        const auto map = fields.GetRef(filters);
+                        auto allowed = CallAndroidMethod(call.vm, map, "get", "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                                         {dx::VmValue::Ref(name)})
+                                           .ref;
+                        if (!allowed.IsValid()) {
+                            clazz = load();
+                            const auto roots = call.vm.ProtectReferences(std::array{clazz});
+                            const auto value = CallAndroidMethod(call.vm, fields.GetRef(filter), "onLoadClass",
+                                                                 "(Ljava/lang/Class;)Z", {dx::VmValue::Ref(clazz)});
+                            const auto boolean = call.vm.Linker().FindDirectMethod(
+                                call.vm.Linker().ResolveDescriptor("Ljava/lang/Boolean;"), "valueOf",
+                                "(Z)Ljava/lang/Boolean;");
+                            const auto result = call.vm.Call(*boolean, std::array{value});
+                            if (result.exception.IsValid())
+                                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                                      result.exception_message, result.exception};
+                            allowed = result.value.ref;
+                            const auto allowed_root = call.vm.ProtectReferences(std::array{allowed});
+                            static_cast<void>(CallAndroidMethod(
+                                call.vm, map, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                                {dx::VmValue::Ref(name), dx::VmValue::Ref(allowed)}));
+                        }
+                        if (!CallAndroidMethod(call.vm, allowed, "booleanValue", "()Z").AsInt())
+                            throw dx::VmJavaThrow{"Landroid/view/InflateException;",
+                                                  position() + ": Class not allowed to be inflated " + full};
+                    }
+                    const auto roots = call.vm.ProtectReferences(std::array{constructor, clazz});
+                    call.vm.Model().SetObjectElement(fields.GetRef(args), 1, attrs);
+                    return CallAndroidMethod(call.vm, constructor, "newInstance",
+                                             "([Ljava/lang/Object;)Ljava/lang/Object;",
+                                             {dx::VmValue::Ref(fields.GetRef(args))});
+                } catch (const dx::VmJavaThrow& error) {
+                    const auto error_roots = call.vm.ProtectReferences(std::array{error.existing, clazz});
+                    if (error.descriptor == "Ljava/lang/ClassNotFoundException;" ||
+                        !call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor("Ljava/lang/Exception;"),
+                                                       call.vm.Linker().ResolveDescriptor(error.descriptor)))
+                        throw;
+                    const auto message =
+                        error.descriptor == "Ljava/lang/NoSuchMethodException;"
+                            ? position() + ": Error inflating class " + full
+                        : error.descriptor == "Ljava/lang/ClassCastException;"
+                            ? position() + ": Class is not a View " + full
+                            : position() + ": Error inflating class " +
+                                  (clazz.IsValid()
+                                       ? call.vm.StringUtf8(
+                                             CallAndroidMethod(call.vm, clazz, "getName", "()Ljava/lang/String;").ref)
+                                       : "<unknown>");
+                    auto cause = error.existing;
+                    const auto make = [&](const std::string& type, const std::string& text) {
+                        const auto object = call.vm.NewIntrinsicInstance(type);
+                        const auto object_root = call.vm.ProtectReferences(std::array{object});
+                        const auto string = call.vm.NewStringUtf8(text);
+                        const auto protected_refs = call.vm.ProtectReferences(std::array{object, string});
+                        const auto init = call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(object),
+                                                                            "<init>", "(Ljava/lang/String;)V");
+                        const auto result =
+                            call.vm.Call(*init, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(string)});
+                        if (result.exception.IsValid())
+                            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                                  result.exception_message, result.exception};
+                        return object;
+                    };
+                    if (!cause.IsValid()) cause = make(error.descriptor, error.message);
+                    const auto cause_root = call.vm.ProtectReferences(std::array{cause});
+                    const auto exception = make("Landroid/view/InflateException;", message);
+                    const auto exception_root = call.vm.ProtectReferences(std::array{exception});
+                    static_cast<void>(CallAndroidMethod(call.vm, exception, "initCause",
+                                                        "(Ljava/lang/Throwable;)Ljava/lang/Throwable;",
+                                                        {dx::VmValue::Ref(cause)}));
+                    throw dx::VmJavaThrow{"Landroid/view/InflateException;", message, exception};
+                }
+            });
+        return std::move(builder).Build();
+    }
     builder.DirectMethod("nativeInflate",
         "(Landroid/content/Context;ILandroid/view/ViewGroup;Z)Landroid/view/View;",
         [context](dx::IntrinsicContext& call) {
@@ -3213,6 +3352,27 @@ Decl Declare_android_view_Window(const Context& context) {
             const auto parent = parent_for(call);
             const auto roots = call.vm.ProtectReferences(std::array{activity, parent});
             const auto node = *FindViewUiNode(*context, parent.Value());
+            dx::VmObjectRef staged;
+            if (xml && context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                // Inflate into an unpublished parent. A failed merge must not mutate the live root.
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;");
+                staged = call.vm.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+                const auto staged_root = call.vm.ProtectReferences(std::array{staged});
+                const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+                const auto initialized =
+                    call.vm.Call(*init, std::array{dx::VmValue::Ref(staged), dx::VmValue::Ref(activity)});
+                if (initialized.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                          initialized.exception_message, initialized.exception};
+                const auto inflater =
+                    CallAndroidMethod(call.vm, call.receiver, "getLayoutInflater", "()Landroid/view/LayoutInflater;")
+                        .ref;
+                const auto inflater_root = call.vm.ProtectReferences(std::array{inflater});
+                static_cast<void>(
+                    CallAndroidMethod(call.vm, inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                                      {call.arguments[0], dx::VmValue::Ref(staged), dx::VmValue::Int(1)}));
+            }
+            const auto staged_root = call.vm.ProtectReferences(std::array{staged});
             const auto revision = ++context->ui_content_revision;
             ++context->ui_content_mutation_depth;
             struct MutationScope { DexVmAndroidContext& context; ~MutationScope() { --context.ui_content_mutation_depth; } } scope{*context};
@@ -3237,11 +3397,18 @@ Decl Declare_android_view_Window(const Context& context) {
                 context->content_view = dx::VmObjectRef{};
             }
             if (xml && context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_window_xml", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "Experimental Window XML unsupported"};
+                while (CallAndroidMethod(call.vm, staged, "getChildCount", "()I").AsInt() != 0) {
+                    const auto child = CallAndroidMethod(call.vm, staged, "getChildAt", "(I)Landroid/view/View;",
+                                                         {dx::VmValue::Int(0)})
+                                           .ref;
+                    const auto child_root = call.vm.ProtectReferences(std::array{child});
+                    static_cast<void>(CallAndroidMethod(call.vm, staged, "removeView", "(Landroid/view/View;)V",
+                                                        {dx::VmValue::Ref(child)}));
+                    static_cast<void>(CallAndroidMethod(call.vm, parent, "addView", "(Landroid/view/View;)V",
+                                                        {dx::VmValue::Ref(child)}));
+                }
             }
-            if (xml) {
+            if (xml && context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) {
                 try {
                     static_cast<void>(InflateUiLayoutResource(call.vm, *context,
                         static_cast<std::uint32_t>(call.arguments[0].AsInt()), activity, node));
@@ -3249,7 +3416,7 @@ Decl Declare_android_view_Window(const Context& context) {
                 catch (const std::runtime_error& error) {
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", std::string("layout inflation failed: ") + error.what()};
                 }
-            } else {
+            } else if (!xml) {
                 auto params = call.arguments[1].ref;
                 if (!params.IsValid()) params = NewAndroidLayoutParams(call.vm,
                     "Landroid/widget/FrameLayout$LayoutParams;", -1, -1);
@@ -3699,6 +3866,19 @@ Decl Declare_test_ListenerInfo(const Context& context) {
                                    dx::kAccProtected),
         builder.BoundInstanceField("mOnFocusChangeListener", "Landroid/view/View$OnFocusChangeListener;",
                                    dx::kAccProtected)};
+    return std::move(builder).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_view_LayoutInflater_BlinkLayout(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/LayoutInflater$BlinkLayout;",
+                                                    "Landroid/widget/FrameLayout;", {}, 0);
+    builder.Constructor(
+        "(Landroid/content/Context;Landroid/util/AttributeSet;)V", [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_inflater_blink", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "blink layout animation is unsupported"};
+        });
     return std::move(builder).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics

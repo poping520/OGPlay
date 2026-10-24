@@ -57,6 +57,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-xml-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-theme-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-context-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-inflater-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -70,11 +71,23 @@ def assemble(recipe, work, measure=False):
                              ','.join(classes[offset:offset + 100]), '--output',
                              str(work / (source + '-smali')), str(builder.source_path(source))])
         guest, custom = builder.compile_guest_java(work)
-        replacement = 'Landroid/view/ContextThemeWrapper;'
+        replacements = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;'}
         duplicates = {v for values in recipe.values() for v in values} & set(custom)
-        if duplicates != {replacement}:
+        if duplicates != replacements:
             raise builder.BuildError('unexpected paired guest Java replacement')
-        (guest / (replacement[1:-1] + '.smali')).unlink()
+        for replacement in replacements | {'Landroid/view/LayoutInflater$LocalInflater;'}:
+            (guest / (replacement[1:-1] + '.smali')).unlink()
+        extra = work / 'experimental-classes'
+        extra.mkdir()
+        builder.run([str(builder.JAVAC), '-encoding', 'UTF-8', '-source', '7', '-target', '7',
+                     '-Xlint:-options', '-g:none', '-bootclasspath', str(builder.ANDROID_JAR),
+                     '-d', str(extra), str(Path(__file__).with_name('experimental-java') / 'android/view/LocalLayoutInflater.java')])
+        dex_dir = work / 'experimental-dex'
+        dex_dir.mkdir()
+        builder.run([str(builder.JAVA), '-cp', str(builder.D8_JAR), 'com.android.tools.r8.D8',
+                     '--min-api', '19', '--output', str(dex_dir), *map(str, sorted(extra.rglob('*.class')))])
+        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'), 'disassemble',
+                     '--api', '19', '--jobs', '1', '--output', str(guest), str(dex_dir / 'classes.dex')])
         output = work / 'classes.dex'
         roots = [str(work / (source + '-smali')) for source in recipe] + [str(guest)]
         builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'smali.jar'), 'assemble',
@@ -104,8 +117,8 @@ def build(measure=False):
         # unchanged default selector; keep them only in this test counterpart.
         hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
                      *(c['owner'] for c in measure_sources(member_sources.load())['classes']
-                       if c['owner'].startswith(('Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
-                     'Landroid/content/Context;', 'Landroid/view/ContextThemeWrapper;',
+                       if c['owner'].startswith(('Landroid/view/LayoutInflater', 'Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
+                     'Landroid/util/AttributeSet;', 'Landroid/content/Context;', 'Landroid/view/ContextThemeWrapper;',
                      'Landroid/content/res/AssetManager;', 'Landroid/content/res/Resources;',
                      'Landroid/content/res/Resources$Theme;', 'Landroid/content/res/TypedArray;',
                      'Landroid/content/res/AssetManager$AssetInputStream;',
@@ -127,7 +140,7 @@ def build(measure=False):
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
         if measure:
             _, custom = builder.compile_guest_java(Path(work))
-            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c != 'Landroid/view/ContextThemeWrapper;'))
+            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}) + ('Landroid/view/LocalLayoutInflater;',))
         else:
             selected = builder.compile_expected_class_names(recipe, Path(work))
     if builder.class_names(dex) != selected:
@@ -164,6 +177,10 @@ def boot_metadata(jar, dex, recipe):
             schema_version=1, sha256=builder.sha256(theme_projection.generate()),
             generator='tools/bootdex/theme_projection.py',
             inputs_sha256=builder.file_sha256(theme_projection.POLICY))
+    if 'theme_projection' in metadata:
+        companion = Path(__file__).with_name('experimental-java') / 'android/view/LocalLayoutInflater.java'
+        metadata['experimental_inflater'] = dict(companion=str(companion.relative_to(builder.ROOT)),
+            sha256=builder.file_sha256(companion), protocol='AOSP 4.4 PhoneLayoutInflater; absent from pinned ROM')
     return metadata
 
 
@@ -186,7 +203,23 @@ def main():
             parser.error('build, check or --self-test required')
         jar, dex, recipe = build(args.view_measure_test_output is not None)
         builder.audit_crc32(dex)
-        builder.audit_zip_streams(dex)
+        if args.view_measure_test_output:
+            # The fixed ROM inflater has no Legacy nativeInflate declaration.
+            expected = builder.zip_stream_native_signatures()
+            expected['Landroid/view/LayoutInflater;'] = {}
+            parsed = builder.dex_survey_lib.parse_dex(dex)
+            observed = {owner: {} for owner in expected}
+            for cls in parsed.classes:
+                owner = parsed.type_name(cls.type_index)
+                if owner in observed:
+                    for method in cls.direct_methods + cls.virtual_methods:
+                        if method.access_flags & builder.dex_survey_lib.ACC_NATIVE:
+                            _, name, descriptor = parsed.method_signature(method.method_index)
+                            observed[owner][name + descriptor] = method.access_flags
+            if observed != expected:
+                raise builder.BuildError('experimental native ABI drift: ' + str(observed))
+        else:
+            builder.audit_zip_streams(dex)
         builder.audit_native_crypto(dex)
         manifest = builder.manifest_bytes(boot_metadata(jar, dex, recipe))
         output = args.view_measure_test_output or builder.OUTPUT

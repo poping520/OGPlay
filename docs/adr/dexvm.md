@@ -2001,3 +2001,17 @@ Theme/Theme.Holo/Theme.DeviceDefault 及其派生 Theme.* 变体（当前92个�
 才能确定合并，则将受影响主题也降为未登记并列账。
 生成器逐项输出已登记与未登记主题及原因。missing-rom-style-field
 仅使该主题不登记；public-id-mismatch 等ID不符仍拒绝整个构建。
+
+### VD-09a-5 实施补充（2026-10-25）
+
+编排方预先决定：LayoutInflater.createView 的 ROM 反射路径属于 ADR-0159 严格拒绝的
+DYNAMIC_TARGETS，按 ADR-0158 决定3替换为逐项受审 adapter；不放宽动态入口准入。
+review 对照、真实 guest ClassLoader/Constructor、Java 缓存/Filter/参数 owner 与
+异常消息/cause 边界见 [DVM-290](../tasks/dexvm/DVM-290.md)。其余 inflate/Factory/
+include/merge 执行原 ROM，Window XML 通过未发布父容器隔离失败后再转入稳定内容根。
+固定 ROM 不含 PhoneLayoutInflater，实验 companion 复用 AOSP 对应前缀及克隆协议。
+
+实施方按编排方常设原则决定，待编排方复核：native ABI 审计按固定配对区分
+LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无 native，
+其他受审 ABI 逐签名/flags 不变。构建器的原生产审计、成员调用及 clinit 规则不变。
+这不授权新 native、完整控件栈或未实现成员伪成功。

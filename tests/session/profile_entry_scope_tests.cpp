@@ -1290,6 +1290,7 @@ TEST_CASE("dynamic attached SurfaceView owns one callback generation") {
     REQUIRE(constructor.has_value());
     const auto app_context = interpreter.NewIntrinsicInstance(
         "Landroid/app/Application;");
+    ogplay::test::AttachViewTestContext(interpreter, app_context);
     const auto initialized = interpreter.Call(
         *constructor,
         std::vector<VmValue>{VmValue::Ref(surface), VmValue::Ref(app_context),

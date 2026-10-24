@@ -1840,7 +1840,7 @@
         {
           "signature": "mLeftPaddingDefined:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1888,13 +1888,13 @@
         {
           "signature": "mMinHeight:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mMinWidth:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1954,25 +1954,25 @@
         {
           "signature": "mPaddingBottom:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mPaddingLeft:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mPaddingRight:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mPaddingTop:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -2026,7 +2026,7 @@
         {
           "signature": "mResources:Landroid/content/res/Resources;",
           "flags": 18,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -2038,7 +2038,7 @@
         {
           "signature": "mRightPaddingDefined:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -2134,43 +2134,43 @@
         {
           "signature": "mUserPaddingBottom:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingEnd:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingLeft:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingLeftInitial:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingRight:I",
           "flags": 4,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingRightInitial:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mUserPaddingStart:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -2255,8 +2255,8 @@
           "review": {
             "reason": "Reviewed initialization adapter; ROM constructor system-service closure is outside this batch.",
             "inputs": "<init>(Landroid/content/Context;)V; injected process services and receiver binding",
-            "outputs": "Existing return/exception and dirty/callback protocol; no ROM behavior claim.",
-            "state_owner": "Java mContext and static SDK compatibility flags; UiTree and integration legacy state remain authoritative; host-owned ROM fields fail guest access.",
+            "outputs": "Context resources identity, ROM initial View layout fields, and existing bounded widget background defaults; no full ROM constructor claim.",
+            "state_owner": "Java mContext/mResources, padding/user/defined/minimum fields, and SDK static flags initialized by reviewed adapter. UiTree geometry remains host-owned.",
             "failure_boundary": "Existing handler exception/ledger boundaries; unselected ROM methods and fields fail under ADR-0147."
           }
         },
@@ -3807,13 +3807,13 @@
           "signature": "getMinimumHeight()I",
           "flags": 1,
           "body_sha256": "843b86b4abdcc9ff549ee495d53d09a69e19ec203fa97301dbc30c2ad890a722",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getMinimumWidth()I",
           "flags": 1,
           "body_sha256": "98ff86b087ddde410993d5b23b3bbdf7110ac5323bb16adf3e984c2153008371",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getNextFocusDownId()I",
@@ -3880,7 +3880,7 @@
           "signature": "getPaddingBottom()I",
           "flags": 1,
           "body_sha256": "c3622b1b49f2783d8c8575ecc78a6ef8efc333ab251798b7e296024afa495cac",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getPaddingEnd()I",
@@ -3892,13 +3892,27 @@
           "signature": "getPaddingLeft()I",
           "flags": 1,
           "body_sha256": "42ba8b81fb6e645adddd64318b2c0df638ba4b023de62dee0858d2d5e211fed8",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Bounded absolute-padding getter; ROM getter requires unselected RTL/flags resolution. No relative-padding API is enabled.",
+            "inputs": "getPaddingLeft()I; receiver Java fields",
+            "outputs": "Return the actual Java absolute padding field; no host storage or RTL guess.",
+            "state_owner": "Java mPaddingLeft/mPaddingRight only; UiNode.padding is a projection.",
+            "failure_boundary": "Existing requestLayout exception/reentry is propagated; unsupported RTL/relative APIs retain ADR-0147 failure."
+          }
         },
         {
           "signature": "getPaddingRight()I",
           "flags": 1,
           "body_sha256": "8a76ccf0679af792f826d9174a4eebeae46119adbbb8169606be5120540e985c",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Bounded absolute-padding getter; ROM getter requires unselected RTL/flags resolution. No relative-padding API is enabled.",
+            "inputs": "getPaddingRight()I; receiver Java fields",
+            "outputs": "Return the actual Java absolute padding field; no host storage or RTL guess.",
+            "state_owner": "Java mPaddingLeft/mPaddingRight only; UiNode.padding is a projection.",
+            "failure_boundary": "Existing requestLayout exception/reentry is propagated; unsupported RTL/relative APIs retain ADR-0147 failure."
+          }
         },
         {
           "signature": "getPaddingStart()I",
@@ -3910,7 +3924,7 @@
           "signature": "getPaddingTop()I",
           "flags": 1,
           "body_sha256": "2738e1c63f0092e3e29585a461d98ffc8c3d073d9d093f8f876f061ede372040",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getParent()Landroid/view/ViewParent;",
@@ -3965,7 +3979,7 @@
           "signature": "getResources()Landroid/content/res/Resources;",
           "flags": 1,
           "body_sha256": "74bfbbe63515648769194f59d2083774fb80a0ffe3312e2a36e11dacc1f8ec7a",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getRight()I",
@@ -6081,13 +6095,27 @@
           "signature": "setMinimumHeight(I)V",
           "flags": 1,
           "body_sha256": "339ef5fb9add29633e51f2f4c0b623fef812af0a03c39e02e84d01bf28604e31",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Retain exact default CHA dependency policy: ROM setters have non-unique requestLayout targets.",
+            "inputs": "setMinimumHeight(I)V; receiver Java fields",
+            "outputs": "Java minimum written before actual virtual requestLayout dispatch; integration imports layout inputs.",
+            "state_owner": "Java mMinWidth/mMinHeight only; UiNode.minimum is a projection.",
+            "failure_boundary": "Existing requestLayout exception/reentry is propagated; unsupported RTL/relative APIs retain ADR-0147 failure."
+          }
         },
         {
           "signature": "setMinimumWidth(I)V",
           "flags": 1,
           "body_sha256": "0c8c7d0ec66cd23d7af02afe1683d789396e6bece1eb6caabce38d434478b1e9",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "Retain exact default CHA dependency policy: ROM setters have non-unique requestLayout targets.",
+            "inputs": "setMinimumWidth(I)V; receiver Java fields",
+            "outputs": "Java minimum written before actual virtual requestLayout dispatch; integration imports layout inputs.",
+            "state_owner": "Java mMinWidth/mMinHeight only; UiNode.minimum is a projection.",
+            "failure_boundary": "Existing requestLayout exception/reentry is propagated; unsupported RTL/relative APIs retain ADR-0147 failure."
+          }
         },
         {
           "signature": "setNextFocusDownId(I)V",
@@ -6219,11 +6247,11 @@
           "body_sha256": "1fda41d663bc61f66505bca4301a965c992a04dbf56cd954594cca8f19bed9f4",
           "source": "overlay",
           "review": {
-            "reason": "Preserve the existing bounded View handler while ROM owns the complete shape.",
-            "inputs": "setPadding(IIII)V; injected process services and receiver binding",
-            "outputs": "Existing return/exception and dirty/callback protocol; no ROM behavior claim.",
-            "state_owner": "UiTree/integration legacy state; mContext is Java-owned; bound slots for scroll-bar style/system-UI are adapter-private while guest field access fails.",
-            "failure_boundary": "Existing handler exception/ledger boundaries; unselected ROM methods and fields fail under ADR-0147."
+            "reason": "Retain bounded absolute padding adapter: ROM internalSetPadding/resolvePadding depend on unselected flags and scrollbar/RTL machinery.",
+            "inputs": "setPadding(IIII)V; nonnegative absolute dimensions",
+            "outputs": "Write Java padding and user/defined fields; project inputs and dispatch requestLayout on change.",
+            "state_owner": "Java padding/user-padding/defined fields only. UiNode.padding is a derived layout/render input.",
+            "failure_boundary": "Negative dimensions preserve existing IAE; relative-padding and full RTL resolution remain unsupported."
           }
         },
         {
@@ -6607,7 +6635,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/member-sources.surface.json.gz",
-      "surface_sha256": "2daa53a709a9587c0543a59295975c2d99e9a7d4c575349138431e5bb5d3a3b4"
+      "surface_sha256": "afcab7859a9e1c49c53db3cd30834e5aec2860a8fef8e05d4136df9de754f7d2"
     }
   ]
 }

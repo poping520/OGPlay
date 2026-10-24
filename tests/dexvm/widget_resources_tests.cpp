@@ -236,7 +236,7 @@ TEST_CASE("EditText Editable preserves identity text and watcher registration") 
 }
 
 TEST_CASE("Button three-argument constructor applies the pinned default style") {
-    ClickVm vm;
+    ClickVm vm(InterpreterBackend::switch_dispatch, false);
     vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
         {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
     vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
@@ -295,7 +295,7 @@ TEST_CASE("Button three-argument constructor applies the pinned default style") 
 
 TEST_CASE("DVM229 resource Drawables retain image backing alpha and queued GC ownership") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        ClickVm vm(backend);
+        ClickVm vm(backend, false);
         const auto base = vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;");
         const auto base_root = vm.interpreter.ProtectReferences(std::array{base});
         vm.CallDirect(base, "Landroid/content/Context;", "<init>", "()V");
@@ -375,9 +375,9 @@ TEST_CASE("DVM229 resource Drawables retain image backing alpha and queued GC ow
         frame = render(); CHECK(frame.rgba8[0] == 0x11); CHECK(frame.rgba8[1] == 0x22); CHECK(frame.rgba8[2] == 0x33);
         vm.CallOn(color, "setColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff445566U))});
         frame = render(); CHECK(frame.rgba8[0] == 0x44); CHECK(frame.rgba8[1] == 0x55); CHECK(frame.rgba8[2] == 0x66);
-        projected->padding.left = 1;
+        vm.CallOn(image, "setPadding", "(IIII)V", {VmValue::Int(1), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
         frame = render(); CHECK(frame.rgba8[3] == 0); CHECK(frame.rgba8[4] == 0x44);
-        projected->padding.left = 0;
+        vm.CallOn(image, "setPadding", "(IIII)V", {VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
         const auto previous = vm.CallOn(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref;
         const auto resource_class = vm.model.ObjectClass(resources);
         const auto method = *vm.linker.FindVtableIndex(resource_class, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;");
@@ -475,7 +475,7 @@ TEST_CASE("ImageView setImageBitmap delegates virtually and retains shared pixel
             CHECK_FALSE(vm.context->ui_drawables.at(changed.Value()).callback_node.has_value());
             CHECK(vm.context->ui_tree.Get(node)->intrinsic == ui::Size{});
             frame = render(); CHECK(frame.rgba8[3] == 0);
-            CHECK(vm.image_resource_queries == 4);
+            CHECK(vm.image_resource_queries == 5);  // View construction now also snapshots Resources.
         }
         static_cast<void>(vm.interpreter.CollectGarbage("image-bitmap-replaced"));
         CHECK_FALSE(vm.context->bitmaps.contains(bitmap.Value()));
@@ -599,7 +599,7 @@ TEST_CASE("API 19 resource qualifiers use ordered matching independent of table 
 }
 
 TEST_CASE("DVM-123 Button constructor checks the supplied Context theme") {
-    ClickVm vm;
+    ClickVm vm(InterpreterBackend::switch_dispatch, false);
     vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
         {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
     const auto type = *vm.linker.FindClass("Landroid/widget/Button;");
@@ -639,6 +639,8 @@ TEST_CASE("compound drawables resolve resources and drive measure") {
     };
     const auto button = vm.interpreter.NewIntrinsicInstance(
         "Landroid/widget/Button;");
+    vm.CallDirect(button, "Landroid/widget/Button;", "<init>", "(Landroid/content/Context;)V",
+                  {VmValue::Ref(vm.activity)});
     vm.CallOn(button, "setText", "(Ljava/lang/CharSequence;)V",
               {VmValue::Ref(vm.interpreter.NewStringUtf8("Hi"))});
     vm.CallOn(button, "setCompoundDrawablesWithIntrinsicBounds", "(IIII)V",
@@ -712,7 +714,7 @@ TEST_CASE("DVM-123 compound drawable failure preserves state and virtual API sha
 }
 
 TEST_CASE("DVM-123 hidden dynamic strip retains hierarchy drawable and listener") {
-    ClickVm vm;
+    ClickVm vm(InterpreterBackend::switch_dispatch, false);
     vm.CallOn(vm.activity, "attachBaseContext", "(Landroid/content/Context;)V",
         {VmValue::Ref(vm.interpreter.NewIntrinsicInstance("Landroid/content/Context;"))});
     vm.CallOn(vm.activity, "setTheme", "(I)V", {VmValue::Int(0x01030007)});

@@ -764,6 +764,7 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
                     "constructing a View from an AttributeSet is unsupported"};
             }
             if (def_style_attr == 0U) return ViewInitHandler(context)(call);
+            InitializeAndroidViewJavaLayout(call.vm, *context, call.receiver);
             if (def_style_attr != kButtonStyleAttr &&
                 def_style_attr != kButtonStyleSmallAttr) {
                 if (auto* ledger = call.vm.Ledger()) {

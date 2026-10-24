@@ -166,7 +166,15 @@ View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留�
 SDK 兼容静态 flags 从注入的当前进程 targetSdk 按 API19 条件初始化。
 非 ROM decor owner、focus/system-UI listener 由 integration 的 owner-attached 引用表保存，
 从 View trace、随 View sweep，脱离 UiTree 后仍保持引用；不向 View 添加额外字段。
-ui 不读取 Java 字段；本阶段宿主布局与几何权威尚未迁移。
+mResources 是构造时 Context.getResources 的 Java 强引用；Context 预绑定只写 mContext，
+构造每次解析资源且异常透传，失败不提前置位 SDK 兼容标志。padding 四边、minimum 两维及有界 absolute user-padding/defined
+字段由 Java 唯一拥有；构造、XML、已支持 widget defaults/背景 adapter 写 Java，不写宿主权威。
+UiNode.padding/minimum 对 guest 仅为输入投影；所有 traversal 入口先读绑定 token，即使布局
+原本 clean 也比较并导入直接 guest 写入。无 Java 回调的只读导入不改变 S 类几何 owner。
+getResources、上下 padding 与 minimum getter 执行 ROM；左右 absolute padding getter 和
+minimum setter 保留受审 adapter，后者真实虚派 requestLayout。完整 RTL/scrollbar padding
+解析和原版 setter 的 CHA 闭包仍未启用，相关未选成员继续明确失败。
+ui 不读取 Java 字段；measured/bounds 与遍历权威仍在宿主。
 
 live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
 Java 字段修改不自动 traversal，getContext 是构造/inflation 的 mContext。addView(width,height)

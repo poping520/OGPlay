@@ -1,0 +1,49 @@
+.class public Ltest/ViewJavaLayout;
+.super Landroid/widget/FrameLayout;
+.field public static requests:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/widget/FrameLayout;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public paddingLeft()I
+.registers 2
+    iget v0, v1, Landroid/view/View;->mPaddingLeft:I
+    return v0
+.end method
+.method public paddingTop()I
+.registers 2
+    iget v0, v1, Landroid/view/View;->mPaddingTop:I
+    return v0
+.end method
+.method public paddingRight()I
+.registers 2
+    iget v0, v1, Landroid/view/View;->mPaddingRight:I
+    return v0
+.end method
+.method public paddingBottom()I
+.registers 2
+    iget v0, v1, Landroid/view/View;->mPaddingBottom:I
+    return v0
+.end method
+.method public storePadding(IIII)V
+.registers 5
+    iput v1, v0, Landroid/view/View;->mPaddingLeft:I
+    iput v2, v0, Landroid/view/View;->mPaddingTop:I
+    iput v3, v0, Landroid/view/View;->mPaddingRight:I
+    iput v4, v0, Landroid/view/View;->mPaddingBottom:I
+    return-void
+.end method
+.method public requestLayout()V
+.registers 2
+    sget v0, Ltest/ViewJavaLayout;->requests:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/ViewJavaLayout;->requests:I
+    invoke-super {v1}, Landroid/view/View;->requestLayout()V
+    return-void
+.end method
+.method public static requestCount()I
+.registers 1
+    sget v0, Ltest/ViewJavaLayout;->requests:I
+    return v0
+.end method

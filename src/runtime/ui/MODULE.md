@@ -16,9 +16,12 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   detach/destroy node，并以 android id 查找已接入 content root 的 node。
 - `UiNode`：唯一保存 parent/children、class、android id（NO_ID=-1）、visibility、
   enabled/clickable、focusable/touch-mode、scroll-container、滚动条开关、orientation、
-  gravity、image resource、layout params、padding、
+  gravity、image resource、layout params、
   `clipChildren`/`clipToPadding`（默认 true）、measured/frame/screen frame、alpha 与
   dirty state。
+- guest View 的 `padding` / `minimum` 是 integration 从 Java 权威导入的布局、渲染输入，
+  本层不维护另一份 setter 状态，不读取 Java 或执行回调。纯宿主节点（如 Dialog 平面）
+  继续直接拥有这两个输入；guest measured/frame 等几何仍由现有宿主遍历计算。
 - `window_visible` 及 `SetWindowVisible` 保存独立窗口可见性；隐藏窗口保留 hierarchy，
   不改变 guest View.visibility。有效可见性包含祖先窗口状态，绘制、输入、焦点共同使用。
 - direct content-root child 的 `modal_layer` 标记合成平面；render-list 可选 all/normal/modal，

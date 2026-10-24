@@ -38,6 +38,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 
 #include "android_value_fixture.h"
+#include "ogplay/runtime/ui/ui_renderer.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -100,6 +101,9 @@ TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java au
             CHECK(get(cached, "getMeasuredState") == 0x01000100);
             REQUIRE_FALSE(measure(cached, static_cast<int>(0x80000000U)).exception.IsValid());
             CHECK(get(cached, "count") == (sdk < 19 ? 3 : 2));
+            const auto before_layout_measure = get(cached, "count");
+            f.On(cached, "layout", "(IIII)V", {VmValue::Int(0), VmValue::Int(0), VmValue::Int(80), VmValue::Int(50)});
+            CHECK(get(cached, "count") == before_layout_measure + (sdk >= 19 ? 1 : 0));
             const auto broken = f.Static("Landroid/view/View$MeasureSpec;", "makeMeasureSpec", "(II)I",
                                          {VmValue::Int(0x40000005), VmValue::Int(0x40000000)})
                                     .AsInt();
@@ -161,6 +165,258 @@ TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java au
             CHECK(f.context->ui_tree.PublishedProjection() == before_failure);
             CHECK(f.ledger.Unimplemented().empty());
         }
+    }
+}
+
+TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Java frames") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::function<void(IntrinsicContext&, int)> hook;
+        std::vector<int> events;
+        std::function<void()> traverse;
+        std::vector<std::array<int, 4>> sizes;
+        auto probe = IntrinsicClassBuilder::Class("Ltest/LayoutProbe;");
+        probe.StaticMethod("size", "(Landroid/view/View;IIII)V", [&](IntrinsicContext& call) {
+            events.push_back(0);
+            sizes.push_back({call.arguments[1].AsInt(), call.arguments[2].AsInt(), call.arguments[3].AsInt(),
+                             call.arguments[4].AsInt()});
+            if (hook) hook(call, 0);
+            return VmValue::Void();
+        });
+        probe.StaticMethod("hit", "(Landroid/view/View;I)V", [&](IntrinsicContext& call) {
+            const auto stage = call.arguments[1].AsInt();
+            events.push_back(stage);
+            if (hook) hook(call, stage);
+            return VmValue::Void();
+        });
+        probe.StaticMethod("traverse", "()V", [&](IntrinsicContext&) {
+            traverse();
+            return VmValue::Void();
+        });
+        AndroidValueVm f(backend, {std::move(probe).Build()}, false, "view_layout.dex", true,
+                         AndroidUiTraversalOwner::JavaTraversal, OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        // Materialize the negative-control type before allocating any instances.
+        static_cast<void>(f.linker.ResolveDescriptor("Landroid/view/GLES20DisplayList;"));
+        const auto owner = f.New("Landroid/content/Context;");
+        const auto make = [&] {
+            return f.New("Ltest/LayoutLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        };
+        const auto view = make();
+        const auto node = *FindViewUiNode(*f.context, view.Value());
+        f.context->content_view = view;
+        const auto get = [&](const char* name) { return f.On(view, name, "()I").AsInt(); };
+        const auto tick = [&](ui::Size size = {80, 50}) {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly, size);
+        };
+        traverse = [&] { static_cast<void>(tick()); };
+        const auto field = [&](const VmObjectRef object, const char* name, const char* type = "I") -> Slot& {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+            REQUIRE(id);
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot];
+        };
+        hook = [&](IntrinsicContext&, int) {
+            CHECK(get("getWidth") == 80);
+            CHECK(get("getHeight") == 50);
+            CHECK(get("getLeft") == 0);
+            CHECK(get("getTop") == 0);
+            CHECK(get("getRight") == 80);
+            CHECK(get("getBottom") == 50);
+            CHECK_FALSE(tick());  // Reentry does not traverse or publish.
+            CHECK_FALSE(f.context->ui_tree.PublishedProjection());
+        };
+        f.context->ui_tree.Get(node)->frame = {3, 4, 333, 444};
+        f.context->ui_tree.Get(node)->background_color = 0xff0000ff;
+        f.context->ui_tree.Get(node)->clickable = true;
+        REQUIRE(tick());
+        CHECK(events == std::vector<int>{0, 1, 2});
+        CHECK(sizes == std::vector<std::array<int, 4>>{{80, 50, 0, 0}});
+        auto snapshot = f.context->ui_tree.PublishedProjection();
+        REQUIRE(snapshot);
+        CHECK(snapshot->Get(node)->frame == ui::Rect{0, 0, 80, 50});
+        CHECK(field(view, "mRight").bits == 80);
+        CHECK(field(view, "mBottom").bits == 50);
+        CHECK(snapshot->ProjectionEpoch() == f.context->ui_measure_epoch);
+        CHECK(snapshot->HitTestProjection(79, 49) == node);
+        const auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*snapshot, {}), {80, 50});
+        CHECK(pixels.rgba8[(49 * 80 + 79) * 4 + 3] == 255);
+        const auto view_class = f.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto size_change = f.linker.FindDirectMethod(view_class, "sizeChange", "(IIII)V");
+        REQUIRE(size_change);
+        CHECK(f.linker.Method(*size_change).kind == MethodKind::interpreted);
+        for (const auto& [name, desc] :
+             std::array<std::pair<const char*, const char*>, 10>{{{"layout", "(IIII)V"},
+                                                                  {"setFrame", "(IIII)Z"},
+                                                                  {"onSizeChanged", "(IIII)V"},
+                                                                  {"onLayout", "(ZIIII)V"},
+                                                                  {"getLeft", "()I"},
+                                                                  {"getTop", "()I"},
+                                                                  {"getRight", "()I"},
+                                                                  {"getBottom", "()I"},
+                                                                  {"getWidth", "()I"},
+                                                                  {"getHeight", "()I"}}}) {
+            const auto index = f.linker.FindVtableIndex(view_class, name, desc);
+            REQUIRE(index);
+            CHECK(f.linker.Method(f.linker.Class(view_class).vtable[*index]).kind == MethodKind::interpreted);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        hook = {};
+        events.clear();
+        sizes.clear();
+        REQUIRE(tick());
+        CHECK(events == std::vector<int>{2});
+        CHECK(sizes.empty());
+        REQUIRE(tick({90, 60}));
+        CHECK(sizes == std::vector<std::array<int, 4>>{{90, 60, 80, 50}});
+        // An onLayout request is already fulfilled by this root's ROM layout:
+        // FORCE_LAYOUT is cleared by the ROM epilogue, so there is no second pass.
+        events.clear();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 1) f.On(view, "requestLayout", "()V");
+        };
+        f.On(view, "requestLayout", "()V");
+        REQUIRE(tick());
+        CHECK(std::count(events.begin(), events.end(), 2) == 1);
+        CHECK(f.context->ui_measure_requests.empty());
+        // A request after super.layout remains valid. First pass retries in this
+        // frame; the second pass defers without setting FORCE_LAYOUT.
+        events.clear();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 2) f.On(view, "requestLayout", "()V");
+        };
+        REQUIRE(tick());
+        CHECK(std::count(events.begin(), events.end(), 2) == 2);
+        CHECK(f.context->ui_measure_requests.contains(view));
+        CHECK((field(view, "mPrivateFlags").bits & 0x1000) == 0);
+        const auto epoch = f.context->ui_measure_epoch;
+        events.clear();
+        hook = {};
+        REQUIRE(tick());
+        CHECK(std::count(events.begin(), events.end(), 1) == 1);
+        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(f.context->ui_measure_epoch == epoch + 1);
+        // GONE requesters are filtered in both passes, as in ViewRootImpl.
+        field(view, "mViewFlags").bits |= 8;
+        events.clear();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 2) f.On(view, "requestLayout", "()V");
+        };
+        REQUIRE(tick());
+        CHECK(std::count(events.begin(), events.end(), 2) == 1);
+        CHECK(f.context->ui_measure_requests.empty());
+        CHECK((field(view, "mPrivateFlags").bits & 0x1000) == 0);
+        field(view, "mViewFlags").bits &= ~8U;
+        events.clear();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 2) {
+                if (f.context->ui_java_layout_pass == 2) field(view, "mViewFlags").bits |= 8;
+                f.On(view, "requestLayout", "()V");
+            }
+        };
+        REQUIRE(tick());
+        CHECK(std::count(events.begin(), events.end(), 2) == 2);
+        CHECK(f.context->ui_measure_requests.empty());
+        field(view, "mViewFlags").bits &= ~8U;
+        CHECK(f.ledger.Unimplemented().empty());
+        // Repeated cross-tick requests hit a bounded watchdog, retaining both
+        // the requester queue and the last complete snapshot.
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 2) f.On(view, "requestLayout", "()V");
+        };
+        for (int i = 0; i < 8; ++i)
+            REQUIRE(tick());
+        snapshot = f.context->ui_tree.PublishedProjection();
+        try {
+            static_cast<void>(tick());
+            FAIL("watchdog must fail");
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.message.find("requester=" + std::to_string(view.Value())) != std::string::npos);
+            CHECK(error.message.find("epoch=") != std::string::npos);
+        }
+        CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
+        CHECK(f.context->ui_measure_requests.contains(view));
+        CHECK_FALSE(f.context->ui_layout_dispatching);
+        hook = {};
+        REQUIRE(tick());
+        CHECK(f.context->ui_java_deferred_ticks == 0);
+        // Guest exception identity and already-mutated Java bounds survive;
+        // no partial snapshot is exposed.
+        const auto exception = f.New("Ljava/lang/IllegalStateException;");
+        snapshot = f.context->ui_tree.PublishedProjection();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 1) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "layout probe", exception};
+        };
+        try {
+            static_cast<void>(tick({110, 70}));
+            FAIL("callback must throw");
+        } catch (const VmJavaThrow& error) {
+            CHECK(error.existing == exception);
+        }
+        CHECK(get("getWidth") == 110);
+        CHECK(get("getHeight") == 70);
+        CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
+        CHECK_FALSE(f.context->ui_layout_dispatching);
+        // A second guest token fails even on the same host thread.
+        const auto execution = f.vm.CreateExecutionContext();
+        const auto method =
+            f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ltest/LayoutProbe;"), "traverse", "()V");
+        REQUIRE(method);
+        const auto other = f.vm.Call(execution, *method, {});
+        REQUIRE(other.exception.IsValid());
+        CHECK(f.linker.Class(other.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        f.vm.DiscardExecutionContext(execution);
+        // Existing hardware state is rejected, rather than ignored as null.
+        static_cast<void>(f.linker.ResolveDescriptor("Landroid/view/GLES20DisplayList;"));
+        const auto hardware = f.vm.NewIntrinsicInstance("Landroid/view/GLES20DisplayList;");
+        auto& display_list = field(view, "mDisplayList", "Landroid/view/DisplayList;");
+        display_list = {hardware.Value(), SlotTag::ref};
+        const auto hardware_result = f.OnOutcome(view, "invalidate", "()V");
+        REQUIRE(hardware_result.exception.IsValid());
+        CHECK(f.linker.Class(hardware_result.exception_class).descriptor ==
+              "Ljava/lang/UnsupportedOperationException;");
+        display_list = {0, SlotTag::ref};
+        // Replacement and window generation invalidation cancel publication.
+        hook = {};
+        const auto replacement = make();
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 1) {
+                f.context->content_view = replacement;
+                ++f.context->ui_content_revision;
+            }
+        };
+        CHECK_FALSE(tick({120, 80}));
+        CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
+        f.context->content_view = view;
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 1) ++f.context->surface_width;
+        };
+        CHECK_FALSE(tick({125, 85}));
+        CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
+        hook = [&](IntrinsicContext&, int stage) {
+            if (stage == 1) f.context->ui_tree.Reset();
+        };
+        CHECK_FALSE(tick({130, 90}));
+        CHECK_FALSE(f.context->ui_tree.PublishedProjection());
+        hook = {};
+        // The same VM token or a held VM lock does not make another host thread owner.
+        bool rejected{};
+        std::thread worker([&] {
+            VmExecutionLockScope lock(f.vm.ExecutionLock());
+            try {
+                static_cast<void>(tick());
+            } catch (const VmJavaThrow& error) {
+                rejected = error.descriptor == "Ljava/lang/IllegalStateException;";
+            }
+        });
+        worker.join();
+        CHECK(rejected);
+        // Only deliberate failure controls hit the ledger.
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 2);
+        CHECK(hits[0].id == "dexvm.view_layout_system_state");
+        CHECK(hits[1].id == "dexvm.view_layout_watchdog");
+        std::ofstream(std::string(".local/analysis/vd-05/layout-") +
+                      (backend == InterpreterBackend::threaded ? "threaded" : "switch") + ".trace.json")
+            << RenderDexVmTraceJson(f.vm.Trace("", 8192));
     }
 }
 

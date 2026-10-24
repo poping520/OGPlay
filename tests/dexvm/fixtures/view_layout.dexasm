@@ -1,0 +1,25 @@
+.class public Ltest/LayoutLeaf;
+.super Landroid/view/View;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onSizeChanged(IIII)V
+.registers 7
+    invoke-static {v2, v3, v4, v5, v6}, Ltest/LayoutProbe;->size(Landroid/view/View;IIII)V
+    return-void
+.end method
+.method protected onLayout(ZIIII)V
+.registers 8
+    const/4 v0, 1
+    invoke-static {v2, v0}, Ltest/LayoutProbe;->hit(Landroid/view/View;I)V
+    return-void
+.end method
+.method public layout(IIII)V
+.registers 7
+    invoke-super {v2, v3, v4, v5, v6}, Landroid/view/View;->layout(IIII)V
+    const/4 v0, 2
+    invoke-static {v2, v0}, Ltest/LayoutProbe;->hit(Landroid/view/View;I)V
+    return-void
+.end method

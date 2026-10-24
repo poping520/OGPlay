@@ -1601,7 +1601,28 @@ Decl Declare_android_view_View(const Context& context) {
          builder.BoundInstanceField("mPrivateFlags2", "I", dx::kAccNone),
          builder.BoundInstanceField("mPrivateFlags3", "I", dx::kAccNone)},
         builder.BoundInstanceField("mMeasureCache", "Landroid/util/LongSparseLongArray;", dx::kAccPrivate),
-        view_flags};
+        view_flags,
+        {builder.BoundInstanceField("mLeft", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mTop", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mRight", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mBottom", "I", dx::kAccProtected)},
+        {builder.BoundInstanceField("mDisplayList", "Landroid/view/DisplayList;", dx::kAccNone),
+         builder.BoundInstanceField("mTransformationInfo", "Landroid/view/View$TransformationInfo;", dx::kAccNone),
+         builder.BoundInstanceField("mOverlay", "Landroid/view/ViewOverlay;", dx::kAccNone),
+         builder.BoundInstanceField("mCurrentAnimation", "Landroid/view/animation/Animation;", dx::kAccNone),
+         builder.BoundInstanceField("mAttachInfo", "Landroid/view/View$AttachInfo;", dx::kAccNone),
+         builder.BoundInstanceField("mAccessibilityDelegate", "Landroid/view/View$AccessibilityDelegate;",
+                                    dx::kAccNone)}};
+    builder.DirectMethod(
+        "hasRtlSupport", "()Z",
+        [context](dx::IntrinsicContext& call) {
+            const auto owner = dx::IntrinsicCall(call).GetRef(*context->view_context_field);
+            const auto roots = call.vm.ProtectReferences(std::array{call.receiver, owner});
+            const auto info =
+                CallAndroidMethod(call.vm, owner, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+            return CallAndroidMethod(call.vm, info, "hasRtlSupport", "()Z");
+        },
+        dx::kAccPrivate);
     builder.StaticMethod("isLayoutModeOptical", "(Ljava/lang/Object;)Z", [](dx::IntrinsicContext& call) {
         const auto object = call.arguments[0].ref;
         if (object.IsValid() &&
@@ -1989,6 +2010,46 @@ Decl Declare_android_view_View(const Context& context) {
             context->ui_tree.MarkDrawDirty(node);
             return dx::VmValue::Void();
         });
+    const auto software_dirty = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        if (call.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View invalidation requires owner thread"};
+        dx::IntrinsicCall fields(call);
+        const auto& tokens = *context->view_java_measure_fields;
+        bool unsupported = (fields.GetInt(tokens.flags[0]) & 0x40) != 0;  // PFLAG_DRAW_ANIMATION
+        for (const auto token : tokens.unsupported_state)
+            unsupported = unsupported || fields.GetRef(token).IsValid();
+        if (unsupported) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_system_state", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "View hardware, animation or attached system state is not supported"};
+        }
+        context->ui_tree.MarkDrawDirty(EnsureViewUiNode(*context, call.receiver, ui::UiClass::View));
+        return dx::VmValue::Void();
+    });
+    const auto invalidate_software = dx::IntrinsicHandler([context, software_dirty](dx::IntrinsicContext& call) {
+        static_cast<void>(software_dirty(call));
+        dx::IntrinsicCall fields(call);
+        const auto token = context->view_java_measure_fields->flags[0];
+        auto flags = (fields.GetInt(token) & ~0x20) | 0x00200000;  // DRAWN -> DIRTY
+        if (call.arguments.size() != 1 || call.arguments[0].AsInt() != 0)
+            flags = (flags & ~0x8000) | static_cast<std::int32_t>(0x80000000U);
+        fields.SetInt(token, flags);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("invalidate", "(Z)V", invalidate_software, dx::kAccNone);
+    builder.VirtualMethod("invalidate", "(IIII)V", invalidate_software);
+    builder.DirectMethod(
+        "updateMatrix", "()V",
+        [context](dx::IntrinsicContext& call) {
+            if (dx::IntrinsicCall(call).GetRef(context->view_java_measure_fields->unsupported_state[1]).IsValid()) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_transform", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Transformed layout is not supported"};
+            }
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate);
+    builder.VirtualMethod("notifySubtreeAccessibilityStateChangedIfNeeded", "()V", software_dirty);
     builder.VirtualMethod("invalidate", "()V", invalidate);
     builder.VirtualMethod("postInvalidate", "()V", invalidate);
     builder.VirtualMethod("getId", "()I", [context](dx::IntrinsicContext& call) {
@@ -1998,15 +2059,19 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("setId", "(I)V", ViewSetIdHandler(context));
     builder.VirtualMethod("requestLayout", "()V", [context](dx::IntrinsicContext& call) {
         if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-            if (call.vm.CurrentContextToken() != 1U)
+            if (call.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                       "View measure requests require owner thread"};
             dx::IntrinsicCall fields(call);
             const auto& tokens = *context->view_java_measure_fields;
             const auto cache = fields.GetRef(tokens.cache);
             if (cache.IsValid()) static_cast<void>(CallAndroidMethod(call.vm, cache, "clear", "()V"));
+            const bool attached_root = context->content_view == call.receiver;
+            if (attached_root) context->ui_measure_requests.insert(call.receiver);
+            // ViewRootImpl:1952-1968: second-pass requests are posted and
+            // return before FORCE_LAYOUT is written (cache clearing precedes it).
+            if (attached_root && context->ui_java_layout_pass == 2) return dx::VmValue::Void();
             fields.SetInt(tokens.flags[0], fields.GetInt(tokens.flags[0]) | static_cast<std::int32_t>(0x80001000U));
-            if (context->content_view == call.receiver) context->ui_measure_requests.insert(call.receiver);
             return dx::VmValue::Void();
         }
         RefreshAndroidLayoutParams(call.vm, *context);
@@ -3137,30 +3202,98 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     switch (context.ui_traversal_owner) {
     case AndroidUiTraversalOwner::Legacy: break;
     case AndroidUiTraversalOwner::JavaTraversal: {
+        dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+        if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
+        if (context.ui_layout_dispatching) return false;
         if (reason != AndroidUiTraversalReason::OwnerTick || phase != AndroidUiTraversalPhase::ResolveOnly)
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                     "Only test-root measurement is enabled"};
-        if (vm.CurrentContextToken() != 1U)
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View measurement requires owner thread"};
+                                     "Only test-root traversal is enabled"};
         const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
                                                         static_cast<std::int32_t>(context.surface_height)});
         if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff)
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid measurement viewport"};
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid traversal viewport"};
         const auto root = context.content_view;
+        const auto node = FindViewUiNode(context, root.Value());
+        const auto generation = context.ui_tree.Generation();
+        const auto revision = context.ui_content_revision;
+        const auto width = context.surface_width;
+        const auto height = context.surface_height;
         const auto roots = vm.ProtectReferences(std::array{root});
-        context.ui_measure_requests.erase(root);
-        static_cast<void>(android_intrinsics::CallAndroidMethod(
-            vm, root, "measure", "(II)V",
-            {dexvm::VmValue::Int(metrics.width | 0x40000000), dexvm::VmValue::Int(metrics.height | 0x40000000)}));
+        const auto current = [&] {
+            return root == context.content_view && revision == context.ui_content_revision &&
+                   generation == context.ui_tree.Generation() && width == context.surface_width &&
+                   height == context.surface_height && node && FindViewUiNode(context, root.Value()) == node;
+        };
+        if (!current())
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound test root"};
+        context.ui_layout_dispatching = true;
+
+        struct Reset {
+            DexVmAndroidContext& context;
+
+            ~Reset() {
+                context.ui_layout_dispatching = false;
+                context.ui_java_layout_pass = 0;
+            }
+        } reset{context};
+
+        if (context.ui_java_watchdog_root != root || context.ui_java_watchdog_generation != generation) {
+            context.ui_java_deferred_ticks = 0;
+            context.ui_java_watchdog_root = root;
+            context.ui_java_watchdog_generation = generation;
+        }
+        const bool pending = context.ui_measure_requests.contains(root);
+        context.ui_measure_requests.clear();
+        if (pending) static_cast<void>(android_intrinsics::CallAndroidMethod(vm, root, "requestLayout", "()V"));
+        context.ui_measure_requests.clear();
+        dexvm::IntrinsicContext call{vm, root, {}};
+        dexvm::IntrinsicCall fields(call);
+        const auto& tokens = *context.view_java_measure_fields;
+        for (unsigned pass = 1; pass <= 2; ++pass) {
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, root, "measure", "(II)V",
+                {dexvm::VmValue::Int(metrics.width | 0x40000000), dexvm::VmValue::Int(metrics.height | 0x40000000)}));
+            if (!current()) return false;
+            context.ui_java_layout_pass = pass;
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, root, "layout", "(IIII)V",
+                {dexvm::VmValue::Int(0), dexvm::VmValue::Int(0),
+                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[0]) & 0x00ffffff),
+                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[1]) & 0x00ffffff)}));
+            context.ui_java_layout_pass = 0;
+            if (!current()) return false;
+            if (pass == 2) {
+                if ((fields.GetInt(tokens.view_flags) & 0x0c) == 8) context.ui_measure_requests.erase(root);
+                break;
+            }
+            const bool requested = context.ui_measure_requests.contains(root);
+            const bool valid = requested && (fields.GetInt(tokens.flags[0]) & 0x1000) != 0 &&
+                               (fields.GetInt(tokens.view_flags) & 0x0c) != 8;
+            context.ui_measure_requests.clear();
+            if (requested) fields.SetInt(tokens.flags[0], fields.GetInt(tokens.flags[0]) & ~0x1000);
+            if (!valid) break;
+            // ViewRootImpl:2062-2105 clears the first-pass flags then issues
+            // fresh requests before the second measure/layout (single test root).
+            static_cast<void>(android_intrinsics::CallAndroidMethod(vm, root, "requestLayout", "()V"));
+            context.ui_measure_requests.clear();
+        }
+        if (context.ui_measure_requests.contains(root)) {
+            if (++context.ui_java_deferred_ticks > 8) {
+                const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
+                                    " epoch=" + std::to_string(context.ui_measure_epoch + 1);
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
+                android_intrinsics::GuestLog(call, core::LogLevel::error, detail);
+                throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
+            }
+        } else {
+            context.ui_java_deferred_ticks = 0;
+        }
         const auto epoch = context.ui_measure_epoch + 1;
-        const ui::UiProjectionTarget target{context.ui_tree.Root(),
-                                            context.ui_tree.Generation(),
-                                            context.ui_content_revision,
-                                            epoch,
-                                            {metrics.width, metrics.height}};
+        const ui::UiProjectionTarget target{
+            context.ui_tree.Root(), generation, revision, epoch, {metrics.width, metrics.height}};
         context.ui_tree.SetProjectionTarget(target);
         CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
-        context.ui_measure_epoch = epoch;
         return true;
     }
     }

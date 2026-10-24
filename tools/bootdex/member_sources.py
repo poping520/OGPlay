@@ -59,7 +59,107 @@ def canonical(document):
     return json.dumps(document, ensure_ascii=True, sort_keys=True, separators=(',', ':')).encode('utf-8') + b'\n'
 
 
-def validate(document, texts, surface):
+def reference_flow(body, own_field, signature, access_flags):
+    """Conservative CFG provenance and definite-null values for object registers.
+
+    Joins retain every own-field origin; a writer is null only on every path.
+    Unknown instructions kill their destination. Exception/switch edges are
+    conservative; no path is discarded because a test object happens to be null.
+    """
+    import select_rom_java as selector
+    args = signature.split('(', 1)[1].split(')', 1)[0]
+    types = re.findall(r'\[*L[^;]+;|\[*[ZBCSIFJD]', args)
+    count = (0 if access_flags & 8 else 1) + sum(2 if t in ('J', 'D') else 1 for t in types)
+    locals_match = re.search(r'\.locals\s+(\d+)', body)
+    registers = re.search(r'\.registers\s+(\d+)', body)
+    local_count = int(locals_match[1]) if locals_match else int(registers[1]) - count if registers else None
+    if local_count is not None:
+        body = re.sub(r'\bv(\d+)\b', lambda m: 'p' + str(int(m[1]) - local_count)
+                      if int(m[1]) >= local_count else m[0], body)
+    lines = [line.strip().split(' #', 1)[0] for line in body.splitlines()
+             if line.strip() and not line.strip().startswith(('.', '#'))]
+    labels = {line.split()[0]: i for i, line in enumerate(lines) if line.startswith(':')}
+    handlers = [labels[label] for label in re.findall(r'\.catch\S*[^\n]*\s(:\w+)\s*$', body, re.M)
+                if label in labels]
+    states = {0: {}} if lines else {}
+    pending = [0] if lines else []
+    invokes, writes = {}, {}
+    invoke_numbers = {}
+    for i, line in enumerate(lines):
+        if selector.INVOKE_RE.match(line):
+            invoke_numbers[i] = len(invoke_numbers) + 1
+    # Values: (own-field origins, definitely-null). Missing register is unknown.
+    unknown = (frozenset(), False)
+    while pending:
+        i = pending.pop()
+        state = states[i]
+        after = dict(state)
+        line = lines[i]
+        op = line.split()[0]
+        field = selector.FIELD_RE.match(line)
+        invoke = selector.INVOKE_RE.match(line)
+        move = selector.MOVE_OBJ_RE.match(line)
+        if field:
+            opcode, registers, owner, name, desc = field.groups()
+            regs = [r.strip() for r in registers.split(',')]
+            key = own_field(owner, name, desc)
+            if opcode.startswith(('iget-object', 'sget-object')):
+                origins = set(state.get(regs[1], unknown)[0]) if len(regs) > 1 else set()
+                if key: origins.add(key)
+                after[regs[0]] = (frozenset(origins), False)
+            elif opcode.startswith(('iput-object', 'sput-object')) and key:
+                value = state.get(regs[0], unknown)[1]
+                writes[key] = writes.get(key, True) and value
+            elif opcode.startswith(('iget', 'sget')):
+                after.pop(regs[0], None)
+        elif move:
+            after[move[1]] = state.get(move[2], unknown)
+        elif invoke:
+            regs = [r.strip() for r in invoke[2].replace('..', ',').split(',') if r.strip()]
+            if regs:
+                number = invoke_numbers[i]
+                invokes[number] = invokes.get(number, frozenset()) | state.get(regs[0], unknown)[0]
+        elif not op.startswith(selector.NO_DEST) and not op.startswith(':'):
+            rest = line.partition(' ')[2]
+            dest = rest.split(',')[0].strip()
+            if re.fullmatch(r'[vp]\d+', dest):
+                after.pop(dest, None)
+                if ('wide' in op or '-to-long' in op or '-to-double' in op or op.endswith(('-long', '-double'))):
+                    after.pop(selector.next_reg(dest), None)
+                if op.startswith('const') and not op.startswith(('const-string', 'const-class', 'const-wide')):
+                    literal = rest.partition(',')[2].strip()
+                    try: is_null = int(literal, 0) == 0
+                    except ValueError: is_null = False
+                    after[dest] = (frozenset(), is_null)
+        successors = []
+        if not op.startswith(('return', 'throw', 'goto')) and i + 1 < len(lines): successors.append(i + 1)
+        if op.startswith(('if-', 'goto')):
+            target = line.split()[-1]
+            if target in labels: successors.append(labels[target])
+        if op.startswith(('packed-switch', 'sparse-switch')):
+            successors.extend(labels.values())
+        successors.extend(handlers)
+        for next_i in successors:
+            outgoing = dict(after)
+            if next_i in handlers:
+                for reg in state.keys() | after.keys():
+                    a, b = state.get(reg, unknown), after.get(reg, unknown)
+                    outgoing[reg] = (a[0] | b[0], a[1] and b[1])
+            previous = states.get(next_i)
+            if previous is None:
+                merged = dict(outgoing)
+            else:
+                merged = {}
+                for reg in previous.keys() | outgoing.keys():
+                    a, b = previous.get(reg, unknown), outgoing.get(reg, unknown)
+                    merged[reg] = (a[0] | b[0], a[1] and b[1])
+            if previous != merged:
+                states[next_i] = merged
+                pending.append(next_i)
+    return invokes, writes
+
+
+def validate(document, texts, surface, boot_texts=None):
     """Validate exact ownership, byte identity, reviewed handlers and references.
 
     `surface` is a pinned dump-surface; no dependency receives future-implementation
@@ -176,6 +276,18 @@ def validate(document, texts, surface):
         for m in cls['methods']:
             m.setdefault('access_flags', 1)
     analyzer = selector.Analyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
+    # VD-05: field-based failure receivers require a whole-BootDex null-writer
+    # proof. Overlay writers are not trusted to preserve a ROM body invariant.
+    guarded_fields = set()
+    guarded_sites = {}
+    flows = {}
+    def own_field(owner, name, desc):
+        resolved = analyzer.find_field(owner, name)
+        return (resolved, name + ':' + desc) if resolved in tables else None
+    for owner, text in texts.items():
+        for key, method in inventory(text)[0].items():
+            if tables[owner][key]['source'] == 'rom':
+                flows[owner, key] = reference_flow(method['body'], own_field, key, method['flags'])[0]
     # ADR-0159 applies only to ordinary composition bodies. Keep the default
     # selector and the complete clinit traversal on the strict analyzer.
     class OrdinaryAnalyzer(selector.Analyzer):
@@ -191,8 +303,13 @@ def validate(document, texts, surface):
                     dispatch_ledger[site] = [dict(signature=o + '->' + name + desc,
                         source='implemented' if self.method_kind(o, (name, desc))
                         in ('bytecode', 'intrinsic') else 'failure') for o in sorted(owners)]
-                    if len(owners) > 1:
-                        return
+                    failure = any(self.method_kind(o, (name, desc)) not in ('bytecode', 'intrinsic')
+                                  for o in owners)
+                    if failure:
+                        fields = flows.get((current, self.caller.split('->', 1)[1]), {}).get(self.invoke_index, ())
+                        guarded_fields.update(fields)
+                        for field in fields: guarded_sites.setdefault(field, set()).add(site)
+                    return
             super().invoke(current, op, exact, fails, required, calls)
 
     ordinary = OrdinaryAnalyzer(list(normalized.values()), parsed, {}, set(parsed), set(), set())
@@ -218,6 +335,34 @@ def validate(document, texts, surface):
                         reasons += failures
             if reasons:
                 raise ValueError('selected-ROM-dependency: ' + repr(reasons))
+
+    if guarded_fields:
+        for owner, key in guarded_fields:
+            declaration = next(f for c in classes if c['owner'] == owner
+                               for f in c['fields'] if f['signature'] == key)
+            if declaration['initialization'].startswith('rom-encoded:') and declaration['initialization'] != 'rom-encoded:null':
+                raise ValueError('failure-receiver-field-initial-value: ' + owner + '->' + key)
+            if not implemented(owner, key, True):
+                raise ValueError('failure-receiver-field-unavailable: ' + owner + '->' + key)
+        # payload() supplies every class in the actual recipe, including classes
+        # overlaid by intrinsics. Direct validate() fixtures supply their bodies.
+        needles = ['->' + key for _, key in guarded_fields]
+        for writer_owner, text in {**(boot_texts or {}), **texts}.items():
+            if not any(needle in text for needle in needles): continue
+            for key, method in inventory(text)[0].items():
+                if not any(needle in method['body'] for needle in needles): continue
+                source = tables.get(writer_owner, {}).get(key, {}).get('source')
+                if source is None:
+                    match = next((m for m in runtime.get(writer_owner, {}).get('methods', [])
+                                  if m['name'] + m['descriptor'] == key), None)
+                    source = ('failure' if match and match['status'] != 'implemented' else
+                              'rom' if match and match['binding'] == 'bytecode' else 'overlay')
+                if source == 'failure': continue
+                _, writes = reference_flow(method['body'], own_field, key, method['flags'])
+                for field, only_null in writes.items():
+                    if field in guarded_fields and (not only_null or source != 'rom'):
+                        raise ValueError('failure-receiver-field-writer: ' + field[0] + '->' + field[1]
+                                         + ' <- ' + writer_owner + '->' + key + ' at ' + repr(sorted(guarded_sites[field])))
 
     # Fields retain exact availability checks. Invocation checks above preserve
     # direct/static/super and exact-receiver guarantees while recording open
@@ -253,7 +398,7 @@ def load(path=DEFAULT):
     return document
 
 
-def payload(document, roots, root):
+def payload(document, roots, root, writer_owners=None):
     if not document['classes']:
         return None
     texts = {}
@@ -276,7 +421,18 @@ def payload(document, roots, root):
         if current.get('startup_link_error'):
             raise ValueError('surface startup link failure')
         surfaces += current['classes']
-    return validate(document, texts, surfaces)
+    # Recipe membership is authoritative, rather than the source label of a
+    # merged runtime class (a BootDex class can also have intrinsic handlers).
+    recipe_owners = (set(writer_owners) if writer_owners is not None else
+                     {c['descriptor'] for c in surfaces if c.get('source') == 'bootdex'})
+    boot_texts = {}
+    for owner in sorted(recipe_owners - set(texts)):
+        matches = [p / (owner[1:-1] + '.smali') for p in roots
+                   if (p / (owner[1:-1] + '.smali')).is_file()]
+        if len(matches) != 1:
+            raise ValueError('BootDex writer audit requires one body: ' + owner)
+        boot_texts[owner] = matches[0].read_text(encoding='utf-8')
+    return validate(document, texts, surfaces, boot_texts)
 
 
 def fixture(text):
@@ -381,6 +537,7 @@ def self_test():
                 raise AssertionError('accepted changed input ' + key)
     assert payload({'schema': 1, 'classes': []}, [], Path('.')) is None
     dispatch_self_test()
+    singleton_dispatch_self_test()
     print('member_sources self-test passed (identity, ownership, conflicts, dependencies, native, overlay, deterministic, disabled)')
 
 
@@ -492,6 +649,83 @@ def dispatch_self_test():
         else:
             raise AssertionError('accepted open dispatch reachable from clinit')
     print('ADR-0159 dispatch self-test passed (all targets, failure, exact/direct/static/super, fields, dynamic, strict clinit, deterministic)')
+
+
+def singleton_dispatch_self_test():
+    owner = 'Ltest/MemberComposition;'
+    target = 'Ltest/OnlyTarget;'
+    base = '''.class public Ltest/MemberComposition;
+.super Ljava/lang/Object;
+.field private receiver:Ltest/OnlyTarget;
+.method static constructor <clinit>()V
+.registers 1
+return-void
+.end method
+.method public static run(Ltest/OnlyTarget;)I
+.registers 2
+BODY
+const/4 v0, 0x0
+return v0
+.end method
+.method public write(Ltest/OnlyTarget;)V
+.registers 3
+WRITE
+return-void
+.end method
+'''
+    external = dict(descriptor=target, superclass='Ljava/lang/Object;', source='skeleton',
+                    fields=[], methods=[dict(name='target', descriptor='()I', access_flags=1,
+                    binding='intrinsic', status='unimplemented-ledger'), dict(name='<init>', descriptor='()V',
+                    access_flags=1, binding='intrinsic', status='implemented')])
+    def sample(body, writer='const/4 v0, 0x0\niput-object v0, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;'):
+        text = base.replace('BODY', body).replace('WRITE', writer)
+        doc, _ = fixture(text)
+        surface = [dict(descriptor=owner, superclass='Ljava/lang/Object;', fields=[], methods=[]), external]
+        return doc, {owner: text}, surface
+    call = 'invoke-virtual {p0}, Ltest/OnlyTarget;->target()I'
+    doc, texts, surface = sample(call)
+    sealed = json.loads(validate(doc, texts, surface))
+    assert next(iter(sealed['dispatch_ledger'].values())) == [dict(signature=target+'->target()I', source='failure')]
+    field_call = 'iget-object v0, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;\n' + call.replace('{p0}', '{v0}')
+    doc, texts, surface = sample(field_call)
+    encoded = validate(doc, texts, surface)
+    assert encoded == validate(copy.deepcopy(doc), texts, list(reversed(surface)))
+    # A writer in a different BootDex class must be audited too.
+    writer_owner = 'Ltest/OtherWriter;'
+    writer_text = '''.class public Ltest/OtherWriter;
+.super Ljava/lang/Object;
+.method public static write(Ltest/MemberComposition;Ltest/OnlyTarget;)V
+.registers 2
+iput-object p1, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;
+return-void
+.end method
+'''
+    other = dict(descriptor=writer_owner, superclass='Ljava/lang/Object;', source='bootdex', fields=[], methods=[
+        dict(name='write', descriptor='(Ltest/MemberComposition;Ltest/OnlyTarget;)V', access_flags=9,
+             status='implemented', binding='bytecode')])
+    try: validate(doc, texts, surface+[other], {writer_owner:writer_text})
+    except ValueError as error: assert 'failure-receiver-field-writer' in str(error)
+    else: raise AssertionError('accepted cross-class non-null writer')
+    other['methods'][0]['status'] = 'unimplemented-ledger'
+    validate(doc, texts, surface+[other], {writer_owner:writer_text})
+    negatives = [
+        ('exact', 'new-instance v0, Ltest/OnlyTarget;\ninvoke-direct {v0}, Ltest/OnlyTarget;-><init>()V\n'+call.replace('{p0}', '{v0}'), None),
+        ('nonnull', field_call, 'iput-object p1, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;'),
+        ('branch', field_call, 'if-eqz p1, :null\nmove-object v0, p1\ngoto :put\n:null\nconst/4 v0, 0x0\n:put\niput-object v0, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;'),
+        ('alias', field_call, 'const/4 p1, 0x0\nnew-instance v2, Ltest/OnlyTarget;\niput-object p1, p0, Ltest/MemberComposition;->receiver:Ltest/OnlyTarget;'),
+        ('unavailable', field_call, None),
+        ('clinit', call, None),
+    ]
+    for name, body, writer in negatives:
+        bad, bodies, classes = sample(body) if writer is None else sample(body, writer)
+        if name == 'unavailable': bad['classes'][0]['fields'][0]['source'] = 'failure'
+        if name == 'clinit':
+            text=bodies[owner].replace('.registers 1\nreturn-void', '.registers 1\n'+call+'\nreturn-void',1)
+            bad, _ = fixture(text);bodies={owner:text}
+        try: validate(bad, bodies, classes)
+        except ValueError: pass
+        else: raise AssertionError('accepted singleton negative: '+name)
+    print('VD-05 singleton dispatch self-test passed (unknown failure ledger, exact/clinit rejection, null/nonnull/branch/alias/cross-class writers, field availability)')
 
 
 def main():

@@ -105,7 +105,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 
 - 纯宿主分区的 hierarchy、visibility、layout params、geometry 与 clip 由 UiTree 拥有。
   JavaTraversal 的 guest hierarchy/geometry 由 Java 唯一拥有，integration 收集并受检发布，
-  UiTree 只保存宿主投影，不回填 Java measured/bounds。Legacy 迁移阶段仍保留宿主遍历。
+  UiTree 只保存宿主投影，不回填 Java measured/bounds。实验测试根提交 ROM layout 后的局部 frame，
+  仅完整成功的 epoch 可供 render/hit-test 同时消费；Legacy 迁移阶段仍保留宿主遍历。
   本层不执行 guest、不持 Java 引用、不读 Java 字段；未迁移文本/样式仍沿既有宿主单一存储。
 - renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
 - integration/session 的 Legacy 布局由 integration 统一调度；本层仍只接收 UiTree/UiMetrics，

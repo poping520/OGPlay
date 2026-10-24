@@ -62,7 +62,8 @@ def assemble(recipe, work, measure=False):
         if len(sources) != 1 or (builder.ROOT / cls['rom_input']).resolve() != builder.source_path(sources[0]).resolve():
             raise builder.BuildError('composition class must come from its pinned ROM recipe input')
     roots = [work / (s + '-smali') for s in recipe] + [work / 'guest-java-smali']
-    payload = member_sources.payload(document, roots, builder.ROOT)
+    payload = member_sources.payload(document, roots, builder.ROOT,
+                                     writer_owners={owner for owners in recipe.values() for owner in owners})
     return dex, payload
 
 

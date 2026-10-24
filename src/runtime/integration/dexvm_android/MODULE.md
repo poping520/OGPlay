@@ -159,15 +159,22 @@ reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutPara
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
 owner 模式在 context 构造时固定且运行中不可切换，生产默认唯一为 Legacy，无用户配置。
-JavaTraversal 仅供固定实验 payload 的 plain View 根/叶测试：ROM 执行 measure/RTL/测量缓存，
-Java 唯一拥有 measured、旧 specs、缓存及相关 flags；初始化和 requestLayout 系统接缝逐项受审。
-requestLayout 清真实 Java cache、置 0x80001000 flags，integration 仅持 owner tick 请求队列
-（GC 强根，Reset 清除），不构造 AttachInfo/ViewRootImpl/Binder，不承诺 during-layout 协议。
-OwnerTick/ResolveOnly 可测量一个测试根；其他 reason/phase 明确拒绝，未接生产 traversal。
-`CommitAndroidMeasuredRootProjection` 在 owner 线程经绑定 token 读 Java measured/padding，
-按外部投影代际/epoch 提交；guest frame 留空，合成窗口根使用 viewport。C++ 不写 measured/bounds、
-不重排外部树；异常不发布。ViewGroup/控件、layout/setFrame、输入/呈现/Surface 留后续阶段。
-ui 不获得 VM、Java 字段或引用。实验来源表仅开放已审根/叶方法，其他 View 成员明确 failure。
+JavaTraversal 仅供固定实验 payload 的 plain View 根/叶测试：ROM 执行 measure/RTL/缓存及
+layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
+onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
+OwnerTick/ResolveOnly 在 owner guest token 和初始化绑定的宿主线程、VM 锁下执行根
+EXACTLY managed viewport measure→layout。首轮仅剩余 FORCE_LAYOUT 的非 GONE 请求触发本帧
+第二轮；第二轮请求不置 FORCE_LAYOUT，延至下一 tick。连续跨 tick 请求超过8次明确失败，
+保留队列并记录 requester/epoch。系统接缝不构造 AttachInfo/ViewRootImpl/Binder。
+初始化/requestLayout/invalidate/无变换矩阵及 ApplicationInfo 接缝逐项受审；invalidate 只标记
+本进程 dirty 并维护软件 Java flags，已有硬件/动画/变换/附着系统对象记账拒绝，不能当 null。
+`CommitAndroidMeasuredRootProjection` 经只读绑定 token 读取 Java measured/bounds/padding，
+完整成功后提交同一 epoch；合成根使用 viewport。回调异常保留原异常和已发生的 Java 修改，
+不发布半成品；换根、binding、内容/窗口代际或 managed metrics 改变取消旧发布。
+C++ 不写 measured/bounds，不重排外部树；ui 不获得 VM、Java 字段或引用。
+其他 reason/phase 明确拒绝，未接生产 traversal；ViewGroup/控件、输入/呈现/Surface 留后续阶段。
+实验来源表只开放受审根/叶方法，其他成员继续 failure；字段接收者 failure 虚派须满足
+ADR-0159 的全 BootDex null-writer 约束，getDisplayList/硬件创建保持 failure。
 HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。

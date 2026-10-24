@@ -1853,3 +1853,21 @@ ADR-0158 决定6对组合普通方法复用 clinit 级“虚派目标唯一”�
 
 本决定只调整显式组合普通方法的证明边界，不改变默认 selector，不承诺所有 ROM 虚派目标
 可运行。每批仍须以有界支持路径和动态记账验收，未闭合的阶段不得借此扩大类准入或默认启用。
+
+
+### VD-05 修订（编排方决定，2026-10-24）
+
+编排方按用户授权选择“唯一 failure 虚派封存为运行期明确失败”，不新增硬件 DisplayList 能力。
+开放世界虚派取决于运行期接收者，ROM 层次中目标个数不构成实现证明；API19 软件路径的
+mDisplayList 初值真实为 null，只有 HardwareRenderer/getDisplayList 创建该硬件对象。
+
+1. 普通方法的 invoke-virtual/interface 接收者不是同方法 new-instance 精确类型时，无论
+   目标唯一与否均按决定2封存 dispatch ledger，逐目标签名保留 implemented/failure 来源；
+   failure 目标运行时仍按 ADR-0147 记账并明确失败，不获得实现信用。
+2. invoke-direct/static/super、精确接收者指向 failure、本类 failure 字段、DYNAMIC_TARGETS
+   与 clinit 及其传递闭包仍沿严格规则拒绝；不修改默认 selector 或 ADR-0156。
+3. ledger 中 failure 目标接收者来自本类字段时，该字段必须为 rom 可用性，且所有 BootDex
+   写入者均为 failure 或只写 null，以 ROM 构造初值 null 为准；否则拒绝。构建检查覆盖实际
+   配方全部类、寄存器别名与分支汇合，任务单逐字段列账，不靠测试对象碰巧为 null。
+4. 自测覆盖唯一 failure 未知接收者通过并入账、精确接收者仍拒绝、字段约束正反例及严格
+   clinit；保留关闭修订时真实 setFrame 候选按原错误拒绝的负对照。支持路径运行记账必须为0。

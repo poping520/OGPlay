@@ -111,6 +111,12 @@ struct DexVmAndroidContext final {
     const AndroidUiTraversalOwner ui_traversal_owner;
     std::uint64_t ui_measure_epoch{};
     std::set<dexvm::VmObjectRef> ui_measure_requests;
+    // 0 outside layout, 1 first pass, 2 deferred-request pass (API19 ViewRootImpl).
+    std::optional<std::thread::id> ui_java_owner_thread;
+    unsigned ui_java_layout_pass{};
+    unsigned ui_java_deferred_ticks{};
+    dexvm::VmObjectRef ui_java_watchdog_root;
+    std::uint64_t ui_java_watchdog_generation{};
     std::atomic_bool process_stopping{};
     // Set from the owning native process before linking/startup. No host query.
     std::optional<GuestMemorySnapshot> memory_snapshot;
@@ -857,6 +863,9 @@ struct DexVmAndroidContext final {
       std::array<dexvm::IntrinsicFieldHandle, 3> flags;
       dexvm::IntrinsicFieldHandle cache;
       dexvm::IntrinsicFieldHandle view_flags;
+      // Read-only geometry bindings: ROM alone writes these fields.
+      std::array<dexvm::IntrinsicFieldHandle, 4> frame;
+      std::array<dexvm::IntrinsicFieldHandle, 6> unsupported_state;
   };
 
   std::optional<ViewJavaMeasureFields> view_java_measure_fields;
@@ -903,7 +912,7 @@ ExpandUiIncludes(std::span<const loader::BinaryXmlElement> elements,
 void AssignViewContext(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                        dexvm::VmObjectRef view, dexvm::VmObjectRef owner);
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view);
-// VD-04 test roots only: publish measured size with empty, not-yet-laid-out frame.
+// Test roots only: publish the current Java measured size and local frame.
 // Reads Java authority; never writes measured/bounds or invokes LayoutUiTree.
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
                                          const ui::UiProjectionTarget& target, std::uint64_t epoch);

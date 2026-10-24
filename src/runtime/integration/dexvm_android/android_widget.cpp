@@ -114,6 +114,8 @@ Decl Declare_android_widget_Button(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_EditText(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;").Build();
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.VirtualMethod("getText", "()Landroid/text/Editable;", [context](dx::IntrinsicContext& call) {
@@ -892,6 +894,8 @@ dx::IntrinsicHandler ViewDefaultStyleInitHandler(const Context& context) {
 }
 
 Decl Declare_android_widget_TextView(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;").Build();
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;",
                                                     {"Landroid/view/ViewTreeObserver$OnPreDrawListener;"});
     builder.Constructor("(Landroid/content/Context;)V",

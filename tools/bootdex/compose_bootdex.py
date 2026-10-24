@@ -59,6 +59,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-context-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-inflater-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-leaf-resources-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-paint-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -119,6 +120,7 @@ def build(measure=False):
         hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
                      *(c['owner'] for c in measure_sources(member_sources.load())['classes']
                        if c['owner'].startswith(('Landroid/view/LayoutInflater', 'Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
+                     'Landroid/graphics/Paint;', 'Landroid/widget/TextView;', 'Landroid/graphics/RectF;', 'Landroid/graphics/RectF$1;',
                      'Landroid/util/AttributeSet;', 'Landroid/content/Context;', 'Landroid/view/ContextThemeWrapper;',
                      'Landroid/content/res/AssetManager;', 'Landroid/content/res/Resources;',
                      'Landroid/content/res/Resources$Theme;', 'Landroid/content/res/TypedArray;',
@@ -133,6 +135,30 @@ def build(measure=False):
                      'Landroid/view/ViewGroup$ViewLocationHolder;',
                      'Landroid/content/res/StringBlock$Height;', 'Landroid/text/Annotation;',
                      'Landroid/text/style/BulletSpan;'}
+        # ADR-0155 retains declarations in disabled TextView/Paint bodies too.
+        # Pure ROM helpers do not enable TextView construction or Editor.
+        hierarchy.update({
+            'Landroid/graphics/TemporaryBuffer;',
+            'Landroid/text/method/AllCapsTransformationMethod;',
+            'Landroid/text/method/ArrowKeyMovementMethod;',
+            'Landroid/text/method/DateKeyListener;',
+            'Landroid/text/method/DateTimeKeyListener;',
+            'Landroid/text/method/DialerKeyListener;',
+            'Landroid/text/method/TimeKeyListener;',
+            'Landroid/text/method/TransformationMethod2;',
+            'Landroid/widget/AccessibilityIterators$LineTextSegmentIterator;',
+            'Landroid/widget/AccessibilityIterators$PageTextSegmentIterator;',
+            'Landroid/widget/Editor$TextModifyOperation$1;',
+            'Landroid/widget/Editor$TextModifyOperation;',
+            'Landroid/widget/Editor$UndoInputFilter;',
+            'Landroid/widget/TextView$1;',
+            'Landroid/widget/TextView$2;',
+            'Landroid/widget/TextView$3;',
+            'Landroid/widget/TextView$4;',
+            'Landroid/widget/TextView$SavedState$1;',
+            'Landroid/widget/TextView$SavedState;',
+        })
+        recipe['framework2.jar'] = tuple(sorted(set(recipe['framework2.jar']) | {'Lcom/android/internal/util/FastMath;'}))
         recipe['framework.jar'] = tuple(sorted(set(recipe['framework.jar']) | hierarchy))
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \

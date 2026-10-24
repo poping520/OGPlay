@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -55,6 +56,66 @@ struct BinaryXmlPullEvent final {
     std::string text;
     std::int32_t depth{};
 };
+
+// Raw pool identities are never inferred from attribute names. kNoIndex means
+// absent; in particular raw_value == kNoIndex differs from a pooled empty string.
+inline constexpr std::uint32_t kBinaryXmlNoIndex = 0xffffffffU;
+
+struct CompiledXmlValue final {
+    std::uint16_t size{};
+    std::uint8_t reserved{}, type{};
+    std::uint32_t data{};
+};
+
+struct CompiledXmlAttribute final {
+    std::uint32_t namespace_index{}, name_index{}, raw_value_index{};
+    CompiledXmlValue value;
+    std::uint32_t resource_id{};
+};
+
+struct CompiledXmlNode final {
+    std::uint16_t type{};  // ResXMLTree chunk type, including namespace nodes
+    std::uint32_t line{}, comment_index{}, namespace_index{kBinaryXmlNoIndex};
+    std::uint32_t name_index{kBinaryXmlNoIndex}, text_index{kBinaryXmlNoIndex};
+    CompiledXmlValue text_value;
+    std::vector<CompiledXmlAttribute> attributes;
+    std::uint16_t id_index{}, class_index{}, style_index{};  // original one-based indices
+    std::optional<std::size_t> matching_node;
+    std::int32_t parent_node{-1}, depth{};
+};
+
+// Owns the original bytes and decoded facts. Published only through const
+// ownership; no resource resolution, attribute semantics or layout defaults.
+class CompiledXmlDocument final {
+public:
+    [[nodiscard]] std::span<const std::byte> Bytes() const { return bytes_; }
+
+    [[nodiscard]] std::span<const std::uint32_t> ResourceMap() const { return resource_map_; }
+
+    [[nodiscard]] std::span<const CompiledXmlNode> Nodes() const { return nodes_; }
+
+    [[nodiscard]] std::size_t StringCount() const { return string_offsets_.size(); }
+
+    // Missing index, invalid index and invalid encoding are distinct. Legacy
+    // adapters alone retain the historical failed-conversion fallback.
+    [[nodiscard]] std::optional<std::string> String(std::uint32_t index) const;
+    [[nodiscard]] std::vector<BinaryXmlElement> Elements() const;
+    [[nodiscard]] std::vector<BinaryXmlPullEvent> PullEvents() const;
+
+private:
+    friend struct CompiledXmlDocumentBuilder;
+    std::vector<std::byte> bytes_;
+    std::vector<std::size_t> string_offsets_;
+    std::size_t string_end_{};
+    bool utf8_{};
+    std::vector<std::uint32_t> resource_map_;
+    std::vector<CompiledXmlNode> nodes_;
+};
+
+// Strict fact extraction rejects unsupported chunks, invalid pool/special
+// indices and unpaired tags. Legacy adapters use the same decoder with their
+// existing permissive structural policy.
+[[nodiscard]] std::shared_ptr<const CompiledXmlDocument> ParseCompiledXmlDocument(std::span<const std::byte> bytes);
 
 // Flat document order (parents before children). Throws std::runtime_error
 // on malformed input.

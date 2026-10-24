@@ -58,6 +58,7 @@
 - [ADR-0157 · 进程内 Java View 遍历与宿主投影](#adr-0157)
 - [ADR-0158 · 固定 ROM 成员级行为组合](#adr-0158)
 - [ADR-0159 · 组合 ROM 普通方法的开放世界虚派闭包](#adr-0159)
+- [ADR-0160 · 有界生成式主题投影与属性构造 native 接缝](#adr-0160)
 
 <a id="adr-0017"></a>
 
@@ -783,6 +784,12 @@ TextView 样式解析只消费相关属性，支持 APK parent/reference/attribu
 selector 与 stateful 渲染、完整 theme 和文本特效不得伪造成功。所有引用链有界，
 可预判的类型/特性错误在发布 UI 外观前失败，guest override 自身异常保留原语义。
 
+### ADR-0160 精确修订（2026-10-24）
+
+保留不引入完整 framework-res、完整 theme 的边界；登记范围内的主题值改由固定源码/ROM
+生成的有界投影提供，配置、属性消费闭包及明确失败规则见 [ADR-0160](#adr-0160)。
+本节原有已验证的 Legacy 外观契约保持；这不授权整类迁入或提前接通属性构造。
+
 <a id="adr-0049"></a>
 
 ## ADR-0049 · ICU 归 API 19 guest 并统一 JNI 桥
@@ -832,6 +839,12 @@ compound drawable 的 Java API 形状归 TextView；integration 解析资源并�
 一次发布，UiTree 保存唯一尺寸/资源事实，runtime/ui 完成 measure/raster。失败不得留下
 部分 mutation；控件子类继承同一 API，禁止专属 Button 副本或游戏分支。guest onLayout、
 完整滚动与推广网络内容不属于初始化验收，后续按真实触发补齐。
+
+### ADR-0160 精确修订（2026-10-24）
+
+保留不引入完整 framework-res、完整 theme 的边界；登记范围内的主题值改由固定源码/ROM
+生成的有界投影提供，配置、属性消费闭包及明确失败规则见 [ADR-0160](#adr-0160)。
+本节原有已验证的 Legacy 外观契约保持；这不授权整类迁入或提前接通属性构造。
 
 <a id="adr-0052"></a>
 
@@ -1932,3 +1945,48 @@ ADR-0147 明确失败与支持路径动态零命中保证，字段接收者证�
 4. 保留宿主分配扫描及 raw-host-allocation 运行负对照，作为信息和回归；
    自测要求 unproven 进入 ledger 且不拒绝、failure 来源不变、严格拒绝仍在、
    封存两次逐字节一致及篡改证据拒绝。
+
+<a id="adr-0160"></a>
+
+## ADR-0160 · 有界生成式主题投影与属性构造 native 接缝
+
+- 状态：Accepted（编排方按用户授权于 2026-10-24 决定）
+- 日期：2026-10-24
+- 实施：[DVM-286 / VD-09a-1](../tasks/dexvm/DVM-286.md)
+- 依据：[VD-09a 分析](../../.local/analysis/vd-09a/REPORT.md) §5、§7、§8；
+  [编排方方案决定](../../.local/analysis/view-dir/DECISION.md)“VD-09a 方案决定”。
+- 关系：精确修订 ADR-0048/0051 的主题值提供方式；保留禁止完整 framework-res/完整
+  theme；ADR-0077 小型系统查询、ADR-0147 明确失败及 ADR-0158 成员组合继续有效。
+
+### 决定
+
+1. 采用方案 C：A 的 native ABI 与固定 AOSP 源码/ROM 生成的有界主题投影。范围为
+   Theme、Theme.Holo、Theme.DeviceDefault 及其 values 中派生的 Theme.* 变体；
+   属性仅取已登记 styleable 消费闭包，配置须显式登记。未知主题、配置或属性明确失败。
+   不引入完整 framework-res 或完整 theme，不在 src 手写主题数值表。
+2. Theme/TypedArray/XmlBlock$Parser/StringBlock 按 ADR-0158 精确成员组合，禁止整类
+   迁入。integration 以强类型 token 唯一持有受检 XML cursor/theme native 状态；
+   TypedArray 六槽数据与转换、View/LP 状态及布局算法归原版 Java。
+3. 投影与 BootDex 同封存，使用独立 schema/version/hash；固定输入、ID 绑定及闭包在
+   build/check 校验。与 ADR-0077 schema 1 查询显式分流，重叠冲突即构建失败，
+   不改变旧映射含义，也不从 APK 同名项兜底系统资源。
+4. 私有 ROM ID 与源资源不符即拒绝该组输入；需要变更时重建同源整组制品。
+   禁止猜值、旧 ID 别名或数值补丁，AOSP tag 相同不构成 ROM 私有 ID 一致证明。
+5. 本轮排除 scrollbar Drawable、ninepatch、selector、光学布局和动画；请求即明确失败。
+   在 VD-10 前重新评估必要依赖并单独升级，不以空 Drawable 或默认几何冒充实现。
+6. 只有登记的主题/配置/属性查询可报“确证缺席”；投影区分已知值、确证缺席和不支持。
+   应用主题覆盖及非零 defStyleAttr 按完整优先级：显式 XML > XML style > 默认
+   style > theme 同名属性。保留 bag parent/reference/?attr、有界循环检查、
+   defStyleAttr 替代 defStyleRes、force/copy 与 @null 遮蔽，不把未知当缺席。
+
+### 顺序与边界
+
+1. 09a-1：编译 XML 事实与受检 cursor；现有 Elements/PullEvents 从同一模型导出，
+   Legacy 输出保持；不暴露 native 或成功属性构造。
+2. 09a-2：XmlBlock/Parser 与 StringBlock 有界 plain-string 接缝及 owner/GC 绑定。
+3. 09a-3：主题投影生成器、applyStyle 与 TypedArray 六槽 ABI。
+4. 09a-4：Context/Resources/Theme/TypedArray 精确成员准入、五类及 LP 属性构造。
+5. 09a-5：实验 inflater 接入，单独验收 include/merge、context/style/LP 与失败回滚。
+
+每阶段独立机器验收；生产默认继续 Legacy。后续阶段未完成不得以本 ADR 视为已实现。
+不引入 Binder/WMS/system_server、完整 TextView 栈或第二份宿主几何权威。

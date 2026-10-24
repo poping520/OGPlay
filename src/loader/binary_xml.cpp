@@ -129,28 +129,15 @@ std::string ReadUtf16String(const std::span<const std::byte> bytes, std::size_t 
 }
 
 struct StringPool final {
-    std::span<const std::byte> bytes;
     std::vector<std::size_t> offsets;
     std::size_t end{};
     bool utf8{};
-
-    [[nodiscard]] std::optional<std::string> Get(std::uint32_t index) const {
-        if (index >= offsets.size()) return std::nullopt;
-        try {
-            return utf8 ? ReadUtf8String(bytes, offsets[index], end) : ReadUtf16String(bytes, offsets[index], end);
-        } catch (const std::runtime_error&) {
-            return std::nullopt;
-        }
-    }
-
-    [[nodiscard]] std::string At(std::uint32_t index) const { return Get(index).value_or(std::string{}); }
 };
 
 StringPool ParseStringPool(std::span<const std::byte> bytes, std::size_t offset, std::uint32_t size) {
     RequireRange(bytes, offset, size);
     if (size < 28) throw std::runtime_error("binary XML string pool is truncated");
     StringPool pool;
-    pool.bytes = bytes;
     pool.end = offset + size;
     pool.utf8 = (Read32(bytes, offset + 16) & kUtf8Flag) != 0;
     const auto count = Read32(bytes, offset + 8);
@@ -176,39 +163,39 @@ std::int32_t LayoutSize(const std::uint8_t type, const std::uint32_t data) {
     return static_cast<std::int32_t>(data);
 }
 
-struct ParsedBinaryXml final {
-    std::vector<BinaryXmlElement> elements;
-    std::vector<BinaryXmlPullEvent> events;
-};
+}  // namespace
 
-ParsedBinaryXml ParseBinaryXml(const std::span<const std::byte> bytes) {
-    if (Read16(bytes, 0) != kXmlType) {
-        throw std::runtime_error("not a binary XML document");
-    }
-    const auto document_size = Read32(bytes, 4);
-    RequireRange(bytes, 0, document_size);
-
-    StringPool pool;
-    bool saw_pool = false;
-    std::string pool_error;
-    ParsedBinaryXml result;
-    result.events.push_back(
-        {BinaryXmlPullEventType::start_document, {}, {}, 0});
-    std::vector<std::int32_t> open;  // element indices on the tag stack
-    std::int32_t depth{};
-    bool saw_node = false;
-    std::size_t offset = Read16(bytes, 2);
-    if (offset < 8 || offset > document_size) throw std::runtime_error("binary XML header is malformed");
-    while (offset + 8 <= document_size) {
-        const auto type = Read16(bytes, offset);
-        const auto header_size = Read16(bytes, offset + 2);
-        const auto size = Read32(bytes, offset + 4);
-        if (size < header_size || header_size < 8) {
-            throw std::runtime_error("binary XML chunk is malformed");
-        }
-        RequireRange(bytes.first(document_size), offset, size);
-        if (type == kStringPoolType) {
-            if (!saw_node) {
+struct CompiledXmlDocumentBuilder final {
+    static std::shared_ptr<const CompiledXmlDocument> Parse(const std::span<const std::byte> input, bool strict) {
+        auto result = std::make_shared<CompiledXmlDocument>();
+        result->bytes_.assign(input.begin(), input.end());
+        const std::span<const std::byte> bytes(result->bytes_);
+        if (Read16(bytes, 0) != kXmlType) throw std::runtime_error("not a binary XML document");
+        const auto document_size = Read32(bytes, 4);
+        RequireRange(bytes, 0, document_size);
+        StringPool pool;
+        bool saw_pool = false, saw_node = false;
+        std::string pool_error;
+        std::vector<std::size_t> open, namespaces;
+        std::int32_t depth{};
+        auto check_string = [&](std::uint32_t index, bool optional) {
+            if (strict && !(optional && index == kNoIndex) && index >= pool.offsets.size())
+                throw std::runtime_error("binary XML pool index is invalid");
+        };
+        auto value = [&](std::size_t offset) {
+            return CompiledXmlValue{Read16(bytes, offset), std::to_integer<std::uint8_t>(bytes[offset + 2]),
+                                    std::to_integer<std::uint8_t>(bytes[offset + 3]), Read32(bytes, offset + 4)};
+        };
+        std::size_t offset = Read16(bytes, 2);
+        if (offset < 8 || offset > document_size) throw std::runtime_error("binary XML header is malformed");
+        while (offset + 8 <= document_size) {
+            const auto type = Read16(bytes, offset);
+            const auto header = Read16(bytes, offset + 2);
+            const auto size = Read32(bytes, offset + 4);
+            if (size < header || header < 8) throw std::runtime_error("binary XML chunk is malformed");
+            RequireRange(bytes.first(document_size), offset, size);
+            const auto ext = offset + header;
+            if (type == kStringPoolType && !saw_node) {
                 try {
                     pool = ParseStringPool(bytes, offset, size);
                     saw_pool = true;
@@ -218,117 +205,215 @@ ParsedBinaryXml ParseBinaryXml(const std::span<const std::byte> bytes) {
                     saw_pool = false;
                     pool_error = error.what();
                 }
-            }
-        } else if (type == kStartElementType) {
-            if (!saw_pool) {
-                throw std::runtime_error(pool_error.empty() ? "binary XML has no string pool" : pool_error);
-            }
-            saw_node = true;
-            if (size - header_size < 20) throw std::runtime_error("binary XML start chunk is malformed");
-            // ResXMLTree_attrExt follows the declared node header.
-            const auto ext = offset + header_size;
-            BinaryXmlElement element;
-            element.name = pool.At(Read32(bytes, ext + 4));
-            element.parent = open.empty() ? -1 : open.back();
-            const auto event_name = element.name;
-            const auto attribute_start = Read16(bytes, ext + 8);
-            const auto attribute_size = Read16(bytes, ext + 10);
-            const auto attribute_count = Read16(bytes, ext + 12);
-            if (attribute_count != 0 && attribute_size < 20) {
-                throw std::runtime_error("binary XML attribute is malformed");
-            }
-            RequireRange(bytes.first(offset + size), ext + attribute_start,
-                         static_cast<std::size_t>(attribute_size) * attribute_count);
-            for (std::uint16_t index = 0; index < attribute_count;
-                 ++index) {
-                const auto attr =
-                    ext + attribute_start +
-                    static_cast<std::size_t>(attribute_size) * index;
-                const auto ns = pool.At(Read32(bytes, attr));
-                const auto name = pool.At(Read32(bytes, attr + 4));
-                const auto raw_index = Read32(bytes, attr + 8);
-                RequireRange(bytes, attr + 15, 5);
-                const auto value_type =
-                    std::to_integer<std::uint8_t>(bytes[attr + 15]);
-                const auto data = Read32(bytes, attr + 16);
-                BinaryXmlAttribute attribute{
-                    .namespace_uri = ns,
-                    .name = name,
-                    .value_type = value_type,
-                    .data = data,
-                };
-                if (raw_index != kNoIndex) {
-                    if (raw_index >= pool.offsets.size())
-                        throw std::runtime_error("binary XML raw attribute string is invalid");
-                    attribute.raw_string = pool.Get(raw_index);
-                } else if (value_type == kTypeString) {
-                    if (data >= pool.offsets.size()) throw std::runtime_error("binary XML typed string is invalid");
-                    attribute.raw_string = pool.Get(data);
-                }
-                element.attributes.push_back(std::move(attribute));
-                if (ns != kAndroidNamespace) continue;
-                if (name == "id") {
-                    // Typed value data (reference kind) is the resource id.
-                    element.id = data;
-                } else if (name == "layout_width") {
-                    element.layout_width = LayoutSize(value_type, data);
-                } else if (name == "layout_height") {
-                    element.layout_height = LayoutSize(value_type, data);
-                } else if (name == "gravity") {
-                    element.gravity = data;
-                } else if (name == "layout_gravity") {
-                    element.layout_gravity = data;
-                } else if (name == "paddingTop") {
-                    element.padding_top = DimensionPx(data);
-                } else if (name == "src") {
-                    element.src = data;
-                }
-            }
-            open.push_back(static_cast<std::int32_t>(result.elements.size()));
-            result.elements.push_back(std::move(element));
-            result.events.push_back({BinaryXmlPullEventType::start_tag, event_name, {}, ++depth});
-        } else if (type == kEndElementType) {
-            saw_node = true;
-            if (size - header_size < 8) throw std::runtime_error("binary XML end chunk is malformed");
-            const auto ext = offset + header_size;
-            const auto closing_name = pool.At(Read32(bytes, ext + 4));
-            result.events.push_back({BinaryXmlPullEventType::end_tag, closing_name, {}, depth--});
+            } else if (type == 0x0180 && !saw_node) {
+                if (strict && (size - header) % 4 != 0)
+                    throw std::runtime_error("binary XML resource map is malformed");
+                result->resource_map_.clear();
+                for (std::size_t i = ext; i + 4 <= offset + size; i += 4)
+                    result->resource_map_.push_back(Read32(bytes, i));
+            } else if (type >= 0x0100 && type <= 0x017f) {
+                if (!saw_pool)
+                    throw std::runtime_error(pool_error.empty() ? "binary XML has no string pool" : pool_error);
+                saw_node = true;
+                if (strict && header < 16) throw std::runtime_error("binary XML node header is malformed");
+                CompiledXmlNode node;
+                node.type = type;
+                // Legacy accepted short headers; never read line/comment outside the chunk.
+                if (header >= 16) {
+                    node.line = Read32(bytes, offset + 8);
+                    node.comment_index = Read32(bytes, offset + 12);
+                } else
+                    node.comment_index = kNoIndex;
+                check_string(node.comment_index, true);
+                node.depth = depth;
+                if (type == kStartElementType) {
+                    if (size - header < 20) throw std::runtime_error("binary XML start chunk is malformed");
+                    node.namespace_index = Read32(bytes, ext);
+                    node.name_index = Read32(bytes, ext + 4);
+                    check_string(node.namespace_index, true);
+                    check_string(node.name_index, false);
+
+                    const auto start = Read16(bytes, ext + 8), stride = Read16(bytes, ext + 10),
+                               count = Read16(bytes, ext + 12);
+                    node.id_index = Read16(bytes, ext + 14);
+                    node.class_index = Read16(bytes, ext + 16);
+                    node.style_index = Read16(bytes, ext + 18);
+                    if (strict && (node.id_index > count || node.class_index > count || node.style_index > count))
+                        throw std::runtime_error("binary XML special attribute index is invalid");
+                    if (count != 0 && stride < 20) throw std::runtime_error("binary XML attribute is malformed");
+                    if (strict && start < 20) throw std::runtime_error("binary XML attribute start is invalid");
+                    RequireRange(bytes.first(offset + size), ext + start, static_cast<std::size_t>(stride) * count);
+                    for (std::uint16_t i = 0; i < count; ++i) {
+                        const auto attr = ext + start + static_cast<std::size_t>(stride) * i;
+                        CompiledXmlAttribute fact{Read32(bytes, attr), Read32(bytes, attr + 4), Read32(bytes, attr + 8),
+                                                  value(attr + 12)};
+                        check_string(fact.namespace_index, true);
+                        check_string(fact.name_index, false);
+                        check_string(fact.raw_value_index, true);
+                        if (fact.raw_value_index != kNoIndex && fact.raw_value_index >= pool.offsets.size())
+                            throw std::runtime_error("binary XML raw attribute string is invalid");
+                        if (fact.value.type == kTypeString && (strict || fact.raw_value_index == kNoIndex)) {
+                            if (fact.value.data >= pool.offsets.size())
+                                throw std::runtime_error("binary XML typed string is invalid");
+                        }
+                        if (fact.name_index < result->resource_map_.size())
+                            fact.resource_id = result->resource_map_[fact.name_index];
+                        node.attributes.push_back(fact);
+                    }
+                    node.depth = ++depth;
+                    node.parent_node = open.empty() ? -1 : static_cast<std::int32_t>(open.back());
+                    open.push_back(result->nodes_.size());
+                } else if (type == kEndElementType) {
+                    if (size - header < 8) throw std::runtime_error("binary XML end chunk is malformed");
+                    node.namespace_index = Read32(bytes, ext);
+                    node.name_index = Read32(bytes, ext + 4);
+                    check_string(node.namespace_index, true);
+                    check_string(node.name_index, false);
+                    node.depth = depth--;
+                    if (!open.empty()) {
+                        auto& start = result->nodes_[open.back()];
+                        if (strict &&
+                            (start.name_index != node.name_index || start.namespace_index != node.namespace_index))
+                            throw std::runtime_error("binary XML end tag does not match start");
+                        node.matching_node = open.back();
+                        start.matching_node = result->nodes_.size();
+                        open.pop_back();
+                    } else if (strict)
+                        throw std::runtime_error("binary XML end tag has no start");
+                } else if (type == kCdataType) {
+                    if (size - header < 12) throw std::runtime_error("binary XML text chunk is malformed");
+                    node.text_index = Read32(bytes, ext);
+                    node.text_value = value(ext + 4);
+                    if (node.text_index >= pool.offsets.size())
+                        throw std::runtime_error("binary XML text string is invalid");
+                    if (strict && node.text_value.type == kTypeString) check_string(node.text_value.data, false);
+                } else if ((type == 0x0100 || type == 0x0101) && strict) {
+                    if (size - header < 8) throw std::runtime_error("binary XML namespace chunk is malformed");
+                    node.name_index = Read32(bytes, ext);
+                    node.namespace_index = Read32(bytes, ext + 4);
+                    check_string(node.name_index, true);
+                    check_string(node.namespace_index, false);
+                    if (type == 0x0100)
+                        namespaces.push_back(result->nodes_.size());
+                    else if (!namespaces.empty()) {
+                        auto& start = result->nodes_[namespaces.back()];
+                        if (strict &&
+                            (start.name_index != node.name_index || start.namespace_index != node.namespace_index))
+                            throw std::runtime_error("binary XML namespace end does not match start");
+                        node.matching_node = namespaces.back();
+                        start.matching_node = result->nodes_.size();
+                        namespaces.pop_back();
+                    } else if (strict)
+                        throw std::runtime_error("binary XML namespace end has no start");
+                } else if (strict)
+                    throw std::runtime_error("binary XML node type is unsupported");
+                result->nodes_.push_back(std::move(node));
+            } else if (strict)
+                throw std::runtime_error("binary XML chunk type or position is unsupported");
+            offset += size;
+        }
+        if (offset != document_size) throw std::runtime_error("binary XML document has trailing bytes");
+        if (strict && (!saw_node || !open.empty() || !namespaces.empty()))
+            throw std::runtime_error("binary XML document has unclosed tags or no nodes");
+        result->string_offsets_ = std::move(pool.offsets);
+        result->string_end_ = pool.end;
+        result->utf8_ = pool.utf8;
+        return result;
+    }
+};
+
+std::optional<std::string> CompiledXmlDocument::String(std::uint32_t index) const {
+    if (index == kNoIndex) return std::nullopt;
+    if (index >= string_offsets_.size()) throw std::out_of_range("binary XML pool index is invalid");
+    return utf8_ ? ReadUtf8String(bytes_, string_offsets_[index], string_end_)
+                 : ReadUtf16String(bytes_, string_offsets_[index], string_end_);
+}
+
+namespace {
+std::optional<std::string> LegacyString(const CompiledXmlDocument& doc, std::uint32_t index) {
+    try {
+        return doc.String(index);
+    } catch (const std::out_of_range&) {
+        return std::nullopt;
+    } catch (const std::runtime_error&) {
+        return std::nullopt;
+    }
+}
+
+std::string LegacyName(const CompiledXmlDocument& doc, std::uint32_t index) {
+    return LegacyString(doc, index).value_or(std::string{});
+}
+}  // namespace
+
+std::vector<BinaryXmlElement> CompiledXmlDocument::Elements() const {
+    std::vector<BinaryXmlElement> result;
+    std::vector<std::int32_t> open;
+    for (const auto& node : nodes_) {
+        if (node.type == kEndElementType) {
             if (!open.empty()) open.pop_back();
-        } else if (type == kCdataType) {
-            saw_node = true;
-            if (size - header_size < 12U) {
-                throw std::runtime_error("binary XML text chunk is malformed");
+            continue;
+        }
+        if (node.type != kStartElementType) continue;
+        BinaryXmlElement element;
+        element.name = LegacyName(*this, node.name_index);
+        element.parent = open.empty() ? -1 : open.back();
+        for (const auto& attr : node.attributes) {
+            BinaryXmlAttribute a{LegacyName(*this, attr.namespace_index),
+                                 LegacyName(*this, attr.name_index),
+                                 attr.value.type,
+                                 attr.value.data,
+                                 {}};
+            a.raw_string = LegacyString(*this, attr.raw_value_index != kNoIndex
+                                                   ? attr.raw_value_index
+                                                   : (attr.value.type == kTypeString ? attr.value.data : kNoIndex));
+            if (a.namespace_uri == kAndroidNamespace) {
+                if (a.name == "id")
+                    element.id = a.data;
+                else if (a.name == "layout_width")
+                    element.layout_width = LayoutSize(a.value_type, a.data);
+                else if (a.name == "layout_height")
+                    element.layout_height = LayoutSize(a.value_type, a.data);
+                else if (a.name == "gravity")
+                    element.gravity = a.data;
+                else if (a.name == "layout_gravity")
+                    element.layout_gravity = a.data;
+                else if (a.name == "paddingTop")
+                    element.padding_top = DimensionPx(a.data);
+                else if (a.name == "src")
+                    element.src = a.data;
             }
-            const auto ext = offset + header_size;
-            RequireRange(bytes, ext, 12);
-            const auto text_index = Read32(bytes, ext);
-            if (!saw_pool || text_index >= pool.offsets.size())
-                throw std::runtime_error("binary XML text string is invalid");
-            result.events.push_back({BinaryXmlPullEventType::text, {}, pool.At(text_index), depth});
+            element.attributes.push_back(std::move(a));
         }
-        if (type >= 0x0100 && type <= 0x017f) {
-            if (!saw_pool) throw std::runtime_error(pool_error.empty() ? "binary XML has no string pool" : pool_error);
-            saw_node = true;
-        }
-        offset += size;
+        open.push_back(static_cast<std::int32_t>(result.size()));
+        result.push_back(std::move(element));
     }
-    if (offset != document_size) {
-        throw std::runtime_error("binary XML document has trailing bytes");
-    }
-    result.events.push_back({BinaryXmlPullEventType::end_document, {}, {}, depth});
     return result;
 }
 
-}  // namespace
-
-std::vector<BinaryXmlElement> ParseBinaryXmlElements(
-    const std::span<const std::byte> bytes) {
-    return ParseBinaryXml(bytes).elements;
+std::vector<BinaryXmlPullEvent> CompiledXmlDocument::PullEvents() const {
+    std::vector<BinaryXmlPullEvent> result{{BinaryXmlPullEventType::start_document, {}, {}, 0}};
+    std::int32_t depth{};
+    for (const auto& node : nodes_) {
+        if (node.type == kStartElementType)
+            result.push_back({BinaryXmlPullEventType::start_tag, LegacyName(*this, node.name_index), {}, ++depth});
+        else if (node.type == kEndElementType)
+            result.push_back({BinaryXmlPullEventType::end_tag, LegacyName(*this, node.name_index), {}, depth--});
+        else if (node.type == kCdataType)
+            result.push_back({BinaryXmlPullEventType::text, {}, LegacyName(*this, node.text_index), depth});
+    }
+    result.push_back({BinaryXmlPullEventType::end_document, {}, {}, depth});
+    return result;
 }
 
-std::vector<BinaryXmlPullEvent> ParseBinaryXmlPullEvents(
-    const std::span<const std::byte> bytes) {
-    return ParseBinaryXml(bytes).events;
+std::shared_ptr<const CompiledXmlDocument> ParseCompiledXmlDocument(std::span<const std::byte> bytes) {
+    return CompiledXmlDocumentBuilder::Parse(bytes, true);
 }
 
+std::vector<BinaryXmlElement> ParseBinaryXmlElements(std::span<const std::byte> bytes) {
+    return CompiledXmlDocumentBuilder::Parse(bytes, false)->Elements();
+}
+
+std::vector<BinaryXmlPullEvent> ParseBinaryXmlPullEvents(std::span<const std::byte> bytes) {
+    return CompiledXmlDocumentBuilder::Parse(bytes, false)->PullEvents();
+}
 }  // namespace ogplay::loader

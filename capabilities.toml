@@ -46,7 +46,7 @@ note = "BND-25/39/40、ADR-0076：dlopen/dlsym/dlclose/dlerror 接进程 ELF nam
 [loader.binary_xml_typed_attributes]
 status = "complete"
 test = "tests/loader/binary_xml_tests.cpp"
-note = "LUI-1 保留 namespace/name、typed value type/data 与 raw/typed string；旧 layout 字段仅为迁移期单向 adapter，string-pool chunk 边界和元素 nesting 严格受检"
+note = "LUI-1/DVM-286：不可变 compiled XML 保留原 bytes/string pool/resource map、namespace/line、typed/raw 与特殊一基索引、start/end 关联；新接口受检失败，Elements/PullEvents 共用事实并保持 Legacy 输出。context 强类型 cursor 支持独立推进/关闭/owner 退役/teardown；未暴露 XmlBlock native 或属性构造。"
 
 [runtime.ui_tree]
 status = "complete"

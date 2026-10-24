@@ -37,3 +37,7 @@ InferDataMount 只比对报告缺失路径与数据目录实际文件（ASCII �
 不支持时检查剩余空间后流式复制。只接受普通文件和目录，与库根互相包含、符号链接/特殊文件
 明确失败。ImportProgress 报告字节并在发布前接受取消（`import_cancelled`）。游戏设置
 external_dir 与库内路径不同时即按 link 解析。
+
+图标：入库与导入分析从 application icon 的全部密度配置中选面积最大且可解码的 PNG（跳过 XML、.9.png），
+存方形 RGBA PNG，不放大、超过 kLauncherIconMaxSize（256）才缩小。`RefreshIcons`/CLI `library refresh-icons`
+在库锁内按当前规则从各条目 game.apk 重提 icon.png，原子替换，读不出的条目保留原图标。

@@ -60,6 +60,7 @@ constexpr std::string_view kDetails =
     "  remove <installation-id> --yes [--delete-saves]\n"
     "                                Remove an installation; saves are kept and\n"
     "                                reused by the next import unless deleted\n"
+    "  refresh-icons                 Re-extract every library icon from its APK\n"
     "  data-hint <installation-id> [--external-dir <dir>]\n"
     "                                Suggest a data mount from the last run\n"
     "  settings get <installation-id>\n"

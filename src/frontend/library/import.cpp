@@ -1,5 +1,6 @@
 #include "ogplay/app/apk_inspect.h"
 
+#include <algorithm>
 #include <fstream>
 #include <set>
 #include <iterator>
@@ -9,6 +10,7 @@
 
 #include "ogplay/loader/apk.h"
 #include "ogplay/loader/apk_native.h"
+#include "locks.h"
 #include "profiles_private.h"
 
 namespace ogplay::app {
@@ -39,6 +41,48 @@ namespace {
 }
 
 }  // namespace
+
+std::vector<std::string> LibraryStore::RefreshIcons() {
+    auto library_lock = RequireLibraryLock(root_);
+    std::vector<std::string> refreshed;
+    std::error_code error;
+    for (std::filesystem::directory_iterator iterator(EntriesRoot(), error), end; !error && iterator != end;
+         iterator.increment(error)) {
+        const auto name = iterator->path().filename().u8string();
+        std::error_code entry_error;
+        if (name.empty() || name.front() == u8'.' || !iterator->is_directory(entry_error)) continue;
+        const auto directory = iterator->path();
+        std::vector<std::byte> icon;
+        try {
+            icon = ExtractApkApplicationVisuals(ReadApkBytes(directory / "game.apk")).icon_png;
+        } catch (const std::exception&) {
+            continue;  // damaged entries are reported by LoadEntries, not here
+        }
+        if (icon.empty()) continue;
+        const auto target = directory / "icon.png";
+        std::ifstream current(target, std::ios::binary);
+        const std::vector<char> existing{std::istreambuf_iterator<char>(current), {}};
+        if (existing.size() == icon.size() &&
+            std::equal(existing.begin(), existing.end(), icon.begin(),
+                       [](const char left, const std::byte right) { return static_cast<std::byte>(left) == right; }))
+            continue;
+        const auto temporary = directory / ".icon.png.refresh";
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output.write(reinterpret_cast<const char*>(icon.data()), static_cast<std::streamsize>(icon.size()));
+            if (!output) throw LibraryError(LibraryErrorCode::io_error, "cannot write refreshed icon", temporary);
+        }
+        std::filesystem::rename(temporary, target, entry_error);
+        if (entry_error) {
+            std::filesystem::remove(temporary, entry_error);
+            throw LibraryError(LibraryErrorCode::io_error, "cannot replace library icon", target);
+        }
+        const auto key = iterator->path().filename().u8string();
+        refreshed.emplace_back(reinterpret_cast<const char*>(key.data()), key.size());
+    }
+    if (error) throw LibraryError(LibraryErrorCode::io_error, "cannot enumerate game library", EntriesRoot());
+    return refreshed;
+}
 
 ApkImportAnalysis AnalyzeApkImport(
     const std::span<const std::byte> apk_bytes,

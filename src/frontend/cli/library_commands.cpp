@@ -222,6 +222,14 @@ int RunLibraryCommand(std::span<const char* const> args) {
         result = writer.Object();
         writer.AddString(result, "installation_id", id);
         writer.AddBool(result, "removed", true);
+    } else if (command == "refresh-icons") {
+        end();
+        const auto refreshed = store.RefreshIcons();
+        result = writer.Object();
+        const auto ids = writer.Array();
+        for (const auto& id : refreshed)
+            writer.Append(ids, writer.String(id));
+        writer.Add(result, "refreshed", ids);
     } else if (command == "data-hint") {
         const std::string id(require());
         std::optional<std::filesystem::path> picked;

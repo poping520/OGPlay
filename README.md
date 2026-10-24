@@ -22,6 +22,8 @@
 
 OGPlay 让你尝试在电脑上运行经典 Android 游戏，把自己的 APK 和数据包整理到一个游戏库中，选择游戏即可启动，无需先启动完整的 Android 系统。
 
+![OGPlay 游戏库界面](assets/pic/LibraryStore.jpg)
+
 > [!NOTE]
 > 项目仍处于**早期 Alpha 阶段，暂未发布版本**。部分游戏已能进入菜单或游戏场景，但尚不能保证完整游玩。OGPlay 不附带游戏，使用前需要自行准备 APK 和相应数据包。
 

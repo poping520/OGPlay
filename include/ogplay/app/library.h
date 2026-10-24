@@ -118,6 +118,9 @@ public:
     [[nodiscard]] bool IsRunning(std::string_view key) const;
     // Saves stay by default and are adopted by the next import of the package.
     void Remove(std::string_view key, bool delete_saves = false);
+    // Re-extracts each entry's icon.png from its own game.apk with the current icon
+    // rule; returns the ids whose icon changed. Unreadable entries keep their icon.
+    std::vector<std::string> RefreshIcons();
 
 private:
     std::filesystem::path root_;

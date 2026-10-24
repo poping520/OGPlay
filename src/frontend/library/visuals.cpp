@@ -1,6 +1,7 @@
 #include "ogplay/app/apk_visuals.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <exception>
 #include <optional>
@@ -44,18 +45,26 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
     });
 }
 
+// Square icon at the source's own size up to kLauncherIconMaxSize: the view scales it
+// once, so upscaling here would only add a second resample.
 [[nodiscard]] std::vector<std::byte> NormalizeIcon(
     const std::span<const std::byte> encoded) {
     const auto decoded = runtime::DecodeImageToArgb(encoded);
-    if (!decoded.has_value()) return {};
+    if (!decoded.has_value() || decoded->width == 0 || decoded->height == 0) return {};
 
-    constexpr auto side = static_cast<std::size_t>(kLauncherIconSize);
-    const auto source_width = static_cast<std::size_t>(decoded->width);
-    const auto source_height = static_cast<std::size_t>(decoded->height);
-    const auto resized = ResizeArgbBilinear(
-        decoded->argb, static_cast<std::uint32_t>(source_width),
-        static_cast<std::uint32_t>(source_height), kLauncherIconSize,
-        kLauncherIconSize);
+    auto width = static_cast<std::uint32_t>(decoded->width);
+    auto height = static_cast<std::uint32_t>(decoded->height);
+    const auto target = std::min(std::max(width, height), kLauncherIconMaxSize);
+    std::vector<std::uint32_t> resized(decoded->argb.begin(), decoded->argb.end());
+    // Halving first keeps a large reduction from skipping source pixels (bilinear
+    // at exactly 2:1 averages each 2x2 block).
+    while (width >= target * 2U && height >= target * 2U) {
+        resized = ResizeArgbBilinear(resized, width, height, width / 2U, height / 2U);
+        width /= 2U;
+        height /= 2U;
+    }
+    if (width != target || height != target) resized = ResizeArgbBilinear(resized, width, height, target, target);
+    const auto side = static_cast<std::size_t>(target);
     std::vector<std::uint8_t> rgba(side * side * 4U);
     for (std::size_t y = 0; y < side; ++y) {
         for (std::size_t x = 0; x < side; ++x) {
@@ -69,12 +78,26 @@ void AppendPngBytes(void* context, void* data, const int size) noexcept {
     }
 
     PngOutput output;
-    const auto encoded_ok = stbi_write_png_to_func(
-        AppendPngBytes, &output, static_cast<int>(kLauncherIconSize),
-        static_cast<int>(kLauncherIconSize), 4, rgba.data(),
-        static_cast<int>(kLauncherIconSize * 4U));
+    const auto encoded_ok =
+        stbi_write_png_to_func(AppendPngBytes, &output, static_cast<int>(target), static_cast<int>(target), 4,
+                               rgba.data(), static_cast<int>(target * 4U));
     if (encoded_ok == 0 || output.failed) return {};
     return output.bytes;
+}
+
+// PNG width x height from the IHDR chunk, without decoding; 0 for anything else.
+[[nodiscard]] std::uint64_t PngArea(const std::span<const std::byte> bytes) {
+    constexpr std::array<std::uint8_t, 8> signature{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    if (bytes.size() < 24) return 0;
+    for (std::size_t index = 0; index < signature.size(); ++index)
+        if (std::to_integer<std::uint8_t>(bytes[index]) != signature[index]) return 0;
+    const auto be32 = [&](const std::size_t offset) {
+        std::uint32_t value{};
+        for (std::size_t index = 0; index < 4; ++index)
+            value = (value << 8U) | std::to_integer<std::uint32_t>(bytes[offset + index]);
+        return value;
+    };
+    return static_cast<std::uint64_t>(be32(16)) * be32(20);
 }
 
 [[nodiscard]] std::optional<loader::ArscTable> ReadResources(
@@ -219,25 +242,52 @@ ApkApplicationVisuals ExtractApkApplicationVisuals(
             ApplicationVisualFallback::icon_resources_unavailable);
         return result;
     }
-    const auto* icon = resources->FindById(*manifest.application_icon);
-    if (icon == nullptr || !icon->string_value.has_value()) {
+    // The icon id has one entry per density/configuration (ldpi … xxxhdpi, anydpi XML);
+    // the largest PNG wins, the next one is tried if it does not decode.
+    std::vector<const loader::ArscEntry*> configurations;
+    for (const auto& entry : resources->entries)
+        if (entry.resource_id == *manifest.application_icon && entry.string_value.has_value())
+            configurations.push_back(&entry);
+    if (configurations.empty()) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::icon_resource_missing);
         return result;
     }
-    if (!SupportedPngPath(*icon->string_value)) {
+
+    struct Candidate final {
+        std::uint64_t area{};
+        std::uint16_t density{};
+        std::vector<std::byte> bytes;
+    };
+
+    std::vector<Candidate> candidates;
+    bool supported{};
+    for (const auto* entry : configurations) {
+        if (!SupportedPngPath(*entry->string_value)) continue;
+        supported = true;
+        try {
+            auto bytes = loader::ReadApkEntry(apk_bytes, archive, *entry->string_value);
+            candidates.push_back({PngArea(bytes), entry->density, std::move(bytes)});
+        } catch (const std::exception&) {
+            // another density may still be readable
+        }
+    }
+    if (!supported) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::icon_path_unsupported);
         return result;
     }
-    try {
-        const auto bytes = loader::ReadApkEntry(apk_bytes, archive,
-                                                *icon->string_value);
-        result.icon_png = NormalizeIcon(bytes);
-    } catch (const std::exception&) {
+    if (candidates.empty()) {
         result.fallbacks.push_back(
             ApplicationVisualFallback::icon_entry_unavailable);
         return result;
+    }
+    std::stable_sort(candidates.begin(), candidates.end(), [](const auto& left, const auto& right) {
+        return left.area != right.area ? left.area > right.area : left.density > right.density;
+    });
+    for (const auto& candidate : candidates) {
+        result.icon_png = NormalizeIcon(candidate.bytes);
+        if (!result.icon_png.empty()) break;
     }
     if (result.icon_png.empty()) {
         result.fallbacks.push_back(

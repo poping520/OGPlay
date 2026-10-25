@@ -5,6 +5,8 @@
 #include <cstring>
 #include <limits>
 #include <utility>
+#include <thread>
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
 
 #include "ogplay/audio/encoded_music.h"
 #include "ogplay/audio/open_sles_pcm_mixer.h"
@@ -304,6 +306,12 @@ void RegisterAndroidAudioTrackStateTable(
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
+void RequireVideoOwner(const Context& context, dx::Interpreter& vm) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+        (vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id()))
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "VideoView metadata requires owner"};
+}
+
 void CheckVideoBudget(const Context& context, dx::IntrinsicContext& call) {
     if (!context->video_views.contains(call.receiver.Value()) && context->video_views.size() >= 8U) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.instance_budget", 0);
@@ -314,6 +322,7 @@ void CheckVideoBudget(const Context& context, dx::IntrinsicContext& call) {
 void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
                      std::shared_ptr<const video::VideoDataSource> source,
                      std::string name, std::int32_t generation) {
+    RequireVideoOwner(context, call.vm);
     std::scoped_lock lock(context->video_views_mutex);
     CheckVideoBudget(context, call);
     if (!context->video_source_player_factory) {
@@ -333,12 +342,14 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
         state.duration_ms = state.player->Metadata().duration_ms;
         state.pending_event = 1;
         context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
-        if (const auto view_node = FindViewUiNode(*context, call.receiver.Value())) {
-            auto* view = context->ui_tree.Get(*view_node);
-            const auto& metadata = context->video_views.at(call.receiver.Value()).player->Metadata();
-            view->intrinsic = {static_cast<std::int32_t>(metadata.width), static_cast<std::int32_t>(metadata.height)};
-            context->ui_tree.MarkLayoutDirty(*view_node);
-        }
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
+            if (const auto view_node = FindViewUiNode(*context, call.receiver.Value())) {
+                auto* view = context->ui_tree.Get(*view_node);
+                const auto& metadata = context->video_views.at(call.receiver.Value()).player->Metadata();
+                view->intrinsic = {static_cast<std::int32_t>(metadata.width),
+                                   static_cast<std::int32_t>(metadata.height)};
+                context->ui_tree.MarkLayoutDirty(*view_node);
+            }
         GuestLog(call, core::LogLevel::info, "VideoView: local video prepared; callback pending");
     } catch (const video::VideoCodecUnsupportedError& error) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
@@ -351,6 +362,42 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
 
 Decl Declare_android_widget_VideoView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/SurfaceView;");
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Bounded Java playback protocol is retained; this is deliberately not
+        // ROM VideoView.onMeasure (ADR-0161). No ROM geometry is written here.
+        context->video_view_generation_field = builder.BoundInstanceField("mGeneration", "I", dx::kAccPrivate);
+        builder.OverrideMethod(
+            "onMeasure", "(II)V",
+            [context](dx::IntrinsicContext& call) {
+                RequireVideoOwner(context, call.vm);
+                const auto node = FindViewUiNode(*context, call.receiver.Value());
+                if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "VideoView has no UI identity"};
+                const auto get = [&](const char* method) {
+                    return CallAndroidMethod(call.vm, call.receiver, method, "()I").AsInt();
+                };
+                const ui::ImageLeafInput input{
+                    context->ui_tree.Get(*node)->intrinsic,
+                    {get("getPaddingLeft"), get("getPaddingTop"), get("getPaddingRight"), get("getPaddingBottom")},
+                    {get("getSuggestedMinimumWidth"), get("getSuggestedMinimumHeight")}};
+                const auto spec = [](int bits) {
+                    const auto mode = static_cast<std::uint32_t>(bits) >> 30U;
+                    if (mode == 3U)
+                        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid video MeasureSpec"};
+                    return ui::MeasureSpec{mode == 1U   ? ui::MeasureMode::Exactly
+                                           : mode == 2U ? ui::MeasureMode::AtMost
+                                                        : ui::MeasureMode::Unspecified,
+                                           bits & 0x3fffffff};
+                };
+                const auto result =
+                    ui::MeasureImageLeaf(input, spec(call.arguments[0].AsInt()), spec(call.arguments[1].AsInt()));
+                // Original ClampSize ignores TOO_SMALL; do not inherit ImageView state.
+                static_cast<void>(CallAndroidMethod(
+                    call.vm, call.receiver, "setMeasuredDimension", "(II)V",
+                    {dx::VmValue::Int(result.constrained.width), dx::VmValue::Int(result.constrained.height)}));
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+    }
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
     builder.DirectMethod("nativeOpenPath", "(Ljava/lang/String;I)V", [context](dx::IntrinsicContext& call) {
         if (!context->vfs) throw dx::VmJavaThrow{"Ljava/io/IOException;", "video VFS unavailable"};
@@ -384,19 +431,23 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         OpenVideoSource(context, call, std::make_shared<EncodedVideoSource>(data), source.name, call.arguments[3].AsInt());
         return dx::VmValue::Void();
     }, flags);
-    builder.DirectMethod("nativeOpenError", "(ILjava/lang/String;)V", [context](dx::IntrinsicContext& call) {
-        std::scoped_lock lock(context->video_views_mutex);
-        CheckVideoBudget(context, call);
-        DexVmAndroidContext::VideoViewState state;
-        state.generation = call.arguments[0].AsInt();
-        state.pending_event = 100;
-        const auto node = FindViewUiNode(*context, call.receiver.Value());
-        state.was_attached = node && context->ui_tree.IsAttached(*node);
-        state.guest_path = call.vm.StringUtf8(call.arguments[1].ref).substr(0, 2048);
-        GuestLog(call, core::LogLevel::warn, "VideoView: " + state.guest_path);
-        context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
-        return dx::VmValue::Void();
-    }, flags);
+    builder.DirectMethod(
+        "nativeOpenError", "(ILjava/lang/String;)V",
+        [context](dx::IntrinsicContext& call) {
+            RequireVideoOwner(context, call.vm);
+            std::scoped_lock lock(context->video_views_mutex);
+            CheckVideoBudget(context, call);
+            DexVmAndroidContext::VideoViewState state;
+            state.generation = call.arguments[0].AsInt();
+            state.pending_event = 100;
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            state.was_attached = node && context->ui_tree.IsAttached(*node);
+            state.guest_path = call.vm.StringUtf8(call.arguments[1].ref).substr(0, 2048);
+            GuestLog(call, core::LogLevel::warn, "VideoView: " + state.guest_path);
+            context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
+            return dx::VmValue::Void();
+        },
+        flags);
     builder.DirectMethod("nativeUnsupported", "(Ljava/lang/String;)V", [](dx::IntrinsicContext& call) -> dx::VmValue {
         const auto operation = call.vm.StringUtf8(call.arguments[0].ref);
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video." + operation, 0);
@@ -406,15 +457,29 @@ Decl Declare_android_widget_VideoView(const Context& context) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.unhandled_error_ui", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "video error was not handled; Android error dialog is unavailable"};
     }, flags);
-    builder.DirectMethod("nativeRelease", "(I)V", [context](dx::IntrinsicContext& call) {
-        std::scoped_lock lock(context->video_views_mutex);
-        const auto found = context->video_views.find(call.receiver.Value());
-        if (found != context->video_views.end() && found->second.generation == call.arguments[0].AsInt()) {
-            context->video_views.erase(found);
-            if (const auto node = FindViewUiNode(*context, call.receiver.Value())) context->ui_tree.MarkDrawDirty(*node);
-        }
-        return dx::VmValue::Void();
-    }, flags);
+    builder.DirectMethod(
+        "nativeRelease", "(I)V",
+        [context](dx::IntrinsicContext& call) {
+            RequireVideoOwner(context, call.vm);
+            bool released = false;
+            {
+                std::scoped_lock lock(context->video_views_mutex);
+                const auto found = context->video_views.find(call.receiver.Value());
+                if (found != context->video_views.end() && found->second.generation == call.arguments[0].AsInt()) {
+                    context->video_views.erase(found);
+                    released = true;
+                    if (const auto node = FindViewUiNode(*context, call.receiver.Value())) {
+                        context->ui_tree.MarkDrawDirty(*node);
+                        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+                            context->ui_tree.Get(*node)->intrinsic = {};
+                    }
+                }
+            }
+            if (released && context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V"));
+            return dx::VmValue::Void();
+        },
+        flags);
     const auto with_state = [context](auto operation) {
         return [context, operation](dx::IntrinsicContext& call) {
             std::scoped_lock lock(context->video_views_mutex);
@@ -463,7 +528,12 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.DirectMethod("nativeWidth", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.player->Metadata().width)); }), flags);
     builder.DirectMethod("nativeHeight", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.player->Metadata().height)); }), flags);
     builder.DirectMethod("nativeIsPlaying", "(I)Z", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(state.playing ? 1 : 0); }), flags);
-    return std::move(builder).Build();
+    auto declaration = std::move(builder).Build();
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        for (auto& method : declaration.methods)
+            if (method.name == "onMeasure" && method.descriptor == "(II)V")
+                method.adapter_review = "tools/bootdex/view-video-adapter.json#onMeasure";
+    return declaration;
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -565,6 +635,11 @@ bool AnyVideoPlaying(const DexVmAndroidContext& context) {
 
 bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
     if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return false;
+    const auto snapshot = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                              ? context.ui_tree.PublishedProjection()
+                              : nullptr;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return false;
+    const auto& tree = snapshot ? *snapshot : context.ui_tree;
     std::scoped_lock lock(context.video_views_mutex);
     for (const auto& [handle, state] : context.video_views) {
         if (!state.latest_frame) continue;
@@ -572,8 +647,8 @@ bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
         if (frame.width == 0 || frame.height == 0 ||
             frame.rgba8.size() != static_cast<std::uint64_t>(frame.width) * frame.height * 4U) continue;
         const auto id = FindViewUiNode(context, state.media_player ? state.display_view.Value() : handle);
-        if (!id || !context.ui_tree.IsVisible(*id)) continue;
-        const auto* node = context.ui_tree.Get(*id);
+        if (!id || !tree.IsVisible(*id)) continue;
+        const auto* node = tree.Get(*id);
         const ui::Rect window{0, 0, static_cast<std::int32_t>(context.surface_width),
                                   static_cast<std::int32_t>(context.surface_height)};
         const auto covers = [&](const ui::Rect rect) {
@@ -583,7 +658,7 @@ bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
         if (!covers(node->screen_frame)) continue;
         bool opaque = true;
         for (auto current = *id; current; ) {
-            node = context.ui_tree.Get(current);
+            node = tree.Get(current);
             if (!node || !node->window_visible || node->visibility != ui::Visibility::Visible || node->alpha != 1.0F) {
                 opaque = false;
                 break;
@@ -894,15 +969,20 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
                        const bool on_top) {
     if (width == 0 || height == 0 ||
         canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
+    const auto snapshot = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                              ? context.ui_tree.PublishedProjection()
+                              : nullptr;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return;
+    const auto& tree = snapshot ? *snapshot : context.ui_tree;
     std::scoped_lock lock(context.video_views_mutex);
     if (context.video_views.empty()) return;
     const auto intersect = [](ui::Rect a, const ui::Rect b) {
         return ui::Rect{std::max(a.left, b.left), std::max(a.top, b.top),
                         std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
     };
-    const auto visit = [&](const auto& self, const ui::UiNodeId id,
-                           ui::Rect clip, float alpha, ui::SurfaceLayer layer) -> void {
-        const auto* node = context.ui_tree.Get(id);
+    const auto visit = [&](const auto& self, const ui::UiNodeId id, ui::Rect clip, float alpha,
+                           ui::SurfaceLayer layer) -> void {
+        const auto* node = tree.Get(id);
         if (!node || !node->window_visible || node->visibility != ui::Visibility::Visible) return;
         alpha *= std::clamp(node->alpha, 0.0F, 1.0F);
         const auto object = context.ui_node_to_object.find(id);
@@ -966,31 +1046,35 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
                         // Child traversal still applies below; only this
                         // surface's pixel loop has been completed.
                     } else {
-                    for (auto y = visible.top; y < visible.bottom; ++y) {
-                        for (auto x = visible.left; x < visible.right; ++x) {
-                            const auto target = (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)) * 4U;
-                            const bool in_image = x >= image_left && x < image_left + image_width &&
-                                                  y >= image_top && y < image_top + image_height;
-                            std::size_t source{};
-                            if (in_image) {
-                                const auto sx = static_cast<std::uint64_t>(x - image_left) * frame.width / static_cast<std::uint64_t>(image_width);
-                                const auto sy = static_cast<std::uint64_t>(y - image_top) * frame.height / static_cast<std::uint64_t>(image_height);
-                                source = static_cast<std::size_t>((sy * frame.width + sx) * 4U);
-                            }
-                            if (alpha == 1.0F) {
+                        for (auto y = visible.top; y < visible.bottom; ++y) {
+                            for (auto x = visible.left; x < visible.right; ++x) {
+                                const auto target =
+                                    (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)) * 4U;
+                                const bool in_image = x >= image_left && x < image_left + image_width &&
+                                                      y >= image_top && y < image_top + image_height;
+                                std::size_t source{};
                                 if (in_image) {
-                                    std::copy_n(frame.rgba8.data() + source, 3U, canvas.data() + target);
-                                } else {
-                                    canvas[target] = canvas[target + 1U] = canvas[target + 2U] = 0;
+                                    const auto sx = static_cast<std::uint64_t>(x - image_left) * frame.width /
+                                                    static_cast<std::uint64_t>(image_width);
+                                    const auto sy = static_cast<std::uint64_t>(y - image_top) * frame.height /
+                                                    static_cast<std::uint64_t>(image_height);
+                                    source = static_cast<std::size_t>((sy * frame.width + sx) * 4U);
                                 }
-                            } else for (std::size_t channel = 0; channel < 3U; ++channel) {
-                                const auto value = in_image ? frame.rgba8[source + channel] : 0;
-                                canvas[target + channel] = static_cast<std::uint8_t>(
-                                    std::lround(value * alpha + canvas[target + channel] * (1.0F - alpha)));
+                                if (alpha == 1.0F) {
+                                    if (in_image) {
+                                        std::copy_n(frame.rgba8.data() + source, 3U, canvas.data() + target);
+                                    } else {
+                                        canvas[target] = canvas[target + 1U] = canvas[target + 2U] = 0;
+                                    }
+                                } else
+                                    for (std::size_t channel = 0; channel < 3U; ++channel) {
+                                        const auto value = in_image ? frame.rgba8[source + channel] : 0;
+                                        canvas[target + channel] = static_cast<std::uint8_t>(
+                                            std::lround(value * alpha + canvas[target + channel] * (1.0F - alpha)));
+                                    }
+                                canvas[target + 3U] = 255U;
                             }
-                            canvas[target + 3U] = 255U;
                         }
-                    }
                     }
                 }
             }
@@ -998,17 +1082,21 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
         if (node->clip_children) clip = intersect(clip, node->screen_frame);
         if (node->clip_to_padding) {
             auto padded = node->screen_frame;
-            padded.left += node->padding.left; padded.top += node->padding.top;
-            padded.right -= node->padding.right; padded.bottom -= node->padding.bottom;
+            padded.left += node->padding.left;
+            padded.top += node->padding.top;
+            padded.right -= node->padding.right;
+            padded.bottom -= node->padding.bottom;
             clip = intersect(clip, padded);
         }
-        for (const auto child : node->children) self(self, child, clip, alpha, layer);
+        for (const auto child : node->children)
+            self(self, child, clip, alpha, layer);
     };
     const ui::Rect bounds{0, 0, static_cast<std::int32_t>(width), static_cast<std::int32_t>(height)};
-    if (on_top) visit(visit, context.ui_tree.Root(), bounds, 1.0F, ui::SurfaceLayer::on_top);
+    if (on_top)
+        visit(visit, tree.Root(), bounds, 1.0F, ui::SurfaceLayer::on_top);
     else {
-        visit(visit, context.ui_tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media);
-        visit(visit, context.ui_tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media_overlay);
+        visit(visit, tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media);
+        visit(visit, tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media_overlay);
     }
 }
 

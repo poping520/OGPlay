@@ -599,3 +599,16 @@ View.onScrollChanged 接缝只接受未系统附着且 accessibility 显式 disa
 onTouchEvent 接缝只在宿主单指分发作用域内开放：前者委托 ROM ViewGroup 父协议，后者
 接受有内容的捕获供宿主 delta 路径使用；作用域外/null/多指明确失败，不写 Java 手势镜像。
 Legacy 位置与输入路径保持。
+
+## 实验 VideoView 测量与 metadata
+
+JavaTraversal 保留有界 VideoView/VideoMediaPlayer Java 播放协议与媒体 native owner，
+不迁 ROM VideoView 字段、构造或比例算法。onMeasure 为逐签名受审 adapter，读取 owner
+已交付 intrinsic 与虚派 Java padding/suggested minimum，复用 MeasureImageLeaf 的 constrained
+结果（原 ClampSize，不携带 TOO_SMALL），真实虚派 setMeasuredDimension；不写几何。
+源打开仅保存 decoder metadata；owner 交付同时核验 native 与 Java mGeneration 后更新
+intrinsic 输入并 requestLayout。换源/释放撤销输入，旧事件不能恢复尺寸；非 owner 拒绝。
+回调期间不持视频锁；工作线程不进 VM、不写输入或发布快照。Java owner tick 完整提交后
+才发布新几何，视频合成与 raster/hit 读取同一 PublishedProjection 的 frame/clip。
+原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
+Legacy 继续原打开即导入 intrinsic、宿主测量路径；生产 BootDex 字节不变。

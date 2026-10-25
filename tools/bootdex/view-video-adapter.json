@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "owner": "Landroid/widget/VideoView;",
+  "signature": "onMeasure(II)V",
+  "implementation_source": "adapter",
+  "rom_algorithm_credit": false,
+  "reason": "ADR-0161 decision 6 / DVM-303; preserve bounded Java playback and original ClampSize measurement",
+  "inputs": "owner-approved intrinsic, virtual Java padding/minimum, both MeasureSpecs",
+  "outputs": "MeasureImageLeaf constrained dimensions via virtual Java setMeasuredDimension, no TOO_SMALL",
+  "state_owner": "bounded Java VideoView owns generation/player; native source owns metadata; owner delivery updates intrinsic input; Java owns geometry; published projection owns frozen geometry",
+  "failure_boundary": "non-owner or missing identity rejects; unknown metadata is zero; stale events do not publish; subtitles/AudioManager/MediaController/error AlertDialog remain unimplemented",
+  "rom_difference": "320x240 double EXACT 200x100: original service/adapter=200x100, ROM=133x100"
+}

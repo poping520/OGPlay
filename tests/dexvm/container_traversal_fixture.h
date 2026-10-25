@@ -25,7 +25,9 @@ struct ContainerVm {
     JavaObjectModel& model;
 
     std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend);
+    std::unique_ptr<ogplay::session::AndroidAppProcess> Create(InterpreterBackend backend, bool include_skeleton);
     explicit ContainerVm(InterpreterBackend backend);
+    ContainerVm(InterpreterBackend backend, bool include_skeleton);
     VmValue Checked(const VmCallOutcome& result);
     VmCallOutcome OnOutcome(VmObjectRef object, const char* name, const char* descriptor,
                             std::vector<VmValue> args = {});

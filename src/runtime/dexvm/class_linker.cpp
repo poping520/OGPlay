@@ -302,6 +302,7 @@ void DexClassLinker::RegisterIntrinsics(
                     : method.invoke_kind;
             linked_method.must_override = method.must_override;
             linked_method.implementation = method.implementation;
+            linked_method.adapter_review = method.adapter_review;
             const auto parts = SplitDescriptor(method.descriptor);
             linked_method.shape = ShapeOf(parts, method.is_static);
             linked_method.return_shorty = ShortyOf(parts.return_type);
@@ -493,10 +494,12 @@ DexUnitId DexClassLinker::RegisterBootDex(std::vector<std::uint8_t> dex_bytes, c
                     invalid("ROM method has no bytecode " + key);
                 actual->kind = MethodKind::interpreted;
                 actual->implementation = {};
+                actual->adapter_review.clear();
                 actual->is_skeleton = false;
             } else if (source == "failure") {
                 actual->kind = MethodKind::intrinsic;
                 actual->implementation = {};
+                actual->adapter_review.clear();
                 actual->code.reset();
                 actual->is_skeleton = true;
             } else
@@ -959,6 +962,10 @@ std::string DexClassLinker::DumpSurfaceJson() {
             const bool implemented = static_cast<bool>(method.implementation) ||
                 method.kind == MethodKind::interpreted || method.kind == MethodKind::abstract;
             out.AddString(item, "status", implemented ? "implemented" : "unimplemented-ledger");
+            if (!method.adapter_review.empty()) {
+                out.AddString(item, "implementation_source", "adapter");
+                out.AddString(item, "adapter_review", method.adapter_review);
+            }
             out.AddString(item, "binding", dynamic ? "guest-jni-unverified" :
                 method.kind == MethodKind::abstract ? "abstract-contract" :
                 method.kind == MethodKind::interpreted ? "bytecode" : "intrinsic");

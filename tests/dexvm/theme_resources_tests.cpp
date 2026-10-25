@@ -2177,3 +2177,51 @@ TEST_CASE("DVM-314 lazy reviewed drawable references retain unsupported scrollba
         CHECK_FALSE(failed.exception_message.empty());
     }
 }
+
+TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constructor first stack") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = f.New("Landroid/app/Activity;");
+        f.context->activity = owner;
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+        // Root attributes from the observed movie overlay: horizontal, match_parent both axes.
+        auto attrs = InflateSize(0xffffffffU, 0xffffffffU);
+        attrs.push_back({0x010100c4, 16, 0});
+        InstallInflateLayouts(f, {{"RelativeLayout", attrs, {}}});
+        const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
+        const auto outcome = f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                                         {VmValue::Int(0x7f030001), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(f.linker.Class(outcome.exception_class).descriptor == "Landroid/view/InflateException;");
+        const auto wrapper = f.On(outcome.exception, "getCause", "()Ljava/lang/Throwable;").ref;
+        REQUIRE(wrapper.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(wrapper)).descriptor ==
+              "Ljava/lang/reflect/InvocationTargetException;");
+        const auto target = f.On(wrapper, "getTargetException", "()Ljava/lang/Throwable;").ref;
+        REQUIRE(target.IsValid());
+        const auto message = f.vm.StringUtf8(f.On(target, "getMessage", "()Ljava/lang/String;").ref);
+        INFO(message);
+        CHECK(message.find("scrollbar") != std::string::npos);
+        const auto task_type = f.linker.ResolveDescriptor("Ltest/OwnerMutation;");
+        const auto run = f.linker.FindVtableIndex(task_type, "run", "()V");
+        REQUIRE(run);
+        auto& method = f.linker.MutableMethod(f.linker.Class(task_type).vtable[*run]);
+        method.code.reset();
+        method.fast_code.reset();
+        method.kind = MethodKind::intrinsic;
+        method.implementation = [fault = outcome.exception](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Landroid/view/InflateException;", "", fault};
+        };
+        const auto handler = f.New("Landroid/os/Handler;");
+        const auto task = f.New("Ltest/OwnerMutation;");
+        const auto roots = f.vm.ProtectReferences(std::array{outcome.exception, handler, task});
+        f.On(handler, "post", "(Ljava/lang/Runnable;)Z", {VmValue::Ref(task)});
+        const auto failure = PumpJavaThreads(f.vm, *f.context);
+        REQUIRE(failure);
+        INFO(*failure);
+        CHECK(failure->find("Caused by: Ljava/lang/UnsupportedOperationException;: " + message) != std::string::npos);
+        CHECK(failure->find("Caused by:   at Landroid/content/res/Resources$Theme;.obtainStyledAttributes") !=
+              std::string::npos);
+    }
+}

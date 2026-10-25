@@ -72,9 +72,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             throw DexActivityLifecycleError(message);
         }
 
-        [[nodiscard]] std::string RenderJavaException(
-            const dx::DexClassLinker& linker,
-            const dx::VmCallOutcome& outcome) {
+        [[nodiscard]] std::string RenderJavaException(dx::Interpreter& vm, const dx::VmCallOutcome& outcome) {
+            const auto& linker = vm.Linker();
             std::string rendered = "  exception: ";
             rendered += outcome.exception_class.IsValid()
                             ? linker.Class(outcome.exception_class).descriptor
@@ -90,15 +89,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                 std::to_string(entry.pc) + ")";
                 }
             }
-            return rendered;
+            return rendered + vm.DescribeThrowableCauses(outcome.exception);
         }
 
         void RequireOutcome(dx::Interpreter& vm,
                             const dx::VmCallOutcome& outcome,
                             const std::string& what) {
             if (!outcome.exception.IsValid()) return;
-            Fail(what + " failed: uncaught Java exception\n" +
-                 RenderJavaException(vm.Linker(), outcome));
+            Fail(what + " failed: uncaught Java exception\n" + RenderJavaException(vm, outcome));
         }
 
         void AttachBaseContext(dx::Interpreter& vm,
@@ -450,7 +448,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             MarkFailed();
             RethrowFatalThreadFailure();
             Fail("Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: " +
-                 error.descriptor + "\n  message: " + error.message);
+                 error.descriptor + "\n  message: " + error.message +
+                 bindings_.bridge->Vm().DescribeThrowableCauses(error.existing));
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -484,7 +483,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             Fail("Activity suspend failed: uncaught Java exception\n  guest boundary: Activity suspend\n  exception: " +
-                 error.descriptor + "\n  message: " + error.message);
+                 error.descriptor + "\n  message: " + error.message +
+                 bindings_.bridge->Vm().DescribeThrowableCauses(error.existing));
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -512,7 +512,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
             Fail("Activity resume failed: uncaught Java exception\n  guest boundary: Activity resume\n  exception: " +
-                 error.descriptor + "\n  message: " + error.message);
+                 error.descriptor + "\n  message: " + error.message +
+                 bindings_.bridge->Vm().DescribeThrowableCauses(error.existing));
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -885,7 +886,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             MarkFailed();
             RethrowFatalThreadFailure();
             Fail("Activity frame failed: uncaught Java exception\n  guest boundary: Activity frame\n  exception: " +
-                 error.descriptor + "\n  message: " + error.message);
+                 error.descriptor + "\n  message: " + error.message +
+                 bindings_.bridge->Vm().DescribeThrowableCauses(error.existing));
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();

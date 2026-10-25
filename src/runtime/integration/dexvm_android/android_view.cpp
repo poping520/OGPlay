@@ -3994,6 +3994,8 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             return false;
         }
         schedule.generation = generation;
+        // First traversal attaches the surviving Java subtree, not onCreate/setContentView.
+        android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
         // An interrupted attempt cannot certify the next barrier as clean, even
         // when the Java layout epilogue already cleared FORCE_LAYOUT.
         schedule.published.reset();
@@ -4182,7 +4184,7 @@ void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& co
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
         const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
         const auto root = AndroidUiTraversalRoot(vm, context);
-        if (!root.IsValid()) return;
+        if (!root.IsValid() || context.ui_window_schedules[root].generation == 0) return;
         android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
         const auto observer = android_intrinsics::ManagedViewTreeObserver(vm, context, root);
         const auto protection = vm.ProtectReferences(std::array{root, observer});
@@ -4277,9 +4279,12 @@ dx::VmObjectRef ObserverWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& con
     dx::IntrinsicContext call{vm, view, {}};
     dx::IntrinsicCall fields(call);
     for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
-        if (view == AndroidUiTraversalRoot(vm, context)) return view;
-        for (const auto& record : context.activity_stack)
-            if (record.java_root.IsValid() && record.java_root == view) return view;
+        const auto attached = context.ui_window_schedules.find(view);
+        if (attached != context.ui_window_schedules.end() && attached->second.generation != 0) {
+            if (view == AndroidUiTraversalRoot(vm, context)) return view;
+            for (const auto& record : context.activity_stack)
+                if (record.java_root.IsValid() && record.java_root == view) return view;
+        }
         view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
     }
     return dx::VmObjectRef{};

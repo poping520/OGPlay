@@ -2279,3 +2279,20 @@ created 后继续 changed，新挂载 holder 等下一安全点。移除/重挂�
 替换仍取消旧后续派发，旧 endpoint 不复活；同代同尺寸去重保留。
 此调整只收窄运行期 Surface 身份关联，不调整组合/准入审计规则，不放宽 ADR-0147。
 真实 APK 首错是否消失由外验确认，fixture 不替代九场景。见 [DVM-315](../tasks/dexvm/DVM-315.md)。
+
+
+### ADR-0162 / DVM-316：首次窗口附着与构造故障诊断（2026-10-26）
+
+首次 setContentView/addView 建立 Java 父链不等于窗口附着。owner 首次 traversal 确立
+窗口 generation 后、ROM measure/layout 前，合并当时存活子树的 floating observer；
+首次遍历前被替换内容不获得窗口 observer。后续已附着窗口的 addView 仍即时合并。
+global layout 仅对开始过 owner traversal 的窗口派发；坐标 adapter 的真实父链与投影
+附着检查保持，不制造 AttachInfo，不为已移除 View 放宽失败边界。
+
+故障报告只读固定 ROM 的 cause/InvocationTargetException.target/初始化 exception 与
+ROM保存的首栈，最多16层并显式报告循环/截断，不执行 guest 或改异常身份；Legacy 原有行与
+退出语义保持，只追加 cause 行。比较器保留已知 cause 链及首成员，未知 cause 形态拒绝。
+实际 RelativeLayout 根属性构造停在 scrollbar 投影，缺同 ROM framework-res.apk 继续
+明确失败；诊断交付不等于系统 Drawable 能力或游戏兼容验收。
+
+实施方按编排方常设原则决定的组合/准入审计范围调整：无。

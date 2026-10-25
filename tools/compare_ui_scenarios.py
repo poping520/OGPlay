@@ -133,7 +133,8 @@ def normalize_fault(case, result, base):
         if not member:
             # A Java exception without a member is still identifiable by the
             # precise first Java stack member; never discard exception text.
-            member = re.search(r'\bat (L[^;\n]+;[.>-]+[^\s]+)', log[java.end():])
+            member = re.search(r'^\s*at (L[^;\n]+;[.>-]+[^\s]+)',
+                               log[java.end():].split('Caused by:', 1)[0], re.MULTILINE)
             identity = member[1] if member else None
         else:
             identity = member[0]
@@ -146,6 +147,25 @@ def normalize_fault(case, result, base):
                              message=message, requires_review=True)
         else:
             signature = dict(category='java', exception=java[1], member=identity, message=message)
+        # Preserve the reviewed first report's cause/target chain. New cause shapes
+        # cannot disappear behind an unchanged InflateException wrapper.
+        causes = []
+        for line in log[java.end():].splitlines():
+            if re.match(r"(?:info|warn|error) \[", line):
+                break
+            if 'Caused by:' not in line:
+                continue
+            text = line.strip()
+            cause = re.fullmatch(r'Caused by: (L[^;\s]+;)(?:: (.*))?', text)
+            frame = re.fullmatch(r'Caused by:   at (L[^;\s]+;\.[^\s]+) \(pc ([0-9]+|unavailable)\)', text)
+            if cause:
+                causes.append(dict(exception=cause[1], message=cause[2] or ''))
+            elif frame and causes and 'first_member' not in causes[-1]:
+                causes[-1]['first_member'] = frame[1]
+            else:
+                raise ValueError('unreviewed Java cause shape')
+        if causes:
+            signature['causes'] = causes
     elif native:
         signature = dict(category='native', module=native[2], relative_pc=hex(int(native[3], 16)),
                          error=native[1])
@@ -359,6 +379,24 @@ def self_test():
         boundary = normalize_fault(source, result, base)
         assert boundary['signature']['category'] == 'java_boundary'
         assert boundary['signature']['requires_review'] is True
+        cause_log = ('[owner] phase=Activity\nerror [f=1] frontend.run_apk.fault scheduled callback raised: '
+            'Landroid/view/InflateException;: root inflate failed\n'
+            '  at Landroid/view/LayoutInflater;.createView (pc 20)\n'
+            'Caused by: Ljava/lang/reflect/InvocationTargetException;\n'
+            'Caused by: Ljava/lang/UnsupportedOperationException;: scrollbar unavailable\n'
+            'Caused by:   at Landroid/content/res/Resources$Theme;.obtainStyledAttributes (pc 23)\n')
+        source['fault_source']['log'] = ref('cause.log', cause_log)
+        cause_fault = normalize_fault(source, result, base)
+        assert cause_fault['signature']['causes'][-1] == dict(
+            exception='Ljava/lang/UnsupportedOperationException;', message='scrollbar unavailable',
+            first_member='Landroid/content/res/Resources$Theme;.obtainStyledAttributes')
+        source['fault_source']['log'] = ref('unknown-cause.log', cause_log + 'Caused by: [unknown target]\n')
+        try:
+            normalize_fault(source, result, base)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('unknown cause admitted')
         for text in ['error [ogplay]\n  unknown CLI failure\n',
                      'error [ogplay]\n  dexvm::VmJavaThrow\n'
                      '    exception: Ljava/lang/IllegalStateException;\n    message: unknown shape\n']:

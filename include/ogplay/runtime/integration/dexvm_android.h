@@ -352,7 +352,21 @@ struct DexVmAndroidContext final {
     std::array<std::optional<ui::UiNodeId>, 3> buttons;
     std::optional<ui::UiNodeId> prior_focus;
     bool visible{true};
+    // Null only for Legacy's original mixed-tree presentation. All node IDs
+    // above belong to host_tree when present, never to the guest projection.
+    std::shared_ptr<ui::UiTree> host_tree;
+    std::uint64_t partition{}, generation{}, revision{};
+
+    struct GuestFocus final {
+        dexvm::VmObjectRef view, window_root;
+        std::uint64_t window_generation{};
+    };
+
+    std::optional<GuestFocus> prior_guest_focus;
   };
+
+  // Advances only after an isolated host tree has passed layout/fit checks.
+  std::uint64_t dialog_host_revision{};
   std::vector<DialogPresentation> dialog_presentations;
   bool dialog_pointer_active{};
   std::optional<ui::UiNodeId> dialog_pressed_button;

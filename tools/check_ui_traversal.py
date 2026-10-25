@@ -15,7 +15,7 @@ def code_only(source):
 
 
 def function_body(code, name):
-    match = re.search(r"\bbool\s+" + name + r"\s*\([^)]*\)\s*\{", code)
+    match = re.search(r"\b(?:bool|void)\s+" + name + r"\s*\([^)]*\)\s*\{", code)
     if not match:
         return (-1, -1)
     start = match.end() - 1
@@ -30,6 +30,7 @@ def function_body(code, name):
 def main():
     errors = []
     calls = []
+    host_calls = []
     for directory in ("src/runtime/integration", "src/session"):
         for path in sorted((ROOT / directory).rglob("*")):
             if path.suffix not in {".cpp", ".h", ".cc", ".hpp", ".mm"}:
@@ -41,8 +42,19 @@ def main():
                 if relative == OWNER
                 else (-1, -1)
             )
+            host_start, host_end = (
+                function_body(code, "ShowAndroidDialog")
+                if relative == Path("src/runtime/integration/dexvm_android/support_ui.cpp")
+                else (-1, -1)
+            )
             for match in re.finditer(r"\bLayoutUiTree\s*\(", code):
                 location = f"{relative}:{code.count(chr(10), 0, match.start()) + 1}"
+                # ADR-0161: the only additional layout call resolves an
+                # unpublished, independently owned HostLayout modal tree.
+                if (host_start < match.start() < host_end and
+                    re.match(r"LayoutUiTree\(\*modal\.host_tree, managed_viewport\)", code[match.start():])):
+                    host_calls.append(location)
+                    continue
                 calls.append(location)
                 if not start < match.start() < end:
                     errors.append(f"layout bypass: {location}")
@@ -63,10 +75,13 @@ def main():
     for write in re.finditer(r"\.scroll_[xy]\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
         if not any(start < write.start() < end for start, end in legacy_blocks):
             errors.append("session scroll coordinate write outside explicit Legacy branch")
+    if len(host_calls) != 1:
+        errors.append(f"expected one isolated HostLayout call, found {len(host_calls)}")
     if len(calls) != 1:
         errors.append(f"expected one Legacy implementation call, found {len(calls)}")
     if errors:
         raise SystemExit("\n".join(errors))
+    print(f"UI HostLayout: {len(host_calls)} isolated modal call")
     print(f"UI traversal: {len(calls)} scheduler call, 0 bypasses ({calls[0]})")
 
 

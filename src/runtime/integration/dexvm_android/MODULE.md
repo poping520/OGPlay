@@ -205,7 +205,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 
 ## UI、Surface 与输入
 
-`EnsureAndroidUiTraversal` 是 integration/session 的唯一布局调度入口，调用方显式提供 VM、
+`EnsureAndroidUiTraversal` 是 integration/session 的唯一 guest 布局调度入口，调用方显式提供 VM、
 reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutParams，BeforePresent
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
@@ -242,7 +242,15 @@ enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
 failure 虚派按 ADR-0159 封存 a/b/unproven 信息，运行期仍明确失败；支持路径须动态零命中。
-HostDialog 暂仍整树布局，后续 VD-10c 隔离宿主根；UI 下层不获 VM 或 Java 引用。
+JavaTraversal 的 Dialog 使用各自独立 HostLayout 树；ShowAndroidDialog 只在未发布宿主树上
+按 managed viewport 调用 LayoutUiTree，容纳检查成功才替换对应 presentation 并推进宿主 revision。
+失败保留旧 modal、guest 投影/epoch、焦点与 revision；纯 modal 操作不请求 guest 遍历。
+UiNodeId 只在所属 modal 树内有效，presentation 的 partition/generation/revision 区分相同原始 ID。
+按钮焦点仅归宿主树；prior_guest_focus 只存真实 Java View/root 身份与窗口 generation，
+从绑定字段读取，不执行 guest findFocus 回调；guest 焦点未转移，hide/dismiss 不向外部投影请求焦点。
+共同 presentation epoch、render/input 合成留待 VD-10c-2；此前实验 modal 输入记账抛 UOE，
+不可把仅成功布局的宿主树算作已呈现/可交互。Legacy HostDialog 仍走原整树调度，逐值行为不变。
+UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
 未迁移、仍由宿主维护的 ROM 实例字段在 guest 访问时明确失败；integration 的受审 adapter
@@ -447,7 +455,8 @@ Dialog/AlertDialog 协议归 Java，native 只投影 plain String 标题/消息/
 owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismiss、进程停止仅退役投影。
 不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/message/button≤512/4096/128
 UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；theme/items/custom view/Window facade
-拒绝。模态根为 direct content-root child，字体/布局/像素复用既有底座。
+拒绝。Legacy 模态根为 direct content-root child；实验每 modal 为独立 HostLayout，
+字体/布局/像素复用既有底座，尚不发布共同呈现快照。
 
 WebView.destroy 可覆盖、检查构造 Looper，targetSdk≥18 跨线程 RuntimeException；清理 settings/
 client/interface、不重建、防御重复销毁，不承诺完整 AOSP 等价。配置/RenderPriority 仅状态/提示，

@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-246/ADR-0125：managed Dialog 缓存与创建、AlertDialog.Builder 三按钮/listener 由 guest Java 执行；native 将纯文本模态投影到 UiTree，含输入捕获、焦点、Surface 保留与顶层合成。主题、items/custom content、Window facade、外触取消、保存恢复与 Fragment 未支持或未验收；不伪造商店/授权服务。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-304; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-246/304：Legacy plain String/三按钮、输入/焦点/Surface 与合成不变；JavaTraversal 每 modal 独立 HostLayout，未发布树布局/容纳检查后替换，失败保留 guest epoch、旧树/焦点/revision；宿主按钮焦点独立、保存真实 guest 身份/窗口代际。共同 presentation epoch 与 render/input 合成待10c-2，实验 modal 输入记账失败。主题/items/custom content/完整 Window 未支持。"
 
 [dexvm.drawable_resource]
 status = "partial"

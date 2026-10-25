@@ -291,3 +291,9 @@ AndroidAppProcessRequest.skeleton_bytes 与已解包 BootDex 一并显式交给 
 
 Application 类初始化前从 Context.getCacheDir 取得缓存路径改写 java.io.tmpdir，
 对齐 API19 ActivityThread 绑定时机；没有缓存目录时保留绑定前默认值。
+
+
+JavaTraversal窗口切换保留每窗口Java根及完整投影，前台输入分区与额外可见handoff分区
+同次发布；恢复焦点走Java软件adapter，HostLayout RequestFocus仅在Legacy恢复分支。
+Compose的一次lease显式交给video上下层、UI与modal，bitmap版本/producer像素属于快照；
+呈现线程不读取当前播放器/绑定表或消费dirty，不为输出像素大小重测Java。

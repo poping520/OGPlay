@@ -444,6 +444,8 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
     dexvm::IntrinsicContext root_call{vm, root, {}};
     if ((dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x800) == 0)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
+    RefreshAndroidImageDrawables(context);
+    RefreshAndroidSurfaceFrames(context);
     auto projection = CollectAndroidRootProjection(vm, context, root, target, epoch, true);
     ResizeAndroidDialogs(vm, context);
     context.ui_tree.CommitProjection(projection);
@@ -456,6 +458,11 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
             context.ui_touch_targets.clear();
             context.ui_touch_clicks.clear();
         }
+    }
+    for (auto& record : context.activity_stack) {
+        if (record.object != context.activity) continue;
+        record.java_root = root;
+        record.projection = context.ui_tree.PublishedProjection();
     }
     context.ui_measure_epoch = epoch;
     if (context.ui_layout_dispatching) {
@@ -623,11 +630,23 @@ ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
 }
 
 void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) {
+    std::shared_ptr<const ui::UiTree> retained;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        for (const auto& record : context.activity_stack) {
+            if (record.window_root != node) continue;
+            retained = record.projection;
+            context.ui_window_schedules.erase(record.java_root);
+            break;
+        }
+    }
+    const auto& tree = retained ? *retained : context.ui_tree;
+    std::vector<ui::UiNodeId> retired;
     std::vector<ui::UiNodeId> nodes{node};
     while (!nodes.empty()) {
         const auto current = nodes.back(); nodes.pop_back();
-        const auto* state = context.ui_tree.Get(current);
+        const auto* state = tree.Get(current);
         if (!state) continue;
+        retired.push_back(current);
         context.ui_notified_view_sizes.erase(current);
         context.ui_notified_window_focus.erase(current);
         nodes.insert(nodes.end(), state->children.begin(), state->children.end());
@@ -666,7 +685,13 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
         context.ui_click_listeners.erase(current);
         context.ui_touch_listeners.erase(current);
     }
-    context.ui_tree.DestroySubtree(node);
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        // Background nodes have been disconnected in the foreground builder;
+        // retire the saved complete hierarchy, not only its now-empty root.
+        for (auto it = retired.rbegin(); it != retired.rend(); ++it)
+            context.ui_tree.RetireProjectedIdentity(*it);
+    } else
+        context.ui_tree.DestroySubtree(node);
 }
 
 }  // namespace ogplay::runtime
@@ -2157,6 +2182,11 @@ AndroidInputEvent::AndroidInputEvent(dexvm::Interpreter& vm, DexVmAndroidContext
     context.input_presentation = AcquireAndroidPresentation(context);
     if (!context.input_presentation)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Input requires a complete presentation"};
+    if (context.input_presentation->activity != context.activity) {
+        context.input_presentation.reset();
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                 "Input presentation has a different window owner"};
+    }
 }
 
 AndroidInputEvent::~AndroidInputEvent() {
@@ -2745,6 +2775,8 @@ AcquireAndroidPresentation(const DexVmAndroidContext& context) {
 
 bool PublishAndroidPresentation(DexVmAndroidContext& context) {
     if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return false;
+    if (context.ui_java_owner_thread != std::this_thread::get_id())
+        throw std::logic_error("Presentation publication requires Java owner thread");
     if (context.input_presentation) return false;
     auto guest = context.ui_tree.PublishedProjection();
     if (!guest || !guest->ProjectionTarget()) return false;
@@ -2761,10 +2793,56 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
         guest = previous->guest_window_epoch_refs.front();
         viewport = previous->viewport;
     }
+    // A failed switch must not relabel the previous window as the new input owner.
+    const auto active = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
+                                     [&](const auto& record) { return record.object == context.activity; });
+    if (active != context.activity_stack.end() &&
+        (!active->window_root || !guest->Get(*active->window_root) || !guest->IsAttached(*active->window_root)))
+        return false;
     const auto& target = *guest->ProjectionTarget();
     using Snapshot = DexVmAndroidContext::PresentationSnapshot;
     auto next = std::make_shared<Snapshot>();
+    next->activity = context.activity;
     next->guest_window_epoch_refs = {guest};
+    // Input always selects the foreground partition at index zero. Composition
+    // visits in reverse order, retaining the existing handoff visibility interval.
+    for (auto record = context.activity_stack.rbegin(); record != context.activity_stack.rend(); ++record) {
+        if (!context.activity.IsValid() || record->object == context.activity || !record->visible) continue;
+        const auto& partition = record->projection;
+        if (!partition || !partition->ProjectionTarget() ||
+            partition->ProjectionTarget()->metrics.width != target.metrics.width ||
+            partition->ProjectionTarget()->metrics.height != target.metrics.height)
+            return false;
+        next->guest_window_epoch_refs.push_back(partition);
+    }
+    next->bitmaps = context.ui_bitmaps;
+    {
+        std::scoped_lock lock(context.video_views_mutex);
+        for (const auto& [handle, state] : context.video_views) {
+            if (!state.latest_frame) continue;
+            const auto& frame = *state.latest_frame;
+            if (!frame.width || !frame.height ||
+                frame.rgba8.size() != static_cast<std::uint64_t>(frame.width) * frame.height * 4U)
+                throw std::runtime_error("Invalid presentation producer pixels");
+            const auto id = FindViewUiNode(context, state.media_player ? state.display_view.Value() : handle);
+            if (!id) continue;
+            for (const auto& partition : next->guest_window_epoch_refs) {
+                if (!partition->Get(*id) || !partition->IsAttached(*id) || !partition->IsVisible(*id)) continue;
+                next->video_frames.emplace(*id, *state.latest_frame);
+                break;
+            }
+        }
+    }
+    // A modal mutation may precede the next owner draw barrier. Do not pair
+    // newly decoded/removed pixels with an older opening in the guest epoch.
+    for (const auto& partition : next->guest_window_epoch_refs) {
+        for (const auto& [id, object] : context.ui_node_to_object) {
+            static_cast<void>(object);
+            const auto* node = partition->Get(id);
+            if (node && partition->IsAttached(id) && node->surface_has_frame != next->video_frames.contains(id))
+                return false;
+        }
+    }
     next->metrics_revision = target.metrics_revision;
     next->viewport = viewport;
     for (const auto& modal : context.dialog_presentations) {
@@ -2787,7 +2865,20 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             if (previous->modal_stack[i].tree != next->modal_stack[i].tree) return false;
         return true;
     }();
-    if (same_modals && previous->guest_window_epoch_refs == next->guest_window_epoch_refs) return !pending_metrics;
+    const auto same_video = [&] {
+        if (!previous || previous->video_frames.size() != next->video_frames.size()) return false;
+        for (const auto& [id, frame] : next->video_frames) {
+            const auto old = previous->video_frames.find(id);
+            if (old == previous->video_frames.end() || old->second.width != frame.width ||
+                old->second.height != frame.height || old->second.position_ms != frame.position_ms ||
+                old->second.rgba8 != frame.rgba8)
+                return false;
+        }
+        return true;
+    }();
+    if (same_modals && same_video && previous->activity == next->activity && previous->bitmaps == next->bitmaps &&
+        previous->guest_window_epoch_refs == next->guest_window_epoch_refs)
+        return !pending_metrics;
     const auto max = std::numeric_limits<std::uint64_t>::max();
     if ((previous && previous->presentation_epoch == max) || (!same_modals && context.dialog_host_revision == max))
         throw std::overflow_error("Presentation sequence exhausted");

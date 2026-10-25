@@ -876,21 +876,21 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
                                                                   runtime::AndroidBoundaryFrame frame) {
         const auto snapshot = runtime::AcquireAndroidPresentation(context);
-        if (!snapshot) return frame;
+        if (!snapshot) throw std::runtime_error("No complete presentation snapshot");
         if (snapshot->viewport !=
             runtime::ui::Size{static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)})
             throw std::runtime_error("Presented frame does not match published presentation metrics");
-        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
-        for (const auto& guest : snapshot->guest_window_epoch_refs) {
+        runtime::ComposeVideoViews(*snapshot, frame.rgba8, frame.width, frame.height, false);
+        for (const auto& guest : std::views::reverse(snapshot->guest_window_epoch_refs)) {
             const auto overlay = runtime::ui::RasterizeUiOverlay(
-                runtime::ui::BuildUiRenderList(*guest, context.ui_bitmaps, runtime::ui::UiRenderPlane::normal),
+                runtime::ui::BuildUiRenderList(*guest, snapshot->bitmaps, runtime::ui::UiRenderPlane::normal),
                 {snapshot->viewport.width, snapshot->viewport.height});
             ComposeUiOverlayInPlace(frame.rgba8, overlay);
         }
-        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
+        runtime::ComposeVideoViews(*snapshot, frame.rgba8, frame.width, frame.height, true);
         for (const auto& modal : snapshot->modal_stack) {
             const auto overlay =
-                runtime::ui::RasterizeUiOverlay(runtime::ui::BuildUiRenderList(*modal.tree, context.ui_bitmaps),
+                runtime::ui::RasterizeUiOverlay(runtime::ui::BuildUiRenderList(*modal.tree, snapshot->bitmaps),
                                                 {snapshot->viewport.width, snapshot->viewport.height});
             ComposeUiOverlayInPlace(frame.rgba8, overlay);
         }
@@ -1076,11 +1076,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (found == context.activity_stack.end() || !found->window_root || found->visible == visible) return;
         found->visible = visible;
         context.ui_tree.SetWindowVisible(*found->window_root, visible);
+        const auto& tree =
+            context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal && found->projection
+                ? *found->projection
+                : context.ui_tree;
         std::vector<dx::VmObjectRef> views;
         std::vector<runtime::ui::UiNodeId> nodes{*found->window_root};
         while (!nodes.empty()) {
             const auto node = nodes.back(); nodes.pop_back();
-            const auto* state = context.ui_tree.Get(node);
+            const auto* state = tree.Get(node);
             if (!state) continue;
             nodes.insert(nodes.end(), state->children.rbegin(), state->children.rend());
             const auto view = runtime::ViewObjectForUiNode(context, node);
@@ -1108,7 +1112,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         activity_started_ = false;
         activity_resumed_ = false;
         SetActivityWindowVisible(record.object, true);
-        if (record.focused_node && context.ui_tree.Get(*record.focused_node))
+        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && record.focused_node &&
+            context.ui_tree.Get(*record.focused_node))
             static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
         if (new_intent.IsValid()) {
             CallActivity("onNewIntent", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(new_intent)});

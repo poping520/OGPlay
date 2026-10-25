@@ -171,6 +171,11 @@ TEST_CASE("DVM-303 VideoView owner metadata invalidates Java and freezes publish
         frame.height = 1;
         frame.rgba8 = {255, 0, 0, 255, 255, 0, 0, 255};
         state.latest_frame = frame;
+        // DVM-310: producer pixels/opening are frozen by the owner, never Compose.
+        RefreshAndroidSurfaceFrames(*f.context);
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                   AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 100}));
+        const auto frozen = f.context->ui_tree.PublishedProjection();
         f.context->ui_tree.Get(id)->screen_frame = {50, 50, 51, 51};
         std::vector<std::uint8_t> canvas(200 * 100 * 4, 0);
         ComposeVideoViews(*f.context, canvas, 200, 100, false);
@@ -182,7 +187,7 @@ TEST_CASE("DVM-303 VideoView owner metadata invalidates Java and freezes publish
                 CHECK(canvas[static_cast<std::size_t>((y * 200 + x) * 4 + 3)] == 255);
             }
         f.On(view, "stopPlayback", "()V");
-        CHECK(f.context->ui_tree.PublishedProjection() == snap);
+        CHECK(f.context->ui_tree.PublishedProjection() == frozen);
         CHECK(snap->Get(id)->intrinsic == ui::Size{320, 240});
         Deliver(f, view, gen);
         Tick(f);

@@ -176,6 +176,9 @@ private:
     float pointer_x_{};
     float pointer_y_{};
     std::uint64_t scroll_view_handle_{};
+    bool scroll_horizontal_{};
+    float scroll_start_x_{};
+    float scroll_last_x_{};
     float scroll_start_y_{};
     float scroll_last_y_{};
     bool scroll_dragging_{};

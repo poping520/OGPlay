@@ -984,7 +984,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
 // Reads Java authority; never writes measured/bounds or invokes LayoutUiTree.
 // Owner-only bounded input seam: Java scrollBy/clamp, then projection-only publication.
 void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
-                         std::int32_t delta_y);
+                         std::int32_t delta_y, std::int32_t delta_x = 0);
 
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
                                          const ui::UiProjectionTarget& target, std::uint64_t epoch);

@@ -65,7 +65,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
   当前 target、严格递增非零 epoch 的完整窗口批次。节点必须存在、唯一、全树连通且满足
   node/child/depth 上限；非法 geometry、visibility、坐标溢出、旧代/旧 revision/旧 epoch 明确失败。
-  先在副本验证 hierarchy/id index 并计算局部 frame/scroll 到 screen_frame/screen_clip，成功才整体替换；
+  先在副本验证 hierarchy/id index，并按 screen(child)=screen(parent)+local(child)−parent.scroll_x/y
+  同时解析双轴 screen_frame/screen_clip；每层用64位累加并拒绝32位坐标溢出，成功才整体替换；
   失败批次零修改，遗漏节点退出层级与 id index。批次可显式携带 android_id（包括 NO_ID），
   与 parent/children 一起验证并原子替换；未携带则沿用构建属性。enabled/clickable/focusable/
   focusable_in_touch_mode 可随同批次显式提交，guest collector 必须提交其全部 Java 值。

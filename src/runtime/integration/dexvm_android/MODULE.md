@@ -566,28 +566,29 @@ IME/composition、Editor、布局对象、修改键移动/删除及未支持字�
 不使用 focused_edit_text 或 UiTree 焦点作实验 owner。失败校验不改 selection；提交后回调
 异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。
 
-## 实验 Scroll 构造与纵向滚动
+## 实验 Scroll 构造与双轴滚动
 
 JavaTraversal 配对保留两 Scroll 完整 ROM 形状；构造、Rect/默认字段、fillViewport 属性
 消费归 ROM。initScrollView 的配置/scroller 接缝保持真实 Context/metrics 与 ROM OverScroller。
-纵向 onMeasure、measureChild/WithMargins、四个单 child addView、requestLayout、onLayout、
-onSizeChanged、scrollTo/clamp 及直接依赖执行 ROM；纵轴先 UNSPECIFIED，fillViewport
+两轴 onMeasure、measureChild/WithMargins、四个单 child addView、requestLayout、onLayout、
+onSizeChanged、scrollTo/clamp 及直接依赖执行 ROM；各自主轴先 UNSPECIFIED，fillViewport
 补测沿 API19 原式，不额外扣 margin。第二个直接 child 抛 ROM IllegalStateException。
 非空 SavedState 恢复、focus 驱动滚动、fling/smoothScroll、scrollbar Drawable 继续明确失败。
-水平布局/测量仍 failure，由后续任务处理。
 
 默认 overScrollMode 可创建 idle-only EdgeEffect。受审构造保留 Java idle 状态、真实 Rect/
 DecelerateInterpolator、density 派生最小宽度；glow/edge Drawable 与资源派生尺寸字段为
 failure，标识未支持 glow 资源。isFinished/finish/setSize/setPosition 执行 ROM，idle onRelease
 只清 pullDistance；非 idle release、onPull/onAbsorb/draw 记账失败。没有动画或绘制成功信用。
 
-Java View.mScrollX/Y 唯一持有位置；collector 读取 mScrollY，按同 epoch 的 parent screen +
+HorizontalScrollView.onLayout 执行原 ROM layoutChildren(forceLeftGravity)：超宽 child 强制左对齐，
+首次 RTL 按 scrollRange−mScrollX 初始化并 clamp，后续布局不重复反转；不以纵向换轴近似。
+Java View.mScrollX/Y 唯一持有位置；collector 读取 mScrollX/mScrollY，按同 epoch 的 parent screen +
 child local − parent scroll 计算 screen/clip。ScrollAndroidViewBy 只允许 owner 线程、已发布且
-仍在根内的纵向对象，经 Java scrollBy→scrollTo/clamp 后完整发布新投影，不 measure/layout、
+仍在根内的两轴 Scroll 对象，经 Java scrollBy→scrollTo/clamp 后完整发布新投影，不 measure/layout、
 不 requestLayout、不写 child measured/frame。异常保留旧发布快照。
 View.onScrollChanged 接缝只接受未系统附着且 accessibility 显式 disabled 的软件路径，
 真实置 mBackgroundSizeChanged；ROM scrollTo 保留 parent cache/invalidation 与 guest 覆写。
-宿主仅持拖动捕获/slop/delta，拦截时向单一旧目标发 CANCEL。纵向 onInterceptTouchEvent/
+宿主仅持拖动捕获/slop/delta，拦截时向单一旧目标发 CANCEL。两轴 onInterceptTouchEvent/
 onTouchEvent 接缝只在宿主单指分发作用域内开放：前者委托 ROM ViewGroup 父协议，后者
 接受有内容的捕获供宿主 delta 路径使用；作用域外/null/多指明确失败，不写 Java 手势镜像。
 Legacy 位置与输入路径保持。

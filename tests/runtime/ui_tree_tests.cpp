@@ -515,6 +515,7 @@ struct ProjectionFixture {
             CHECK(now.visibility == old.visibility);
             CHECK(now.padding == old.padding);
             CHECK(now.scroll_y == old.scroll_y);
+            CHECK(now.scroll_x == old.scroll_x);
             CHECK(now.clip_children == old.clip_children);
             CHECK(now.clip_to_padding == old.clip_to_padding);
             CHECK(now.layout_dirty == old.layout_dirty);
@@ -770,4 +771,45 @@ TEST_CASE("VD-02 hierarchy bounds reject excess depth and fanout before publishi
             CHECK(f.tree.ProjectionEpoch() == 2);
         }
     }
+}
+
+TEST_CASE("DVM-301 XY projection rejects overflow and old batches atomically") {
+    ProjectionFixture f;
+    auto batch = f.Batch();
+    batch.nodes[0].scroll_x = 4;
+    batch.nodes[0].scroll_y = 3;
+    batch.nodes[1].scroll_x = 7;
+    batch.nodes[1].scroll_y = 5;
+    f.tree.CommitProjection(batch);
+    const auto old = f.tree.PublishedProjection();
+    CHECK(old->Get(f.parent)->screen_frame == ui::Rect{11, 23, 41, 53});
+    CHECK(old->Get(f.leaf)->screen_frame == ui::Rect{2, 22, 44, 38});
+    CHECK(old->Get(f.leaf)->screen_clip == ui::Rect{11, 23, 41, 38});
+    auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*old, {}), {100, 100});
+    for (int y = 0; y < 100; ++y)
+        for (int x = 0; x < 100; ++x) {
+            const bool inside = x >= 11 && x < 41 && y >= 23 && y < 38;
+            CHECK((old->HitTestProjection(x, y) == f.leaf) == inside);
+            CHECK((pixels.rgba8[static_cast<std::size_t>((y * 100 + x) * 4 + 3)] != 0) == inside);
+        }
+    f.Reject(batch);
+    batch.epoch = 2;
+    for (auto value : {std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()}) {
+        auto bad = batch;
+        bad.nodes[0].scroll_x = value;
+        // MAX requires a negative child edge; MIN overflows from the positive root origin.
+        if (value > 0) bad.nodes[1].frame = {-100, 0, -70, 30};
+        f.Reject(bad);
+        bad = batch;
+        bad.nodes[0].scroll_y = value;
+        if (value > 0) bad.nodes[1].frame = {0, -100, 30, -70};
+        f.Reject(bad);
+    }
+    batch.nodes[0].scroll_x = 0;
+    batch.nodes[1].scroll_x = 0;
+    f.tree.CommitProjection(batch);
+    const auto next = f.tree.PublishedProjection();
+    CHECK(next->Get(f.leaf)->screen_frame == ui::Rect{13, 22, 55, 38});
+    CHECK(old->Get(f.leaf)->screen_frame == ui::Rect{2, 22, 44, 38});
+    CHECK(next->ProjectionEpoch() == old->ProjectionEpoch() + 1);
 }

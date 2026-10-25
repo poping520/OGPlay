@@ -2133,6 +2133,11 @@ status = "partial"
 note = "DVM-276..285：成员组合/虚派账，failure 动态失败；Legacy 唯一生产默认。实验 Java hierarchy/参数/flags/focus、ROM measure/layout、调度/投影/GC/输入；accessibility 需显式 disabled。Window FrameLayout、LinearLayout weight/baseline/largest-child 与 RelativeLayout 双轴依赖/居中/baseline、START/END/RTL/margin、GONE/缺锚/环沿 ROM。XML/Drawable/系统附着及生产切换未启用。"
 test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
 
+[dexvm.scroll_constructor]
+status = "partial"
+test = "tests/dexvm/scrollview_constructor_tests.cpp; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "DVM-299：仅实验配对两Scroll完整ROM形状、三构造与TypedArray真解析；显式overScrollMode=never、Context/metrics配置接缝和真实ROM OverScroller。默认glow、scrollbar Drawable、SavedState、focus滚动、fling/smoothScroll与measure/layout/input明确失败，交10b-2/3；Legacy保持。"
+
 [dexvm.paint_measure]
 status = "partial"
 test = "tests/dexvm/paint_measure_tests.cpp"

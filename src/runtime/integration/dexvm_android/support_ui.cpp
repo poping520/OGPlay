@@ -161,6 +161,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
               vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&
             !((kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
               vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
+            !(kind == ui::UiClass::ScrollView && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::RelativeLayout &&

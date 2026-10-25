@@ -3,6 +3,7 @@
 // ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
 #include <array>
+#include <bit>
 #include <map>
 #include <cmath>
 #include <set>
@@ -554,8 +555,90 @@ Decl Declare_android_widget_RelativeLayout(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+// ADR-0161: construction only. Animation operations remain explicit failures.
+Decl ExperimentalScrollView(const char* owner) {
+    auto b = dx::IntrinsicClassBuilder::Class(owner, "Landroid/widget/FrameLayout;");
+    const auto scroller = b.BoundInstanceField("mScroller", "Landroid/widget/OverScroller;", dx::kAccPrivate);
+    std::vector<dx::IntrinsicFieldHandle> config;
+    const std::array names{"mTouchSlop", "mMinimumVelocity", "mMaximumVelocity", "mOverscrollDistance",
+                           "mOverflingDistance"};
+    for (std::size_t i = 0; i < names.size(); ++i)
+        config.push_back(b.BoundInstanceField(names[i], "I", dx::kAccPrivate));
+    const auto fail = [](dx::Interpreter& vm) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.scroll_edge_effect", 0);
+        throw dx::VmJavaThrow{
+            "Ljava/lang/UnsupportedOperationException;",
+            "Scroll construction requires explicit overScrollMode=never; EdgeEffect system drawables unsupported"};
+    };
+    b.OverrideMethod("setOverScrollMode", "(I)V", [fail](dx::IntrinsicContext& c) {
+        if (c.arguments[0].AsInt() != 2) fail(c.vm);
+        const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto index = c.vm.Linker().FindVtableIndex(type, "setOverScrollMode", "(I)V");
+        const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*index],
+                                      std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
+    b.DirectMethod("initScrollView", "()V", [=](dx::IntrinsicContext& c) {
+        auto& vm = c.vm;
+        if (CallAndroidMethod(vm, c.receiver, "getOverScrollMode", "()I").AsInt() != 2) fail(vm);
+        const auto context = CallAndroidMethod(vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
+        const auto resources = CallAndroidMethod(vm, context, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto roots = vm.ProtectReferences(std::array{context, resources});
+        const auto metrics =
+            CallAndroidMethod(vm, resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref;
+        const auto configuration =
+            CallAndroidMethod(vm, resources, "getConfiguration", "()Landroid/content/res/Configuration;").ref;
+        const auto input_roots = vm.ProtectReferences(std::array{metrics, configuration});
+        const auto read = [&](dx::VmObjectRef object, const char* name, const char* type) {
+            return vm.Model().InstanceSlots(object)
+                [vm.Linker().Field(*vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type)).slot];
+        };
+        const auto density = std::bit_cast<float>(read(metrics, "density", "F").bits);
+        if (!std::isfinite(density) || density <= 0 || density > 8)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid scroll metrics density"};
+        const auto size_density = density * ((read(configuration, "screenLayout", "I").bits & 0xf) >= 4 ? 1.5f : 1.0f);
+        // ViewConfiguration.java:276-340 and pinned config.xml: touchSlop=8dp.
+        // No ViewConfiguration instance is fabricated: unrelated WMS/menu/cache facts stay unavailable.
+        const std::array values{static_cast<int>(density * 8.0f + .5f), static_cast<int>(density * 50.0f + .5f),
+                                static_cast<int>(density * 8000.0f + .5f), 0,
+                                static_cast<int>(size_density * 6.0f + .5f)};
+        const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/OverScroller;");
+        const auto initialized = vm.EnsureClassInitialized(type);
+        if (initialized.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
+                                  initialized.exception_message, initialized.exception};
+        const auto object = vm.NewIntrinsicInstance("Landroid/widget/OverScroller;");
+        const auto object_root = vm.ProtectReferences(std::array{object});
+        const auto ctor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+        const auto result = vm.Call(*ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(context)});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        dx::IntrinsicCall fields(c);
+        fields.SetRef(scroller, object);
+        for (std::size_t i = 0; i < values.size(); ++i)
+            fields.SetInt(config[i], values[i]);
+        static_cast<void>(CallAndroidMethod(vm, c.receiver, "setFocusable", "(Z)V", {dx::VmValue::Int(1)}));
+        static_cast<void>(
+            CallAndroidMethod(vm, c.receiver, "setDescendantFocusability", "(I)V", {dx::VmValue::Int(0x40000)}));
+        static_cast<void>(CallAndroidMethod(vm, c.receiver, "setWillNotDraw", "(Z)V", {dx::VmValue::Int(0)}));
+        return dx::VmValue::Void();
+    });
+    return std::move(b).Build();
+}
+}  // namespace
+
+Decl Declare_android_widget_HorizontalScrollView(const Context&) {
+    return ExperimentalScrollView("Landroid/widget/HorizontalScrollView;");
+}
+
 Decl Declare_android_widget_ScrollView(const Context& context) {
-    static_cast<void>(context);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return ExperimentalScrollView("Landroid/widget/ScrollView;");
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ScrollView;", "Landroid/widget/FrameLayout;");
     builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
         const auto target =

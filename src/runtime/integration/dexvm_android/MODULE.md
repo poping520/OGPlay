@@ -565,3 +565,20 @@ IME/composition、Editor、布局对象、修改键移动/删除及未支持字�
 输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
 不使用 focused_edit_text 或 UiTree 焦点作实验 owner。失败校验不改 selection；提交后回调
 异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。
+
+## 实验 Scroll 构造接缝
+
+JavaTraversal 配对保留纵/横 ScrollView 的完整 ROM 形状与 clinit owner（本输入无 clinit）。
+三个构造、Rect/默认字段、fillViewport 的 TypedArray 消费和简单状态方法执行 ROM；
+initScrollView 与 setOverScrollMode 为逐签名受审 adapter。只接受真实主题解析所得的
+显式 overScrollMode=never；默认/always/ifContentScrolls 所需 EdgeEffect 系统 Drawable
+继续记账失败，相关字段保持 failure，不以 null 宣称 ROM EdgeEffect 初始化成功。
+init adapter 按固定 AOSP ViewConfiguration 的有界公式，从实际 Context 的 Resources/
+DisplayMetrics/Configuration 取得 density/屏幕级别，写入五个 Java 配置字段；touchSlop
+使用封存 config.xml 的8dp，velocity 为50/8000dp，overscroll/overfling 为0/6dp，XLARGE
+仅放大后两者。此接缝不伪造 ViewConfiguration 的 WMS/menu/cache 状态或完整实例。
+OverScroller 与两个 spline 由真实 ROM 构造、保留物理系数与完成状态，Java 强边保活；
+不创建空动画对象。Java mScrollX/Y 未增加宿主副本；不写 measured/bounds。
+fling/smoothScroll、glow、scrollbar Drawable、SavedState、focus 驱动滚动及本类
+onMeasure/onLayout/输入仍沿 ADR-0147 failure，后续10b-2/3独立开放。Legacy catalog/
+构造及生产 payload 保持，水平类只在实验 catalog 注册。

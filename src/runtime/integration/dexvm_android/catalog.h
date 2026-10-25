@@ -248,6 +248,7 @@ Declare_android_widget_ImageView_ScaleType(const Context &context);
 [[nodiscard]] Decl Declare_android_widget_ProgressBar(const Context &context);
 [[nodiscard]] Decl
 Declare_android_widget_RelativeLayout(const Context &context);
+[[nodiscard]] Decl Declare_android_widget_HorizontalScrollView(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_ScrollView(const Context &context);
 [[nodiscard]] Decl Declare_android_widget_TableLayout(const Context &context);
 [[nodiscard]] Decl Declare_android_widget_TableRow(const Context &context);

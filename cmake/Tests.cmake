@@ -231,6 +231,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/imageview_traversal_tests.cpp
     tests/dexvm/button_traversal_tests.cpp
     tests/dexvm/edittext_traversal_tests.cpp
+    tests/dexvm/scrollview_constructor_tests.cpp
     tests/dexvm/textview_traversal_tests.cpp
     tests/dexvm/paint_measure_tests.cpp
     tests/dexvm/android_pending_notifications_tests.cpp

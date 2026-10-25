@@ -1,0 +1,1158 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-scroll.surface.json.gz",
+      "surface_sha256": "e42078c222b7037ab5f6083b16e4ca9f9400fba5d0bce47b77483399b57c1b7c",
+      "owner": "Landroid/widget/ScrollView;",
+      "smali_sha256": "26af15b7841e69243cf158c9734586de860308a35dcd57aa9ccc5c44bafa9635",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "9e3746a55787d1c671971d0bb988522977aee348593348cb001043bb44166406",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+          "flags": 65537,
+          "body_sha256": "f7415b7f83ad24bde63b6126e14b02aa2c8cca079bcb22d52259c11c3b448d30",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+          "flags": 65537,
+          "body_sha256": "d0a0a0fc16ce6894e4822f6393eeea91c3fe033b23e7a28578102475fb4c81c8",
+          "source": "rom"
+        },
+        {
+          "signature": "canScroll()Z",
+          "flags": 2,
+          "body_sha256": "802cb592f796d6ba5aa23964e1fbb3aaa6db32b1ac51999f5b44358a5c3ee990",
+          "source": "failure"
+        },
+        {
+          "signature": "clamp(III)I",
+          "flags": 10,
+          "body_sha256": "a35e6353e238eb1b61e316b298cd0e06c931053dfb3952d91afdd7af54ce0a7d",
+          "source": "failure"
+        },
+        {
+          "signature": "doScrollY(I)V",
+          "flags": 2,
+          "body_sha256": "61a6f80ef416ff5fa8b0dff4cebb56fd018ac48249af858d17c8eb39179f8514",
+          "source": "failure"
+        },
+        {
+          "signature": "endDrag()V",
+          "flags": 2,
+          "body_sha256": "04aa8fc77f3742e0719431f730e21c500de3b180857168f81f75c55f66052e52",
+          "source": "failure"
+        },
+        {
+          "signature": "findFocusableViewInBounds(ZII)Landroid/view/View;",
+          "flags": 2,
+          "body_sha256": "9d9c0a2891e0ad59bf6c90766781b93ac65ef1de8172ac2d596e4c7c3cbd491b",
+          "source": "failure"
+        },
+        {
+          "signature": "getScrollRange()I",
+          "flags": 2,
+          "body_sha256": "f21e4d3555f200e6a167bf2d331d7925229c059bfbaab77feb175883299e4931",
+          "source": "failure"
+        },
+        {
+          "signature": "inChild(II)Z",
+          "flags": 2,
+          "body_sha256": "d5282905b7c1d4a8bf3aa773258c501634bd4ea8bbf392f8fc91f66702a7020e",
+          "source": "failure"
+        },
+        {
+          "signature": "initOrResetVelocityTracker()V",
+          "flags": 2,
+          "body_sha256": "3a10a41548b8e80e6aecd0806b49a22fc101f32482c2b8a7732252f718dd5686",
+          "source": "failure"
+        },
+        {
+          "signature": "initScrollView()V",
+          "flags": 2,
+          "body_sha256": "ec0111cda10c9fe7ffccd122a96e2d1457bdf34ee9dff15cfcebe17fc2ec7a5a",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
+            "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
+            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+          }
+        },
+        {
+          "signature": "initVelocityTrackerIfNotExists()V",
+          "flags": 2,
+          "body_sha256": "2637b20d09be11a7844990b1e570936e6bf1f759685164dc1bfce577400b82cb",
+          "source": "failure"
+        },
+        {
+          "signature": "isOffScreen(Landroid/view/View;)Z",
+          "flags": 2,
+          "body_sha256": "7515eaf4e7129281eb7b8b737401e5cc19d19e537da3bcc80b754c6a37e5fa9e",
+          "source": "failure"
+        },
+        {
+          "signature": "isViewDescendantOf(Landroid/view/View;Landroid/view/View;)Z",
+          "flags": 10,
+          "body_sha256": "9f3af835e04207fe80aea4d0688c46f70dbcb6eec4af53950cc6db2a01de74a2",
+          "source": "failure"
+        },
+        {
+          "signature": "isWithinDeltaOfScreen(Landroid/view/View;II)Z",
+          "flags": 2,
+          "body_sha256": "f76589c2ced35c54524361f68b6bba018fe711ec9679212f95c11e9d17c6db81",
+          "source": "failure"
+        },
+        {
+          "signature": "onSecondaryPointerUp(Landroid/view/MotionEvent;)V",
+          "flags": 2,
+          "body_sha256": "8188600b4e04ba4caefedd60f99bfd28d21761dff94a53e59107c9f89f42851e",
+          "source": "failure"
+        },
+        {
+          "signature": "recycleVelocityTracker()V",
+          "flags": 2,
+          "body_sha256": "e1bd73a2952f3be102b01715a6661d8fc8a7ff057db07a3958a22045b8183163",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollAndFocus(III)Z",
+          "flags": 2,
+          "body_sha256": "32755dede800b1374b95f769c4d10c0c8759eab5451525f091ae380837bd377d",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollToChild(Landroid/view/View;)V",
+          "flags": 2,
+          "body_sha256": "521b0de001ba33351b41feb3691a73e263de7a0271fd7d58a244c22603dbb282",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollToChildRect(Landroid/graphics/Rect;Z)Z",
+          "flags": 2,
+          "body_sha256": "532fd9fde4a951eabe416b79715cd64819c93df980652bdf8f8bd76f013da467",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;)V",
+          "flags": 1,
+          "body_sha256": "aa41e5f2a1b5f42f0532f614260570d17dca8691c924f7f766c55bb7faba1fd7",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;I)V",
+          "flags": 1,
+          "body_sha256": "7748d8949d3a53e9e047be1e0772c7500ee062472bcd3fcbf997d6c4d5799803",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
+          "flags": 1,
+          "body_sha256": "8d063c27470c745cf00ed8c0a524e19283af168d2ad33ab930cd95bad3bdc798",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+          "flags": 1,
+          "body_sha256": "f17c140f19238222d11f0843b12e51a24a0f0cd2eccff5ab04c24558041a49e3",
+          "source": "failure"
+        },
+        {
+          "signature": "arrowScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "9cf320a647e8380fd5ae63abea8707f91b0d99becb98505d023f4a23d202e773",
+          "source": "failure"
+        },
+        {
+          "signature": "computeScroll()V",
+          "flags": 1,
+          "body_sha256": "ddeb133ecaf596120a6d17d97ec0398b7162a4690dcab11e33484cc883be60f7",
+          "source": "failure"
+        },
+        {
+          "signature": "computeScrollDeltaToGetChildRectOnScreen(Landroid/graphics/Rect;)I",
+          "flags": 4,
+          "body_sha256": "a77d8b92c8888e193e9cc1cd543b6604121363a44868491bcb9ff58fa841a537",
+          "source": "failure"
+        },
+        {
+          "signature": "computeVerticalScrollOffset()I",
+          "flags": 4,
+          "body_sha256": "9853edd99eab3f07a72f690632a0e77fb2edd9d8252e1236b3aa41af2e9e6438",
+          "source": "failure"
+        },
+        {
+          "signature": "computeVerticalScrollRange()I",
+          "flags": 4,
+          "body_sha256": "d0fb37bce8e575346af50cc2187a9cfa751e4ad8879f52ba152a770c33fb49b8",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchKeyEvent(Landroid/view/KeyEvent;)Z",
+          "flags": 1,
+          "body_sha256": "c805bc2e631192ca27af2407f94507ac08fc05af89f82516360173fd0f2c2c0a",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "5272e5c9bdfc47b728f4a8c8e75c3a3274b18d21bd69ea7155f0600733145476",
+          "source": "failure"
+        },
+        {
+          "signature": "executeKeyEvent(Landroid/view/KeyEvent;)Z",
+          "flags": 1,
+          "body_sha256": "e63863563cc1cbb0afc6fde40108ee4ee75ee578da276188f33b2709ce08bd28",
+          "source": "failure"
+        },
+        {
+          "signature": "fling(I)V",
+          "flags": 1,
+          "body_sha256": "647080a86872fc99f0d5e0b51f340c43e33dc977d862245d77c284f62e08e5e8",
+          "source": "failure"
+        },
+        {
+          "signature": "fullScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "20a13da0fb9bdef50994872d9efd896037a83f2efec4cf94f8ebc597f55e688f",
+          "source": "failure"
+        },
+        {
+          "signature": "getBottomFadingEdgeStrength()F",
+          "flags": 4,
+          "body_sha256": "b8a1d4d27e6307920cf59119d51530af6d765f0645a5f54a4a9011b66d51e20a",
+          "source": "failure"
+        },
+        {
+          "signature": "getMaxScrollAmount()I",
+          "flags": 1,
+          "body_sha256": "f496a39115f066401c6b50ee1fd02831c73cf80815fa446e3c35af95b2619645",
+          "source": "failure"
+        },
+        {
+          "signature": "getTopFadingEdgeStrength()F",
+          "flags": 4,
+          "body_sha256": "9bd7df0580eb21cb99c30521b0207ad2e2ddfa45a98c34f18a6bffad713ca72b",
+          "source": "failure"
+        },
+        {
+          "signature": "isFillViewport()Z",
+          "flags": 1,
+          "body_sha256": "d9ea557891eea4e6965c73e7ed4957d7088c4776c1f800a6b89d75f48e0d37c6",
+          "source": "rom"
+        },
+        {
+          "signature": "isSmoothScrollingEnabled()Z",
+          "flags": 1,
+          "body_sha256": "e8c37c00e09f2403bd2f7d5351a06e29f77f63d44f98bdb4dd01a304d8b6a5f1",
+          "source": "rom"
+        },
+        {
+          "signature": "measureChild(Landroid/view/View;II)V",
+          "flags": 4,
+          "body_sha256": "58e2946e18fe0cde0948232612c30daafb65e6de957e155e6f2931e292d4e1ad",
+          "source": "failure"
+        },
+        {
+          "signature": "measureChildWithMargins(Landroid/view/View;IIII)V",
+          "flags": 4,
+          "body_sha256": "ef25c6b0ccc62c3b59b76591a2687cb115beb746dfd669147906cf657dc758ac",
+          "source": "failure"
+        },
+        {
+          "signature": "onDetachedFromWindow()V",
+          "flags": 4,
+          "body_sha256": "c74716b2af7b43c053a51fb2aad67049aa54d61cd0dfa1f6aedf3e0c7ab33543",
+          "source": "failure"
+        },
+        {
+          "signature": "onGenericMotionEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "24eab3eef8adf5ed92eafbb6e2ff73d03ec5aa44f7d6b5a3316651cd29a48a90",
+          "source": "failure"
+        },
+        {
+          "signature": "onInitializeAccessibilityEvent(Landroid/view/accessibility/AccessibilityEvent;)V",
+          "flags": 1,
+          "body_sha256": "0b9ec40f959a8940a848613007e7942c02e9db0d2979e6e3f7a863a9a897a365",
+          "source": "failure"
+        },
+        {
+          "signature": "onInitializeAccessibilityNodeInfo(Landroid/view/accessibility/AccessibilityNodeInfo;)V",
+          "flags": 1,
+          "body_sha256": "5440b79ef33dd6f99fd869c2e73d0c78121afd2170a4418bf92d5876df0fb058",
+          "source": "failure"
+        },
+        {
+          "signature": "onInterceptTouchEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "baa282d9f492b894859464c5a079c0fe8b6abcce36c68d93d4c087f18e38411a",
+          "source": "failure"
+        },
+        {
+          "signature": "onLayout(ZIIII)V",
+          "flags": 4,
+          "body_sha256": "f2dbe619a4dd087ab145fdcb7ab4b03fea8d2a128bcff2bf530b41b4733543ca",
+          "source": "failure"
+        },
+        {
+          "signature": "onMeasure(II)V",
+          "flags": 4,
+          "body_sha256": "b6520da89dd4fc736e1fba8bfa024b8b46fc85eae48056d12a90e87ae12e32a2",
+          "source": "failure"
+        },
+        {
+          "signature": "onOverScrolled(IIZZ)V",
+          "flags": 4,
+          "body_sha256": "1fb614a52e6e35d284f037cd46d5b4c9e6db8e90ba5b0080a2014bd9814246bf",
+          "source": "failure"
+        },
+        {
+          "signature": "onRequestFocusInDescendants(ILandroid/graphics/Rect;)Z",
+          "flags": 4,
+          "body_sha256": "c162863e0e54879236e83796e128f4d2b771550509095a0d08826f023d8b0ef1",
+          "source": "failure"
+        },
+        {
+          "signature": "onRestoreInstanceState(Landroid/os/Parcelable;)V",
+          "flags": 4,
+          "body_sha256": "77084b2803ab8ff76dce4d57e6b51859de33b2705050c2ba838e448a3c04a750",
+          "source": "failure"
+        },
+        {
+          "signature": "onSaveInstanceState()Landroid/os/Parcelable;",
+          "flags": 4,
+          "body_sha256": "15eb922db45665531d294dd76d6c38d5c65bbac57cc334f9849ce34715f69340",
+          "source": "failure"
+        },
+        {
+          "signature": "onSizeChanged(IIII)V",
+          "flags": 4,
+          "body_sha256": "a4d1b9c913a2c66c5b5ee8cadb7f3e6256dc48cab635c76a366c5ba5f197e96a",
+          "source": "failure"
+        },
+        {
+          "signature": "onTouchEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "fc3c029e83344101703c14974ca0a080e31770b596c5d88ad1e7c93972c50328",
+          "source": "failure"
+        },
+        {
+          "signature": "pageScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "e4f5f5b8cb12cb5209c1d0cb21fd1d110c3966bd572229113065c388806c8dab",
+          "source": "failure"
+        },
+        {
+          "signature": "performAccessibilityAction(ILandroid/os/Bundle;)Z",
+          "flags": 1,
+          "body_sha256": "7746a24ced038e1462129e628f0002cc8697312cad65613a1ddedd7a9b4a1958",
+          "source": "failure"
+        },
+        {
+          "signature": "requestChildFocus(Landroid/view/View;Landroid/view/View;)V",
+          "flags": 1,
+          "body_sha256": "ce21692b871e3740042d350acd4883d1aee50151a64017395ecf76e2c0f847bf",
+          "source": "failure"
+        },
+        {
+          "signature": "requestChildRectangleOnScreen(Landroid/view/View;Landroid/graphics/Rect;Z)Z",
+          "flags": 1,
+          "body_sha256": "4f18ba25d886920344b0ceb5aa6718486dcd0845da8c55d8d7706dcc2d305a75",
+          "source": "failure"
+        },
+        {
+          "signature": "requestDisallowInterceptTouchEvent(Z)V",
+          "flags": 1,
+          "body_sha256": "279528f6d12b37a4f2bf4d9ecab9dfc36e231bb10e71d052ac1fb6b6805eef85",
+          "source": "failure"
+        },
+        {
+          "signature": "requestLayout()V",
+          "flags": 1,
+          "body_sha256": "0e873a1f47ecabf00e038e3555005923bbfb6d50bbe6aeb3148c613968481340",
+          "source": "rom"
+        },
+        {
+          "signature": "scrollTo(II)V",
+          "flags": 1,
+          "body_sha256": "732eb30d961137e1d60c21ddf76c3e081dd1aad6e529fc7265a388bf7098b349",
+          "source": "failure"
+        },
+        {
+          "signature": "setFillViewport(Z)V",
+          "flags": 1,
+          "body_sha256": "a5c8bf47f184c119406a916027aa5f6e660148abab451035d35199326f6aef38",
+          "source": "rom"
+        },
+        {
+          "signature": "setOverScrollMode(I)V",
+          "flags": 1,
+          "body_sha256": "3d230929314aea69bfe89390ebcb7acdf0de50faa4a65fb5afb6e5d1c1079681",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
+            "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
+            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+          }
+        },
+        {
+          "signature": "setSmoothScrollingEnabled(Z)V",
+          "flags": 1,
+          "body_sha256": "9c76ea54a7d831a8abcfc8cee8c848a9fba31c23f2f4865563e3099d86a8ea18",
+          "source": "rom"
+        },
+        {
+          "signature": "shouldDelayChildPressedState()Z",
+          "flags": 1,
+          "body_sha256": "b996aa12c393911278f5f4bd5cd32cb0bce4b0a0e63b55cd9e3dee055b4e27cc",
+          "source": "failure"
+        },
+        {
+          "signature": "smoothScrollBy(II)V",
+          "flags": 17,
+          "body_sha256": "8e41c31b3eed5e352e764bb30c4d7dc9fdbb029d5987b83bbda3f89450fafeb8",
+          "source": "failure"
+        },
+        {
+          "signature": "smoothScrollTo(II)V",
+          "flags": 17,
+          "body_sha256": "8300a8736b6e24b54946d4af3f98bf1671e6a726879a1efbd02c2db64b428f44",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "ANIMATED_SCROLL_GAP:I",
+          "flags": 24,
+          "source": "rom",
+          "initialization": "rom-encoded:0xfa"
+        },
+        {
+          "signature": "INVALID_POINTER:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:-0x1"
+        },
+        {
+          "signature": "MAX_SCROLL_FACTOR:F",
+          "flags": 24,
+          "source": "rom",
+          "initialization": "rom-encoded:0.5f"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"ScrollView\""
+        },
+        {
+          "signature": "mActivePointerId:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mChildToScrollTo:Landroid/view/View;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeGlowBottom:Landroid/widget/EdgeEffect;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeGlowTop:Landroid/widget/EdgeEffect;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFillViewport:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFlingStrictSpan:Landroid/os/StrictMode$Span;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mIsBeingDragged:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mIsLayoutDirty:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastMotionY:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastScroll:J",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMaximumVelocity:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMinimumVelocity:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverflingDistance:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverscrollDistance:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSavedState:Landroid/widget/ScrollView$SavedState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mScrollStrictSpan:Landroid/os/StrictMode$Span;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mScroller:Landroid/widget/OverScroller;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSmoothScrollingEnabled:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTempRect:Landroid/graphics/Rect;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTouchSlop:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVelocityTracker:Landroid/view/VelocityTracker;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-scroll.surface.json.gz",
+      "surface_sha256": "e42078c222b7037ab5f6083b16e4ca9f9400fba5d0bce47b77483399b57c1b7c",
+      "owner": "Landroid/widget/HorizontalScrollView;",
+      "smali_sha256": "cfdd3ec3f3b29f9102045d9c30f7adc7ccdd9db1faa004b63479c97baf7ce471",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "5e05f405d6f02340ba137de9f8cebbe0152ca65be893aea8fd39875cf8764cc9",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+          "flags": 65537,
+          "body_sha256": "6916a00e2dee32db8052dc62a9a9f2777ef9ae22e1a1addb79e500445fb7de20",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+          "flags": 65537,
+          "body_sha256": "cd52dce0ad4d4da1d45c9c5a06a0fa1329230d07a5d227db86690c6a32a65244",
+          "source": "rom"
+        },
+        {
+          "signature": "canScroll()Z",
+          "flags": 2,
+          "body_sha256": "fa1acd2e2e30cdcd9ac725d46d41236fb61199eb3cf54495ff01d1fb112e7c8e",
+          "source": "failure"
+        },
+        {
+          "signature": "clamp(III)I",
+          "flags": 10,
+          "body_sha256": "e2260d608f44ee82f6617444774374c21faffc19fc95dff0936ba59429c21204",
+          "source": "failure"
+        },
+        {
+          "signature": "doScrollX(I)V",
+          "flags": 2,
+          "body_sha256": "a339354f25ae7ee8e0a964c05e6add4cc8bf20073e607f338b34383b352fb573",
+          "source": "failure"
+        },
+        {
+          "signature": "findFocusableViewInBounds(ZII)Landroid/view/View;",
+          "flags": 2,
+          "body_sha256": "f269aacbd2343263e47ff989f69d9f230e9dbca21433c131176c01629165efe0",
+          "source": "failure"
+        },
+        {
+          "signature": "findFocusableViewInMyBounds(ZILandroid/view/View;)Landroid/view/View;",
+          "flags": 2,
+          "body_sha256": "4f4708285db8253ff441227ef1b473813f6920b5e3c1134c7c284169cfd89a12",
+          "source": "failure"
+        },
+        {
+          "signature": "getScrollRange()I",
+          "flags": 2,
+          "body_sha256": "4402157988fd0256cd47193d5ef650ef0b778d45a6ecd2f7fda555d722dfa2a2",
+          "source": "failure"
+        },
+        {
+          "signature": "inChild(II)Z",
+          "flags": 2,
+          "body_sha256": "655cfb79145c25f691d11020bb1ae7eac0298f216621b0e0a8067e8bad931f2a",
+          "source": "failure"
+        },
+        {
+          "signature": "initOrResetVelocityTracker()V",
+          "flags": 2,
+          "body_sha256": "ebea70ee7c84442e9612a0b354cf3e067c9b9a43b2d3131ef9bfa8f1fa946e31",
+          "source": "failure"
+        },
+        {
+          "signature": "initScrollView()V",
+          "flags": 2,
+          "body_sha256": "10d7c2dc8deefbfc822e387551c8b82e3b98f103d35f0a740ddb7c1ab8fa6941",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
+            "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
+            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+          }
+        },
+        {
+          "signature": "initVelocityTrackerIfNotExists()V",
+          "flags": 2,
+          "body_sha256": "7f7fae152242c7fe462eb51e5adf7621e0fe013d4f8c20dda45142f6cdc95ebf",
+          "source": "failure"
+        },
+        {
+          "signature": "isOffScreen(Landroid/view/View;)Z",
+          "flags": 2,
+          "body_sha256": "11bcd412db9251894d45c56f24ada6247ebfdcc6487df167db6b291521a00f6b",
+          "source": "failure"
+        },
+        {
+          "signature": "isViewDescendantOf(Landroid/view/View;Landroid/view/View;)Z",
+          "flags": 10,
+          "body_sha256": "95ddba83362f3fa7cfeff2d5057ea047c34c8a629fff00cf77b3380eabf467dd",
+          "source": "failure"
+        },
+        {
+          "signature": "isWithinDeltaOfScreen(Landroid/view/View;I)Z",
+          "flags": 2,
+          "body_sha256": "723d2272f8fa189b78a906fb8a9b5cc004f6456a3af956bb7432039c2a602bb4",
+          "source": "failure"
+        },
+        {
+          "signature": "onSecondaryPointerUp(Landroid/view/MotionEvent;)V",
+          "flags": 2,
+          "body_sha256": "0785cd83cf4f127e366b306fa5f8b3ad0c609699cdd364c5148e88f4098d1ee0",
+          "source": "failure"
+        },
+        {
+          "signature": "recycleVelocityTracker()V",
+          "flags": 2,
+          "body_sha256": "710dce47bd87ed0895b7c5c495601dc0f771b60550db9b52540749a931513109",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollAndFocus(III)Z",
+          "flags": 2,
+          "body_sha256": "956291abac3676ca4e4d512f6df8c0870ac604aef80707cee23c9d042726187a",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollToChild(Landroid/view/View;)V",
+          "flags": 2,
+          "body_sha256": "38c21a7a6513d3bd394141085c0b189c107b65f03c6f18edf3d2ce0eebfdd0a3",
+          "source": "failure"
+        },
+        {
+          "signature": "scrollToChildRect(Landroid/graphics/Rect;Z)Z",
+          "flags": 2,
+          "body_sha256": "047aa13fddf2e8f437a145a644add0ec9e853c965c4f4692da9e7079de864e39",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;)V",
+          "flags": 1,
+          "body_sha256": "9e62f078114e4700eb9a83ebaaff09a0fb8afb84601bd0bc7761618bb494a99d",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;I)V",
+          "flags": 1,
+          "body_sha256": "043ad4cfe06ef722c04c534dbae02328b2a2faff30d76b69571ddc0c981e3f05",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
+          "flags": 1,
+          "body_sha256": "3c9a3a6eee7d199e2bfa426c59fd97305be9bb694a3500a0a80290a1d61b7a72",
+          "source": "failure"
+        },
+        {
+          "signature": "addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+          "flags": 1,
+          "body_sha256": "be2e04e44e6e6350325175cae234773e9e6d6bc3df925a7312a7d64d017c26de",
+          "source": "failure"
+        },
+        {
+          "signature": "arrowScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "f3f84c27ace67a684c36f95b72f6445e83c5e9bc9013d01b33774b90064cfaf1",
+          "source": "failure"
+        },
+        {
+          "signature": "computeHorizontalScrollOffset()I",
+          "flags": 4,
+          "body_sha256": "60e3c9473b3ce0b9ebafe54a82c361b34e85fc48e14f9c3d5c091459fc0da280",
+          "source": "failure"
+        },
+        {
+          "signature": "computeHorizontalScrollRange()I",
+          "flags": 4,
+          "body_sha256": "6c9d3a199750287b6126c125362c86fb772325d90d0cdca5f8482b0a555bd767",
+          "source": "failure"
+        },
+        {
+          "signature": "computeScroll()V",
+          "flags": 1,
+          "body_sha256": "0e78a70bd0af64d3c64214b8bb4660e6fe608ea0312389ea152ddd801010cbef",
+          "source": "failure"
+        },
+        {
+          "signature": "computeScrollDeltaToGetChildRectOnScreen(Landroid/graphics/Rect;)I",
+          "flags": 4,
+          "body_sha256": "13a90343ead9b09c64c8128649f51ba0970a96468e5c30de26e90ad154489106",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchKeyEvent(Landroid/view/KeyEvent;)Z",
+          "flags": 1,
+          "body_sha256": "0933e185f8dc17432f56ef6b9c15e67eaa87ec7d7c19059e540cafa6b4cfe864",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "f345f74811d2f135cb1da5da46ac405498817e0ca0fd0c48b6ce05444584d3eb",
+          "source": "failure"
+        },
+        {
+          "signature": "executeKeyEvent(Landroid/view/KeyEvent;)Z",
+          "flags": 1,
+          "body_sha256": "586dd3442b5ac46d1df47c2432093c01df7ebac9e25c25b970b84971e84d948f",
+          "source": "failure"
+        },
+        {
+          "signature": "fling(I)V",
+          "flags": 1,
+          "body_sha256": "9e519595c2f39d99631d60d17eaebaff2eb64fae1fd46bf1579e6bd7dab15fbb",
+          "source": "failure"
+        },
+        {
+          "signature": "fullScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "018bb1a19544c25b20053f7d646e6395245e07c8a4312649a88dda2028fba9e2",
+          "source": "failure"
+        },
+        {
+          "signature": "getLeftFadingEdgeStrength()F",
+          "flags": 4,
+          "body_sha256": "ab2cbed74d796cb932a23782891e94391c0b9a0db7d276e0bc56aedb05f32138",
+          "source": "failure"
+        },
+        {
+          "signature": "getMaxScrollAmount()I",
+          "flags": 1,
+          "body_sha256": "11e6f6d0a7b16002092a9f796f80b7a74f5e246916e3f9b002cbea434e804f8c",
+          "source": "failure"
+        },
+        {
+          "signature": "getRightFadingEdgeStrength()F",
+          "flags": 4,
+          "body_sha256": "0db1396c2ab762cd79875528d905d450c52f3bdd48d1943f5c1821180734ea2d",
+          "source": "failure"
+        },
+        {
+          "signature": "isFillViewport()Z",
+          "flags": 1,
+          "body_sha256": "6ff55b168fc67279a82e072901fd3e90de3bf3c2b893e8497752aaf46f394ae8",
+          "source": "rom"
+        },
+        {
+          "signature": "isSmoothScrollingEnabled()Z",
+          "flags": 1,
+          "body_sha256": "7272fa55a971d26463300d7489431e22acbfac8151dd089d2670470ee9301f39",
+          "source": "rom"
+        },
+        {
+          "signature": "measureChild(Landroid/view/View;II)V",
+          "flags": 4,
+          "body_sha256": "814892e8da5a75ea573458eb46eeeb72adb2813c5c5f1fae97df6b7f52ffdfeb",
+          "source": "failure"
+        },
+        {
+          "signature": "measureChildWithMargins(Landroid/view/View;IIII)V",
+          "flags": 4,
+          "body_sha256": "6e8615b73d033d3f1852b163d3e8dd288713974042654c25c96d1c289738c661",
+          "source": "failure"
+        },
+        {
+          "signature": "onGenericMotionEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "f81fe01d2301c6c1e0af45b13f5e35a9d95a949ee1f375cca9d53e306d782ac3",
+          "source": "failure"
+        },
+        {
+          "signature": "onInitializeAccessibilityEvent(Landroid/view/accessibility/AccessibilityEvent;)V",
+          "flags": 1,
+          "body_sha256": "af74584eddefb14e0a041a56227f9c7dfa9d904028dece71a7eb01c4edd1f625",
+          "source": "failure"
+        },
+        {
+          "signature": "onInitializeAccessibilityNodeInfo(Landroid/view/accessibility/AccessibilityNodeInfo;)V",
+          "flags": 1,
+          "body_sha256": "18331b9390fd747be055bfcd2957d84d8decf8284b68391c3cd971e9cb0f0a1d",
+          "source": "failure"
+        },
+        {
+          "signature": "onInterceptTouchEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "78d7624c18975b49e876bde465da9fe06806c84c158f4feb07d9d000e97fb02e",
+          "source": "failure"
+        },
+        {
+          "signature": "onLayout(ZIIII)V",
+          "flags": 4,
+          "body_sha256": "41f94404aa5c3b7e3d2ed23025bdbea2c76f154f22945b843705092a21b09205",
+          "source": "failure"
+        },
+        {
+          "signature": "onMeasure(II)V",
+          "flags": 4,
+          "body_sha256": "db5a4ed514666861ef3581436d812119f7b2821cc40b383270752413e5beeb52",
+          "source": "failure"
+        },
+        {
+          "signature": "onOverScrolled(IIZZ)V",
+          "flags": 4,
+          "body_sha256": "8fa329f6ed4463c8722e236be4f79bf73abb8d51db3c37b9c8abb620c280bce6",
+          "source": "failure"
+        },
+        {
+          "signature": "onRequestFocusInDescendants(ILandroid/graphics/Rect;)Z",
+          "flags": 4,
+          "body_sha256": "90f55038f7da9d53c2f309db2572f0c3ae41682e41799f061138fe5006616bb5",
+          "source": "failure"
+        },
+        {
+          "signature": "onRestoreInstanceState(Landroid/os/Parcelable;)V",
+          "flags": 4,
+          "body_sha256": "7a9bad88bd6c334dd39b58475363b38d689fbd53b935cb8c519489a4301d41f5",
+          "source": "failure"
+        },
+        {
+          "signature": "onSaveInstanceState()Landroid/os/Parcelable;",
+          "flags": 4,
+          "body_sha256": "56839edffa49e00da030bbf13a19e066434b4d10b374a3f0f56dbc119d8e722f",
+          "source": "failure"
+        },
+        {
+          "signature": "onSizeChanged(IIII)V",
+          "flags": 4,
+          "body_sha256": "4ce587457febac4c46b3398dc9f26bd33ca91dd8ef146581ec153de5c523661b",
+          "source": "failure"
+        },
+        {
+          "signature": "onTouchEvent(Landroid/view/MotionEvent;)Z",
+          "flags": 1,
+          "body_sha256": "7a563c46ba6b294dbe3ce4e0f253d4e41b24356324b2e31f65eae5d1486d1ce7",
+          "source": "failure"
+        },
+        {
+          "signature": "pageScroll(I)Z",
+          "flags": 1,
+          "body_sha256": "47a0005ed20f47b7d0e1aab240b8a2d2cc1a1ed4268efc5a29b52b7c7d47b640",
+          "source": "failure"
+        },
+        {
+          "signature": "performAccessibilityAction(ILandroid/os/Bundle;)Z",
+          "flags": 1,
+          "body_sha256": "ebf9652ed195405e09e851d1abfc0ea6df4e2dc201d5832ba19d6a4424178676",
+          "source": "failure"
+        },
+        {
+          "signature": "requestChildFocus(Landroid/view/View;Landroid/view/View;)V",
+          "flags": 1,
+          "body_sha256": "f36585cecdf292dc428b9ddc97d64c7420321ca530266e390448d33ce9aa2df4",
+          "source": "failure"
+        },
+        {
+          "signature": "requestChildRectangleOnScreen(Landroid/view/View;Landroid/graphics/Rect;Z)Z",
+          "flags": 1,
+          "body_sha256": "36e4d60ad97759cc425b6df52863eea0f8bf0b418d14f61b5a07e0e8dcd1aa21",
+          "source": "failure"
+        },
+        {
+          "signature": "requestDisallowInterceptTouchEvent(Z)V",
+          "flags": 1,
+          "body_sha256": "d13dd98b86d707c3356251cdefa2c4d44233494e88e9d4a30eed6a9f8d9cdff0",
+          "source": "failure"
+        },
+        {
+          "signature": "requestLayout()V",
+          "flags": 1,
+          "body_sha256": "6e345353ad807c0e742d12ae290df2e5020104087699c69d4c1cc7d8f2ae2ea3",
+          "source": "rom"
+        },
+        {
+          "signature": "scrollTo(II)V",
+          "flags": 1,
+          "body_sha256": "edc3a48a561c8c665c1f80872951f5fc324eb3ff86a2197dbf3bf19d17567ebe",
+          "source": "failure"
+        },
+        {
+          "signature": "setFillViewport(Z)V",
+          "flags": 1,
+          "body_sha256": "0e5acc02b286c0ac8278080409610ffd554c7ade6fa5f2f4a9582e438e753e3e",
+          "source": "rom"
+        },
+        {
+          "signature": "setOverScrollMode(I)V",
+          "flags": 1,
+          "body_sha256": "24089eb98d331acf8136bd731dfb1d8ff8e13c28cc85d04e37977921e195d530",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
+            "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
+            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+          }
+        },
+        {
+          "signature": "setSmoothScrollingEnabled(Z)V",
+          "flags": 1,
+          "body_sha256": "e0a4d74681b379c628a2c4409bacc19b4a2996cc00b2047ee80f12d20f147098",
+          "source": "rom"
+        },
+        {
+          "signature": "shouldDelayChildPressedState()Z",
+          "flags": 1,
+          "body_sha256": "4b563a6b98d75e8801904b7841ab27efee06f77b063e17bc6f58c325155a3626",
+          "source": "failure"
+        },
+        {
+          "signature": "smoothScrollBy(II)V",
+          "flags": 17,
+          "body_sha256": "9c1d5c4f017668f6abe8af0e48bd280282f73a9d6f4c0961b4ddaf33f2b6b2f7",
+          "source": "failure"
+        },
+        {
+          "signature": "smoothScrollTo(II)V",
+          "flags": 17,
+          "body_sha256": "bb440b49a25f81e3fd4be29c48c30f5b6e8efa7947cfc461b4e4c574746fb99a",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "ANIMATED_SCROLL_GAP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xfa"
+        },
+        {
+          "signature": "INVALID_POINTER:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:-0x1"
+        },
+        {
+          "signature": "MAX_SCROLL_FACTOR:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0.5f"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"HorizontalScrollView\""
+        },
+        {
+          "signature": "mActivePointerId:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mChildToScrollTo:Landroid/view/View;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeGlowLeft:Landroid/widget/EdgeEffect;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeGlowRight:Landroid/widget/EdgeEffect;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFillViewport:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mIsBeingDragged:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mIsLayoutDirty:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastMotionX:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastScroll:J",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMaximumVelocity:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMinimumVelocity:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverflingDistance:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverscrollDistance:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSavedState:Landroid/widget/HorizontalScrollView$SavedState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mScroller:Landroid/widget/OverScroller;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSmoothScrollingEnabled:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTempRect:Landroid/graphics/Rect;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTouchSlop:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVelocityTracker:Landroid/view/VelocityTracker;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

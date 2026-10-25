@@ -2179,3 +2179,33 @@ GeometryRead 只允许进行中回调读取临时投影。临时投影从当前 
 11-2 对 ADR-0161 共同发布接缝的精确实施更新：ROM measure/layout 完成后，先准备并
 检查全部宿主 modal resize，再提交 guest 投影和共同快照；resize 失败保留上个完整 guest/
 presentation 发布，已经执行的 Java 不回滚。旧任务单保留当时实现的历史时序。
+
+
+### 11-3 owner 帧循环实施补充（2026-10-25）
+
+managed-window 的 getLocationInWindow/OnScreen 是已附着软件窗口 adapter：读取当前 Java
+父链/局部 frame/祖先 scroll 的临时投影，screen 原点与 managed 全屏窗口原点相同；不读取
+AttachInfo、不发布、不测量。未附着坐标与非中性 transform 明确失败，绝不把宿主坐标称为
+AttachInfo=null 返回零的 ROM 分支。getWindowVisibility/hasWindowFocus 读取实际 managed
+窗口事实；窗口可见性与 initialAwakenScrollBars 的空 cache 分支执行 ROM，非空 cache 的
+未实现动画仍按 ADR-0147 失败。
+
+窗口焦点 adapter 在 owner 上取消软件输入，清 mPrivateFlags 的 PFLAG_PRESSED=0x4000 /
+PFLAG_PREPRESSED=0x02000000，虚派 onFocusLost 并刷新 drawable state。onFocusLost、
+resetPressedState、isPressed、setPressed、dispatchSetPressed、removeLongPressCallback 使用
+ROM；Java 唯一持 flags/回调字段，不创建 IME 或长按 timer。TextView 窗口焦点 adapter
+精确调用 View，复用现有有界文本服务，排除 Editor/IME；SurfaceView 可见性 adapter 精确
+调用 View ROM，managed holder 生命周期独立于 WMS/updateWindow。GLSurfaceView 实验
+构造精确调用 SurfaceView 父 adapter，不能由 VM 零值替代 ROM requested=-1。
+
+Activity 栈的窗口记录关联真实 Java 内容根，不在 ExternalProjection 树上附着宿主窗口根。
+Start/Resume 建立完整首快照；StepFrame 输入前 OwnerTick、mutation 批后 BeforePresent，
+内容同步与 Surface 用 BeforeSurfaceCallbacks。后两者及 BeforeInput 均是同 tick 屏障，
+ResolveAndNotifySizes 在 Java 分支只执行 ROM layout 的同步尺寸回调，不复用 Legacy
+八轮通知。纯绘制重新冻结快照而不测量；owner 发布前刷新叶像素和 producer 事实。
+presentation epoch 触发软件窗口基帧及 intrinsic renderer draw request，Compose 不执行 guest
+或补遍历。完整 Surface 回调代次、事件事务、窗口切换及媒体同 lease 收口仍由后续 WU 验收。
+
+本单无组合/准入审计规则范围调整，direct/static/super/精确接收者、本类 failure 字段与
+clinit 规则保持；虚派按现有 dispatch ledger 列账，支持路径动态未实现命中须为0。
+迁移、adapter review 与机器证据见 [DVM-308](../tasks/dexvm/DVM-308.md)。

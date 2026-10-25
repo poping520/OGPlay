@@ -559,3 +559,88 @@
     iput-object v0, v2, Ltest/ManagedSurfaceCallback;->frame:Landroid/graphics/Rect;
     return-void
 .end method
+
+.class public Ltest/OwnerActivity;
+.super Landroid/app/Activity;
+.field public static leaf:Ltest/MeasuredLeaf;
+.field public static owner:Ltest/OwnerActivity;
+.field public static inputSeen:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 4
+    sput-object v2, Ltest/OwnerActivity;->owner:Ltest/OwnerActivity;
+    new-instance v0, Ltest/MeasuredLeaf;
+    invoke-direct {v0, v2}, Ltest/MeasuredLeaf;-><init>(Landroid/content/Context;)V
+    sput-object v0, Ltest/OwnerActivity;->leaf:Ltest/MeasuredLeaf;
+    invoke-virtual {v2, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+.method public onWindowFocusChanged(Z)V
+.registers 4
+    invoke-static {}, Ltest/OwnerActivity;->mutate()V
+    return-void
+.end method
+.method public onTouchEvent(Landroid/view/MotionEvent;)Z
+.registers 4
+    sget-object v0, Ltest/OwnerActivity;->leaf:Ltest/MeasuredLeaf;
+    invoke-virtual {v0}, Ltest/MeasuredLeaf;->count()I
+    move-result v1
+    sput v1, Ltest/OwnerActivity;->inputSeen:I
+    invoke-static {}, Ltest/OwnerActivity;->mutate()V
+    const/4 v0, 1
+    return v0
+.end method
+
+.method public static mutate()V
+.registers 4
+    sget-object v0, Ltest/OwnerActivity;->owner:Ltest/OwnerActivity;
+    sget-object v1, Ltest/OwnerActivity;->leaf:Ltest/MeasuredLeaf;
+    invoke-virtual {v1}, Landroid/view/View;->requestLayout()V
+    invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+    move-result-object v2
+    const v3, 0x01020002
+    invoke-virtual {v2, v3}, Landroid/view/Window;->findViewById(I)Landroid/view/View;
+    move-result-object v2
+    new-instance v3, Landroid/view/View;
+    invoke-direct {v3, v0}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    invoke-virtual {v2, v3}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
+    return-void
+.end method
+
+.method public static inputSeen()I
+.registers 1
+    sget v0, Ltest/OwnerActivity;->inputSeen:I
+    return v0
+.end method
+
+.class public Ltest/OwnerMutation;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public run()V
+.registers 3
+    invoke-static {}, Ltest/OwnerActivity;->mutate()V
+    return-void
+.end method
+
+.class public Ltest/OwnerPrepared;
+.super Ljava/lang/Object;
+.implements Landroid/media/MediaPlayer$OnPreparedListener;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public onPrepared(Landroid/media/MediaPlayer;)V
+.registers 3
+    invoke-static {}, Ltest/OwnerActivity;->mutate()V
+    return-void
+.end method

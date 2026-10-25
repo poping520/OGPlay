@@ -94,8 +94,20 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                                                     {"Landroid/view/SurfaceHolder$Callback;"});
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
-    builder.Constructor("(Landroid/content/Context;)V",
-        SurfaceViewInitHandler(context));
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
+            const auto parent =
+                call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/view/SurfaceView;"),
+                                                  "<init>", "(Landroid/content/Context;)V");
+            const auto result = call.vm.Call(*parent, std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                      result.exception_message, result.exception};
+            return dx::VmValue::Void();
+        });
+    } else {
+        builder.Constructor("(Landroid/content/Context;)V", SurfaceViewInitHandler(context));
+    }
     // API19 stores this preference on the View, independently of renderer
     // creation. It is a request, not evidence that an EGL context survived.
     const auto preserve_context = builder.BoundInstanceField(

@@ -604,6 +604,9 @@ ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
     if (found == context.activity_stack.end())
         throw std::logic_error("foreground Activity has no window record");
     if (!found->window_root || !context.ui_tree.Get(*found->window_root)) {
+        // The owner barrier materializes the Java Window content root. Until
+        // then an empty window has only the synthetic projection root.
+        if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return context.ui_tree.Root();
         const auto node = context.ui_tree.CreateNode(ui::UiClass::FrameLayout);
         context.ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
         context.ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;

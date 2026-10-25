@@ -218,7 +218,9 @@ onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字
 VM 主 guest context 的状态表装配绑定唯一宿主 owner，不由首个 View 构造绑定。
 OwnerTick 开始一个逻辑 tick；BeforeInput 是同 tick 读屏障，不消费第二 pass 的延期。
 每个稳定窗口根独立保存请求、延期/watchdog 与最近成功身份/metrics；clean 复用完整快照，
-不调用 measure/layout、不推进 epoch。OwnerTick/BeforeInput 的 ResolveOnly 在 owner guest token、绑定宿主线程与 VM 锁下执行根
+不调用 measure/layout、不推进 epoch。纯绘制变化只重新冻结投影，不调用 measure/layout。
+OwnerTick/BeforeInput/BeforePresent/BeforeSurfaceCallbacks 的 ResolveOnly 与 ResolveAndNotifySizes
+在 owner guest token、绑定宿主线程与 VM 锁下执行根
 EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧
 第二轮；第二轮请求不置 FORCE_LAYOUT，延至下一 tick。连续跨 tick 请求超过8次明确失败，
 保留队列并记录 requester/epoch。系统接缝不构造 AttachInfo/ViewRootImpl/Binder。
@@ -242,8 +244,15 @@ enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事
 非 null AttachInfo、动画/硬件、accessibility focus、背景状态等未支持服务明确记账失败。
 不宣称构造完整 AccessibilityManager 服务；除受审 getInstance/isEnabled 外其成员均 failure。
 输入重入未完成 traversal 明确拒绝；GeometryRead 仅允许进行中的回调读取临时投影。
-其余 reason/phase 明确失败并记账；生产帧安全点、Surface 生命周期与 E2E 待后续 WU，
-Legacy 仍为生产默认。
+HostDialog 与回调外 GeometryRead 明确失败并记账；Surface 生命周期完整代次校验与 E2E 待后续 WU，
+Legacy 仍为生产默认。Java 分支的尺寸 phase 由 ROM layout 同步完成 onSizeChanged，
+不进入 Legacy 多轮尺寸派发；Surface 消费遍历后的本轮 pending。
+managed-window 坐标查询读取临时 Java 投影，含父链/祖先 scroll；全屏窗口 screen 原点为0，
+不创建 AttachInfo。窗口可见性与空 scrollbar cache 使用 ROM；focus adapter 取消软件捕获、
+清 Java pressed/prepressed、虚派 ROM onFocusLost 并刷新 drawable state，不创建 IME。
+TextView 的窗口焦点及 SurfaceView 的可见性接缝精确调用 View 父实现，排除 Editor/WMS。
+GLSurfaceView 在实验配对精确调用 SurfaceView 父构造，保留 requested=-1、willNotDraw 与真实 holder。
+Activity 栈的窗口根关联真实 Java 内容 FrameLayout；创建前仅查询空投影根，不附着第二棵宿主层级。
 实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者

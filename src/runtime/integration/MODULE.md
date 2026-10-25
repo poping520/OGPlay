@@ -413,3 +413,9 @@ Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此�
 JavaTraversal 的 owner 在 bridge 装配主 guest context 状态表时绑定；View 构造只校验，
 不能通过换宿主线程重新绑定。请求/调度表为按稳定窗口根保存的弱 Java 身份，
 GC sweep 清理对应根与请求；不进入 session 强根，完整投影独立保留。
+
+
+DVM-308：JavaTraversal 帧遍历由 lifecycle owner 在输入前、mutation 批后及 Surface 回调前
+调度；重复屏障不推进逻辑 tick，尺寸通知由 ROM layout 唯一派发。纯绘制重新冻结投影，
+Compose 只消费完整快照、不进入 guest。managed-window adapter 不创建 AttachInfo/IME/WMS；
+Activity 窗口记录关联 Java 内容根，UiTree 不附着第二棵 guest 层级。Legacy 时序保持。

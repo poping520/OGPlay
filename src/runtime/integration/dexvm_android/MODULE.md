@@ -714,3 +714,7 @@ DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时
 实际 owner/root/holder/mount/buffer 核验连续性，不以无关 sibling 的 content revision
 变化销毁仍存活的 holder；新挂载延后，换根/重挂及 callback owner 替换仍撤销旧派发。
 owner 直接调用 ROM observer 和 Surface 事务在 VM execution lock 下捕获与复核。
+
+JavaTraversal 的 `ui.surface.*` 结构化诊断记录 producer 注册、holder 激活/拒绝原因及
+Surface 回调的 holder 分型和真实尺寸；轮询决策按对象限流，实际生命周期派发不合并。
+诊断不参与准入判断，不改变代次、buffer 或 ADR-0147 失败语义；Legacy 不输出该诊断域。

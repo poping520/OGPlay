@@ -1322,13 +1322,31 @@ TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") 
         cause(create("test.InflatedLeaf"), "Landroid/view/InflateException;");
         CHECK(JavaField(f, filter, "calls").bits == 1);
         f.On(inflater, "setFilter", "(Landroid/view/LayoutInflater$Filter;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto phone_type = f.linker.ResolveDescriptor("Lcom/android/internal/policy/impl/PhoneLayoutInflater;");
+        CHECK(f.model.ObjectClass(inflater) == phone_type);
+        for (const auto& [method, descriptor] : std::vector<std::pair<const char*, const char*>>{
+                 {"cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;"},
+                 {"onCreateView", "(Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;"}}) {
+            const auto selected = f.linker.FindVtableIndex(phone_type, method, descriptor);
+            REQUIRE(selected);
+            CHECK(f.linker.Method(f.linker.Class(phone_type).vtable[*selected]).kind == MethodKind::interpreted);
+        }
+        const auto clone_context = f.New("Landroid/content/Context;");
+        f.On(inflater, "setFilter", "(Landroid/view/LayoutInflater$Filter;)V", {VmValue::Ref(filter)});
         const auto factory = f.New("Ltest/InflaterFactory;");
         f.On(inflater, "setFactory2", "(Landroid/view/LayoutInflater$Factory2;)V", {VmValue::Ref(factory)});
         const auto clone = f.On(inflater, "cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;",
-                                {VmValue::Ref(owner)})
+                                {VmValue::Ref(clone_context)})
                                .ref;
         CHECK(clone != inflater);
+        CHECK(f.model.ObjectClass(clone) == phone_type);
+        CHECK(f.On(clone, "getContext", "()Landroid/content/Context;").ref == clone_context);
+        CHECK(f.On(inflater, "getContext", "()Landroid/content/Context;").ref == owner);
+        CHECK(VmObjectRef{JavaField(f, clone, "mFilter", "Landroid/view/LayoutInflater$Filter;").bits} == filter);
+        CHECK(JavaField(f, clone, "mFilterMap", "Ljava/util/HashMap;").bits !=
+              JavaField(f, inflater, "mFilterMap", "Ljava/util/HashMap;").bits);
         CHECK(f.On(clone, "getFactory2", "()Landroid/view/LayoutInflater$Factory2;").ref == factory);
+        f.On(clone, "setFilter", "(Landroid/view/LayoutInflater$Filter;)V", {VmValue::Ref(VmObjectRef{})});
         const auto factory2 = f.New("Ltest/InflaterFactory;");
         f.On(clone, "setFactory", "(Landroid/view/LayoutInflater$Factory;)V", {VmValue::Ref(factory2)});
         InstallInflateLayouts(f, {{"View", InflateSize(40, 20), {}}});
@@ -1341,8 +1359,8 @@ TEST_CASE("DVM-290 createView cache filter exception causes and ROM factories") 
         const auto clone_args = VmObjectRef{JavaField(f, clone, "mConstructorArgs", "[Ljava/lang/Object;").bits};
         CHECK_FALSE(f.model.GetObjectElement(clone_args, 0).IsValid());
         CHECK_FALSE(f.model.GetObjectElement(clone_args, 1).IsValid());
-        const auto plain =
-            f.New("Landroid/view/LocalLayoutInflater;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto plain = f.New("Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
+                                 "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto first = f.New("Ltest/InflaterFactory;");
         f.On(plain, "setFactory", "(Landroid/view/LayoutInflater$Factory;)V", {VmValue::Ref(first)});
         const auto merged = f.On(plain, "cloneInContext", "(Landroid/content/Context;)Landroid/view/LayoutInflater;",

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "reference_sha256": "c351a5c6e5a012f68810db5d87f9932dd40e3658c07a88f4ba6a72c9f43f629a",
+  "selected": [
+    "Lcom/android/internal/policy/impl/PhoneLayoutInflater;"
+  ],
+  "shape_deviations": []
+}

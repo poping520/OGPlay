@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Rule-based admission of pure-Java ROM classes into BootDex (ADR-0148).
 
-The audited object is the rule set, not individual classes. A skeleton class from the four
-pinned ROM jars is admitted when it has no native method, its superclass chain is Object /
+The audited object is the rule set, not individual classes. A skeleton class from the hash-locked
+ROM sources (including the independent policy reference) is admitted when it has no native method, its superclass chain is Object /
 an admitted class / an implemented intrinsic or BootDex parent (ADR-0156), its <clinit> transitive call closure
 touches only implemented code, and no implemented intrinsic signature or C++ source names it.
 Virtual/interface targets that are not uniquely determined are treated as possibly reaching
@@ -24,7 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_bootdex as builder
 from api19_skeleton import unpack
 
-JARS = ('core.jar', 'framework.jar', 'framework2.jar', 'ext.jar')
+import policy_rom
+
+JARS = policy_rom.JARS
 ACC_PRIVATE, ACC_STATIC, ACC_FINAL, ACC_NATIVE, ACC_ABSTRACT, ACC_INTERFACE = 0x2, 0x8, 0x10, 0x100, 0x400, 0x200
 BINDER_NAMES = frozenset('Landroid/os/' + n + ';' for n in (
     'Binder', 'IBinder', 'IInterface', 'ServiceManager', 'ServiceManagerNative', 'Parcel', 'BinderProxy'))
@@ -581,7 +583,8 @@ class Analyzer:
 
 # ---- I/O drivers ----------------------------------------------------------------------
 def disassemble(cache: Path) -> dict[str, dict]:
-    """Baksmali the four ROM jars (cached) and return {descriptor: (jar, smali text)}."""
+    """Baksmali the hash-locked ROM sources (cached) and return {descriptor: (jar, smali text)}."""
+    policy_rom.verify_sources()
     texts = {}
     for jar in JARS:
         path = builder.source_path(jar)
@@ -699,7 +702,7 @@ def replacement_surface(surface, rom, replacements):
 def run(args) -> int:
     recipe = json.loads(builder.RECIPE.read_text(encoding='utf-8'))
     builder.verify_inputs(builder.load_recipe(recipe))
-    surface = json.loads(args.surface.read_text(encoding='utf-8'))['classes']
+    surface = policy_rom.extend_surface(json.loads(args.surface.read_text(encoding='utf-8'))['classes'])
     replacements = set(args.replace_intrinsic or ())
     native_bindings = set()
     if replacements:

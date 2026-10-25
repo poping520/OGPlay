@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.dont_write_bytecode = True
 import dex_survey_lib as dx
 import dexdis
+import framework_res_audit
 
 GROUPS = ('View', 'ViewGroup', 'FrameLayout', 'LinearLayout', 'RelativeLayout',
           'ViewGroup_Layout', 'ViewGroup_MarginLayout', 'FrameLayout_Layout',
@@ -113,6 +114,20 @@ def inspect_inputs(negative_rom_id=False):
                 arrays.update(decode_arrays(dex, data, cls))
     if negative_rom_id:
         rom['Landroid/R$style;']['Theme'] ^= 1
+    # Independently pin the resource input and cross-check *all* shared R
+    # constants before admitting private scrollbar IDs absent from R.drawable.
+    resource_audit = framework_res_audit.inspect()
+    require(not resource_audit['errors'], 'framework-res/R identity conflict')
+    hashes.update({rel: row['sha256'] for rel, row in resource_audit['inputs'].items()})
+    drawable_bindings = dict(rom['Lcom/android/internal/R$drawable;'])
+    for row in resource_audit['demanded_drawables']:
+        if row['name'] not in framework_res_audit.SCROLLBARS:
+            continue
+        require(row['package_id'] == 1 and row['type_id'] == 8 and row['type'] == 'drawable',
+                'framework-res scrollbar type mismatch')
+        require(row['name'] not in drawable_bindings or drawable_bindings[row['name']] == row['id'],
+                'framework-res scrollbar ID conflict')
+        drawable_bindings[row['name']] = row['id']
     values_dir = ROOT / '.local/aosp/framework/base/core/res/res/values'
     styles = {}
     attrs = {}
@@ -199,5 +214,5 @@ def inspect_inputs(negative_rom_id=False):
                   public_id_checks=public_checks, styleable_slot_checks=styleable_checks,
                   styleable_group_count=len(GROUPS), styleable_slot_count=len(styleable_checks), errors=errors,
                   negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids,
-                  drawable_bindings=rom['Lcom/android/internal/R$drawable;'])
+                  drawable_bindings=drawable_bindings)
     return report

@@ -153,7 +153,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner，init(true)、系统池、
   selector/ninepatch/animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
   执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
-  缺席或 @null 返回 null；background/foreground/divider/scrollbar 非空仍在六槽发布前失败。
+  缺席或 @null 返回 null；仅封存清单内 View drawable 引用可惰性进入六槽，
+  background/foreground/divider/scrollbar 的其他非空值仍明确失败。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
@@ -413,8 +414,9 @@ Legacy 字段及缓存行为保持。
 View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
 属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
 抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
-基础主题不支持的 scrollbar drawable；未覆盖的实际请求明确失败。LinearLayout 属性构造
-缺席 weightSum=-1，与 Context-only 的0保持区分；null divider 设置沿 ROM，绘制仍失败。
+基础主题 scrollbar 引用；DVM-325 允许封存引用直接投影，非零标志所需的实际加载/构造
+仍明确失败。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
+null divider 设置沿 ROM，绘制仍失败。
 
 实验 LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
 createView 为受审反射 adapter，真实虚派 guest ClassLoader.loadClass/Class.asSubclass/
@@ -710,8 +712,10 @@ WebView 仅准入已有父构造接缝，AbsoluteLayout 的测量/布局失败�
 Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 changed；同代同值仍去重。
 
 有界主题允许清单内固定 ROM 具名 drawable ID 作为惰性引用进入六槽；读取引用不加载
-系统 drawable，实际未支持皮肤加载仍失败。View scrollbar 私有 ID 缺同 ROM 资源输入时
-保留 unsupported，不以猜值或 null 代替；不能据此宣称默认 View 属性构造已全部可用。
+系统 drawable，实际未支持皮肤加载仍失败。DVM-325 的 scrollbar 私有 ID 来自哈希锁定
+同 ROM framework-res.apk 的 ARSC，与全部共享 R 常量交叉核对后封存；未知/类型冲突
+拒绝。引用投影不提供 NinePatch/ScrollabilityCache 构造或绘制信用，非零 scrollbars
+构造仍明确失败；没有 Display/Shader 等新增 adapter。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
 共享窗口 observer 与真实父链坐标；Legacy 仍使用原 decor facade。Surface 回调事务以

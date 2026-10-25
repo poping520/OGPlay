@@ -60,6 +60,8 @@ def candidate_provenance():
     policy = candidate_policy()
     paths = [builder.RECIPE, member_sources.DEFAULT, CANDIDATE_RECIPE,
              theme_projection.POLICY, Path(theme_projection.__file__),
+             Path(__file__).with_name('theme_inputs.py'),
+             Path(__file__).with_name('framework_res_audit.py'),
              Path(__file__).with_name(policy['view_policy']),
              Path(__file__).with_name(policy['video_review']),
              *(Path(__file__).with_name(p) for p in policy['composition_sources'])]

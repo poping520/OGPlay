@@ -236,9 +236,8 @@ TEST_CASE("DVM-288 generated theme registration and three-state values are expli
     r.Apply(token, 0x01030005, true, table);
     CHECK_FALSE(r.Attribute(token, 0x010100d5, true, table));  // padding: certified absent
     CHECK(r.Attribute(token, 0x01010063, true, table)->Slots() == std::array<std::uint32_t, 6>{5, 0x0a01, 1, 0, 0, 0});
-    CHECK_THROWS_WITH_AS(static_cast<void>(r.Attribute(token, 0x01010064, true, table)),
-                         "unsupported projected value: @android:drawable/scrollbar_handle_horizontal",
-                         std::runtime_error);
+    CHECK(r.Attribute(token, 0x01010064, true, table)->Slots() ==
+          std::array<std::uint32_t, 6>{1, 0x01080554, 1, 0x01080554, 0, 0});
     CHECK(r.Attribute(token, 0x01010066, true, table)->type == 1);        // @null remains reference in theme
     CHECK_THROWS(static_cast<void>(r.Attribute(token, 0x0101ffff, true, table)));
     CHECK_THROWS(r.Apply(token, 0x0103ffff, true, table));
@@ -2150,24 +2149,38 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
     }
 }
 
-TEST_CASE("DVM-314 lazy reviewed drawable references retain unsupported scrollbar boundary") {
+TEST_CASE("DVM-325 scrollbar references project without loading and reject unregistered IDs") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        {
-            ContainerVm bad(backend);
-            const auto bad_owner = bad.New("Landroid/app/Activity;");
-            ogplay::test::AttachViewTestContext(bad.vm, bad_owner);
-            const auto object = bad.vm.NewIntrinsicInstance("Landroid/view/View;");
-            const auto method = bad.linker.FindDirectMethod(bad.model.ObjectClass(object), "<init>",
-                                                            "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
-            REQUIRE(method);
-            const auto rejected = bad.vm.Call(
-                *method, std::array{VmValue::Ref(object), VmValue::Ref(bad_owner), VmValue::Ref(VmObjectRef{})});
-            REQUIRE(rejected.exception.IsValid());
-            CHECK(rejected.exception_message ==
-                  "unsupported projected value: @android:drawable/scrollbar_handle_horizontal");
-        }
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
+        const auto plain_owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, plain_owner);
+        const auto plain = f.New("Landroid/view/View;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                                 {VmValue::Ref(plain_owner), VmValue::Ref(VmObjectRef{})});
+        const auto plain_roots = f.vm.ProtectReferences(std::array{plain_owner, plain});
+        CHECK((JavaField(f, plain, "mViewFlags").bits & 0x300U) == 0);
+        CHECK(JavaField(f, plain, "mScrollCache", "Landroid/view/View$ScrollabilityCache;").bits == 0);
+        const auto requested =
+            f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 4);
+        const auto requested_root = f.vm.ProtectReferences(std::array{requested});
+        for (std::int32_t i = 0; i < 4; ++i)
+            f.model.SetPrimitiveElement(requested, i, 0x01010064U + static_cast<std::uint32_t>(i));
+        for (const auto [theme_id, thumb_h, thumb_v] :
+             {std::array{0x01030005, 0x01080554, 0x01080555}, std::array{0x0103006b, 0x01080552, 0x01080552},
+              std::array{0x0103006e, 0x01080553, 0x01080553}}) {
+            f.On(plain_owner, "setTheme", "(I)V", {VmValue::Int(theme_id)});
+            const auto values = f.On(plain_owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;",
+                                     {VmValue::Ref(requested)})
+                                    .ref;
+            const auto values_root = f.vm.ProtectReferences(std::array{values});
+            for (std::int32_t i = 0; i < 4; ++i) {
+                const auto expected = i == 0 ? thumb_h : i == 1 ? thumb_v : 0;
+                CHECK(f.On(values, "getResourceId", "(II)I", {VmValue::Int(i), VmValue::Int(0)}).AsInt() == expected);
+            }
+            f.On(values, "recycle", "()V");
+        }
+        CHECK(f.context->ui_drawables.empty());
+        CHECK(f.ledger.Unimplemented().empty());
         f.context->arsc = Table(
             {Style(0x7f020004, 0x01030005, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100d4, 1, 0, {}}}),
              Style(0x7f020005, 0, {{0x010100d4, 1, 0x01080004, {}}})});
@@ -2199,10 +2212,14 @@ TEST_CASE("DVM-314 lazy reviewed drawable references retain unsupported scrollba
 TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constructor first stack") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        // The observed root now passes projection. This diagnostic deliberately
+        // supplies an unknown framework scrollbar ID through the theme instead.
+        f.context->arsc = Table({Style(0x7f020004, 0x01030007, {{0x01010064, 1, 0x0108ffff, {}}})});
         const auto owner = f.New("Landroid/app/Activity;");
         f.context->activity = owner;
         ogplay::test::AttachViewTestContext(f.vm, owner);
-        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
         // Root attributes from the observed movie overlay: horizontal, match_parent both axes.
         auto attrs = InflateSize(0xffffffffU, 0xffffffffU);
         attrs.push_back({0x010100c4, 16, 0});
@@ -2220,7 +2237,7 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         REQUIRE(target.IsValid());
         const auto message = f.vm.StringUtf8(f.On(target, "getMessage", "()Ljava/lang/String;").ref);
         INFO(message);
-        CHECK(message.find("scrollbar") != std::string::npos);
+        CHECK(message == "unsupported projected resource reference " + std::to_string(0x0108ffff));
         const auto task_type = f.linker.ResolveDescriptor("Ltest/OwnerMutation;");
         const auto run = f.linker.FindVtableIndex(task_type, "run", "()V");
         REQUIRE(run);

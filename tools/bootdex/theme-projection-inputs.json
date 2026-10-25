@@ -1,6 +1,12 @@
 {
   "input_sha256": {
     ".local/aosp/framework.jar": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+    ".local/aosp/framework2.jar": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea",
+    ".local/aosp/android.policy.jar": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+    ".local/aosp/conscrypt.jar": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e",
+    ".local/aosp/core.jar": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef",
+    ".local/aosp/ext.jar": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c",
+    ".local/aosp/framework-res.apk": "b76835c5bd2c2d70c624b33d82e26ba00445196ce73a70381982540796a90f0e",
     ".local/aosp/framework/base/core/res/res/values/arrays.xml": "60a09aca5c2cffa528e7eede39d559d48f1b007026ff99f6c0c2cba8fd2f7887",
     ".local/aosp/framework/base/core/res/res/values/attrs.xml": "96c0b7b2ebc2978fb06abc1243911ddb04203bda8e64cc35166a5c11c7bd186f",
     ".local/aosp/framework/base/core/res/res/values/attrs_manifest.xml": "9e3f2338fdf979d57324c479446dd97aa398b2cea5979358bb25794db2dc69ad",
@@ -20,8 +26,7 @@
     ".local/aosp/framework/base/core/res/res/values/styles_device_defaults.xml": "615f2075f2a9b35ea24efa00dcbfd0ae746575a5350ca98a7ed8bd636b87b50a",
     ".local/aosp/framework/base/core/res/res/values/symbols.xml": "7308e63d825098bd746ae1f7a125dfead48eee4263a42b2f4cc6f869268dbc49",
     ".local/aosp/framework/base/core/res/res/values/themes.xml": "d19bcb3faf1032942fb8e438937ca6b66633f15c757f117254463e919d51eea2",
-    ".local/aosp/framework/base/core/res/res/values/themes_device_defaults.xml": "7fc92597654744f451372b1b3c7da549a9f47bb796d17766b6e511513c41212e",
-    ".local/aosp/framework2.jar": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+    ".local/aosp/framework/base/core/res/res/values/themes_device_defaults.xml": "7fc92597654744f451372b1b3c7da549a9f47bb796d17766b6e511513c41212e"
   },
   "schema_version": 1,
   "projectable_reference_styleables": {

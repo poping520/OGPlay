@@ -2038,6 +2038,24 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 按决定3仅交审计；以上为准入决定，不代表 scrollbar 投影或构造已经实现。
 
 
+### VD-11-15 有界 scrollbar 引用与条件闭包（编排方决定 2026-10-26（二））
+
+1. scrollbar 系列先作为同 ROM 资源引用投影；ID/类型来自哈希锁定的
+   framework-res 审计，引用投影不涉 Binder，不随构造闭包停止。
+2. 仅静态证明真实失败场景以非零 scrollbars 标志构造 View 时，才增加
+   Display.getRealSize 及 ViewConfiguration 构造实际需要的显示信息 adapter：
+   返回进程内 managed 显示事实，与 ADR-0162 决定2同型；不建立
+   DisplayManagerGlobal/IDisplayManager/Binder，其余 ViewConfiguration 执行 ROM。
+3. 同一条件下，ScrollabilityCache 所需 Interpolator/LinearGradient/Shader/
+   PorterDuffXfermode 采用保存真实构造参数及对象身份的有状态 adapter；
+   经 ROM initializeScrollbars/getDrawable 构造最小 NinePatchDrawable/ScrollBarDrawable，
+   从同 ROM `.9.png` 按当前密度选择配置。绘制、淡出/awakenScrollBars 动画仍按
+   ADR-0147 记账并明确失败，不以空对象或成功零值替代。
+4. 条件不成立则不实施2、3。[DVM-325](../tasks/dexvm/DVM-325.md) 的四条原失败
+   构造路径静态标志均为0，本次只交付引用投影；不代表非零 scrollbar 构造或绘制可用。
+
+
+
 <a id="adr-0161"></a>
 
 ## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
@@ -2133,6 +2151,15 @@ Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保�
 动画、其他系统皮肤或完整渲染栈；遇 Binder/WMS 依赖按停止条件只交审计。
 [DVM-324](../tasks/dexvm/DVM-324.md) 当前仅完成输入与越界闭包审计，没有新增成员或 adapter；
 其余决定、ADR-0147 与严格成员准入规则保持。
+
+
+### VD-11-15 条件闭包补充（编排方决定 2026-10-26（二））
+
+采用 ADR-0160 的 VD-11-15 四项修订：先交付同 ROM scrollbar 引用投影；仅在真实
+失败构造的 scrollbars 非零时接入 managed 显示事实、有状态图形参数 adapter 与
+最小 ROM Drawable 构造。该条件未满足时不新增 adapter；绘制/淡出继续明确失败。
+[DVM-325](../tasks/dexvm/DVM-325.md) 静态证明本次四条路径均为0，未实施条件闭包。
+其余决定、严格成员准入与 ADR-0147 保持。
 
 
 <a id="adr-0162"></a>

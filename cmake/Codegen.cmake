@@ -122,6 +122,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-theme.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme_projection.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme_inputs.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/framework_res_audit.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/.local/aosp/framework-res.apk"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/theme-projection-inputs.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-system-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure.surface.json.gz"

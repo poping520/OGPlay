@@ -357,8 +357,11 @@ TEST_CASE("DVM-284 LinearLayout default copy parameters and explicit unsupported
         const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(ll), "<init>",
                                                     "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
         REQUIRE(ctor);
-        REQUIRE(f.vm.Call(*ctor, std::array{VmValue::Ref(ll), VmValue::Ref(owner), VmValue::Ref(VmObjectRef{})})
-                    .exception.IsValid());
+        // DVM-325: zero-scrollbar attribute construction now crosses projection.
+        REQUIRE_FALSE(f.vm.Call(*ctor, std::array{VmValue::Ref(ll), VmValue::Ref(owner), VmValue::Ref(VmObjectRef{})})
+                          .exception.IsValid());
+        CHECK((slot(ll, "mViewFlags").bits & 0x300U) == 0);
+        CHECK(slot(ll, "mScrollCache", "Landroid/view/View$ScrollabilityCache;").bits == 0);
         CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

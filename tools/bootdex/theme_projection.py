@@ -140,7 +140,7 @@ def generate(negative_rom_id=False):
         if m and -2**23 <= int(m[1]) < 2**23:
             unit = dict(px=0, dip=1, dp=1, sp=2, pt=3, **{'in':4, 'mm':5})[m[2]]
             return dict(state='known', type=5, data=((int(m[1]) << 8) | unit) & 0xffffffff)
-        # Drawable/selector/ninepatch/animation values deliberately keep the
+        # Unregistered drawable/selector/ninepatch/animation values keep the
         # original reference text, without inventing an ID or a successful value.
         return dict(state='unsupported', reason='unsupported projected value: ' + text)
 

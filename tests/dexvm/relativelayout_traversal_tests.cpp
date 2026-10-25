@@ -357,13 +357,17 @@ TEST_CASE("DVM-285 RelativeLayout ROM cycles parameter copies and explicit failu
         f.Rule(compat, 18, 102);
         CHECK(f.RuleValue(compat, 5, 1) == 102);
         CHECK(f.ledger.Unimplemented().empty());
-        // Attribute/XML and system accessibility remain explicit failures.
+        // DVM-325: zero-scrollbar attribute construction succeeds; unsupported
+        // XML parameters and system accessibility still fail explicitly.
         const auto ctor = f.linker.FindDirectMethod(f.model.ObjectClass(f.relative), "<init>",
                                                     "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
         REQUIRE(ctor);
-        REQUIRE(
+        REQUIRE_FALSE(
             f.vm.Call(*ctor, std::array{VmValue::Ref(f.relative), VmValue::Ref(f.owner), VmValue::Ref(VmObjectRef{})})
                 .exception.IsValid());
+        CHECK((f.Field(f.relative, "mViewFlags").bits & 0x300U) == 0);
+        CHECK(f.Field(f.relative, "mScrollCache", "Landroid/view/View$ScrollabilityCache;").bits == 0);
+        CHECK(f.ledger.Unimplemented().empty());
         REQUIRE(f.OnOutcome(f.relative, "generateLayoutParams",
                             "(Landroid/util/AttributeSet;)Landroid/widget/RelativeLayout$LayoutParams;",
                             {VmValue::Ref(VmObjectRef{})})

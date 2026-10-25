@@ -369,7 +369,7 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
             const auto failed = Construct(f, owner);
             CHECK(failed.exception.IsValid());
             INFO(failed.exception_message);
-            CHECK(failed.exception_message.find(defaults == 1 ? "scrollbar" : "edit_text") != std::string::npos);
+            CHECK(failed.exception_message.find("edit_text") != std::string::npos);
             CHECK_FALSE(f.ledger.Unimplemented().empty());
         }
         ContainerVm f(backend);

@@ -1963,9 +1963,33 @@ std::optional<std::string> InvokeVideoEvent(
             return post(event, event == 100 ? 1 : 0, event == 100 ? -1 : 0);
         }
     }
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+        (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
+        return "VideoView event requires owner";
     const auto view = dx::VmObjectRef{static_cast<std::uint32_t>(handle)};
     const auto root = vm.ProtectReferences(std::array{view});
     const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        dx::IntrinsicContext call{vm, view, {}};
+        if (dx::IntrinsicCall(call).GetInt(*context.video_view_generation_field) != generation) return std::nullopt;
+        if (event == 1) {
+            {
+                std::scoped_lock lock(context.video_views_mutex);
+                const auto found = context.video_views.find(handle);
+                if (found == context.video_views.end() || found->second.generation != generation ||
+                    !found->second.player)
+                    return std::nullopt;
+                const auto node = FindViewUiNode(context, handle);
+                if (!node) return "VideoView metadata has no UI identity";
+                const auto& metadata = found->second.player->Metadata();
+                context.ui_tree.Get(*node)->intrinsic = {static_cast<std::int32_t>(metadata.width),
+                                                         static_cast<std::int32_t>(metadata.height)};
+            }
+            // Owner-approved metadata is only a leaf input. Java owns invalidation,
+            // measurement and the next complete projection; old epochs stay frozen.
+            static_cast<void>(CallAndroidMethod(vm, view, "requestLayout", "()V"));
+        }
+    }
     const auto method = vm.Linker().FindDirectMethod(type, "dispatchEvent", "(II)V");
     if (!method) return "VideoView event protocol is unavailable";
     const auto outcome = vm.Call(*method, std::array{dx::VmValue::Ref(view), dx::VmValue::Int(generation), dx::VmValue::Int(event)});

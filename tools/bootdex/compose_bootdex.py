@@ -190,6 +190,12 @@ def build(measure=False):
         projected = theme_projection.generate()
         theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
         resources[theme_projection.ENTRY] = projected
+        review = json.loads(Path(__file__).with_name('view-video-adapter.json').read_text(encoding='utf-8'))
+        if (review['implementation_source'] != 'adapter' or review['rom_algorithm_credit'] is not False
+                or review['owner'] != 'Landroid/widget/VideoView;' or review['signature'] != 'onMeasure(II)V'
+                or any(not review[k] for k in ('reason', 'inputs', 'outputs', 'state_owner', 'failure_boundary'))):
+            raise builder.BuildError('invalid bounded VideoView adapter review')
+        resources['META-INF/ogplay/view-video-adapter.json'] = member_sources.canonical(review)
     return builder.make_jar(dex, resources), dex, recipe
 
 
@@ -213,6 +219,8 @@ def boot_metadata(jar, dex, recipe):
             generator='tools/bootdex/theme_projection.py',
             inputs_sha256=builder.file_sha256(theme_projection.POLICY))
     if 'theme_projection' in metadata:
+        review = Path(__file__).with_name('view-video-adapter.json')
+        metadata['experimental_video_adapter'] = dict(review=str(review.relative_to(builder.ROOT)), sha256=builder.file_sha256(review), entry='META-INF/ogplay/view-video-adapter.json', rom_algorithm_credit=False)
         companion = Path(__file__).with_name('experimental-java') / 'android/view/LocalLayoutInflater.java'
         metadata['experimental_inflater'] = dict(companion=str(companion.relative_to(builder.ROOT)),
             sha256=builder.file_sha256(companion), protocol='AOSP 4.4 PhoneLayoutInflater; absent from pinned ROM')

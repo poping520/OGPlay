@@ -134,6 +134,8 @@ struct IntrinsicMethodDecl final {
     bool must_override{};
     IntrinsicHandler implementation;
     bool guest_native{};
+    // Diagnostic provenance only; never grants ROM or admission credit.
+    std::string adapter_review;
 };
 
 struct IntrinsicFieldDecl final {
@@ -243,6 +245,7 @@ struct LinkedMethod final {
     std::int32_t vtable_index{-1};
     std::optional<loader::DexMethodCode> code;
     IntrinsicHandler implementation;
+    std::string adapter_review;
     bool prechecked{};
     std::shared_ptr<FastCode> fast_code;
     std::optional<std::uint32_t> dex_method_index;

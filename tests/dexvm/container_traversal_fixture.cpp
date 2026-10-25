@@ -2,6 +2,11 @@
 
 namespace ogplay::test::container_traversal {
 std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(InterpreterBackend backend) {
+    return Create(backend, false);
+}
+
+std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(InterpreterBackend backend,
+                                                                        bool include_skeleton) {
     using namespace ogplay::test::native_library;
     std::vector<std::vector<std::byte>> bytes;
     std::vector<BionicModuleSource> sources;
@@ -24,6 +29,12 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
     request.boot_dex_bytes.resize(dex.size());
     std::memcpy(request.boot_dex_bytes.data(), dex.data(), dex.size());
+    if (include_skeleton) {
+        std::ifstream skeleton(std::filesystem::path{OGPLAY_SOURCE_DIR} / "data/dexvm/api19-skeleton.bin",
+                               std::ios::binary);
+        REQUIRE(skeleton.good());
+        request.skeleton_bytes = {std::istreambuf_iterator<char>(skeleton), {}};
+    }
     request.context = context;
     request.dexvm.interpreter.backend = backend;
     request.dexvm.interpreter.diagnostics.trace_capacity = 10000;
@@ -35,8 +46,10 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     return ogplay::session::AndroidAppProcess::Create(std::move(request));
 }
 
-ContainerVm::ContainerVm(InterpreterBackend backend)
-    : app(Create(backend)), vm(app->DexVm().Vm()), linker(vm.Linker()), model(vm.Model()) {}
+ContainerVm::ContainerVm(InterpreterBackend backend) : ContainerVm(backend, false) {}
+
+ContainerVm::ContainerVm(InterpreterBackend backend, bool include_skeleton)
+    : app(Create(backend, include_skeleton)), vm(app->DexVm().Vm()), linker(vm.Linker()), model(vm.Model()) {}
 
 VmValue ContainerVm::Checked(const VmCallOutcome& result) {
     REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);

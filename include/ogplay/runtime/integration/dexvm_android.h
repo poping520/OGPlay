@@ -848,6 +848,7 @@ struct DexVmAndroidContext final {
   // frontend. Preparation and errors are deferred to the guest main pump;
   // listeners and the bound MediaPlayer identity are ordinary Java fields.
   video::VideoSourcePlayerFactory video_source_player_factory;
+  std::optional<dexvm::IntrinsicFieldHandle> video_view_generation_field;
   mutable std::recursive_mutex video_views_mutex;
   struct VideoViewState final {
     std::unique_ptr<video::VideoPlayer> player;

@@ -2442,6 +2442,14 @@ namespace ogplay::runtime {
 namespace {
 using Modal = DexVmAndroidContext::DialogPresentation;
 
+ui::UiTree& DialogTree(DexVmAndroidContext& context, const Modal& modal) {
+    return modal.host_tree ? *modal.host_tree : context.ui_tree;
+}
+
+const ui::UiTree& DialogTree(const DexVmAndroidContext& context, const Modal& modal) {
+    return modal.host_tree ? *modal.host_tree : context.ui_tree;
+}
+
 bool DialogOwnerVisible(const DexVmAndroidContext& context, const dexvm::VmObjectRef owner) {
     if (context.process_stopping) return false;
     if (context.activity.IsValid() && context.activity != owner) return false;
@@ -2452,14 +2460,18 @@ bool DialogOwnerVisible(const DexVmAndroidContext& context, const dexvm::VmObjec
 }
 Modal* TopDialog(DexVmAndroidContext& context) {
     for (auto item = context.dialog_presentations.rbegin(); item != context.dialog_presentations.rend(); ++item)
-        if (item->visible && DialogOwnerVisible(context, item->owner) && context.ui_tree.IsVisible(item->root)) return &*item;
+        if (item->visible && DialogOwnerVisible(context, item->owner) &&
+            DialogTree(context, *item).IsVisible(item->root))
+            return &*item;
     return nullptr;
 }
 void FocusModal(DexVmAndroidContext& context, const Modal& modal) {
-    const auto focused = context.ui_tree.Focused();
+    auto& tree = DialogTree(context, modal);
+    const auto focused = tree.Focused();
     for (const auto node : modal.buttons) if (node && node == focused) return;
     for (const auto node : modal.buttons) if (node) {
-        static_cast<void>(context.ui_tree.RequestFocus(*node, false)); return;
+            static_cast<void>(tree.RequestFocus(*node, false));
+            return;
     }
 }
 bool ContainsDialogButton(const DexVmAndroidContext& context, ui::UiNodeId button, float x, float y) {
@@ -2473,12 +2485,14 @@ bool ContainsDialogButton(const DexVmAndroidContext& context, ui::UiNodeId butto
 
 bool HasAndroidModalDialog(const DexVmAndroidContext& context) {
     for (const auto& modal : context.dialog_presentations)
-        if (modal.visible && DialogOwnerVisible(context, modal.owner) && context.ui_tree.IsVisible(modal.root)) return true;
+        if (modal.visible && DialogOwnerVisible(context, modal.owner) &&
+            DialogTree(context, modal).IsVisible(modal.root))
+            return true;
     return false;
 }
 void ReleaseAndroidDialogs(DexVmAndroidContext& context) {
     for (const auto& modal : context.dialog_presentations)
-        if (context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
+        if (!modal.host_tree && context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
     context.dialog_presentations.clear();
     context.dialog_pointer_active = false; context.dialog_pressed_button.reset(); context.dialog_keys_down.clear();
 }
@@ -2499,11 +2513,12 @@ void SynchronizeAndroidDialogs(DexVmAndroidContext& context) {
         const bool alive = context.activity_stack.empty() || std::any_of(context.activity_stack.begin(), context.activity_stack.end(),
             [&](const auto& record) { return record.object == modal.owner; });
         if (alive) return false;
-        if (context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
+        if (!modal.host_tree && context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
         return true;
     });
     for (const auto& modal : context.dialog_presentations)
-        context.ui_tree.SetWindowVisible(modal.root, modal.visible && DialogOwnerVisible(context, modal.owner));
+        DialogTree(context, modal)
+            .SetWindowVisible(modal.root, modal.visible && DialogOwnerVisible(context, modal.owner));
     if (const auto* modal = TopDialog(context)) FocusModal(context, *modal);
 }
 
@@ -2513,19 +2528,22 @@ void DismissAndroidDialog(DexVmAndroidContext& context, const dx::VmObjectRef di
         [dialog](const Modal& modal) { return modal.dialog == dialog; });
     if (found == context.dialog_presentations.end()) return;
     const auto prior_focus = found->prior_focus;
-    if (context.ui_tree.Get(found->root)) context.ui_tree.DestroySubtree(found->root);
+    if (!found->host_tree && context.ui_tree.Get(found->root)) context.ui_tree.DestroySubtree(found->root);
     context.dialog_presentations.erase(found);
     context.dialog_pressed_button.reset();
-    if (prior_focus && context.ui_tree.Get(*prior_focus)) static_cast<void>(context.ui_tree.RequestFocus(*prior_focus, false));
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy && prior_focus &&
+        context.ui_tree.Get(*prior_focus))
+        static_cast<void>(context.ui_tree.RequestFocus(*prior_focus, false));
     if (const auto* top = TopDialog(context)) FocusModal(context, *top);
 }
 void SetAndroidDialogVisible(DexVmAndroidContext& context, const dx::VmObjectRef dialog, bool visible) {
     for (auto& modal : context.dialog_presentations) if (modal.dialog == dialog) {
         modal.visible = visible;
-        context.ui_tree.SetWindowVisible(modal.root, visible && DialogOwnerVisible(context, modal.owner));
+        DialogTree(context, modal).SetWindowVisible(modal.root, visible && DialogOwnerVisible(context, modal.owner));
         if (!visible) {
             context.dialog_pressed_button.reset();
-            if (modal.prior_focus && context.ui_tree.Get(*modal.prior_focus))
+            if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy && modal.prior_focus &&
+                context.ui_tree.Get(*modal.prior_focus))
                 static_cast<void>(context.ui_tree.RequestFocus(*modal.prior_focus, false));
         }
     }
@@ -2537,12 +2555,12 @@ std::int32_t FocusAndroidDialog(DexVmAndroidContext& context, const dx::VmObject
     std::vector<std::size_t> buttons;
     std::size_t current{};
     for (std::size_t i = 0; i < 3; ++i) if (modal->buttons[i]) {
-        if (modal->buttons[i] == context.ui_tree.Focused()) current = buttons.size();
-        buttons.push_back(i);
+            if (modal->buttons[i] == DialogTree(context, *modal).Focused()) current = buttons.size();
+            buttons.push_back(i);
     }
     if (buttons.empty()) return 0;
     if (direction != 0) current = direction > 0 ? (current + 1) % buttons.size() : (current + buttons.size() - 1) % buttons.size();
-    static_cast<void>(context.ui_tree.RequestFocus(*modal->buttons[buttons[current]], false));
+    static_cast<void>(DialogTree(context, *modal).RequestFocus(*modal->buttons[buttons[current]], false));
     return -static_cast<std::int32_t>(buttons[current]) - 1;
 }
 void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::IntrinsicFieldHandle generation) {
@@ -2588,13 +2606,50 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         [&](const Modal& modal) { return modal.dialog == call.receiver; });
     if (previous == context->dialog_presentations.end() && context->dialog_presentations.size() >= 8)
         unsupported("Dialog window limit exceeded");
-    const auto prior_focus = previous == context->dialog_presentations.end() ? context->ui_tree.Focused() : previous->prior_focus;
+    const bool isolated = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+    const auto prior_focus = previous == context->dialog_presentations.end()
+                                 ? (isolated ? std::optional<ui::UiNodeId>{} : context->ui_tree.Focused())
+                                 : previous->prior_focus;
+    std::optional<Modal::GuestFocus> prior_guest_focus;
+    if (isolated) {
+        if (previous != context->dialog_presentations.end())
+            prior_guest_focus = previous->prior_guest_focus;
+        else {
+            const auto guest_root = AndroidUiTraversalRoot(call.vm, *context);
+            dx::VmObjectRef focused;
+            // PFLAG_FOCUSED is Java's fact. Read binding tokens rather than
+            // invoking a potentially overridden findFocus during construction.
+            if (context->view_java_measure_fields && context->view_java_hierarchy_fields) {
+                for (const auto& [node, view] : context->ui_node_to_object) {
+                    static_cast<void>(node);
+                    if (!call.vm.Model().IsValidRef(view)) continue;
+                    dx::IntrinsicContext view_call{call.vm, view, {}};
+                    if ((dx::IntrinsicCall(view_call).GetInt(context->view_java_measure_fields->flags[0]) & 2) != 0 &&
+                        AndroidViewBelongsToRoot(call.vm, *context, view)) {
+                        focused = view;
+                        break;
+                    }
+                }
+            }
+            prior_guest_focus = Modal::GuestFocus{focused, guest_root, context->ui_tree.Generation()};
+        }
+    }
+
     const auto density = context->ui_density;
     if (!std::isfinite(density) || density <= 0 || density > 8 || context->surface_width < 48 || context->surface_height < 48)
         unsupported("Dialog viewport is unavailable or too small");
-    auto& tree = context->ui_tree;
+    Modal modal{.dialog = call.receiver, .owner = owner, .root = {}, .buttons = {}, .prior_focus = prior_focus};
+    if (isolated) {
+        if (context->dialog_host_revision == std::numeric_limits<std::uint64_t>::max())
+            unsupported("Dialog host revision exhausted");
+        modal.host_tree = std::make_shared<ui::UiTree>(ui::UiGeometryOwner::HostLayout);
+        modal.partition = modal.revision = context->dialog_host_revision + 1;
+        modal.generation = static_cast<std::uint64_t>(call.arguments[5].AsLong());
+        modal.prior_guest_focus = prior_guest_focus;
+    }
+    auto& tree = DialogTree(*context, modal);
     const auto root = tree.CreateNode(ui::UiClass::FrameLayout);
-    Modal modal{.dialog = call.receiver, .owner = owner, .root = root, .buttons = {}, .prior_focus = prior_focus};
+    modal.root = root;
     try {
         auto* overlay = tree.Get(root);
         overlay->modal_layer = true;
@@ -2636,8 +2691,14 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             node->layout.width.mode = ui::SizeMode::WrapContent; node->layout.height.mode = ui::SizeMode::WrapContent;
             tree.Attach(row, id);
         }
-        EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::HostDialog,
-                                 AndroidUiTraversalPhase::ResolveOnly);
+        if (isolated) {
+            const ui::UiMetrics managed_viewport{static_cast<std::int32_t>(context->surface_width),
+                                                 static_cast<std::int32_t>(context->surface_height)};
+            ui::LayoutUiTree(*modal.host_tree, managed_viewport);
+        } else {
+            EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::HostDialog,
+                                     AndroidUiTraversalPhase::ResolveOnly);
+        }
         const auto bounds = tree.Get(panel)->screen_frame;
         if (bounds.top < 8 || bounds.bottom > static_cast<std::int32_t>(context->surface_height) - 8)
             unsupported("Dialog content cannot fit the bounded viewport");
@@ -2645,9 +2706,10 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             unsupported("Dialog buttons cannot fit the bounded viewport");
         // No guest callbacks occur during geometry construction. Commit after validation.
         if (previous != context->dialog_presentations.end()) {
-            tree.DestroySubtree(previous->root);
+            if (!previous->host_tree) tree.DestroySubtree(previous->root);
             *previous = modal;
         } else context->dialog_presentations.push_back(modal);
+        if (isolated) context->dialog_host_revision = modal.revision;
         context->dialog_pressed_button.reset();
         tree.SetWindowVisible(root, DialogOwnerVisible(*context, owner));
         FocusModal(*context, modal);
@@ -2677,6 +2739,12 @@ dexvm::VmObjectRef MakeAndroidKeyEvent(dexvm::Interpreter& vm, const AndroidBoun
 
 bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& context, const AndroidBoundaryInput& input) {
     using namespace dexvm;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+        (HasAndroidModalDialog(context) || context.dialog_pointer_active || !context.dialog_keys_down.empty())) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("runtime.ui.dialog.presentation", 0);
+        throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "Dialog presentation/input composition requires a common presentation epoch"};
+    }
     SynchronizeAndroidDialogs(context);
     auto* top = TopDialog(context);
     if (input.type == AndroidBoundaryInputType::key) {

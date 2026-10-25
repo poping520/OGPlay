@@ -282,6 +282,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/widget_inflater_tests.cpp
     tests/dexvm/widget_resources_tests.cpp
     tests/dexvm/widget_focus_input_tests.cpp
+    tests/dexvm/dialog_host_layout_tests.cpp
     tests/dexvm/widget_window_dialog_tests.cpp
     tests/dexvm/widget_fixture.cpp
     tests/dexvm/ui_include_tests.cpp

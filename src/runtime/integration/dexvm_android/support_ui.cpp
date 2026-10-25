@@ -429,9 +429,152 @@ std::shared_ptr<const ui::UiTree> ReadAndroidUiGeometry(dexvm::Interpreter& vm, 
     return temporary.PublishedProjection();
 }
 
+namespace {
+std::string DescribeProducer(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef producer) {
+    const auto root = AndroidUiTraversalRoot(vm, context);
+    const auto node = FindViewUiNode(context, producer.Value());
+    const auto projection = context.ui_tree.PublishedProjection();
+    const auto runtime = context.gl_surface_runtimes.find(producer.Value());
+    std::string result = "view=" + std::to_string(producer.Value()) + " bound=" + std::to_string(node.has_value()) +
+                         " in_projection=" + std::to_string(node && projection && projection->Get(*node)) +
+                         " projection_available=" + std::to_string(bool(projection)) +
+                         " root=" + std::to_string(root.Value()) +
+                         " visible=" + std::to_string(node && context.ui_tree.IsVisible(*node)) +
+                         " selected=" + std::to_string(context.gl_surface_renderer_view == producer);
+    if (runtime != context.gl_surface_runtimes.end()) {
+        const auto& state = *runtime->second;
+        result += " owner=" + std::to_string(state.owner.Value()) +
+                  " renderer=" + std::to_string(state.renderer.Value()) +
+                  " surface_available=" + std::to_string(state.surface_available) +
+                  " stopped=" + std::to_string(state.stopped);
+    } else
+        result += " retired=1";
+    std::set<dexvm::VmObjectRef> seen;
+    auto view = producer;
+    dexvm::VmObjectRef first_break{}, window{};
+    std::string termination = "null";
+    result += " chain=[";
+    const auto view_class = vm.Linker().ResolveDescriptor("Landroid/view/View;");
+    while (view.IsValid()) {
+        if (!seen.insert(view).second || seen.size() > ui::UiTree::kMaxDepth) {
+            termination = "cycle_or_depth_limit";
+            if (!first_break.IsValid()) first_break = view;
+            break;
+        }
+        if (!vm.Model().IsValidRef(view)) {
+            termination = "collected";
+            if (!first_break.IsValid()) first_break = view;
+            break;
+        }
+        const auto type = vm.Model().ObjectClass(view);
+        result += "{view=" + std::to_string(view.Value()) + ",class=" + vm.Linker().Class(type).descriptor;
+        const auto bound = FindViewUiNode(context, view.Value());
+        result += ",bound=" + std::to_string(bound.has_value());
+        if (!vm.Linker().IsAssignable(view_class, type) || !context.view_java_hierarchy_fields ||
+            !context.view_java_measure_fields) {
+            result += ",fields=unavailable}";
+            termination = "non_view_or_missing_fields";
+            if (!first_break.IsValid()) first_break = view;
+            break;
+        }
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall fields(call);
+        const auto parent = fields.GetRef(context.view_java_hierarchy_fields->parent);
+        const auto& measure = *context.view_java_measure_fields;
+        const auto visibility = fields.GetInt(measure.view_flags) & 0x0c;
+        result += ",id=" + std::to_string(fields.GetInt(context.view_java_hierarchy_fields->id)) +
+                  ",visibility=" + std::to_string(visibility) + ",parent=" + std::to_string(parent.Value()) +
+                  ",parent_null=" + std::to_string(!parent.IsValid()) +
+                  ",measured=" + std::to_string(fields.GetInt(measure.measured[0]) & 0xffffff) + "x" +
+                  std::to_string(fields.GetInt(measure.measured[1]) & 0xffffff) + "}";
+        for (const auto& record : context.activity_stack)
+            if (record.java_root == view) window = record.object;
+        if (!first_break.IsValid() && (!bound || visibility != 0 || (!parent.IsValid() && view != root)))
+            first_break = view;
+        if (view == root) {
+            termination = "root";
+            break;
+        }
+        view = parent;
+    }
+    dexvm::VmObjectRef java_window{};
+    if (window.IsValid() && context.ui_java_activity_window) {
+        dexvm::IntrinsicContext call{vm, window, {}};
+        java_window = dexvm::IntrinsicCall(call).GetRef(*context.ui_java_activity_window);
+    }
+    result += "] window=" + std::to_string(java_window.Value()) +
+              " first_break=" + std::to_string(first_break.Value()) +
+              " window_activity=" + std::to_string(window.Value()) + " termination=" + termination;
+    return result;
+}
+}  // namespace
+
+void RecordAndroidSurfaceDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                    const std::string_view category, const std::string& reason,
+                                    std::vector<core::LogField> fields, const core::RateLimitPolicy& rate_limit) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    std::string key = std::string(category) + ": " + reason;
+    for (const auto& field : fields)
+        if (field.key == "reason" || field.key == "phase")
+            if (const auto* value = std::get_if<std::string>(&field.value)) key += " / " + *value;
+    auto& total = context.ui_diagnostic_totals[key];
+    ++total.count;
+    total.epoch = context.ui_measure_epoch;
+    total.tick = context.ui_owner_tick;
+    if (auto* logger = vm.Log())
+        logger->Write(core::LogLevel::info, category, reason, {}, std::move(fields), rate_limit);
+}
+
+void RecordAndroidProducerDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                     const dexvm::VmObjectRef view, const std::string& reason) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    auto description = "reason=" + reason + " " + DescribeProducer(vm, context, view);
+    auto& previous = context.ui_producer_diagnostics[view.Value()];
+    if (previous == description) return;
+    previous = description;
+    RecordAndroidSurfaceDiagnostic(vm, context, "ui.surface.producer_state", "producer state changed",
+                                   {{"view", std::uint64_t(view.Value())},
+                                    {"epoch", context.ui_measure_epoch},
+                                    {"tick", context.ui_owner_tick},
+                                    {"state", description}},
+                                   {.mode = core::RateLimitMode::none});
+}
+
+void SummarizeAndroidUiDiagnostics(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    if (context.ui_diagnostic_summary_emitted) return;
+    context.ui_diagnostic_summary_emitted = true;
+    auto* logger = vm.Log();
+    if (!logger) return;
+    const core::RateLimitPolicy unlimited{.mode = core::RateLimitMode::none};
+    logger->Write(core::LogLevel::info, "ui.diagnostics.summary", "UI diagnostics before teardown", {},
+                  {{"epoch", context.ui_measure_epoch}, {"tick", context.ui_owner_tick}}, unlimited);
+    for (const auto& [reason, total] : context.ui_diagnostic_totals)
+        logger->Write(core::LogLevel::info, "ui.diagnostics.reason", reason, {},
+                      {{"count", total.count}, {"epoch", total.epoch}, {"tick", total.tick}}, unlimited);
+    for (const auto& [view, previous] : context.ui_producer_diagnostics) {
+        const bool live = context.gl_surface_runtimes.contains(view);
+        const auto state = live ? DescribeProducer(vm, context, dexvm::VmObjectRef{view})
+                                : "retired=1 last_observed={" + previous + "}";
+        logger->Write(core::LogLevel::info, "ui.diagnostics.producer", "final producer state", {},
+                      {{"view", std::uint64_t(view)},
+                       {"state", state},
+                       {"epoch", context.ui_measure_epoch},
+                       {"tick", context.ui_owner_tick}},
+                      unlimited);
+    }
+}
+
 void RecordAndroidTraversalDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                       const dexvm::VmObjectRef root, const std::string& reason) {
     if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
+    auto& total = context.ui_diagnostic_totals["ui.traversal: " + reason];
+    ++total.count;
+    total.epoch = context.ui_measure_epoch;
+    total.tick = context.ui_owner_tick;
     const auto count = ++context.ui_traversal_diagnostics[root][reason];
     if (count != 1) return;
     if (auto* logger = vm.Log())

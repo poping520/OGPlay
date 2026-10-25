@@ -314,3 +314,7 @@ Legacy 不输出该诊断域。
 JavaTraversal 在 owner 投影屏障及内容遍历后重评估已注册 intrinsic producer，先于该屏障的
 Surface 交付；仍要求可见且属于当前内容根。首条选择/拒绝原因按窗口记录，后续计数。
 GLThread 初始化不等于可绘制 Surface，Legacy 选择仍在原内容同步位置。
+
+DVM-320：JavaTraversal 在每次 producer 重评估比较只读父链事实；正常与失败 Stop
+均在 teardown 回调前经显式 integration 接口汇总一次。汇总保留清理前的最终状态，
+重复 Stop 不重发；失败清理仍沿原 attempt/首错协议，Legacy 不输出新域。

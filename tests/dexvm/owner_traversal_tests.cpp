@@ -1221,6 +1221,12 @@ TEST_CASE("DVM-318 Legacy producer registration and Surface callbacks emit no tr
         CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.").empty());
         CHECK(f.logger.Snapshot(std::nullopt, "ui.traversal").empty());
         CHECK(f.context->ui_traversal_diagnostics.empty());
+        RecordAndroidProducerDiagnostic(f.vm, *f.context, view, "ignored Legacy");
+        SummarizeAndroidUiDiagnostics(f.vm, *f.context);
+        CHECK(f.context->ui_diagnostic_totals.empty());
+        CHECK(f.context->ui_producer_diagnostics.empty());
+        CHECK_FALSE(f.context->ui_diagnostic_summary_emitted);
+        CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.").empty());
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
@@ -1268,6 +1274,8 @@ TEST_CASE("DVM-319 owner projection selects late producer before its first Surfa
         CHECK_FALSE(f.context->gl_surface_runtimes.at(view.Value())->surface_available);
         CHECK(f.ledger.Unimplemented().empty());
         static_cast<void>(lifecycle.Stop());
+        CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.summary").size() == 1);
+        CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.producer").size() == 1);
     }
 }
 
@@ -1325,4 +1333,81 @@ TEST_CASE("DVM-319 traversal reasons are per window first occurrence with retain
         }
         CHECK(f.ledger.Unimplemented().empty());
     }
+}
+
+TEST_CASE("DVM-320 producer facts change after projection and summarize once before normal or failed teardown") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded})
+        for (const bool failed : {false, true}) {
+            ogplay::test::container_traversal::ContainerVm f(backend);
+            f.context->ui_test_accessibility_disabled = true;
+            ogplay::session::DexActivityLifecycleBindings bindings;
+            bindings.bridge = &f.app->DexVm();
+            bindings.context = f.context;
+            bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+            bindings.application_descriptor = "Landroid/app/Application;";
+            bindings.before_guest_shutdown = [&] {
+                CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.summary").size() == 1);
+            };
+            ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+            static_cast<void>(lifecycle.Start());
+            const auto owner = f.context->activity;
+            const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+            const auto container =
+                f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto view =
+                f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(owner)});
+            // Registered while detached: actual Java parent is null, despite a UiNode binding.
+            const auto detached = f.context->ui_producer_diagnostics.at(view.Value());
+            CHECK(detached.find("bound=1 in_projection=0") != std::string::npos);
+            CHECK(detached.find("parent_null=1") != std::string::npos);
+            CHECK(detached.find("first_break=" + std::to_string(view.Value())) != std::string::npos);
+            f.On(container, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(container)});
+            f.On(container, "setVisibility", "(I)V", {VmValue::Int(4)});
+            static_cast<void>(lifecycle.StepFrame());
+            const auto epoch = f.context->ui_measure_epoch;
+            RecordAndroidProducerDiagnostic(f.vm, *f.context, view, "outside visible projection");
+            const auto hidden = f.context->ui_producer_diagnostics.at(view.Value());
+            CHECK(hidden.find("in_projection=1") != std::string::npos);
+            CHECK(hidden.find("class=Landroid/opengl/GLSurfaceView;") != std::string::npos);
+            CHECK(hidden.find("visibility=4") != std::string::npos);
+            CHECK(hidden.find("first_break=" + std::to_string(container.Value())) != std::string::npos);
+            CHECK(hidden.find("termination=root") != std::string::npos);
+            CHECK(hidden.find("window_activity=" + std::to_string(owner.Value())) != std::string::npos);
+            const auto count = f.logger.Snapshot(std::nullopt, "ui.surface.producer_state").size();
+            RecordAndroidProducerDiagnostic(f.vm, *f.context, view, "outside visible projection");
+            CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.producer_state").size() == count);
+            // Changed Java visibility is a new fact even with the same reason and epoch.
+            f.On(container, "setVisibility", "(I)V", {VmValue::Int(8)});
+            RecordAndroidProducerDiagnostic(f.vm, *f.context, view, "outside visible projection");
+            CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.producer_state").size() == count + 1);
+            CHECK(f.context->ui_measure_epoch == epoch);
+            CHECK(AndroidUiTraversalRoot(f.vm, *f.context) == root);
+            RecordAndroidTraversalDiagnostic(f.vm, *f.context, root, "fixture repeated reason");
+            RecordAndroidTraversalDiagnostic(f.vm, *f.context, root, "fixture repeated reason");
+            CHECK(f.context->ui_diagnostic_totals.at("ui.traversal: fixture repeated reason").count == 2);
+            CHECK(f.context->ui_diagnostic_totals.at("ui.surface.producer: renderer registered").count == 1);
+            static_cast<void>(lifecycle.Stop(failed ? ogplay::session::DexProcessStopReason::runtime_failure
+                                                    : ogplay::session::DexProcessStopReason::host_shutdown));
+            static_cast<void>(lifecycle.Stop());
+            SummarizeAndroidUiDiagnostics(f.vm, *f.context);
+            CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.summary").size() == 1);
+            const auto summaries = f.logger.Snapshot(std::nullopt, "ui.diagnostics.producer");
+            REQUIRE(summaries.size() == 1);
+            bool final_gone{}, final_epoch{};
+            for (const auto& field : summaries.front().fields) {
+                if (field.key == "state")
+                    final_gone = std::get<std::string>(field.value).find("visibility=8") != std::string::npos;
+                if (field.key == "epoch") final_epoch = std::get<std::uint64_t>(field.value) == epoch;
+            }
+            CHECK(final_gone);
+            CHECK(final_epoch);
+            const auto reasons = f.logger.Snapshot(std::nullopt, "ui.diagnostics.reason");
+            const auto repeated = std::ranges::find_if(
+                reasons, [](const auto& record) { return record.message == "ui.traversal: fixture repeated reason"; });
+            REQUIRE(repeated != reasons.end());
+            CHECK(std::get<std::uint64_t>(repeated->fields.front().value) == 2);
+            CHECK(f.ledger.Unimplemented().empty());
+        }
 }

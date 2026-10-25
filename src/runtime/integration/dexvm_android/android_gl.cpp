@@ -138,12 +138,12 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                               state->renderer = call.arguments[0].ref;
                               state->stopped = false;
                               if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-                                  if (auto* logger = call.vm.Log())
-                                      logger->Write(core::LogLevel::info, "ui.surface.producer", "renderer registered",
-                                                    {},
-                                                    {{"view", std::uint64_t(call.receiver.Value())},
-                                                     {"owner", std::uint64_t(state->owner.Value())}},
-                                                    {.mode = core::RateLimitMode::none});
+                                  RecordAndroidSurfaceDiagnostic(call.vm, *context, "ui.surface.producer",
+                                                                 "renderer registered",
+                                                                 {{"view", std::uint64_t(call.receiver.Value())},
+                                                                  {"owner", std::uint64_t(state->owner.Value())}},
+                                                                 {.mode = core::RateLimitMode::none});
+                              RecordAndroidProducerDiagnostic(call.vm, *context, call.receiver, "registered");
                               return dx::VmValue::Void();
                           });
     builder.VirtualMethod("setEGLContextFactory", "(Landroid/opengl/GLSurfaceView$EGLContextFactory;)V",

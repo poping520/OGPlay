@@ -396,6 +396,23 @@ struct DexVmAndroidContext final {
     std::optional<GuestFocus> prior_guest_focus;
   };
 
+  struct UiOwnerIdentity final {
+      dexvm::VmObjectRef activity, root, view;
+      std::uint64_t generation{}, revision{};
+      std::vector<std::pair<dexvm::VmObjectRef, std::uint64_t>> mounts;
+  };
+
+  // Incremented by the ROM removal adapter, including detach/re-attach ABA.
+  std::map<dexvm::VmObjectRef, std::uint64_t> ui_mount_generations;
+  std::optional<UiOwnerIdentity> input_capture_identity, input_scroll_identity;
+  bool input_pointer_tail{};
+  bool surface_event_dispatching{};
+  bool input_deep_dispatching{};
+  std::map<std::uint32_t, UiOwnerIdentity> surface_owner_identities;
+  std::uint64_t active_window_holder_generation{};
+  std::unordered_set<std::uint32_t> window_surface_holders;
+  std::uint64_t window_holder_generation{};
+
   // Advances only after an isolated host tree has passed layout/fit checks.
   std::uint64_t dialog_host_revision{};
   std::vector<DialogPresentation> dialog_presentations;
@@ -1479,4 +1496,27 @@ namespace ogplay::runtime {
 enum class AndroidViewListener : std::size_t { Click, Touch, LongClick, FocusChange };
 [[nodiscard]] dexvm::VmObjectRef ReadAndroidViewListener(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                                          dexvm::VmObjectRef view, AndroidViewListener listener);
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+[[nodiscard]] DexVmAndroidContext::UiOwnerIdentity CaptureAndroidUiOwner(dexvm::Interpreter&, DexVmAndroidContext&,
+                                                                         dexvm::VmObjectRef);
+[[nodiscard]] bool IsAndroidUiOwnerCurrent(dexvm::Interpreter&, DexVmAndroidContext&,
+                                           const DexVmAndroidContext::UiOwnerIdentity&, bool require_enabled = true);
+
+// One public owner event, including modal, native queue, editing and Activity fallback.
+// Nested public events fail; internal View dispatch borrows the established lease.
+class AndroidInputEvent final {
+public:
+    AndroidInputEvent(dexvm::Interpreter&, DexVmAndroidContext&);
+    ~AndroidInputEvent();
+    AndroidInputEvent(const AndroidInputEvent&) = delete;
+    AndroidInputEvent& operator=(const AndroidInputEvent&) = delete;
+
+private:
+    DexVmAndroidContext& context_;
+    bool java_;
+};
+
+[[nodiscard]] std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter&, DexVmAndroidContext&);
 }  // namespace ogplay::runtime

@@ -437,6 +437,10 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
     if (root != AndroidUiTraversalRoot(vm, context) || target.content_revision != context.ui_content_revision ||
         target.window_generation != context.ui_tree.Generation())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
+    if (context.input_presentation) {
+        context.ui_tree.MarkDrawDirty(context.ui_tree.Root());
+        return;
+    }
     dexvm::IntrinsicContext root_call{vm, root, {}};
     if ((dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x800) == 0)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
@@ -2104,6 +2108,61 @@ struct InputDispatchScope final {
     ~InputDispatchScope() { context.input_presentation = std::move(previous); }
 };
 }  // namespace
+
+DexVmAndroidContext::UiOwnerIdentity CaptureAndroidUiOwner(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                           dexvm::VmObjectRef view) {
+    DexVmAndroidContext::UiOwnerIdentity identity{context.activity,
+                                                  AndroidUiTraversalRoot(vm, context),
+                                                  view,
+                                                  context.ui_tree.Generation(),
+                                                  context.ui_content_revision,
+                                                  {}};
+    for (auto current = view; current.IsValid() && identity.mounts.size() <= ui::UiTree::kMaxDepth;) {
+        identity.mounts.emplace_back(current, context.ui_mount_generations[current]);
+        if (current == identity.root) break;
+        dexvm::IntrinsicContext call{vm, current, {}};
+        current = dexvm::IntrinsicCall(call).GetRef(context.view_java_hierarchy_fields->parent);
+    }
+    return identity;
+}
+
+bool IsAndroidUiOwnerCurrent(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                             const DexVmAndroidContext::UiOwnerIdentity& identity, bool require_enabled) {
+    if (identity.activity != context.activity || identity.root != AndroidUiTraversalRoot(vm, context) ||
+        identity.generation != context.ui_tree.Generation() || identity.revision != context.ui_content_revision ||
+        identity.mounts.empty() || identity.mounts.back().first != identity.root)
+        return false;
+    auto current = identity.view;
+    for (const auto& [view, generation] : identity.mounts) {
+        if (view != current || context.ui_mount_generations[view] != generation) return false;
+        dexvm::IntrinsicContext call{vm, view, {}};
+        dexvm::IntrinsicCall fields(call);
+        const auto flags = fields.GetInt(context.view_java_measure_fields->view_flags);
+        if ((flags & 0xc) != 0 || (require_enabled && (flags & 0x20) != 0)) return false;
+        current = fields.GetRef(context.view_java_hierarchy_fields->parent);
+    }
+    return true;
+}
+
+AndroidInputEvent::AndroidInputEvent(dexvm::Interpreter& vm, DexVmAndroidContext& context)
+    : context_(context), java_(context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    if (!java_) return;
+    if (context.input_presentation)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Reentrant owner input event"};
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id() ||
+        context.ui_layout_dispatching)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Input requires Java owner outside traversal"};
+    // The frame/previous event barrier owns mutation processing. In particular,
+    // suspend's synthetic CANCEL must not create an extra logical layout cycle.
+    context.input_presentation = AcquireAndroidPresentation(context);
+    if (!context.input_presentation)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Input requires a complete presentation"};
+}
+
+AndroidInputEvent::~AndroidInputEvent() {
+    if (java_) context_.input_presentation.reset();
+}
+
 namespace android_intrinsics {
 
 std::int32_t VisibilityOf(const DexVmAndroidContext& context,
@@ -2270,7 +2329,17 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     const auto roots = vm.ProtectReferences(std::array{view, event});
     EnsureInputProjection(vm, context);
     const auto node = FindViewUiNode(context, view.Value());
-    if (!node) return false;
+    if (!node) {
+        if (action == 3 && context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            const auto listener = InputListener(vm, context, view, true);
+            if (listener.IsValid())
+                return android_intrinsics::CallAndroidMethod(vm, listener, "onTouch",
+                                                             "(Landroid/view/View;Landroid/view/MotionEvent;)Z",
+                                                             {VmValue::Ref(view), VmValue::Ref(event)})
+                           .AsInt() != 0;
+        }
+        return false;
+    }
     const auto key = view.Value();
     if (action == 0) {
         context.ui_touch_targets.erase(key);
@@ -2304,7 +2373,11 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             for (auto child = children.rbegin(); child != children.rend(); ++child) {
                 const auto receiver = ViewObjectForUiNode(context, *child);
                 if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
+                const auto identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                                          ? std::optional{CaptureAndroidUiOwner(vm, context, receiver)}
+                                          : std::nullopt;
                 if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
+                    if (identity && !context.input_capture_identity) context.input_capture_identity = identity;
                     if (TouchLive(context, receiver)) context.ui_touch_targets[key] = receiver;
                     if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
                     return true;
@@ -2314,16 +2387,20 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     }
     // API19 View dispatch: an enabled OnTouchListener gets first refusal.
     const auto state = *tree.Get(*node);
+    const auto owner_identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && action == 0
+                                    ? std::optional{CaptureAndroidUiOwner(vm, context, view)}
+                                    : std::nullopt;
     bool listener_handled = false;
     const auto listener = InputListener(vm, context, view, true);
     const auto listener_root = vm.ProtectReferences(std::array{listener});
-    if (state.enabled && listener.IsValid()) {
+    if ((state.enabled || action == 3) && listener.IsValid()) {
         listener_handled = android_intrinsics::CallAndroidMethod(vm, listener, "onTouch",
                                                                  "(Landroid/view/View;Landroid/view/MotionEvent;)Z",
                                                                  {VmValue::Ref(view), VmValue::Ref(event)})
                                .AsInt() != 0;
     }
     const bool handled = listener_handled || TouchCall(vm, view, event, "onTouchEvent");
+    if (owner_identity && handled) context.input_capture_identity = owner_identity;
     auto click = context.ui_touch_clicks[key];
     bool enabled = state.enabled, clickable = state.clickable;
     bool live = TouchLive(context, view);
@@ -2375,7 +2452,11 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
         for (auto child = children.rbegin(); child != children.rend(); ++child) {
             const auto receiver = ViewObjectForUiNode(context, *child);
             if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
+            const auto identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                                      ? std::optional{CaptureAndroidUiOwner(vm, context, receiver)}
+                                      : std::nullopt;
             if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
+                if (identity && !context.input_capture_identity) context.input_capture_identity = identity;
                 if (TouchLive(context, receiver)) context.ui_touch_targets[0] = receiver;
                 if (!context.ui_touch_capture) context.ui_touch_capture = receiver.Value();
                 handled = true;
@@ -2392,7 +2473,19 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
 DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     DexVmAndroidContext& context, const std::int32_t action, const float x, const float y,
     const std::uint64_t captured_view, const AndroidBoundaryInput* snapshot) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) EnsureInputProjection(vm, context);
+    const bool owner_event = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+    if (owner_event && context.input_deep_dispatching)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Reentrant pointer event"};
+
+    struct DeepScope {
+        bool& flag;
+        bool previous;
+
+        ~DeepScope() { flag = previous; }
+    } deep_scope{context.input_deep_dispatching, context.input_deep_dispatching};
+
+    if (owner_event) context.input_deep_dispatching = true;
+    if (owner_event) EnsureInputProjection(vm, context);
     const auto previous_presentation = context.input_presentation;
     if (!context.input_presentation) context.input_presentation = AcquireAndroidPresentation(context);
 
@@ -2417,7 +2510,36 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     if (snapshot && action == 3) adjusted.action = 3;
     const auto event = snapshot ? MakeMotionEvent(vm, adjusted) : MakeMotionEvent(vm, action, x, y, 0);
     try {
+        const bool java = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+        if (java && action == 0) {
+            context.input_pointer_tail = false;
+            context.input_capture_identity.reset();
+        }
+        const auto cancel_invalid = [&] {
+            if (!context.input_capture_identity ||
+                IsAndroidUiOwnerCurrent(vm, context, *context.input_capture_identity))
+                return false;
+            const auto identity = *context.input_capture_identity;
+            context.input_capture_identity.reset();
+            context.input_pointer_tail = true;
+            ClearTouch(context);
+            // Dispatch exactly once to the captured receiver, even if its tree binding retired.
+            CancelTouch(vm, identity.view, event);
+            ClearTouch(context);
+            return true;
+        };
+        if (java) {
+            static_cast<void>(cancel_invalid());
+            if (context.input_pointer_tail && action != 0) {
+                if (action == 1 || action == 3) context.input_pointer_tail = false;
+                return {.handled = true};
+            }
+        }
         const auto handled = DispatchContentTouchEvent(vm, context, event);
+        if (java) {
+            static_cast<void>(cancel_invalid());
+            if (action == 1 || action == 3) context.input_capture_identity.reset();
+        }
         return {.handled = handled, .captured_view = context.ui_touch_capture};
     } catch (const dexvm::VmJavaThrow& error) {
         return {.error = "View dispatchTouchEvent failed: " + error.message};
@@ -2623,6 +2745,7 @@ AcquireAndroidPresentation(const DexVmAndroidContext& context) {
 
 bool PublishAndroidPresentation(DexVmAndroidContext& context) {
     if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return false;
+    if (context.input_presentation) return false;
     auto guest = context.ui_tree.PublishedProjection();
     if (!guest || !guest->ProjectionTarget()) return false;
     const auto previous = AcquireAndroidPresentation(context);
@@ -3012,7 +3135,8 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "Modal input requires owner thread"};
         SynchronizeAndroidDialogs(context);
-        const auto snapshot = AcquireAndroidPresentation(context);
+        const auto snapshot =
+            context.input_presentation ? context.input_presentation : AcquireAndroidPresentation(context);
         if (input.type == AndroidBoundaryInputType::key) {
             if (input.action == 0)
                 context.dialog_key_tails.erase(input.code);

@@ -2209,3 +2209,15 @@ presentation epoch 触发软件窗口基帧及 intrinsic renderer draw request�
 本单无组合/准入审计规则范围调整，direct/static/super/精确接收者、本类 failure 字段与
 clinit 规则保持；虚派按现有 dispatch ledger 列账，支持路径动态未实现命中须为0。
 迁移、adapter review 与机器证据见 [DVM-308](../tasks/dexvm/DVM-308.md)。
+
+### 11-4 owner 事件事务实施补充（2026-10-25）
+
+每个 owner 输入事件从 modal 至 NativeActivity 队列、编辑/键、pointer/焦点/scroll、deep
+及 Activity fallback 共用 presentation lease；释放后才消费 mutation。内部 View 派发借用租约，
+新的公开事件重入失败。捕获绑定窗口/root/内容/树代次与父链挂载代次，detach/reparent ABA
+不能复用旧捕获；失效取消一次、尾 UP 不向新 owner 派发，坐标随下一事件发布生效。
+Surface 在 owner 安全点按 size→created→changed 派发，同值不重复；每次 guest 回调后
+重验窗口/root/holder/挂载与真实 buffer。新根/新挂载留下一轮，注册 callback 不补造 created。
+window holder 不反查 SurfaceView；View holder 的 fixed 请求继续受 managed buffer 限制。
+本单不调整组合/准入审计范围，未改变 ADR-0147、严格精确调用、本类 failure 字段或 clinit。
+迁移 review 与证据见 [DVM-309](../tasks/dexvm/DVM-309.md)。

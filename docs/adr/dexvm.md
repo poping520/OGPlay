@@ -2221,3 +2221,18 @@ Surface 在 owner 安全点按 size→created→changed 派发，同值不重复
 window holder 不反查 SurfaceView；View holder 的 fixed 请求继续受 managed buffer 限制。
 本单不调整组合/准入审计范围，未改变 ADR-0147、严格精确调用、本类 failure 字段或 clinit。
 迁移 review 与证据见 [DVM-309](../tasks/dexvm/DVM-309.md)。
+
+
+### 11-5 窗口与呈现事实收口（2026-10-25）
+
+每个managed Activity保留Java Window内容根和最后完整投影，后台不改Java几何/scroll/焦点。
+共同快照首分区是唯一前台输入分区；handoff按既有可见区间保留额外窗口，绘制顺序反向。
+新窗口缺完整匹配投影或尺寸时不发布旧投影的新身份；旧快照可继续保留。
+窗口focus经Java软件adapter，ExternalProjection不调用HostLayout RequestFocus。
+owner收集前刷新producer开孔/叶像素，共同发布冻结视频帧与bitmap版本；整次Compose只借
+一个lease，video上下层、UI、modal不再各取快照或读取可变producer。尺寸不匹配拒绝，
+超采样沿合成出口resolve，不改变guest MeasureSpec。Legacy保留原调度与像素算法。
+离线比较器核验Result v1/原始证据哈希、固定阶段、checkpoint前缀、精确fault与退出码；
+阶段注记须由trace审阅，未知原始格式/裸PC拒绝；签名改变一律needs_review且非零。
+不改变成员准入审计范围或ADR-0147，不扩WMS/透明Activity/多窗口系统。
+编码与沙盒证据见[DVM-310](../tasks/dexvm/DVM-310.md)，九场景由编排方外验并记录同单。

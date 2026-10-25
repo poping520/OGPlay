@@ -311,6 +311,9 @@ struct DexVmAndroidContext final {
     std::int32_t task_id{1};
     std::uint32_t launch_mode{};
     bool package_affinity{true};
+    // Last complete partition survives foreground changes and failed traversals.
+    dexvm::VmObjectRef java_root{};
+    std::shared_ptr<const ui::UiTree> projection{};
   };
   struct ActivityCommand final {
     enum class Kind { launch, finish } kind{Kind::launch};
@@ -422,6 +425,9 @@ struct DexVmAndroidContext final {
       std::vector<std::shared_ptr<const ui::UiTree>> guest_window_epoch_refs;
       std::uint64_t host_modal_revision{}, metrics_revision{};
       ui::Size viewport{};
+      dexvm::VmObjectRef activity{};
+      ui::UiBitmapCache bitmaps;
+      std::map<ui::UiNodeId, video::VideoFrame> video_frames;
 
       struct ModalSnapshot final {
           dexvm::VmObjectRef dialog, owner;
@@ -1157,6 +1163,9 @@ void PaceEglSwap(DexVmAndroidContext &context,
 // Composes attached decoded video over the current base or UI according to
 // the SurfaceView layer fact; uses the same UiTree geometry and visibility.
 void ComposeVideoViews(DexVmAndroidContext &context, std::vector<std::uint8_t> &rgba8,
+                       std::uint32_t width, std::uint32_t height, bool on_top);
+// Explicit lease: never acquires again or reads mutable producer state.
+void ComposeVideoViews(const DexVmAndroidContext::PresentationSnapshot& presentation, std::vector<std::uint8_t>& rgba8,
                        std::uint32_t width, std::uint32_t height, bool on_top);
 // Owner-thread helpers; video state is shared with the existing video/PCM pump.
 [[nodiscard]] bool PrepareAndroidMediaVideo(DexVmAndroidContext &context,

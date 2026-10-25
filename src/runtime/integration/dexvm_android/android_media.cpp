@@ -1,5 +1,6 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
+#include <ranges>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -967,21 +968,10 @@ std::optional<std::string> PumpAndroidAudioTracks(
     return PumpJavaThreads(vm, context);
 }
 
-void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& canvas,
-                       const std::uint32_t width, const std::uint32_t height,
-                       const bool on_top) {
-    if (width == 0 || height == 0 ||
-        canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
-    const auto presentation = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                                  ? AcquireAndroidPresentation(context)
-                                  : nullptr;
-    const auto snapshot = presentation && !presentation->guest_window_epoch_refs.empty()
-                              ? presentation->guest_window_epoch_refs.front()
-                              : nullptr;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return;
-    const auto& tree = snapshot ? *snapshot : context.ui_tree;
-    std::scoped_lock lock(context.video_views_mutex);
-    if (context.video_views.empty()) return;
+namespace {
+template <typename FindFrame>
+void ComposeFrozenVideo(const ui::UiTree& tree, const FindFrame& find_frame, std::vector<std::uint8_t>& canvas,
+                        std::uint32_t width, std::uint32_t height, bool on_top) {
     const auto intersect = [](ui::Rect a, const ui::Rect b) {
         return ui::Rect{std::max(a.left, b.left), std::max(a.top, b.top),
                         std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
@@ -991,15 +981,10 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
         const auto* node = tree.Get(id);
         if (!node || !node->window_visible || node->visibility != ui::Visibility::Visible) return;
         alpha *= std::clamp(node->alpha, 0.0F, 1.0F);
-        const auto object = context.ui_node_to_object.find(id);
-        if (object != context.ui_node_to_object.end() && node->surface_layer == layer) {
-            const auto found = std::find_if(context.video_views.begin(), context.video_views.end(),
-                [&](const auto& entry) {
-                    const auto& state = entry.second;
-                    return (state.media_player ? state.display_view.Value() : entry.first) == object->second.Value();
-                });
-            if (found != context.video_views.end() && found->second.latest_frame) {
-                const auto& frame = *found->second.latest_frame;
+        const auto* frozen_frame = node->surface_layer == layer ? find_frame(id) : nullptr;
+        if (frozen_frame) {
+            {
+                const auto& frame = *frozen_frame;
                 const auto bounds = node->screen_frame;
                 const auto rect_width = static_cast<std::int64_t>(bounds.right) - bounds.left;
                 const auto rect_height = static_cast<std::int64_t>(bounds.bottom) - bounds.top;
@@ -1104,6 +1089,49 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
         visit(visit, tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media);
         visit(visit, tree.Root(), bounds, 1.0F, ui::SurfaceLayer::media_overlay);
     }
+}
+
+}  // namespace
+
+void ComposeVideoViews(const DexVmAndroidContext::PresentationSnapshot& presentation, std::vector<std::uint8_t>& canvas,
+                       std::uint32_t width, std::uint32_t height, bool on_top) {
+    if (presentation.viewport != ui::Size{static_cast<std::int32_t>(width), static_cast<std::int32_t>(height)} ||
+        canvas.size() != static_cast<std::uint64_t>(width) * height * 4U)
+        throw std::runtime_error("Video output does not match presentation viewport");
+    for (const auto& tree : std::views::reverse(presentation.guest_window_epoch_refs))
+        ComposeFrozenVideo(
+            *tree,
+            [&](ui::UiNodeId id) -> const video::VideoFrame* {
+                const auto found = presentation.video_frames.find(id);
+                return found == presentation.video_frames.end() ? nullptr : &found->second;
+            },
+            canvas, width, height, on_top);
+}
+
+void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& canvas, std::uint32_t width,
+                       std::uint32_t height, bool on_top) {
+    if (width == 0 || height == 0 || canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto lease = AcquireAndroidPresentation(context);
+        if (lease) ComposeVideoViews(*lease, canvas, width, height, on_top);
+        return;
+    }
+    std::scoped_lock lock(context.video_views_mutex);
+    if (context.video_views.empty()) return;
+    ComposeFrozenVideo(
+        context.ui_tree,
+        [&](ui::UiNodeId id) -> const video::VideoFrame* {
+            const auto object = context.ui_node_to_object.find(id);
+            if (object == context.ui_node_to_object.end()) return nullptr;
+            const auto found =
+                std::find_if(context.video_views.begin(), context.video_views.end(), [&](const auto& entry) {
+                    return (entry.second.media_player ? entry.second.display_view.Value() : entry.first) ==
+                           object->second.Value();
+                });
+            return found != context.video_views.end() && found->second.latest_frame ? &*found->second.latest_frame
+                                                                                    : nullptr;
+        },
+        canvas, width, height, on_top);
 }
 
 std::optional<std::string> PumpVideoViews(

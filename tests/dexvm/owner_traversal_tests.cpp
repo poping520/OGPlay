@@ -557,3 +557,184 @@ TEST_CASE("DVM-309 session pointer and key Activity fallback borrow the event pr
         static_cast<void>(lifecycle.Stop());
     }
 }
+
+TEST_CASE("DVM-310 lifecycle window partitions retain Java identity scroll focus and failed-switch snapshot") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        static_cast<void>(lifecycle.StepFrame());
+        const auto a = f.context->activity;
+        const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+        const auto leaf = f.context->content_view;
+        f.On(leaf, "setFocusableInTouchMode", "(Z)V", {VmValue::Int(1)});
+        REQUIRE(f.On(leaf, "requestFocus", "()Z").AsInt() == 1);
+        f.context->arsc.package_id = 0x7f;
+        ogplay::loader::ArscEntry theme;
+        theme.resource_id = 0x7f020001;
+        theme.type_name = "style";
+        theme.entry_name = "surface";
+        theme.is_complex = true;
+        theme.parent = 0x01030005;
+        for (auto id : {0x01010064U, 0x01010065U, 0x01010034U, 0x010100d4U})
+            theme.bag.push_back({id, 1, 0, {}});
+        f.context->arsc.entries = {theme};
+        f.On(a, "setTheme", "(I)V", {VmValue::Int(static_cast<int>(theme.resource_id))});
+        const auto surface_view =
+            f.New("Landroid/view/SurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(a)});
+        const auto holder = f.On(surface_view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(root, "addView", "(Landroid/view/View;)V", {VmValue::Ref(surface_view)});
+        f.On(root, "scrollTo", "(II)V", {VmValue::Int(3), VmValue::Int(5)});
+        static_cast<void>(lifecycle.StepFrame());
+        const auto old_surface = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        REQUIRE(old_surface.IsValid());
+        REQUIRE(f.context->active_surface_holders.contains(holder.Value()));
+        const auto sequence = [&] {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(callback), "sequence", "I");
+            REQUIRE(field);
+            return static_cast<int>(f.model.InstanceSlots(callback)[f.linker.Field(*field).slot].bits);
+        };
+        CHECK(sequence() == 12);
+        const auto saved = AcquireAndroidPresentation(*f.context);
+        REQUIRE(saved);
+        const auto a_node = *FindViewUiNode(*f.context, leaf.Value());
+        const auto root_node = *FindViewUiNode(*f.context, root.Value());
+        const auto a_size = saved->guest_window_epoch_refs.front()->Get(a_node)->measured;
+        const auto intent = f.New("Landroid/content/Intent;");
+        DexVmAndroidContext::ActivityCommand launch;
+        launch.owner = a;
+        launch.intent = intent;
+        launch.descriptor = "Ltest/OwnerActivity;";
+        launch.component = "test.OwnerActivity";
+        f.context->activity_commands.push_back(launch);
+        static_cast<void>(lifecycle.StepFrame());
+        const auto b = f.context->activity;
+        REQUIRE(b != a);
+        REQUIRE(f.context->activity_stack.size() == 2);
+        CHECK(f.context->activity_stack.front().java_root == root);
+        REQUIRE(f.context->activity_stack.front().projection);
+        CHECK(f.context->activity_stack.front().projection->Get(root_node)->scroll_x == 3);
+        CHECK(f.context->activity_stack.front().projection->Get(root_node)->scroll_y == 5);
+        CHECK_FALSE(f.context->activity_stack.front().visible);
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK(sequence() == 123);
+        const auto current = AcquireAndroidPresentation(*f.context);
+        REQUIRE(current);
+        CHECK(current->activity == b);
+        CHECK_FALSE(current->guest_window_epoch_refs.front()->IsAttached(a_node));
+        CHECK(f.On(leaf, "hasWindowFocus", "()Z").AsInt() == 0);
+        CHECK(f.On(leaf, "isFocused", "()Z").AsInt() == 1);
+        f.On(b, "finish", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity == a);
+        CHECK(AndroidUiTraversalRoot(f.vm, *f.context) == root);
+        CHECK(f.context->content_view == leaf);
+        CHECK(sequence() == 12312);
+        CHECK(f.context->active_surface_holders.contains(holder.Value()));
+        const auto restored_surface = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
+        CHECK(restored_surface != old_surface);
+        CHECK(f.On(old_surface, "isValid", "()Z").AsInt() == 0);
+        CHECK(f.On(restored_surface, "isValid", "()Z").AsInt() == 1);
+        CHECK(f.On(leaf, "isFocused", "()Z").AsInt() == 1);
+        CHECK(f.On(leaf, "hasWindowFocus", "()Z").AsInt() == 1);
+        const auto restored = AcquireAndroidPresentation(*f.context);
+        REQUIRE(restored);
+        CHECK(restored->guest_window_epoch_refs.front()->Get(a_node)->measured == a_size);
+        CHECK(restored->guest_window_epoch_refs.front()->Get(root_node)->scroll_x == 3);
+        CHECK(restored->guest_window_epoch_refs.front()->Get(root_node)->scroll_y == 5);
+        CHECK(saved->guest_window_epoch_refs.front()->Get(root_node)->scroll_x == 3);
+        // A new window has no complete projection. Publication must retain A.
+        const auto incomplete = f.New("Landroid/app/Activity;");
+        f.context->activity_stack.push_back({incomplete});
+        f.context->activity = incomplete;
+        CHECK_FALSE(PublishAndroidPresentation(*f.context));
+        CHECK(AcquireAndroidPresentation(*f.context) == restored);
+        CHECK_THROWS_AS(AndroidInputEvent(f.vm, *f.context), VmJavaThrow);
+        CHECK_FALSE(f.context->input_presentation);
+        f.context->activity_stack.pop_back();
+        f.context->activity = a;
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}
+
+TEST_CASE("DVM-310 presentation freezes producer layers bitmap backing and non-owner exact pixels") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = 8;
+        f.context->surface_height = 6;
+        const auto owner = f.New("Landroid/app/Activity;");
+        f.context->activity = owner;
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(view, "setClickable", "(Z)V", {VmValue::Int(1)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        const auto id = *FindViewUiNode(*f.context, view.Value());
+        auto bitmap = std::make_shared<ui::UiBitmap>();
+        bitmap->width = bitmap->height = 1;
+        bitmap->rgba8 = {10, 20, 30, 255};
+        f.context->ui_bitmaps[77] = bitmap;
+        auto& producer = f.context->video_views[view.Value()];
+        producer.latest_frame = ogplay::video::VideoFrame{0, 1, 1, {255, 0, 0, 255}};
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        const auto lease = AcquireAndroidPresentation(*f.context);
+        REQUIRE(lease);
+        CHECK(lease->video_frames.at(id).rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(lease->guest_window_epoch_refs.front()->Get(id)->surface_has_frame);
+        CHECK(lease->bitmaps.at(77) == bitmap);
+        auto replacement = std::make_shared<ui::UiBitmap>(*bitmap);
+        replacement->rgba8 = {40, 50, 60, 255};
+        f.context->ui_bitmaps[77] = replacement;
+        producer.latest_frame->rgba8 = {0, 255, 0, 255};
+        f.context->ui_tree.Get(id)->surface_layer = ui::SurfaceLayer::on_top;
+        f.context->ui_tree.MarkDrawDirty(id);
+        const auto epoch = f.context->ui_measure_epoch;
+        const auto trace = f.vm.Trace("", 10000).size();
+        ogplay::runtime::AndroidBoundaryFrame frame{
+            .width = 8, .height = 6, .rgba8 = std::vector<std::uint8_t>(8 * 6 * 4)};
+        std::thread consumer(
+            [&] { frame = ogplay::session::ComposeAndroidPresentationFrame(*f.context, std::move(frame)); });
+        consumer.join();
+        for (std::size_t i = 0; i < frame.rgba8.size(); i += 4) {
+            CHECK(frame.rgba8[i] == (((i / 4) % 8 >= 1 && (i / 4) % 8 < 7) ? 255 : 0));
+            CHECK(frame.rgba8[i + 1] == 0);
+            CHECK(frame.rgba8[i + 3] == 255);
+            CHECK(lease->guest_window_epoch_refs.front()->HitTestProjection(static_cast<int>((i / 4) % 8),
+                                                                            static_cast<int>((i / 4) / 8)) == id);
+        }
+        CHECK(f.vm.Trace("", 10000).size() == trace);
+        CHECK(f.context->ui_measure_epoch == epoch);
+        CHECK(AcquireAndroidPresentation(*f.context) == lease);
+        CHECK(f.context->ui_tree.Get(id)->draw_dirty);
+        CHECK_THROWS(static_cast<void>(ogplay::session::ComposeAndroidPresentationFrame(
+            *f.context, {.width = 16, .height = 12, .rgba8 = std::vector<std::uint8_t>(16 * 12 * 4)})));
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
+        const auto next = AcquireAndroidPresentation(*f.context);
+        REQUIRE(next != lease);
+        CHECK(next->bitmaps.at(77) == replacement);
+        CHECK(lease->bitmaps.at(77)->rgba8 == std::vector<std::uint8_t>{10, 20, 30, 255});
+        CHECK(next->video_frames.at(id).rgba8 == std::vector<std::uint8_t>{0, 255, 0, 255});
+        CHECK(next->guest_window_epoch_refs.front()->Get(id)->surface_layer == ui::SurfaceLayer::on_top);
+        producer.latest_frame.reset();
+        CHECK_FALSE(PublishAndroidPresentation(*f.context));
+        CHECK(AcquireAndroidPresentation(*f.context) == next);
+        RefreshAndroidSurfaceFrames(*f.context);
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
+        CHECK(AcquireAndroidPresentation(*f.context)->video_frames.empty());
+        CHECK_FALSE(
+            AcquireAndroidPresentation(*f.context)->guest_window_epoch_refs.front()->Get(id)->surface_has_frame);
+        CHECK(lease->video_frames.at(id).rgba8.front() == 255);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

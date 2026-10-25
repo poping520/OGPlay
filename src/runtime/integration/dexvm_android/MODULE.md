@@ -674,3 +674,18 @@ PumpAndroidSurfaceEvents 只在 owner 帧屏障执行 size→created→changed�
 SurfaceView 请求，Window.takeSurface holder 只用真实 managed window buffer，不反查 View。
 Rect 身份稳定，销毁后 retire native surface；完整 WMS/updateWindow/独立 buffer resize 仍失败。
 Legacy 输入、焦点与 Surface 调度保持原路径。
+
+
+## 窗口与呈现事实
+
+JavaTraversal每个Activity保留真实Window Java根与最后完整投影；后台几何不依赖当前构建树。
+共同发布仅在前台完整投影匹配身份/viewport后更新；首分区供输入，额外可见handoff分区
+按后到前合成。后台退役使用保留层级清绑定。窗口焦点由Java拥有，禁止外部投影RequestFocus。
+owner收集前刷新开孔/叶像素，发布冻结bitmap缓存版本及视频节点/像素；发布只允许owner，
+输入lease内延期。消费者显式共享同一PresentationSnapshot，禁止再读播放器、可变缓存或
+反查guest绑定；无效producer像素明确失败。未知窗口/metrics保留最后完整快照。
+Legacy视频继续原锁与frame引用、原像素算法；不扩大managed窗口/Surface支持范围。
+
+JavaTraversal的destroyed回调完成后永久撤销旧managed endpoint的holder有效性；
+holder恢复需新Surface，新active代次不能复活旧Surface。旧owner token只保留给release/GC，
+不再可作为managed producer绑定；Legacy销毁顺序与endpoint路径保持。

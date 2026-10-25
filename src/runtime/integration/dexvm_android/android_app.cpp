@@ -1008,6 +1008,18 @@ std::optional<std::string> DispatchHolderCallbacks(
                 if (context.retire_native_surface)
                     context.retire_native_surface(dexvm::VmObjectRef(holder));
                 context.destroying_surface_holders.erase(holder);
+                if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                    const auto surface = context.holder_surfaces.find(holder);
+                    if (surface != context.holder_surfaces.end()) {
+                        // Invalidate this endpoint permanently before a later
+                        // holder generation can become active. Keep its owner
+                        // token until Java release/GC so release remains valid.
+                        const auto owner = context.stream_surface_owners.find(surface->second.Value());
+                        if (owner != context.stream_surface_owners.end())
+                            context.managed_surface_tokens.erase(owner->second);
+                        context.holder_surfaces.erase(surface);
+                    }
+                }
                 if (context.window_surface_holders.contains(holder) &&
                     holder != context.window_surface_holder.Value()) {
                     context.window_surface_holders.erase(holder);

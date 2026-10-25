@@ -26,6 +26,8 @@ def generate(negative_rom_id=False):
     policy = json.loads(POLICY.read_text(encoding='utf-8'))
     if report['input_sha256'] != policy['input_sha256']:
         raise ValueError('theme projection pinned source/ROM input mismatch')
+    if policy.get('projectable_reference_styleables') != {'View': ['drawable']}:
+        raise ValueError('unreviewed projected reference categories')
     if report['errors']:
         raise ValueError('theme projection ROM ID mismatch: ' + json.dumps(report['errors']))
     values = ROOT / '.local/aosp/framework/base/core/res/res/values'
@@ -92,12 +94,15 @@ def generate(negative_rom_id=False):
             break
     attribute_demands = [dict(name=name, resource_id=attrs[name]) for name in sorted(extra_demands)]
 
-    def value(text, seen=()):
+    view_attrs = {row['name'] for row in report['styleable_slot_checks'] if row['group'] == 'View'}
+    projected_references = {}
+
+    def value(text, attr_name, seen=()):
         if text in seen or len(seen) >= 64:
             raise ValueError('projected scalar reference cycle/depth: ' + text)
         ref = re.fullmatch(r'@(?:android:)?(color|dimen|integer|bool)/(.+)', text)
         if ref and (ref[1], ref[2]) in scalar_resources:
-            return value(scalar_resources[(ref[1], ref[2])], seen + (text,))
+            return value(scalar_resources[(ref[1], ref[2])], attr_name, seen + (text,))
         style = re.fullmatch(r'@(?:android:)?style/(.+)', text)
         if style and style[1] in report['style_bindings'] and style[1] in styles:
             demanded_styles.add(style[1])
@@ -106,6 +111,13 @@ def generate(negative_rom_id=False):
         if attr and attr[1] in attrs and attr[1] in report['attr_bindings']:
             return dict(state='known', type=2, data=report['attr_bindings'][attr[1]])
 
+        drawable = re.fullmatch(r'@(?:android:)?drawable/(.+)', text)
+        if drawable and attr_name in view_attrs and drawable[1] in report['drawable_bindings']:
+            ident = report['drawable_bindings'][drawable[1]]
+            if (ident >> 24, (ident >> 16) & 255) != (1, 8):
+                raise ValueError('ROM drawable reference type mismatch: ' + text)
+            projected_references[drawable[1]] = dict(name=drawable[1], resource_id=ident, resource_type='drawable')
+            return dict(state='known', type=1, data=ident)
         if text == '@null':
             return dict(state='known', type=1, data=0)
         if re.fullmatch(r'#[0-9a-fA-F]{3,8}', text) and len(text) in (4, 5, 7, 9):
@@ -142,7 +154,7 @@ def generate(negative_rom_id=False):
         inherited = merge(row['name'])
         projected = []
         for name, ident in sorted(attrs.items(), key=lambda x: x[1]):
-            result = value(inherited[name]) if name in inherited else dict(state='absent')
+            result = value(inherited[name], name) if name in inherited else dict(state='absent')
             counts[result['state']] += 1
             projected.append(dict(id=ident, name=name, **result))
         themes.append(dict(id=row['resource_id'], name=row['name'], attributes=projected))
@@ -154,7 +166,7 @@ def generate(negative_rom_id=False):
         inherited = merge(name)
         projected = []
         for attr_name, ident in sorted(attrs.items(), key=lambda x: x[1]):
-            result = value(inherited[attr_name]) if attr_name in inherited else dict(state='absent')
+            result = value(inherited[attr_name], attr_name) if attr_name in inherited else dict(state='absent')
             projected.append(dict(id=ident, name=attr_name, **result))
         style_closure.append(dict(id=report['style_bindings'][name], name=name, attributes=projected))
     ids = [row['id'] for row in themes]
@@ -171,7 +183,8 @@ def generate(negative_rom_id=False):
                     configuration='values', input_sha256=report['input_sha256'],
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
-                    counts=dict(counts), attribute_count=len(attrs))
+                    counts=dict(counts), attribute_count=len(attrs),
+                    projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
     return canonical(document)
 
 

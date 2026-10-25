@@ -23,5 +23,11 @@
     ".local/aosp/framework/base/core/res/res/values/themes_device_defaults.xml": "7fc92597654744f451372b1b3c7da549a9f47bb796d17766b6e511513c41212e",
     ".local/aosp/framework2.jar": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
   },
-  "schema_version": 1
+  "schema_version": 1,
+  "projectable_reference_styleables": {
+    "View": [
+      "drawable"
+    ]
+  },
+  "reference_identity": "same pinned framework.jar android/internal R$drawable fields; package=1/type=8"
 }

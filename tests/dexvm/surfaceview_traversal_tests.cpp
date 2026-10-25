@@ -468,3 +468,38 @@ TEST_CASE("DVM-309 Surface callback list is frozen across created and changed") 
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-314 Surface recreation emits created changed even for identical buffer dimensions") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        std::vector<int> events;
+        SurfaceHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(1);
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext&) {
+            events.push_back(2);
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(3);
+            return VmValue::Void();
+        });
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        CHECK(events == std::vector<int>{1, 2});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+        CHECK(events == std::vector<int>{1, 2, 3});
+        // A cache entry from a prior buffer cannot suppress the new generation's changed.
+        f.context->surface_callback_sizes[holder.Value()] = {320, 240};
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        CHECK(events == std::vector<int>{1, 2, 3, 1, 2});
+        for (int i = 0; i < 3; ++i)
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == std::vector<int>{1, 2, 3, 1, 2});
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

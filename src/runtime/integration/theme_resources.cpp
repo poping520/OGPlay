@@ -57,6 +57,18 @@ void ThemeResources::Load(std::string_view projection) {
     if (Text(Member(root, "schema")) != "ogplay.bounded-theme" || Number(Member(root, "schema_version")) != 1 ||
         Number(Member(root, "api_level")) != 19 || Text(Member(root, "configuration")) != "values")
         throw std::runtime_error("unsupported theme projection schema/configuration");
+    std::set<std::uint32_t> reference_ids;
+    if (const auto references = root.Member("projected_references")) {
+        if (!references->IsArray() || references->Size() > 1024)
+            throw std::runtime_error("invalid projected reference bounds");
+        for (std::size_t i = 0; i < references->Size(); ++i) {
+            const auto row = *references->Element(i);
+            const auto id = Number(Member(row, "resource_id"));
+            if ((id >> 16U) != 0x0108U || Text(Member(row, "resource_type")) != "drawable" ||
+                Text(Member(row, "name")).empty() || !reference_ids.insert(id).second)
+                throw std::runtime_error("invalid projected drawable reference");
+        }
+    }
     std::set<std::uint32_t> drawables;
     const auto styleables = Member(root, "styleables");
     if (!styleables.IsArray() || styleables.Size() > 1024) throw std::runtime_error("invalid styleable bounds");
@@ -109,6 +121,7 @@ void ThemeResources::Load(std::string_view projection) {
             throw std::runtime_error("duplicate unregistered theme");
     }
     drawable_attributes_ = std::move(drawables);
+    projected_reference_ids_ = std::move(reference_ids);
     projection_ = std::move(projected);
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
@@ -275,10 +288,10 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
         if (!seen.emplace(1, value.data).second) throw std::runtime_error("resource reference cycle");
         const auto id = value.data;
         if ((id >> 24U) == 1) {
-            if (!projection_.contains(id))
+            if (!projection_.contains(id) && !projected_reference_ids_.contains(id))
                 throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
-            // A style bag is a terminal reference, consumed by getResourceId,
-            // never converted into a scalar or a successful Drawable.
+            // Styles and reviewed View drawable IDs are terminal, lazy references.
+            // No system drawable is loaded or rasterized by this provider.
             value.resource_id = id;
             value.cookie = 1;
             return value;
@@ -384,7 +397,8 @@ std::vector<ThemeValue> ThemeResources::Styled(ThemeToken token, std::uint32_t d
             value.type = 0;
             value.cookie = -1;
         }
-        if (drawable_attributes_.contains(attr) && value.type != 0)
+        if (drawable_attributes_.contains(attr) && value.type != 0 &&
+            !(value.type == 1 && projected_reference_ids_.contains(value.data)))
             throw std::runtime_error("requested drawable attribute is unsupported");
         cookie = value.cookie;
         result.push_back(value);

@@ -689,3 +689,18 @@ Legacy视频继续原锁与frame引用、原像素算法；不扩大managed窗�
 JavaTraversal的destroyed回调完成后永久撤销旧managed endpoint的holder有效性；
 holder恢复需新Surface，新active代次不能复活旧Surface。旧owner token只保留给release/GC，
 不再可作为managed producer绑定；Legacy销毁顺序与endpoint路径保持。
+
+## Managed-window observer 与基础引用
+
+JavaTraversal 每窗口稳定 Java 根拥有一个 ROM ViewTreeObserver，沿 owner-attached
+GC 边保活；未附着 View 的真实 mFloatingTreeObserver 在挂载时经 ROM merge/kill
+转移并清空。owner global layout 通过该窗口 observer 的 ROM dispatchOnGlobalLayout
+一次派发；不按每个 View 重复派发，Legacy 原表保持。其他 observer 系统能力仍明确失败。
+setSystemUiVisibility adapter 写真实 Java 字段，ROM getter 读取；附着改变调用父
+recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callback 或 AttachInfo。
+WebView 仅准入已有父构造接缝，AbsoluteLayout 的测量/布局失败边界保留。
+Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 changed；同代同值仍去重。
+
+有界主题允许清单内固定 ROM 具名 drawable ID 作为惰性引用进入六槽；读取引用不加载
+系统 drawable，实际未支持皮肤加载仍失败。View scrollbar 私有 ID 缺同 ROM 资源输入时
+保留 unsupported，不以猜值或 null 代替；不能据此宣称默认 View 属性构造已全部可用。

@@ -102,7 +102,7 @@ def inspect_inputs(negative_rom_id=False):
             owner = dex.type_name(cls.type_index)
             if owner not in ('Landroid/R$attr;', 'Landroid/R$style;',
                              'Lcom/android/internal/R$attr;', 'Lcom/android/internal/R$style;',
-                             'Lcom/android/internal/R$styleable;'):
+                             'Lcom/android/internal/R$styleable;', 'Landroid/R$drawable;', 'Lcom/android/internal/R$drawable;'):
                 continue
             values = dx.static_values(data, dex, cls)
             fields = [dex.strings[dex.field_ids[f.field_index][2]] for f in cls.static_fields]
@@ -198,5 +198,6 @@ def inspect_inputs(negative_rom_id=False):
                   missing_theme_count=sum(not t['rom_fields'] for t in bindings),
                   public_id_checks=public_checks, styleable_slot_checks=styleable_checks,
                   styleable_group_count=len(GROUPS), styleable_slot_count=len(styleable_checks), errors=errors,
-                  negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids)
+                  negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids,
+                  drawable_bindings=rom['Lcom/android/internal/R$drawable;'])
     return report

@@ -101,15 +101,15 @@
       "entry": "META-INF/ogplay/member-sources.json",
       "manifest_sha256": "bc54a5a6f754098ab7e0daaa76eb2d84476bfafe78bec785dcb5121ae6c138e6",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "ed4015e64bfb0bc3a5faf170b7b2c9b398bb6eff8f478b050f696efbc3231bee"
+      "composer_sha256": "28ec4c365fb43892c0e8699cc81dc3588c20412619fa93bd653241eb5e6f94c3"
     },
     "experimental_theme_projection": {
       "scope": "JavaTraversal paired payload only",
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "cf19e57dfee078e74e1f2d78986ce6b097b0b87a9ab1b5d53436a8deb5f3e6ba",
+      "sha256": "104eb325dd60ad0674352edf356013cb5c8345008169a20b7a52b4d9639c4fea",
       "generator": "tools/bootdex/theme_projection.py",
-      "inputs_sha256": "f6c960c57a5d71e73a8814433f91dac2f5fa7ed3891cdcf522d282e5a7187bee"
+      "inputs_sha256": "665697f785fadbec7e24fe5846f350bc578bd00e13050da4f2cfd1c361f329e8"
     }
   },
   "icu": {

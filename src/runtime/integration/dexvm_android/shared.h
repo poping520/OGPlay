@@ -9,6 +9,9 @@
 namespace ogplay::runtime::android_intrinsics {
 
 namespace dx = dexvm;
+[[nodiscard]] dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context,
+                                                      dx::VmObjectRef view);
+void MergeManagedViewTreeObservers(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef subtree);
 
 using Decl = dexvm::IntrinsicClassDecl;
 using Context = std::shared_ptr<DexVmAndroidContext>;

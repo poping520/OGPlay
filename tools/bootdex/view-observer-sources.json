@@ -1,0 +1,288 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-window.surface.json.gz",
+      "surface_sha256": "cd4106e0fdc4c32811522a535d37354fde5f7f8f53066f355279e2bfb4804a6d",
+      "owner": "Landroid/view/ViewTreeObserver;",
+      "smali_sha256": "13346141b4b2b1bed63c3bbf26cf507373fc8ae2c51ae69abf9f426ab32389d6",
+      "fields": [
+        {
+          "signature": "mAlive:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnComputeInternalInsetsListeners:Landroid/view/ViewTreeObserver$CopyOnWriteArray;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnDrawListeners:Ljava/util/ArrayList;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnGlobalFocusListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnGlobalLayoutListeners:Landroid/view/ViewTreeObserver$CopyOnWriteArray;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnPreDrawListeners:Landroid/view/ViewTreeObserver$CopyOnWriteArray;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnScrollChangedListeners:Landroid/view/ViewTreeObserver$CopyOnWriteArray;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnTouchModeChangeListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnWindowAttachListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOnWindowFocusListeners:Ljava/util/concurrent/CopyOnWriteArrayList;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ],
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65536,
+          "body_sha256": "0fd7c0a7eacba6fd5ae32bbdeeb2cf82da6adaae6c8fdcb1e954a726a69bbfbd",
+          "source": "rom"
+        },
+        {
+          "signature": "checkIsAlive()V",
+          "flags": 2,
+          "body_sha256": "596979833a2b0dbb5ef23807133c0f23a9b34f79fa4582ba7f4ca541e1e2049d",
+          "source": "rom"
+        },
+        {
+          "signature": "kill()V",
+          "flags": 2,
+          "body_sha256": "dfd8151e603465dff4dcab792c8854c38dae53cf3425319c9564704578d240e6",
+          "source": "rom"
+        },
+        {
+          "signature": "addOnComputeInternalInsetsListener(Landroid/view/ViewTreeObserver$OnComputeInternalInsetsListener;)V",
+          "flags": 1,
+          "body_sha256": "ec8f151624d6d8bd2ea43a55e4195cfdcaadbec23d23d38b2c523ae36777f6b5",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnDrawListener(Landroid/view/ViewTreeObserver$OnDrawListener;)V",
+          "flags": 1,
+          "body_sha256": "7b35ef4058276abab90e95540a6269979d6c14648ca7f6034191a17f45df6407",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnGlobalFocusChangeListener(Landroid/view/ViewTreeObserver$OnGlobalFocusChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "34364d108579fd6d8cee6d5ac6c887d64fd1cfd40ce310e69d1b625d627001c9",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+          "flags": 1,
+          "body_sha256": "b2e3d94925f55858b7419aeca4ace697ea386c7d6a7b9b3774bb39a3654f1d9f",
+          "source": "rom"
+        },
+        {
+          "signature": "addOnPreDrawListener(Landroid/view/ViewTreeObserver$OnPreDrawListener;)V",
+          "flags": 1,
+          "body_sha256": "2fc66f7a40f927d6d9611bc9fe92a773f086e657b75af8c8685907c86a1a2af3",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnScrollChangedListener(Landroid/view/ViewTreeObserver$OnScrollChangedListener;)V",
+          "flags": 1,
+          "body_sha256": "a53250c27ea9258e0bb85e66a372d8e6ee48af3045c807ca0037f6893f18eade",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnTouchModeChangeListener(Landroid/view/ViewTreeObserver$OnTouchModeChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "a3980c26832001c0e8651a6d11e78d20ccdd1ac90b455c7aa7df363cec088601",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnWindowAttachListener(Landroid/view/ViewTreeObserver$OnWindowAttachListener;)V",
+          "flags": 1,
+          "body_sha256": "63b8aed37fefa0b02831ce2dacc3584e2581ddb7c37f831a0208d6981c81e255",
+          "source": "failure"
+        },
+        {
+          "signature": "addOnWindowFocusChangeListener(Landroid/view/ViewTreeObserver$OnWindowFocusChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "8df193bd8be6fd5118842bf5f2f78b1e037e4c51b5077a80f49aae79eaa80308",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnComputeInternalInsets(Landroid/view/ViewTreeObserver$InternalInsetsInfo;)V",
+          "flags": 16,
+          "body_sha256": "1b99ed74aec589bf43771d13ad84621080f7279c55f8e4fce32b21c022c8bf8b",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnDraw()V",
+          "flags": 17,
+          "body_sha256": "3a86bcc1bbbfc5b9d1df34f8888757cff8899ae42bed3768febb332625ab6598",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnGlobalFocusChange(Landroid/view/View;Landroid/view/View;)V",
+          "flags": 16,
+          "body_sha256": "006bd4af5cb1a0d12334f21c1b15592dcafd40e2144f2131199456a742c7c687",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnGlobalLayout()V",
+          "flags": 17,
+          "body_sha256": "18c04a0dfb21b4211059c8ce29c498061b80c64073d16c28004d1ea82c9754a1",
+          "source": "rom"
+        },
+        {
+          "signature": "dispatchOnPreDraw()Z",
+          "flags": 17,
+          "body_sha256": "8e82efd1ccda8304028cc6d907e9fe633e4ceb00345afdbef052ce7d52857490",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnScrollChanged()V",
+          "flags": 16,
+          "body_sha256": "260d02770099226b04af366f497589badd87321456416fd6a1d645347bd359aa",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnTouchModeChanged(Z)V",
+          "flags": 16,
+          "body_sha256": "3dd21f9b528cb7d05789518b3bd4210fedeec91194079b3eb4358544f37d3125",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnWindowAttachedChange(Z)V",
+          "flags": 16,
+          "body_sha256": "6448262570c6de06a9caca266cb3bcf90cb9132d917753f47635d2b01eeda192",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchOnWindowFocusChange(Z)V",
+          "flags": 16,
+          "body_sha256": "d5f1ec91ab5a6ab7a50bacf70ee07d4568467587ecd611bf1f9635568d35f1ca",
+          "source": "failure"
+        },
+        {
+          "signature": "hasComputeInternalInsetsListeners()Z",
+          "flags": 16,
+          "body_sha256": "dcb50a3cbaa8e84e627c3d5b51322a80190dc49b73fce8e99f0f9965a748be1b",
+          "source": "failure"
+        },
+        {
+          "signature": "hasOnPreDrawListeners()Z",
+          "flags": 16,
+          "body_sha256": "641376c5b55972589f06c1ec885eb644226ab0218086c8a823f73653afaf4d7f",
+          "source": "failure"
+        },
+        {
+          "signature": "isAlive()Z",
+          "flags": 1,
+          "body_sha256": "92e3af3e90edcdcfe770e93778e2d42f887254ea30ba727a31b9ab46ed54680b",
+          "source": "rom"
+        },
+        {
+          "signature": "merge(Landroid/view/ViewTreeObserver;)V",
+          "flags": 0,
+          "body_sha256": "bbd3aa302570cc43c4da947711efc52188990c46ee06a13434b2c42e7d6daec5",
+          "source": "rom"
+        },
+        {
+          "signature": "removeGlobalOnLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+          "flags": 1,
+          "body_sha256": "34d52e3b2588d1af2cb864a48905ac6849fa7f689f6d5e055823552294291ae9",
+          "source": "rom"
+        },
+        {
+          "signature": "removeOnComputeInternalInsetsListener(Landroid/view/ViewTreeObserver$OnComputeInternalInsetsListener;)V",
+          "flags": 1,
+          "body_sha256": "9f3cbded49340ed221df96eba254090b1bb2b3a6c1236ef963f9171e830a2b09",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnDrawListener(Landroid/view/ViewTreeObserver$OnDrawListener;)V",
+          "flags": 1,
+          "body_sha256": "4f1744af44dad792e42ac971e3d2cda6c199fb777ed86cdf546c5965a0e91113",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnGlobalFocusChangeListener(Landroid/view/ViewTreeObserver$OnGlobalFocusChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "0ea4740f409bcf63ec4a8cd4d8b10518a826a7327f8ad6e8ec0f9ea2fb4dc7fe",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+          "flags": 1,
+          "body_sha256": "2c3ccbf5b27c99a8b2c423e42e91a07586bd71ac9bded4e4025810f64c1666fd",
+          "source": "rom"
+        },
+        {
+          "signature": "removeOnPreDrawListener(Landroid/view/ViewTreeObserver$OnPreDrawListener;)V",
+          "flags": 1,
+          "body_sha256": "19197850eaf94487744ff0d8b0fc2dede29b705727ef0f1c35a2a15f87e6f5e9",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnScrollChangedListener(Landroid/view/ViewTreeObserver$OnScrollChangedListener;)V",
+          "flags": 1,
+          "body_sha256": "de280bfbc8b1c70349bf9eb162e6445d9b51a1d2ff817876e6faae4df8b868f3",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnTouchModeChangeListener(Landroid/view/ViewTreeObserver$OnTouchModeChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "e4ed8805f5570c34c9bea8a89b82afd8a288bf5e1b90e24ec1453c323041cd16",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnWindowAttachListener(Landroid/view/ViewTreeObserver$OnWindowAttachListener;)V",
+          "flags": 1,
+          "body_sha256": "6057f0dfe0a4dccce624f0292a17ae4363d19e13d9f5ef6cf4b1b825a847510e",
+          "source": "failure"
+        },
+        {
+          "signature": "removeOnWindowFocusChangeListener(Landroid/view/ViewTreeObserver$OnWindowFocusChangeListener;)V",
+          "flags": 1,
+          "body_sha256": "7f5308e6da3a96cd2f1e5a41d141b06ab4013352bfdf1c3f5207bb031c352464",
+          "source": "failure"
+        }
+      ]
+    }
+  ]
+}

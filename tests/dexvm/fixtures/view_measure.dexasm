@@ -644,3 +644,21 @@
     invoke-static {}, Ltest/OwnerActivity;->mutate()V
     return-void
 .end method
+
+.class public Ltest/GlobalLayoutCounter;
+.super Ljava/lang/Object;
+.implements Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;
+.field public calls:I
+.method public constructor <init>()V
+ .registers 1
+ invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+ return-void
+.end method
+.method public onGlobalLayout()V
+ .registers 3
+ iget v0, v2, Ltest/GlobalLayoutCounter;->calls:I
+ const/4 v1, 1
+ add-int/2addr v0, v1
+ iput v0, v2, Ltest/GlobalLayoutCounter;->calls:I
+ return-void
+.end method

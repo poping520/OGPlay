@@ -65,6 +65,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-edittext-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-scroll-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-surface-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-observer-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -142,7 +143,7 @@ def build(measure=False):
                      'Landroid/text/style/BulletSpan;'}
         # ADR-0155 retains declarations in disabled TextView/Paint bodies too.
         # Pure ROM helpers do not enable TextView construction or Editor.
-        hierarchy.update({'Landroid/graphics/PixelFormat;', *(c['owner'] for c in measure_sources(member_sources.load())['classes'] if c['owner'].startswith('Landroid/view/SurfaceView')), 'Landroid/widget/HorizontalScrollView$SavedState;', 'Landroid/widget/HorizontalScrollView$SavedState$1;', 'Landroid/widget/ScrollView;', 'Landroid/widget/HorizontalScrollView;', 'Landroid/widget/EditText;', 'Landroid/widget/Button;', 'Landroid/widget/ImageView;', 'Landroid/widget/ImageButton;',
+        hierarchy.update({'Landroid/view/ViewTreeObserver;', 'Landroid/view/ViewTreeObserver$CopyOnWriteArray;', 'Landroid/view/ViewTreeObserver$CopyOnWriteArray$Access;', 'Landroid/graphics/PixelFormat;', *(c['owner'] for c in measure_sources(member_sources.load())['classes'] if c['owner'].startswith('Landroid/view/SurfaceView')), 'Landroid/widget/HorizontalScrollView$SavedState;', 'Landroid/widget/HorizontalScrollView$SavedState$1;', 'Landroid/widget/ScrollView;', 'Landroid/widget/HorizontalScrollView;', 'Landroid/widget/EditText;', 'Landroid/widget/Button;', 'Landroid/widget/ImageView;', 'Landroid/widget/ImageButton;',
                           'Landroid/widget/ImageView$ScaleType;', 'Landroid/graphics/Matrix;', 'Landroid/graphics/Matrix$1;',
             'Landroid/graphics/TemporaryBuffer;',
             'Landroid/text/method/AllCapsTransformationMethod;',

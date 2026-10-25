@@ -173,7 +173,8 @@
     "isPressed()Z",
     "setPressed(Z)V",
     "dispatchSetPressed(Z)V",
-    "removeLongPressCallback()V"
+    "removeLongPressCallback()V",
+    "getSystemUiVisibility()I"
   ],
   "rom_fields": [
     "ACCESSIBILITY_CURSOR_POSITION_UNDEFINED:I",
@@ -516,7 +517,9 @@
     "sUseBrokenMakeMeasureSpec:Z",
     "mScrollCache:Landroid/view/View$ScrollabilityCache;",
     "mHasPerformedLongPress:Z",
-    "mPendingCheckForLongPress:Landroid/view/View$CheckForLongPress;"
+    "mPendingCheckForLongPress:Landroid/view/View$CheckForLongPress;",
+    "mFloatingTreeObserver:Landroid/view/ViewTreeObserver;",
+    "mSystemUiVisibility:I"
   ],
   "overlays": {
     "<init>(Landroid/content/Context;)V": {
@@ -728,8 +731,22 @@
       "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
       "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
       "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
+    },
+    "getViewTreeObserver()Landroid/view/ViewTreeObserver;": {
+      "reason": "ADR-0162 DVM-314 bounded managed-window observer and system-attributes seam",
+      "inputs": "Owner thread and actual Java parent/field state",
+      "outputs": "ROM observer identity/merge or retained system UI request; no system bars callbacks",
+      "state_owner": "Java floating observer/system UI field, managed root owns its ROM observer",
+      "failure_boundary": "No AttachInfo/WMS/Binder; wrong owner fails; unsupported observer methods remain failure"
+    },
+    "setSystemUiVisibility(I)V": {
+      "reason": "ADR-0162 DVM-314 bounded managed-window observer and system-attributes seam",
+      "inputs": "Owner thread and actual Java parent/field state",
+      "outputs": "ROM observer identity/merge or retained system UI request; no system bars callbacks",
+      "state_owner": "Java floating observer/system UI field, managed root owns its ROM observer",
+      "failure_boundary": "No AttachInfo/WMS/Binder; wrong owner fails; unsupported observer methods remain failure"
     }
   },
-  "surface": "tools/bootdex/view-owner.surface.json.gz",
-  "surface_sha256": "ea38caf65e1b03dd1b9a92f2e04f8689b679166486ef8ce3d86ba0878f728872"
+  "surface": "tools/bootdex/view-window.surface.json.gz",
+  "surface_sha256": "cd4106e0fdc4c32811522a535d37354fde5f7f8f53066f355279e2bfb4804a6d"
 }

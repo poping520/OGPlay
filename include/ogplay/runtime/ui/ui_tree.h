@@ -136,6 +136,8 @@ struct UiGeometryProjection final {
     std::uint64_t epoch{};
     // Complete window hierarchy; sibling order is the order in this vector.
     std::vector<UiProjectedNode> nodes;
+    // Managed window fact, published atomically with Java visibility/hierarchy.
+    std::optional<bool> window_visible{};
 };
 
 struct RelativeRules final {

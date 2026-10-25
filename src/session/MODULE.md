@@ -318,3 +318,8 @@ GLThread 初始化不等于可绘制 Surface，Legacy 选择仍在原内容同�
 DVM-320：JavaTraversal 在每次 producer 重评估比较只读父链事实；正常与失败 Stop
 均在 teardown 回调前经显式 integration 接口汇总一次。汇总保留清理前的最终状态，
 重复 Stop 不重发；失败清理仍沿原 attempt/首错协议，Legacy 不输出新域。
+
+JavaTraversal 的窗口可见事实由 Activity 生命周期单独拥有：resume/restore 显示，
+suspend、stop 与 handoff 隐藏；即使尚无 Java Window root 也记录事实。变化在 owner 上
+重发最后完整几何及窗口事实，保留待布局请求；producer 仅从完整投影选择。退役空窗口
+不隐藏共用 synthetic root。Legacy 的窗口写入与选择路径保持原契约。

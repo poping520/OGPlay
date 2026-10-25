@@ -2321,3 +2321,18 @@ JavaTraversal owner 帧屏障及内容遍历完成后、Surface 交付前重新�
 保持原位置。投影提交与共同 presentation 发布分别诊断，拒绝仍保留原失败/旧完整发布协议。
 每窗口/原因首次输出、后续计数，弱身份随窗口退役/GC清理；旧Logger first_and_count 的
 首次 epoch 字段不能证明后续没有提交或重评估。未改变准入审计、ADR-0147及系统能力边界。
+
+### ADR-0162 / DVM-321：生命周期窗口可见事实（2026-10-26）
+
+JavaTraversal 的 ActivityRecord.visible 是 managed 窗口可见事实的唯一来源。resume/restore
+与 suspend/stop/handoff 更新它，不依赖 Window 根是否已经创建；创建根不得修改事实。
+owner collector 将事实随完整批次发布到 synthetic partition root，批内 View 的窗口位
+规范为继承根的中性值，Java visibility 仍逐节点受检。producer 与 holder 使用该完整
+投影的 IsVisible，继续核验挂载、身份及回调代次；不得因初始化已执行就激活 Surface。
+隐藏状态仍发布成功的几何，失败保留旧完整快照。Legacy 保持原路径。
+
+此为窗口事实发布契约收口，无组合/准入规则适用范围调整；ADR-0147 不变。
+
+窗口事实独立变化时，owner 可通过空节点窗口事实批次重发最后完整几何并推进
+epoch，不能消费待布局请求或收集尚未测量的 Java 子树；正常 owner 屏障仍负责这些
+Java 变化。隐藏窗口的 Surface 泵只退役 holder，不为销毁回调额外测量。

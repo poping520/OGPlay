@@ -63,7 +63,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   本层不补算 guest bounds；render/hit-test 消费同一完整窗口 epoch。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
-  当前 target、严格递增非零 epoch 的完整窗口批次。节点必须存在、唯一、全树连通且满足
+  当前 target、严格递增非零 epoch 的完整窗口几何批次或独立窗口事实批次。节点必须存在、唯一、全树连通且满足
   node/child/depth 上限；非法 geometry、visibility、坐标溢出、旧代/旧 revision/旧 epoch 明确失败。
   先在副本验证 hierarchy/id index，并按 screen(child)=screen(parent)+local(child)−parent.scroll_x/y
   同时解析双轴 screen_frame/screen_clip；每层用64位累加并拒绝32位坐标溢出，成功才整体替换；
@@ -171,3 +171,11 @@ UiTree 不持有播放器或 guest 引用，不依赖解码器。
 实验 ImageView 光栅以同一投影 epoch 的 Drawable intrinsic（含 density）计算五种缩放目标，
 不可变像素 backing 保留原尺寸用于采样；纯色 intrinsic=-1 仍填充内容区。HostLayout Legacy
 继续用原像素尺寸，renderer 不重新测量或改写投影几何。
+
+JavaTraversal managed 窗口批次显式携带 `window_visible`：CommitProjection 将该事实赋给
+synthetic root，并清除本批子节点的历史窗口位；Java visibility 仍逐节点提交。窗口隐藏
+与恢复同 hierarchy/geometry 原子发布，IsVisible 不绕过任何祖先。未提供该字段的通用
+投影调用保留原契约；managed collector 必须提供，Legacy SetWindowVisible 不变。
+
+`CommitProjection` 的空节点窗口事实批次仅为 ExternalProjection 重发最后完整几何与新窗口事实，推进
+epoch、原子替换快照，保留构建属性、target 与待布局工作；不测量或收集未完成 Java 几何。

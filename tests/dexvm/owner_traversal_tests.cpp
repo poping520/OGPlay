@@ -1081,8 +1081,8 @@ TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames wit
     }
 }
 
-TEST_CASE("DVM-318 late GLSurfaceView after NativeActivity takeSurface null starts renderer") {
-    for (const bool defer_mount : {false, true})
+TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface null starts renderer") {
+    for (const int mount : {0, 1, 2})
         for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
             ogplay::test::container_traversal::ContainerVm f(backend, false, true);
             f.context->ui_test_accessibility_disabled = true;
@@ -1151,12 +1151,41 @@ TEST_CASE("DVM-318 late GLSurfaceView after NativeActivity takeSurface null star
             bindings.launcher_descriptor = "Ltest/LateGlActivity;";
             f.context->activity_components.front().name = "test.LateGlActivity";
             bindings.application_descriptor = "Landroid/app/Application;";
-            ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+            const bool defer_mount = mount != 0;
+            if (mount == 2) {
+                bindings.launcher_descriptor = "Landroid/app/Activity;";
+                const auto type = f.linker.ResolveDescriptor("Landroid/app/Activity;");
+                const auto index = *f.linker.FindVtableIndex(type, "onCreate", "(Landroid/os/Bundle;)V");
+                auto& method = f.linker.MutableMethod(f.linker.Class(type).vtable[index]);
+                method.kind = MethodKind::intrinsic;
+                method.code.reset();
+                method.fast_code.reset();
+                method.implementation = [&, type](IntrinsicContext& call) {
+                    if (f.model.ObjectClass(call.receiver) != type) return VmValue::Void();
+                    // A launcher retires before it ever materializes a Window root.
+                    // Use the same command queue consumed by startActivity/finish.
+                    DexVmAndroidContext::ActivityCommand launch;
+                    launch.owner = call.receiver;
+                    launch.intent = f.New("Landroid/content/Intent;");
+                    launch.descriptor = "Ltest/LateGlActivity;";
+                    launch.component = "test.LateGlActivity";
+                    f.context->activity_commands.push_back(launch);
+                    DexVmAndroidContext::ActivityCommand finish;
+                    finish.kind = DexVmAndroidContext::ActivityCommand::Kind::finish;
+                    finish.owner = call.receiver;
+                    f.context->activity_commands.push_back(finish);
+                    return VmValue::Void();
+                };
+            }
             f.Static("Ltest/LateGlActivity;", "deferMount", "(I)V", {VmValue::Int(defer_mount ? 1 : 0)});
+            ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
             static_cast<void>(lifecycle.Start());
             REQUIRE(f.context->gl_surface_runtimes.size() == 1);
             const auto detached = f.context->gl_surface_runtimes.begin()->second;
             if (defer_mount) {
+                static_cast<void>(lifecycle.StepFrame());
+                CHECK(f.context->activity_stack.back().resumed);
+                CHECK(f.context->window_has_focus.load());
                 CHECK_FALSE(detached->surface_available);
                 CHECK(egl_requests == 0);
                 f.On(f.context->content_view, "addView", "(Landroid/view/View;)V", {VmValue::Ref(detached->view)});
@@ -1168,7 +1197,13 @@ TEST_CASE("DVM-318 late GLSurfaceView after NativeActivity takeSurface null star
             const auto node = FindViewUiNode(*f.context, state->view.Value());
             REQUIRE(node);
             REQUIRE(f.context->ui_tree.PublishedProjection()->Get(*node));
+            CAPTURE(mount);
+            CAPTURE(static_cast<int>(backend));
+            CHECK(f.context->ui_tree.Get(f.context->ui_tree.Root())->window_visible);
+            CHECK(f.context->ui_tree.Get(*f.context->activity_stack.back().window_root)->window_visible);
+            CHECK(f.context->ui_tree.Get(*node)->window_visible);
             CHECK(f.context->ui_tree.IsVisible(*node));
+            CHECK(f.context->gl_surface_renderer_view == state->view);
             CHECK(state->surface_available);
             CHECK(egl_requests == 1);
             CHECK(swaps >= 1);
@@ -1189,21 +1224,52 @@ TEST_CASE("DVM-318 late GLSurfaceView after NativeActivity takeSurface null star
                 else
                     CHECK(count == 1);
             }
+            if (swaps == 0) {
+                static_cast<void>(lifecycle.Stop());
+                continue;
+            }
+            CHECK(f.On(state->view, "getWindowVisibility", "()I").AsInt() == 0);
             auto frame = f.context->session->TakeLatestFrame();
-            REQUIRE(frame);
+            CHECK(frame.has_value());
+            if (!frame) {
+                static_cast<void>(lifecycle.Stop());
+                continue;
+            }
             const auto previous = frame->sequence;
+            const auto presented = lifecycle.ComposePresentedFrame(std::move(*frame));
+            CHECK(presented.sequence == previous);
             static_cast<void>(lifecycle.StepFrame());
             frame = f.context->session->TakeLatestFrame();
             REQUIRE(frame);
             CHECK(frame->sequence > previous);
+            CHECK(lifecycle.ComposePresentedFrame(std::move(*frame)).sequence > presented.sequence);
             const auto records = f.logger.Snapshot(std::nullopt, "ui.surface.");
             for (const auto category : {"ui.surface.producer", "ui.surface.projection", "ui.surface.callback",
                                         "ui.surface.holder", "ui.surface.glthread", "ui.surface.egl"})
                 CHECK(std::ranges::any_of(records, [&](const auto& record) {
                     return record.category == category && !record.fields.empty();
                 }));
+            static_cast<void>(lifecycle.Suspend());
+            CHECK_FALSE(f.context->activity_stack.back().visible);
+            CHECK(f.On(state->view, "getWindowVisibility", "()I").AsInt() == 4);
+            CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
+            CHECK_FALSE(f.context->ui_tree.PublishedProjection()->IsVisible(*node));
+            CHECK_FALSE(
+                f.context->active_surface_holders.contains(f.context->surface_holders.at(state->view.Value()).Value()));
+            const auto suspended_swaps = swaps;
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(swaps == suspended_swaps);
+            static_cast<void>(lifecycle.Resume());
+            static_cast<void>(lifecycle.StepFrame());
+            CHECK(f.context->gl_surface_renderer_view == state->view);
+            CHECK(f.context->ui_tree.PublishedProjection()->IsVisible(*node));
+            CHECK(swaps > suspended_swaps);
             CHECK(f.ledger.Unimplemented().empty());
             static_cast<void>(lifecycle.Stop());
+            CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
+            CHECK_FALSE(f.context->renderer.IsValid());
+            CHECK(f.context->active_surface_holders.empty());
+            CHECK(f.ledger.Unimplemented().empty());
         }
 }
 

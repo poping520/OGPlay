@@ -823,6 +823,9 @@ namespace {
 // holder. Surface liveness is the actual window/root and complete mount chain.
 bool SurfaceOwnerCurrent(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                          DexVmAndroidContext::UiOwnerIdentity identity) {
+    const auto projection = context.ui_tree.PublishedProjection();
+    const auto node = FindViewUiNode(context, identity.view.Value());
+    if (!projection || !node || !projection->IsVisible(*node)) return false;
     identity.revision = context.ui_content_revision;
     return IsAndroidUiOwnerCurrent(vm, context, identity, false);
 }
@@ -964,7 +967,9 @@ std::optional<std::string> DispatchHolderCallbacks(
         if (holder == window_holder.Value())
             return window_holder == context.window_surface_holder &&
                    window_generation == context.window_holder_generation &&
-                   (phase == SurfaceHolderPhase::destroyed || context.managed_host_surface_open);
+                   (phase == SurfaceHolderPhase::destroyed ||
+                    (context.managed_host_surface_open && context.ui_tree.PublishedProjection() &&
+                     context.ui_tree.PublishedProjection()->IsVisible(context.ui_tree.Root())));
         const auto found = identities.find(holder);
         if (found == identities.end()) return false;
         const auto binding = context.surface_holders.find(found->second.view.Value());
@@ -1227,8 +1232,12 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
         context.surface_event_dispatching || context.input_presentation || context.ui_layout_dispatching)
         return std::nullopt;
     const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
-    static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
-                                               AndroidUiTraversalPhase::ResolveAndNotifySizes));
+    const auto published = context.ui_tree.PublishedProjection();
+    // A hidden window only retires holders. Do not consume pending Java layout
+    // just to deliver destruction after a lifecycle visibility publication.
+    if (!published || published->IsVisible(published->Root()))
+        static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
+                                                   AndroidUiTraversalPhase::ResolveAndNotifySizes));
     context.surface_event_dispatching = true;
 
     struct Reset {
@@ -1258,7 +1267,9 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
                                             : "owner or visibility mismatch")}});
         }
     }
-    if (context.window_surface_callback.IsValid()) holders.push_back(context.window_surface_holder.Value());
+    const auto projection = context.ui_tree.PublishedProjection();
+    if (context.window_surface_callback.IsValid() && projection && projection->IsVisible(projection->Root()))
+        holders.push_back(context.window_surface_holder.Value());
     std::ranges::sort(holders);
     for (const auto holder : context.active_surface_holders) {
         const auto old = context.surface_owner_identities.find(holder);

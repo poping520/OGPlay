@@ -509,3 +509,53 @@
     iput v0, v2, Ltest/ScrollLeaf;->layouts:I
     return-void
 .end method
+
+.class public Ltest/ManagedSurfaceCallback;
+.super Ljava/lang/Object;
+.implements Landroid/view/SurfaceHolder$Callback;
+.field public sequence:I
+.field public frame:Landroid/graphics/Rect;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public surfaceCreated(Landroid/view/SurfaceHolder;)V
+.registers 4
+    iget v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    const/4 v1, 1
+    add-int/2addr v0, v1
+    iput v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    invoke-interface {v3}, Landroid/view/SurfaceHolder;->getSurfaceFrame()Landroid/graphics/Rect;
+    move-result-object v0
+    iput-object v0, v2, Ltest/ManagedSurfaceCallback;->frame:Landroid/graphics/Rect;
+    return-void
+.end method
+.method public surfaceChanged(Landroid/view/SurfaceHolder;III)V
+.registers 7
+    iget v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    const/4 v1, 2
+    add-int/2addr v0, v1
+    iput v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    invoke-interface {v3}, Landroid/view/SurfaceHolder;->getSurfaceFrame()Landroid/graphics/Rect;
+    move-result-object v0
+    iput-object v0, v2, Ltest/ManagedSurfaceCallback;->frame:Landroid/graphics/Rect;
+    return-void
+.end method
+.method public surfaceDestroyed(Landroid/view/SurfaceHolder;)V
+.registers 4
+    iget v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    const/4 v1, 3
+    add-int/2addr v0, v1
+    iput v0, v2, Ltest/ManagedSurfaceCallback;->sequence:I
+    invoke-interface {v3}, Landroid/view/SurfaceHolder;->getSurfaceFrame()Landroid/graphics/Rect;
+    move-result-object v0
+    iput-object v0, v2, Ltest/ManagedSurfaceCallback;->frame:Landroid/graphics/Rect;
+    return-void
+.end method

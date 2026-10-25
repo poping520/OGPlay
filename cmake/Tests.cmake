@@ -232,6 +232,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/button_traversal_tests.cpp
     tests/dexvm/edittext_traversal_tests.cpp
     tests/dexvm/scrollview_traversal_tests.cpp
+    tests/dexvm/surfaceview_traversal_tests.cpp
     tests/dexvm/scrollview_constructor_tests.cpp
     tests/dexvm/textview_traversal_tests.cpp
     tests/dexvm/paint_measure_tests.cpp

@@ -306,6 +306,13 @@ SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
 像素尺寸、destroyed 保留末值，旧 holder 不随新代更新；不从 View bounds 推导独立 buffer。
 setFixedSize 仅物理托管尺寸、保存请求，setSizeFromLayout 解除固定，不匹配独立几何失败。
+实验 SurfaceView 保留完整 ROM shape，onMeasure/isFixedSize 执行 ROM；三构造受审调用对应 View
+构造并初始化请求为 −1、setWillNotDraw(true)，getHolder 继续返回真实 managed holder。setFrame
+仅精确调用 ROM View 父协议，不执行 WMS updateWindow；WMS 相关字段/方法保留 failure。
+实验 holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1，正数只接受真实 managed
+buffer 尺寸；先校验双轴再原子写 Java 请求，改变时真实 requestLayout。setSizeFromLayout
+恢复两轴 −1。请求与 View 重排不改 buffer/Rect；回调前仍只发布实际 managed 尺寸。
+请求由 Java mRequestedWidth/Height 唯一持有，Impl 请求字段仅供 Legacy，不建实验镜像。
 SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 AttributeSet/三参数 defStyle
 不支持；注册 XML 沿 Context 构造及既有属性投影。层序唯一归 UiTree，setZOrderMediaOverlay/
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。

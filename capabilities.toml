@@ -1620,8 +1620,8 @@ note = "ADR-0116/0136、VID-1：VideoView 与 MediaPlayer 子类共用链接的 
 
 [dexvm.surface_view_lifecycle]
 status = "partial"
-test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/egl_facade_tests.cpp#SurfaceView null-attribute constructors; tests/dexvm/egl_facade_tests.cpp#SurfaceHolder frame"
-note = "DVM-90：按 AOSP 4.4.4 条件 attach/detach，初始只激活 live UiTree holder，动态子树形成独立 created/changed/destroyed 代次，回调用稳定快照；SurfaceView(Context,null) 复用 View 初始化，非空 AttributeSet 记账失败，三参数构造不支持；getSurfaceFrame 返回 holder 字段中的稳定 Rect。visibility、format/size 重建与 SurfaceFlinger 不在范围。"
+test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/egl_facade_tests.cpp#SurfaceView null-attribute constructors; tests/dexvm/egl_facade_tests.cpp#SurfaceHolder frame; tests/dexvm/surfaceview_traversal_tests.cpp"
+note = "Legacy 保持条件 attach/detach 与稳定 holder Rect；实验 DVM-302 保留 SurfaceView ROM shape，onMeasure/isFixedSize 执行 ROM，三构造及 managed holder 为受审接缝。非正 holder 请求映射 ROM −1，匹配 fixed 可测量、改变时 requestLayout，不匹配正数先失败；不由 bounds 推造 buffer。WMS/updateWindow、独立 buffer resize、SurfaceFlinger 未启用；完整生命周期接入待 VD-11。"
 
 [dexvm.surface_video_layers]
 status = "partial"

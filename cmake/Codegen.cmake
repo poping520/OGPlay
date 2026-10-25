@@ -92,6 +92,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-edittext.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-scroll-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-scroll.surface.json.gz"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-surface-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-surface.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-button.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-image.surface.json.gz"

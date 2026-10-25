@@ -1235,18 +1235,70 @@ dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm,
     return frame;
 }
 
+namespace {
+dx::VmObjectRef ManagedHolderView(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef holder) {
+    for (const auto& [view, candidate] : context.surface_holders)
+        if (candidate == holder) return dx::VmObjectRef{view};
+    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "SurfaceHolder has no current managed View"};
+}
+
+void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& context, std::int32_t width,
+                              std::int32_t height) {
+    // Managed holder 0 means layout, never ROM fixed=0. Canonicalize the old
+    // nonpositive layout requests to the exact ROM sentinel before publication.
+    if ((width > 0 && static_cast<std::uint32_t>(width) != context.surface_width) ||
+        (height > 0 && static_cast<std::uint32_t>(height) != context.surface_height)) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "independent Surface buffer geometry is unavailable"};
+    }
+    const auto view = ManagedHolderView(call.vm, context, call.receiver);
+    dx::IntrinsicContext view_call{call.vm, view, {}};
+    dx::IntrinsicCall fields(view_call);
+    width = width > 0 ? width : -1;
+    height = height > 0 ? height : -1;
+    const auto w = *context.surface_view_requested_width_field;
+    const auto h = *context.surface_view_requested_height_field;
+    if (fields.GetInt(w) != width || fields.GetInt(h) != height) {
+        // Both axes are validated before either field changes; no buffer/frame
+        // publication or geometry backfill is part of a measurement request.
+        fields.SetInt(w, width);
+        fields.SetInt(h, height);
+        static_cast<void>(CallAndroidMethod(call.vm, view, "requestLayout", "()V"));
+    }
+}
+}  // namespace
+
 void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
                                const dx::VmObjectRef holder) {
-    for (const auto& [name, actual] : std::array{
-            std::pair{"mRequestedWidth", context.surface_width}, std::pair{"mRequestedHeight", context.surface_height}}) {
-        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(holder), name, "I");
-        if (!field) continue;
-        const auto requested = static_cast<std::int32_t>(vm.Model().InstanceSlots(holder)[vm.Linker().Field(*field).slot].bits);
-        if (requested > 0 && static_cast<std::uint32_t>(requested) != actual) {
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "fixed Surface buffer differs from managed geometry"};
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto view = ManagedHolderView(vm, context, holder);
+        dx::IntrinsicContext call{vm, view, {}};
+        dx::IntrinsicCall fields(call);
+        for (const auto& [field, actual] :
+             std::array{std::pair{*context.surface_view_requested_width_field, context.surface_width},
+                        std::pair{*context.surface_view_requested_height_field, context.surface_height}}) {
+            const auto requested = fields.GetInt(field);
+            if (requested > 0 && static_cast<std::uint32_t>(requested) != actual) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "fixed Surface buffer differs from managed geometry"};
+            }
         }
-    }
+    } else
+        for (const auto& [name, actual] : std::array{std::pair{"mRequestedWidth", context.surface_width},
+                                                     std::pair{"mRequestedHeight", context.surface_height}}) {
+            const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(holder), name, "I");
+            if (!field) continue;
+            const auto requested =
+                static_cast<std::int32_t>(vm.Model().InstanceSlots(holder)[vm.Linker().Field(*field).slot].bits);
+            if (requested > 0 && static_cast<std::uint32_t>(requested) != actual) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "fixed Surface buffer differs from managed geometry"};
+            }
+        }
     constexpr auto max_extent =
         static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
     if (context.surface_width > max_extent || context.surface_height > max_extent) {
@@ -1352,27 +1404,42 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
     context->surface_holder_frame_field = builder.BoundInstanceField(
         "mSurfaceFrame", "Landroid/graphics/Rect;", dx::kAccPrivate);
-    const auto requested_width = builder.BoundInstanceField("mRequestedWidth", "I", dx::kAccPrivate);
-    const auto requested_height = builder.BoundInstanceField("mRequestedHeight", "I", dx::kAccPrivate);
-    builder.FinalMethod("setFixedSize", "(II)V", [context, requested_width, requested_height](dx::IntrinsicContext& call) {
-        const auto width = call.arguments[0].AsInt(), height = call.arguments[1].AsInt();
-        if ((width > 0 && static_cast<std::uint32_t>(width) != context->surface_width) ||
-            (height > 0 && static_cast<std::uint32_t>(height) != context->surface_height)) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "independent Surface buffer geometry is unavailable"};
-        }
-        dx::IntrinsicCall fields(call);
-        fields.SetInt(requested_width, width);
-        fields.SetInt(requested_height, height);
-        PublishSurfaceHolderFrame(call.vm, *context, call.receiver);
-        return dx::VmValue::Void();
-    });
-    builder.FinalMethod("setSizeFromLayout", "()V", [requested_width, requested_height](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall fields(call);
-        fields.SetInt(requested_width, 0);
-        fields.SetInt(requested_height, 0);
-        return dx::VmValue::Void();
-    });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        builder.FinalMethod("setFixedSize", "(II)V", [context](dx::IntrinsicContext& call) {
+            SetManagedSurfaceRequest(call, *context, call.arguments[0].AsInt(), call.arguments[1].AsInt());
+            return dx::VmValue::Void();
+        });
+        builder.FinalMethod("setSizeFromLayout", "()V", [context](dx::IntrinsicContext& call) {
+            SetManagedSurfaceRequest(call, *context, 0, 0);
+            return dx::VmValue::Void();
+        });
+    } else {
+        const auto requested_width = builder.BoundInstanceField("mRequestedWidth", "I", dx::kAccPrivate);
+        const auto requested_height = builder.BoundInstanceField("mRequestedHeight", "I", dx::kAccPrivate);
+        builder.FinalMethod("setFixedSize", "(II)V",
+                            [context, requested_width, requested_height](dx::IntrinsicContext& call) {
+                                const auto width = call.arguments[0].AsInt(), height = call.arguments[1].AsInt();
+                                if ((width > 0 && static_cast<std::uint32_t>(width) != context->surface_width) ||
+                                    (height > 0 && static_cast<std::uint32_t>(height) != context->surface_height)) {
+                                    if (auto* ledger = call.vm.Ledger())
+                                        ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+                                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                                          "independent Surface buffer geometry is unavailable"};
+                                }
+                                dx::IntrinsicCall fields(call);
+                                fields.SetInt(requested_width, width);
+                                fields.SetInt(requested_height, height);
+                                PublishSurfaceHolderFrame(call.vm, *context, call.receiver);
+                                return dx::VmValue::Void();
+                            });
+        builder.FinalMethod("setSizeFromLayout", "()V",
+                            [requested_width, requested_height](dx::IntrinsicContext& call) {
+                                dx::IntrinsicCall fields(call);
+                                fields.SetInt(requested_width, 0);
+                                fields.SetInt(requested_height, 0);
+                                return dx::VmValue::Void();
+                            });
+    }
     builder.FinalMethod("getSurfaceFrame", "()Landroid/graphics/Rect;",
         [context](dx::IntrinsicContext& call) {
             return dx::VmValue::Ref(GetSurfaceHolderFrame(
@@ -1428,10 +1495,52 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
-    builder.Constructor("(Landroid/content/Context;)V", SurfaceViewInitHandler(context));
-    builder.Constructor(
-        "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-        SurfaceViewInitHandler(context, true));
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto width = builder.BoundInstanceField("mRequestedWidth", "I", 0);
+        const auto height = builder.BoundInstanceField("mRequestedHeight", "I", 0);
+        context->surface_view_requested_width_field = width;
+        context->surface_view_requested_height_field = height;
+        for (const auto descriptor :
+             {"(Landroid/content/Context;)V", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+              "(Landroid/content/Context;Landroid/util/AttributeSet;I)V"}) {
+            builder.Constructor(descriptor, [context, width, height, descriptor](dx::IntrinsicContext& call) {
+                const auto parent = call.vm.Linker().FindDirectMethod(
+                    call.vm.Linker().ResolveDescriptor("Landroid/view/View;"), "<init>", descriptor);
+                auto args = std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)};
+                args.insert(args.end(), call.arguments.begin(), call.arguments.end());
+                const auto result = call.vm.Call(*parent, args);
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                dx::IntrinsicCall fields(call);
+                fields.SetInt(width, -1);
+                fields.SetInt(height, -1);
+                static_cast<void>(SurfaceHolderForView(call.vm, *context, call.receiver));
+                static_cast<void>(
+                    CallAndroidMethod(call.vm, call.receiver, "setWillNotDraw", "(Z)V", {dx::VmValue::Int(1)}));
+                return dx::VmValue::Void();
+            });
+        }
+        builder.OverrideMethod(
+            "setFrame", "(IIII)Z",
+            [](dx::IntrinsicContext& call) {
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+                const auto index = call.vm.Linker().FindVtableIndex(type, "setFrame", "(IIII)Z");
+                const auto parent = call.vm.Linker().Class(type).vtable.at(*index);
+                auto args = std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)};
+                args.insert(args.end(), call.arguments.begin(), call.arguments.end());
+                const auto result = call.vm.Call(parent, args);
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                return result.value;
+            },
+            dx::kAccProtected);
+    } else {
+        builder.Constructor("(Landroid/content/Context;)V", SurfaceViewInitHandler(context));
+        builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                            SurfaceViewInitHandler(context, true));
+    }
     builder.VirtualMethod("getHolder", "()Landroid/view/SurfaceHolder;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(SurfaceHolderForView(call.vm, *context, call.receiver));
     });

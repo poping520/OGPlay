@@ -2236,3 +2236,28 @@ owner收集前刷新producer开孔/叶像素，共同发布冻结视频帧与bit
 阶段注记须由trace审阅，未知原始格式/裸PC拒绝；签名改变一律needs_review且非零。
 不改变成员准入审计范围或ADR-0147，不扩WMS/透明Activity/多窗口系统。
 编码与沙盒证据见[DVM-310](../tasks/dexvm/DVM-310.md)，九场景由编排方外验并记录同单。
+
+### ADR-0160 / DVM-314：惰性 View 引用的输入边界（2026-10-25）
+
+View 基础 styleable 的 drawable 类别可进入有界投影，但仅启用固定 ROM 具名 ID
+可证明的引用；封存在 projected_references（name/resource_id/resource_type）中，
+package=1/type=8。Theme/TypedArray 只传递 terminal 引用及真实 resourceId，不加载或
+光栅未消费 drawable；实际系统皮肤加载仍按 ADR-0147 失败。未知类别/ID 不投影。
+输入清单记录 View→drawable；目前 ROM R.drawable 仅证明 btn_default。
+四个 scrollbar 具名绑定不在固定 JAR 中，且缺同 ROM framework-res.apk，因此该部分
+**未完成**；禁止用 SDK、别的 ROM、AOSP 排序或默认 null 填缺。详见 [DVM-314](../tasks/dexvm/DVM-314.md)。
+本修订不放宽原生值认证、未知失败或组合准入规则。
+
+### ADR-0162 / DVM-314：窗口 observer 与 Surface 新代（2026-10-25）
+
+managed-window adapter 按窗口稳定根持有一个 ROM ViewTreeObserver，作为 AttachInfo
+mTreeObserver 的有界替代，不构建 AttachInfo。未附着 observer 保存在 Java
+mFloatingTreeObserver，挂载时经 ROM merge/kill 转移监听器并清 floating 字段；owner
+帧的 global layout 经窗口 observer 的 ROM dispatchOnGlobalLayout 一次派发。
+Java mSystemUiVisibility 保留请求，附着改变经父 recomputeViewAttributes adapter；
+宿主无系统栏/WMS，不生成系统栏回调。Legacy 协议保持。
+
+Surface created 激活新代先清上一代尺寸去重事实，必须随后 changed，即使尺寸同值；
+去重仅适用于同一未重建 Surface。实际 buffer/fixed-size 限制、逐回调代次重验不变。
+构造检查仅补入实际 WebView 的受审父构造路径，AbsoluteLayout 排版继续明确失败。
+上述变化没有组合/准入审计规则范围调整；端到端通过仍取决于资源输入及外验。

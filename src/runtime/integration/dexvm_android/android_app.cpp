@@ -979,6 +979,8 @@ std::optional<std::string> DispatchHolderCallbacks(
             }
             if (hidden) continue;
             if (context.active_surface_holders.contains(holder_handle)) continue;
+            // A new Surface must receive changed even when its buffer size is unchanged.
+            if (java) context.surface_callback_sizes.erase(holder_handle);
             // AOSP sets mSurfaceCreated before invoking callbacks.
             context.active_surface_holders.insert(holder_handle);
             if (java) {
@@ -1325,6 +1327,7 @@ std::optional<std::string> AttachSurfaceViewSubtree(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const ui::UiNodeId subtree) {
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        android_intrinsics::MergeManagedViewTreeObservers(vm, context, ViewObjectForUiNode(context, subtree));
         context.surface_traversal_pending.insert(subtree);
         return std::nullopt;
     }

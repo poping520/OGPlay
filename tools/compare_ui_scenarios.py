@@ -96,7 +96,7 @@ def normalize_fault(case, result, base):
     # Restrict extraction to the first fatal frontend report. Later cleanup
     # exceptions cannot replace an unrecognized earlier CPU/native failure.
     raw_log = log
-    fatal = re.search(r'^error[^\n]*frontend\.run_apk\.[^ \n]+ ', log, re.MULTILINE)
+    fatal = re.search(r'^error[^\n]*frontend\.run_apk\.[^ \n]+ |^error \[ogplay\]\r?\n', log, re.MULTILINE)
     if fatal:
         log = log[fatal.start():]
         following = re.search(r'\nerror[^\n]* ', log)
@@ -124,6 +124,8 @@ def normalize_fault(case, result, base):
     # Keep the original exception, exact member descriptor, message dimensions and
     # counts. Only native PCs explicitly expressed relative to a module normalize.
     java = re.search(r'exception: (L[^;\n]+;)[\r\n]+\s*message: ([^\n]+)', log)
+    if java is None:
+        java = re.search(r'scheduled callback raised: (L[^;\n]+;): ([^\n]+)', log)
     native = re.search(r'(?:native fault|guest fault): ([^\n]+?) module=([^ /\n]+) relative_pc=(0x[0-9a-fA-F]+)', log)
     if java and (not native or java.start() < native.start()):
         message = java[2].strip()
@@ -141,13 +143,34 @@ def normalize_fault(case, result, base):
     elif native:
         signature = dict(category='native', module=native[2], relative_pc=hex(int(native[3], 16)),
                          error=native[1])
+    elif (entry := re.search(r'DexVM native invocation failed:\n\s+class=([^\s]+)\n\s+method=([^\s]+)\n\s+descriptor=(\([^\n]+)\n', log)):
+        # These reports prove the exact JNI entry, but contain bare ASLR PCs.
+        # Preserve the entire first report as opaque evidence; never claim a
+        # module-relative native identity or automatically pass equal reports.
+        if not re.search(r'stop: +pc=0x[0-9a-f]+ state=a32 reason=memory_fault\(4\)', log) or not re.search(
+                r'fault: +address=0x[0-9a-f]+ access=(?:read|write|execute)\(\d+\) reason=\w+\(\d+\)', log):
+            raise ValueError('unrecognized native invocation report')
+        signature = dict(category='native_entry_report', member='L' + entry[1] + ';->' + entry[2] + entry[3],
+                         report_sha256=hashlib.sha256(log.encode('utf-8')).hexdigest(), requires_review=True)
+    elif (fatal is None and failed is not None and phase == 'frame' and
+          result['firstFailure'] == f'{failed}: checkpoint {failed} wall-time budget exceeded'):
+        checkpoint = next(c for c in result['checkpoints'] if c['id'] == failed)
+        frames = [a for a in checkpoint['assertions'] if a['type'] == 'frame']
+        no_fault = [a for a in checkpoint['assertions'] if a['type'] == 'no_guest_fault']
+        if (checkpoint['error'] != f'checkpoint {failed} wall-time budget exceeded' or
+                len(frames) != 1 or len(no_fault) != 1 or no_fault[0]['passed'] is not True or
+                no_fault[0]['actual'] != {'guestFault': None} or frames[0]['passed'] is not False or
+                type(frames[0]['actual'].get('sequence')) is not int or frames[0]['actual']['sequence'] < 0 or
+                re.search(r'uncaught Java exception|exception:|native fault|guest fault|^error[^\n]*frontend\.run_apk\.|^error \[ogplay\]', log, re.MULTILINE)):
+            raise ValueError('timeout lacks fault-free checkpoint frame evidence')
+        signature = dict(category='timeout', checkpoint=failed, presented_frames=frames[0]['actual']['sequence'])
     else:
         raise ValueError('unrecognized first fault; manual normalizer review required')
     errors = [result['firstFailure'] or '', result['shutdown']['error'] or '']
     exits = [int(code) for error in errors for code in re.findall(r'exited with status (-?\d+)', error)]
     if len(set(exits)) > 1:
         raise ValueError('contradictory exit codes')
-    timeout = any(re.search(r'timeout|timed out|wall-time budget exhausted', e, re.IGNORECASE) for e in errors)
+    timeout = any(re.search(r'timeout|timed out|wall-time budget (?:exhausted|exceeded)', e, re.IGNORECASE) for e in errors)
     if not exits and not timeout:
         raise ValueError('missing process exit/timeout evidence')
     return dict(signature=signature, phase_name=phase, phase_rank=PHASES.index(phase),
@@ -208,6 +231,8 @@ def compare(old, new):
     b, br = new
     reasons = []
     review = []
+    if any(case.get('fault') and case['fault']['signature'].get('requires_review') for case in (a, b)):
+        review.append('native entry report lacks module-relative PC; manual review required')
     if a['inputs'] != b['inputs'] or ar['profile'] != br['profile']:
         return {'verdict': 'invalid', 'reasons': ['frozen inputs differ']}
     successful = []
@@ -302,6 +327,32 @@ def self_test():
             pass
         else:
             raise AssertionError('bare PC admitted')
+        source = copy.deepcopy(failed['0'][0])
+        result = copy.deepcopy(failed['0'][1])
+        source['fault_source'].update(phase='Activity', checkpoint=None)
+        source['fault_source']['log'] = ref('startup.log', 'error [ogplay]\n  onCreate failed: uncaught Java exception\n'
+            '    exception: Ljava/lang/UnsatisfiedLinkError;\n'
+            '    message: intrinsic handler is not implemented: Landroid/view/View;.getViewTreeObserver()Landroid/view/ViewTreeObserver;\n')
+        fault = normalize_fault(source, result, base)
+        assert fault['phase_name'] == 'Activity' and fault['signature']['category'] == 'java'
+        result['checkpoints'] = [checkpoint('baseline', False)]
+        result['checkpoints'][0].update(error='checkpoint baseline wall-time budget exceeded', assertions=[
+            dict(type='frame', passed=False, actual={'sequence': 0}, expected={'minimum_sequence': 1800}),
+            dict(type='no_guest_fault', passed=True, actual={'guestFault': None}, expected={})])
+        result['firstFailure'] = 'baseline: checkpoint baseline wall-time budget exceeded'
+        result['shutdown']['error'] = 'OGPlay required forced process cleanup'
+        source['fault_source'].update(phase='frame', checkpoint='baseline', log=ref('timeout.log', 'info window running\n'))
+        fault = normalize_fault(source, result, base)
+        assert fault['signature'] == dict(category='timeout', checkpoint='baseline', presented_frames=0)
+        for malformed in ['error [ogplay]\n  unknown failure', 'native fault: read pc=0x1234',
+                          'exception: Ljava/lang/Exception;\n']:
+            source['fault_source']['log'] = ref('malformed.log', malformed)
+            try:
+                normalize_fault(source, result, base)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('unknown fault admitted as timeout')
     print('UI scenario comparison: synthetic Result v1 pass/same/earlier/changed and native normalization passed')
     return 0
 

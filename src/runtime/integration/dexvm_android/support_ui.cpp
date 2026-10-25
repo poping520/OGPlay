@@ -154,8 +154,10 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         const auto text = vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
         const auto image = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
         const auto video = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");
+        const auto web = vm.Linker().ResolveDescriptor("Landroid/webkit/WebView;");
         // TextView uses its reviewed pure leaf adapter, never host tree layout.
         if (kind != ui::UiClass::View &&
+            !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(web, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::VideoView && vm.Linker().IsAssignable(video, vm.Model().ObjectClass(view))) &&
             !((kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton) &&
               vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&

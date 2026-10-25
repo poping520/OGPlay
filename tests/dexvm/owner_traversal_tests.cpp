@@ -738,3 +738,91 @@ TEST_CASE("DVM-310 presentation freezes producer layers bitmap backing and non-o
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-314 ROM window observers merge floating listeners and dispatch once per window") {
+    using ogplay::test::container_traversal::ContainerVm;
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = 100;
+        f.context->surface_height = 80;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto listener = f.New("Ltest/GlobalLayoutCounter;");
+        const auto other_listener = f.New("Ltest/GlobalLayoutCounter;");
+        const auto observer = [&](VmObjectRef object) {
+            return f.On(object, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;").ref;
+        };
+        const auto floating = observer(view), group_floating = observer(group);
+        const auto roots =
+            f.vm.ProtectReferences(std::array{owner, group, view, listener, other_listener, floating, group_floating});
+        CHECK(observer(view) == floating);
+        CHECK(f.On(floating, "isAlive", "()Z").AsInt() == 1);
+        f.On(floating, "addOnGlobalLayoutListener", "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             {VmValue::Ref(listener)});
+        f.On(group_floating, "addOnGlobalLayoutListener", "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             {VmValue::Ref(other_listener)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        CHECK(observer(view) == floating);  // detached hierarchy retains individual floating observers
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        const auto window = observer(group);
+        CHECK(observer(view) == window);
+        CHECK(window != floating);
+        CHECK(f.On(floating, "isAlive", "()Z").AsInt() == 0);
+        CHECK(f.On(group_floating, "isAlive", "()Z").AsInt() == 0);
+        const auto dead =
+            f.OnOutcome(floating, "addOnGlobalLayoutListener",
+                        "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V", {VmValue::Ref(listener)});
+        REQUIRE(dead.exception.IsValid());
+        CHECK(f.linker.Class(dead.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        const auto count = [&](VmObjectRef value) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(value), "calls", "I");
+            REQUIRE(field);
+            return f.model.InstanceSlots(value)[f.linker.Field(*field).slot].bits;
+        };
+        DispatchAndroidGlobalLayout(f.vm, *f.context);
+        CHECK(count(listener) == 1);
+        CHECK(count(other_listener) == 1);
+        f.On(window, "removeOnGlobalLayoutListener", "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             {VmValue::Ref(listener)});
+        DispatchAndroidGlobalLayout(f.vm, *f.context);
+        CHECK(count(listener) == 1);
+        CHECK(count(other_listener) == 2);
+        f.On(view, "setSystemUiVisibility", "(I)V", {VmValue::Int(0x1706)});
+        CHECK(f.On(view, "getSystemUiVisibility", "()I").AsInt() == 0x1706);
+        const auto system_field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mSystemUiVisibility", "I");
+        REQUIRE(system_field);
+        CHECK(f.model.InstanceSlots(view)[f.linker.Field(*system_field).slot].bits == 0x1706);
+        f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        const auto detached = observer(view);
+        CHECK(detached != window);
+        CHECK(f.On(detached, "isAlive", "()Z").AsInt() == 1);
+        f.On(view, "setSystemUiVisibility", "(I)V", {VmValue::Int(7)});
+        CHECK(f.On(view, "getSystemUiVisibility", "()I").AsInt() == 7);
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto trace = f.vm.Trace("", 10000);
+        CHECK(std::ranges::count_if(trace, [](const auto& e) {
+                  return e.class_descriptor == "Landroid/view/ViewTreeObserver;" &&
+                         e.method_name == "dispatchOnGlobalLayout";
+              }) == 2);
+    }
+}
+
+TEST_CASE("DVM-314 reviewed WebView construction retains explicit AbsoluteLayout measure boundary") {
+    using ogplay::test::container_traversal::ContainerVm;
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto view = f.New("Landroid/webkit/WebView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        CHECK(f.On(view, "getSettings", "()Landroid/webkit/WebSettings;").ref.IsValid());
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto outcome =
+            f.OnOutcome(view, "measure", "(II)V", {VmValue::Int(0x40000064), VmValue::Int(0x40000050)});
+        REQUIRE(outcome.exception.IsValid());
+        CHECK(outcome.exception_message.find("onMeasure") != std::string::npos);
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}

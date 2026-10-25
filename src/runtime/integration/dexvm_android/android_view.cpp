@@ -2795,10 +2795,22 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("onFinishInflate", "()V", [](dx::IntrinsicContext&) {
         return dx::VmValue::Void();
     }, dx::kAccProtected);
-    builder.VirtualMethod("setSystemUiVisibility", "(I)V",
-        [system_ui_visibility](dx::IntrinsicContext& context) {
-            dx::IntrinsicCall(context).SetInt(
-                system_ui_visibility, context.arguments[0].AsInt());
+    builder.VirtualMethod(
+        "setSystemUiVisibility", "(I)V", [context, system_ui_visibility, managed_attached](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall fields(call);
+            const auto value = call.arguments[0].AsInt();
+            if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                if (fields.GetInt(system_ui_visibility) == value) return dx::VmValue::Void();
+                fields.SetInt(system_ui_visibility, value);
+                if (managed_attached(call)) {
+                    const auto parent = fields.GetRef(context->view_java_hierarchy_fields->parent);
+                    if (parent.IsValid())
+                        static_cast<void>(CallAndroidMethod(call.vm, parent, "recomputeViewAttributes",
+                                                            "(Landroid/view/View;)V",
+                                                            {dx::VmValue::Ref(call.receiver)}));
+                }
+            } else
+                fields.SetInt(system_ui_visibility, value);
             return dx::VmValue::Void();
         });
     builder.VirtualMethod("getSystemUiVisibility", "()I",
@@ -2816,6 +2828,8 @@ Decl Declare_android_view_View(const Context& context) {
                           [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
     builder.VirtualMethod("getViewTreeObserver", "()Landroid/view/ViewTreeObserver;",
                           [context](dx::IntrinsicContext& call) {
+                              if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+                                  return dx::VmValue::Ref(ManagedViewTreeObserver(call.vm, *context, call.receiver));
                               auto& observer = context->view_tree_observers[call.receiver.Value()];
                               if (!observer.IsValid()) {
                                   observer = call.vm.NewIntrinsicInstance("Landroid/view/ViewTreeObserver;");
@@ -3050,6 +3064,22 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
             fields.SetInt(tokens.last_touch_index, -1);
             return dx::VmValue::Void();
         });
+        builder.VirtualMethod(
+            "onViewAdded", "(Landroid/view/View;)V",
+            [context](dx::IntrinsicContext& call) {
+                MergeManagedViewTreeObservers(call.vm, *context, call.arguments[0].ref);
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+        builder.VirtualMethod(
+            "recomputeViewAttributes", "(Landroid/view/View;)V", [context](dx::IntrinsicContext& call) {
+                // No system bars or WMS exist on this managed-window platform.
+                // The request is retained in the actual Java View field; no system callback is synthesized.
+                if (call.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                          "Window attributes require owner thread"};
+                return dx::VmValue::Void();
+            });
         const auto cancel_target = [context](bool touch) {
             return dx::IntrinsicHandler([context, touch](dx::IntrinsicContext& call) {
                 if (touch && call.arguments[0].ref.IsValid()) ++context->ui_mount_generations[call.arguments[0].ref];
@@ -3297,6 +3327,8 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewTreeObserver(const Context& context) {
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        return dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;").Build();
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/ViewTreeObserver;", "Ljava/lang/Object;");
     builder.FinalMethod("addOnGlobalLayoutListener",
         "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
@@ -4138,6 +4170,15 @@ bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 }
 
 void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto root = AndroidUiTraversalRoot(vm, context);
+        if (!root.IsValid()) return;
+        android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
+        const auto observer = android_intrinsics::ManagedViewTreeObserver(vm, context, root);
+        const auto protection = vm.ProtectReferences(std::array{root, observer});
+        static_cast<void>(android_intrinsics::CallAndroidMethod(vm, observer, "dispatchOnGlobalLayout", "()V"));
+        return;
+    }
     std::vector<dexvm::VmObjectRef> callbacks;
     for (const auto& [view, observer] : context.view_tree_observers) {
         const auto node = FindViewUiNode(context, view);
@@ -4217,5 +4258,82 @@ Decl Declare_android_view_LayoutInflater_BlinkLayout(const Context&) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "blink layout animation is unsupported"};
         });
     return std::move(builder).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+dx::VmObjectRef ObserverWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    dx::IntrinsicContext call{vm, view, {}};
+    dx::IntrinsicCall fields(call);
+    for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+        if (view == AndroidUiTraversalRoot(vm, context)) return view;
+        for (const auto& record : context.activity_stack)
+            if (record.java_root.IsValid() && record.java_root == view) return view;
+        view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
+    }
+    return dx::VmObjectRef{};
+}
+
+dx::Slot& FloatingObserver(dx::Interpreter& vm, dx::VmObjectRef view) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(view), "mFloatingTreeObserver",
+                                                      "Landroid/view/ViewTreeObserver;");
+    if (!field || vm.Linker().Field(*field).is_unimplemented)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Missing paired floating observer field"};
+    return vm.Model().InstanceSlots(view)[vm.Linker().Field(*field).slot];
+}
+
+dx::VmObjectRef NewRomObserver(dx::Interpreter& vm) {
+    const auto object = vm.NewIntrinsicInstance("Landroid/view/ViewTreeObserver;");
+    const auto roots = vm.ProtectReferences(std::array{object});
+    const auto method = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "()V");
+    const auto outcome = vm.Call(*method, std::array{dx::VmValue::Ref(object)});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+    return object;
+}
+}  // namespace
+
+dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window observer requires owner thread"};
+    const auto roots = vm.ProtectReferences(std::array{view});
+    const auto root = ObserverWindowRoot(vm, context, view);
+    if (!root.IsValid()) {
+        auto observer = dx::VmObjectRef(FloatingObserver(vm, view).bits);
+        if (!observer.IsValid()) {
+            observer = NewRomObserver(vm);
+            FloatingObserver(vm, view) = {observer.Value(), dx::SlotTag::ref};
+        }
+        return observer;
+    }
+    auto observer = context.view_tree_observers[root.Value()];
+    if (!observer.IsValid()) {
+        observer = NewRomObserver(vm);
+        context.view_tree_observers[root.Value()] = observer;
+    }
+    const auto floating = dx::VmObjectRef(FloatingObserver(vm, view).bits);
+    if (floating.IsValid()) {
+        const auto protection = vm.ProtectReferences(std::array{observer, floating});
+        static_cast<void>(CallAndroidMethod(vm, observer, "merge", "(Landroid/view/ViewTreeObserver;)V",
+                                            {dx::VmValue::Ref(floating)}));
+        FloatingObserver(vm, view) = {0, dx::SlotTag::ref};
+    }
+    return observer;
+}
+
+void MergeManagedViewTreeObservers(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef subtree) {
+    if (!subtree.IsValid() || !ObserverWindowRoot(vm, context, subtree).IsValid()) return;
+    const auto roots = vm.ProtectReferences(std::array{subtree});
+    if (FloatingObserver(vm, subtree).bits) static_cast<void>(ManagedViewTreeObserver(vm, context, subtree));
+    const auto group = vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;");
+    if (!vm.Linker().IsAssignable(group, vm.Model().ObjectClass(subtree))) return;
+    const auto count = CallAndroidMethod(vm, subtree, "getChildCount", "()I").AsInt();
+    for (int index = 0; index < count; ++index) {
+        const auto child =
+            CallAndroidMethod(vm, subtree, "getChildAt", "(I)Landroid/view/View;", {dx::VmValue::Int(index)}).ref;
+        MergeManagedViewTreeObservers(vm, context, child);
+    }
 }
 }  // namespace ogplay::runtime::android_intrinsics

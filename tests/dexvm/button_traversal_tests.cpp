@@ -327,7 +327,7 @@ TEST_CASE("DVM-297 Button default theme fails actual unsupported requests") {
             CHECK(failed.exception.IsValid());
             INFO(defaults, failed.exception_message);
             CHECK(failed.exception_message.find(defaults == 1   ? "scrollbar"
-                                                : defaults == 2 ? "btn_default"
+                                                : defaults == 2 ? "leaf Drawable requires APK bitmap or scalar color"
                                                                 : "primary_text_light") != std::string::npos);
             CHECK_FALSE(f.ledger.Unimplemented().empty());
         }

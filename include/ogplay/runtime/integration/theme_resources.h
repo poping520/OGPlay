@@ -83,6 +83,7 @@ private:
     std::map<std::string, std::string, std::less<>> unregistered_;
     std::map<ThemeToken, State> themes_;
     std::set<std::uint32_t> drawable_attributes_;
+    std::set<std::uint32_t> projected_reference_ids_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

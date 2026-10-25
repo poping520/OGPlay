@@ -428,3 +428,7 @@ holder 分型，不引入系统附着或 WMS；详细边界见 dexvm_android/MOD
 JavaTraversal共同发布冻结逐窗口完整投影、视频像素与bitmap版本；session视频/UI/modal
 消费者显式共享同一lease，不在consumer读取当前producer/绑定表。窗口退役只清构建
 身份，旧不可变presentation可继续保留；缺匹配新窗口投影时拒绝替换。
+
+有界主题投影可携带经过封存的 projected_references；provider 严查 drawable 名称、
+package/type 与数量，只保留 terminal 引用/resourceId，不获得系统皮肤加载或光栅信用。
+缺固定 ROM 具名绑定仍明确失败，详见 dexvm_android MODULE。

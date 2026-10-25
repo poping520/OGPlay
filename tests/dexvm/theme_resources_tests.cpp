@@ -236,8 +236,9 @@ TEST_CASE("DVM-288 generated theme registration and three-state values are expli
     r.Apply(token, 0x01030005, true, table);
     CHECK_FALSE(r.Attribute(token, 0x010100d5, true, table));  // padding: certified absent
     CHECK(r.Attribute(token, 0x01010063, true, table)->Slots() == std::array<std::uint32_t, 6>{5, 0x0a01, 1, 0, 0, 0});
-    CHECK_THROWS(
-        static_cast<void>(r.Attribute(token, 0x01010064, true, table)));  // original scrollbar drawable, not absent
+    CHECK_THROWS_WITH_AS(static_cast<void>(r.Attribute(token, 0x01010064, true, table)),
+                         "unsupported projected value: @android:drawable/scrollbar_handle_horizontal",
+                         std::runtime_error);
     CHECK(r.Attribute(token, 0x01010066, true, table)->type == 1);        // @null remains reference in theme
     CHECK_THROWS(static_cast<void>(r.Attribute(token, 0x0101ffff, true, table)));
     CHECK_THROWS(r.Apply(token, 0x0103ffff, true, table));
@@ -2128,5 +2129,51 @@ TEST_CASE("DVM-296 ImageButton XML and code honor real imageButtonStyle and expl
             CHECK(f.On(view, "getMeasuredHeight", "()I").AsInt() == 1);
         }
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-314 lazy reviewed drawable references retain unsupported scrollbar boundary") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        {
+            ContainerVm bad(backend);
+            const auto bad_owner = bad.New("Landroid/app/Activity;");
+            ogplay::test::AttachViewTestContext(bad.vm, bad_owner);
+            const auto object = bad.vm.NewIntrinsicInstance("Landroid/view/View;");
+            const auto method = bad.linker.FindDirectMethod(bad.model.ObjectClass(object), "<init>",
+                                                            "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
+            REQUIRE(method);
+            const auto rejected = bad.vm.Call(
+                *method, std::array{VmValue::Ref(object), VmValue::Ref(bad_owner), VmValue::Ref(VmObjectRef{})});
+            REQUIRE(rejected.exception.IsValid());
+            CHECK(rejected.exception_message ==
+                  "unsupported projected value: @android:drawable/scrollbar_handle_horizontal");
+        }
+        ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->arsc = Table(
+            {Style(0x7f020004, 0x01030005, {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x010100d4, 1, 0, {}}}),
+             Style(0x7f020005, 0, {{0x010100d4, 1, 0x01080004, {}}})});
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        // Only IDs proven by the fixed ROM are enabled. This is R.drawable.btn_default,
+        // already demanded by the View background slot of the default Button style.
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+                                {VmValue::Ref(owner), VmValue::Ref(VmObjectRef{})});
+        REQUIRE(view.IsValid());
+        const auto theme = f.On(owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
+        f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020005), VmValue::Int(1)});
+        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+        f.model.SetPrimitiveElement(attrs, 0, 0x010100d4);
+        const auto array =
+            f.On(owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, theme, attrs, array});
+        CHECK(f.On(array, "getResourceId", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() == 0x01080004);
+        CHECK(f.context->ui_drawables.empty());
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto failed =
+            f.OnOutcome(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK_FALSE(failed.exception_message.empty());
     }
 }

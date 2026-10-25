@@ -303,6 +303,11 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                                           {target.metrics.width, target.metrics.height},
                                           ui::Visibility::Visible,
                                           {}}}};
+    // No per-View construction cache owns window visibility. The synthetic
+    // partition root carries the Activity lifecycle fact for the whole batch.
+    projection.window_visible = context.activity_stack.empty();
+    for (const auto& record : context.activity_stack)
+        if (record.object == context.activity) projection.window_visible = record.visible;
     std::set<dexvm::VmObjectRef> seen;
     const auto collect = [&](auto&& self, dexvm::VmObjectRef view, dexvm::VmObjectRef expected_parent,
                              ui::UiNodeId parent, std::size_t depth) -> void {
@@ -441,6 +446,17 @@ std::string DescribeProducer(dexvm::Interpreter& vm, DexVmAndroidContext& contex
                          " root=" + std::to_string(root.Value()) +
                          " visible=" + std::to_string(node && context.ui_tree.IsVisible(*node)) +
                          " selected=" + std::to_string(context.gl_surface_renderer_view == producer);
+    result += " projection_chain=[";
+    auto projected = node;
+    for (std::size_t depth = 0; projection && projected && depth <= ui::UiTree::kMaxDepth; ++depth) {
+        const auto* state = projection->Get(*projected);
+        if (!state) break;
+        result += "{node=" + std::to_string(projected->Value()) +
+                  ",window_visible=" + std::to_string(state->window_visible) +
+                  ",visibility=" + std::to_string(static_cast<int>(state->visibility)) + "}";
+        projected = state->parent;
+    }
+    result += "]";
     if (runtime != context.gl_surface_runtimes.end()) {
         const auto& state = *runtime->second;
         result += " owner=" + std::to_string(state.owner.Value()) +

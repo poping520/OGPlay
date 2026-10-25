@@ -418,7 +418,8 @@ GC sweep 清理对应根与请求；不进入 session 强根，完整投影独�
 DVM-308：JavaTraversal 帧遍历由 lifecycle owner 在输入前、mutation 批后及 Surface 回调前
 调度；重复屏障不推进逻辑 tick，尺寸通知由 ROM layout 唯一派发。纯绘制重新冻结投影，
 Compose 只消费完整快照、不进入 guest。managed-window adapter 不创建 AttachInfo/IME/WMS；
-Activity 窗口记录关联 Java 内容根，UiTree 不附着第二棵 guest 层级。Legacy 时序保持。
+Activity 窗口记录关联 Java 内容根并独占生命周期可见事实，该事实随 owner 完整投影发布；
+producer/holder 使用同一快照的可见性。UiTree 不附着第二棵 guest 层级，Legacy 时序保持。
 
 JavaTraversal owner 事件由 AndroidInputEvent 保留共同快照，GC 根覆盖未终止捕获的 Java
 窗口/父链；owner 帧屏障统一泵送 managed Surface，回调后重验代次。窗口 holder 与 View

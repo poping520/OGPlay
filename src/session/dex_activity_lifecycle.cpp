@@ -474,6 +474,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (bindings_.flush_persistent_state) {
                 bindings_.flush_persistent_state();
             }
+            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+                SetActivityWindowVisible(bindings_.context->activity, false);
+                runtime::PublishAndroidPresentation(*bindings_.context);
+                if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), *bindings_.context))
+                    Fail(*error);
+                ReevaluateContentRenderer();
+            }
             suspended_ = true;
             if (bindings_.diagnostics) {
                 bindings_.diagnostics->SetLifecyclePhase(
@@ -498,6 +505,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             Fail("dex_activity lifecycle cannot resume in this state");
         }
         try {
+            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                SetActivityWindowVisible(bindings_.context->activity, true);
             CallActivity("onResume", "()V", {});
             SetWindowFocus(true);
             if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
@@ -1077,6 +1086,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (transitioning() || runtime::SessionExitRequested(context)) return;
         DeliverActivityResults();
         if (!transitioning() && !runtime::SessionExitRequested(context)) {
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                SetActivityWindowVisible(context.activity, true);
             CallActivity("onResume", "()V", {});
             activity_resumed_ = true;
             context.activity_stack.back().resumed = true;
@@ -1101,9 +1112,30 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
             [&](const auto& record) { return record.object == activity; });
-        if (found == context.activity_stack.end() || !found->window_root || found->visible == visible) return;
+        const bool java = context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal;
+        if (found == context.activity_stack.end() || (!java && !found->window_root) || found->visible == visible)
+            return;
         found->visible = visible;
-        context.ui_tree.SetWindowVisible(*found->window_root, visible);
+        if (java) {
+            // Publish the host-owned fact without consuming pending Java layout
+            // requests (focus loss/gain must still coalesce at the next barrier).
+            const auto previous = context.ui_tree.PublishedProjection();
+            if (activity == context.activity && previous && found->projection == previous) {
+                context.ui_tree.CommitProjection(
+                    {*context.ui_tree.ProjectionTarget(), context.ui_measure_epoch + 1, {}, visible});
+                const auto projection = context.ui_tree.PublishedProjection();
+                context.ui_measure_epoch = projection->ProjectionEpoch();
+                if (auto schedule = context.ui_window_schedules.find(found->java_root);
+                    schedule != context.ui_window_schedules.end() && schedule->second.published == previous)
+                    schedule->second.published = projection;
+                found->projection = projection;
+            } else {
+                context.ui_tree.MarkDrawDirty(context.ui_tree.Root());
+            }
+        } else {
+            context.ui_tree.SetWindowVisible(*found->window_root, visible);
+        }
+        if (!found->window_root) return;
         const auto& tree =
             context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal && found->projection
                 ? *found->projection
@@ -1184,7 +1216,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             } else if (const auto error = runtime::DetachSurfaceViewSubtree(
                 vm, context, runtime::ActivityContentRoot(context))) Fail(*error);
             StopRendererThread();
-            context.ui_tree.SetWindowVisible(runtime::ActivityContentRoot(context), false);
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                SetActivityWindowVisible(context.activity, false);
+            else
+                context.ui_tree.SetWindowVisible(runtime::ActivityContentRoot(context), false);
             context.content_view = dx::VmObjectRef{};
             context.focused_edit_text = dx::VmObjectRef{};
             context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
@@ -1416,6 +1451,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         refresh();
         CompleteWindowHandoffs();
         if (activity_started_ && !activity_resumed_ && !runtime::SessionExitRequested(context)) {
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                SetActivityWindowVisible(context.activity, true);
             CallActivity("onResume", "()V", {});
             activity_resumed_ = true;
         }
@@ -1456,15 +1493,18 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
+        const bool java = context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal;
+        const auto projection = java ? context.ui_tree.PublishedProjection() : nullptr;
+        const auto& tree = projection ? *projection : context.ui_tree;
         std::shared_ptr<GlSurfaceRuntime> selected;
         if (node) {
             for (const auto& [_, state] : context.gl_surface_runtimes) {
                 if (!state->renderer.IsValid()) continue;
                 auto current = runtime::FindViewUiNode(context, state->view.Value());
-                const bool visible = current && context.ui_tree.IsVisible(*current);
+                const bool visible = current && (!java || projection) && tree.IsVisible(*current);
                 if (visible)
                     while (current && *current != *node)
-                        current = context.ui_tree.Get(*current)->parent;
+                        current = tree.Get(*current)->parent;
                 if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
                     runtime::RecordAndroidTraversalDiagnostic(
                         bindings_.bridge->Vm(), context,
@@ -2057,6 +2097,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         bindings_.bridge->Vm(), *bindings_.context))
                     throw std::runtime_error(*error);
             });
+            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                guest([&] { SetActivityWindowVisible(bindings_.context->activity, false); });
             if (activity_started_) guest([&] { CallActivity("onStop", "()V", {}); });
             if (bindings_.context->activity.IsValid())
                 guest([&] { CallActivity("onDestroy", "()V", {}); });

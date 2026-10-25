@@ -557,6 +557,46 @@ TEST_CASE("VD-02 complete projection commits hierarchy and geometry in one epoch
     CHECK(f.tree.PublishedProjection()->ProjectionEpoch() == 2);
 }
 
+TEST_CASE("DVM-321 managed window visibility replaces stale construction bits atomically") {
+    ProjectionFixture f;
+    f.tree.SetWindowVisible(f.tree.Root(), false);
+    f.tree.SetWindowVisible(f.parent, false);
+    f.tree.SetWindowVisible(f.leaf, false);
+    auto batch = f.Batch();
+    batch.window_visible = true;
+    f.tree.CommitProjection(batch);
+    const auto visible = f.tree.PublishedProjection();
+    CHECK(visible->IsVisible(f.leaf));
+    batch = f.Batch(2);
+    batch.window_visible = false;
+    auto invalid = batch;
+    invalid.nodes.push_back(invalid.nodes.back());
+    CHECK_THROWS(f.tree.CommitProjection(invalid));
+    CHECK(f.tree.PublishedProjection() == visible);
+    CHECK(f.tree.IsVisible(f.leaf));
+    f.tree.CommitProjection(batch);
+    const auto hidden = f.tree.PublishedProjection();
+    CHECK_FALSE(hidden->IsVisible(f.leaf));
+    CHECK(hidden->IsAttached(f.leaf));
+    CHECK(hidden->Get(f.leaf)->visibility == ui::Visibility::Visible);
+    CHECK(visible->IsVisible(f.leaf));
+    const auto geometry = hidden->Get(f.leaf)->frame;
+    auto visibility_only = f.Batch(3);
+    visibility_only.nodes.clear();
+    visibility_only.window_visible = true;
+    f.tree.CommitProjection(visibility_only);
+    CHECK(f.tree.PublishedProjection()->ProjectionEpoch() == 3);
+    CHECK(f.tree.PublishedProjection()->IsVisible(f.leaf));
+    CHECK(f.tree.PublishedProjection()->Get(f.leaf)->frame == geometry);
+    CHECK_FALSE(hidden->IsVisible(f.leaf));
+    batch = f.Batch(4);
+    batch.window_visible = true;
+    batch.nodes[1].visibility = ui::Visibility::Invisible;
+    f.tree.CommitProjection(batch);
+    CHECK_FALSE(f.tree.PublishedProjection()->IsVisible(f.leaf));
+    CHECK_FALSE(hidden->IsVisible(f.leaf));
+}
+
 TEST_CASE("VD-06a projected identity retirement preserves the published epoch") {
     ProjectionFixture f;
     auto batch = f.Batch();

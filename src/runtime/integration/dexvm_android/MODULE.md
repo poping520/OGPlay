@@ -729,3 +729,12 @@ DVM-320：JavaTraversal 的 producer 重评估只读 Java 父链、绑定、可�
 不持有 guest 强根，已退役对象仅报告 last_observed。owner 退出边界调用幂等汇总，
 输出 `ui.diagnostics.summary/reason/producer`，不执行 guest、不改变选择或失败语义。
 Legacy 不采集、不输出；原按弱根的遍历计数清理协议保持。
+
+DVM-321：JavaTraversal managed-window 的 visible 只由 Activity 生命周期记录拥有；
+Window 内容根的创建不改变它。collector 将当前 Activity 的事实显式提交到 synthetic
+partition root，子节点不继承构建缓存窗口位。producer 与 View/window holder 消费 owner
+完整投影的 IsVisible；逐回调 Java mount/visibility/代次重验仍保留。getWindowVisibility
+读取所属 managed Activity 事实；诊断包含完整投影祖先窗口位，未附着初始化不取得 Surface。
+
+纯窗口可见变化可由 owner 重发最后完整投影的窗口事实，更新调度 published 引用而不
+消费 Java requestLayout。隐藏窗口的 Surface 泵仅退役 holder，不为销毁回调触发遍历。

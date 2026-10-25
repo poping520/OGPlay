@@ -61,8 +61,28 @@ void UiTree::SetProjectionTarget(const UiProjectionTarget& target) {
 void UiTree::CommitProjection(const UiGeometryProjection& projection) {
     if (geometry_owner_ != UiGeometryOwner::ExternalProjection || !projection_target_ ||
         !SameTarget(projection.target, *projection_target_) || projection.epoch == 0 ||
-        projection.epoch <= projection_epoch_ || projection.nodes.empty() || projection.nodes.size() > kMaxNodes)
+        projection.epoch <= projection_epoch_ || projection.nodes.size() > kMaxNodes)
         throw std::runtime_error("Invalid or stale UI projection batch");
+
+    if (projection.nodes.empty()) {
+        const auto previous = PublishedProjection();
+        if (!projection.window_visible || !previous || !previous->ProjectionTarget() ||
+            !SameTarget(projection.target, *previous->ProjectionTarget()))
+            throw std::runtime_error("Window visibility requires matching complete geometry");
+        UiTree candidate(*previous);
+        candidate.published_projection_.reset();
+        candidate.Require(root_).window_visible = *projection.window_visible;
+        candidate.Require(root_).draw_dirty = true;
+        candidate.projection_epoch_ = projection.epoch;
+        auto snapshot = std::make_shared<const UiTree>(candidate);
+        // Only the lifecycle fact changes; keep construction attributes, target
+        // and pending Java layout work for the normal owner barrier.
+        Require(root_).window_visible = *projection.window_visible;
+        Require(root_).draw_dirty = true;
+        projection_epoch_ = projection.epoch;
+        std::atomic_store(&published_projection_, std::move(snapshot));
+        return;
+    }
 
     // Prepare and validate in isolation. All potentially throwing work, including
     // allocation of the immutable consumer snapshot, precedes the final swaps.
@@ -97,6 +117,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         node.frame = input.frame;
         node.measured = input.measured;
         node.visibility = input.visibility;
+        if (projection.window_visible) node.window_visible = input.id == root_ ? *projection.window_visible : true;
         if (input.enabled) node.enabled = *input.enabled;
         if (input.clickable) node.clickable = *input.clickable;
         if (input.focusable) node.focusable = *input.focusable;

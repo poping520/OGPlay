@@ -2058,7 +2058,8 @@ Decl Declare_android_view_View(const Context& context) {
             auto view = call.receiver;
             for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
                 const auto node = FindViewUiNode(*context, view.Value());
-                if (node && !context->ui_tree.Get(*node)->window_visible) return dx::VmValue::Int(4);
+                for (const auto& record : context->activity_stack)
+                    if (node && record.window_root == node) return dx::VmValue::Int(record.visible ? 0 : 4);
                 view = fields.GetRef(context->view_java_hierarchy_fields->parent, view);
             }
             return dx::VmValue::Int(0);
@@ -3572,8 +3573,8 @@ Decl Declare_android_view_Window(const Context& context) {
             for (auto& record : context->activity_stack) {
                 if (record.object != activity) continue;
                 record.window_root = node;
-                record.visible = activity == context->activity;
-                context->ui_tree.SetWindowVisible(node, record.visible);
+                // JavaTraversal publishes the lifecycle fact with the batch;
+                // materializing a Window must not change its visibility.
             }
             return parent;
         }

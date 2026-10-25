@@ -6,6 +6,7 @@ The normalizer extracts the first Java exception/member or native module+relativ
 Phase is an audited trace annotation from Application/Activity/Surface/frame/shutdown;
 checkpoint must match Result v1. Unknown evidence fails closed, never a guessed identity.
 Exit code is extracted from Result firstFailure/shutdown; a raw address is never a PC.
+Use freeze --group B|C --evidence-root DIR --bundle BUNDLE --output MATRIX to seal existing runs.
 Use --self-test for synthetic Result v1 fixtures; no game is launched.
 Exit 0=pass, 1=fail/needs_review, 2=invalid. No subprocesses are launched.
 """
@@ -15,6 +16,8 @@ import copy
 import tempfile
 import hashlib
 import json
+import sys
+import zipfile
 from pathlib import Path
 
 VERSION = 'vd11-reviewed-fault-v1'
@@ -97,6 +100,12 @@ def normalize_fault(case, result, base):
     # exceptions cannot replace an unrecognized earlier CPU/native failure.
     raw_log = log
     fatal = re.search(r'^error[^\n]*frontend\.run_apk\.[^ \n]+ |^error \[ogplay\]\r?\n', log, re.MULTILINE)
+    checkpoint_timeout = (failed is not None and result['firstFailure'] ==
+                          f'{failed}: checkpoint {failed} wall-time budget exceeded')
+    if checkpoint_timeout and fatal and 'frontend.run_apk.teardown ' in fatal[0]:
+        # Do not let a later cleanup report replace the checkpoint's first failure.
+        log = raw_log[:fatal.start()]
+        fatal = None
     if fatal:
         log = log[fatal.start():]
         following = re.search(r'\nerror[^\n]* ', log)
@@ -104,9 +113,13 @@ def normalize_fault(case, result, base):
             log = log[:following.start()]
     # Phase names are trace facts, not an arbitrary rank supplied by the matrix.
     markers = list(re.finditer(r'^\[owner\] phase=(Application|Activity|Surface|frame|shutdown)\s*$',
-                               raw_log[:fatal.start()] if fatal else raw_log, re.MULTILINE))
+                               raw_log[:fatal.start()] if fatal else log, re.MULTILINE))
     proven_phase = markers[-1][1] if markers else None
-    if fatal and 'frontend.run_apk.teardown ' in fatal[0]:
+    if checkpoint_timeout and fatal is None:
+        # The runner already entered this checkpoint; later cleanup trace markers
+        # cannot move its fault-free timeout to the shutdown stage.
+        proven_phase = 'frame'
+    elif fatal and 'frontend.run_apk.teardown ' in fatal[0]:
         proven_phase = 'shutdown'
     elif proven_phase is None:
         if re.search(r'Application (?:onCreate|<init>)', log):
@@ -303,6 +316,114 @@ def compare(old, new):
             'shutdown': br['shutdown'], 'new_fault': bool(review)}
 
 
+def freeze(group, evidence_root, bundle, output):
+    """Rebind frozen run identities to existing evidence, never infer historical inputs.
+
+    A JSON bundle is a preserved schema-1 comparison matrix. A staged directory
+    contains comparison-manifest.json with the same frozen inputs/ROM identities;
+    executable, libraries, BootDex pairing and fonts are hashed from that directory.
+    """
+    bundle = bundle.resolve()
+    template = bundle / 'comparison-manifest.json' if bundle.is_dir() else bundle
+    if output == template.resolve():
+        raise ValueError('freeze output must not replace its preserved bundle')
+    doc = read(template)
+    if doc['schema'] != 1 or doc['normalizer_version'] != VERSION or len(doc['cases']) != 9:
+        raise ValueError('freeze requires nine frozen input/implementation identities')
+    doc = copy.deepcopy(doc)
+
+    def ref(path):
+        return dict(path=str(path.resolve()), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+
+    for row in doc['cases']:
+        if not SAME <= row['inputs'].keys() or not BUILD <= row['implementation'].keys():
+            raise ValueError('missing frozen inputs/implementation identity')
+        # scenarioId may be supplied explicitly by a run manifest; preserved
+        # matrices instead carry a hash-checked Result from the original run.
+        sid = row.get('scenarioId')
+        original = None
+        if sid is None:
+            original = read(file_ref(template.parent, row['result']))
+            validate_result(original)
+            sid = original['scenarioId']
+        matches = []
+        for result_path in evidence_root.glob('*/result.json'):
+            if read(result_path).get('scenarioId') == sid:
+                matches.append(result_path)
+        if len(matches) != 1:
+            raise ValueError('freeze needs exactly one Result for ' + str(sid))
+        result_path = matches[0]
+        result = read(result_path)
+        validate_result(result)
+        if original is not None and original['profile'] != result['profile']:
+            raise ValueError('preserved run profile differs for ' + sid)
+        directory = result_path.parent
+        log_path = directory / 'stderr.log'
+        if directory.resolve() in output.parents:
+            raise ValueError('freeze output must not replace raw evidence')
+        identity = row['implementation']
+        if bundle.is_dir():
+            cli = bundle / ('ogplay-cli.exe' if (bundle / 'ogplay-cli.exe').exists() else 'ogplay-cli')
+            jar = bundle / 'data/android/19/framework/bootdex.jar'
+            with zipfile.ZipFile(jar) as archive:
+                if len(archive.namelist()) != len(set(archive.namelist())):
+                    raise ValueError('duplicate BootDex entry')
+                pairing_name = 'META-INF/ogplay/vm-pairing.json'
+                pairing = None
+                if pairing_name in archive.namelist():
+                    pairing = json.loads(archive.read(pairing_name))
+                    if (pairing.get('schema'), pairing.get('mode'), pairing.get('version')) != (1, 'java-traversal', 1):
+                        raise ValueError('unknown BootDex pairing')
+                    for key, entry in [('dex_sha256', 'classes.dex'),
+                                       ('member_sources_sha256', 'META-INF/ogplay/member-sources.json'),
+                                       ('theme_projection_sha256', 'META-INF/ogplay/theme-projection.json')]:
+                        if pairing[key] != hashlib.sha256(archive.read(entry)).hexdigest():
+                            raise ValueError('BootDex pairing mismatch')
+                mode = 'JavaTraversal' if pairing else 'Legacy'
+                member = hashlib.sha256(archive.read('META-INF/ogplay/member-sources.json')).hexdigest()
+            identity.update(binary_sha256=ref(cli)['sha256'], build_id=ref(cli)['sha256'],
+                            bootdex_sha256=ref(jar)['sha256'], member_manifest_sha256=member,
+                            mode=mode, mode_version=1 if pairing else 0)
+            identity['runtime_library_hashes'] = {
+                p.name: ref(p)['sha256'] for p in sorted(bundle.iterdir()) if p.is_file() and
+                (p.suffix.lower() in {'.dylib', '.so', '.dll'} or '.so.' in p.name)}
+            identity['font_hashes'] = {
+                str(p.relative_to(bundle)): ref(p)['sha256'] for p in sorted((bundle / 'data').rglob('*'))
+                if p.is_file() and p.suffix.lower() in {'.ttf', '.otf'}}
+        if identity['mode'] != ('JavaTraversal' if group == 'C' else 'Legacy'):
+            raise ValueError('group does not match preserved bundle mode')
+        failed = next((c['id'] for c in result['checkpoints'] if c['status'] == 'failed'), None)
+        row['result'] = ref(result_path)
+        row['evidence'] = [ref(p) for p in sorted(directory.rglob('*'))
+                           if p.is_file() and 'sandbox' not in p.relative_to(directory).parts]
+        row.pop('fault', None)
+        row['scenarioId'] = sid
+        if result['status'] == 'passed':
+            row['fault_source'] = None
+        else:
+            # Ask the same strict normalizer to prove the stage, rather than
+            # duplicating its fatal-report precedence or guessing from duration.
+            phases = []
+            for phase in PHASES:
+                row['fault_source'] = dict(phase=phase, checkpoint=failed, log=ref(log_path))
+                try:
+                    normalize_fault(row, result, output.parent)
+                    phases.append(phase)
+                except ValueError:
+                    pass
+            if len(phases) != 1:
+                raise ValueError('unreviewed or ambiguous first fault for ' + sid)
+            row['fault_source']['phase'] = phases[0]
+    # Validate the complete matrix before replacing an existing output.
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
+        candidate = Path(temporary) / 'matrix.json'
+        candidate.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        matrix(candidate)
+        candidate.replace(output)
+    return 0
+
+
 def self_test():
     # Complete Result-v1-shaped synthetic matrices exercise hashing, normalization,
     # checkpoint chronology and CLI verdict exit codes without subprocess/game IO.
@@ -416,6 +537,76 @@ def self_test():
         source['fault_source'].update(phase='frame', checkpoint='baseline', log=ref('timeout.log', 'info window running\n'))
         fault = normalize_fault(source, result, base)
         assert fault['signature'] == dict(category='timeout', checkpoint='baseline', presented_frames=0)
+        # Actual C shape: checkpoint timeout first, teardown timeout only later.
+        result['checkpoints'][0].update(endFrame=36671, endTicks=36671000)
+        result['checkpoints'][0]['assertions'][0]['actual']['sequence'] = 1
+        source['fault_source']['log'] = ref('cleanup-timeout.log',
+            'info window running\n[owner] phase=shutdown\nerror [f=0] frontend.run_apk.teardown Android guest invocation failed: '
+            'teardown cleanup wall-time budget exhausted\n')
+        fault = normalize_fault(source, result, base)
+        assert fault['phase_name'] == 'frame'
+        assert fault['signature'] == dict(category='timeout', checkpoint='baseline', presented_frames=1)
+        # Freeze accepts either reviewed group from a preserved bundle matrix.
+        for group, tag, status in [('B', 'freeze-pass', 'passed'), ('C', 'freeze-fail', 'failed')]:
+            manifest(tag, status)
+            document = read(base / (tag + '.json'))
+            manifest_path = base / ('bundle-' + group + '.json')
+            evidence = base / ('evidence-' + group)
+            evidence.mkdir()
+            for i, row in enumerate(document['cases']):
+                row['implementation']['mode'] = 'JavaTraversal' if group == 'C' else 'Legacy'
+                directory = evidence / str(i)
+                directory.mkdir()
+                (directory / 'result.json').write_bytes((base / row['result']['path']).read_bytes())
+                text = (base / row['fault_source']['log']['path']).read_text() if row['fault_source'] else ''
+                (directory / 'stderr.log').write_text(text)
+            manifest_path.write_text(json.dumps(document))
+            output = base / (group + '-frozen.json')
+            assert main(['freeze', '--group', group, '--evidence-root', str(evidence),
+                         '--bundle', str(manifest_path), '--output', str(output)]) == 0
+            assert len(matrix(output)) == 9
+            staged = base / ('staged-' + group)
+            (staged / 'data/android/19/framework').mkdir(parents=True)
+            (staged / 'ogplay-cli').write_bytes(b'preserved executable')
+            entries = {'classes.dex': b'dex fixture', 'META-INF/ogplay/member-sources.json': b'{}',
+                       'META-INF/ogplay/theme-projection.json': b'{}'}
+            if group == 'C':
+                pairing = dict(schema=1, mode='java-traversal', version=1,
+                    dex_sha256=hashlib.sha256(entries['classes.dex']).hexdigest(),
+                    member_sources_sha256=hashlib.sha256(entries['META-INF/ogplay/member-sources.json']).hexdigest(),
+                    theme_projection_sha256=hashlib.sha256(entries['META-INF/ogplay/theme-projection.json']).hexdigest())
+                entries['META-INF/ogplay/vm-pairing.json'] = json.dumps(pairing).encode()
+            with zipfile.ZipFile(staged / 'data/android/19/framework/bootdex.jar', 'w') as archive:
+                for name, value in entries.items():
+                    archive.writestr(name, value)
+            # Relative references belong to the preserved manifest, so the staged
+            # sidecar uses explicit scenario IDs rather than stale relative paths.
+            staged_doc = copy.deepcopy(document)
+            for i, row in enumerate(staged_doc['cases']):
+                row['scenarioId'] = str(i)
+            (staged / 'comparison-manifest.json').write_text(json.dumps(staged_doc))
+            staged_output = base / ('staged-' + group + '.json')
+            assert main(['freeze', '--group', group, '--evidence-root', str(evidence),
+                         '--bundle', str(staged), '--output', str(staged_output)]) == 0
+            assert len(matrix(staged_output)) == 9
+            # Wrong group never re-labels the archived executable/BootDex mode.
+            try:
+                freeze('B' if group == 'C' else 'C', evidence, staged, staged_output)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('bundle mode mismatch admitted')
+        # Failed freeze leaves the prior output intact.
+        prior = output.read_bytes()
+        (evidence / '0' / 'stderr.log').write_text('unknown first fault')
+        try:
+            main(['freeze', '--group', 'C', '--evidence-root', str(evidence),
+                  '--bundle', str(manifest_path), '--output', str(output)])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('unknown freeze admitted')
+        assert output.read_bytes() == prior
         for malformed in ['error [ogplay]\n  unknown failure', 'native fault: read pc=0x1234',
                           'exception: Ljava/lang/Exception;\n']:
             source['fault_source']['log'] = ref('malformed.log', malformed)
@@ -430,6 +621,15 @@ def self_test():
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == 'freeze':
+        p = argparse.ArgumentParser(description=freeze.__doc__)
+        p.add_argument('--group', choices=('B', 'C'), required=True)
+        p.add_argument('--evidence-root', type=Path, required=True)
+        p.add_argument('--bundle', type=Path, required=True)
+        p.add_argument('--output', type=Path, required=True)
+        args = p.parse_args(argv[1:])
+        return freeze(args.group, args.evidence_root.resolve(), args.bundle, args.output.resolve())
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--self-test', action='store_true')
     p.add_argument('--baseline', type=Path)
@@ -454,6 +654,6 @@ def main(argv=None):
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except (ValueError, KeyError, TypeError, OSError) as e:
+    except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as e:
         print(json.dumps({'status': 'invalid', 'reason': str(e)}, ensure_ascii=False))
         raise SystemExit(2)

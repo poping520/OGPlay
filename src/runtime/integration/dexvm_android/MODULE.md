@@ -442,7 +442,9 @@ SHADING_LANGUAGE_VERSION，GLUtils 按四种 Bitmap.Config 编码；GLU 用 API1
 GLSurfaceView 版本/config/driver/事件/EGL wrapper 归稳定 per-View runtime，foreground 仅投影。
 EGL/renderer 初始化等待所属 holder 已激活并发布正尺寸，暂停与可见性仍独立限制绘制。
 GLThread 为真实 Java Thread，经显式 hook 接 session，不自动 prepare Looper；queueEvent 唤醒并
-保活 Runnable，在 current GL 线程、renderer 前 FIFO 执行、不依赖绘帧。requestRender/WHEN_DIRTY
+保活 Runnable，在所属 GLThread、renderer 前 FIFO 执行、不依赖绘帧或 EGL 已初始化。
+JavaTraversal 在 owner 安全点接通未附着 producer 的排队初始化；native window holder 的
+帧继续借用完整 presentation lease，空内容不省略快照或尺寸校验。requestRender/WHEN_DIRTY
 单次消费；PreserveEGLContextOnPause 默认 false、Java 字段/可覆盖方法、可先于 renderer 设置。
 onPause/onResume 在所属线程确认、释放/恢复 EGLSurface，Context 按 preserve 保留/重建，
 backend context-loss 按验证范围记账。

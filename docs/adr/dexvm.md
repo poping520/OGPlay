@@ -2296,3 +2296,20 @@ ROM保存的首栈，最多16层并显式报告循环/截断，不执行 guest �
 明确失败；诊断交付不等于系统 Drawable 能力或游戏兼容验收。
 
 实施方按编排方常设原则决定的组合/准入审计范围调整：无。
+
+### ADR-0162 / DVM-317：producer 初始化与 checkpoint 超时（2026-10-26）
+
+原生帧的到达独立于 presentation epoch；window holder 可与空 guest UI 共同消费完整
+lease，仍严格检查 viewport/buffer，Compose 不补遍历、不调 guest。CPU producer 接缝
+只能证明帧消费协议，真实 EGL producer 与截图仍须外验。
+真实证据的 NativeActivity 子类在首次遍历前 takeSurface(null)，随后使用独立
+GLSurfaceView；未附着 producer 的 queueEvent 初始化可能负责触发后续挂载。
+JavaTraversal owner 安全点允许为当前 Activity 的已注册、未停止 producer 启动所属
+GLThread并消费已排队初始化，不能因其尚未出现在投影中而饿死初始化；不因此创建
+EGLSurface、调用 renderer 或放宽 holder 激活/尺寸要求。Legacy 调度保持。
+
+比较器 freeze 只封存已有 Result/log，输入与 ROM 身份必须来自显式保存的矩阵或 bundle
+的 comparison-manifest.json，不根据当前机器、耗时或成功数补猜历史输入。
+checkpoint 已开始且 Result 证明无 guest fault 的 wall-time 超时属于 frame；其签名保留
+checkpoint/presented 序号。后续 teardown budget 不能覆盖该首错；未知形态仍拒绝。
+本修订无组合/准入审计范围调整，ADR-0147 与 dispatch ledger 规则不变。

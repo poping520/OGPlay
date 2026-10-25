@@ -168,3 +168,24 @@ python tools/run_scenario.py --watch --scenario … --evidence-dir … （其余
 无精确成员或阶段证据须先审阅归一化规则，不能手写fault签名或把退出1当相同首错。
 阶段注记须匹配原始`[owner] phase=...`记录、明确的生命周期错误上下文或Result的checkpoint阶段；
 未知阶段拒绝。仍需人工trace审阅，哈希只证明证据未变化，不替代该审阅。
+
+`freeze` 将已完成的 B/C 证据封存为矩阵，不启动进程：
+
+```text
+python3 tools/compare_ui_scenarios.py freeze --group B \
+  --evidence-root <preserved-B-evidence> --bundle <preserved-B-bundle> --output B.json
+python3 tools/compare_ui_scenarios.py freeze --group C \
+  --evidence-root <C-evidence> --bundle <C-bundle> --output C.json
+```
+
+bundle 可以是已有 schema=1 矩阵文件（保留原实现身份），或可重算 CLI/库/BootDex/font
+哈希的目录。目录须含 `comparison-manifest.json`：同矩阵 schema/normalizer_version/cases，
+每 case 保存完整 inputs、implementation 的 ROM_hashes 及 scenarioId；也可直接复制一份
+已封存输入矩阵作为 sidecar。目录实际 BootDex pairing 决定模式，B=Legacy、C=JavaTraversal；
+不得拿当前 bundle 冒充旧运行制品。没有保存的历史输入身份即拒绝，不从当前环境推断。
+旧矩阵无 scenarioId 时读取并核验其原 Result 哈希及 profile，再按 scenarioId 匹配新证据。
+输出前重新验证九个 Result、全部证据及首错；失败保留已有输出。
+
+无 fault 的 checkpoint wall-time 超时以 Result 的已开始 checkpoint 证明 frame 阶段，
+签名含 checkpoint 和 presented 序号；后续 teardown 超时仍单列，不替换首错。
+未知 fatal/native/cause 或缺少无 fault 断言仍拒绝；此分类不宣称画面通过验收。

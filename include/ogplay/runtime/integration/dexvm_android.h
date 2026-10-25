@@ -798,6 +798,9 @@ struct DexVmAndroidContext final {
       // Text/style live in UiNode. Keep the distinct constructor line policy
       // and owner-traced identities here; no Java text/layout mirror.
       bool text_single_line{};
+      // Bounded edit service; no second text buffer or ROM Editor/spans.
+      dexvm::VmObjectRef text_editable{}, text_movement{};
+      std::int32_t selection_start{}, selection_end{};
       std::optional<ui::LeafMeasureResult> text_measure;
       std::unordered_map<std::int32_t, ui::LeafMeasureResult> text_measure_cache;
       std::uint64_t text_revision{};
@@ -1213,11 +1216,13 @@ void InitializeDefaultViewBackground(dexvm::Interpreter &vm,
 // Applies one filtered text replacement and synchronously delivers the API 19
 // TextWatcher transaction on the guest thread.
 namespace android_intrinsics {
-bool ApplyTextEdit(dexvm::Interpreter &vm, DexVmAndroidContext &context,
-                   dexvm::VmObjectRef view, std::int32_t start,
-                   std::int32_t before_count,
-                   const std::u16string &replacement);
+bool ApplyTextEdit(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view, std::int32_t start,
+                   std::int32_t before_count, const std::u16string& replacement, bool collapse_selection = false);
 } // namespace android_intrinsics
+
+// Bounded experimental editing consumes input against Java findFocus.
+[[nodiscard]] bool DispatchAndroidBoundedEditInput(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                   const AndroidBoundaryInput& input);
 
 // True when the view's derived bounds contain the point (up-inside check of
 // a click gesture).

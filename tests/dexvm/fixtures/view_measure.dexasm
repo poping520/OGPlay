@@ -403,3 +403,71 @@
     iget v0, v1, Ltest/ImageMeasureSuper;->counter:I
     return v0
 .end method
+
+.class public Ltest/EditWatcher;
+.super Ljava/lang/Object;
+.implements Landroid/text/TextWatcher;
+.field private static log:Ljava/lang/String;
+.field private nested:Z
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method static constructor <clinit>()V
+.registers 1
+    const-string v0, ""
+    sput-object v0, Ltest/EditWatcher;->log:Ljava/lang/String;
+    return-void
+.end method
+.method public static reset()V
+.registers 1
+    const-string v0, ""
+    sput-object v0, Ltest/EditWatcher;->log:Ljava/lang/String;
+    return-void
+.end method
+.method public static events()Ljava/lang/String;
+.registers 1
+    sget-object v0, Ltest/EditWatcher;->log:Ljava/lang/String;
+    return-object v0
+.end method
+.method public reenter()V
+.registers 2
+    const/4 v0, 1
+    iput-boolean v0, v1, Ltest/EditWatcher;->nested:Z
+    return-void
+.end method
+.method private static record(Ljava/lang/String;)V
+.registers 3
+    sget-object v0, Ltest/EditWatcher;->log:Ljava/lang/String;
+    invoke-virtual {v0, v2}, Ljava/lang/String;->concat(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    sput-object v0, Ltest/EditWatcher;->log:Ljava/lang/String;
+    return-void
+.end method
+.method public beforeTextChanged(Ljava/lang/CharSequence;III)V
+.registers 6
+    const-string v0, "1"
+    invoke-static {v0}, Ltest/EditWatcher;->record(Ljava/lang/String;)V
+    return-void
+.end method
+.method public onTextChanged(Ljava/lang/CharSequence;III)V
+.registers 6
+    const-string v0, "2"
+    invoke-static {v0}, Ltest/EditWatcher;->record(Ljava/lang/String;)V
+    return-void
+.end method
+.method public afterTextChanged(Landroid/text/Editable;)V
+.registers 6
+    const-string v0, "3"
+    invoke-static {v0}, Ltest/EditWatcher;->record(Ljava/lang/String;)V
+    iget-boolean v0, v4, Ltest/EditWatcher;->nested:Z
+    if-eqz v0, :done
+    const/4 v0, 0
+    iput-boolean v0, v4, Ltest/EditWatcher;->nested:Z
+    const/4 v1, 1
+    const-string v2, "Z"
+    invoke-interface {v5, v0, v1, v2}, Landroid/text/Editable;->replace(IILjava/lang/CharSequence;)Landroid/text/Editable;
+:done
+    return-void
+.end method

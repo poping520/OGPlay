@@ -1299,8 +1299,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-button.surface.json.gz",
-      "surface_sha256": "cf4469c7f4640f27c1cad8ce317b04664d9f286487655438b3a6fbe9e0cccbbc",
+      "surface": "tools/bootdex/view-edittext.surface.json.gz",
+      "surface_sha256": "23ceceb9f47e2be4acfccc081e108e5ac333bf69a7e6dfd552b60ea0456ad392",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -1737,7 +1737,14 @@
           "signature": "addTextChangedListener(Landroid/text/TextWatcher;)V",
           "flags": 1,
           "body_sha256": "45f80e39633f5eb53a8833eef7cab16410dd1af48fdacc9aec6614e45dd79f12",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-298 bounded editing adapter",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
+            "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
+          }
         },
         {
           "signature": "append(Ljava/lang/CharSequence;)V",
@@ -2370,13 +2377,27 @@
           "signature": "getSelectionEnd()I",
           "flags": 1,
           "body_sha256": "be1ae2047589ed0378c625da63ea9b68e3243bd068fe53fc03547d179c80e102",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-298 bounded editing adapter",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
+            "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
+          }
         },
         {
           "signature": "getSelectionStart()I",
           "flags": 1,
           "body_sha256": "0d202a25b2d62433ac4c4109dcb17c5b3cbf66dc230540953f2cb46bc37468ca",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-298 bounded editing adapter",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
+            "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
+          }
         },
         {
           "signature": "getShadowColor()I",
@@ -3027,7 +3048,14 @@
           "signature": "removeTextChangedListener(Landroid/text/TextWatcher;)V",
           "flags": 1,
           "body_sha256": "b5b879001f840e664fc842a2036b94a9e67fdfd317df88ea25b1c2b3ede0c46f",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-298 bounded editing adapter",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
+            "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
+          }
         },
         {
           "signature": "replaceText_internal(IILjava/lang/CharSequence;)V",
@@ -3584,7 +3612,14 @@
           "signature": "setText(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
           "flags": 1,
           "body_sha256": "38f618307448f436125e44db670c92ec6f1cc4f10615d6efe7064066c4525985",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-298 bounded editing adapter",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
+            "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
+          }
         },
         {
           "signature": "setText([CII)V",

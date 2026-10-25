@@ -1479,6 +1479,64 @@ VmObjectRef Interpreter::ThrowableCause(VmObjectRef throwable) const {
     return cause == throwable ? VmObjectRef{} : cause;
 }
 
+std::string Interpreter::DescribeThrowableCauses(VmObjectRef throwable) const {
+    if (!throwable.IsValid()) return {};
+    std::string rendered;
+    std::vector<VmObjectRef> visited{throwable};
+    constexpr std::size_t kMaxCauseDepth = 16;
+    const auto causeOf = [&](const VmObjectRef object) {
+        // API19 InvocationTargetException overrides getCause with its target field.
+        // Reading Throwable.cause alone loses precisely the constructor failure.
+        for (const auto& [owner, name] :
+             std::array{std::pair{"Ljava/lang/reflect/InvocationTargetException;", "target"},
+                        std::pair{"Ljava/lang/ExceptionInInitializerError;", "exception"}}) {
+            const auto type = impl_->linker->FindClass(owner);
+            if (!type || !impl_->linker->IsAssignable(*type, impl_->model->ObjectClass(object))) continue;
+            const auto field = impl_->linker->FindFieldRecursive(*type, name, "Ljava/lang/Throwable;");
+            if (field && !impl_->linker->Field(*field).is_unimplemented) {
+                const auto ref =
+                    VmObjectRef{impl_->model->InstanceSlots(object)[impl_->linker->Field(*field).slot].bits};
+                if (ref.IsValid()) return ref;
+            }
+        }
+        return ThrowableCause(object);
+    };
+    auto cause = causeOf(throwable);
+    for (std::size_t depth = 0; cause.IsValid() && depth < kMaxCauseDepth; ++depth) {
+        if (std::find(visited.begin(), visited.end(), cause) != visited.end()) {
+            return rendered + "\nCaused by: [cycle]";
+        }
+        visited.push_back(cause);
+        rendered += "\nCaused by: " + impl_->linker->Class(impl_->model->ObjectClass(cause)).descriptor;
+        const auto message = ThrowableMessage(cause);
+        if (message.IsValid()) rendered += ": " + impl_->owner->StringUtf8(message);
+        const auto snapshot =
+            VmObjectRef{ThrowableField(*impl_->owner, cause, "stackState", "Ljava/lang/Object;").bits};
+        const auto trace =
+            VmObjectRef{ThrowableField(*impl_->owner, cause, "stackTrace", "[Ljava/lang/StackTraceElement;").bits};
+        if (snapshot.IsValid() && impl_->model->ArrayLength(snapshot) >= 2) {
+            const auto method = VmMethodId{static_cast<std::uint32_t>(impl_->model->GetPrimitiveElement(snapshot, 0))};
+            const auto& first = impl_->linker->Method(method);
+            rendered += "\nCaused by:   at " + impl_->linker->Class(first.owner).descriptor + "." + first.name +
+                        " (pc " + std::to_string(impl_->model->GetPrimitiveElement(snapshot, 1)) + ")";
+        } else if (trace.IsValid() && impl_->model->ArrayLength(trace) > 0) {
+            const auto first = impl_->model->GetObjectElement(trace, 0);
+            const auto text = [&](const char* name) {
+                const auto field =
+                    impl_->linker->FindFieldRecursive(impl_->model->ObjectClass(first), name, "Ljava/lang/String;");
+                return impl_->owner->StringUtf8(
+                    VmObjectRef{impl_->model->InstanceSlots(first)[impl_->linker->Field(*field).slot].bits});
+            };
+            auto owner = text("declaringClass");
+            std::replace(owner.begin(), owner.end(), '.', '/');
+            rendered += "\nCaused by:   at L" + owner + ";." + text("methodName") + " (pc unavailable)";
+        }
+        cause = causeOf(cause);
+    }
+    if (cause.IsValid()) rendered += "\nCaused by: [cause chain truncated]";
+    return rendered;
+}
+
 void Interpreter::SetThrowableMessage(const VmObjectRef throwable, const VmObjectRef message) {
     ThrowableField(*this, throwable, "detailMessage", "Ljava/lang/String;") = {message.Value(), SlotTag::ref};
 }

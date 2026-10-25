@@ -693,8 +693,10 @@ holder恢复需新Surface，新active代次不能复活旧Surface。旧owner tok
 ## Managed-window observer 与基础引用
 
 JavaTraversal 每窗口稳定 Java 根拥有一个 ROM ViewTreeObserver，沿 owner-attached
-GC 边保活；未附着 View 的真实 mFloatingTreeObserver 在挂载时经 ROM merge/kill
-转移并清空。owner global layout 通过该窗口 observer 的 ROM dispatchOnGlobalLayout
+GC 边保活；首次 owner traversal 建立窗口附着身份后，存活子树的真实
+mFloatingTreeObserver 才经 ROM merge/kill 转移并清空。首次遍历前 setContentView/addView
+只建立 Java 父链；被替换内容保留 floating observer，不参与窗口 global layout。已附着
+窗口后续挂载仍即时合并；真正未附着坐标查询继续明确失败。owner global layout 通过该窗口 observer 的 ROM dispatchOnGlobalLayout
 一次派发；不按每个 View 重复派发，Legacy 原表保持。其他 observer 系统能力仍明确失败。
 setSystemUiVisibility adapter 写真实 Java 字段，ROM getter 读取；附着改变调用父
 recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callback 或 AttachInfo。

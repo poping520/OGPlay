@@ -521,3 +521,63 @@ TEST_CASE("WU7-3 Throwable uses DEX source and the last debug position at the sa
         }
     });
 }
+
+TEST_CASE("DVM-316 diagnostic causes preserve ROM target identity and bound cycles and depth") {
+    WithEachBackend([](InterpreterConfig config) {
+        Vm f(config);
+        CHECK(f.interpreter.DescribeThrowableCauses(VmObjectRef{}).empty());
+        const auto plain = f.interpreter.MakeThrowable("Ljava/lang/IllegalStateException;", "plain");
+        CHECK(f.interpreter.DescribeThrowableCauses(plain).empty());
+        const auto wrapper = f.interpreter.MakeThrowable("Ljava/lang/reflect/InvocationTargetException;", "wrapper");
+        const auto target =
+            f.linker.FindFieldRecursive(f.model.ObjectClass(wrapper), "target", "Ljava/lang/Throwable;");
+        REQUIRE(target);
+        f.model.InstanceSlots(wrapper)[f.linker.Field(*target).slot] = {plain.Value(), SlotTag::ref};
+        const auto roots = f.interpreter.ProtectReferences(std::array{wrapper, plain});
+        CHECK(f.interpreter.DescribeThrowableCauses(wrapper) ==
+              "\nCaused by: Ljava/lang/IllegalStateException;: plain");
+        CHECK_FALSE(f.interpreter.ThrowableCause(wrapper).IsValid());  // Diagnostics never rewrite ROM fields.
+        f.interpreter.InitThrowableCause(plain, wrapper);
+        CHECK(f.interpreter.DescribeThrowableCauses(wrapper).ends_with("\nCaused by: [cycle]"));
+        auto chain = f.interpreter.MakeThrowable("Ljava/lang/Exception;", "end");
+        for (int i = 0; i < 18; ++i) {
+            const auto next = f.interpreter.MakeThrowable("Ljava/lang/Exception;", "link");
+            f.interpreter.InitThrowableCause(next, chain);
+            chain = next;
+        }
+        CHECK(f.interpreter.DescribeThrowableCauses(chain).ends_with("\nCaused by: [cause chain truncated]"));
+        CHECK(f.ledger.Unimplemented().empty());
+    });
+}
+
+TEST_CASE("DVM-316 diagnostic first stack survives ROM stack materialization without guest execution") {
+    WithEachBackend([](InterpreterConfig config) {
+        config.diagnostics.trace_capacity = 10000;
+        config.diagnostics.event_mask = DexVmTraceBit(DexVmTraceKind::method_enter);
+        Vm f(config);
+        auto& vm = f.interpreter;
+        const auto create = [&](const char* message) {
+            const auto result =
+                f.CallStatic("LThrowableMessageProbe;", "createOuter", "(Ljava/lang/String;)Ljava/lang/Throwable;",
+                             {VmValue::Ref(vm.NewStringUtf8(message))});
+            REQUIRE_FALSE(result.exception.IsValid());
+            return result.value.ref;
+        };
+        const auto top = create("top"), cause = create("inner");
+        const auto roots = vm.ProtectReferences(std::array{top, cause});
+        vm.InitThrowableCause(top, cause);
+        const auto before = vm.Trace("", 10000).size();
+        CHECK(vm.DescribeThrowableCauses(top).find("Caused by:   at LThrowableMessageProbe;.create (pc ") !=
+              std::string::npos);
+        CHECK(vm.Trace("", 10000).size() == before);
+        const auto index =
+            f.linker.FindVtableIndex(f.model.ObjectClass(cause), "getStackTrace", "()[Ljava/lang/StackTraceElement;");
+        REQUIRE(index);
+        const auto result =
+            vm.Call(f.linker.Class(f.model.ObjectClass(cause)).vtable[*index], std::array{VmValue::Ref(cause)});
+        REQUIRE_FALSE(result.exception.IsValid());
+        CHECK(vm.DescribeThrowableCauses(top).find("Caused by:   at LThrowableMessageProbe;.create (pc unavailable)") !=
+              std::string::npos);
+        CHECK(f.ledger.Unimplemented().empty());
+    });
+}

@@ -301,3 +301,6 @@ Compose的一次lease显式交给video上下层、UI与modal，bitmap版本/prod
 DVM-315：startup/frame/suspend/resume 中，宿主发起的 owner/observer/Surface/窗口
 adapter 若在 vm.Call 外抛出 VmJavaThrow，转为 DexActivityLifecycleError，保留明确
 Java 类型、消息与宿主阶段；仍标 failed、保留原退出及异步 fatal 优先语义，不伪造成功。
+
+DVM-316：生命周期 Java 故障与宿主 guest 边界追加只读 cause/target 的类型、消息和首栈；
+既有主异常行、失败状态与退出语义保持，Legacy 仅新增 Caused by 行。

@@ -471,6 +471,8 @@ public:
     [[nodiscard]] VmObjectRef CaptureThrowableStack();
     [[nodiscard]] VmObjectRef MaterializeThrowableStack(VmObjectRef snapshot);
     [[nodiscard]] VmObjectRef ThrowableCause(VmObjectRef throwable) const;
+    // Diagnostic-only ROM cause/target fields and captured first frames; no guest calls.
+    [[nodiscard]] std::string DescribeThrowableCauses(VmObjectRef throwable) const;
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
     [[nodiscard]] VmObjectRef ThrowableMessage(VmObjectRef throwable) const;
 

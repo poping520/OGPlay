@@ -768,6 +768,10 @@ TEST_CASE("DVM-314 ROM window observers merge floating listeners and dispatch on
         f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
         CHECK(observer(view) == floating);  // detached hierarchy retains individual floating observers
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        CHECK(observer(group) == group_floating);  // setContentView is not window attachment.
+        CHECK(observer(view) == floating);
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveAndNotifySizes));
         const auto window = observer(group);
         CHECK(observer(view) == window);
         CHECK(window != floating);
@@ -894,6 +898,83 @@ TEST_CASE("DVM-315 startup guest callback exception becomes a lifecycle fault") 
             static_cast<void>(lifecycle.Start()),
             "Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: Ljava/lang/IllegalStateException;\n  message: fixture startup callback",
             ogplay::session::DexActivityLifecycleError);
+        CHECK(lifecycle.State().state == ogplay::session::LifecycleRunState::failed);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-316 replaced startup content retains its floating observer until real attachment") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = 100;
+        f.context->surface_height = 80;
+        const auto owner = f.New("Ltest/NativeStartupActivity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.On(owner, "onCreate", "(Landroid/os/Bundle;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(owner), "content", "Landroid/view/View;");
+        REQUIRE(field);
+        const auto removed = VmObjectRef{f.model.InstanceSlots(owner)[f.linker.Field(*field).slot].bits};
+        const auto floating = f.On(removed, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;").ref;
+        const auto replacement = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, removed, floating, replacement});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(replacement)});
+        CHECK_NOTHROW(DispatchAndroidGlobalLayout(f.vm, *f.context));  // No traversal, no window observer yet.
+        CHECK(f.ledger.Unimplemented().empty());
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveAndNotifySizes));
+        // The decor registration remains live; isolate the removed content registration.
+        const auto decor =
+            f.On(f.On(owner, "getWindow", "()Landroid/view/Window;").ref, "getDecorView", "()Landroid/view/View;").ref;
+        const auto window = f.On(decor, "getViewTreeObserver", "()Landroid/view/ViewTreeObserver;").ref;
+        f.On(window, "removeOnGlobalLayoutListener", "(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V",
+             {VmValue::Ref(owner)});
+        CHECK(floating != window);
+        CHECK(f.On(floating, "isAlive", "()Z").AsInt() == 1);
+        CHECK_NOTHROW(DispatchAndroidGlobalLayout(f.vm, *f.context));
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto array = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 2);
+        const auto failure = f.OnOutcome(removed, "getLocationInWindow", "([I)V", {VmValue::Ref(array)});
+        REQUIRE(failure.exception.IsValid());
+        CHECK(failure.exception_message == "Coordinates require managed attachment");
+    }
+}
+
+TEST_CASE("DVM-316 lifecycle host guest boundary appends causes without changing the failure header") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto type = f.linker.ResolveDescriptor("Ltest/NativeStartupActivity;");
+        const auto index = f.linker.FindVtableIndex(type, "onGlobalLayout", "()V");
+        REQUIRE(index);
+        auto& method = f.linker.MutableMethod(f.linker.Class(type).vtable[*index]);
+        method.code.reset();
+        method.fast_code.reset();
+        method.kind = MethodKind::intrinsic;
+        method.implementation = [](IntrinsicContext& call) -> VmValue {
+            const auto inner = call.vm.MakeThrowable("Ljava/lang/IllegalArgumentException;", "constructor detail");
+            const auto roots = call.vm.ProtectReferences(std::array{inner});
+            const auto wrapper = call.vm.MakeThrowable("Ljava/lang/RuntimeException;", "wrapper");
+            call.vm.InitThrowableCause(wrapper, inner);
+            throw VmJavaThrow{"Ljava/lang/RuntimeException;", "wrapper", wrapper};
+        };
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/NativeStartupActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        try {
+            static_cast<void>(lifecycle.Start());
+            FAIL("startup must fail");
+        } catch (const ogplay::session::DexActivityLifecycleError& error) {
+            const std::string text = error.what();
+            CHECK(text.starts_with(
+                "Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: Ljava/lang/RuntimeException;\n  message: wrapper"));
+            CHECK(text.find("\nCaused by: Ljava/lang/IllegalArgumentException;: constructor detail") !=
+                  std::string::npos);
+        }
         CHECK(lifecycle.State().state == ogplay::session::LifecycleRunState::failed);
         CHECK(f.ledger.Unimplemented().empty());
     }

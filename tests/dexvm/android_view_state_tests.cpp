@@ -155,10 +155,10 @@ TEST_CASE("DVM-279 ROM measure specs state cache and guest overrides use Java au
                                            AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 60}));
             CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->measured == ui::Size{100, 60});
             f.On(leaf, "requestLayout", "()V");
-            CHECK(f.context->ui_measure_requests.contains(leaf));
+            CHECK(AndroidUiMeasureRequests(f.vm, *f.context).contains(leaf));
             CHECK(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                            AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 60}));
-            CHECK_FALSE(f.context->ui_measure_requests.contains(leaf));
+            CHECK_FALSE(AndroidUiMeasureRequests(f.vm, *f.context).contains(leaf));
 
             const auto view_class = f.linker.ResolveDescriptor("Landroid/view/View;");
             CHECK(f.linker
@@ -291,8 +291,8 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
         hook = {};
         events.clear();
         sizes.clear();
-        REQUIRE(tick());
-        CHECK(events == std::vector<int>{2});
+        CHECK_FALSE(tick());
+        CHECK(events.empty());
         CHECK(sizes.empty());
         REQUIRE(tick({90, 60}));
         CHECK(sizes == std::vector<std::array<int, 4>>{{90, 60, 80, 50}});
@@ -305,23 +305,25 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
         f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK(std::count(events.begin(), events.end(), 2) == 1);
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         // A request after super.layout remains valid. First pass retries in this
         // frame; the second pass defers without setting FORCE_LAYOUT.
         events.clear();
         hook = [&](IntrinsicContext&, int stage) {
             if (stage == 2) f.On(view, "requestLayout", "()V");
         };
+        f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK(std::count(events.begin(), events.end(), 2) == 2);
-        CHECK(f.context->ui_measure_requests.contains(view));
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).contains(view));
         CHECK((field(view, "mPrivateFlags").bits & 0x1000) == 0);
         const auto epoch = f.context->ui_measure_epoch;
         events.clear();
         hook = {};
+        f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK(std::count(events.begin(), events.end(), 1) == 1);
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         CHECK(f.context->ui_measure_epoch == epoch + 1);
         // GONE requesters are filtered in both passes, as in ViewRootImpl.
         field(view, "mViewFlags").bits |= 8;
@@ -329,9 +331,10 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
         hook = [&](IntrinsicContext&, int stage) {
             if (stage == 2) f.On(view, "requestLayout", "()V");
         };
+        f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK(std::count(events.begin(), events.end(), 2) == 1);
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         CHECK((field(view, "mPrivateFlags").bits & 0x1000) == 0);
         field(view, "mViewFlags").bits &= ~8U;
         events.clear();
@@ -341,9 +344,10 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
                 f.On(view, "requestLayout", "()V");
             }
         };
+        f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK(std::count(events.begin(), events.end(), 2) == 2);
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         field(view, "mViewFlags").bits &= ~8U;
         CHECK(f.ledger.Unimplemented().empty());
         // Repeated cross-tick requests hit a bounded watchdog, retaining both
@@ -351,6 +355,7 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
         hook = [&](IntrinsicContext&, int stage) {
             if (stage == 2) f.On(view, "requestLayout", "()V");
         };
+        f.On(view, "requestLayout", "()V");
         for (int i = 0; i < 8; ++i)
             REQUIRE(tick());
         snapshot = f.context->ui_tree.PublishedProjection();
@@ -362,11 +367,12 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
             CHECK(error.message.find("epoch=") != std::string::npos);
         }
         CHECK(f.context->ui_tree.PublishedProjection() == snapshot);
-        CHECK(f.context->ui_measure_requests.contains(view));
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).contains(view));
         CHECK_FALSE(f.context->ui_layout_dispatching);
         hook = {};
+        f.On(view, "requestLayout", "()V");
         REQUIRE(tick());
-        CHECK(f.context->ui_java_deferred_ticks == 0);
+        CHECK(f.context->ui_window_schedules.at(view).deferred_ticks == 0);
         // Guest exception identity and already-mutated Java bounds survive;
         // no partial snapshot is exposed.
         const auto exception = f.New("Ljava/lang/IllegalStateException;");

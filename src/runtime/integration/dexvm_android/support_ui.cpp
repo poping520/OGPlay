@@ -140,10 +140,8 @@ void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                      const dexvm::VmObjectRef view) {
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-        if (vm.CurrentContextToken() != 1U ||
-            (context.ui_java_owner_thread && *context.ui_java_owner_thread != std::this_thread::get_id()))
+        if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View initialization requires owner thread"};
-        context.ui_java_owner_thread = std::this_thread::get_id();
         const auto type = vm.Linker().ResolveDescriptor("Landroid/view/View;");
         const auto field = vm.Linker().FindFieldRecursive(type, "mMeasuredWidth", "I");
         if (!field || vm.Linker().Field(*field).is_unimplemented)
@@ -242,7 +240,10 @@ dexvm::VmObjectRef AndroidUiTraversalRoot(dexvm::Interpreter& vm, DexVmAndroidCo
             if (root.IsValid()) return root;
         }
     }
-    return context.content_view;  // VD-04/05 standalone test roots.
+    // A missing Activity is the explicit VD-04/05 standalone fixture path.
+    return context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && context.activity.IsValid()
+               ? dexvm::VmObjectRef{}
+               : context.content_view;
 }
 
 bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
@@ -287,19 +288,10 @@ void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, c
                                         context.ui_measure_epoch + 1);
 }
 
-void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
-                                         const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
-                                         const std::uint64_t epoch) {
-    dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
-        (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
-        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection requires Java owner thread"};
-    if (root != AndroidUiTraversalRoot(vm, context) || target.content_revision != context.ui_content_revision ||
-        target.window_generation != context.ui_tree.Generation())
-        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
-    dexvm::IntrinsicContext root_call{vm, root, {}};
-    if ((dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x800) == 0)
-        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
+namespace {
+ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                                      dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
+                                                      std::uint64_t epoch, bool prepare_render) {
     const auto roots = vm.ProtectReferences(std::array{root});
     ui::UiGeometryProjection projection{target,
                                         epoch,
@@ -349,9 +341,10 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
             entry.clip_to_padding = (flags & 2) != 0;
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
-        if (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton)
+        if (prepare_render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))
             android_intrinsics::ProjectAndroidImage(vm, context, view);
-        if ((kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
+        if (prepare_render &&
+            (kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
             visibility != ui::Visibility::Gone) {
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
@@ -400,6 +393,55 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
         }
     };
     collect(collect, root, dexvm::VmObjectRef{}, target.root, 0);
+    return projection;
+}
+}  // namespace
+
+std::set<dexvm::VmObjectRef>& AndroidUiMeasureRequests(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
+        context.ui_java_owner_thread != std::this_thread::get_id())
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Layout requests require Java owner"};
+    return context.ui_window_schedules[AndroidUiTraversalRoot(vm, context)].requests;
+}
+
+std::shared_ptr<const ui::UiTree> ReadAndroidUiGeometry(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
+    dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
+        context.ui_java_owner_thread != std::this_thread::get_id())
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Geometry projection requires Java owner"};
+    const auto root = AndroidUiTraversalRoot(vm, context);
+    if (!root.IsValid() || !FindViewUiNode(context, root.Value()))
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Geometry requires a bound window root"};
+    const auto size = context.ui_java_active_metrics.value_or(
+        ui::Size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
+    const ui::UiMetrics metrics{size.width, size.height};
+    const auto epoch = context.ui_measure_epoch + 1;
+    const auto metrics_revision =
+        context.ui_tree.ProjectionTarget() ? context.ui_tree.ProjectionTarget()->metrics_revision + 1 : 1;
+    const ui::UiProjectionTarget target{context.ui_tree.Root(), context.ui_tree.Generation(),
+                                        context.ui_content_revision, metrics_revision, metrics};
+    auto projection = CollectAndroidRootProjection(vm, context, root, target, epoch, false);
+    ui::UiTree temporary(context.ui_tree);
+    temporary.SetProjectionTarget(target);
+    temporary.CommitProjection(projection);
+    return temporary.PublishedProjection();
+}
+
+void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                         const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
+                                         const std::uint64_t epoch) {
+    dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
+        (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection requires Java owner thread"};
+    if (root != AndroidUiTraversalRoot(vm, context) || target.content_revision != context.ui_content_revision ||
+        target.window_generation != context.ui_tree.Generation())
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection has stale root identity"};
+    dexvm::IntrinsicContext root_call{vm, root, {}};
+    if ((dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x800) == 0)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
+    auto projection = CollectAndroidRootProjection(vm, context, root, target, epoch, true);
+    ResizeAndroidDialogs(vm, context);
     context.ui_tree.CommitProjection(projection);
     if (context.ui_touch_capture) {
         const auto capture = dexvm::VmObjectRef{static_cast<std::uint32_t>(context.ui_touch_capture)};
@@ -418,7 +460,6 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
         context.ui_layout_metrics = ui::Size{static_cast<std::int32_t>(context.surface_width),
                                              static_cast<std::int32_t>(context.surface_height)};
     }
-    ResizeAndroidDialogs(vm, context);
     PublishAndroidPresentation(context);
 }
 
@@ -516,9 +557,7 @@ void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
 }
 
 void ResetViewUiState(DexVmAndroidContext& context) {
-    context.ui_measure_requests.clear();
-    context.ui_java_watchdog_root = dexvm::VmObjectRef{};
-    context.ui_java_deferred_ticks = 0;
+    context.ui_window_schedules.clear();
     context.ui_touch_capture = 0;
     context.ui_touch_activity = dexvm::VmObjectRef{};
     context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();

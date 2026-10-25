@@ -210,10 +210,15 @@ reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutPara
 沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
 保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
 owner 模式在 context 构造时固定且运行中不可切换，生产默认唯一为 Legacy，无用户配置。
-JavaTraversal 仅供固定实验 payload 的 plain View 与测试 ViewGroup：ROM 执行 hierarchy、参数、measure/RTL/缓存及
+JavaTraversal 由固定实验 payload 配对启用，支持已受审 View/容器的 managed Window 根：ROM 执行 hierarchy、参数、measure/RTL/缓存及
 layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
 onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
-OwnerTick/BeforeInput 的 ResolveOnly 在 owner guest token 和初始化绑定的宿主线程、VM 锁下执行根
+`ReadAndroidUiGeometry` 在 owner 回调内从当前 Java 字段建立临时 const 投影，
+只在副本校验/解析坐标，不发布、不准备叶光栅、不派 Surface 或执行 guest。
+VM 主 guest context 的状态表装配绑定唯一宿主 owner，不由首个 View 构造绑定。
+OwnerTick 开始一个逻辑 tick；BeforeInput 是同 tick 读屏障，不消费第二 pass 的延期。
+每个稳定窗口根独立保存请求、延期/watchdog 与最近成功身份/metrics；clean 复用完整快照，
+不调用 measure/layout、不推进 epoch。OwnerTick/BeforeInput 的 ResolveOnly 在 owner guest token、绑定宿主线程与 VM 锁下执行根
 EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧
 第二轮；第二轮请求不置 FORCE_LAYOUT，延至下一 tick。连续跨 tick 请求超过8次明确失败，
 保留队列并记录 requester/epoch。系统接缝不构造 AttachInfo/ViewRootImpl/Binder。
@@ -236,8 +241,9 @@ enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事
 测试容器显式注入 disabled accessibility provider，singleton 与 enabled 值仍在 Java；未配置、
 非 null AttachInfo、动画/硬件、accessibility focus、背景状态等未支持服务明确记账失败。
 不宣称构造完整 AccessibilityManager 服务；除受审 getInstance/isEnabled 外其成员均 failure。
-输入重入未完成 traversal 明确拒绝；其他 reason/phase 及生产端到端 traversal/Surface 生命周期
-仍未启用；Legacy 仍为唯一生产默认。
+输入重入未完成 traversal 明确拒绝；GeometryRead 仅允许进行中的回调读取临时投影。
+其余 reason/phase 明确失败并记账；生产帧安全点、Surface 生命周期与 E2E 待后续 WU，
+Legacy 仍为生产默认。
 实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
@@ -251,7 +257,8 @@ UiNodeId 只在所属 modal 树内有效，presentation 的 partition/generation
 共同 PresentationSnapshot 以 shared_ptr 原子发布：presentation_epoch、guest_window_epoch_refs、
 host_modal_revision、metrics_revision、viewport 与可见 modal_stack。guest 部分只引用完整窗口
 投影，不复制几何；modal 部分冻结独立宿主树，发布后不共享构建树的可变焦点/可见性。
-owner 完成 guest 提交后准备全部待 resize 的宿主分区；尺寸/density 与 guest 测量事实匹配才
+owner 完成 Java measure/layout 后先准备全部待 resize 的宿主分区，再提交 guest 投影；
+resize 失败不发布新 guest epoch，Java 已执行状态不回滚。尺寸/density 与 guest 测量事实匹配才
 发布。设备metrics待齐时，旧modal的隐藏/退役可沿最后完整guest/metrics发布移除；新几何
 不得混入该旧序列。容纳失败保留旧共同快照及宿主集合，不回滚已经发生的Java测量或独立guest投影。
 纯 modal 变更不测量/布局 guest、不推进 guest epoch；owner 可见性/退役先撤销捕获再发布集合。
@@ -366,12 +373,15 @@ SDL scancode 映射 keyCode/Unicode/meta/repeat；AndroidBoundaryInput 快照物
 recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/source。
 
 实验 JavaTraversal 的 Window 根从 Activity.mWindow→Window.mContentParent 的受审只读 token
-取得真实 FrameLayout，content_view 仅保留首个内容身份；无 Window 的旧测试根沿用原夹具。
+取得真实 FrameLayout，content_view 仅保留首个内容身份；owner 屏障即使空 Activity 也建立该根，
+不能用内容 child 代替。无 Activity 的独立测试根沿用原夹具；有 Activity 却无根不回退。
+生产 MeasureSpec 取 managed surface 与配置；显式 viewport 参数仅用于受控 CPU 夹具，
+保留其 managed viewport 与实际 holder buffer 分离的测量控制。
 Window 的默认参数、增添/替换内容沿真实 Java hierarchy；替换复用 ROM removeAllViews。
 FrameLayout 的 Context 构造（含 Rect/ArrayList）、measure/layout、默认/复制参数、foreground
 padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。未启用容器的 own
 onMeasure/onLayout 在实验表面显式 failure，不能继承基础算法取得实现信用。
-仅测试窗口；foreground Drawable 设置/绘制与系统附着仍明确失败。
+仅有界 managed 窗口；foreground Drawable 设置/绘制与系统附着仍明确失败。
 完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，Legacy 路径保持。
 LinearLayout 的 Context 构造、weight/baseline/largest-child 状态、双方向测量/布局、参数生成/
 复制与 Gravity/RTL 解析归 ROM；共享 View/Group adapter 只初始化既有基础字段，不写

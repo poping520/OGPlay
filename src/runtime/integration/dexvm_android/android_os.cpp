@@ -1675,9 +1675,16 @@ void RegisterAndroidValueStateTables(
     const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
     if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        if (vm.CurrentContextToken() != 1U ||
+            (context->ui_java_owner_thread && context->ui_java_owner_thread != std::this_thread::get_id()))
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View owner binding requires main context"};
+        context->ui_java_owner_thread = std::this_thread::get_id();
         vm.RegisterIntrinsicStateTable({"android.java-view-binding",
                                         [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
                                         [context](dexvm::VmObjectRef object) {
+                                            context->ui_window_schedules.erase(object);
+                                            for (auto& [_, state] : context->ui_window_schedules)
+                                                state.requests.erase(object);
                                             const auto found = context->object_to_ui_node.find(object.Value());
                                             if (found == context->object_to_ui_node.end()) return;
                                             const auto node = found->second;

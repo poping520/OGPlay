@@ -409,3 +409,7 @@ ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读�
 Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
 平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
 本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
+
+JavaTraversal 的 owner 在 bridge 装配主 guest context 状态表时绑定；View 构造只校验，
+不能通过换宿主线程重新绑定。请求/调度表为按稳定窗口根保存的弱 Java 身份，
+GC sweep 清理对应根与请求；不进入 session 强根，完整投影独立保留。

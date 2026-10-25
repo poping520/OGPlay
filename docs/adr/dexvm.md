@@ -2128,7 +2128,7 @@ Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保�
    owner 事件。两 pass/延期按逻辑 tick 计数，跨 tick watchdog 作为宿主预算保留。
 4. 保持 managed buffer 限制；window holder 与 View holder 分型，每次 guest 回调后
    核验代次。尺寸先于 managed Surface，ROM onSizeChanged 不重复；不启 updateWindow/WMS。
-5. 不放宽实验首错门禁。接线完成（11-1～11-8）和端到端通过（11-9）分开记账。
+5. 不放宽实验首错门禁。接线完成（11-1～11-5）和端到端通过（11-5 门禁中的三组九场景）分开记账。
    新首错按 ROM 依赖类别另开通用能力 WU，不删请求、不改 APK、不用 Profile 默认值
    压首错；单类超过单会话或越界即按 VD-11 停止边界报告。
 6. **前置决定，VD-12 追加修订**：只取同 ROM PhoneLayoutInflater 及机器证明的纯依赖，
@@ -2157,4 +2157,25 @@ compose build/check 同时封存模式、成员来源和主题；生产 JAR 不�
 生产三入口独立注入平台无 accessibility 服务事实，不设置测试 bool。
 
 本阶段只交付装配与平台事实；不放开 test-root，不改变 StepFrame 或系统附着行为。
-窗口 adapter、根/owner 调度、帧安全点和 E2E 由 11-2～11-9 分别验收。
+窗口 adapter、根/owner 调度、帧安全点和 E2E 由 11-2～11-5 分别验收（2026-10-25 按能力合并为 5 单）。
+
+### 11-2 稳定根与调度协议（2026-10-25）
+
+VM 主 guest context 装配时绑定宿主 owner；构造/遍历/读投影同时校验 token 与线程。
+Activity Window 持有稳定 FrameLayout 内容根，owner 屏障负责创建空根；content_view
+仅是内容身份，不能作为已有 Activity 的根回退。生产 metrics 来自 managed surface/配置。
+OwnerTick 表示一个逻辑 tick 边界，BeforeInput 仅执行该 tick 的读屏障；调用方不得把
+重复屏障标为新 OwnerTick。每窗口保存请求、成功身份/metrics 与跨 tick watchdog。
+首轮有效请求可第二 pass，第二 pass 请求及该窗口后续屏障延至下一逻辑 tick，
+watchdog 每 tick 至多计一次；clean 快照复用且不调用布局、不推进 epoch。
+metrics revision 随尺寸/密度独立推进，失败后恢复尺寸不复用不同 metrics 的同一 revision。
+只开放两种 ResolveOnly 生产根入口；Surface/Present/HostDialog 及其他 phase 明确失败，
+GeometryRead 只允许进行中回调读取临时投影。临时投影从当前 Java 字段读取，
+在副本校验/解析、不准备叶光栅、不发布、不执行 guest 或派 Surface。
+异常不回滚 Java；中断尝试不能证明 clean，换内容/根/窗口代次/metrics 取消旧提交。
+本单未调整组合/准入审计规则适用范围，ADR-0147 及 clinit 规则不变。
+验收与迁移 review 见 [DVM-307](../tasks/dexvm/DVM-307.md)。
+
+11-2 对 ADR-0161 共同发布接缝的精确实施更新：ROM measure/layout 完成后，先准备并
+检查全部宿主 modal resize，再提交 guest 投影和共同快照；resize 失败保留上个完整 guest/
+presentation 发布，已经执行的 Java 不回滚。旧任务单保留当时实现的历史时序。

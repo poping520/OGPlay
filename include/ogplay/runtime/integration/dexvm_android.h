@@ -129,14 +129,25 @@ struct DexVmAndroidContext final {
     }
     std::uint64_t ui_measure_epoch{};
     float ui_projection_density{};  // Density used by the last completed owner traversal.
-    // Weak identities in JavaTraversal; live hierarchy edges belong to Java.
-    std::set<dexvm::VmObjectRef> ui_measure_requests;
-    // 0 outside layout, 1 first pass, 2 deferred-request pass (API19 ViewRootImpl).
+
+    // Weak Java identities; each stable Window content root owns its scheduling budget.
+    struct UiWindowSchedule final {
+        std::set<dexvm::VmObjectRef> requests;
+        std::uint64_t deferred_until_tick{};
+        std::uint64_t watchdog_tick{};
+        unsigned deferred_ticks{};
+        std::uint64_t generation{}, content_revision{};
+        ui::Size metrics{};
+        float density{};
+        std::shared_ptr<const ui::UiTree> published;
+    };
+
+    std::map<dexvm::VmObjectRef, UiWindowSchedule> ui_window_schedules;
+    std::uint64_t ui_owner_tick{};
     std::optional<std::thread::id> ui_java_owner_thread;
+    // 0 outside layout, 1 first pass, 2 deferred-request pass (API19 ViewRootImpl).
     unsigned ui_java_layout_pass{};
-    unsigned ui_java_deferred_ticks{};
-    dexvm::VmObjectRef ui_java_watchdog_root;
-    std::uint64_t ui_java_watchdog_generation{};
+    std::optional<ui::Size> ui_java_active_metrics;
     std::atomic_bool process_stopping{};
     // Set from the owning native process before linking/startup. No host query.
     std::optional<GuestMemorySnapshot> memory_snapshot;
@@ -1341,7 +1352,9 @@ DispatchViewGestureEvent(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 InvokeViewOnClick(dexvm::Interpreter &vm, DexVmAndroidContext &context,
                   std::uint64_t handle);
 
-// Legacy traversal scheduling. ResolveOnly never dispatches guest size callbacks;
+// OwnerTick begins one logical tick; BeforeInput is a read barrier in that tick.
+// JavaTraversal only accepts ResolveOnly for those two production safe points.
+// Legacy ResolveOnly never dispatches guest size callbacks;
 // only GeometryRead refreshes Java LayoutParams. viewport preserves presentation metrics.
 enum class AndroidUiTraversalReason : std::uint8_t {
     GeometryRead,
@@ -1355,6 +1368,11 @@ enum class AndroidUiTraversalPhase : std::uint8_t { ResolveOnly, ResolveAndNotif
 // Returns whether layout resolved or a size notification was delivered.
 bool EnsureAndroidUiTraversal(dexvm::Interpreter&, DexVmAndroidContext&, AndroidUiTraversalReason,
                               AndroidUiTraversalPhase, std::optional<ui::Size> viewport = std::nullopt);
+
+// Owner-only transient geometry, including while callbacks are executing. Never publishes,
+// mutates the live tree, dispatches Surface, or enters guest code.
+std::shared_ptr<const ui::UiTree> ReadAndroidUiGeometry(dexvm::Interpreter&, DexVmAndroidContext&);
+std::set<dexvm::VmObjectRef>& AndroidUiMeasureRequests(dexvm::Interpreter&, DexVmAndroidContext&);
 
 // Compatibility wrapper for BeforeSurfaceCallbacks / ResolveAndNotifySizes.
 bool DispatchAndroidViewSizes(dexvm::Interpreter&, DexVmAndroidContext&);

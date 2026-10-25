@@ -66,7 +66,7 @@ TEST_CASE("DVM-304 isolated host Dialog layout leaves guest geometry epoch and f
         const auto root = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto leaf = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto keep = f.vm.ProtectReferences(std::array{owner, root, leaf});
-        f.context->activity = owner;
+        // Standalone Java root: this fixture tests modal isolation, not Window attachment.
         f.context->content_view = root;
         f.On(root, "addView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
         f.On(leaf, "setFocusableInTouchMode", "(Z)V", {VmValue::Int(1)});
@@ -240,7 +240,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
         const auto leaf = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto listener = f.New("LModalSnapshotObserver;");
         const auto keep = f.vm.ProtectReferences(std::array{owner, root, leaf, listener});
-        f.context->activity = owner;
+        // Standalone Java root: this fixture tests modal isolation, not Window attachment.
         f.context->content_view = root;
         f.On(root, "addView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
         f.On(leaf, "setFocusableInTouchMode", "(Z)V", {VmValue::Int(1)});
@@ -417,7 +417,7 @@ TEST_CASE("DVM-305 presentation snapshot composes modal pixels input and atomic 
         CHECK(f.context->ui_measure_epoch == epoch);
         pump();
         CHECK(f.context->ui_measure_epoch == epoch);
-        CHECK_FALSE(f.context->ui_measure_requests.empty());
+        CHECK_FALSE(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));
         CHECK(f.context->ui_measure_epoch > epoch);
@@ -539,11 +539,12 @@ TEST_CASE("DVM-305 modal presentation preserves a live managed Surface generatio
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));
-        // The managed callback fixture opens no native window or EGL context.
-        f.context->ui_layout_dispatching = true;
-        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        // Prepare the live-holder fixture directly; the created traversal phase belongs to VD-11-6.
+        f.context->managed_host_surface_open = true;
+        f.context->active_surface_holders.insert(holder.Value());
+        android_intrinsics::PublishSurfaceHolderFrame(f.vm, *f.context, holder);
+        f.On(callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", {VmValue::Ref(holder)});
         REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
-        f.context->ui_layout_dispatching = false;
         const auto surface = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
         const auto frame = f.On(holder, "getSurfaceFrame", "()Landroid/graphics/Rect;").ref;
         const auto surface_generation = f.On(surface, "getGenerationId", "()I").AsInt();

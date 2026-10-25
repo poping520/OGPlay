@@ -718,3 +718,7 @@ owner 直接调用 ROM observer 和 Surface 事务在 VM execution lock 下捕�
 JavaTraversal 的 `ui.surface.*` 结构化诊断记录 producer 注册、holder 激活/拒绝原因及
 Surface 回调的 holder 分型和真实尺寸；轮询决策按对象限流，实际生命周期派发不合并。
 诊断不参与准入判断，不改变代次、buffer 或 ADR-0147 失败语义；Legacy 不输出该诊断域。
+
+JavaTraversal 的 `ui.traversal` 按弱窗口根/原因保存计数，首次输出结构化 root、epoch、
+身份及 metrics；后续仅累计，窗口退役/GC/UI 重置清理。覆盖屏障跳过、clean、延期、
+回调身份取消及投影提交/异常；不改变失败、延期或旧完整发布协议。Legacy 不输出或计数。

@@ -1040,6 +1040,8 @@ struct DexVmAndroidContext final {
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
   std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_width_field;
   std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_height_field;
+  // Weak window identities; counters survive schedule invalidation, never root guest objects.
+  std::map<dexvm::VmObjectRef, std::map<std::string, std::uint64_t>> ui_traversal_diagnostics;
 };
 
 void RegisterAndroidAudioTrackStateTable(
@@ -1087,6 +1089,8 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
 void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                          std::int32_t delta_y, std::int32_t delta_x = 0);
 
+void RecordAndroidTraversalDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
+                                      const std::string& reason);
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
                                          const ui::UiProjectionTarget& target, std::uint64_t epoch);
 [[nodiscard]] ui::Insets ReadAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context,

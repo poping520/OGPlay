@@ -310,3 +310,7 @@ DVM-316：生命周期 Java 故障与宿主 guest 边界追加只读 cause/targe
 JavaTraversal 的 `ui.surface.*` 诊断记录 producer 投影可见性、所属 GLThread 启动与 EGL
 创建请求；初始化线程启动不代表已有可绘制 Surface，真实 EGL 与呈现仍需独立验证。
 Legacy 不输出该诊断域。
+
+JavaTraversal 在 owner 投影屏障及内容遍历后重评估已注册 intrinsic producer，先于该屏障的
+Surface 交付；仍要求可见且属于当前内容根。首条选择/拒绝原因按窗口记录，后续计数。
+GLThread 初始化不等于可绘制 Surface，Legacy 选择仍在原内容同步位置。

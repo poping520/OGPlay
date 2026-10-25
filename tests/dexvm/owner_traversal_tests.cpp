@@ -1219,6 +1219,110 @@ TEST_CASE("DVM-318 Legacy producer registration and Surface callbacks emit no tr
         REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
         REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
         CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.").empty());
+        CHECK(f.logger.Snapshot(std::nullopt, "ui.traversal").empty());
+        CHECK(f.context->ui_traversal_diagnostics.empty());
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-319 owner projection selects late producer before its first Surface callback") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        const auto owner = f.context->activity;
+        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+        const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+        f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(AndroidUiTraversalRoot(f.vm, *f.context) == root);
+        const auto content =
+            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(content)});
+        const auto view =
+            f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto renderer = f.New("Ltest/OwnerMutation;");
+        f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(renderer)});
+        unsigned created{};
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        const auto holder = f.On(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        // Stop at the real holder boundary before any EGL/GPU request.
+        OwnerHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) -> VmValue {
+            ++created;
+            CHECK(f.context->gl_surface_renderer_view == view);
+            CHECK(f.context->renderer == renderer);
+            CHECK(f.context->ui_measure_epoch > 0);
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "fixture stop before EGL"};
+        });
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
+        f.On(content, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        CHECK_THROWS_AS(static_cast<void>(lifecycle.StepFrame()), ogplay::session::DexActivityLifecycleError);
+        CHECK(created == 1);
+        CHECK_FALSE(f.context->gl_surface_runtimes.at(view.Value())->surface_available);
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}
+
+TEST_CASE("DVM-319 traversal reasons are per window first occurrence with retained counters") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->surface_width = 80;
+        f.context->surface_height = 50;
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly);
+        };
+        REQUIRE(tick());
+        const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+        const auto epoch = f.context->ui_measure_epoch;
+        CHECK_FALSE(tick());
+        CHECK_FALSE(tick());
+        CHECK(f.context->ui_measure_epoch == epoch);
+        auto& counts = f.context->ui_traversal_diagnostics[root];
+        CHECK(counts.at("clean snapshot") == 2);
+        CHECK(counts.at("projection committed") == 1);
+        {
+            AndroidInputEvent input(f.vm, *f.context);
+            CHECK_FALSE(tick());
+            CHECK_FALSE(tick());
+            auto target = *f.context->ui_tree.ProjectionTarget();
+            CommitAndroidMeasuredRootProjection(f.vm, *f.context, root, target, epoch + 1);
+        }
+        CHECK(counts.at("input lease barrier") == 2);
+        CHECK(counts.at("commit input lease") == 1);
+        f.context->surface_event_dispatching = true;
+        CHECK_FALSE(tick());
+        f.context->surface_event_dispatching = false;
+        auto& schedule = f.context->ui_window_schedules[root];
+        schedule.deferred_until_tick = f.context->ui_owner_tick + 2;
+        CHECK_FALSE(tick());
+        CHECK(counts.at("deferred next tick") == 1);
+        CHECK_FALSE(tick());
+        CHECK(f.context->ui_measure_epoch == epoch + 1);  // pending draw publishes after lease release
+        auto stale = *f.context->ui_tree.ProjectionTarget();
+        ++stale.content_revision;
+        CHECK_THROWS_AS(CommitAndroidMeasuredRootProjection(f.vm, *f.context, root, stale, epoch + 2), VmJavaThrow);
+        CHECK(counts.at("commit stale identity") == 1);
+        const auto records = f.logger.Snapshot(std::nullopt, "ui.traversal");
+        for (const auto why : {"clean snapshot", "projection committed", "input lease barrier", "commit input lease",
+                               "surface callback barrier", "deferred next tick", "commit stale identity"}) {
+            CHECK(std::ranges::count_if(records, [&](const auto& record) {
+                      return record.message == std::string(why) + " root=" + std::to_string(root.Value()) &&
+                             !record.fields.empty();
+                  }) == 1);
+        }
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

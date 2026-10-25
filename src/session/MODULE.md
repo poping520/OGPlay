@@ -154,6 +154,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，
   video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
   裁剪与命中使用同一次布局产生的 frame。
+- JavaTraversal 的 `ComposePresentedFrame` 只读一次 AcquireAndroidPresentation 得到的共同快照，
+  按 video下层→guest UI→video上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
+  新帧尺寸须与共同快照一致，失败保留发布序列。Legacy 继续原刷新/布局/cache/合成路径。
+  modal 输入先由 integration 使用同一发布对象命中/捕获，再进入 Java Dialog 协议；
+  普通输入使用事件租约。回调请求布局由后续 owner 调度执行，呈现线程不执行 guest。
 - 内容树触摸由 integration 的共享分发器负责；session 仅映射输入、处理滚动与 Activity
   fallback，不保存独立 listener/deep capture。guest Decor→Activity→Window 入口使用同一
   reverse-Z、intercept/CANCEL 与捕获 owner；非 split 多指沿 DOWN 目标派发。

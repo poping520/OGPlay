@@ -3756,12 +3756,13 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         const auto revision = context.ui_content_revision;
         const auto width = context.surface_width;
         const auto height = context.surface_height;
+        const auto density = context.ui_density;
         const auto roots = vm.ProtectReferences(std::array{root});
         const auto current = [&] {
             return root == AndroidUiTraversalRoot(vm, context) && content == context.content_view &&
                    revision == context.ui_content_revision && generation == context.ui_tree.Generation() &&
-                   width == context.surface_width && height == context.surface_height && node &&
-                   FindViewUiNode(context, root.Value()) == node;
+                   width == context.surface_width && height == context.surface_height &&
+                   density == context.ui_density && node && FindViewUiNode(context, root.Value()) == node;
         };
         if (!current())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound test root"};

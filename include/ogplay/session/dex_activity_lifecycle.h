@@ -51,6 +51,10 @@ using runtime::DispatchDeepTouchEvent;
 // through interpreted onTouchEvent/onKeyDown overrides. Manifest MAIN/LAUNCHER
 // selects the initial Activity.
 
+// Read-only experimental compositor. Uses one acquired presentation for every UI plane.
+[[nodiscard]] runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
+                                                                            runtime::AndroidBoundaryFrame frame);
+
 struct DexActivityLifecycleBindings final {
     runtime::DexVmGuestBridge* bridge{};
     std::shared_ptr<runtime::DexVmAndroidContext> context;

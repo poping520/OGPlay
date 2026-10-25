@@ -635,8 +635,11 @@ bool AnyVideoPlaying(const DexVmAndroidContext& context) {
 
 bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
     if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return false;
-    const auto snapshot = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                              ? context.ui_tree.PublishedProjection()
+    const auto presentation = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                                  ? AcquireAndroidPresentation(context)
+                                  : nullptr;
+    const auto snapshot = presentation && !presentation->guest_window_epoch_refs.empty()
+                              ? presentation->guest_window_epoch_refs.front()
                               : nullptr;
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return false;
     const auto& tree = snapshot ? *snapshot : context.ui_tree;
@@ -969,8 +972,11 @@ void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& 
                        const bool on_top) {
     if (width == 0 || height == 0 ||
         canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
-    const auto snapshot = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                              ? context.ui_tree.PublishedProjection()
+    const auto presentation = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                                  ? AcquireAndroidPresentation(context)
+                                  : nullptr;
+    const auto snapshot = presentation && !presentation->guest_window_epoch_refs.empty()
+                              ? presentation->guest_window_epoch_refs.front()
                               : nullptr;
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return;
     const auto& tree = snapshot ? *snapshot : context.ui_tree;

@@ -112,6 +112,7 @@ struct DexVmAndroidContext final {
 
     const AndroidUiTraversalOwner ui_traversal_owner;
     std::uint64_t ui_measure_epoch{};
+    float ui_projection_density{};  // Density used by the last completed owner traversal.
     // Weak identities in JavaTraversal; live hierarchy edges belong to Java.
     std::set<dexvm::VmObjectRef> ui_measure_requests;
     // 0 outside layout, 1 first pass, 2 deferred-request pass (API19 ViewRootImpl).
@@ -356,6 +357,9 @@ struct DexVmAndroidContext final {
     // above belong to host_tree when present, never to the guest projection.
     std::shared_ptr<ui::UiTree> host_tree;
     std::uint64_t partition{}, generation{}, revision{};
+    ui::Size viewport{};
+    float density{1.0F};
+    ui::UiNodeId panel;
 
     struct GuestFocus final {
         dexvm::VmObjectRef view, window_root;
@@ -368,6 +372,36 @@ struct DexVmAndroidContext final {
   // Advances only after an isolated host tree has passed layout/fit checks.
   std::uint64_t dialog_host_revision{};
   std::vector<DialogPresentation> dialog_presentations;
+
+  struct PresentationSnapshot final {
+      std::uint64_t presentation_epoch{};
+      std::vector<std::shared_ptr<const ui::UiTree>> guest_window_epoch_refs;
+      std::uint64_t host_modal_revision{}, metrics_revision{};
+      ui::Size viewport{};
+
+      struct ModalSnapshot final {
+          dexvm::VmObjectRef dialog, owner;
+          std::uint64_t partition{}, generation{}, revision{};
+          std::shared_ptr<const ui::UiTree> tree;
+          std::array<std::optional<ui::UiNodeId>, 3> buttons;
+      };
+
+      std::vector<ModalSnapshot> modal_stack;
+  };
+
+  // Owner builds partitions; render/input acquire only this immutable sequence.
+  std::shared_ptr<const PresentationSnapshot> presentation_snapshot;
+  std::shared_ptr<const PresentationSnapshot> input_presentation;  // Owner-scoped event lease.
+
+  struct ModalCapture final {
+      std::uint64_t partition{}, generation{};
+      dexvm::VmObjectRef dialog;
+  };
+
+  std::optional<ModalCapture> dialog_capture;
+  // Cancelled sequences still consume their terminal event, without retaining an owner.
+  bool dialog_pointer_tail{};
+  std::unordered_set<std::int32_t> dialog_key_tails;
   bool dialog_pointer_active{};
   std::optional<ui::UiNodeId> dialog_pressed_button;
   std::unordered_set<std::int32_t> dialog_keys_down;
@@ -1220,6 +1254,12 @@ ViewObjectForUiNode(const DexVmAndroidContext &context, ui::UiNodeId node);
 void ResetViewUiState(DexVmAndroidContext &context);
 [[nodiscard]] bool HasAndroidModalDialog(const DexVmAndroidContext& context);
 void SynchronizeAndroidDialogs(DexVmAndroidContext& context);
+[[nodiscard]] std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>
+AcquireAndroidPresentation(const DexVmAndroidContext& context);
+// Owner only. No guest calls; false until a complete matching guest partition exists.
+bool PublishAndroidPresentation(DexVmAndroidContext& context);
+// Owner traversal prepares unpublished host partitions for changed metrics.
+void ResizeAndroidDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context);
 void ReleaseAndroidDialogs(DexVmAndroidContext& context);
 void DismissAndroidActivityDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context,
     dexvm::VmObjectRef owner);

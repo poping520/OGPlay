@@ -123,8 +123,37 @@ Decl Declare_android_widget_Button(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_widget_EditText(const Context& context) {
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        return dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;").Build();
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
+        builder.VirtualMethod("getText", "()Landroid/text/Editable;", [context](dx::IntrinsicContext& c) {
+            auto& refs = context->view_adapter_references.at(c.receiver.Value());
+            if (!refs.text_editable.IsValid()) {
+                refs.text_editable = c.vm.NewIntrinsicInstance("Landroid/text/EditableImpl;");
+                context->editable_owner[refs.text_editable.Value()] = c.receiver.Value();
+            }
+            return dx::VmValue::Ref(refs.text_editable);
+        });
+        const auto selection = [context](int kind) {
+            return dx::IntrinsicHandler([context, kind](dx::IntrinsicContext& c) {
+                const auto node = FindViewUiNode(*context, c.receiver.Value());
+                if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "unconstructed EditText"};
+                const auto length = static_cast<std::int32_t>(context->ui_tree.Get(*node)->text.size());
+                auto& refs = context->view_adapter_references.at(c.receiver.Value());
+                const auto start = kind == 2 ? 0 : kind == 3 ? refs.selection_start : c.arguments[0].AsInt();
+                const auto end = kind == 2 ? length : kind == 0 ? c.arguments[1].AsInt() : c.arguments[0].AsInt();
+                if (start < 0 || end < 0 || start > length || end > length)
+                    throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "selection outside text"};
+                refs.selection_start = start;
+                refs.selection_end = end;
+                return dx::VmValue::Void();
+            });
+        };
+        builder.VirtualMethod("setSelection", "(II)V", selection(0));
+        builder.VirtualMethod("setSelection", "(I)V", selection(1));
+        builder.VirtualMethod("selectAll", "()V", selection(2));
+        builder.VirtualMethod("extendSelection", "(I)V", selection(3));
+        return std::move(builder).Build();
+    }
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/EditText;", "Landroid/widget/TextView;");
     builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
     builder.VirtualMethod("getText", "()Landroid/text/Editable;", [context](dx::IntrinsicContext& call) {
@@ -1232,6 +1261,7 @@ Decl ExperimentalTextView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context](dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
+        const bool editing = UiClassForObject(vm, c.receiver) == ui::UiClass::EditText;
         const auto style = c.arguments[2];
         const auto super = vm.Linker().FindDirectMethod(vm.Linker().ResolveDescriptor("Landroid/view/View;"), "<init>",
                                                         "(Landroid/content/Context;Landroid/util/AttributeSet;I)V");
@@ -1283,6 +1313,7 @@ Decl ExperimentalTextView(const Context& context) {
         std::u16string text;
         std::string family;
         bool has_family = false, single = false;
+        bool editable = editing;
         int ellipsize = -1;
         std::array<ui::CompoundDrawable, 4> compounds{};
         std::array<dx::VmObjectRef, 4> compound_refs{dx::VmObjectRef{}, dx::VmObjectRef{}, dx::VmObjectRef{},
@@ -1381,11 +1412,18 @@ Decl ExperimentalTextView(const Context& context) {
                     // The View super constructor consumed this same value.
                 } else if (name == "includeFontPadding" || name == "cursorVisible" || name == "linksClickable") {
                     if (!boolean(true)) TextInputFailure(vm, "unsupported non-default " + name);
-                } else if (name == "textAllCaps" || name == "editable" || name == "password" ||
-                           name == "textIsSelectable" || name == "autoText" || name == "phoneNumber" ||
-                           name == "selectAllOnFocus" || name == "scrollHorizontally") {
+                } else if (name == "editable") {
+                    editable = boolean(editing);
+                    if (editable != editing) TextInputFailure(vm, "editable override outside bounded EditText");
+                } else if (name == "bufferType") {
+                    const auto type = integer(0);
+                    if (type != 0 && !(editing && (type == 1 || type == 2)))
+                        TextInputFailure(vm, "unsupported bufferType");
+                } else if (name == "textAllCaps" || name == "password" || name == "textIsSelectable" ||
+                           name == "autoText" || name == "phoneNumber" || name == "selectAllOnFocus" ||
+                           name == "scrollHorizontally") {
                     if (boolean(false)) TextInputFailure(vm, "unsupported " + name);
-                } else if (name == "autoLink" || name == "bufferType" || name == "shadowColor") {
+                } else if (name == "autoLink" || name == "shadowColor") {
                     if (integer(0) != 0) TextInputFailure(vm, "unsupported " + name);
                 } else {
                     TextInputFailure(vm, "unsupported TextView attribute: " + name);
@@ -1448,7 +1486,7 @@ Decl ExperimentalTextView(const Context& context) {
             TextInputFailure(vm, "RTL text direction unsupported");
         const auto focus_values = obtain(view.array);
         const auto focus_root = vm.ProtectReferences(std::array{focus_values});
-        std::array<bool, 3> focus{};
+        std::array<bool, 3> focus{editing, editing, editing};
         const auto count = CallAndroidMethod(vm, focus_values, "getIndexCount", "()I").AsInt();
         for (int i = 0; i < count; ++i) {
             const auto index = CallAndroidMethod(vm, focus_values, "getIndex", "(I)I", {dx::VmValue::Int(i)}).AsInt();
@@ -1477,6 +1515,26 @@ Decl ExperimentalTextView(const Context& context) {
         refs.text_single_line = single;
         refs.text_typeface = face;
         refs.text_compounds = compound_refs;
+        if (editing) {
+            if (!CallAndroidMethod(vm, c.receiver, "getDefaultEditable", "()Z").AsInt())
+                TextInputFailure(vm, "EditText requires editable default");
+            refs.text_movement =
+                CallAndroidMethod(vm, c.receiver, "getDefaultMovementMethod", "()Landroid/text/method/MovementMethod;")
+                    .ref;
+            if (!refs.text_movement.IsValid() ||
+                vm.Linker().Class(vm.Model().ObjectClass(refs.text_movement)).descriptor !=
+                    "Landroid/text/method/ArrowKeyMovementMethod;")
+                TextInputFailure(vm, "EditText requires bounded ArrowKeyMovementMethod");
+            state->max_length = 1024;
+            // ArrowKeyMovementMethod.initialize places the initial cursor at 0.
+            refs.selection_start = refs.selection_end = 0;
+            static_cast<void>(CallAndroidMethod(vm, c.receiver, "getText", "()Landroid/text/Editable;"));
+            // Exercise the actual EditText override that forces EDITABLE,
+            // while the reviewed TextView endpoint owns the bounded transaction.
+            const auto initial = vm.Model().NewString(state->text);
+            static_cast<void>(CallAndroidMethod(vm, c.receiver, "setText", "(Ljava/lang/CharSequence;)V",
+                                                {dx::VmValue::Ref(initial)}));
+        }
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     });
@@ -1504,6 +1562,15 @@ Decl ExperimentalTextView(const Context& context) {
     };
     builder.FinalMethod(
         "setText", "(Ljava/lang/CharSequence;)V", [context, changed, validate](dx::IntrinsicContext& c) {
+            if (UiClassForObject(c.vm, c.receiver) == ui::UiClass::EditText) {
+                const auto type = TextStatic(c.vm, "Landroid/widget/TextView$BufferType;", "valueOf",
+                                             "(Ljava/lang/String;)Landroid/widget/TextView$BufferType;",
+                                             {dx::VmValue::Ref(c.vm.NewStringUtf8("EDITABLE"))})
+                                      .ref;
+                return CallAndroidMethod(c.vm, c.receiver, "setText",
+                                         "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                                         {c.arguments[0], dx::VmValue::Ref(type)});
+            }
             const auto ref = c.arguments[0].ref;
             if (ref.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(ref)).descriptor != "Ljava/lang/String;")
                 TextInputFailure(c.vm, "plain String required");
@@ -1513,6 +1580,48 @@ Decl ExperimentalTextView(const Context& context) {
             n.text = std::move(text);
             return changed(c);
         });
+    builder.VirtualMethod("setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
+                          [context, validate](dx::IntrinsicContext& c) {
+                              if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText ||
+                                  !c.arguments[1].ref.IsValid() ||
+                                  CallAndroidMethod(c.vm, c.arguments[1].ref, "ordinal", "()I").AsInt() != 2)
+                                  TextInputFailure(c.vm, "only EditText EDITABLE buffer is supported");
+                              const auto text = c.arguments[0].ref;
+                              if (text.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(text)).descriptor !=
+                                                        "Ljava/lang/String;")
+                                  TextInputFailure(c.vm, "plain String required");
+                              const auto value = text.IsValid() ? c.vm.Model().StringValue(text) : std::u16string{};
+                              const auto& n = *context->ui_tree.Get(TextNode(c, context));
+                              validate(c, n, value, n.text_size_px, n.text_style);
+                              static_cast<void>(ApplyTextEdit(c.vm, *context, c.receiver, 0,
+                                                              static_cast<std::int32_t>(n.text.size()), value));
+                              return dx::VmValue::Void();
+                          });
+    for (const auto& [name, end] :
+         std::array<std::pair<const char*, bool>, 2>{{{"getSelectionStart", false}, {"getSelectionEnd", true}}})
+        builder.VirtualMethod(name, "()I", [context, end](dx::IntrinsicContext& c) {
+            const auto& refs = context->view_adapter_references.at(c.receiver.Value());
+            if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText) return dx::VmValue::Int(-1);
+            return dx::VmValue::Int(end ? refs.selection_end : refs.selection_start);
+        });
+    builder.VirtualMethod("addTextChangedListener", "(Landroid/text/TextWatcher;)V",
+                          [context](dx::IntrinsicContext& c) {
+                              if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText)
+                                  TextInputFailure(c.vm, "watchers require bounded EditText");
+                              if (!c.arguments[0].ref.IsValid())
+                                  throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "null watcher"};
+                              context->text_watchers[c.receiver.Value()].push_back(c.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
+    builder.VirtualMethod("removeTextChangedListener", "(Landroid/text/TextWatcher;)V",
+                          [context](dx::IntrinsicContext& c) {
+                              if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText)
+                                  TextInputFailure(c.vm, "watchers require bounded EditText");
+                              auto& watchers = context->text_watchers[c.receiver.Value()];
+                              const auto found = std::find(watchers.begin(), watchers.end(), c.arguments[0].ref);
+                              if (found != watchers.end()) watchers.erase(found);
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("getText", "()Ljava/lang/CharSequence;", [context](dx::IntrinsicContext& c) {
         return dx::VmValue::Ref(c.vm.Model().NewString(context->ui_tree.Get(TextNode(c, context))->text));
     });

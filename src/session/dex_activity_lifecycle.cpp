@@ -533,7 +533,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             using Type = runtime::AndroidBoundaryInputType;
             if (input.type == Type::key) {
-                if (input.pressed && context.focused_edit_text.IsValid()) {
+                if (runtime::DispatchAndroidBoundedEditInput(vm, context, input)) continue;
+                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && input.pressed &&
+                    context.focused_edit_text.IsValid()) {
                     const auto node = runtime::FindViewUiNode(
                         context, context.focused_edit_text.Value());
                     if (node.has_value()) {
@@ -603,7 +605,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         static_cast<std::uint32_t>(handle)};
                     if (vm.Linker().IsAssignable(
                             edit_class, vm.Model().ObjectClass(candidate))) {
-                        context.focused_edit_text = candidate;
+                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                            static_cast<void>(CallOnView(candidate, "requestFocus", "()Z", {}));
+                        else
+                            context.focused_edit_text = candidate;
                     }
                     const auto node = runtime::FindViewUiNode(context, handle);
                     if (node.has_value() &&

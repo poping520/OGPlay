@@ -222,10 +222,8 @@ void BindImageDrawable(dx::Interpreter& vm, const Context& context,
 // Single writer for TextView/EditText mutations. Every source (host keys,
 // setText and Editable methods) uses the same filters and guest TextWatcher
 // transaction.
-bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
-                   dx::VmObjectRef view, std::int32_t start,
-                   std::int32_t before_count,
-                   const std::u16string& replacement);
+bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view, std::int32_t start,
+                   std::int32_t before_count, const std::u16string& replacement, bool collapse_selection);
 [[nodiscard]] dx::IntrinsicHandler GraphicsNoopHandler();
 [[nodiscard]] dx::IntrinsicHandler PrefsEditHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler PrefsEditorCommitHandler(

@@ -549,3 +549,19 @@ transformation 不在支持输入内，不读取相应 failure 字段或伪初�
 Theme/TypedArray 解析。默认主题的不支持背景/状态色等请求沿 ADR-0147 明确失败，
 应用 style/主题可用纯色或 @null 显式覆盖。accessibility 两个 Button 覆写仍 failure。
 Legacy 控件默认值与生产配方保持。
+
+## 实验 EditText 有界编辑
+
+JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认 editable/movement、
+EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
+selector/ninepatch/系统皮肤失败，应用可显式覆盖。复用同一 TextView 文本与冻结测量服务。
+宿主 UiNode 唯一拥有可变文本；View adapter 仅保存有界 selection 与 Editable/movement 身份，
+不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用 Legacy 的
+length/toString/clear/replace 服务；实验身份从 View 强边保活，反向保活 View，循环随 GC 回收。
+编辑使用已有 ApplyTextEdit；实验分支提交 selection、失效测量缓存并调用 Java requestLayout/
+invalidate，先全部 before、提交、全部 on、全部 after，after 可重入；Legacy 原事务顺序保持。
+边界为1024 UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；完整 Spannable、
+IME/composition、Editor、布局对象、修改键移动/删除及未支持字形请求均记账失败。
+输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
+不使用 focused_edit_text 或 UiTree 焦点作实验 owner。失败校验不改 selection；提交后回调
+异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。

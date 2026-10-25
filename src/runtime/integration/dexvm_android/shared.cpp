@@ -248,10 +248,9 @@ template <typename ValueType>
 
 }  // namespace
 
-bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
-                   const dx::VmObjectRef view, const std::int32_t start,
-                   const std::int32_t before_count,
-                   const std::u16string& replacement) {
+bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef view,
+                   const std::int32_t start, const std::int32_t before_count, const std::u16string& replacement,
+                   const bool collapse_selection) {
     const auto node = EnsureViewUiNode(context, view, ui::UiClass::TextView);
     auto* state = context.ui_tree.Get(node);
     if (start < 0 || before_count < 0 ||
@@ -260,6 +259,11 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
             state->text.size() - static_cast<std::size_t>(start)) {
         throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                               "text replacement range is invalid"};
+    }
+    const bool experimental = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+    if (experimental && state->text.size() - static_cast<std::size_t>(before_count) + replacement.size() > 1024) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text exceeds bounded edit service"};
     }
     std::u16string filtered;
     filtered.reserve(replacement.size());
@@ -279,14 +283,24 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
     auto after = state->text;
     after.replace(static_cast<std::size_t>(start),
                   static_cast<std::size_t>(before_count), filtered);
-    if (after == state->text) return false;
+    if (!experimental && after == state->text) return false;
     try {
-        static_cast<void>(ui::MeasureFixedText(after, 8.0F, 0, context.ui_tree.FallbackFont().get()));
+        static_cast<void>(ui::MeasureFixedText(after, experimental ? state->text_size_px : 8.0F,
+                                               experimental ? state->text_style : 0,
+                                               context.ui_tree.FallbackFont().get()));
     } catch (const std::runtime_error& error) {
+        if (experimental)
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               error.what()};
     }
 
+    if (experimental && (after.size() > 1024 || std::any_of(after.begin(), after.end(), [](char16_t ch) {
+                             return !(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff));
+                         }))) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text outside bounded edit service"};
+    }
     const auto before = state->text;
     auto watchers = context.text_watchers[view.Value()];
     const auto old_text = vm.Model().NewString(before);
@@ -324,6 +338,24 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
     state = context.ui_tree.Get(node);
     state->text = std::move(after);
     context.ui_tree.MarkLayoutDirty(node);
+    if (experimental) {
+        auto& refs = context.view_adapter_references.at(view.Value());
+        const auto adjust = [&](std::int32_t value) {
+            if (before_count == 0 && value == start) return start + static_cast<std::int32_t>(filtered.size());
+            if (value > start + before_count) return value - before_count + static_cast<std::int32_t>(filtered.size());
+            if (value > start) return start + static_cast<std::int32_t>(filtered.size());
+            return value;
+        };
+        refs.selection_start = adjust(refs.selection_start);
+        refs.selection_end = adjust(refs.selection_end);
+        if (collapse_selection)
+            refs.selection_start = refs.selection_end = start + static_cast<std::int32_t>(filtered.size());
+        ++refs.text_revision;
+        refs.text_measure.reset();
+        refs.text_measure_cache.clear();
+        static_cast<void>(CallAndroidMethod(vm, view, "requestLayout", "()V"));
+        static_cast<void>(CallAndroidMethod(vm, view, "invalidate", "()V"));
+    }
     dx::VmObjectRef editable{};
     if (!watchers.empty()) {
         const auto edit_text = vm.Linker().ResolveDescriptor(
@@ -339,9 +371,12 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context,
                {dx::VmValue::Ref(new_text), dx::VmValue::Int(start),
                 dx::VmValue::Int(before_count),
                 dx::VmValue::Int(static_cast<std::int32_t>(filtered.size()))});
-        invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V",
-               {dx::VmValue::Ref(editable)});
+        if (!experimental)
+            invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V", {dx::VmValue::Ref(editable)});
     }
+    if (experimental)
+        for (const auto watcher : watchers)
+            invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V", {dx::VmValue::Ref(editable)});
     return true;
 }
 
@@ -510,6 +545,12 @@ dx::IntrinsicHandler EditableReplaceHandler(const Context& context) {
                 "Editable.replace range is invalid"};
         }
         const auto value = call.arguments[2].ref;
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && value.IsValid() &&
+            call.vm.Linker().Class(call.vm.Model().ObjectClass(value)).descriptor != "Ljava/lang/String;") {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "bounded Editable.replace requires plain String"};
+        }
         const auto owner = dx::VmObjectRef(context->editable_owner.at(
             call.receiver.Value()));
         static_cast<void>(ApplyTextEdit(

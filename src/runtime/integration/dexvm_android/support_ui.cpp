@@ -159,7 +159,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         if (kind != ui::UiClass::View &&
             !((kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton) &&
               vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&
-            !((kind == ui::UiClass::TextView || kind == ui::UiClass::Button) &&
+            !((kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
               vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
@@ -322,7 +322,8 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
         const auto kind = context.ui_tree.Get(*node)->kind;
         if (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton)
             android_intrinsics::ProjectAndroidImage(vm, context, view);
-        if ((kind == ui::UiClass::TextView || kind == ui::UiClass::Button) && visibility != ui::Visibility::Gone) {
+        if ((kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
+            visibility != ui::Visibility::Gone) {
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
             auto& text = *context.ui_tree.Get(*node);
@@ -429,7 +430,8 @@ ui::UiNodeId EnsureViewUiNode(DexVmAndroidContext& context,
     const auto found = context.object_to_ui_node.find(view.Value());
     if (found != context.object_to_ui_node.end()) return found->second;
     const auto node = context.ui_tree.CreateNode(kind);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && kind == ui::UiClass::Button) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+        (kind == ui::UiClass::Button || kind == ui::UiClass::EditText)) {
         // Legacy defaults have no authority over the ROM theme consumption path.
         auto& text = *context.ui_tree.Get(node);
         text.background_color.reset();
@@ -2678,3 +2680,51 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
     return true;
 }
 } // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+bool DispatchAndroidBoundedEditInput(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                     const AndroidBoundaryInput& input) {
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
+        input.type != AndroidBoundaryInputType::key || !context.content_view.IsValid())
+        return false;
+    const auto focused =
+        android_intrinsics::CallAndroidMethod(vm, context.content_view, "findFocus", "()Landroid/view/View;").ref;
+    if (!focused.IsValid() || !AndroidViewBelongsToRoot(vm, context, focused) ||
+        android_intrinsics::UiClassForObject(vm, focused) != ui::UiClass::EditText)
+        return false;
+    if (input.code != 21 && input.code != 22 && input.code != 67 && input.code != 112 && input.unicode_char <= 0)
+        return false;
+    if (!input.pressed) return true;
+    if (input.meta_state != 0 && (input.code == 21 || input.code == 22 || input.code == 67 || input.code == 112)) {
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "modified movement/deletion unsupported"};
+    }
+    auto& refs = context.view_adapter_references.at(focused.Value());
+    const auto node = FindViewUiNode(context, focused.Value());
+    const auto length = static_cast<std::int32_t>(context.ui_tree.Get(*node)->text.size());
+    auto start = std::min(refs.selection_start, refs.selection_end);
+    auto end = std::max(refs.selection_start, refs.selection_end);
+    if (input.code == 21 || input.code == 22) {
+        const auto next = input.code == 21 ? (start != end ? start : std::max(0, start - 1))
+                                           : (start != end ? end : std::min(length, end + 1));
+        refs.selection_start = refs.selection_end = next;
+        return true;
+    }
+    std::u16string replacement;
+    if (input.code == 67) {
+        if (start == end) start = std::max(0, start - 1);
+    } else if (input.code == 112) {
+        if (start == end) end = std::min(length, end + 1);
+    } else {
+        if (input.unicode_char > 0xffff) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "supplementary editing unsupported"};
+        }
+        replacement.push_back(static_cast<char16_t>(input.unicode_char));
+    }
+    // Collapse at commit, before on/after callbacks; reentrant callbacks retain
+    // authority over the resulting selection. Validation failures change nothing.
+    static_cast<void>(android_intrinsics::ApplyTextEdit(vm, context, focused, start, end - start, replacement, true));
+    return true;
+}
+}  // namespace ogplay::runtime

@@ -2027,7 +2027,7 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 - 依据：[VD-10 分析](../../.local/analysis/vd-10/REPORT.md) §2、§3、§7、§8；
   [编排方方案决定](../../.local/analysis/view-dir/DECISION.md)“VD-10 方案决定”。
 - Supersedes：仅精确修订 [ADR-0160](#adr-0160) 决定5，见决定2。
-- 实施：[DVM-291 / VD-10a-1](../tasks/dexvm/DVM-291.md)、[DVM-292 / VD-10a-2](../tasks/dexvm/DVM-292.md)、[DVM-293 / VD-10a-P](../tasks/dexvm/DVM-293.md)、[DVM-294 / VD-10a-3](../tasks/dexvm/DVM-294.md)、[DVM-295 / VD-10a-4](../tasks/dexvm/DVM-295.md)、[DVM-296 / VD-10a-5](../tasks/dexvm/DVM-296.md)、[DVM-297 / VD-10a-6](../tasks/dexvm/DVM-297.md)。
+- 实施：[DVM-291 / VD-10a-1](../tasks/dexvm/DVM-291.md)、[DVM-292 / VD-10a-2](../tasks/dexvm/DVM-292.md)、[DVM-293 / VD-10a-P](../tasks/dexvm/DVM-293.md)、[DVM-294 / VD-10a-3](../tasks/dexvm/DVM-294.md)、[DVM-295 / VD-10a-4](../tasks/dexvm/DVM-295.md)、[DVM-296 / VD-10a-5](../tasks/dexvm/DVM-296.md)、[DVM-297 / VD-10a-6](../tasks/dexvm/DVM-297.md)、[DVM-298 / VD-10a-7](../tasks/dexvm/DVM-298.md)。
 
 ### 决定
 

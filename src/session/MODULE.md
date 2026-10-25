@@ -112,6 +112,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   MOVE/POINTER_UP/UP/CANCEL 与 action index；坐标变换不在这里重复执行。
   `MapAndroidKey` 把 `ControlMapper` 的 Android keycode 输出投影为 key 事件；
   `MapControlOutput` 统一投影触摸、直通键与 keycode 三类输出。
+  JavaTraversal 的有界 EditText 输入通过 integration 从 Java findFocus/父链取候选；
+  DOWN 走真实 requestFocus，字符/左右/删除复用宿主编辑事务。实验路径不读写 Legacy
+  focused_edit_text 候选，Editor/IME/composition 与修改键编辑明确失败。
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。

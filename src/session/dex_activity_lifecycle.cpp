@@ -596,6 +596,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 context.focused_edit_text = dx::VmObjectRef{};
                 scroll_view_handle_ = 0U;
                 scroll_dragging_ = false;
+                scroll_start_x_ = pointer_x_;
+                scroll_last_x_ = pointer_x_;
+                scroll_horizontal_ = false;
                 scroll_start_y_ = pointer_y_;
                 scroll_last_y_ = pointer_y_;
                 const auto edit_class = vm.Linker().ResolveDescriptor(
@@ -611,10 +614,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                             context.focused_edit_text = candidate;
                     }
                     const auto node = runtime::FindViewUiNode(context, handle);
-                    if (node.has_value() &&
-                        context.ui_tree.Get(*node)->kind ==
-                            runtime::ui::UiClass::ScrollView) {
-                        scroll_view_handle_ = handle;
+                    if (node.has_value()) {
+                        const auto kind = context.ui_tree.Get(*node)->kind;
+                        if (kind == runtime::ui::UiClass::ScrollView ||
+                            (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
+                             kind == runtime::ui::UiClass::HorizontalScrollView)) {
+                            scroll_view_handle_ = handle;
+                            scroll_horizontal_ = kind == runtime::ui::UiClass::HorizontalScrollView;
+                        }
                     }
                 }
             }
@@ -623,14 +630,17 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     context, scroll_view_handle_);
                 if (node.has_value()) {
                     auto& scroll = *context.ui_tree.Get(*node);
-                    const auto content_height = scroll.children.empty()
-                        ? 0 : context.ui_tree.Get(scroll.children.front())->measured.height;
-                    const auto maximum = std::max(
-                        0, content_height - scroll.measured.height +
-                               scroll.padding.top + scroll.padding.bottom);
+                    const auto content = scroll.children.empty()
+                                             ? runtime::ui::Size{}
+                                             : context.ui_tree.Get(scroll.children.front())->measured;
+                    const auto maximum = scroll_horizontal_
+                                             ? std::max(0, content.width - scroll.measured.width + scroll.padding.left +
+                                                               scroll.padding.right)
+                                             : std::max(0, content.height - scroll.measured.height +
+                                                               scroll.padding.top + scroll.padding.bottom);
                     if (!scroll_dragging_ && ShouldInterceptScrollGesture(
-                            maximum, scroll_start_y_, pointer_y_,
-                            context.ui_density)) {
+                                                 maximum, scroll_horizontal_ ? scroll_start_x_ : scroll_start_y_,
+                                                 scroll_horizontal_ ? pointer_x_ : pointer_y_, context.ui_density)) {
                         // Once the ancestor ScrollView intercepts, Android
                         // cancels the original child target. This revokes both
                         // its touch capture and click eligibility.
@@ -644,7 +654,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
                             runtime::ScrollAndroidViewBy(
                                 vm, context, dx::VmObjectRef{static_cast<std::uint32_t>(scroll_view_handle_)},
-                                static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)));
+                                scroll_horizontal_
+                                    ? 0
+                                    : static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)),
+                                scroll_horizontal_ ? static_cast<std::int32_t>(std::lround(scroll_last_x_ - pointer_x_))
+                                                   : 0);
+                            scroll_last_x_ = pointer_x_;
                             scroll_last_y_ = pointer_y_;
                         } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) {
                             const auto previous = scroll.scroll_y;

@@ -2136,7 +2136,7 @@ test = "tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check;
 [dexvm.scroll_constructor]
 status = "partial"
 test = "tests/dexvm/scrollview_constructor_tests.cpp; tests/dexvm/scrollview_traversal_tests.cpp; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-299/300：实验两Scroll完整ROM形状、真主题构造、metrics和ROM OverScroller；默认EdgeEffect仅idle，激活/draw失败。纵向ROM测量/单child/layout/clamp，Java位置唯一，owner delta与同epoch投影/clip/CANCEL。水平布局、scrollbar Drawable、SavedState、focus滚动和fling/smoothScroll失败；Legacy保持。"
+note = "DVM-299..301：实验两Scroll完整ROM形状、真主题构造、metrics和ROM OverScroller；默认EdgeEffect仅idle，激活/draw失败。双轴ROM测量/单child/layout/clamp及水平初次RTL/forceLeftGravity，Java位置唯一，owner delta与同epoch XY投影/clip/CANCEL。scrollbar Drawable、SavedState、focus滚动和fling/smoothScroll失败；Legacy保持。"
 
 [dexvm.paint_measure]
 status = "partial"

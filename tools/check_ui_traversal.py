@@ -60,9 +60,9 @@ def main():
             if not depth:
                 legacy_blocks.append((start, end))
                 break
-    for write in re.finditer(r"\.scroll_y\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
+    for write in re.finditer(r"\.scroll_[xy]\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
         if not any(start < write.start() < end for start, end in legacy_blocks):
-            errors.append("session scroll_y write outside explicit Legacy branch")
+            errors.append("session scroll coordinate write outside explicit Legacy branch")
     if len(calls) != 1:
         errors.append(f"expected one Legacy implementation call, found {len(calls)}")
     if errors:

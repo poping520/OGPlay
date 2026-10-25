@@ -193,8 +193,9 @@ void Failure(ContainerVm& f, VmObjectRef object, const char* name, const char* s
     CHECK_FALSE(f.ledger.Unimplemented().empty());
     CHECK(hits() > before);
     const bool glow = std::string_view(name) == "setOverScrollMode";
+    const auto& owner = f.linker.Class(f.model.ObjectClass(object)).descriptor;
     const bool bounded = std::string_view(name) == "onTouchEvent" &&
-                         f.linker.Class(f.model.ObjectClass(object)).descriptor == "Landroid/widget/ScrollView;";
+                         (owner == "Landroid/widget/ScrollView;" || owner == "Landroid/widget/HorizontalScrollView;");
     CHECK(f.linker.Class(result.exception_class).descriptor ==
           ((glow || bounded) ? "Ljava/lang/UnsupportedOperationException;" : "Ljava/lang/UnsatisfiedLinkError;"));
     CHECK(result.exception_message.find(glow ? "EdgeEffect" : name) != std::string::npos);
@@ -301,11 +302,6 @@ TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly f
                         (std::string(name).substr(0, std::string(name).size() - 1) + "$SavedState;").c_str()))});
             Failure(f, view, "requestChildFocus", "(Landroid/view/View;Landroid/view/View;)V",
                     {VmValue::Ref(view), VmValue::Ref(view)});
-            if (std::string_view(name) == "Landroid/widget/HorizontalScrollView;") {
-                Failure(f, view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
-                Failure(f, view, "onLayout", "(ZIIII)V",
-                        {VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
-            }
             Failure(f, view, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(VmObjectRef{})});
         }
         ContainerVm f(backend);

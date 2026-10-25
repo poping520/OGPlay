@@ -115,8 +115,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   JavaTraversal 的有界 EditText 输入通过 integration 从 Java findFocus/父链取候选；
   DOWN 走真实 requestFocus，字符/左右/删除复用宿主编辑事务。实验路径不读写 Legacy
   focused_edit_text 候选，Editor/IME/composition 与修改键编辑明确失败。
-  JavaTraversal 的纵向拖动只持捕获/slop/delta；拦截时 CANCEL 单一旧目标，再调用 integration
-  的 Java scrollBy/clamp 与投影发布接缝，不写 UiNode.scroll_y。宿主位置写入仅限显式 Legacy 分支。
+  JavaTraversal 的两轴拖动只持捕获/slop/delta；拦截时 CANCEL 单一旧目标，再调用 integration
+  的 Java scrollBy/clamp 与投影发布接缝，不写 UiNode.scroll_x/y。宿主位置写入仅限显式 Legacy 分支。
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。

@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
+      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
       "owner": "Landroid/widget/ScrollView;",
       "smali_sha256": "26af15b7841e69243cf158c9734586de860308a35dcd57aa9ccc5c44bafa9635",
       "methods": [
@@ -599,7 +599,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
+      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
       "owner": "Landroid/widget/HorizontalScrollView;",
       "smali_sha256": "cfdd3ec3f3b29f9102045d9c30f7adc7ccdd9db1faa004b63479c97baf7ce471",
       "methods": [
@@ -631,13 +631,13 @@
           "signature": "clamp(III)I",
           "flags": 10,
           "body_sha256": "e2260d608f44ee82f6617444774374c21faffc19fc95dff0936ba59429c21204",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "doScrollX(I)V",
           "flags": 2,
           "body_sha256": "a339354f25ae7ee8e0a964c05e6add4cc8bf20073e607f338b34383b352fb573",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "findFocusableViewInBounds(ZII)Landroid/view/View;",
@@ -698,13 +698,13 @@
           "signature": "isViewDescendantOf(Landroid/view/View;Landroid/view/View;)Z",
           "flags": 10,
           "body_sha256": "95ddba83362f3fa7cfeff2d5057ea047c34c8a629fff00cf77b3380eabf467dd",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isWithinDeltaOfScreen(Landroid/view/View;I)Z",
           "flags": 2,
           "body_sha256": "723d2272f8fa189b78a906fb8a9b5cc004f6456a3af956bb7432039c2a602bb4",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onSecondaryPointerUp(Landroid/view/MotionEvent;)V",
@@ -728,7 +728,7 @@
           "signature": "scrollToChild(Landroid/view/View;)V",
           "flags": 2,
           "body_sha256": "38c21a7a6513d3bd394141085c0b189c107b65f03c6f18edf3d2ce0eebfdd0a3",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "scrollToChildRect(Landroid/graphics/Rect;Z)Z",
@@ -740,25 +740,25 @@
           "signature": "addView(Landroid/view/View;)V",
           "flags": 1,
           "body_sha256": "9e62f078114e4700eb9a83ebaaff09a0fb8afb84601bd0bc7761618bb494a99d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;I)V",
           "flags": 1,
           "body_sha256": "043ad4cfe06ef722c04c534dbae02328b2a2faff30d76b69571ddc0c981e3f05",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
           "flags": 1,
           "body_sha256": "3c9a3a6eee7d199e2bfa426c59fd97305be9bb694a3500a0a80290a1d61b7a72",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
           "flags": 1,
           "body_sha256": "be2e04e44e6e6350325175cae234773e9e6d6bc3df925a7312a7d64d017c26de",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "arrowScroll(I)Z",
@@ -854,13 +854,13 @@
           "signature": "measureChild(Landroid/view/View;II)V",
           "flags": 4,
           "body_sha256": "814892e8da5a75ea573458eb46eeeb72adb2813c5c5f1fae97df6b7f52ffdfeb",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "measureChildWithMargins(Landroid/view/View;IIII)V",
           "flags": 4,
           "body_sha256": "6e8615b73d033d3f1852b163d3e8dd288713974042654c25c96d1c289738c661",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onGenericMotionEvent(Landroid/view/MotionEvent;)Z",
@@ -884,19 +884,26 @@
           "signature": "onInterceptTouchEvent(Landroid/view/MotionEvent;)Z",
           "flags": 1,
           "body_sha256": "78d7624c18975b49e876bde465da9fe06806c84c158f4feb07d9d000e97fb02e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-301 horizontal bounded host touch seam, identical single-pointer protocol to DVM-300",
+            "inputs": "only scoped DispatchDeepTouchEvent host dispatch, one pointer, DOWN/MOVE/UP/CANCEL; host slop/capture/delta owns interception",
+            "outputs": "onIntercept delegates ROM ViewGroup base so Java dispatch forwards to its real child; onTouch accepts host capture with nonempty child, empty DOWN declines; host sends CANCEL before Java scrollBy",
+            "state_owner": "existing host capture/slop/delta only; Java owns scroll position; scope flag is transient, no velocity/time/geometry mirror",
+            "failure_boundary": "manual direct calls outside host scope, null/multi-pointer events, fling/smooth/glow fail explicitly; no full ROM touch credit"
+          }
         },
         {
           "signature": "onLayout(ZIIII)V",
           "flags": 4,
           "body_sha256": "41f94404aa5c3b7e3d2ed23025bdbea2c76f154f22945b843705092a21b09205",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onMeasure(II)V",
           "flags": 4,
           "body_sha256": "db5a4ed514666861ef3581436d812119f7b2821cc40b383270752413e5beeb52",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onOverScrolled(IIZZ)V",
@@ -926,13 +933,20 @@
           "signature": "onSizeChanged(IIII)V",
           "flags": 4,
           "body_sha256": "4ce587457febac4c46b3398dc9f26bd33ca91dd8ef146581ec153de5c523661b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onTouchEvent(Landroid/view/MotionEvent;)Z",
           "flags": 1,
           "body_sha256": "7a563c46ba6b294dbe3ce4e0f253d4e41b24356324b2e31f65eae5d1486d1ce7",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-301 horizontal bounded host touch seam, identical single-pointer protocol to DVM-300",
+            "inputs": "only scoped DispatchDeepTouchEvent host dispatch, one pointer, DOWN/MOVE/UP/CANCEL; host slop/capture/delta owns interception",
+            "outputs": "onIntercept delegates ROM ViewGroup base so Java dispatch forwards to its real child; onTouch accepts host capture with nonempty child, empty DOWN declines; host sends CANCEL before Java scrollBy",
+            "state_owner": "existing host capture/slop/delta only; Java owns scroll position; scope flag is transient, no velocity/time/geometry mirror",
+            "failure_boundary": "manual direct calls outside host scope, null/multi-pointer events, fling/smooth/glow fail explicitly; no full ROM touch credit"
+          }
         },
         {
           "signature": "pageScroll(I)Z",
@@ -974,7 +988,7 @@
           "signature": "scrollTo(II)V",
           "flags": 1,
           "body_sha256": "edc3a48a561c8c665c1f80872951f5fc324eb3ff86a2197dbf3bf19d17567ebe",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setFillViewport(Z)V",
@@ -1126,7 +1140,7 @@
         {
           "signature": "mSavedState:Landroid/widget/HorizontalScrollView$SavedState;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1167,7 +1181,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
+      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
       "owner": "Landroid/widget/EdgeEffect;",
       "smali_sha256": "8f66f625288c6c86ef8fcefde2acd7781ffa0b6e4bee73bdc1b1145c1c9ddb9a",
       "methods": [

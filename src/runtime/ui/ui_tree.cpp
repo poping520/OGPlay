@@ -103,6 +103,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         if (input.focusable_in_touch_mode) node.focusable_in_touch_mode = *input.focusable_in_touch_mode;
         node.padding = input.padding;
         node.scroll_y = input.scroll_y;
+        node.scroll_x = input.scroll_x;
         node.clip_children = input.clip_children;
         node.clip_to_padding = input.clip_to_padding;
         if (input.android_id) node.android_id = *input.android_id;
@@ -134,7 +135,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
             child_clip = Clip(child_clip, content);
         }
         for (const auto child : node.children)
-            self(self, child, left, top - node.scroll_y, child_clip, node.clip_children, depth + 1);
+            self(self, child, left - node.scroll_x, top - node.scroll_y, child_clip, node.clip_children, depth + 1);
     };
     resolve(resolve, root_, 0, 0, {0, 0, projection.target.metrics.width, projection.target.metrics.height}, true, 1);
     if (visited != entries.size()) throw std::runtime_error("UI projection contains disconnected nodes or a cycle");

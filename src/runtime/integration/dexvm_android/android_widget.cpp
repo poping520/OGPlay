@@ -570,7 +570,7 @@ Decl ExperimentalScrollView(const Context& context, const char* owner) {
                                              dx::kAccPrivate);
     const auto edge_b = b.BoundInstanceField(vertical ? "mEdgeGlowBottom" : "mEdgeGlowRight",
                                              "Landroid/widget/EdgeEffect;", dx::kAccPrivate);
-    if (vertical) {
+    {
         const auto check_event = [context](dx::IntrinsicContext& c, const char* method) {
             const auto event = c.arguments[0].ref;
             if (!context->ui_bounded_scroll_dispatch || !event.IsValid() ||
@@ -609,7 +609,7 @@ Decl ExperimentalScrollView(const Context& context, const char* owner) {
                                     CallAndroidMethod(c.vm, c.receiver, "getChildCount", "()I").AsInt() != 0);
         });
     }
-    // Horizontal layout is still disabled; only its construction uses this seam.
+    // Both axes use the reviewed idle-only EdgeEffect seam.
     b.OverrideMethod("setOverScrollMode", "(I)V", [=](dx::IntrinsicContext& c) {
         dx::IntrinsicCall fields(c);
         if (c.arguments[0].AsInt() != 2 && !fields.GetRef(edge_a).IsValid()) {

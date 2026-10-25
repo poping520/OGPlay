@@ -161,7 +161,8 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
               vm.Linker().IsAssignable(image, vm.Model().ObjectClass(view))) &&
             !((kind == ui::UiClass::TextView || kind == ui::UiClass::Button || kind == ui::UiClass::EditText) &&
               vm.Linker().IsAssignable(text, vm.Model().ObjectClass(view))) &&
-            !(kind == ui::UiClass::ScrollView && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
+            !((kind == ui::UiClass::ScrollView || kind == ui::UiClass::HorizontalScrollView) &&
+              vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::FrameLayout && vm.Linker().IsAssignable(frame, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::LinearLayout && vm.Linker().IsAssignable(linear, vm.Model().ObjectClass(view))) &&
             !(kind == ui::UiClass::RelativeLayout &&
@@ -262,21 +263,23 @@ bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 }
 
 void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
-                         const std::int32_t delta_y) {
+                         const std::int32_t delta_y, const std::int32_t delta_x) {
     dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
     if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
         context.ui_java_owner_thread != std::this_thread::get_id() || context.ui_layout_dispatching)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                  "Scroll input requires Java owner outside layout"};
     const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ScrollView;");
-    if (!vm.Linker().IsAssignable(type, vm.Model().ObjectClass(view)) ||
+    const auto horizontal = vm.Linker().ResolveDescriptor("Landroid/widget/HorizontalScrollView;");
+    if ((!vm.Linker().IsAssignable(type, vm.Model().ObjectClass(view)) &&
+         !vm.Linker().IsAssignable(horizontal, vm.Model().ObjectClass(view))) ||
         !AndroidViewBelongsToRoot(vm, context, view, true) || !context.ui_tree.PublishedProjection())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                 "Scroll input requires a published attached vertical view"};
+                                 "Scroll input requires a published attached scroll view"};
     const auto roots = vm.ProtectReferences(std::array{view});
     const auto target = *context.ui_tree.ProjectionTarget();
-    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "scrollBy", "(II)V",
-                                                            {dexvm::VmValue::Int(0), dexvm::VmValue::Int(delta_y)}));
+    static_cast<void>(android_intrinsics::CallAndroidMethod(
+        vm, view, "scrollBy", "(II)V", {dexvm::VmValue::Int(delta_x), dexvm::VmValue::Int(delta_y)}));
     // No requestLayout or measure/layout: child local frames and measured sizes stay Java-owned.
     CommitAndroidMeasuredRootProjection(vm, context, AndroidUiTraversalRoot(vm, context), target,
                                         context.ui_measure_epoch + 1);
@@ -328,6 +331,7 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
                                   {fields.GetInt(m.measured[0]) & 0xffffff, fields.GetInt(m.measured[1]) & 0xffffff},
                                   visibility,
                                   ReadAndroidViewPadding(vm, context, view)};
+        entry.scroll_x = fields.GetInt(m.scroll[0]);
         entry.scroll_y = fields.GetInt(m.scroll[1]);
         entry.android_id = fields.GetInt(h.id);
         const auto view_flags = fields.GetInt(m.view_flags);
@@ -618,6 +622,7 @@ ui::UiClass UiClassForDescriptor(const std::string_view descriptor) {
         descriptor == "Landroid/widget/AbsoluteLayout;") {
         return ui::UiClass::FrameLayout;
     }
+    if (descriptor == "Landroid/widget/HorizontalScrollView;") return ui::UiClass::HorizontalScrollView;
     if (descriptor == "Landroid/widget/ScrollView;") return ui::UiClass::ScrollView;
     if (descriptor == "Landroid/widget/TableLayout;") return ui::UiClass::TableLayout;
     if (descriptor == "Landroid/widget/TableRow;") return ui::UiClass::TableRow;

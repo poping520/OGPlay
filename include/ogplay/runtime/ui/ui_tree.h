@@ -48,6 +48,7 @@ enum class UiClass : std::uint8_t {
     ImageView,
     ImageButton,
     VideoView,
+    HorizontalScrollView,
 };
 
 enum class SurfaceLayer : std::uint8_t { media, media_overlay, on_top };
@@ -127,6 +128,7 @@ struct UiProjectedNode final {
     std::optional<bool> clickable{};
     std::optional<bool> focusable{};
     std::optional<bool> focusable_in_touch_mode{};
+    std::int32_t scroll_x{};
 };
 
 struct UiGeometryProjection final {
@@ -226,6 +228,7 @@ struct UiNode final {
     // Resolved render/input clip for external projections, in screen coordinates.
     Rect screen_clip;
     std::int32_t scroll_y{};
+    std::int32_t scroll_x{};
     float alpha{1.0F};
     bool layout_dirty{true};
     bool draw_dirty{true};

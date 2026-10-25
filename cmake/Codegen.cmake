@@ -76,7 +76,7 @@ add_custom_target(ogplay_member_sources_fixture
             "${OGPLAY_DEXVM_FIXTURE_DIR}/member-sources.jar")
 add_dependencies(ogplay_dexvm_fixtures ogplay_member_sources_fixture)
 
-# VD-04 fixed test counterpart. Production always loads the Legacy payload.
+# Fixed sealed JavaTraversal counterpart. The production default remains Legacy.
 add_custom_command(
     OUTPUT "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.jar"
            "${OGPLAY_DEXVM_FIXTURE_DIR}/view-measure.manifest.json"

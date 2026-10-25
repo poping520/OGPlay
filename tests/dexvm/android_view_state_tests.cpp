@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include "ogplay/core/capability_ledger.h"
@@ -1674,4 +1675,96 @@ TEST_CASE("View scroll bar style is inherited and preserves unrelated flags") {
               0x03000000);
         CHECK((flags.bits & ~kStyleMask) == 0x40000040U);
     }
+}
+
+TEST_CASE("DVM-306 sealed BootDex assembly fixes owner and platform facts before VM creation") {
+    const auto read = [](const std::filesystem::path& path) {
+        std::ifstream stream(path, std::ios::binary);
+        REQUIRE(stream.good());
+        const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+        const auto bytes = std::as_bytes(std::span(raw));
+        return std::vector<std::byte>(bytes.begin(), bytes.end());
+    };
+    const auto legacy = AssembleAndroidContext(
+        read(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar"), {true});
+    CHECK(legacy->ui_traversal_owner == AndroidUiTraversalOwner::Legacy);
+    CHECK(legacy->ui_tree.GeometryOwner() == ui::UiGeometryOwner::HostLayout);
+    auto bytes = read(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / "view-measure.jar");
+    const auto context = AssembleAndroidContext(bytes, {true});
+    CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
+    CHECK(context->ui_tree.GeometryOwner() == ui::UiGeometryOwner::ExternalProjection);
+    CHECK(context->platform_services.accessibility_service_absent);
+    CHECK(context->UiAccessibilityUnavailable());
+    CHECK_FALSE(context->ui_test_accessibility_disabled);
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        const auto assembled = AssembleAndroidContext(bytes, {true});
+        DexClassLinker linker;
+        linker.RegisterIntrinsics(BoundCoreIntrinsicCatalog(assembled));
+        linker.RegisterIntrinsics(AndroidIntrinsicCatalog(assembled));
+        ogplay::test::BindBootDexPlatformNatives(linker);
+        const auto dex = ogplay::loader::ReadApkEntry(bytes, assembled->boot_classpath_archive, "classes.dex");
+        std::vector<std::uint8_t> code(dex.size());
+        std::memcpy(code.data(), dex.data(), dex.size());
+        linker.RegisterBootDex(std::move(code), DexClassLinker::BootDexMemberSources(bytes));
+        linker.Link();
+        HostCopyJavaPayloadProvider strings_payload, arrays_payload;
+        JniStringStore strings{strings_payload};
+        JniPrimitiveArrayStore arrays{arrays_payload};
+        JavaObjectModel model{strings, arrays};
+        ogplay::core::CapabilityLedger ledger;
+        Interpreter vm(linker, model, nullptr, ledger, {.backend = backend});
+        const auto get = linker.FindDirectMethod(
+            linker.ResolveDescriptor("Landroid/view/accessibility/AccessibilityManager;"), "getInstance",
+            "(Landroid/content/Context;)Landroid/view/accessibility/AccessibilityManager;");
+        REQUIRE(get);
+        const auto owner = vm.NewIntrinsicInstance("Landroid/app/Activity;");
+        const std::array arguments{VmValue::Ref(owner)};
+        const auto manager = vm.Call(*get, arguments);
+        REQUIRE_FALSE(manager.exception.IsValid());
+        REQUIRE(manager.value.ref.IsValid());
+        const auto manager_class = linker.ResolveDescriptor("Landroid/view/accessibility/AccessibilityManager;");
+        const auto enabled = linker.FindVtableIndex(manager_class, "isEnabled", "()Z");
+        REQUIRE(enabled);
+        const std::array receiver{manager.value};
+        const auto result = vm.Call(linker.Class(manager_class).vtable[*enabled], receiver);
+        REQUIRE_FALSE(result.exception.IsValid());
+        CHECK(result.value.AsInt() == 0);
+        CHECK_FALSE(assembled->ui_test_accessibility_disabled);
+        CHECK(ledger.Unimplemented().empty());
+    }
+    const auto undeclared = AssembleAndroidContext(bytes, {});
+    CHECK_FALSE(undeclared->UiAccessibilityUnavailable());
+    undeclared->ui_test_accessibility_disabled = true;
+    CHECK(undeclared->UiAccessibilityUnavailable());
+    static_assert(!std::is_assignable_v<decltype((context->ui_traversal_owner)), AndroidUiTraversalOwner>);
+    static_assert(!std::is_assignable_v<decltype((context->platform_services)), AndroidPlatformServices>);
+    const auto replace = [&](std::string_view from, std::string_view to) {
+        REQUIRE(from.size() == to.size());
+        std::string raw(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        std::size_t offset = 0, count = 0;
+        while ((offset = raw.find(from, offset)) != std::string::npos) {
+            raw.replace(offset, from.size(), to);
+            offset += to.size();
+            ++count;
+        }
+        REQUIRE(count > 0);
+        const auto result = std::as_bytes(std::span(raw));
+        return std::vector<std::byte>(result.begin(), result.end());
+    };
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("java-traversal", "unknown-mode!!"), {true})),
+                      "BootDex pairing: unknown mode/schema/version");
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("\"version\":1", "\"version\":2"), {true})),
+                      "BootDex pairing: unknown mode/schema/version");
+    CHECK_THROWS_WITH(
+        static_cast<void>(AssembleAndroidContext(replace("theme-projection.json", "theme-projectioX.json"), {true})),
+        "BootDex pairing: missing META-INF/ogplay/theme-projection.json");
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("vm-pairing.json", "vm-pairinX.json"), {true})),
+                      "BootDex pairing: experimental payload lacks sealed mode; no Legacy fallback");
+    // Stored payload mutation leaves the ZIP readable but must fail its sealed identity.
+    const auto archive = ogplay::loader::ParseApkArchive(bytes);
+    const auto offset = ogplay::loader::StoredApkEntryDataOffset(bytes, archive, "classes.dex");
+    bytes.at(offset + 20) ^= std::byte{1};
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(bytes, {true})),
+                      "BootDex pairing: identity mismatch: dex_sha256");
+    CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
 }

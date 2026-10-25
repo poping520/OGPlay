@@ -188,11 +188,17 @@ DexRunOptions ParseDexRunArgs(const std::span<const std::string_view> args) {
 int RunDex(const DexRunOptions& options, const DexConsole& console) {
     auto app_dex = ReadDex(options.input);
     const auto data = BundledDataPaths().root;
-    auto boot_dex = ReadDex(data / "android/19/framework/bootdex.jar");
+    const auto boot_raw = ReadFile(data / "android/19/framework/bootdex.jar");
+    std::vector<std::byte> boot_archive(boot_raw.size());
+    std::memcpy(boot_archive.data(), boot_raw.data(), boot_raw.size());
+    const auto context = runtime::AssembleAndroidContext(std::move(boot_archive), {true});
+    const auto boot_entry =
+        loader::ReadApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, "classes.dex");
+    std::vector<std::uint8_t> boot_dex(boot_entry.size());
+    std::memcpy(boot_dex.data(), boot_entry.data(), boot_entry.size());
     auto skeleton = ReadFile(data / "dexvm/api19-skeleton.bin");
 
     core::CapabilityLedger ledger;
-    const auto context = std::make_shared<runtime::DexVmAndroidContext>();
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
     // The real dalvikvm entry is NativeStart.main, which calls the selected
     // application's main. Retain that actual call boundary in captured stacks.

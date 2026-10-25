@@ -632,3 +632,11 @@ intrinsic 输入并 requestLayout。换源/释放撤销输入，旧事件不能�
 才发布新几何，视频合成与 raster/hit 读取同一 PublishedProjection 的 frame/clip。
 原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
 Legacy 继续原打开即导入 intrinsic、宿主测量路径；生产 BootDex 字节不变。
+
+
+ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
+归档，校验固定 java-traversal v1 模式及 DEX/成员表/主题投影 SHA-256 与主题 schema，
+再选择不可变 context owner；未知模式、错配、缺投影或无标识实验制品明确失败，无自动
+Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
+平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
+本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。

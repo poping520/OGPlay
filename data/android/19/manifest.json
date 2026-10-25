@@ -101,7 +101,7 @@
       "entry": "META-INF/ogplay/member-sources.json",
       "manifest_sha256": "bc54a5a6f754098ab7e0daaa76eb2d84476bfafe78bec785dcb5121ae6c138e6",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "69a3e3d9adc106f4874d9c4e8d322be019a34e8582ec3b8e8072bcb4cafaae12"
+      "composer_sha256": "cc6b57382b30bdb43789da17155d2279ad31c783c3eaa2622fdbda1e2e9c6136"
     },
     "experimental_theme_projection": {
       "scope": "JavaTraversal paired payload only",

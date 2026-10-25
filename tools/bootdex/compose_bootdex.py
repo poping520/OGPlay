@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import tempfile
 import zipfile
+from unittest.mock import patch
 
 import build_bootdex as builder
 import member_sources
@@ -20,9 +21,55 @@ import theme_projection
 import policy_rom
 
 
+CANDIDATE_RECIPE = Path(__file__).with_name('java-traversal.json')
+VIDEO_ENTRY = 'META-INF/ogplay/view-video-adapter.json'
+RECIPE_ENTRY = 'META-INF/ogplay/java-traversal-recipe.json'
+
+
+def candidate_policy():
+    policy = json.loads(CANDIDATE_RECIPE.read_text(encoding='utf-8'))
+    if (set(policy) != {'schema', 'mode', 'version', 'base_recipe', 'view_policy',
+                        'composition_sources', 'class_additions', 'theme_policy', 'video_review'}
+            or (policy['schema'], policy['mode'], policy['version']) != (1, 'java-traversal', 1)
+            or policy['base_recipe'] != builder.RECIPE.name
+            or policy['theme_policy'] != theme_projection.POLICY.name
+            or policy['video_review'] != 'view-video-adapter.json'):
+        raise builder.BuildError('invalid JavaTraversal candidate recipe')
+    paths = [policy['view_policy'], *policy['composition_sources']]
+    if len(set(paths)) != len(paths) or any(Path(p).name != p for p in paths):
+        raise builder.BuildError('duplicate or invalid candidate composition input')
+    return policy
+
+
+def candidate_classes():
+    policy = candidate_policy()
+    document = json.loads(builder.RECIPE.read_text(encoding='utf-8'))
+    additions = copy.deepcopy(policy['class_additions'])
+    policy_classes = additions.pop(policy_rom.SOURCE, [])
+    for source, owners in additions.items():
+        if owners != sorted(set(owners)) or set(owners) & set(document['classes'].get(source, [])):
+            raise builder.BuildError('duplicate candidate class addition')
+        document['classes'][source] = sorted(document['classes'].get(source, []) + owners)
+    recipe = builder.load_recipe(document)
+    recipe[policy_rom.SOURCE] = tuple(policy_classes)
+    policy_rom.check_selection(recipe)
+    return recipe
+
+
+def candidate_provenance():
+    policy = candidate_policy()
+    paths = [builder.RECIPE, member_sources.DEFAULT, CANDIDATE_RECIPE,
+             theme_projection.POLICY, Path(theme_projection.__file__),
+             Path(__file__).with_name(policy['view_policy']),
+             Path(__file__).with_name(policy['video_review']),
+             *(Path(__file__).with_name(p) for p in policy['composition_sources'])]
+    return member_sources.canonical(dict(recipe=policy, input_sha256={
+        str(p.relative_to(builder.ROOT)): builder.file_sha256(p) for p in paths}))
+
+
 def measure_sources(document):
-    """Fixed sealed experimental counterpart; no user member switches."""
-    policy = json.loads(Path(__file__).with_name('view-measure-sources.json').read_text(encoding='utf-8'))
+    """Fixed candidate composition, shared by the experimental fixture."""
+    policy = json.loads(Path(__file__).with_name(candidate_policy()['view_policy']).read_text(encoding='utf-8'))
     document = copy.deepcopy(document)
     cls, = document['classes']
     if set(policy) != {'rom_methods', 'rom_fields', 'overlays', 'surface', 'surface_sha256'}:
@@ -50,24 +97,9 @@ def measure_sources(document):
         if field['signature'] in policy['rom_fields']:
             field['source'] = 'rom'
     cls['surface'], cls['surface_sha256'] = policy['surface'], policy['surface_sha256']
-    document['classes'].append(json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8')))
-    document['classes'].append(json.loads(Path(__file__).with_name('view-system-sources.json').read_text(encoding='utf-8')))
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-frame-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-linear-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-relative-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-xml-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-theme-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-context-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-inflater-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-leaf-resources-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-paint-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-image-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-button-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-edittext-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-scroll-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-surface-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-observer-sources.json').read_text(encoding='utf-8'))['classes'])
-    document['classes'].extend(json.loads(Path(__file__).with_name('view-policy-sources.json').read_text(encoding='utf-8'))['classes'])
+    for name in candidate_policy()['composition_sources']:
+        rows = json.loads(Path(__file__).with_name(name).read_text(encoding='utf-8'))
+        document['classes'].extend(rows['classes'] if 'classes' in rows else [rows])
     return document
 
 
@@ -108,59 +140,7 @@ def assemble(recipe, work, measure=False):
 
 
 def build(measure=False):
-    recipe = builder.load_recipe()
-    if measure:
-        group = json.loads(Path(__file__).with_name('view-group-sources.json').read_text(encoding='utf-8'))
-        # ADR-0155 still audits every retained DEX body, including disabled
-        # composition bodies. These pure-Java helpers are admitted by the
-        # unchanged default selector; keep them only in this test counterpart.
-        hierarchy = {group['owner'], 'Landroid/widget/FrameLayout;', 'Landroid/widget/LinearLayout;',
-                     *(c['owner'] for c in measure_sources(member_sources.load())['classes']
-                       if c['owner'].startswith(('Landroid/view/LayoutInflater', 'Landroid/widget/RelativeLayout', 'Landroid/content/res/XmlBlock', 'Landroid/content/res/StringBlock'))),
-                     'Landroid/graphics/Paint;', 'Landroid/widget/TextView;', 'Landroid/graphics/RectF;', 'Landroid/graphics/RectF$1;',
-                     'Landroid/util/AttributeSet;', 'Landroid/content/Context;', 'Landroid/view/ContextThemeWrapper;',
-                     'Landroid/content/res/AssetManager;', 'Landroid/content/res/Resources;',
-                     'Landroid/content/res/Resources$Theme;', 'Landroid/content/res/TypedArray;',
-                     'Landroid/content/res/AssetManager$AssetInputStream;',
-                     'Landroid/app/IconPackHelper;', 'Landroid/app/IconPackHelper$ColorFilterUtils;',
-                     'Landroid/app/IconPackHelper$ColorFilterUtils$Builder;',
-                     'Landroid/graphics/drawable/Drawable;', 'Landroid/graphics/drawable/BitmapDrawable;',
-                     'Landroid/graphics/drawable/ColorDrawable;',
-                     'Landroid/view/View$ListenerInfo;',
-                     'Landroid/view/ViewGroup$1;', 'Landroid/view/ViewGroup$2;',
-                     'Landroid/view/ViewGroup$3;', 'Landroid/view/ViewGroup$ChildListForAccessibility;',
-                     'Landroid/view/ViewGroup$ViewLocationHolder;',
-                     'Landroid/content/res/StringBlock$Height;', 'Landroid/text/Annotation;',
-                     'Landroid/text/style/BulletSpan;'}
-        # ADR-0155 retains declarations in disabled TextView/Paint bodies too.
-        # Pure ROM helpers do not enable TextView construction or Editor.
-        hierarchy.update({'Landroid/view/ViewTreeObserver;', 'Landroid/view/ViewTreeObserver$CopyOnWriteArray;', 'Landroid/view/ViewTreeObserver$CopyOnWriteArray$Access;', 'Landroid/graphics/PixelFormat;', *(c['owner'] for c in measure_sources(member_sources.load())['classes'] if c['owner'].startswith('Landroid/view/SurfaceView')), 'Landroid/widget/HorizontalScrollView$SavedState;', 'Landroid/widget/HorizontalScrollView$SavedState$1;', 'Landroid/widget/ScrollView;', 'Landroid/widget/HorizontalScrollView;', 'Landroid/widget/EditText;', 'Landroid/widget/Button;', 'Landroid/widget/ImageView;', 'Landroid/widget/ImageButton;',
-                          'Landroid/widget/ImageView$ScaleType;', 'Landroid/graphics/Matrix;', 'Landroid/graphics/Matrix$1;',
-            'Landroid/graphics/TemporaryBuffer;',
-            'Landroid/text/method/AllCapsTransformationMethod;',
-            'Landroid/text/method/ArrowKeyMovementMethod;',
-            'Landroid/text/method/DateKeyListener;',
-            'Landroid/text/method/DateTimeKeyListener;',
-            'Landroid/text/method/DialerKeyListener;',
-            'Landroid/text/method/TimeKeyListener;',
-            'Landroid/text/method/TransformationMethod2;',
-            'Landroid/widget/AccessibilityIterators$LineTextSegmentIterator;',
-            'Landroid/widget/AccessibilityIterators$PageTextSegmentIterator;',
-            'Landroid/widget/Editor$TextModifyOperation$1;',
-            'Landroid/widget/Editor$TextModifyOperation;',
-            'Landroid/widget/Editor$UndoInputFilter;',
-            'Landroid/widget/TextView$1;',
-            'Landroid/widget/TextView$2;',
-            'Landroid/widget/TextView$3;',
-            'Landroid/widget/TextView$4;',
-            'Landroid/widget/TextView$SavedState$1;',
-            'Landroid/widget/TextView$SavedState;',
-        })
-        recipe['framework2.jar'] = tuple(sorted(set(recipe['framework2.jar']) | {'Lcom/android/internal/util/FastMath;'}))
-        recipe['framework.jar'] = tuple(sorted(set(recipe['framework.jar']) | hierarchy))
-    if measure:
-        recipe[policy_rom.SOURCE] = (policy_rom.OWNER,)
-        policy_rom.check_selection(recipe)
+    recipe = candidate_classes() if measure else builder.load_recipe()
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
             tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:
@@ -187,17 +167,20 @@ def build(measure=False):
         projected = theme_projection.generate()
         theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
         resources[theme_projection.ENTRY] = projected
-        resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
-            schema=1, mode='java-traversal', version=1,
-            dex_sha256=builder.sha256(dex),
-            member_sources_sha256=builder.sha256(payload),
-            theme_projection_sha256=builder.sha256(projected)))
         review = json.loads(Path(__file__).with_name('view-video-adapter.json').read_text(encoding='utf-8'))
         if (review['implementation_source'] != 'adapter' or review['rom_algorithm_credit'] is not False
                 or review['owner'] != 'Landroid/widget/VideoView;' or review['signature'] != 'onMeasure(II)V'
                 or any(not review[k] for k in ('reason', 'inputs', 'outputs', 'state_owner', 'failure_boundary'))):
             raise builder.BuildError('invalid bounded VideoView adapter review')
-        resources['META-INF/ogplay/view-video-adapter.json'] = member_sources.canonical(review)
+        resources[VIDEO_ENTRY] = member_sources.canonical(review)
+        resources[RECIPE_ENTRY] = candidate_provenance()
+        resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
+            schema=1, mode='java-traversal', version=1,
+            dex_sha256=builder.sha256(dex),
+            member_sources_sha256=builder.sha256(payload),
+            theme_projection_sha256=builder.sha256(projected),
+            video_adapter_sha256=builder.sha256(resources[VIDEO_ENTRY]),
+            candidate_recipe_sha256=builder.sha256(resources[RECIPE_ENTRY])))
     return builder.make_jar(dex, resources), dex, recipe
 
 
@@ -208,6 +191,10 @@ def boot_metadata(jar, dex, recipe):
         metadata['sources'].insert(-1, dict(source_project='platform/frameworks/base',
             source_jar=policy_rom.SOURCE, source_jar_sha256=policy_rom.SHA256))
     with zipfile.ZipFile(io.BytesIO(jar)) as archive:
+        if RECIPE_ENTRY in archive.namelist():
+            metadata['candidate_recipe'] = dict(path=str(CANDIDATE_RECIPE.relative_to(builder.ROOT)),
+                sha256=builder.file_sha256(CANDIDATE_RECIPE), entry=RECIPE_ENTRY,
+                payload_sha256=builder.sha256(archive.read(RECIPE_ENTRY)))
         if 'META-INF/ogplay/vm-pairing.json' in archive.namelist():
             metadata['vm_pairing'] = dict(entry='META-INF/ogplay/vm-pairing.json',
                 sha256=builder.sha256(archive.read('META-INF/ogplay/vm-pairing.json')),
@@ -239,6 +226,30 @@ def boot_metadata(jar, dex, recipe):
 
 
 def self_test():
+    policy = candidate_policy()
+    recipe = candidate_classes()
+    assert recipe[policy_rom.SOURCE] == (policy_rom.OWNER,)
+    assert len({c['owner'] for c in measure_sources(member_sources.load())['classes']}) > 1
+    assert candidate_provenance() == candidate_provenance()
+    for change in ('duplicate_class', 'duplicate_source', 'unknown_mode'):
+        invalid = copy.deepcopy(policy)
+        if change == 'duplicate_class':
+            invalid['class_additions']['framework.jar'] *= 2
+        elif change == 'duplicate_source':
+            invalid['class_additions']['core.jar'] = [policy_rom.OWNER]
+        else:
+            invalid['mode'] = 'unknown'
+        with tempfile.TemporaryDirectory(prefix='ogplay-candidate-policy-') as work:
+            path = Path(work) / 'recipe.json'
+            path.write_text(json.dumps(invalid), encoding='utf-8')
+            with patch(__name__ + '.CANDIDATE_RECIPE', path):
+                try:
+                    candidate_classes()
+                except builder.BuildError:
+                    pass
+                else:
+                    raise AssertionError('invalid candidate recipe accepted: ' + change)
+    print('JavaTraversal candidate recipe self-test passed')
     member_sources.self_test()
     return builder.self_test()
 
@@ -247,7 +258,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', nargs='?', choices=('build', 'check'))
     parser.add_argument('--self-test', action='store_true')
-    parser.add_argument('--view-measure-test-output', type=Path,
+    outputs = parser.add_mutually_exclusive_group()
+    outputs.add_argument('--candidate-output', type=Path,
+                         help='write/check the fixed production candidate; does not switch the default')
+    outputs.add_argument('--view-measure-test-output', type=Path,
                         help='write/check the fixed sealed JavaTraversal counterpart instead of production')
     args = parser.parse_args()
     try:
@@ -255,9 +269,12 @@ def main():
             return self_test()
         if not args.mode:
             parser.error('build, check or --self-test required')
-        jar, dex, recipe = build(args.view_measure_test_output is not None)
+        paired_output = args.candidate_output or args.view_measure_test_output
+        if paired_output and paired_output.resolve() == builder.OUTPUT.resolve():
+            raise builder.BuildError('paired output must not overwrite the default BootDex')
+        jar, dex, recipe = build(paired_output is not None)
         builder.audit_crc32(dex)
-        if args.view_measure_test_output:
+        if paired_output:
             # The fixed ROM inflater has no Legacy nativeInflate declaration.
             expected = builder.zip_stream_native_signatures()
             expected['Landroid/view/LayoutInflater;'] = {}
@@ -276,8 +293,8 @@ def main():
             builder.audit_zip_streams(dex)
         builder.audit_native_crypto(dex)
         manifest = builder.manifest_bytes(boot_metadata(jar, dex, recipe))
-        output = args.view_measure_test_output or builder.OUTPUT
-        metadata = output.with_suffix('.manifest.json') if args.view_measure_test_output else builder.MANIFEST
+        output = paired_output or builder.OUTPUT
+        metadata = output.with_suffix('.manifest.json') if paired_output else builder.MANIFEST
         if args.mode == 'build':
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(jar)

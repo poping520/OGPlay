@@ -2359,3 +2359,25 @@ companion；克隆、前缀与状态仍归 Java。
 独立 `policy-reference.json`/`policy-baseline.json` 校验 ROM 和最终 DEX 的完整 own shape，
 不修改 api19-skeleton 或既有 framework baseline。成员、父成员、clinit、native 与
 “不伪造成功”规则均未放宽；本单无按常设原则自行调整审计适用范围的事项。
+
+
+### VD-12-2 生产候选 closure 制品（2026-10-26）
+
+[DVM-323](../tasks/dexvm/DVM-323.md) 落实决定7的候选准备阶段与索引工具修正，
+不执行默认切换。`tools/bootdex/java-traversal.json` 记录相对 Legacy 配方的固定 ROM
+类集合增量和既有逐成员配方；实验 fixture 与生产候选共用同一集合，不提供成员开关。
+`compose_bootdex.py build/check --candidate-output build/release/bootdex-candidate/bootdex.jar`
+输出独立 JAR/manifest，拒绝覆盖默认 BootDex；原实验输出参数保留为同配方入口。
+
+候选封存 mode=java-traversal/version=1，绑定 DEX、成员来源、主题投影、video adapter
+审查及候选配方 provenance 的 entry 哈希。provenance 保存配方、成员配方、主题输入清单/
+生成器及 video review 的文件身份；build/check 从当前受审输入重建并比较完整 JAR。
+新增两项哈希是构建审计绑定，不改变既有 VM 装配 schema、运行时校验范围或启用协议。
+主题输入变化须先按 ADR-0160 更新真实来源与哈希，再重建整套候选；同 ROM
+framework-res.apk 缺口保持，不补猜 scrollbar ID/值，不宣称主题或端到端已验收。
+
+`select_rom_java.py --check-closure` 从显式 `--bootdex` 读取实际 DEX method/field IDs，
+两个计数都必须严格 `<60000`；非默认制品与60000边界有自检。
+来源、类集合、A1及既有契约偏差相对冻结 Legacy 的差分见本单 closure-diff 证据。
+默认仍 Legacy；默认切换、移除 guest fallback、性能/GPU/九场景及 Windows 发布门禁
+均留 VD-12-3。没有按常设原则自行放宽审计范围，ADR-0147与clinit规则不变。

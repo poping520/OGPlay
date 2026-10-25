@@ -660,7 +660,9 @@ Legacy 继续原打开即导入 intrinsic、宿主测量路径；生产 BootDex 
 ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
 归档，校验固定 java-traversal v1 模式及 DEX/成员表/主题投影 SHA-256 与主题 schema，
 再选择不可变 context owner；未知模式、错配、缺投影或无标识实验制品明确失败，无自动
-Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
+Legacy fallback。候选与实验 fixture 共用固定 JavaTraversal 配方；候选封存的 video/配方
+哈希用于构建期审计，不扩展此处 VM 装配校验范围。无标识生产制品仍 Legacy。
+frontend 三入口共用此装配，显式注入不可变
 平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
 本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
 

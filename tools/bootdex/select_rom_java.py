@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import struct
+import tempfile
 import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -699,6 +700,18 @@ def replacement_surface(surface, rom, replacements):
     return list(by.values()), bindings
 
 
+def dex_indices(bootdex: Path) -> dict:
+    """Count IDs in the payload being checked, including non-default artifacts."""
+    with zipfile.ZipFile(bootdex) as archive:
+        dex = archive.read('classes.dex')
+    return dict(method_ids=struct.unpack_from('<I', dex, 88)[0],
+                field_ids=struct.unpack_from('<I', dex, 80)[0])
+
+
+def within_index_budget(indices: dict) -> bool:
+    return all(n < 60000 for n in indices.values())
+
+
 def run(args) -> int:
     recipe = json.loads(builder.RECIPE.read_text(encoding='utf-8'))
     builder.verify_inputs(builder.load_recipe(recipe))
@@ -799,18 +812,16 @@ def run(args) -> int:
     report['selected_classes'] = chosen
     args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
     if args.check_closure:
-        with zipfile.ZipFile(builder.OUTPUT) as archive:
-            dex = archive.read('classes.dex')
-        indices = dict(method_ids=struct.unpack_from('<I', dex, 88)[0],
-                       field_ids=struct.unpack_from('<I', dex, 80)[0])
+        indices = dex_indices(args.bootdex)
         report['dex_indices'] = indices
         args.report.write_text(json.dumps(report, ensure_ascii=True, indent=1) + '\n', encoding='utf-8')
-        over_budget = any(n > 60000 for n in indices.values())
+        over_budget = not within_index_budget(indices)
         if over_budget:
-            print('single DEX index budget exceeded (60000): ' + str(indices), file=sys.stderr)
+            print('single DEX index budget requires each count <60000: ' + str(indices), file=sys.stderr)
         for d in closure_missing:
             print('CLOSURE GAP ' + d, file=sys.stderr)
         print(f'closure gaps: {len(closure_missing)}')
+        print('checked DEX indices: ' + str(indices))
         return 1 if closure_missing or over_budget else 0
     if args.apply:
         for d in chosen:
@@ -841,6 +852,23 @@ def _smali(desc, body='', super_='Ljava/lang/Object;', methods=''):
 
 
 def self_test():
+    # A non-default archive must supply its own counts. Test both independent
+    # limits at the strict boundary; the production payload is never opened.
+    with tempfile.TemporaryDirectory(prefix='ogplay-index-test-') as work:
+        for name, methods, fields in [('default.jar', 123, 456),
+                                      ('candidate.jar', 59999, 59998)]:
+            dex = bytearray(112)
+            struct.pack_into('<I', dex, 88, methods)
+            struct.pack_into('<I', dex, 80, fields)
+            with zipfile.ZipFile(Path(work) / name, 'w') as archive:
+                archive.writestr('classes.dex', dex)
+        assert dex_indices(Path(work) / 'default.jar') == dict(method_ids=123, field_ids=456)
+        indices = dex_indices(Path(work) / 'candidate.jar')
+        assert indices == dict(method_ids=59999, field_ids=59998)
+        assert within_index_budget(indices)
+        assert not within_index_budget(dict(method_ids=60000, field_ids=1))
+        assert not within_index_budget(dict(method_ids=1, field_ids=60000))
+        assert not within_index_budget(dict(method_ids=60001, field_ids=1))
     obj = 'Ljava/lang/Object;'
     impl = lambda n, d, f=1: _method(n, d, f, 'implemented', 'intrinsic')
     unimpl = lambda n, d, f=1: _method(n, d, f)

@@ -1453,6 +1453,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         runtime::SynchronizeAndroidDialogs(context);
         if (activity_resumed_) SetWindowFocus(requested_window_focus_);
+        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+            // setRenderer starts a GLThread even before its View is attached.
+            // Native initialization queued there can post the very UI mutation
+            // that attaches the producer. It must not depend on a drawable Surface.
+            std::vector<std::shared_ptr<GlSurfaceRuntime>> pending;
+            for (const auto& [_, state] : context.gl_surface_runtimes) {
+                if (!state->renderer.IsValid() || state->stopped || state->owner != context.activity) continue;
+                const auto producer = runtime::FindViewUiNode(context, state->view.Value());
+                if (producer && context.ui_tree.IsAttached(*producer)) continue;
+                bool events{};
+                {
+                    std::scoped_lock lock(context.scheduler_mutex);
+                    events = !state->events.empty();
+                }
+                if (events && !renderer_threads_.contains(state->view.Value())) pending.push_back(state);
+            }
+            for (const auto& state : pending)
+                RunOnRenderer(state, [this] { RunRendererEvents(); });
+        }
         const auto content = context.content_view;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
         const auto content_revision = context.ui_content_revision;

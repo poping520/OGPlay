@@ -979,3 +979,103 @@ TEST_CASE("DVM-316 lifecycle host guest boundary appends causes without changing
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-317 NativeActivity style empty content drains detached producer initialization before Surface") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        const auto owner = f.context->activity;
+        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+        // NativeActivity can relinquish the window Surface before attaching a
+        // View producer. Its queueEvent initialization must still run on GLThread.
+        f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto content =
+            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(content)});
+        const auto view =
+            f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto event = f.New("Ltest/OwnerMutation;");
+        unsigned calls{};
+        std::uint64_t event_token{};
+        const auto method = f.linker.FindVtableIndex(f.model.ObjectClass(event), "run", "()V");
+        REQUIRE(method);
+        auto& run = f.linker.MutableMethod(f.linker.Class(f.model.ObjectClass(event)).vtable[*method]);
+        run.code.reset();
+        run.fast_code.reset();
+        run.kind = MethodKind::intrinsic;
+        run.implementation = [&](IntrinsicContext& call) {
+            ++calls;
+            event_token = call.vm.CurrentContextToken();
+            return VmValue::Void();
+        };
+        // No render callback is legal before attachment, so the renderer identity
+        // is never invoked here. The queue uses a real ROM Runnable dispatch.
+        f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(event)});
+        f.On(view, "queueEvent", "(Ljava/lang/Runnable;)V", {VmValue::Ref(event)});
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(calls == 1);
+        CHECK(event_token != 0);
+        CHECK(event_token != 1);
+        const auto state = f.context->gl_surface_runtimes.at(view.Value());
+        CHECK_FALSE(state->surface_available);
+        CHECK_FALSE(state->renderer_surface.IsValid());
+        CHECK_FALSE(f.context->active_surface_holders.contains(f.context->surface_holders.at(view.Value()).Value()));
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}
+
+TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames with a clean presentation lease") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Landroid/app/NativeActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        REQUIRE(f.context->active_surface_holders.contains(f.context->window_surface_holder.Value()));
+        std::uint64_t previous{};
+        std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot> stable;
+        for (unsigned i = 0; i != 4; ++i) {
+            static_cast<void>(lifecycle.StepFrame());
+            const auto lease = AcquireAndroidPresentation(*f.context);
+            REQUIRE(lease);
+            if (stable)
+                CHECK(lease == stable);
+            else
+                stable = lease;
+            const auto width = static_cast<std::uint32_t>(lease->viewport.width);
+            const auto height = static_cast<std::uint32_t>(lease->viewport.height);
+            std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * height * 4U, 255);
+            pixels[0] = static_cast<std::uint8_t>(i + 1);
+            // CPU producer seam after EGL readback/resolve; real EGL is an external gate.
+            f.context->session->PublishSoftwareFrame(pixels);
+            auto frame = f.context->session->TakeLatestFrame();
+            REQUIRE(frame);
+            CHECK(frame->sequence > previous);
+            previous = frame->sequence;
+            const auto trace = f.vm.Trace("", 10000).size();
+            const auto composed = lifecycle.ComposePresentedFrame(std::move(*frame));
+            CHECK(composed.sequence == previous);
+            CHECK(composed.rgba8 == pixels);
+            CHECK(AcquireAndroidPresentation(*f.context) == lease);
+            CHECK(f.vm.Trace("", 10000).size() == trace);
+            CHECK_THROWS(static_cast<void>(lifecycle.ComposePresentedFrame(
+                {.width = width + 1,
+                 .height = height,
+                 .rgba8 = std::vector<std::uint8_t>(static_cast<std::size_t>(width + 1) * height * 4U)})));
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}

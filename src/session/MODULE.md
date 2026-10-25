@@ -81,7 +81,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   回调、queueEvent 与 EGL 生命周期；不预先创建 Looper。生命周期等待绘帧时继续泵送主
   Looper；通过 `AndroidAppProcessHost.pump_host_events` 透传的显式回调在等待线程上、
   释放 worker/VM 锁后泵送宿主窗口消息，回调不得重入 guest 生命周期。空闲及暂停时
-  queueEvent 仍可唤醒 GLThread。真正 detach/finish 或进程关闭先停止并等待
+  queueEvent 仍可唤醒 GLThread。JavaTraversal owner 安全点也消费尚未附着 producer 的初始化
+  事件（独立 GLThread，不要求 Surface/EGL）；内容挂载后才开放 EGL/renderer 回调，
+  原生帧到达不要求 presentation epoch 改变。真正 detach/finish 或进程关闭先停止并等待
   GLThread/native detach 完成再清空引用；onPause 的渲染握手先于该停止。
   帧、呈现及内容同步统一经 integration traversal 入口，显式区分 reason/phase；
   呈现仅解析几何，内容同步先派发附着子树尺寸，再交付 Surface creation/global layout；

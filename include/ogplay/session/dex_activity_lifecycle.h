@@ -149,6 +149,7 @@ private:
     void CompleteWindowHandoffs();
     void SetActivityWindowVisible(runtime::dexvm::VmObjectRef activity, bool visible);
     void SynchronizeContentView();
+    void ReevaluateContentRenderer();
     void DispatchViewWindowFocus(bool has_focus);
     void EnsureRendererCallbacks();
     using GlSurfaceRuntime = runtime::DexVmAndroidContext::GlSurfaceRuntime;

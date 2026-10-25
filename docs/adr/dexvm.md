@@ -2313,3 +2313,11 @@ EGLSurface、调用 renderer 或放宽 holder 激活/尺寸要求。Legacy 调�
 checkpoint 已开始且 Result 证明无 guest fault 的 wall-time 超时属于 frame；其签名保留
 checkpoint/presented 序号。后续 teardown budget 不能覆盖该首错；未知形态仍拒绝。
 本修订无组合/准入审计范围调整，ADR-0147 与 dispatch ledger 规则不变。
+
+### ADR-0162 / DVM-319：投影后的 producer 选择（2026-10-26）
+
+JavaTraversal owner 帧屏障及内容遍历完成后、Surface 交付前重新评估已注册 producer，
+选择仍要求可见且属于当前内容根；不以注册或GLThread启动替代挂载事实。Legacy 选择
+保持原位置。投影提交与共同 presentation 发布分别诊断，拒绝仍保留原失败/旧完整发布协议。
+每窗口/原因首次输出、后续计数，弱身份随窗口退役/GC清理；旧Logger first_and_count 的
+首次 epoch 字段不能证明后续没有提交或重评估。未改变准入审计、ADR-0147及系统能力边界。

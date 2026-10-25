@@ -765,6 +765,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                                             runtime::AndroidUiTraversalReason::BeforePresent,
                                                             runtime::AndroidUiTraversalPhase::ResolveOnly));
         runtime::PublishAndroidPresentation(context);
+        // Selection consumes the completed projection before Surface callbacks.
+        ReevaluateContentRenderer();
         if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), context)) Fail(*error);
     }
 
@@ -792,6 +794,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                   runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
               }
             }
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                ReevaluateContentRenderer();
             if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), context)) Fail(*error);
             DispatchInput();
             PumpJavaThreads();
@@ -1448,6 +1452,48 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
     }
 
+    void DexActivityLifecycle::ReevaluateContentRenderer() {
+        const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
+        auto& context = *bindings_.context;
+        const auto node = std::optional{runtime::ActivityContentRoot(context)};
+        std::shared_ptr<GlSurfaceRuntime> selected;
+        if (node) {
+            for (const auto& [_, state] : context.gl_surface_runtimes) {
+                if (!state->renderer.IsValid()) continue;
+                auto current = runtime::FindViewUiNode(context, state->view.Value());
+                const bool visible = current && context.ui_tree.IsVisible(*current);
+                if (visible)
+                    while (current && *current != *node)
+                        current = context.ui_tree.Get(*current)->parent;
+                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                    runtime::RecordAndroidTraversalDiagnostic(
+                        bindings_.bridge->Vm(), context,
+                        runtime::AndroidUiTraversalRoot(bindings_.bridge->Vm(), context),
+                        std::string("producer ") + std::to_string(state->view.Value()) +
+                            (visible && current ? " selected"
+                             : !visible         ? " outside visible projection"
+                                                : " outside content root"));
+                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                    if (auto* logger = bindings_.bridge->Vm().Log())
+                        logger->Write(
+                            core::LogLevel::info, "ui.surface.projection",
+                            std::string(visible && current ? "visible producer "
+                                                           : "producer outside visible projection ") +
+                                std::to_string(state->view.Value()),
+                            {}, {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
+                if (!visible || !current) continue;
+                if (selected) Fail("multiple intrinsic GL producers in one content tree are unsupported");
+                selected = state;
+            }
+        }
+        context.renderer = selected ? selected->renderer : dx::VmObjectRef{};
+        context.gl_surface_renderer_view = selected ? selected->view : dx::VmObjectRef{};
+        if (selected) {
+            selected->owner = context.activity;
+            ProjectRenderer(context, *selected);
+        }
+    }
+
     void DexActivityLifecycle::SynchronizeContentView() {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
@@ -1475,36 +1521,17 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto content = context.content_view;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
         const auto content_revision = context.ui_content_revision;
-        std::shared_ptr<GlSurfaceRuntime> selected;
-        if (node) {
-            for (const auto& [_, state] : context.gl_surface_runtimes) {
-                if (!state->renderer.IsValid()) continue;
-                auto current = runtime::FindViewUiNode(context, state->view.Value());
-                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                    if (auto* logger = bindings_.bridge->Vm().Log())
-                        logger->Write(
-                            core::LogLevel::info, "ui.surface.projection",
-                            std::string(current && context.ui_tree.IsVisible(*current)
-                                            ? "visible producer "
-                                            : "producer outside visible projection ") +
-                                std::to_string(state->view.Value()),
-                            {}, {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
-                if (!current || !context.ui_tree.IsVisible(*current)) continue;
-                while (current && *current != *node) current = context.ui_tree.Get(*current)->parent;
-                if (!current) continue;
-                if (selected) Fail("multiple intrinsic GL producers in one content tree are unsupported");
-                selected = state;
-            }
-        }
-        context.renderer = selected ? selected->renderer : dx::VmObjectRef{};
-        context.gl_surface_renderer_view = selected ? selected->view : dx::VmObjectRef{};
-        if (selected) { selected->owner = context.activity; ProjectRenderer(context, *selected); }
+        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) ReevaluateContentRenderer();
         const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_ ||
             content_revision != sized_content_revision_;
         sized_content_revision_ = content_revision;
         sized_content_view_ = content;
         sized_content_node_ = node;
-        if (context.ui_tree.Get(*node)->children.empty()) return;
+        if (context.ui_tree.Get(*node)->children.empty()) {
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                ReevaluateContentRenderer();
+            return;
+        }
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed = runtime::EnsureAndroidUiTraversal(
@@ -1513,6 +1540,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 ? runtime::AndroidUiTraversalReason::BeforeSurfaceCallbacks
                 : runtime::AndroidUiTraversalReason::OwnerTick,
             runtime::AndroidUiTraversalPhase::ResolveAndNotifySizes);
+        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) ReevaluateContentRenderer();
         if (!content_changed && !layout_changed && !layout_dirty &&
             context.surface_traversal_pending.empty()) return;
         // A virtual size callback may replace its own content. Reconcile the

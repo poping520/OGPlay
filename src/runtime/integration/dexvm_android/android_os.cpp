@@ -1683,6 +1683,7 @@ void RegisterAndroidValueStateTables(
                                         [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
                                         [context](dexvm::VmObjectRef object) {
                                             context->ui_window_schedules.erase(object);
+                                            context->ui_traversal_diagnostics.erase(object);
                                             for (auto& [_, state] : context->ui_window_schedules)
                                                 state.requests.erase(object);
                                             const auto found = context->object_to_ui_node.find(object.Value());

@@ -3865,31 +3865,44 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     case AndroidUiTraversalOwner::Legacy: break;
     case AndroidUiTraversalOwner::JavaTraversal: {
         dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-        if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
+        const auto diagnostic = [&](const std::string& why) {
+            RecordAndroidTraversalDiagnostic(vm, context, AndroidUiTraversalRoot(vm, context), why);
+        };
+        if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()) {
+            RecordAndroidTraversalDiagnostic(vm, context, dexvm::VmObjectRef{}, "owner thread rejected");
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
+        }
+        diagnostic("traversal entered");
         if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
              reason != AndroidUiTraversalReason::BeforePresent &&
              reason != AndroidUiTraversalReason::BeforeSurfaceCallbacks &&
              !(context.ui_layout_dispatching && reason == AndroidUiTraversalReason::GeometryRead)) ||
             (phase != AndroidUiTraversalPhase::ResolveOnly &&
              phase != AndroidUiTraversalPhase::ResolveAndNotifySizes)) {
+            diagnostic("unsupported traversal phase");
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_traversal_phase", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                      "Traversal safe point is not enabled"};
         }
         if (context.ui_layout_dispatching) {
             if (reason == AndroidUiTraversalReason::GeometryRead) {
+                diagnostic("temporary callback geometry");
                 static_cast<void>(ReadAndroidUiGeometry(vm, context));
                 return false;
             }
             if (reason == AndroidUiTraversalReason::BeforeInput) {
+                diagnostic("reentrant input rejected");
                 if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_reentrant_input", 0);
                 throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                          "Input during Java traversal unsupported"};
             }
+            diagnostic("layout callback barrier");
             return false;
         }
-        if (context.input_presentation || context.surface_event_dispatching) return false;
+        if (context.input_presentation || context.surface_event_dispatching) {
+            diagnostic(context.input_presentation ? "input lease barrier" : "surface callback barrier");
+            return false;
+        }
         if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
         // Materialize the Window's stable FrameLayout even for an empty Activity.
         if (context.activity.IsValid()) {
@@ -3901,8 +3914,10 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         }
         const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
                                                         static_cast<std::int32_t>(context.surface_height)});
-        if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff)
+        if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff) {
+            diagnostic("invalid metrics");
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid traversal viewport"};
+        }
         const auto root = AndroidUiTraversalRoot(vm, context);
         const auto content = context.content_view;
         const auto node = FindViewUiNode(context, root.Value());
@@ -3918,12 +3933,18 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                    width == context.surface_width && height == context.surface_height &&
                    density == context.ui_density && node && FindViewUiNode(context, root.Value()) == node;
         };
-        if (!current())
+        if (!current()) {
+            diagnostic("unbound window root");
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound window root"};
+        }
+        if (!metrics.width || !metrics.height) diagnostic("zero metrics");
         auto& schedule = context.ui_window_schedules[root];
         const bool same_identity = schedule.generation == generation && schedule.content_revision == revision;
         if (schedule.generation != generation) schedule = {};
-        if (schedule.deferred_until_tick > context.ui_owner_tick) return false;
+        if (schedule.deferred_until_tick > context.ui_owner_tick) {
+            diagnostic("deferred next tick");
+            return false;
+        }
         dexvm::IntrinsicContext root_call{vm, root, {}};
         const bool layout_requested =
             (dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) != 0;
@@ -3985,6 +4006,7 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             schedule.requests.empty() && !layout_requested && schedule.metrics == metrics &&
             schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty &&
             !projection_changed()) {
+            diagnostic("clean snapshot");
             if (context.ui_tree.Get(context.ui_tree.Root())->draw_dirty) {
                 const auto target = *context.ui_tree.ProjectionTarget();
                 CommitAndroidMeasuredRootProjection(vm, context, root, target, context.ui_measure_epoch + 1);
@@ -3994,124 +4016,143 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             return false;
         }
         schedule.generation = generation;
-        // First traversal attaches the surviving Java subtree, not onCreate/setContentView.
-        android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
-        // An interrupted attempt cannot certify the next barrier as clean, even
-        // when the Java layout epilogue already cleared FORCE_LAYOUT.
-        schedule.published.reset();
-        auto& requests = schedule.requests;
-        context.ui_layout_dispatching = true;
-        context.ui_java_active_metrics = metrics;
+        try {
+            // First traversal attaches the surviving Java subtree, not onCreate/setContentView.
+            android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
+            // An interrupted attempt cannot certify the next barrier as clean, even
+            // when the Java layout epilogue already cleared FORCE_LAYOUT.
+            schedule.published.reset();
+            auto& requests = schedule.requests;
+            context.ui_layout_dispatching = true;
+            context.ui_java_active_metrics = metrics;
 
-        struct Reset {
-            DexVmAndroidContext& context;
+            struct Reset {
+                DexVmAndroidContext& context;
 
-            ~Reset() {
-                context.ui_layout_dispatching = false;
-                context.ui_java_layout_pass = 0;
-                context.ui_java_active_metrics.reset();
-            }
-        } reset{context};
+                ~Reset() {
+                    context.ui_layout_dispatching = false;
+                    context.ui_java_layout_pass = 0;
+                    context.ui_java_active_metrics.reset();
+                }
+            } reset{context};
 
-        const auto pending = std::move(requests);
-        requests.clear();
-        std::vector<dexvm::VmObjectRef> pending_refs;
-        for (const auto requester : pending)
-            if (AndroidViewBelongsToRoot(vm, context, requester, true)) pending_refs.push_back(requester);
-        const auto pending_roots = vm.ProtectReferences(pending_refs);
-        for (const auto requester : pending_refs) {
-            if (AndroidViewBelongsToRoot(vm, context, requester, true))
-                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
-            if (!current()) return false;
-        }
-        requests.clear();
-        dexvm::IntrinsicContext call{vm, root, {}};
-        dexvm::IntrinsicCall fields(call);
-        const auto& tokens = *context.view_java_measure_fields;
-        for (unsigned pass = 1; pass <= 2; ++pass) {
-            static_cast<void>(android_intrinsics::CallAndroidMethod(
-                vm, root, "measure", "(II)V",
-                {dexvm::VmValue::Int(metrics.width | 0x40000000), dexvm::VmValue::Int(metrics.height | 0x40000000)}));
-            if (!current()) return false;
-            context.ui_java_layout_pass = pass;
-            static_cast<void>(android_intrinsics::CallAndroidMethod(
-                vm, root, "layout", "(IIII)V",
-                {dexvm::VmValue::Int(0), dexvm::VmValue::Int(0),
-                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[0]) & 0x00ffffff),
-                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[1]) & 0x00ffffff)}));
-            context.ui_java_layout_pass = 0;
-            if (!current()) return false;
-            if (pass == 2) {
-                std::erase_if(requests, [&](const auto requester) {
-                    return !AndroidViewBelongsToRoot(vm, context, requester, true);
-                });
-                break;
-            }
-            const auto requested = std::move(requests);
+            const auto pending = std::move(requests);
             requests.clear();
-            std::vector<dexvm::VmObjectRef> valid;
-            for (const auto requester : requested) {
-                const bool attached = AndroidViewBelongsToRoot(vm, context, requester);
-                if (attached && AndroidViewBelongsToRoot(vm, context, requester, true) &&
-                    (fields.GetInt(tokens.flags[0], requester) & 0x1000) != 0)
-                    valid.push_back(requester);
-            }
-            // ViewRootImpl.getValidLayoutRequesters evaluates every requester
-            // before clearing flags, including GONE/detached requesters. Clearing
-            // an ancestor early must not hide a second valid requester.
-            for (const auto requester : requested) {
-                if (!vm.Model().IsValidRef(requester)) continue;
-                auto view = requester;
-                while (view.IsValid() && (fields.GetInt(tokens.flags[0], view) & 0x1000) != 0) {
-                    fields.SetInt(tokens.flags[0], view, fields.GetInt(tokens.flags[0], view) & ~0x1000);
-                    view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
+            std::vector<dexvm::VmObjectRef> pending_refs;
+            for (const auto requester : pending)
+                if (AndroidViewBelongsToRoot(vm, context, requester, true)) pending_refs.push_back(requester);
+            const auto pending_roots = vm.ProtectReferences(pending_refs);
+            for (const auto requester : pending_refs) {
+                if (AndroidViewBelongsToRoot(vm, context, requester, true))
+                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
+                if (!current()) {
+                    diagnostic("callback changed identity or metrics");
+                    return false;
                 }
             }
-            if (valid.empty()) break;
-            const auto request_roots = vm.ProtectReferences(valid);
-            for (const auto requester : valid) {
-                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
-                if (!current()) return false;
-            }
             requests.clear();
-        }
-        if (!requests.empty()) {
-            schedule.deferred_until_tick = context.ui_owner_tick + 1;
-            if (schedule.deferred_ticks == 0 || schedule.watchdog_tick != context.ui_owner_tick) {
-                schedule.watchdog_tick = context.ui_owner_tick;
-                ++schedule.deferred_ticks;
+            dexvm::IntrinsicContext call{vm, root, {}};
+            dexvm::IntrinsicCall fields(call);
+            const auto& tokens = *context.view_java_measure_fields;
+            for (unsigned pass = 1; pass <= 2; ++pass) {
+                static_cast<void>(
+                    android_intrinsics::CallAndroidMethod(vm, root, "measure", "(II)V",
+                                                          {dexvm::VmValue::Int(metrics.width | 0x40000000),
+                                                           dexvm::VmValue::Int(metrics.height | 0x40000000)}));
+                if (!current()) {
+                    diagnostic("callback changed identity or metrics");
+                    return false;
+                }
+                context.ui_java_layout_pass = pass;
+                static_cast<void>(android_intrinsics::CallAndroidMethod(
+                    vm, root, "layout", "(IIII)V",
+                    {dexvm::VmValue::Int(0), dexvm::VmValue::Int(0),
+                     dexvm::VmValue::Int(fields.GetInt(tokens.measured[0]) & 0x00ffffff),
+                     dexvm::VmValue::Int(fields.GetInt(tokens.measured[1]) & 0x00ffffff)}));
+                context.ui_java_layout_pass = 0;
+                if (!current()) {
+                    diagnostic("callback changed identity or metrics");
+                    return false;
+                }
+                if (pass == 2) {
+                    std::erase_if(requests, [&](const auto requester) {
+                        return !AndroidViewBelongsToRoot(vm, context, requester, true);
+                    });
+                    break;
+                }
+                const auto requested = std::move(requests);
+                requests.clear();
+                std::vector<dexvm::VmObjectRef> valid;
+                for (const auto requester : requested) {
+                    const bool attached = AndroidViewBelongsToRoot(vm, context, requester);
+                    if (attached && AndroidViewBelongsToRoot(vm, context, requester, true) &&
+                        (fields.GetInt(tokens.flags[0], requester) & 0x1000) != 0)
+                        valid.push_back(requester);
+                }
+                // ViewRootImpl.getValidLayoutRequesters evaluates every requester
+                // before clearing flags, including GONE/detached requesters. Clearing
+                // an ancestor early must not hide a second valid requester.
+                for (const auto requester : requested) {
+                    if (!vm.Model().IsValidRef(requester)) continue;
+                    auto view = requester;
+                    while (view.IsValid() && (fields.GetInt(tokens.flags[0], view) & 0x1000) != 0) {
+                        fields.SetInt(tokens.flags[0], view, fields.GetInt(tokens.flags[0], view) & ~0x1000);
+                        view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
+                    }
+                }
+                if (valid.empty()) break;
+                const auto request_roots = vm.ProtectReferences(valid);
+                for (const auto requester : valid) {
+                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
+                    if (!current()) {
+                        diagnostic("callback changed identity or metrics");
+                        return false;
+                    }
+                }
+                requests.clear();
             }
-            if (schedule.deferred_ticks > 8) {
-                const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
-                                    " epoch=" + std::to_string(context.ui_measure_epoch + 1);
-                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
-                android_intrinsics::GuestLog(call, core::LogLevel::error, detail);
-                throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
+            if (!requests.empty()) {
+                schedule.deferred_until_tick = context.ui_owner_tick + 1;
+                if (schedule.deferred_ticks == 0 || schedule.watchdog_tick != context.ui_owner_tick) {
+                    schedule.watchdog_tick = context.ui_owner_tick;
+                    ++schedule.deferred_ticks;
+                }
+                if (schedule.deferred_ticks > 8) {
+                    diagnostic("layout watchdog rejected");
+                    const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
+                                        " epoch=" + std::to_string(context.ui_measure_epoch + 1);
+                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
+                    android_intrinsics::GuestLog(call, core::LogLevel::error, detail);
+                    throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
+                }
+            } else {
+                schedule.deferred_ticks = 0;
+                schedule.deferred_until_tick = 0;
             }
-        } else {
-            schedule.deferred_ticks = 0;
-            schedule.deferred_until_tick = 0;
+            const auto epoch = context.ui_measure_epoch + 1;
+            const auto previous_target = context.ui_tree.ProjectionTarget();
+            const auto metrics_revision =
+                previous_target
+                    ? previous_target->metrics_revision + (previous_target->metrics.width != metrics.width ||
+                                                                   previous_target->metrics.height != metrics.height ||
+                                                                   context.ui_projection_density != density
+                                                               ? 1U
+                                                               : 0U)
+                    : 1U;
+            const ui::UiProjectionTarget target{
+                context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
+            context.ui_tree.SetProjectionTarget(target);
+            CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+            context.ui_tree.ClearDrawDirty();
+            schedule.published = context.ui_tree.PublishedProjection();
+            schedule.content_revision = revision;
+            schedule.metrics = metrics;
+            schedule.density = density;
+            return true;
+        } catch (...) {
+            diagnostic("traversal exception");
+            throw;
         }
-        const auto epoch = context.ui_measure_epoch + 1;
-        const auto previous_target = context.ui_tree.ProjectionTarget();
-        const auto metrics_revision =
-            previous_target
-                ? previous_target->metrics_revision + (previous_target->metrics.width != metrics.width ||
-                                                               previous_target->metrics.height != metrics.height ||
-                                                               context.ui_projection_density != density
-                                                           ? 1U
-                                                           : 0U)
-                : 1U;
-        const ui::UiProjectionTarget target{
-            context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
-        context.ui_tree.SetProjectionTarget(target);
-        CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
-        context.ui_tree.ClearDrawDirty();
-        schedule.published = context.ui_tree.PublishedProjection();
-        schedule.content_revision = revision;
-        schedule.metrics = metrics;
-        schedule.density = density;
-        return true;
     }
     }
     auto metrics = viewport.value_or(

@@ -2089,3 +2089,17 @@ ROM 新建对象的 STATE_IDLE/isFinished、finish、尺寸/位置记录保持�
 onPull/onAbsorb、draw 调用及离开 idle 的 release 路径按 ADR-0147 记账失败；idle release
 只做原版清零后返回。宿主有界 delta→Java scrollTo 不触发 pull，没有动画时间源。
 决定4对完整 EdgeEffect 动画/绘制、ROM touch、fling/scrollbar 的排除与其他审计规则不变。
+
+
+### VD-10c-2 实施边界（2026-10-25）
+
+[DVM-305](../tasks/dexvm/DVM-305.md) 的共同呈现序列由 integration owner 原子发布。
+guest_window_epoch_refs 只借用既有完整窗口快照；modal_stack 冻结独立 HostLayout 树，
+不复制 guest 几何。metrics revision 来自完整 guest target，viewport/density 同时匹配后才
+发布；resize 先在所有宿主副本布局并检验容纳性，任一失败保留旧共同快照及旧宿主集合。
+Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保留称作 guest 状态回滚。
+设备metrics待齐时，旧modal隐藏/退役可在最后完整metrics下发布移除，不混入新几何。
+纯 modal show/update/dismiss/输入只推进共同/宿主序列；Compose 不执行 guest 或遍历。
+最上层 modal 捕获绑定分区及代次；撤销捕获先于集合发布，取消的尾事件不穿透新 owner。
+普通 guest 触摸也持有共同快照的事件租约，listener 改树沿既有 requestLayout 由 owner 调度。
+无组合/准入审计规则范围调整；ADR-0147、精确调用、本类 failure 字段及 clinit 规则保持。

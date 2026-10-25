@@ -806,10 +806,36 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         return State();
     }
 
+    runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
+                                                                  runtime::AndroidBoundaryFrame frame) {
+        const auto snapshot = runtime::AcquireAndroidPresentation(context);
+        if (!snapshot) return frame;
+        if (snapshot->viewport !=
+            runtime::ui::Size{static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)})
+            throw std::runtime_error("Presented frame does not match published presentation metrics");
+        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
+        for (const auto& guest : snapshot->guest_window_epoch_refs) {
+            const auto overlay = runtime::ui::RasterizeUiOverlay(
+                runtime::ui::BuildUiRenderList(*guest, context.ui_bitmaps, runtime::ui::UiRenderPlane::normal),
+                {snapshot->viewport.width, snapshot->viewport.height});
+            ComposeUiOverlayInPlace(frame.rgba8, overlay);
+        }
+        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
+        for (const auto& modal : snapshot->modal_stack) {
+            const auto overlay =
+                runtime::ui::RasterizeUiOverlay(runtime::ui::BuildUiRenderList(*modal.tree, context.ui_bitmaps),
+                                                {snapshot->viewport.width, snapshot->viewport.height});
+            ComposeUiOverlayInPlace(frame.rgba8, overlay);
+        }
+        return frame;
+    }
+
     runtime::AndroidBoundaryFrame DexActivityLifecycle::ComposePresentedFrame(
         runtime::AndroidBoundaryFrame frame) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
+        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+            return ComposeAndroidPresentationFrame(context, std::move(frame));
         runtime::RefreshAndroidImageDrawables(context);
         runtime::RefreshAndroidSurfaceFrames(context);
         runtime::EnsureAndroidUiTraversal(

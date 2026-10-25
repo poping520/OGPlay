@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-304; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-246/304：Legacy plain String/三按钮、输入/焦点/Surface 与合成不变；JavaTraversal 每 modal 独立 HostLayout，未发布树布局/容纳检查后替换，失败保留 guest epoch、旧树/焦点/revision；宿主按钮焦点独立、保存真实 guest 身份/窗口代际。共同 presentation epoch 与 render/input 合成待10c-2，实验 modal 输入记账失败。主题/items/custom content/完整 Window 未支持。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-246/304/305：Legacy原路径保持；JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。CPU已验证；GPU/九场景/Windows待外验。主题/items/custom content/完整Window未支持。"
 
 [dexvm.drawable_resource]
 status = "partial"

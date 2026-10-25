@@ -236,7 +236,7 @@ enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事
 测试容器显式注入 disabled accessibility provider，singleton 与 enabled 值仍在 Java；未配置、
 非 null AttachInfo、动画/硬件、accessibility focus、背景状态等未支持服务明确记账失败。
 不宣称构造完整 AccessibilityManager 服务；除受审 getInstance/isEnabled 外其成员均 failure。
-输入重入未完成 traversal 明确拒绝；其他 reason/phase、生产 traversal、控件算法、呈现与 Surface
+输入重入未完成 traversal 明确拒绝；其他 reason/phase 及生产端到端 traversal/Surface 生命周期
 仍未启用；Legacy 仍为唯一生产默认。
 实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
@@ -248,8 +248,19 @@ JavaTraversal 的 Dialog 使用各自独立 HostLayout 树；ShowAndroidDialog �
 UiNodeId 只在所属 modal 树内有效，presentation 的 partition/generation/revision 区分相同原始 ID。
 按钮焦点仅归宿主树；prior_guest_focus 只存真实 Java View/root 身份与窗口 generation，
 从绑定字段读取，不执行 guest findFocus 回调；guest 焦点未转移，hide/dismiss 不向外部投影请求焦点。
-共同 presentation epoch、render/input 合成留待 VD-10c-2；此前实验 modal 输入记账抛 UOE，
-不可把仅成功布局的宿主树算作已呈现/可交互。Legacy HostDialog 仍走原整树调度，逐值行为不变。
+共同 PresentationSnapshot 以 shared_ptr 原子发布：presentation_epoch、guest_window_epoch_refs、
+host_modal_revision、metrics_revision、viewport 与可见 modal_stack。guest 部分只引用完整窗口
+投影，不复制几何；modal 部分冻结独立宿主树，发布后不共享构建树的可变焦点/可见性。
+owner 完成 guest 提交后准备全部待 resize 的宿主分区；尺寸/density 与 guest 测量事实匹配才
+发布。设备metrics待齐时，旧modal的隐藏/退役可沿最后完整guest/metrics发布移除；新几何
+不得混入该旧序列。容纳失败保留旧共同快照及宿主集合，不回滚已经发生的Java测量或独立guest投影。
+纯 modal 变更不测量/布局 guest、不推进 guest epoch；owner 可见性/退役先撤销捕获再发布集合。
+输入持共同快照，最上层可见 modal 优先吞输入；捕获含 partition/generation/Dialog 身份。
+更新/隐藏/取消/owner退役使捕获失效，已取消序列仅消费尾事件，不对新 modal/guest 触发动作。
+按钮/Back/Tab/Enter 进入既有 Java 协议及 owner Looper；回调改树只请求下一 owner 遍历。
+实验普通触摸也持有事件快照租约；几何命中读该快照，不在嵌套分发中重测。
+Compose 只读同一共同快照，video/raster/hit 共用 guest 投影与 modal screen_frame；帧尺寸
+不匹配明确失败，不把新 viewport 与旧几何混合。Legacy HostDialog 及合成逐值保持原路径。
 UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
@@ -456,7 +467,7 @@ owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismi
 不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/message/button≤512/4096/128
 UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；theme/items/custom view/Window facade
 拒绝。Legacy 模态根为 direct content-root child；实验每 modal 为独立 HostLayout，
-字体/布局/像素复用既有底座，尚不发布共同呈现快照。
+字体/布局/像素复用既有底座，经共同呈现快照合成与命中。
 
 WebView.destroy 可覆盖、检查构造 Looper，targetSdk≥18 跨线程 RuntimeException；清理 settings/
 client/interface、不重建、防御重复销毁，不承诺完整 AOSP 等价。配置/RenderPriority 仅状态/提示，

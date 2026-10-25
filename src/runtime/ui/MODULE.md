@@ -133,7 +133,9 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   UiTree 只保存宿主投影，不回填 Java measured/bounds。实验测试根提交 ROM layout 后的局部 frame，
   仅完整成功的 epoch 可供 render/hit-test 同时消费；Legacy 迁移阶段仍保留宿主遍历。
   本层不执行 guest、不持 Java 引用、不读 Java 字段；未迁移文本/样式仍沿既有宿主单一存储。
-- renderer 与 input 后续只能读取同一 `screen_frame`；不得各自推导 bounds。
+- renderer 与 input 只能读取同一 `screen_frame`；不得各自推导 bounds。
+  integration 的共同 presentation 只持有完整 guest 投影引用和已布局宿主树的 const 冻结副本；
+  本层不拥有该发布序列、不新增 guest 几何权威。宿主树复制仅冻结宿主分区，不对 guest 分区重排。
 - integration/session 的 Legacy 布局由 integration 统一调度；本层仍只接收 UiTree/UiMetrics，
   不获取解释器、guest 回调或 Java 引用。
 - `ClearLayoutDirty` 与 `ClearDrawDirty` 只能由各自阶段消费；禁止恢复同时清除两类状态的

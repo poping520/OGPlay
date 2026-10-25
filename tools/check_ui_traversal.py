@@ -47,11 +47,16 @@ def main():
                 if relative == Path("src/runtime/integration/dexvm_android/support_ui.cpp")
                 else (-1, -1)
             )
+            resize_start, resize_end = (
+                function_body(code, "ResizeAndroidDialogs")
+                if relative == Path("src/runtime/integration/dexvm_android/support_ui.cpp")
+                else (-1, -1)
+            )
             for match in re.finditer(r"\bLayoutUiTree\s*\(", code):
                 location = f"{relative}:{code.count(chr(10), 0, match.start()) + 1}"
-                # ADR-0161: the only additional layout call resolves an
-                # unpublished, independently owned HostLayout modal tree.
-                if (host_start < match.start() < host_end and
+                # ADR-0161: additional calls resolve only unpublished,
+                # independently owned HostLayout modal trees.
+                if ((host_start < match.start() < host_end or resize_start < match.start() < resize_end) and
                     re.match(r"LayoutUiTree\(\*modal\.host_tree, managed_viewport\)", code[match.start():])):
                     host_calls.append(location)
                     continue
@@ -75,8 +80,8 @@ def main():
     for write in re.finditer(r"\.scroll_[xy]\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
         if not any(start < write.start() < end for start, end in legacy_blocks):
             errors.append("session scroll coordinate write outside explicit Legacy branch")
-    if len(host_calls) != 1:
-        errors.append(f"expected one isolated HostLayout call, found {len(host_calls)}")
+    if len(host_calls) != 2:
+        errors.append(f"expected two isolated HostLayout calls, found {len(host_calls)}")
     if len(calls) != 1:
         errors.append(f"expected one Legacy implementation call, found {len(calls)}")
     if errors:

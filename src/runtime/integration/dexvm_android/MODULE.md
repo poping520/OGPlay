@@ -704,3 +704,9 @@ Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 change
 有界主题允许清单内固定 ROM 具名 drawable ID 作为惰性引用进入六槽；读取引用不加载
 系统 drawable，实际未支持皮肤加载仍失败。View scrollbar 私有 ID 缺同 ROM 资源输入时
 保留 unsupported，不以猜值或 null 代替；不能据此宣称默认 View 属性构造已全部可用。
+
+DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
+共享窗口 observer 与真实父链坐标；Legacy 仍使用原 decor facade。Surface 回调事务以
+实际 owner/root/holder/mount/buffer 核验连续性，不以无关 sibling 的 content revision
+变化销毁仍存活的 holder；新挂载延后，换根/重挂及 callback owner 替换仍撤销旧派发。
+owner 直接调用 ROM observer 和 Surface 事务在 VM execution lock 下捕获与复核。

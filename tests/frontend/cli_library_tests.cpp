@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "frontend/app/runtime_failure.h"
 #include "frontend/cli/commands.h"
 #include "apk_fixture.h"
 #include "ogplay/app/json.h"
@@ -117,4 +118,25 @@ TEST_CASE("CLI library running lock and malformed options fail explicitly") {
     }
     for (const auto& command : std::vector<std::vector<std::string>>{{}, {"unknown"}, {"list", "extra"}, {"run", "missing"}, {"run", "org.example.game", "--mode", "bad"}, {"settings", "set", "org.example.game"}})
         CHECK(f.Run(command).code == 1);
+}
+
+TEST_CASE("DVM-315 CLI reports known non standard runtime failures and preserves exit one") {
+    const auto report = [](std::exception_ptr failure) {
+        Capture error(stderr);
+        CHECK(ogplay::cli::ReportCliFailure(failure) == 1);
+        return error.Read();
+    };
+    std::exception_ptr java_failure;
+    try {
+        ogplay::app::detail::RethrowRuntimeFailure(std::make_exception_ptr(
+            ogplay::runtime::dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "startup callback failed"}));
+    } catch (const std::runtime_error&) {
+        java_failure = std::current_exception();
+    }
+    REQUIRE(java_failure);
+    CHECK(
+        report(java_failure) ==
+        "\nerror [ogplay]\n  dexvm::VmJavaThrow\n    exception: Ljava/lang/IllegalStateException;\n    message: startup callback failed\n");
+    CHECK(report(std::make_exception_ptr(std::runtime_error("old failure"))) == "\nerror [ogplay]\n  old failure\n");
+    CHECK(report(std::make_exception_ptr(7)) == "\nerror [ogplay]\n  unknown CLI failure\n");
 }

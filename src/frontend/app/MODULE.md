@@ -41,3 +41,9 @@ RunDex 默认将 Java out/err 分别输出到宿主 stdout/stderr；显式传入
 公共契约合并两路字节，诊断/未捕获异常的宿主报告继续使用 stderr。
 一致性工具可显式使用 `--merge-console`，按 AOSP run-test 的 `2>&1` 约定将 Java 两路字节
 按提交顺序并入 stdout；宿主结构化诊断仍在 stderr，不能污染 Java expected.txt。
+
+DescribeUnhandledException 只导出异常报告字符串：识别 VmJavaThrow 的类型/消息，
+标准异常原样保留 what，未知异常保持未知失败；不向 EXE 暴露运行时类型。
+
+RunGame 在同一共享库内将已知私有运行时异常转换为保留原类型/消息的标准失败，
+再跨 app 边界；SDL 回调仍只保存 exception_ptr，不跨 C ABI 抛异常。

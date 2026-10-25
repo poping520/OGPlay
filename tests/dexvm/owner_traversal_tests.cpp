@@ -826,3 +826,75 @@ TEST_CASE("DVM-314 reviewed WebView construction retains explicit AbsoluteLayout
         CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-315 NativeActivity style startup observer queries content and decor geometry") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = 100;
+        f.context->surface_height = 80;
+        const auto owner = f.New("Ltest/NativeStartupActivity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.On(owner, "onCreate", "(Landroid/os/Bundle;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveAndNotifySizes));
+        CHECK_NOTHROW(DispatchAndroidGlobalLayout(f.vm, *f.context));
+        const auto value = [&](const char* name) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(owner), name, "I");
+            REQUIRE(field);
+            return f.model.InstanceSlots(owner)[f.linker.Field(*field).slot].bits;
+        };
+        // ROM keeps both explicit registrations even on the same observer.
+        CHECK(value("calls") == 2);
+        CHECK(value("width") == 100);
+        CHECK(value("height") == 80);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-315 original NativeActivity startup executes ROM global layout on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Landroid/app/NativeActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        CHECK_NOTHROW(static_cast<void>(lifecycle.Start()));
+        CHECK(f.context->active_surface_holders.contains(f.context->window_surface_holder.Value()));
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}
+
+TEST_CASE("DVM-315 startup guest callback exception becomes a lifecycle fault") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto type = f.linker.ResolveDescriptor("Ltest/NativeStartupActivity;");
+        const auto index = f.linker.FindVtableIndex(type, "onGlobalLayout", "()V");
+        REQUIRE(index);
+        auto& method = f.linker.MutableMethod(f.linker.Class(type).vtable[*index]);
+        method.code.reset();
+        method.fast_code.reset();
+        method.kind = MethodKind::intrinsic;
+        method.implementation = [](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "fixture startup callback"};
+        };
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/NativeStartupActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        CHECK_THROWS_WITH_AS(
+            static_cast<void>(lifecycle.Start()),
+            "Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: Ljava/lang/IllegalStateException;\n  message: fixture startup callback",
+            ogplay::session::DexActivityLifecycleError);
+        CHECK(lifecycle.State().state == ogplay::session::LifecycleRunState::failed);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

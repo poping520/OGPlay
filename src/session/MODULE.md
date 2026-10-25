@@ -297,3 +297,7 @@ JavaTraversal窗口切换保留每窗口Java根及完整投影，前台输入分
 同次发布；恢复焦点走Java软件adapter，HostLayout RequestFocus仅在Legacy恢复分支。
 Compose的一次lease显式交给video上下层、UI与modal，bitmap版本/producer像素属于快照；
 呈现线程不读取当前播放器/绑定表或消费dirty，不为输出像素大小重测Java。
+
+DVM-315：startup/frame/suspend/resume 中，宿主发起的 owner/observer/Surface/窗口
+adapter 若在 vm.Call 外抛出 VmJavaThrow，转为 DexActivityLifecycleError，保留明确
+Java 类型、消息与宿主阶段；仍标 failed、保留原退出及异步 fatal 优先语义，不伪造成功。

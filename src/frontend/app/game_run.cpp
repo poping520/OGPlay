@@ -1,4 +1,6 @@
 #include "ogplay/app/game_run.h"
+#include "ogplay/app/diagnostics.h"
+#include "runtime_failure.h"
 #include "ogplay/app/library.h"
 #include "ogplay/core/logger.h"
 #include "../game/run_game.h"
@@ -9,6 +11,10 @@
 #include <SDL3/SDL_main.h>
 #endif
 namespace ogplay::app {
+std::string DescribeUnhandledException(std::exception_ptr failure) {
+    return detail::DescribeRuntimeFailure(failure);
+}
+
 int RunGame(GameRunOptions options, const LogConfig& config) {
     ValidateGameRunOptions(options);
     std::optional<RunningLease> running;
@@ -31,10 +37,14 @@ int RunGame(GameRunOptions options, const LogConfig& config) {
     char* argv[]{name, nullptr};
     const int result = SDL_RunApp(1, argv, callback, nullptr);
     active = nullptr;
-    if (invocation.error) std::rethrow_exception(invocation.error);
+    if (invocation.error) detail::RethrowRuntimeFailure(invocation.error);
     return result;
 #else
-    return frontend::RunGame(std::move(options), logger, config.status_to_stderr);
+    try {
+        return frontend::RunGame(std::move(options), logger, config.status_to_stderr);
+    } catch (...) {
+        detail::RethrowRuntimeFailure(std::current_exception());
+    }
 #endif
 }
 }

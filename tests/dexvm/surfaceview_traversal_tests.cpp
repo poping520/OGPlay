@@ -503,3 +503,53 @@ TEST_CASE("DVM-314 Surface recreation emits created changed even for identical b
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-315 Surface recreation completes changed when created appends unrelated window content") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (int kind : {0, 1, 2}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f);
+            const auto view = kind == 1 ? f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V",
+                                                {VmValue::Ref(owner)})
+                                        : Surface(f, owner);
+            const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+            const auto sibling = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+            if (kind == 2)
+                f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(callback)});
+            const auto holder = kind == 2 ? f.context->window_surface_holder : Holder(f, view);
+            std::vector<int> events;
+            bool rebuilding{};
+            SurfaceHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+                events.push_back(1);
+                if (rebuilding) {
+                    rebuilding = false;
+                    const auto params = ogplay::runtime::android_intrinsics::NewAndroidLayoutParams(
+                        f.vm, "Landroid/view/ViewGroup$LayoutParams;", 1, 1);
+                    f.On(window, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                         {VmValue::Ref(sibling), VmValue::Ref(params)});
+                }
+                return VmValue::Void();
+            });
+            SurfaceHook(f, callback, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext&) {
+                events.push_back(2);
+                return VmValue::Void();
+            });
+            SurfaceHook(f, callback, "surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+                events.push_back(3);
+                return VmValue::Void();
+            });
+            if (kind != 2)
+                f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+            rebuilding = true;
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+            CHECK(events == std::vector<int>{1, 2, 3, 1, 2});
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(events == std::vector<int>{1, 2, 3, 1, 2});
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}

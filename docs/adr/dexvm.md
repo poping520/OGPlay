@@ -2019,6 +2019,25 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 这不授权新 native、完整控件栈或未实现成员伪成功。
 
 
+### VD-11-14 同 ROM 资源输入修订（编排方决定 2026-10-26）
+
+精确修订决定5，并与 [ADR-0161](#adr-0161) 决定2共同限定以下范围：
+
+1. 同 ROM `framework-res.apk` 为哈希锁定的独立资源输入，与 BootDex 配对封存；
+   从 `resources.arsc` 取得公开/私有 drawable 的真实 ID、类型和配置，禁止猜值。
+   与固定 JAR 中已知 `android.R` / `com.android.internal.R` 常量冲突即构建失败。
+2. View 基础 styleable 中主题实际引用的 scrollbar thumb/track、horizontal/vertical、
+   holo_dark/holo_light 等值允许作为资源引用投影，`obtainStyledAttributes` 不因其失败。
+3. 若 ROM View 构造（含 initializeScrollbars）消费这些引用，只开放构造所需最小闭包：
+   从同一 APK 选择匹配当前密度的配置、解码对应 `.9.png`，经 ROM NinePatchDrawable /
+   ScrollBarDrawable 构造。滚动条绘制、淡出及 awakenScrollBars 动画继续按 ADR-0147
+   记账并明确失败；静止不画不触发。闭包需要 Binder/WMS/完整渲染栈则停止并只交审计。
+
+实施状态见 [DVM-324](../tasks/dexvm/DVM-324.md)：输入身份与 R 常量一致，原版构造闭包
+在加载 Drawable 前经 ViewConfiguration → Display.getRealSize 触及 IDisplayManager Binder。
+按决定3仅交审计；以上为准入决定，不代表 scrollbar 投影或构造已经实现。
+
+
 <a id="adr-0161"></a>
 
 ## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
@@ -2104,6 +2123,16 @@ Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保�
 最上层 modal 捕获绑定分区及代次；撤销捕获先于集合发布，取消的尾事件不穿透新 owner。
 普通 guest 触摸也持有共同快照的事件租约，listener 改树沿既有 requestLayout 由 owner 调度。
 无组合/准入审计规则范围调整；ADR-0147、精确调用、本类 failure 字段及 clinit 规则保持。
+
+
+### VD-11-14 scrollbar 构造边界修订（编排方决定 2026-10-26）
+
+精确修订决定2对 scrollbar 与资源 NinePatchDrawable 的排除，采用
+[ADR-0160](#adr-0160) 的 VD-11-14 三项修订：同 ROM 哈希锁定输入、真实资源引用投影及
+构造所需最小 `.9.png` / ROM Drawable 闭包。此项不开放绘制、淡出、awakenScrollBars
+动画、其他系统皮肤或完整渲染栈；遇 Binder/WMS 依赖按停止条件只交审计。
+[DVM-324](../tasks/dexvm/DVM-324.md) 当前仅完成输入与越界闭包审计，没有新增成员或 adapter；
+其余决定、ADR-0147 与严格成员准入规则保持。
 
 
 <a id="adr-0162"></a>

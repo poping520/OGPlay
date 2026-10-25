@@ -471,3 +471,41 @@
 :done
     return-void
 .end method
+
+.class public Ltest/ScrollLeaf;
+.super Landroid/view/View;
+.field public desiredWidth:I
+.field public desiredHeight:I
+.field public measures:I
+.field public layouts:I
+.field public widthSpec:I
+.field public heightSpec:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onMeasure(II)V
+.registers 7
+    iget v0, v4, Ltest/ScrollLeaf;->measures:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v4, Ltest/ScrollLeaf;->measures:I
+    iput v5, v4, Ltest/ScrollLeaf;->widthSpec:I
+    iput v6, v4, Ltest/ScrollLeaf;->heightSpec:I
+    const/4 v2, 0
+    iget v0, v4, Ltest/ScrollLeaf;->desiredWidth:I
+    invoke-static {v0, v5, v2}, Landroid/view/View;->resolveSizeAndState(III)I
+    move-result v0
+    iget v1, v4, Ltest/ScrollLeaf;->desiredHeight:I
+    invoke-static {v1, v6, v2}, Landroid/view/View;->resolveSizeAndState(III)I
+    move-result v1
+    invoke-virtual {v4, v0, v1}, Landroid/view/View;->setMeasuredDimension(II)V
+    return-void
+.end method
+.method protected onLayout(ZIIII)V
+.registers 8
+    iget v0, v2, Ltest/ScrollLeaf;->layouts:I
+    add-int/lit8 v0, v0, 1
+    iput v0, v2, Ltest/ScrollLeaf;->layouts:I
+    return-void
+.end method

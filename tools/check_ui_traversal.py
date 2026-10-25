@@ -48,6 +48,21 @@ def main():
                     errors.append(f"layout bypass: {location}")
             if re.search(r"\bEnsureLayout\s*\(", code):
                 errors.append(f"old layout entry: {relative}")
+    # DVM-300: session may mutate a host scroll position only in an explicit Legacy block.
+    session = ROOT / "src/session/dex_activity_lifecycle.cpp"
+    code = code_only(session.read_text(encoding="utf-8"))
+    legacy_blocks = []
+    for match in re.finditer(r"else\s+if\s*\(context.ui_traversal_owner\s*==\s*runtime::AndroidUiTraversalOwner::Legacy\)\s*\{", code):
+        start = match.end() - 1
+        depth = 1
+        for end in range(start + 1, len(code)):
+            depth += (code[end] == "{") - (code[end] == "}")
+            if not depth:
+                legacy_blocks.append((start, end))
+                break
+    for write in re.finditer(r"\.scroll_y\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
+        if not any(start < write.start() < end for start, end in legacy_blocks):
+            errors.append("session scroll_y write outside explicit Legacy branch")
     if len(calls) != 1:
         errors.append(f"expected one Legacy implementation call, found {len(calls)}")
     if errors:

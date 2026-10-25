@@ -193,8 +193,10 @@ void Failure(ContainerVm& f, VmObjectRef object, const char* name, const char* s
     CHECK_FALSE(f.ledger.Unimplemented().empty());
     CHECK(hits() > before);
     const bool glow = std::string_view(name) == "setOverScrollMode";
+    const bool bounded = std::string_view(name) == "onTouchEvent" &&
+                         f.linker.Class(f.model.ObjectClass(object)).descriptor == "Landroid/widget/ScrollView;";
     CHECK(f.linker.Class(result.exception_class).descriptor ==
-          (glow ? "Ljava/lang/UnsupportedOperationException;" : "Ljava/lang/UnsatisfiedLinkError;"));
+          ((glow || bounded) ? "Ljava/lang/UnsupportedOperationException;" : "Ljava/lang/UnsatisfiedLinkError;"));
     CHECK(result.exception_message.find(glow ? "EdgeEffect" : name) != std::string::npos);
 }
 }  // namespace
@@ -289,8 +291,8 @@ TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly f
             CHECK(f.ledger.Unimplemented().empty());
             Failure(f, view, "fling", "(I)V", {VmValue::Int(20)});
             Failure(f, view, "smoothScrollTo", "(II)V", {VmValue::Int(0), VmValue::Int(10)});
-            Failure(f, view, "setOverScrollMode", "(I)V", {VmValue::Int(0)});
-            CHECK(f.On(view, "getOverScrollMode", "()I").AsInt() == 2);
+            f.On(view, "setOverScrollMode", "(I)V", {VmValue::Int(0)});
+            CHECK(f.On(view, "getOverScrollMode", "()I").AsInt() == 0);
             Failure(f, view, "onSaveInstanceState", "()Landroid/os/Parcelable;");
             Failure(f, view, "initializeScrollbars", "(Landroid/content/res/TypedArray;)V",
                     {VmValue::Ref(VmObjectRef{})});
@@ -299,21 +301,23 @@ TEST_CASE("DVM-299 scroll unsupported system and next-stage methods explicitly f
                         (std::string(name).substr(0, std::string(name).size() - 1) + "$SavedState;").c_str()))});
             Failure(f, view, "requestChildFocus", "(Landroid/view/View;Landroid/view/View;)V",
                     {VmValue::Ref(view), VmValue::Ref(view)});
-            Failure(f, view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
-            Failure(f, view, "onLayout", "(ZIIII)V",
-                    {VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
+            if (std::string_view(name) == "Landroid/widget/HorizontalScrollView;") {
+                Failure(f, view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+                Failure(f, view, "onLayout", "(ZIIII)V",
+                        {VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0), VmValue::Int(0)});
+            }
             Failure(f, view, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(VmObjectRef{})});
         }
         ContainerVm f(backend);
         const auto owner = Owner(f, false);
+        CHECK(f.ledger.Unimplemented().empty());
         const auto root = f.vm.ProtectReferences(std::array{owner});
         for (const auto name : {"Landroid/widget/ScrollView;", "Landroid/widget/HorizontalScrollView;"}) {
             const auto view = f.vm.NewIntrinsicInstance(name);
             const auto result = f.vm.Call(
                 *f.linker.FindDirectMethod(f.linker.ResolveDescriptor(name), "<init>", "(Landroid/content/Context;)V"),
                 std::array{VmValue::Ref(view), VmValue::Ref(owner)});
-            CHECK(result.exception.IsValid());
-            CHECK_FALSE(f.ledger.Unimplemented().empty());
+            CHECK_FALSE(result.exception.IsValid());
         }
     }
 }

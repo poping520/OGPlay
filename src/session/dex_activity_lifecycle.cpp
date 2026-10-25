@@ -641,14 +641,20 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         scroll_dragging_ = true;
                     }
                     if (scroll_dragging_) {
-                        const auto previous = scroll.scroll_y;
-                        scroll.scroll_y = std::clamp(
-                            scroll.scroll_y + static_cast<std::int32_t>(
-                                std::lround(scroll_last_y_ - pointer_y_)),
-                            0, maximum);
-                        scroll_last_y_ = pointer_y_;
-                        if (scroll.scroll_y != previous) {
-                            context.ui_tree.MarkLayoutDirty(*node);
+                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+                            runtime::ScrollAndroidViewBy(
+                                vm, context, dx::VmObjectRef{static_cast<std::uint32_t>(scroll_view_handle_)},
+                                static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)));
+                            scroll_last_y_ = pointer_y_;
+                        } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) {
+                            const auto previous = scroll.scroll_y;
+                            scroll.scroll_y = std::clamp(
+                                scroll.scroll_y + static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)),
+                                0, maximum);
+                            scroll_last_y_ = pointer_y_;
+                            if (scroll.scroll_y != previous) {
+                                context.ui_tree.MarkLayoutDirty(*node);
+                            }
                         }
                         continue;
                     }

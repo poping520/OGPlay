@@ -566,19 +566,28 @@ IME/composition、Editor、布局对象、修改键移动/删除及未支持字�
 不使用 focused_edit_text 或 UiTree 焦点作实验 owner。失败校验不改 selection；提交后回调
 异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。
 
-## 实验 Scroll 构造接缝
+## 实验 Scroll 构造与纵向滚动
 
-JavaTraversal 配对保留纵/横 ScrollView 的完整 ROM 形状与 clinit owner（本输入无 clinit）。
-三个构造、Rect/默认字段、fillViewport 的 TypedArray 消费和简单状态方法执行 ROM；
-initScrollView 与 setOverScrollMode 为逐签名受审 adapter。只接受真实主题解析所得的
-显式 overScrollMode=never；默认/always/ifContentScrolls 所需 EdgeEffect 系统 Drawable
-继续记账失败，相关字段保持 failure，不以 null 宣称 ROM EdgeEffect 初始化成功。
-init adapter 按固定 AOSP ViewConfiguration 的有界公式，从实际 Context 的 Resources/
-DisplayMetrics/Configuration 取得 density/屏幕级别，写入五个 Java 配置字段；touchSlop
-使用封存 config.xml 的8dp，velocity 为50/8000dp，overscroll/overfling 为0/6dp，XLARGE
-仅放大后两者。此接缝不伪造 ViewConfiguration 的 WMS/menu/cache 状态或完整实例。
-OverScroller 与两个 spline 由真实 ROM 构造、保留物理系数与完成状态，Java 强边保活；
-不创建空动画对象。Java mScrollX/Y 未增加宿主副本；不写 measured/bounds。
-fling/smoothScroll、glow、scrollbar Drawable、SavedState、focus 驱动滚动及本类
-onMeasure/onLayout/输入仍沿 ADR-0147 failure，后续10b-2/3独立开放。Legacy catalog/
-构造及生产 payload 保持，水平类只在实验 catalog 注册。
+JavaTraversal 配对保留两 Scroll 完整 ROM 形状；构造、Rect/默认字段、fillViewport 属性
+消费归 ROM。initScrollView 的配置/scroller 接缝保持真实 Context/metrics 与 ROM OverScroller。
+纵向 onMeasure、measureChild/WithMargins、四个单 child addView、requestLayout、onLayout、
+onSizeChanged、scrollTo/clamp 及直接依赖执行 ROM；纵轴先 UNSPECIFIED，fillViewport
+补测沿 API19 原式，不额外扣 margin。第二个直接 child 抛 ROM IllegalStateException。
+非空 SavedState 恢复、focus 驱动滚动、fling/smoothScroll、scrollbar Drawable 继续明确失败。
+水平布局/测量仍 failure，由后续任务处理。
+
+默认 overScrollMode 可创建 idle-only EdgeEffect。受审构造保留 Java idle 状态、真实 Rect/
+DecelerateInterpolator、density 派生最小宽度；glow/edge Drawable 与资源派生尺寸字段为
+failure，标识未支持 glow 资源。isFinished/finish/setSize/setPosition 执行 ROM，idle onRelease
+只清 pullDistance；非 idle release、onPull/onAbsorb/draw 记账失败。没有动画或绘制成功信用。
+
+Java View.mScrollX/Y 唯一持有位置；collector 读取 mScrollY，按同 epoch 的 parent screen +
+child local − parent scroll 计算 screen/clip。ScrollAndroidViewBy 只允许 owner 线程、已发布且
+仍在根内的纵向对象，经 Java scrollBy→scrollTo/clamp 后完整发布新投影，不 measure/layout、
+不 requestLayout、不写 child measured/frame。异常保留旧发布快照。
+View.onScrollChanged 接缝只接受未系统附着且 accessibility 显式 disabled 的软件路径，
+真实置 mBackgroundSizeChanged；ROM scrollTo 保留 parent cache/invalidation 与 guest 覆写。
+宿主仅持拖动捕获/slop/delta，拦截时向单一旧目标发 CANCEL。纵向 onInterceptTouchEvent/
+onTouchEvent 接缝只在宿主单指分发作用域内开放：前者委托 ROM ViewGroup 父协议，后者
+接受有内容的捕获供宿主 delta 路径使用；作用域外/null/多指明确失败，不写 Java 手势镜像。
+Legacy 位置与输入路径保持。

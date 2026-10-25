@@ -261,6 +261,27 @@ bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     return false;
 }
 
+void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
+                         const std::int32_t delta_y) {
+    dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
+        context.ui_java_owner_thread != std::this_thread::get_id() || context.ui_layout_dispatching)
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                 "Scroll input requires Java owner outside layout"};
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ScrollView;");
+    if (!vm.Linker().IsAssignable(type, vm.Model().ObjectClass(view)) ||
+        !AndroidViewBelongsToRoot(vm, context, view, true) || !context.ui_tree.PublishedProjection())
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                 "Scroll input requires a published attached vertical view"};
+    const auto roots = vm.ProtectReferences(std::array{view});
+    const auto target = *context.ui_tree.ProjectionTarget();
+    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "scrollBy", "(II)V",
+                                                            {dexvm::VmValue::Int(0), dexvm::VmValue::Int(delta_y)}));
+    // No requestLayout or measure/layout: child local frames and measured sizes stay Java-owned.
+    CommitAndroidMeasuredRootProjection(vm, context, AndroidUiTraversalRoot(vm, context), target,
+                                        context.ui_measure_epoch + 1);
+}
+
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                          const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
                                          const std::uint64_t epoch) {
@@ -307,6 +328,7 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
                                   {fields.GetInt(m.measured[0]) & 0xffffff, fields.GetInt(m.measured[1]) & 0xffffff},
                                   visibility,
                                   ReadAndroidViewPadding(vm, context, view)};
+        entry.scroll_y = fields.GetInt(m.scroll[1]);
         entry.android_id = fields.GetInt(h.id);
         const auto view_flags = fields.GetInt(m.view_flags);
         entry.enabled = (view_flags & 0x20) == 0;
@@ -2266,6 +2288,15 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
 DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     DexVmAndroidContext& context, const std::int32_t action, const float x, const float y,
     const std::uint64_t captured_view, const AndroidBoundaryInput* snapshot) {
+    const auto previous = context.ui_bounded_scroll_dispatch;
+    context.ui_bounded_scroll_dispatch = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+
+    struct RestoreDispatch {
+        bool& flag;
+        bool previous;
+
+        ~RestoreDispatch() { flag = previous; }
+    } restore_dispatch{context.ui_bounded_scroll_dispatch, previous};
     // Capture belongs to the context; the legacy argument is only a projection.
     static_cast<void>(captured_view);
     auto adjusted = snapshot ? *snapshot : AndroidBoundaryInput{};

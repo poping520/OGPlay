@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "e42078c222b7037ab5f6083b16e4ca9f9400fba5d0bce47b77483399b57c1b7c",
+      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
       "owner": "Landroid/widget/ScrollView;",
       "smali_sha256": "26af15b7841e69243cf158c9734586de860308a35dcd57aa9ccc5c44bafa9635",
       "methods": [
@@ -38,13 +38,13 @@
           "signature": "clamp(III)I",
           "flags": 10,
           "body_sha256": "a35e6353e238eb1b61e316b298cd0e06c931053dfb3952d91afdd7af54ce0a7d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "doScrollY(I)V",
           "flags": 2,
           "body_sha256": "61a6f80ef416ff5fa8b0dff4cebb56fd018ac48249af858d17c8eb39179f8514",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "endDrag()V",
@@ -83,10 +83,10 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
-            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; real overScrollMode; EdgeEffect idle-only seam; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
             "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
             "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
-            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+            "failure_boundary": "No glow resources; EdgeEffect activation/draw explicitly fail. Animation, scrollbar, focus scroll and saved-state entry points remain failure."
           }
         },
         {
@@ -105,13 +105,13 @@
           "signature": "isViewDescendantOf(Landroid/view/View;Landroid/view/View;)Z",
           "flags": 10,
           "body_sha256": "9f3af835e04207fe80aea4d0688c46f70dbcb6eec4af53950cc6db2a01de74a2",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isWithinDeltaOfScreen(Landroid/view/View;II)Z",
           "flags": 2,
           "body_sha256": "f76589c2ced35c54524361f68b6bba018fe711ec9679212f95c11e9d17c6db81",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onSecondaryPointerUp(Landroid/view/MotionEvent;)V",
@@ -135,7 +135,7 @@
           "signature": "scrollToChild(Landroid/view/View;)V",
           "flags": 2,
           "body_sha256": "521b0de001ba33351b41feb3691a73e263de7a0271fd7d58a244c22603dbb282",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "scrollToChildRect(Landroid/graphics/Rect;Z)Z",
@@ -147,25 +147,25 @@
           "signature": "addView(Landroid/view/View;)V",
           "flags": 1,
           "body_sha256": "aa41e5f2a1b5f42f0532f614260570d17dca8691c924f7f766c55bb7faba1fd7",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;I)V",
           "flags": 1,
           "body_sha256": "7748d8949d3a53e9e047be1e0772c7500ee062472bcd3fcbf997d6c4d5799803",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
           "flags": 1,
           "body_sha256": "8d063c27470c745cf00ed8c0a524e19283af168d2ad33ab930cd95bad3bdc798",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
           "flags": 1,
           "body_sha256": "f17c140f19238222d11f0843b12e51a24a0f0cd2eccff5ab04c24558041a49e3",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "arrowScroll(I)Z",
@@ -261,13 +261,13 @@
           "signature": "measureChild(Landroid/view/View;II)V",
           "flags": 4,
           "body_sha256": "58e2946e18fe0cde0948232612c30daafb65e6de957e155e6f2931e292d4e1ad",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "measureChildWithMargins(Landroid/view/View;IIII)V",
           "flags": 4,
           "body_sha256": "ef25c6b0ccc62c3b59b76591a2687cb115beb746dfd669147906cf657dc758ac",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onDetachedFromWindow()V",
@@ -297,19 +297,26 @@
           "signature": "onInterceptTouchEvent(Landroid/view/MotionEvent;)Z",
           "flags": 1,
           "body_sha256": "baa282d9f492b894859464c5a079c0fe8b6abcce36c68d93d4c087f18e38411a",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 DVM-300 host-owned bounded drag and single-target CANCEL seam; full ROM touch remains unsupported",
+            "inputs": "only scoped DispatchDeepTouchEvent host dispatch, one pointer, DOWN/MOVE/UP/CANCEL; host slop/capture/delta owns interception",
+            "outputs": "onIntercept delegates ROM ViewGroup base so Java dispatch forwards to its real child; onTouch accepts host capture with nonempty child, empty DOWN declines; host sends CANCEL before Java scrollBy",
+            "state_owner": "existing host capture/slop/delta only; Java owns scroll position; scope flag is transient, no velocity/time/geometry mirror",
+            "failure_boundary": "manual direct calls outside host scope, null/multi-pointer events, fling/smooth/glow fail explicitly; no full ROM touch credit"
+          }
         },
         {
           "signature": "onLayout(ZIIII)V",
           "flags": 4,
           "body_sha256": "f2dbe619a4dd087ab145fdcb7ab4b03fea8d2a128bcff2bf530b41b4733543ca",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onMeasure(II)V",
           "flags": 4,
           "body_sha256": "b6520da89dd4fc736e1fba8bfa024b8b46fc85eae48056d12a90e87ae12e32a2",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onOverScrolled(IIZZ)V",
@@ -339,13 +346,20 @@
           "signature": "onSizeChanged(IIII)V",
           "flags": 4,
           "body_sha256": "a4d1b9c913a2c66c5b5ee8cadb7f3e6256dc48cab635c76a366c5ba5f197e96a",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onTouchEvent(Landroid/view/MotionEvent;)Z",
           "flags": 1,
           "body_sha256": "fc3c029e83344101703c14974ca0a080e31770b596c5d88ad1e7c93972c50328",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 DVM-300 host-owned bounded drag and single-target CANCEL seam; full ROM touch remains unsupported",
+            "inputs": "only scoped DispatchDeepTouchEvent host dispatch, one pointer, DOWN/MOVE/UP/CANCEL; host slop/capture/delta owns interception",
+            "outputs": "onIntercept delegates ROM ViewGroup base so Java dispatch forwards to its real child; onTouch accepts host capture with nonempty child, empty DOWN declines; host sends CANCEL before Java scrollBy",
+            "state_owner": "existing host capture/slop/delta only; Java owns scroll position; scope flag is transient, no velocity/time/geometry mirror",
+            "failure_boundary": "manual direct calls outside host scope, null/multi-pointer events, fling/smooth/glow fail explicitly; no full ROM touch credit"
+          }
         },
         {
           "signature": "pageScroll(I)Z",
@@ -387,7 +401,7 @@
           "signature": "scrollTo(II)V",
           "flags": 1,
           "body_sha256": "732eb30d961137e1d60c21ddf76c3e081dd1aad6e529fc7265a388bf7098b349",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setFillViewport(Z)V",
@@ -399,14 +413,7 @@
           "signature": "setOverScrollMode(I)V",
           "flags": 1,
           "body_sha256": "3d230929314aea69bfe89390ebcb7acdf0de50faa4a65fb5afb6e5d1c1079681",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
-            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
-            "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
-            "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
-            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
-          }
+          "source": "rom"
         },
         {
           "signature": "setSmoothScrollingEnabled(Z)V",
@@ -473,13 +480,13 @@
         {
           "signature": "mEdgeGlowBottom:Landroid/widget/EdgeEffect;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mEdgeGlowTop:Landroid/widget/EdgeEffect;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -545,7 +552,7 @@
         {
           "signature": "mSavedState:Landroid/widget/ScrollView$SavedState;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -592,7 +599,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "e42078c222b7037ab5f6083b16e4ca9f9400fba5d0bce47b77483399b57c1b7c",
+      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
       "owner": "Landroid/widget/HorizontalScrollView;",
       "smali_sha256": "cfdd3ec3f3b29f9102045d9c30f7adc7ccdd9db1faa004b63479c97baf7ce471",
       "methods": [
@@ -669,10 +676,10 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
-            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; real overScrollMode; EdgeEffect idle-only seam; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
             "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
             "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
-            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+            "failure_boundary": "No glow resources; EdgeEffect activation/draw explicitly fail. Animation, scrollbar, focus scroll and saved-state entry points remain failure."
           }
         },
         {
@@ -982,10 +989,10 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-299 construction-only scroll system seam",
-            "inputs": "real Context Resources DisplayMetrics and Configuration; explicit overScrollMode=never; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
+            "inputs": "real Context Resources DisplayMetrics and Configuration; real overScrollMode; EdgeEffect idle-only seam; pinned API19 config_viewConfigurationTouchSlop=8dp and ViewConfiguration equations",
             "outputs": "real ROM OverScroller with two initialized ROM spline objects; five scaled configuration fields; Java focus and drawing flags",
             "state_owner": "Java ROM fields own scroll/config/object identity; ROM constructors own Rect and default flags; no host scroll position or geometry writes",
-            "failure_boundary": "default/always/ifContentScrolls require unsupported EdgeEffect system drawables and fail; no null animation success; fling/smoothScroll/glow/scrollbar/SavedState/focus scrolling/measure/layout/input stay failure"
+            "failure_boundary": "No glow resources; EdgeEffect activation/draw explicitly fail. Animation, scrollbar, focus scroll and saved-state entry points remain failure."
           }
         },
         {
@@ -1053,13 +1060,13 @@
         {
           "signature": "mEdgeGlowLeft:Landroid/widget/EdgeEffect;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mEdgeGlowRight:Landroid/widget/EdgeEffect;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1150,6 +1157,412 @@
           "signature": "mVelocityTracker:Landroid/view/VelocityTracker;",
           "flags": 2,
           "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-scroll.surface.json.gz",
+      "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed",
+      "owner": "Landroid/widget/EdgeEffect;",
+      "smali_sha256": "8f66f625288c6c86ef8fcefde2acd7781ffa0b6e4bee73bdc1b1145c1c9ddb9a",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "adb3dd3e65ef942eed1e3b9dfb8b9512d1fd3b0e482ab47595029c888a420c44",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 DVM-300 orchestrator-authorized idle EdgeEffect seam",
+            "inputs": "real Context; idle state",
+            "outputs": "ROM idle state, real Rect and interpolator; idle release clears pull distance; no glow resource loading",
+            "state_owner": "Java fields only; resource-dependent fields remain failure (unsupported glow resources)",
+            "failure_boundary": "onPull/onAbsorb/draw and nonidle release explicitly fail; resource-derived dimensions unavailable"
+          }
+        },
+        {
+          "signature": "update()V",
+          "flags": 2,
+          "body_sha256": "bb3b615409e50ccddec9972927d1f15c5d4a9e90615371cc4ab301c0e8b4a87f",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)Z",
+          "flags": 1,
+          "body_sha256": "83d3650b231c0fb9271ca52754e125856ee4f53801dc742d379a00cc7e4d1c2e",
+          "source": "failure"
+        },
+        {
+          "signature": "finish()V",
+          "flags": 1,
+          "body_sha256": "a04118e1272cf5d643f44b8b27c5ea0e4b4fe2f5d8265ad5d42965571dd61c4e",
+          "source": "rom"
+        },
+        {
+          "signature": "getBounds(Z)Landroid/graphics/Rect;",
+          "flags": 1,
+          "body_sha256": "3d81cd2298bd6eaf56b2ab9720ebc0a248a324a367c76e9d461dd84749824eb5",
+          "source": "failure"
+        },
+        {
+          "signature": "isFinished()Z",
+          "flags": 1,
+          "body_sha256": "e672b79877e2cfa1b85350e7a1d5d10affe6b5304b4d926cf7ec355f18c7e95a",
+          "source": "rom"
+        },
+        {
+          "signature": "onAbsorb(I)V",
+          "flags": 1,
+          "body_sha256": "0a93ce9807123d9d56bba3289a23e6551520351de266c1f53f615cb9096a8534",
+          "source": "failure"
+        },
+        {
+          "signature": "onPull(F)V",
+          "flags": 1,
+          "body_sha256": "8b10e34401df8bcaa467ca0805dbd79708b632842f929355e96f8155cc760f46",
+          "source": "failure"
+        },
+        {
+          "signature": "onRelease()V",
+          "flags": 1,
+          "body_sha256": "9886a872cc327c837b5ec6f1afc0df856f30f89aab1748e05b7536d0fc8f84cf",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 DVM-300 orchestrator-authorized idle EdgeEffect seam",
+            "inputs": "real Context; idle state",
+            "outputs": "ROM idle state, real Rect and interpolator; idle release clears pull distance; no glow resource loading",
+            "state_owner": "Java fields only; resource-dependent fields remain failure (unsupported glow resources)",
+            "failure_boundary": "onPull/onAbsorb/draw and nonidle release explicitly fail; resource-derived dimensions unavailable"
+          }
+        },
+        {
+          "signature": "setPosition(II)V",
+          "flags": 0,
+          "body_sha256": "57ff27fce4857b58c4dc396f40c8f4411ea64e4c4b22cd02f68130c48b78ccb5",
+          "source": "rom"
+        },
+        {
+          "signature": "setSize(II)V",
+          "flags": 1,
+          "body_sha256": "8225fb48458be71241be6749940b462e65cd391f87858a443a9ac1aa47289dce",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "EPSILON:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0.001f"
+        },
+        {
+          "signature": "HELD_EDGE_SCALE_Y:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0.5f"
+        },
+        {
+          "signature": "MAX_ALPHA:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:1.0f"
+        },
+        {
+          "signature": "MAX_GLOW_HEIGHT:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:4.0f"
+        },
+        {
+          "signature": "MAX_VELOCITY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x2710"
+        },
+        {
+          "signature": "MIN_VELOCITY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x64"
+        },
+        {
+          "signature": "MIN_WIDTH:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x12c"
+        },
+        {
+          "signature": "PULL_DECAY_TIME:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x3e8"
+        },
+        {
+          "signature": "PULL_DISTANCE_ALPHA_GLOW_FACTOR:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:1.1f"
+        },
+        {
+          "signature": "PULL_DISTANCE_EDGE_FACTOR:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x7"
+        },
+        {
+          "signature": "PULL_DISTANCE_GLOW_FACTOR:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x7"
+        },
+        {
+          "signature": "PULL_EDGE_BEGIN:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0.6f"
+        },
+        {
+          "signature": "PULL_GLOW_BEGIN:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:1.0f"
+        },
+        {
+          "signature": "PULL_TIME:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xa7"
+        },
+        {
+          "signature": "RECEDE_TIME:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x3e8"
+        },
+        {
+          "signature": "STATE_ABSORB:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x2"
+        },
+        {
+          "signature": "STATE_IDLE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x0"
+        },
+        {
+          "signature": "STATE_PULL:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1"
+        },
+        {
+          "signature": "STATE_PULL_DECAY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x4"
+        },
+        {
+          "signature": "STATE_RECEDE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x3"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"EdgeEffect\""
+        },
+        {
+          "signature": "VELOCITY_EDGE_FACTOR:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x8"
+        },
+        {
+          "signature": "VELOCITY_GLOW_FACTOR:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xc"
+        },
+        {
+          "signature": "mBounds:Landroid/graphics/Rect;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDuration:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdge:Landroid/graphics/drawable/Drawable;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeAlpha:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeAlphaFinish:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeAlphaStart:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeHeight:I",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeScaleY:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeScaleYFinish:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeScaleYStart:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlow:Landroid/graphics/drawable/Drawable;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowAlpha:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowAlphaFinish:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowAlphaStart:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowHeight:I",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowScaleY:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowScaleYFinish:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowScaleYStart:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlowWidth:I",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHeight:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mInterpolator:Landroid/view/animation/Interpolator;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMaxEffectHeight:I",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMinWidth:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPullDistance:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStartTime:J",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mState:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWidth:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mX:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mY:I",
+          "flags": 2,
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         }
       ]

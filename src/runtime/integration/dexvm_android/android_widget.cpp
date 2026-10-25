@@ -556,8 +556,8 @@ Decl Declare_android_widget_RelativeLayout(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
-// ADR-0161: construction only. Animation operations remain explicit failures.
-Decl ExperimentalScrollView(const char* owner) {
+// ADR-0161: Java geometry and bounded scroll position; animation remains failure.
+Decl ExperimentalScrollView(const Context& context, const char* owner) {
     auto b = dx::IntrinsicClassBuilder::Class(owner, "Landroid/widget/FrameLayout;");
     const auto scroller = b.BoundInstanceField("mScroller", "Landroid/widget/OverScroller;", dx::kAccPrivate);
     std::vector<dx::IntrinsicFieldHandle> config;
@@ -565,14 +565,75 @@ Decl ExperimentalScrollView(const char* owner) {
                            "mOverflingDistance"};
     for (std::size_t i = 0; i < names.size(); ++i)
         config.push_back(b.BoundInstanceField(names[i], "I", dx::kAccPrivate));
-    const auto fail = [](dx::Interpreter& vm) {
-        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.scroll_edge_effect", 0);
-        throw dx::VmJavaThrow{
-            "Ljava/lang/UnsupportedOperationException;",
-            "Scroll construction requires explicit overScrollMode=never; EdgeEffect system drawables unsupported"};
-    };
-    b.OverrideMethod("setOverScrollMode", "(I)V", [fail](dx::IntrinsicContext& c) {
-        if (c.arguments[0].AsInt() != 2) fail(c.vm);
+    const bool vertical = std::string_view(owner) == "Landroid/widget/ScrollView;";
+    const auto edge_a = b.BoundInstanceField(vertical ? "mEdgeGlowTop" : "mEdgeGlowLeft", "Landroid/widget/EdgeEffect;",
+                                             dx::kAccPrivate);
+    const auto edge_b = b.BoundInstanceField(vertical ? "mEdgeGlowBottom" : "mEdgeGlowRight",
+                                             "Landroid/widget/EdgeEffect;", dx::kAccPrivate);
+    if (vertical) {
+        const auto check_event = [context](dx::IntrinsicContext& c, const char* method) {
+            const auto event = c.arguments[0].ref;
+            if (!context->ui_bounded_scroll_dispatch || !event.IsValid() ||
+                CallAndroidMethod(c.vm, event, "getPointerCount", "()I").AsInt() != 1) {
+                if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.scroll_bounded_touch", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      std::string(method) + " requires host bounded single-pointer dispatch"};
+            }
+            const auto action = CallAndroidMethod(c.vm, event, "getAction", "()I").AsInt() & 255;
+            if (action < 0 || action > 3) {
+                if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.scroll_bounded_touch", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      std::string(method) + " does not support split pointers"};
+            }
+            return action;
+        };
+        b.OverrideMethod("onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z", [=](dx::IntrinsicContext& c) {
+            static_cast<void>(check_event(c, "onInterceptTouchEvent"));
+            // Host slop/delta owner intercepts before dispatch and sends one CANCEL.
+            // Within the Java child protocol, use the actual non-intercepting parent method.
+            const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;");
+            const auto index =
+                c.vm.Linker().FindVtableIndex(type, "onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z");
+            const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*index],
+                                          std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return result.value;
+        });
+        b.OverrideMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [=](dx::IntrinsicContext& c) {
+            const auto action = check_event(c, "onTouchEvent");
+            // Accept capture for the host's bounded delta path even without a child listener.
+            // No velocity, smooth animation, EdgeEffect activation or Java gesture mirror.
+            return dx::VmValue::Int(action != 0 ||
+                                    CallAndroidMethod(c.vm, c.receiver, "getChildCount", "()I").AsInt() != 0);
+        });
+    }
+    // Horizontal layout is still disabled; only its construction uses this seam.
+    b.OverrideMethod("setOverScrollMode", "(I)V", [=](dx::IntrinsicContext& c) {
+        dx::IntrinsicCall fields(c);
+        if (c.arguments[0].AsInt() != 2 && !fields.GetRef(edge_a).IsValid()) {
+            const auto context = CallAndroidMethod(c.vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
+            const auto create = [&] {
+                const auto object = c.vm.NewIntrinsicInstance("Landroid/widget/EdgeEffect;");
+                const auto keep = c.vm.ProtectReferences(std::array{object});
+                const auto ctor = c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(object), "<init>",
+                                                                 "(Landroid/content/Context;)V");
+                const auto result = c.vm.Call(*ctor, std::array{dx::VmValue::Ref(object), dx::VmValue::Ref(context)});
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                return object;
+            };
+            const auto first = create();
+            const auto keep = c.vm.ProtectReferences(std::array{first});
+            const auto second = create();
+            fields.SetRef(edge_a, first);
+            fields.SetRef(edge_b, second);
+        } else if (c.arguments[0].AsInt() == 2) {
+            fields.SetRef(edge_a, dx::VmObjectRef{});
+            fields.SetRef(edge_b, dx::VmObjectRef{});
+        }
         const auto type = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
         const auto index = c.vm.Linker().FindVtableIndex(type, "setOverScrollMode", "(I)V");
         const auto result = c.vm.Call(c.vm.Linker().Class(type).vtable[*index],
@@ -584,7 +645,6 @@ Decl ExperimentalScrollView(const char* owner) {
     });
     b.DirectMethod("initScrollView", "()V", [=](dx::IntrinsicContext& c) {
         auto& vm = c.vm;
-        if (CallAndroidMethod(vm, c.receiver, "getOverScrollMode", "()I").AsInt() != 2) fail(vm);
         const auto context = CallAndroidMethod(vm, c.receiver, "getContext", "()Landroid/content/Context;").ref;
         const auto resources = CallAndroidMethod(vm, context, "getResources", "()Landroid/content/res/Resources;").ref;
         const auto roots = vm.ProtectReferences(std::array{context, resources});
@@ -632,13 +692,63 @@ Decl ExperimentalScrollView(const char* owner) {
 }
 }  // namespace
 
-Decl Declare_android_widget_HorizontalScrollView(const Context&) {
-    return ExperimentalScrollView("Landroid/widget/HorizontalScrollView;");
+Decl Declare_android_widget_EdgeEffect(const Context&) {
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/widget/EdgeEffect;", "Ljava/lang/Object;");
+    const auto state = b.BoundInstanceField("mState", "I", dx::kAccPrivate);
+    const auto pull = b.BoundInstanceField("mPullDistance", "F", dx::kAccPrivate);
+    const auto bounds = b.BoundInstanceField("mBounds", "Landroid/graphics/Rect;", dx::kAccPrivate | dx::kAccFinal);
+    const auto interpolator =
+        b.BoundInstanceField("mInterpolator", "Landroid/view/animation/Interpolator;", dx::kAccPrivate | dx::kAccFinal);
+    const auto min_width = b.BoundInstanceField("mMinWidth", "I", dx::kAccPrivate | dx::kAccFinal);
+    b.Constructor("(Landroid/content/Context;)V", [=](dx::IntrinsicContext& c) {
+        const auto resources =
+            CallAndroidMethod(c.vm, c.arguments[0].ref, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto roots = c.vm.ProtectReferences(std::array{resources});
+        const auto metrics =
+            CallAndroidMethod(c.vm, resources, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;").ref;
+        const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(metrics), "density", "F");
+        const auto density =
+            std::bit_cast<float>(c.vm.Model().InstanceSlots(metrics)[c.vm.Linker().Field(*field).slot].bits);
+        if (!std::isfinite(density) || density <= 0 || density > 8)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid EdgeEffect metrics density"};
+        const auto create = [&](const char* name) {
+            const auto object = c.vm.NewIntrinsicInstance(name);
+            const auto keep = c.vm.ProtectReferences(std::array{object});
+            const auto result =
+                c.vm.Call(*c.vm.Linker().FindDirectMethod(c.vm.Model().ObjectClass(object), "<init>", "()V"),
+                          std::array{dx::VmValue::Ref(object)});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                      result.exception};
+            return object;
+        };
+        dx::IntrinsicCall fields(c);
+        fields.SetInt(state, 0);
+        fields.SetRef(bounds, create("Landroid/graphics/Rect;"));
+        fields.SetRef(interpolator, create("Landroid/view/animation/DecelerateInterpolator;"));
+        fields.SetInt(min_width, static_cast<int>(density * 300 + .5f));
+        // mEdge/mGlow and derived dimensions remain failure: unsupported glow resources.
+        return dx::VmValue::Void();
+    });
+    b.VirtualMethod("onRelease", "()V", [=](dx::IntrinsicContext& c) {
+        dx::IntrinsicCall fields(c);
+        if (fields.GetInt(state) != 0) {
+            if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.scroll_edge_effect", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "EdgeEffect glow resources unsupported"};
+        }
+        fields.SetFloat(pull, 0.0F);
+        return dx::VmValue::Void();
+    });
+    return std::move(b).Build();
+}
+
+Decl Declare_android_widget_HorizontalScrollView(const Context& context) {
+    return ExperimentalScrollView(context, "Landroid/widget/HorizontalScrollView;");
 }
 
 Decl Declare_android_widget_ScrollView(const Context& context) {
     if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        return ExperimentalScrollView("Landroid/widget/ScrollView;");
+        return ExperimentalScrollView(context, "Landroid/widget/ScrollView;");
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/ScrollView;", "Landroid/widget/FrameLayout;");
     builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
         const auto target =

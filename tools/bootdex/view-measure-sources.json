@@ -159,7 +159,13 @@
     "setBackgroundDrawable(Landroid/graphics/drawable/Drawable;)V",
     "scrollTo(II)V",
     "setScrollContainer(Z)V",
-    "onFinishInflate()V"
+    "onFinishInflate()V",
+    "scrollBy(II)V",
+    "getScrollX()I",
+    "getScrollY()I",
+    "isLaidOut()Z",
+    "postInvalidateOnAnimation()V",
+    "awakenScrollBars()Z"
   ],
   "rom_fields": [
     "ACCESSIBILITY_CURSOR_POSITION_UNDEFINED:I",
@@ -499,7 +505,8 @@
     "sNextAccessibilityViewId:I",
     "sNextGeneratedId:Ljava/util/concurrent/atomic/AtomicInteger;",
     "sThreadLocal:Ljava/lang/ThreadLocal;",
-    "sUseBrokenMakeMeasureSpec:Z"
+    "sUseBrokenMakeMeasureSpec:Z",
+    "mScrollCache:Landroid/view/View$ScrollabilityCache;"
   ],
   "overlays": {
     "<init>(Landroid/content/Context;)V": {
@@ -676,8 +683,15 @@
       "outputs": "Process software dirty and actual listener callback or bounded input cancellation; no system service simulation",
       "state_owner": "Java flags, ListenerInfo, ViewGroup.mFocused only; host retains input capture identities",
       "failure_boundary": "No AttachInfo, accessibility focus/delegate, background state, animation, transformation or hardware objects; unsupported state records and throws UOE"
+    },
+    "onScrollChanged(IIII)V": {
+      "reason": "ADR-0161 DVM-300 unattached software scroll notification seam",
+      "inputs": "Java scroll coordinates; accessibility explicitly disabled; no AttachInfo",
+      "outputs": "mBackgroundSizeChanged=true; parent cache and invalidation remain ROM scrollTo",
+      "state_owner": "Java mScrollX/Y and background-size flag only; no host position or layout writes",
+      "failure_boundary": "attached system view or enabled accessibility explicitly fails; no ViewRootImpl/WMS"
     }
   },
-  "surface": "tools/bootdex/view-measure.surface.json.gz",
-  "surface_sha256": "c11a54daa8c8ae25cc813f64274741082efbd8d38cfcb34d70cea51fa629e8f0"
+  "surface": "tools/bootdex/view-scroll.surface.json.gz",
+  "surface_sha256": "7cc7060bfe047cadc72e8821cd9877cf28ff6fe6a4e02bb9981e47adbf1c5eed"
 }

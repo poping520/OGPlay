@@ -1754,6 +1754,23 @@ Decl Declare_android_view_View(const Context& context) {
         context->view_java_input_fields = std::array{
             builder.BoundInstanceField("mListenerInfo", "Landroid/view/View$ListenerInfo;", dx::kAccNone),
             builder.BoundInstanceField("mBackground", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate)};
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const auto background_changed = builder.BoundInstanceField("mBackgroundSizeChanged", "Z", dx::kAccPrivate);
+        builder.VirtualMethod(
+            "onScrollChanged", "(IIII)V",
+            [=](dx::IntrinsicContext& c) {
+                dx::IntrinsicCall fields(c);
+                if (!context->ui_test_accessibility_disabled ||
+                    fields.GetRef(context->view_java_measure_fields->unsupported_state[4]).IsValid()) {
+                    if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_scroll_notification", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "Attached/accessibility scroll notification unsupported"};
+                }
+                fields.SetInt(background_changed, 1);
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+    }
     context->view_java_hierarchy_fields = DexVmAndroidContext::ViewJavaHierarchyFields{
         builder.BoundInstanceField("mParent", "Landroid/view/ViewParent;", dx::kAccNone),
         builder.BoundInstanceField("mLayoutParams", "Landroid/view/ViewGroup$LayoutParams;", dx::kAccNone),
@@ -1773,6 +1790,8 @@ Decl Declare_android_view_View(const Context& context) {
          builder.BoundInstanceField("mTop", "I", dx::kAccProtected),
          builder.BoundInstanceField("mRight", "I", dx::kAccProtected),
          builder.BoundInstanceField("mBottom", "I", dx::kAccProtected)},
+        {builder.BoundInstanceField("mScrollX", "I", dx::kAccProtected),
+         builder.BoundInstanceField("mScrollY", "I", dx::kAccProtected)},
         {builder.BoundInstanceField("mDisplayList", "Landroid/view/DisplayList;", dx::kAccNone),
          builder.BoundInstanceField("mTransformationInfo", "Landroid/view/View$TransformationInfo;", dx::kAccNone),
          builder.BoundInstanceField("mOverlay", "Landroid/view/ViewOverlay;", dx::kAccNone),

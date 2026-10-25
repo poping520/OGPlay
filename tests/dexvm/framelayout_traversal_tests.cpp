@@ -250,6 +250,8 @@ TEST_CASE("DVM-283 experimental unsupported containers foreground and attribute 
             const auto result = f.vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
             REQUIRE(result.exception.IsValid());
             CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            if (std::string_view(type) == "Landroid/widget/ScrollView;")
+                continue;  // DVM-300 now supplies ROM layout; constructor resource rejection stays covered.
             const auto measured = f.OnOutcome(object, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
             REQUIRE(measured.exception.IsValid());
             CHECK(f.linker.Class(measured.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");

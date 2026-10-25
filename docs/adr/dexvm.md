@@ -2078,3 +2078,14 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 新服务提供统一 line-plan，差异列入 DVM-291 留待10a-4。Java 叶构造/adapter 本轮不开放。
 支持路径动态未实现命中须为0；严格 direct/static/super/精确接收者、本类 failure 字段与
 clinit 审计不变。生产默认继续 Legacy，不引入 Binder/WMS/system_server 或完整 Android。
+
+### VD-10b-2 精确补充（编排方预先决定，2026-10-25）
+
+[DVM-300](../tasks/dexvm/DVM-300.md) 默认 overScrollMode 的构造依赖允许受审 EdgeEffect
+idle 接缝；此为编排方在任务中预先决定，不是实施方按常设原则调整审计范围。
+ROM 新建对象的 STATE_IDLE/isFinished、finish、尺寸/位置记录保持真实 Java 状态；构造
+保留非资源默认值、Rect、density 最小宽度与真实 interpolator。系统 glow/edge Drawable
+及资源派生尺寸标为 failure（未支持 glow 资源），不加载或伪造资源成功。
+onPull/onAbsorb、draw 调用及离开 idle 的 release 路径按 ADR-0147 记账失败；idle release
+只做原版清零后返回。宿主有界 delta→Java scrollTo 不触发 pull，没有动画时间源。
+决定4对完整 EdgeEffect 动画/绘制、ROM touch、fling/scrollbar 的排除与其他审计规则不变。

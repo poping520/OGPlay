@@ -783,6 +783,7 @@ struct DexVmAndroidContext final {
       ui_touch_listeners;
   // One non-split gesture shared by host and guest dispatch. View bindings
   // retain receivers; capture is validated against attachment and Activity.
+  bool ui_bounded_scroll_dispatch{};  // Scoped host non-split dispatch; never a position owner.
   std::uint64_t ui_touch_capture{};
   dexvm::VmObjectRef ui_touch_activity;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> ui_touch_targets;
@@ -904,6 +905,7 @@ struct DexVmAndroidContext final {
       dexvm::IntrinsicFieldHandle view_flags;
       // Read-only geometry bindings: ROM alone writes these fields.
       std::array<dexvm::IntrinsicFieldHandle, 4> frame;
+      std::array<dexvm::IntrinsicFieldHandle, 2> scroll;
       std::array<dexvm::IntrinsicFieldHandle, 6> unsupported_state;
   };
 
@@ -980,6 +982,10 @@ void AssignViewContext(dexvm::Interpreter &vm, DexVmAndroidContext &context,
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view);
 // Test roots only: publish the current Java measured size and local frame.
 // Reads Java authority; never writes measured/bounds or invokes LayoutUiTree.
+// Owner-only bounded input seam: Java scrollBy/clamp, then projection-only publication.
+void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                         std::int32_t delta_y);
+
 void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
                                          const ui::UiProjectionTarget& target, std::uint64_t epoch);
 [[nodiscard]] ui::Insets ReadAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& context,

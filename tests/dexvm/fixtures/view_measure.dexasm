@@ -715,3 +715,128 @@
  iput v0, v3, Ltest/NativeStartupActivity;->calls:I
  return-void
 .end method
+
+.class public Ltest/LateGlActivity;
+.super Landroid/app/NativeActivity;
+.field public static view:Ltest/LateGlView;
+.field public static container:Landroid/widget/FrameLayout;
+.field public static defer:I
+.field public static sequence:I
+.field public static init:I
+.field public static created:I
+.field public static changed:I
+.field public static drawn:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/NativeActivity;-><init>()V
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 5
+    invoke-super {v3, v4}, Landroid/app/NativeActivity;->onCreate(Landroid/os/Bundle;)V
+    invoke-virtual {v3}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+    move-result-object v0
+    const/4 v1, 0
+    invoke-virtual {v0, v1}, Landroid/view/Window;->takeSurface(Landroid/view/SurfaceHolder$Callback2;)V
+    new-instance v0, Ltest/LateGlView;
+    invoke-direct {v0, v3}, Ltest/LateGlView;-><init>(Landroid/content/Context;)V
+    sput-object v0, Ltest/LateGlActivity;->view:Ltest/LateGlView;
+    new-instance v1, Ltest/LateRenderer;
+    invoke-direct {v1}, Ltest/LateRenderer;-><init>()V
+    invoke-virtual {v0, v1}, Landroid/opengl/GLSurfaceView;->setRenderer(Landroid/opengl/GLSurfaceView$Renderer;)V
+    invoke-virtual {v0, v1}, Landroid/opengl/GLSurfaceView;->queueEvent(Ljava/lang/Runnable;)V
+    invoke-virtual {v0}, Landroid/view/SurfaceView;->getHolder()Landroid/view/SurfaceHolder;
+    move-result-object v2
+    invoke-interface {v2, v1}, Landroid/view/SurfaceHolder;->addCallback(Landroid/view/SurfaceHolder$Callback;)V
+    new-instance v2, Landroid/widget/FrameLayout;
+    invoke-direct {v2, v3}, Landroid/widget/FrameLayout;-><init>(Landroid/content/Context;)V
+    sput-object v2, Ltest/LateGlActivity;->container:Landroid/widget/FrameLayout;
+    sget v1, Ltest/LateGlActivity;->defer:I
+    if-nez v1, :mount_later
+    invoke-virtual {v2, v0}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
+:mount_later
+    invoke-virtual {v3, v2}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+    return-void
+.end method
+.method public static deferMount(I)V
+.registers 1
+    sput v0, Ltest/LateGlActivity;->defer:I
+    return-void
+.end method
+.class public Ltest/LateGlView;
+.super Landroid/opengl/GLSurfaceView;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/opengl/GLSurfaceView;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method protected onSizeChanged(IIII)V
+.registers 7
+    invoke-super {v2, v3, v4, v5, v6}, Landroid/view/View;->onSizeChanged(IIII)V
+    sget v0, Ltest/LateGlActivity;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/LateGlActivity;->sequence:I
+    return-void
+.end method
+.class public Ltest/LateRenderer;
+.super Ljava/lang/Object;
+.implements Ljava/lang/Runnable;
+.implements Landroid/opengl/GLSurfaceView$Renderer;
+.implements Landroid/view/SurfaceHolder$Callback;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public run()V
+.registers 2
+    sget v0, Ltest/LateGlActivity;->init:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/LateGlActivity;->init:I
+    return-void
+.end method
+.method public onSurfaceCreated(Ljavax/microedition/khronos/opengles/GL10;Ljavax/microedition/khronos/egl/EGLConfig;)V
+.registers 4
+    sget v0, Ltest/LateGlActivity;->created:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/LateGlActivity;->created:I
+    return-void
+.end method
+.method public onSurfaceChanged(Ljavax/microedition/khronos/opengles/GL10;II)V
+.registers 5
+    sget v0, Ltest/LateGlActivity;->changed:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/LateGlActivity;->changed:I
+    return-void
+.end method
+.method public onDrawFrame(Ljavax/microedition/khronos/opengles/GL10;)V
+.registers 3
+    sget v0, Ltest/LateGlActivity;->drawn:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Ltest/LateGlActivity;->drawn:I
+    return-void
+.end method
+.method public surfaceCreated(Landroid/view/SurfaceHolder;)V
+.registers 4
+    sget v0, Ltest/LateGlActivity;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    add-int/lit8 v0, v0, 2
+    sput v0, Ltest/LateGlActivity;->sequence:I
+    return-void
+.end method
+.method public surfaceChanged(Landroid/view/SurfaceHolder;III)V
+.registers 7
+    sget v0, Ltest/LateGlActivity;->sequence:I
+    const/16 v1, 10
+    mul-int/2addr v0, v1
+    add-int/lit8 v0, v0, 3
+    sput v0, Ltest/LateGlActivity;->sequence:I
+    return-void
+.end method
+.method public surfaceDestroyed(Landroid/view/SurfaceHolder;)V
+.registers 2
+    return-void
+.end method

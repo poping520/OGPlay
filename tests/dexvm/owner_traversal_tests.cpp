@@ -6,6 +6,7 @@
 #include <doctest/doctest.h>
 #include <array>
 #include <functional>
+#include <algorithm>
 #include <thread>
 
 using namespace ogplay::test::android_value;
@@ -1077,5 +1078,147 @@ TEST_CASE("DVM-317 NativeActivity window producer composes continuous frames wit
         }
         CHECK(f.ledger.Unimplemented().empty());
         static_cast<void>(lifecycle.Stop());
+    }
+}
+
+TEST_CASE("DVM-318 late GLSurfaceView after NativeActivity takeSurface null starts renderer") {
+    for (const bool defer_mount : {false, true})
+        for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+            ogplay::test::container_traversal::ContainerVm f(backend, false, true);
+            f.context->ui_test_accessibility_disabled = true;
+            // CPU EGL seam: lifecycle executes the actual EGL Java calls on GLThread;
+            // no host display/GPU is opened. Real context creation remains external.
+            unsigned egl_requests{}, swaps{};
+            const auto patch = [&](const char* name, const char* descriptor, IntrinsicHandler handler) {
+                const auto type = f.linker.ResolveDescriptor("Ljavax/microedition/khronos/egl/EGL10$Impl;");
+                const auto index = f.linker.FindVtableIndex(type, name, descriptor);
+                REQUIRE(index);
+                auto& method = f.linker.MutableMethod(f.linker.Class(type).vtable[*index]);
+                method.code.reset();
+                method.fast_code.reset();
+                method.kind = MethodKind::intrinsic;
+                method.implementation = std::move(handler);
+            };
+            const auto yes = [](IntrinsicContext&) { return VmValue::Int(1); };
+            patch("eglGetDisplay", "(Ljava/lang/Object;)Ljavax/microedition/khronos/egl/EGLDisplay;",
+                  [&](IntrinsicContext&) {
+                      return VmValue::Ref(f.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLDisplay;"));
+                  });
+            patch("eglInitialize", "(Ljavax/microedition/khronos/egl/EGLDisplay;[I)Z", yes);
+            patch("eglChooseConfig",
+                  "(Ljavax/microedition/khronos/egl/EGLDisplay;[I[Ljavax/microedition/khronos/egl/EGLConfig;I[I)Z",
+                  [&](IntrinsicContext& call) {
+                      f.model.SetObjectElement(call.arguments[2].ref, 0,
+                                               f.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLConfig;"));
+                      f.model.SetPrimitiveElement(call.arguments[4].ref, 0, 1);
+                      return VmValue::Int(1);
+                  });
+            patch(
+                "eglCreateContext",
+                "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljavax/microedition/khronos/egl/EGLContext;[I)Ljavax/microedition/khronos/egl/EGLContext;",
+                [&](IntrinsicContext&) {
+                    ++egl_requests;
+                    return VmValue::Ref(f.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLContext;"));
+                });
+            patch(
+                "eglCreateWindowSurface",
+                "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLConfig;Ljava/lang/Object;[I)Ljavax/microedition/khronos/egl/EGLSurface;",
+                [&](IntrinsicContext& call) {
+                    CHECK(f.context->active_surface_holders.contains(call.arguments[2].ref.Value()));
+                    CHECK(f.context->surface_callback_sizes.contains(call.arguments[2].ref.Value()));
+                    return VmValue::Ref(f.vm.NewIntrinsicInstance("Ljavax/microedition/khronos/egl/EGLSurface;"));
+                });
+            patch(
+                "eglMakeCurrent",
+                "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLSurface;Ljavax/microedition/khronos/egl/EGLContext;)Z",
+                yes);
+            patch("eglSwapBuffers",
+                  "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z",
+                  [&](IntrinsicContext&) {
+                      ++swaps;
+                      f.context->session->PublishSoftwareFrame(
+                          std::vector<std::uint8_t>(f.context->surface_width * f.context->surface_height * 4U, 255));
+                      return VmValue::Int(1);
+                  });
+            patch("eglDestroySurface",
+                  "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLSurface;)Z", yes);
+            patch("eglDestroyContext",
+                  "(Ljavax/microedition/khronos/egl/EGLDisplay;Ljavax/microedition/khronos/egl/EGLContext;)Z", yes);
+            patch("eglTerminate", "(Ljavax/microedition/khronos/egl/EGLDisplay;)Z", yes);
+            ogplay::session::DexActivityLifecycleBindings bindings;
+            bindings.bridge = &f.app->DexVm();
+            bindings.context = f.context;
+            bindings.launcher_descriptor = "Ltest/LateGlActivity;";
+            f.context->activity_components.front().name = "test.LateGlActivity";
+            bindings.application_descriptor = "Landroid/app/Application;";
+            ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+            f.Static("Ltest/LateGlActivity;", "deferMount", "(I)V", {VmValue::Int(defer_mount ? 1 : 0)});
+            static_cast<void>(lifecycle.Start());
+            REQUIRE(f.context->gl_surface_runtimes.size() == 1);
+            const auto detached = f.context->gl_surface_runtimes.begin()->second;
+            if (defer_mount) {
+                CHECK_FALSE(detached->surface_available);
+                CHECK(egl_requests == 0);
+                f.On(f.context->content_view, "addView", "(Landroid/view/View;)V", {VmValue::Ref(detached->view)});
+            }
+            for (unsigned i = 0; i != 3; ++i)
+                static_cast<void>(lifecycle.StepFrame());
+            REQUIRE(f.context->gl_surface_runtimes.size() == 1);
+            const auto state = f.context->gl_surface_runtimes.begin()->second;
+            const auto node = FindViewUiNode(*f.context, state->view.Value());
+            REQUIRE(node);
+            REQUIRE(f.context->ui_tree.PublishedProjection()->Get(*node));
+            CHECK(f.context->ui_tree.IsVisible(*node));
+            CHECK(state->surface_available);
+            CHECK(egl_requests == 1);
+            CHECK(swaps >= 1);
+            const auto sequence =
+                f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Ltest/LateGlActivity;"), "sequence", "I");
+            REQUIRE(sequence);
+            CHECK(f.linker.Class(f.linker.ResolveDescriptor("Ltest/LateGlActivity;"))
+                      .static_storage[f.linker.Field(*sequence).slot] == 123);
+            for (const auto name : {"init", "created", "changed", "drawn"}) {
+                const auto field =
+                    f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Ltest/LateGlActivity;"), name, "I");
+                REQUIRE(field);
+                CHECK(f.linker.Field(*field).is_static);
+                const auto count = f.linker.Class(f.linker.ResolveDescriptor("Ltest/LateGlActivity;"))
+                                       .static_storage[f.linker.Field(*field).slot];
+                if (std::string_view(name) == "drawn")
+                    CHECK(count >= 1);
+                else
+                    CHECK(count == 1);
+            }
+            auto frame = f.context->session->TakeLatestFrame();
+            REQUIRE(frame);
+            const auto previous = frame->sequence;
+            static_cast<void>(lifecycle.StepFrame());
+            frame = f.context->session->TakeLatestFrame();
+            REQUIRE(frame);
+            CHECK(frame->sequence > previous);
+            const auto records = f.logger.Snapshot(std::nullopt, "ui.surface.");
+            for (const auto category : {"ui.surface.producer", "ui.surface.projection", "ui.surface.callback",
+                                        "ui.surface.holder", "ui.surface.glthread", "ui.surface.egl"})
+                CHECK(std::ranges::any_of(records, [&](const auto& record) {
+                    return record.category == category && !record.fields.empty();
+                }));
+            CHECK(f.ledger.Unimplemented().empty());
+            static_cast<void>(lifecycle.Stop());
+        }
+}
+
+TEST_CASE("DVM-318 Legacy producer registration and Surface callbacks emit no traversal diagnostics") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto view =
+            f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(owner)});
+        f.context->activity = owner;
+        f.context->content_view = view;
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
+        CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.").empty());
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

@@ -306,3 +306,7 @@ Java 类型、消息与宿主阶段；仍标 failed、保留原退出及异步 f
 
 DVM-316：生命周期 Java 故障与宿主 guest 边界追加只读 cause/target 的类型、消息和首栈；
 既有主异常行、失败状态与退出语义保持，Legacy 仅新增 Caused by 行。
+
+JavaTraversal 的 `ui.surface.*` 诊断记录 producer 投影可见性、所属 GLThread 启动与 EGL
+创建请求；初始化线程启动不代表已有可绘制 Surface，真实 EGL 与呈现仍需独立验证。
+Legacy 不输出该诊断域。

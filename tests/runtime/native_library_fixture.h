@@ -38,6 +38,7 @@ void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
            const std::uint32_t value);
 
 [[nodiscard]] std::vector<std::byte> LibcElf();
+[[nodiscard]] std::vector<std::byte> NativeActivityElf();
 
 [[nodiscard]] std::uint32_t EnvironmentThunk(const std::string_view name);
 

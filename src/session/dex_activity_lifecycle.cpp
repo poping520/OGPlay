@@ -445,6 +445,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
             state_ = LifecycleRunState::running;
             if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
+        } catch (const dx::VmJavaThrow& error) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
+            MarkFailed();
+            RethrowFatalThreadFailure();
+            Fail("Activity startup failed: uncaught Java exception\n  guest boundary: Activity startup\n  exception: " +
+                 error.descriptor + "\n  message: " + error.message);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -474,6 +480,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 bindings_.diagnostics->SetLifecyclePhase(
                     "suspend.complete", false);
             }
+        } catch (const dx::VmJavaThrow& error) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
+            MarkFailed();
+            Fail("Activity suspend failed: uncaught Java exception\n  guest boundary: Activity suspend\n  exception: " +
+                 error.descriptor + "\n  message: " + error.message);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -497,6 +508,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             suspended_ = false;
             previous_step_ns_ = 0;
             if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
+        } catch (const dx::VmJavaThrow& error) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
+            MarkFailed();
+            Fail("Activity resume failed: uncaught Java exception\n  guest boundary: Activity resume\n  exception: " +
+                 error.descriptor + "\n  message: " + error.message);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();
@@ -864,6 +880,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (egl_pacer_attached_) {
                 runtime::AdvanceEglSwapPacer(*bindings_.context);
             }
+        } catch (const dx::VmJavaThrow& error) {
+            if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
+            MarkFailed();
+            RethrowFatalThreadFailure();
+            Fail("Activity frame failed: uncaught Java exception\n  guest boundary: Activity frame\n  exception: " +
+                 error.descriptor + "\n  message: " + error.message);
         } catch (...) {
             if (bindings_.bridge->Vm().ExitCode().has_value()) return Stop();
             MarkFailed();

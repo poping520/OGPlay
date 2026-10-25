@@ -12,3 +12,6 @@ dexvm run-dex <dex|jar> 按 dalvikvm 语义运行独立 main：guest System.out/
 退出码为 main 返回 0、未捕获 1、System.exit(n)；VM/装配错误以 error 块和 70 区分。
 
 run-dex 可选 `--native-lib-dir <dir>` 提供 ARM 应用库目录；未指定时不提供应用库。
+
+顶层失败统一经 app 的异常字符串外观输出；已知非 std 运行时异常保留类型/消息，
+标准异常错误块与退出1保持。未知异常继续明确报告 unknown CLI failure。

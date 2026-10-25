@@ -125,6 +125,11 @@ int Usage() {
 
 }  // namespace
 
+int ogplay::cli::ReportCliFailure(std::exception_ptr failure) {
+    Write(stderr, FormatError(ogplay::app::DescribeUnhandledException(failure)));
+    return 1;
+}
+
 int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
         Write(stdout, "OGPlay " OGPLAY_VERSION "\n");
@@ -211,12 +216,8 @@ int ogplay::cli::RunCli(const int argc, const char* const argv[]) {
             while (std::getline(std::cin, line)) Write(stdout, console.HandleJsonRpc(line) + "\n");
             return 0;
         }
-    } catch (const std::exception& error) {
-        Write(stderr, FormatError(error.what()));
-        return 1;
     } catch (...) {
-        Write(stderr, FormatError("unknown CLI failure"));
-        return 1;
+        return ReportCliFailure(std::current_exception());
     }
     return Usage();
 }

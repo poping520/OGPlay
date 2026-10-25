@@ -111,7 +111,7 @@ def normalize_fault(case, result, base):
     elif proven_phase is None:
         if re.search(r'Application (?:onCreate|<init>)', log):
             proven_phase = 'Application'
-        elif re.search(r'(?:Activity |activity )?(?:onCreate|<init>) (?:failed|raised)', log, re.MULTILINE):
+        elif re.search(r'(?:Activity |activity )?(?:onCreate|<init>|startup) (?:failed|raised)', log, re.MULTILINE):
             proven_phase = 'Activity'
         elif re.search(r'surface(?:Created|Changed|RedrawNeeded) raised', log):
             proven_phase = 'Surface'
@@ -138,8 +138,14 @@ def normalize_fault(case, result, base):
         else:
             identity = member[0]
         if not identity:
-            raise ValueError('Java first fault has no exact member identity')
-        signature = dict(category='java', exception=java[1], member=identity, message=message)
+            boundary = re.search(r'^\s*guest boundary: (Activity startup|Activity suspend|Activity resume|Activity frame)\s*$', log, re.MULTILINE)
+            if boundary is None:
+                raise ValueError('Java first fault has no exact member identity')
+            # This is a host entry boundary, not an inferred Java stack member.
+            signature = dict(category='java_boundary', exception=java[1], boundary=boundary[1],
+                             message=message, requires_review=True)
+        else:
+            signature = dict(category='java', exception=java[1], member=identity, message=message)
     elif native:
         signature = dict(category='native', module=native[2], relative_pc=hex(int(native[3], 16)),
                          error=native[1])
@@ -152,6 +158,11 @@ def normalize_fault(case, result, base):
             raise ValueError('unrecognized native invocation report')
         signature = dict(category='native_entry_report', member='L' + entry[1] + ';->' + entry[2] + entry[3],
                          report_sha256=hashlib.sha256(log.encode('utf-8')).hexdigest(), requires_review=True)
+    elif (phase == 'shutdown' and fatal and 'frontend.run_apk.teardown ' in fatal[0] and
+          re.fullmatch(r'error[^\n]*frontend\.run_apk\.teardown Android guest invocation failed: teardown cleanup wall-time budget exhausted\s*', log)):
+        # A proven host cleanup budget is not a fabricated Java/native member.
+        signature = dict(category='teardown_budget', message='teardown cleanup wall-time budget exhausted',
+                         requires_review=True)
     elif (fatal is None and failed is not None and phase == 'frame' and
           result['firstFailure'] == f'{failed}: checkpoint {failed} wall-time budget exceeded'):
         checkpoint = next(c for c in result['checkpoints'] if c['id'] == failed)
@@ -232,7 +243,7 @@ def compare(old, new):
     reasons = []
     review = []
     if any(case.get('fault') and case['fault']['signature'].get('requires_review') for case in (a, b)):
-        review.append('native entry report lacks module-relative PC; manual review required')
+        review.append('first report has only a reviewed host/entry boundary; precise guest fault review required')
     if a['inputs'] != b['inputs'] or ar['profile'] != br['profile']:
         return {'verdict': 'invalid', 'reasons': ['frozen inputs differ']}
     successful = []
@@ -327,6 +338,11 @@ def self_test():
             pass
         else:
             raise AssertionError('bare PC admitted')
+        source['fault_source']['log'] = ref('teardown-budget.log',
+            'error [f=0] frontend.run_apk.teardown Android guest invocation failed: teardown cleanup wall-time budget exhausted\n')
+        fault = normalize_fault(source, failed['0'][1], base)
+        assert fault['signature']['category'] == 'teardown_budget'
+        assert fault['signature']['requires_review'] is True
         source = copy.deepcopy(failed['0'][0])
         result = copy.deepcopy(failed['0'][1])
         source['fault_source'].update(phase='Activity', checkpoint=None)
@@ -335,6 +351,24 @@ def self_test():
             '    message: intrinsic handler is not implemented: Landroid/view/View;.getViewTreeObserver()Landroid/view/ViewTreeObserver;\n')
         fault = normalize_fault(source, result, base)
         assert fault['phase_name'] == 'Activity' and fault['signature']['category'] == 'java'
+        source['fault_source']['log'] = ref('startup-boundary.log', 'error [ogplay]\n'
+            '  Activity startup failed: uncaught Java exception\n'
+            '    guest boundary: Activity startup\n'
+            '    exception: Ljava/lang/IllegalStateException;\n'
+            '    message: Geometry requires a bound window root\n')
+        boundary = normalize_fault(source, result, base)
+        assert boundary['signature']['category'] == 'java_boundary'
+        assert boundary['signature']['requires_review'] is True
+        for text in ['error [ogplay]\n  unknown CLI failure\n',
+                     'error [ogplay]\n  dexvm::VmJavaThrow\n'
+                     '    exception: Ljava/lang/IllegalStateException;\n    message: unknown shape\n']:
+            source['fault_source']['log'] = ref('unknown-startup.log', text)
+            try:
+                normalize_fault(source, result, base)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('unknown startup admitted')
         result['checkpoints'] = [checkpoint('baseline', False)]
         result['checkpoints'][0].update(error='checkpoint baseline wall-time budget exceeded', assertions=[
             dict(type='frame', passed=False, actual={'sequence': 0}, expected={'minimum_sequence': 1800}),

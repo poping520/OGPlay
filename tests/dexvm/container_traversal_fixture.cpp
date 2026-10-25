@@ -6,7 +6,7 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
 }
 
 std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(InterpreterBackend backend,
-                                                                        bool include_skeleton) {
+                                                                        bool include_skeleton, bool native_activity) {
     using namespace ogplay::test::native_library;
     std::vector<std::vector<std::byte>> bytes;
     std::vector<BionicModuleSource> sources;
@@ -22,7 +22,12 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
     const auto dex = ogplay::loader::ReadApkEntry(
         context->boot_classpath_bytes, ogplay::loader::ParseApkArchive(context->boot_classpath_bytes), "classes.dex");
     ogplay::session::AndroidAppProcessRequest request;
-    request.manifest = AppManifest("fixture.MainActivity");
+    request.manifest = AppManifest(native_activity ? "android.app.NativeActivity" : "fixture.MainActivity");
+    const auto native = native_activity ? NativeActivityElf() : std::vector<std::byte>{};
+    if (native_activity) {
+        request.manifest.activity_components.front().meta_data.push_back({"android.app.lib_name", std::string("a")});
+        request.native_libraries.push_back(Library("liba.so", native));
+    }
     request.system_libraries = sources;
     request.dex_bytes = ReadDexFixture("view_measure.dex");
     request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
@@ -49,7 +54,11 @@ std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(Interpre
 ContainerVm::ContainerVm(InterpreterBackend backend) : ContainerVm(backend, false) {}
 
 ContainerVm::ContainerVm(InterpreterBackend backend, bool include_skeleton)
-    : app(Create(backend, include_skeleton)), vm(app->DexVm().Vm()), linker(vm.Linker()), model(vm.Model()) {}
+    : ContainerVm(backend, include_skeleton, false) {}
+
+ContainerVm::ContainerVm(InterpreterBackend backend, bool include_skeleton, bool native_activity)
+    : app(Create(backend, include_skeleton, native_activity)), vm(app->DexVm().Vm()), linker(vm.Linker()),
+      model(vm.Model()) {}
 
 VmValue ContainerVm::Checked(const VmCallOutcome& result) {
     REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);

@@ -662,3 +662,56 @@
  iput v0, v2, Ltest/GlobalLayoutCounter;->calls:I
  return-void
 .end method
+
+.class public Ltest/NativeStartupActivity;
+.super Landroid/app/Activity;
+.implements Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;
+.field public content:Landroid/view/View;
+.field public decor:Landroid/view/View;
+.field public calls:I
+.field public width:I
+.field public height:I
+.method public constructor <init>()V
+ .registers 1
+ invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+ return-void
+.end method
+.method public onCreate(Landroid/os/Bundle;)V
+ .registers 5
+ new-instance v0, Landroid/view/View;
+ invoke-direct {v0, v3}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+ iput-object v0, v3, Ltest/NativeStartupActivity;->content:Landroid/view/View;
+ invoke-virtual {v3, v0}, Landroid/app/Activity;->setContentView(Landroid/view/View;)V
+ invoke-virtual {v0}, Landroid/view/View;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
+ move-result-object v1
+ invoke-virtual {v1, v3}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
+ invoke-virtual {v3}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+ move-result-object v1
+ invoke-virtual {v1}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+ move-result-object v0
+ iput-object v0, v3, Ltest/NativeStartupActivity;->decor:Landroid/view/View;
+ invoke-virtual {v0}, Landroid/view/View;->getViewTreeObserver()Landroid/view/ViewTreeObserver;
+ move-result-object v1
+ invoke-virtual {v1, v3}, Landroid/view/ViewTreeObserver;->addOnGlobalLayoutListener(Landroid/view/ViewTreeObserver$OnGlobalLayoutListener;)V
+ return-void
+.end method
+.method public onGlobalLayout()V
+ .registers 4
+ const/4 v0, 2
+ new-array v0, v0, [I
+ iget-object v1, v3, Ltest/NativeStartupActivity;->content:Landroid/view/View;
+ invoke-virtual {v1, v0}, Landroid/view/View;->getLocationInWindow([I)V
+ invoke-virtual {v1}, Landroid/view/View;->getWidth()I
+ move-result v2
+ iput v2, v3, Ltest/NativeStartupActivity;->width:I
+ invoke-virtual {v1}, Landroid/view/View;->getHeight()I
+ move-result v2
+ iput v2, v3, Ltest/NativeStartupActivity;->height:I
+ iget-object v1, v3, Ltest/NativeStartupActivity;->decor:Landroid/view/View;
+ invoke-virtual {v1, v0}, Landroid/view/View;->getLocationInWindow([I)V
+ iget v0, v3, Ltest/NativeStartupActivity;->calls:I
+ const/4 v1, 1
+ add-int/2addr v0, v1
+ iput v0, v3, Ltest/NativeStartupActivity;->calls:I
+ return-void
+.end method

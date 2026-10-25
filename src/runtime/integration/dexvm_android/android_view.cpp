@@ -3707,19 +3707,28 @@ Decl Declare_android_view_Window(const Context& context) {
         return CallAndroidMethod(call.vm, call.receiver, "setContentView",
             "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)});
     });
-    builder.VirtualMethod("getDecorView", "()Landroid/view/View;", [context, decor, owner](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall fields(call);
-        auto value = fields.GetRef(decor);
-        if (!value.IsValid()) {
-            value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
-            const auto roots = call.vm.ProtectReferences(std::array{value});
-            AssignViewContext(call.vm, *context, value, fields.GetRef(owner));
-            InitializeAndroidViewJavaLayout(call.vm, *context, value);
-            context->view_adapter_references[value.Value()].window_owner = fields.GetRef(owner);
-            fields.SetRef(decor, value);
-        }
-        return dx::VmValue::Ref(value);
-    });
+    builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
+                          [context, decor, owner, parent_for](dx::IntrinsicContext& call) {
+                              dx::IntrinsicCall fields(call);
+                              if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                                  // The managed fullscreen Window has one real Java root; a detached
+                                  // facade cannot own a second observer or report window coordinates.
+                                  const auto root = parent_for(call);
+                                  fields.SetRef(decor, root);
+                                  context->view_adapter_references[root.Value()].window_owner = fields.GetRef(owner);
+                                  return dx::VmValue::Ref(root);
+                              }
+                              auto value = fields.GetRef(decor);
+                              if (!value.IsValid()) {
+                                  value = call.vm.NewIntrinsicInstance("Landroid/view/View;");
+                                  const auto roots = call.vm.ProtectReferences(std::array{value});
+                                  AssignViewContext(call.vm, *context, value, fields.GetRef(owner));
+                                  InitializeAndroidViewJavaLayout(call.vm, *context, value);
+                                  context->view_adapter_references[value.Value()].window_owner = fields.GetRef(owner);
+                                  fields.SetRef(decor, value);
+                              }
+                              return dx::VmValue::Ref(value);
+                          });
     const auto wu_mContext =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
     const auto wu_mIsActive = builder.BoundInstanceField("mIsActive", "Z", dx::kAccPrivate);
@@ -4171,6 +4180,7 @@ bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 
 void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
         const auto root = AndroidUiTraversalRoot(vm, context);
         if (!root.IsValid()) return;
         android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);

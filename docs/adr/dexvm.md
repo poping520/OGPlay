@@ -2261,3 +2261,21 @@ Surface created 激活新代先清上一代尺寸去重事实，必须随后 cha
 去重仅适用于同一未重建 Surface。实际 buffer/fixed-size 限制、逐回调代次重验不变。
 构造检查仅补入实际 WebView 的受审父构造路径，AbsoluteLayout 排版继续明确失败。
 上述变化没有组合/准入审计规则范围调整；端到端通过仍取决于资源输入及外验。
+
+### 11-7 启动异常与 Surface 重建接缝（2026-10-26）
+
+宿主 owner 发起的 startup/frame/suspend/resume 调用不能把 `VmJavaThrow` 留在
+`vm.Call` 之外逃逸；生命周期边界将其转为明确失败，保留 Java 类型、消息和宿主阶段。
+CLI 经 app 值外观识别已知非标准运行时异常，保持退出1；不向 CLI 暴露内核头。
+没有精确 guest 成员的报告只具有宿主边界身份，离线比较必须 needs_review，未知形态仍拒绝。
+
+JavaTraversal 的有界全屏 managed Window 由同一个真实 Java FrameLayout 根提供
+content/decor 身份及窗口 observer；不另造脱离父链的 decor View，不引入 PhoneWindow、
+系统装饰或 AttachInfo。Legacy 的 decor 与异常标准输出保留原路径。
+
+Surface 代次按 Activity、窗口/root、holder、完整挂载链、可见性及真实 buffer 核验。
+追加无关 sibling 引起的全局 content revision 不等于该 holder 重建；已有 holder 的
+created 后继续 changed，新挂载 holder 等下一安全点。移除/重挂、换根、窗口 callback
+替换仍取消旧后续派发，旧 endpoint 不复活；同代同尺寸去重保留。
+此调整只收窄运行期 Surface 身份关联，不调整组合/准入审计规则，不放宽 ADR-0147。
+真实 APK 首错是否消失由外验确认，fixture 不替代九场景。见 [DVM-315](../tasks/dexvm/DVM-315.md)。

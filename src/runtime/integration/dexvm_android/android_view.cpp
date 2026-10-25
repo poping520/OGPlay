@@ -1254,6 +1254,7 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               "independent Surface buffer geometry is unavailable"};
     }
+    if (call.receiver == context.window_surface_holder) return;
     const auto view = ManagedHolderView(call.vm, context, call.receiver);
     dx::IntrinsicContext view_call{call.vm, view, {}};
     dx::IntrinsicCall fields(view_call);
@@ -1273,7 +1274,8 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
 
 void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
                                const dx::VmObjectRef holder) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+        holder != context.window_surface_holder) {
         const auto view = ManagedHolderView(vm, context, holder);
         dx::IntrinsicContext call{vm, view, {}};
         dx::IntrinsicCall fields(call);
@@ -1287,7 +1289,7 @@ void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context
                                       "fixed Surface buffer differs from managed geometry"};
             }
         }
-    } else
+    } else if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
         for (const auto& [name, actual] : std::array{std::pair{"mRequestedWidth", context.surface_width},
                                                      std::pair{"mRequestedHeight", context.surface_height}}) {
             const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(holder), name, "I");
@@ -3050,6 +3052,7 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
         });
         const auto cancel_target = [context](bool touch) {
             return dx::IntrinsicHandler([context, touch](dx::IntrinsicContext& call) {
+                if (touch && call.arguments[0].ref.IsValid()) ++context->ui_mount_generations[call.arguments[0].ref];
                 const auto& t = *context->view_group_java_fields;
                 if (dx::IntrinsicCall(call).GetRef(touch ? t.touch_target : t.hover_target).IsValid()) {
                     if (auto* ledger = call.vm.Ledger())
@@ -3845,6 +3848,7 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             }
             return false;
         }
+        if (context.input_presentation || context.surface_event_dispatching) return false;
         if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
         // Materialize the Window's stable FrameLayout even for an empty Activity.
         if (context.activity.IsValid()) {

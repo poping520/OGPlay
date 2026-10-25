@@ -509,7 +509,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (state_ != LifecycleRunState::running) return;
         const auto cancelled = input_timeline_.Cancel(bindings_.context->uptime_millis.load() * 1000000);
         pending_input_.insert(pending_input_.end(), cancelled.begin(), cancelled.end());
-        if (!pending_input_.empty()) DispatchInput();
+        if (!pending_input_.empty()) DispatchInput(false);
     }
 
     void DexActivityLifecycle::QueueInput(
@@ -524,179 +524,197 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             pending_input_.push_back(std::move(*snapshot));
     }
 
-    void DexActivityLifecycle::DispatchInput() {
+    void DexActivityLifecycle::DispatchInput(const bool publish_mutations) {
         auto& vm = bindings_.bridge->Vm();
         auto& context = *bindings_.context;
         for (const auto& input: pending_input_) {
-            if (runtime::DispatchAndroidDialogInput(vm, context, input)) {
-                context.ui_touch_capture = 0;
-                context.ui_touch_targets.clear(); context.ui_touch_clicks.clear();
-                scroll_view_handle_ = 0; scroll_dragging_ = false;
-                continue;
-            }
-            if (context.window_input_queue.IsValid()) {
-                bindings_.bridge->Session().PushInput(input);
-                continue;
-            }
-            using Type = runtime::AndroidBoundaryInputType;
-            if (input.type == Type::key) {
-                if (runtime::DispatchAndroidBoundedEditInput(vm, context, input)) continue;
-                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && input.pressed &&
-                    context.focused_edit_text.IsValid()) {
-                    const auto node = runtime::FindViewUiNode(
-                        context, context.focused_edit_text.Value());
-                    if (node.has_value()) {
-                        auto& state = *context.ui_tree.Get(*node);
-                        auto changed = state.text;
-                        if (input.code == 67 && !changed.empty()) {
-                            changed.pop_back();
-                        } else if (input.unicode_char > 0 &&
-                                   (!state.numeric_input ||
-                                    (input.unicode_char >= '0' &&
-                                     input.unicode_char <= '9')) &&
-                                   changed.size() < static_cast<std::size_t>(
-                                                        state.max_length)) {
-                            changed.push_back(static_cast<char16_t>(
-                                input.unicode_char));
-                        }
-                        if (changed != state.text) {
-                            const auto before_size = state.text.size();
-                            if (changed.size() < before_size) {
-                                static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
-                                    vm, context, context.focused_edit_text,
-                                    static_cast<std::int32_t>(before_size - 1),
-                                    1, {}));
-                            } else {
-                                static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
-                                    vm, context, context.focused_edit_text,
-                                    static_cast<std::int32_t>(before_size), 0,
-                                    std::u16string(1, changed.back())));
+            {
+                const runtime::AndroidInputEvent event(vm, context);
+                const auto dispatch = [&] {
+                    if (runtime::DispatchAndroidDialogInput(vm, context, input)) {
+                        context.ui_touch_capture = 0;
+                        context.ui_touch_targets.clear();
+                        context.ui_touch_clicks.clear();
+                        scroll_view_handle_ = 0;
+                        scroll_dragging_ = false;
+                        return;
+                    }
+                    if (context.window_input_queue.IsValid()) {
+                        bindings_.bridge->Session().PushInput(input);
+                        return;
+                    }
+                    using Type = runtime::AndroidBoundaryInputType;
+                    if (input.type == Type::key) {
+                        if (runtime::DispatchAndroidBoundedEditInput(vm, context, input)) return;
+                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && input.pressed &&
+                            context.focused_edit_text.IsValid()) {
+                            const auto node = runtime::FindViewUiNode(context, context.focused_edit_text.Value());
+                            if (node.has_value()) {
+                                auto& state = *context.ui_tree.Get(*node);
+                                auto changed = state.text;
+                                if (input.code == 67 && !changed.empty()) {
+                                    changed.pop_back();
+                                } else if (input.unicode_char > 0 &&
+                                           (!state.numeric_input ||
+                                            (input.unicode_char >= '0' && input.unicode_char <= '9')) &&
+                                           changed.size() < static_cast<std::size_t>(state.max_length)) {
+                                    changed.push_back(static_cast<char16_t>(input.unicode_char));
+                                }
+                                if (changed != state.text) {
+                                    const auto before_size = state.text.size();
+                                    if (changed.size() < before_size) {
+                                        static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
+                                            vm, context, context.focused_edit_text,
+                                            static_cast<std::int32_t>(before_size - 1), 1, {}));
+                                    } else {
+                                        static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
+                                            vm, context, context.focused_edit_text,
+                                            static_cast<std::int32_t>(before_size), 0,
+                                            std::u16string(1, changed.back())));
+                                    }
+                                    return;
+                                }
                             }
-                            continue;
+                        }
+                        const auto key_event = runtime::MakeAndroidKeyEvent(vm, input);
+                        if (input.action == 2) {
+                            CallActivity("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
+                                         {dx::VmValue::Int(input.code), dx::VmValue::Int(input.repeat_count),
+                                          dx::VmValue::Ref(key_event)});
+                            return;
+                        }
+                        CallActivity(input.pressed ? "onKeyDown" : "onKeyUp", "(ILandroid/view/KeyEvent;)Z",
+                                     {dx::VmValue::Int(input.code), dx::VmValue::Ref(key_event)});
+                        return;
+                    }
+                    const auto action = input.action & 0xff;
+                    pointer_x_ = input.x;
+                    pointer_y_ = input.y;
+                    if (action == kMotionActionDown) pointer_down_ = true;
+                    if (action == kMotionActionUp || action == kMotionActionCancel) pointer_down_ = false;
+                    // A visible listener target may capture DOWN. Touch consumption and
+                    // click eligibility are independent; an unconsumed touch-only DOWN
+                    // falls through to Activity and does not retain the gesture.
+                    if (action == kMotionActionDown) {
+                        context.focused_edit_text = dx::VmObjectRef{};
+                        scroll_view_handle_ = 0U;
+                        context.input_scroll_identity.reset();
+                        scroll_dragging_ = false;
+                        scroll_start_x_ = pointer_x_;
+                        scroll_last_x_ = pointer_x_;
+                        scroll_horizontal_ = false;
+                        scroll_start_y_ = pointer_y_;
+                        scroll_last_y_ = pointer_y_;
+                        const auto edit_class = vm.Linker().ResolveDescriptor("Landroid/widget/EditText;");
+                        for (const auto handle : runtime::FindTouchReceiversAt(vm, context, pointer_x_, pointer_y_)) {
+                            const dx::VmObjectRef candidate{static_cast<std::uint32_t>(handle)};
+                            if (vm.Linker().IsAssignable(edit_class, vm.Model().ObjectClass(candidate))) {
+                                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                                    static_cast<void>(CallOnView(candidate, "requestFocus", "()Z", {}));
+                                else
+                                    context.focused_edit_text = candidate;
+                            }
+                            const auto node = runtime::FindViewUiNode(context, handle);
+                            if (node.has_value()) {
+                                const auto& input_tree =
+                                    context.input_presentation
+                                        ? *context.input_presentation->guest_window_epoch_refs.front()
+                                        : context.ui_tree;
+                                const auto kind = input_tree.Get(*node)->kind;
+                                if (kind == runtime::ui::UiClass::ScrollView ||
+                                    (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
+                                     kind == runtime::ui::UiClass::HorizontalScrollView)) {
+                                    scroll_view_handle_ = handle;
+                                    if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
+                                        context.input_scroll_identity =
+                                            runtime::CaptureAndroidUiOwner(vm, context, candidate);
+                                    scroll_horizontal_ = kind == runtime::ui::UiClass::HorizontalScrollView;
+                                }
+                            }
                         }
                     }
-                }
-                const auto key_event = runtime::MakeAndroidKeyEvent(vm, input);
-                if (input.action == 2) {
-                    CallActivity("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
-                        {dx::VmValue::Int(input.code), dx::VmValue::Int(input.repeat_count),
-                         dx::VmValue::Ref(key_event)});
-                    continue;
-                }
-                CallActivity(input.pressed ? "onKeyDown" : "onKeyUp",
-                             "(ILandroid/view/KeyEvent;)Z",
-                             {
-                                 dx::VmValue::Int(input.code),
-                                 dx::VmValue::Ref(key_event)
-                             });
-                continue;
-            }
-            const auto action = input.action & 0xff;
-            pointer_x_ = input.x;
-            pointer_y_ = input.y;
-            if (action == kMotionActionDown) pointer_down_ = true;
-            if (action == kMotionActionUp || action == kMotionActionCancel) pointer_down_ = false;
-            // A visible listener target may capture DOWN. Touch consumption and
-            // click eligibility are independent; an unconsumed touch-only DOWN
-            // falls through to Activity and does not retain the gesture.
-            if (action == kMotionActionDown) {
-                context.focused_edit_text = dx::VmObjectRef{};
-                scroll_view_handle_ = 0U;
-                scroll_dragging_ = false;
-                scroll_start_x_ = pointer_x_;
-                scroll_last_x_ = pointer_x_;
-                scroll_horizontal_ = false;
-                scroll_start_y_ = pointer_y_;
-                scroll_last_y_ = pointer_y_;
-                const auto edit_class = vm.Linker().ResolveDescriptor(
-                    "Landroid/widget/EditText;");
-                for (const auto handle : runtime::FindTouchReceiversAt(vm, context, pointer_x_, pointer_y_)) {
-                    const dx::VmObjectRef candidate{
-                        static_cast<std::uint32_t>(handle)};
-                    if (vm.Linker().IsAssignable(
-                            edit_class, vm.Model().ObjectClass(candidate))) {
-                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                            static_cast<void>(CallOnView(candidate, "requestFocus", "()Z", {}));
-                        else
-                            context.focused_edit_text = candidate;
+                    if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
+                        context.input_scroll_identity &&
+                        !runtime::IsAndroidUiOwnerCurrent(vm, context, *context.input_scroll_identity)) {
+                        scroll_view_handle_ = 0;
+                        scroll_dragging_ = false;
+                        context.input_scroll_identity.reset();
+                        context.input_pointer_tail = true;
                     }
-                    const auto node = runtime::FindViewUiNode(context, handle);
-                    if (node.has_value()) {
-                        const auto kind = context.ui_tree.Get(*node)->kind;
-                        if (kind == runtime::ui::UiClass::ScrollView ||
-                            (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
-                             kind == runtime::ui::UiClass::HorizontalScrollView)) {
-                            scroll_view_handle_ = handle;
-                            scroll_horizontal_ = kind == runtime::ui::UiClass::HorizontalScrollView;
-                        }
-                    }
-                }
-            }
-            if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
-                const auto node = runtime::FindViewUiNode(
-                    context, scroll_view_handle_);
-                if (node.has_value()) {
-                    auto& scroll = *context.ui_tree.Get(*node);
-                    const auto content = scroll.children.empty()
-                                             ? runtime::ui::Size{}
-                                             : context.ui_tree.Get(scroll.children.front())->measured;
-                    const auto maximum = scroll_horizontal_
-                                             ? std::max(0, content.width - scroll.measured.width + scroll.padding.left +
-                                                               scroll.padding.right)
-                                             : std::max(0, content.height - scroll.measured.height +
-                                                               scroll.padding.top + scroll.padding.bottom);
-                    if (!scroll_dragging_ && ShouldInterceptScrollGesture(
-                                                 maximum, scroll_horizontal_ ? scroll_start_x_ : scroll_start_y_,
-                                                 scroll_horizontal_ ? pointer_x_ : pointer_y_, context.ui_density)) {
-                        // Once the ancestor ScrollView intercepts, Android
-                        // cancels the original child target. This revokes both
-                        // its touch capture and click eligibility.
-                        const auto cancelled = runtime::DispatchDeepTouchEvent(
-                            vm, context, kMotionActionCancel, pointer_x_, pointer_y_,
-                            context.ui_touch_capture, &input);
-                        if (cancelled.error) Fail(*cancelled.error);
-                        scroll_dragging_ = true;
-                    }
-                    if (scroll_dragging_) {
-                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
-                            runtime::ScrollAndroidViewBy(
-                                vm, context, dx::VmObjectRef{static_cast<std::uint32_t>(scroll_view_handle_)},
+                    if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
+                        const auto node = runtime::FindViewUiNode(context, scroll_view_handle_);
+                        if (node.has_value()) {
+                            const auto& input_tree = context.input_presentation
+                                                         ? *context.input_presentation->guest_window_epoch_refs.front()
+                                                         : context.ui_tree;
+                            const auto& frozen_scroll = *input_tree.Get(*node);
+                            auto& scroll = *context.ui_tree.Get(*node);
+                            const auto content = frozen_scroll.children.empty()
+                                                     ? runtime::ui::Size{}
+                                                     : input_tree.Get(frozen_scroll.children.front())->measured;
+                            const auto maximum =
                                 scroll_horizontal_
-                                    ? 0
-                                    : static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)),
-                                scroll_horizontal_ ? static_cast<std::int32_t>(std::lround(scroll_last_x_ - pointer_x_))
-                                                   : 0);
-                            scroll_last_x_ = pointer_x_;
-                            scroll_last_y_ = pointer_y_;
-                        } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) {
-                            const auto previous = scroll.scroll_y;
-                            scroll.scroll_y = std::clamp(
-                                scroll.scroll_y + static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)),
-                                0, maximum);
-                            scroll_last_y_ = pointer_y_;
-                            if (scroll.scroll_y != previous) {
-                                context.ui_tree.MarkLayoutDirty(*node);
+                                    ? std::max(0, content.width - frozen_scroll.measured.width +
+                                                      frozen_scroll.padding.left + frozen_scroll.padding.right)
+                                    : std::max(0, content.height - frozen_scroll.measured.height +
+                                                      frozen_scroll.padding.top + frozen_scroll.padding.bottom);
+                            if (!scroll_dragging_ &&
+                                ShouldInterceptScrollGesture(
+                                    maximum, scroll_horizontal_ ? scroll_start_x_ : scroll_start_y_,
+                                    scroll_horizontal_ ? pointer_x_ : pointer_y_, context.ui_density)) {
+                                // Once the ancestor ScrollView intercepts, Android
+                                // cancels the original child target. This revokes both
+                                // its touch capture and click eligibility.
+                                const auto cancelled =
+                                    runtime::DispatchDeepTouchEvent(vm, context, kMotionActionCancel, pointer_x_,
+                                                                    pointer_y_, context.ui_touch_capture, &input);
+                                if (cancelled.error) Fail(*cancelled.error);
+                                scroll_dragging_ = true;
+                            }
+                            if (scroll_dragging_) {
+                                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+                                    runtime::ScrollAndroidViewBy(
+                                        vm, context, dx::VmObjectRef{static_cast<std::uint32_t>(scroll_view_handle_)},
+                                        scroll_horizontal_
+                                            ? 0
+                                            : static_cast<std::int32_t>(std::lround(scroll_last_y_ - pointer_y_)),
+                                        scroll_horizontal_
+                                            ? static_cast<std::int32_t>(std::lround(scroll_last_x_ - pointer_x_))
+                                            : 0);
+                                    scroll_last_x_ = pointer_x_;
+                                    scroll_last_y_ = pointer_y_;
+                                } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) {
+                                    const auto previous = scroll.scroll_y;
+                                    scroll.scroll_y =
+                                        std::clamp(scroll.scroll_y + static_cast<std::int32_t>(
+                                                                         std::lround(scroll_last_y_ - pointer_y_)),
+                                                   0, maximum);
+                                    scroll_last_y_ = pointer_y_;
+                                    if (scroll.scroll_y != previous) {
+                                        context.ui_tree.MarkLayoutDirty(*node);
+                                    }
+                                }
+                                return;
                             }
                         }
-                        continue;
                     }
-                }
+                    if (action == kMotionActionUp || action == kMotionActionCancel) {
+                        scroll_view_handle_ = 0U;
+                        if (scroll_dragging_) {
+                            scroll_dragging_ = false;
+                            return;
+                        }
+                    }
+                    const auto result = runtime::DispatchDeepTouchEvent(vm, context, action, pointer_x_, pointer_y_,
+                                                                        context.ui_touch_capture, &input);
+                    if (result.error) Fail(*result.error);
+                    if (result.handled) return;
+                    const auto event = runtime::MakeMotionEvent(vm, input);
+                    CallActivity("onTouchEvent", "(Landroid/view/MotionEvent;)Z", {dx::VmValue::Ref(event)});
+                };
+                dispatch();
             }
-            if (action == kMotionActionUp || action == kMotionActionCancel) {
-                scroll_view_handle_ = 0U;
-                if (scroll_dragging_) {
-                    scroll_dragging_ = false;
-                    continue;
-                }
-            }
-            const auto result = runtime::DispatchDeepTouchEvent(
-                vm, context, action, pointer_x_, pointer_y_, context.ui_touch_capture, &input);
-            if (result.error) Fail(*result.error);
-            if (result.handled) continue;
-            const auto event = runtime::MakeMotionEvent(
-                vm, input);
-            CallActivity("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
-                         {dx::VmValue::Ref(event)});
+            if (publish_mutations) EnsureOwnerFrame(false, false);
         }
         pending_input_.clear();
     }
@@ -730,6 +748,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                                             runtime::AndroidUiTraversalReason::BeforePresent,
                                                             runtime::AndroidUiTraversalPhase::ResolveOnly));
         runtime::PublishAndroidPresentation(context);
+        if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), context)) Fail(*error);
     }
 
     LifecycleFrameState DexActivityLifecycle::StepFrame() {
@@ -756,6 +775,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                   runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
               }
             }
+            if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), context)) Fail(*error);
             DispatchInput();
             PumpJavaThreads();
             PumpVideo();

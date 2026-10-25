@@ -122,7 +122,7 @@ private:
     runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver,
                     const std::string& name, const std::string& descriptor,
                     std::vector<runtime::dexvm::VmValue> arguments);
-    void DispatchInput();
+    void DispatchInput(bool publish_mutations = true);
     void MarkFailed() noexcept;
     // Managed surface lifecycle for guest-implemented SurfaceViews, which
     // wait on these before they will touch EGL.

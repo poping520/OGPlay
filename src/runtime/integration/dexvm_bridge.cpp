@@ -180,6 +180,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     root(context.window_surface_callback);
     root(context.window_surface_holder);
+    for (const auto holder : context.window_surface_holders) {
+        root(dexvm::VmObjectRef{holder});
+        if (const auto found = context.surface_callbacks.find(holder); found != context.surface_callbacks.end())
+            for (const auto callback : found->second)
+                root(callback);
+    }
     root(context.window_input_callback);
     root(context.window_input_queue);
     for (const auto& [holder, surface] : context.holder_surfaces) {
@@ -220,6 +226,21 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     }
     root(context.ui_touch_activity);
     for (const auto& [_, ref] : context.ui_touch_targets) root(ref);
+    for (const auto& [_, identity] : context.surface_owner_identities) {
+        root(identity.activity);
+        root(identity.root);
+        root(identity.view);
+        for (const auto& [ref, _] : identity.mounts)
+            root(ref);
+    }
+    for (const auto* identity : {&context.input_capture_identity, &context.input_scroll_identity}) {
+        if (!*identity) continue;
+        root((*identity)->activity);
+        root((*identity)->root);
+        root((*identity)->view);
+        for (const auto& [ref, _] : (*identity)->mounts)
+            root(ref);
+    }
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
         for (const auto& [_, ref] : context.ui_node_to_object)
             root(ref);

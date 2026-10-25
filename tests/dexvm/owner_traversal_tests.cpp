@@ -412,3 +412,148 @@ TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and fi
         static_cast<void>(lifecycle.Stop());
     }
 }
+
+namespace {
+void OwnerHook(ogplay::test::container_traversal::ContainerVm& f, VmObjectRef receiver, const char* name,
+               const char* signature, IntrinsicHandler hook) {
+    const auto klass = f.model.ObjectClass(receiver);
+    const auto index = f.linker.FindVtableIndex(klass, name, signature);
+    REQUIRE(index);
+    auto& method = f.linker.MutableMethod(f.linker.Class(klass).vtable[*index]);
+    method.code.reset();
+    method.fast_code.reset();
+    method.kind = MethodKind::intrinsic;
+    method.implementation = std::move(hook);
+}
+}  // namespace
+
+TEST_CASE("DVM-309 owner input lease survives mutation and cancels detached gone disabled reparented targets once") {
+    using ogplay::test::container_traversal::ContainerVm;
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (int mutation = 0; mutation < 5; ++mutation) {
+            ContainerVm f(backend);
+            f.context->ui_test_accessibility_disabled = true;
+            f.context->surface_width = 180;
+            f.context->surface_height = 120;
+            const auto owner = f.New("Landroid/app/Activity;");
+            f.context->activity = owner;
+            const auto group =
+                f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto leaf = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+            const auto listener = f.New("Ltest/StateListener;");
+            f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+            f.On(leaf, "setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", {VmValue::Ref(listener)});
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+            REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly));
+            std::vector<int> actions;
+            const auto initial = AcquireAndroidPresentation(*f.context);
+            const auto measured = f.On(leaf, "count", "()I").AsInt();
+            OwnerHook(
+                f, listener, "onTouch", "(Landroid/view/View;Landroid/view/MotionEvent;)Z", [&](IntrinsicContext& c) {
+                    const auto action = f.On(c.arguments[1].ref, "getAction", "()I").AsInt();
+                    actions.push_back(action);
+                    CHECK(f.context->input_presentation == initial);
+                    if (action == 0) {
+                        if (mutation == 0) f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+                        if (mutation == 1) f.On(leaf, "setVisibility", "(I)V", {VmValue::Int(8)});
+                        if (mutation == 2) f.On(leaf, "setEnabled", "(Z)V", {VmValue::Int(0)});
+                        if (mutation == 3) {
+                            f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+                            f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+                        }
+                        if (mutation == 4)
+                            f.On(leaf, "layout", "(IIII)V",
+                                 {VmValue::Int(50), VmValue::Int(50), VmValue::Int(100), VmValue::Int(100)});
+                        CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                             AndroidUiTraversalPhase::ResolveOnly));
+                        CHECK(f.context->ui_tree.PublishedProjection() == initial->guest_window_epoch_refs.front());
+                        CHECK(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 4, 4));
+                        CHECK(f.On(leaf, "count", "()I").AsInt() == measured);
+                    }
+                    return VmValue::Int(1);
+                });
+            {
+                AndroidInputEvent event(f.vm, *f.context);
+                CHECK(f.context->input_presentation == initial);
+                CHECK_THROWS_AS(AndroidInputEvent(f.vm, *f.context), VmJavaThrow);
+                const auto down = DispatchDeepTouchEvent(f.vm, *f.context, 0, 4, 4, 0);
+                REQUIRE_FALSE(down.error);
+                CHECK(down.handled);
+                CHECK(f.context->input_presentation == initial);
+            }
+            CHECK_FALSE(f.context->input_presentation);
+            if (mutation < 4) {
+                CHECK(actions == std::vector<int>{0, 3});
+                {
+                    AndroidInputEvent event(f.vm, *f.context);
+                    const auto up = DispatchDeepTouchEvent(f.vm, *f.context, 1, 4, 4, 0);
+                    REQUIRE_FALSE(up.error);
+                    CHECK(up.handled);
+                }
+                CHECK(actions == std::vector<int>{0, 3});
+                CHECK(f.context->ui_touch_capture == 0);
+            } else {
+                CHECK(actions == std::vector<int>{0});
+                // Frozen hit coordinates change only at the next event boundary.
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforeInput,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                AndroidInputEvent event(f.vm, *f.context);
+                CHECK_FALSE(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 4, 4));
+                CHECK(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 60, 60));
+            }
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}
+
+TEST_CASE("DVM-309 session pointer and key Activity fallback borrow the event presentation") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        static_cast<void>(lifecycle.StepFrame());
+        auto expected = AcquireAndroidPresentation(*f.context);
+        unsigned touches{}, keys{};
+        OwnerHook(f, f.context->activity, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", [&](IntrinsicContext&) {
+            ++touches;
+            REQUIRE(f.context->input_presentation == expected);
+            static_cast<void>(FindTouchReceiversAt(f.vm, *f.context, 4, 4));
+            CHECK(f.context->input_presentation == expected);
+            f.On(f.context->content_view, "requestLayout", "()V");
+            CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                 AndroidUiTraversalPhase::ResolveOnly));
+            return VmValue::Int(1);
+        });
+        OwnerHook(f, f.context->activity, "onKeyDown", "(ILandroid/view/KeyEvent;)Z", [&](IntrinsicContext&) {
+            ++keys;
+            CHECK(f.context->input_presentation == expected);
+            return VmValue::Int(1);
+        });
+        AndroidBoundaryInput input;
+        input.type = AndroidBoundaryInputType::pointer_button;
+        input.pressed = true;
+        input.x = 4;
+        input.y = 4;
+        lifecycle.QueueInput(input);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(touches == 1);
+        CHECK_FALSE(f.context->input_presentation);
+        expected = AcquireAndroidPresentation(*f.context);
+        input.type = AndroidBoundaryInputType::key;
+        input.code = 29;
+        input.action = 0;
+        lifecycle.QueueInput(input);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(keys == 1);
+        CHECK_FALSE(f.context->input_presentation);
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(lifecycle.Stop());
+    }
+}

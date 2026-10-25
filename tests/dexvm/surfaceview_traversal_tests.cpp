@@ -1,6 +1,8 @@
 #include "container_traversal_fixture.h"
 #include "../../src/runtime/integration/dexvm_android/shared.h"
 #include <bit>
+#include <algorithm>
+#include <tuple>
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -163,17 +165,7 @@ TEST_CASE("DVM-302 SurfaceView managed holder generation and stable Rect without
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 150}));
         Shape(f, frame, 0, 0);
-        // Prepare the created fixture explicitly: the production created safe point stays disabled.
         const auto dispatch = [&](SurfaceHolderPhase phase) {
-            if (phase == SurfaceHolderPhase::created) {
-                const auto current = Holder(f, view);
-                f.context->managed_host_surface_open = true;
-                if (f.context->active_surface_holders.insert(current.Value()).second) {
-                    android_intrinsics::PublishSurfaceHolderFrame(f.vm, *f.context, current);
-                    f.On(listener, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", {VmValue::Ref(current)});
-                }
-                return std::optional<std::string>{};
-            }
             return DispatchSurfaceHolderCallbacks(f.vm, *f.context, phase);
         };
         for (int repeat = 0; repeat < 2; ++repeat) {
@@ -250,5 +242,229 @@ TEST_CASE("DVM-302 SurfaceView reviewed constructors and disabled WMS remain exp
         const auto rejected = f.vm.Call(*update, std::array{VmValue::Ref(view), VmValue::Int(0), VmValue::Int(0)});
         CHECK(rejected.exception.IsValid());
         CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}
+
+namespace {
+void SurfaceHook(ContainerVm& f, VmObjectRef receiver, const char* name, const char* signature, IntrinsicHandler hook) {
+    const auto klass = f.model.ObjectClass(receiver);
+    const auto index = f.linker.FindVtableIndex(klass, name, signature);
+    REQUIRE(index);
+    auto& method = f.linker.MutableMethod(f.linker.Class(klass).vtable[*index]);
+    method.code.reset();
+    method.fast_code.reset();
+    method.kind = MethodKind::intrinsic;
+    method.implementation = std::move(hook);
+}
+}  // namespace
+
+TEST_CASE("DVM-309 Surface owner transaction orders sizes created changed activates late holders and preserves Rect") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto view = Surface(f, owner), holder = Holder(f, view), frame = Frame(f, holder);
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        std::vector<std::pair<std::uint32_t, int>> events;
+        SurfaceHook(f, view, "onSizeChanged", "(IIII)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.receiver.Value(), 0);
+            return VmValue::Void();
+        });
+        for (const auto [name, sig, phase] : {std::tuple{"surfaceCreated", "(Landroid/view/SurfaceHolder;)V", 1},
+                                              std::tuple{"surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", 2},
+                                              std::tuple{"surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", 3}}) {
+            SurfaceHook(f, callback, name, sig, [&, phase](IntrinsicContext& c) {
+                events.emplace_back(c.arguments[0].ref.Value(), phase);
+                CHECK_FALSE(f.context->input_presentation);
+                CHECK((f.context->surface_event_dispatching || phase == 3));
+                return VmValue::Void();
+            });
+        }
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        const auto created = std::ranges::find(events, std::pair{holder.Value(), 1});
+        const auto sized = std::ranges::find(events, std::pair{view.Value(), 0});
+        const auto changed = std::ranges::find(events, std::pair{holder.Value(), 2});
+        REQUIRE(sized != events.end());
+        REQUIRE(created != events.end());
+        REQUIRE(changed != events.end());
+        CHECK(sized < created);
+        CHECK(created < changed);
+        const auto stable = events;
+        for (int i = 0; i < 3; ++i)
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == stable);
+        CHECK(Frame(f, holder) == frame);
+        Shape(f, frame, 320, 240);
+        // Mere registration is not a new holder generation.
+        const auto second = f.New("Ltest/ManagedSurfaceCallback;");
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(second)});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == stable);
+        // Late construction and attachment in an already open window.
+        const auto late = Surface(f, owner), late_holder = Holder(f, late);
+        f.On(late_holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(late)});
+        CHECK_FALSE(f.context->active_surface_holders.contains(late_holder.Value()));
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(f.context->active_surface_holders.contains(late_holder.Value()));
+        CHECK(std::ranges::count(events, std::pair{late_holder.Value(), 1}) == 1);
+        CHECK(std::ranges::count(events, std::pair{late_holder.Value(), 2}) == 1);
+        f.On(group, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(late)});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(std::ranges::count(events, std::pair{late_holder.Value(), 3}) == 1);
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK_FALSE(f.context->active_surface_holders.contains(late_holder.Value()));
+        CHECK(std::ranges::count(events, std::pair{late_holder.Value(), 1}) == 1);
+        // Window.takeSurface uses the real window buffer with no SurfaceView lookup.
+        f.On(f.On(owner, "getWindow", "()Landroid/view/Window;").ref, "takeSurface",
+             "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(callback)});
+        const auto window_holder = f.context->window_surface_holder;
+        REQUIRE(window_holder.IsValid());
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        const auto window_frame = Frame(f, window_holder);
+        Shape(f, window_frame, 320, 240);
+        CHECK(Frame(f, window_holder) == window_frame);
+        f.On(window_holder, "setSizeFromLayout", "()V");
+        CHECK(std::ranges::count(events, std::pair{window_holder.Value(), 1}) == 1);
+        CHECK(std::ranges::count(events, std::pair{window_holder.Value(), 2}) == 1);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-309 Surface callbacks changing root or mounting children cancel stale callbacks until next traversal") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (int mutation_phase : {1, 2}) {
+            for (bool replace : {false, true}) {
+                ContainerVm f(backend);
+                const auto owner = Owner(f);
+                const auto group =
+                    f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+                const auto view = Surface(f, owner), holder = Holder(f, view);
+                const auto late = Surface(f, owner), late_holder = Holder(f, late);
+                const auto first = f.New("Ltest/ManagedSurfaceCallback;"),
+                           second = f.New("Ltest/ManagedSurfaceCallback;");
+                std::vector<std::pair<std::uint32_t, int>> events;
+                bool mutated = false;
+                const auto mutate = [&] {
+                    if (mutated) return;
+                    mutated = true;
+                    if (replace)
+                        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(late)});
+                    else
+                        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(late)});
+                    CHECK_FALSE(f.context->active_surface_holders.contains(late_holder.Value()));
+                };
+                SurfaceHook(f, first, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext& c) {
+                    events.emplace_back(c.receiver.Value(), 1);
+                    if (mutation_phase == 1) mutate();
+                    return VmValue::Void();
+                });
+                SurfaceHook(f, first, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext& c) {
+                    events.emplace_back(c.arguments[0].ref.Value(), 2);
+                    if (mutation_phase == 2) mutate();
+                    return VmValue::Void();
+                });
+                f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(first)});
+                f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(second)});
+                f.On(late_holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(second)});
+                f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+                f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+                REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+                CHECK_FALSE(f.context->active_surface_holders.contains(late_holder.Value()));
+                CHECK(std::ranges::count(events, std::pair{second.Value(), 1}) ==
+                      (replace && mutation_phase == 1 ? 0 : 1));
+                REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+                CHECK(f.context->active_surface_holders.contains(late_holder.Value()));
+                CHECK(std::ranges::count(events, std::pair{second.Value(), 1}) ==
+                      (replace && mutation_phase == 1 ? 1 : 2));
+                if (replace) CHECK(std::ranges::count(events, std::pair{holder.Value(), 2}) == mutation_phase - 1);
+                const auto complete = events;
+                REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+                CHECK(events == complete);
+                REQUIRE_FALSE(RetireSurfaceHolderGeneration(f.vm, *f.context));
+                REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+                CHECK(f.context->active_surface_holders.empty());
+                CHECK(f.ledger.Unimplemented().empty());
+            }
+        }
+    }
+}
+
+TEST_CASE("DVM-309 takeSurface replacement in callback retires old holder at next safe point") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+        const auto first = f.New("Ltest/ManagedSurfaceCallback;"), second = f.New("Ltest/ManagedSurfaceCallback;");
+        std::vector<std::pair<std::uint32_t, int>> events;
+        SurfaceHook(f, first, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.arguments[0].ref.Value(), 1);
+            if (c.receiver == first) {
+                f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(second)});
+                CHECK(events.size() == 1);
+            }
+            return VmValue::Void();
+        });
+        SurfaceHook(f, first, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.arguments[0].ref.Value(), 2);
+            return VmValue::Void();
+        });
+        SurfaceHook(f, first, "surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.arguments[0].ref.Value(), 3);
+            return VmValue::Void();
+        });
+        f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(first)});
+        const auto uncreated = f.context->window_surface_holder;
+        f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(second)});
+        CHECK_FALSE(f.context->window_surface_holders.contains(uncreated.Value()));
+        CHECK_FALSE(f.context->surface_callbacks.contains(uncreated.Value()));
+        f.On(window, "takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V", {VmValue::Ref(first)});
+        CHECK(f.context->window_surface_holders.size() == 1);
+        const auto old = f.context->window_surface_holder;
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        const auto next = f.context->window_surface_holder;
+        CHECK(next != old);
+        CHECK(events == std::vector<std::pair<std::uint32_t, int>>{{old.Value(), 1}});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == std::vector<std::pair<std::uint32_t, int>>{
+                            {old.Value(), 1}, {old.Value(), 3}, {next.Value(), 1}, {next.Value(), 2}});
+        CHECK_FALSE(f.context->active_surface_holders.contains(old.Value()));
+        const auto complete = events;
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == complete);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-309 Surface callback list is frozen across created and changed") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto first = f.New("Ltest/ManagedSurfaceCallback;"), late = f.New("Ltest/ManagedSurfaceCallback;");
+        std::vector<std::pair<std::uint32_t, int>> events;
+        SurfaceHook(f, first, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.receiver.Value(), 1);
+            f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(late)});
+            return VmValue::Void();
+        });
+        SurfaceHook(f, first, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext& c) {
+            events.emplace_back(c.receiver.Value(), 2);
+            return VmValue::Void();
+        });
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(first)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        CHECK(events == std::vector<std::pair<std::uint32_t, int>>{{first.Value(), 1}, {first.Value(), 2}});
+        const auto complete = events;
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == complete);
+        f.context->surface_width = 640;
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(std::ranges::count(events, std::pair{late.Value(), 1}) == 0);
+        CHECK(std::ranges::count(events, std::pair{late.Value(), 2}) == 1);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

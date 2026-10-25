@@ -659,3 +659,18 @@ ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读�
 Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
 平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
 本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
+
+## Owner 事件事务
+
+JavaTraversal 的 AndroidInputEvent 在 owner 线程冻结共同 presentation，内部命中、焦点、
+scroll、编辑及 fallback 借用同一 lease；公开输入重入明确失败。事件内不推进遍历/发布或
+Surface，释放后由 session 屏障消费 mutation。捕获保存窗口/root/内容/树代次与 Java 父链
+挂载代次；移除 adapter 增代防 detach/reparent ABA，失效发送一次 CANCEL 并吞终止尾事件。
+Java 原字段决定可见/启用，几何始终来自租约；临时坐标查询不触测量。
+
+PumpAndroidSurfaceEvents 只在 owner 帧屏障执行 size→created→changed；冻结本轮 holder/
+挂载集合，每次 guest 回调后重验窗口/root/holder/挂载与 buffer 尺寸。换根/新增挂载留下一轮，
+同尺寸不重发；迟建/迟挂 holder 由下一轮发现，addCallback 只更新列表。View holder 校验
+SurfaceView 请求，Window.takeSurface holder 只用真实 managed window buffer，不反查 View。
+Rect 身份稳定，销毁后 retire native surface；完整 WMS/updateWindow/独立 buffer resize 仍失败。
+Legacy 输入、焦点与 Surface 调度保持原路径。

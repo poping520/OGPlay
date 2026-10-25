@@ -219,7 +219,19 @@ TEST_CASE("DVM-300 Java scroll clamp projection raster hit and CANCEL keep child
         CHECK(ogplay::session::ShouldInterceptScrollGesture(170, 20, 0, 1));
         auto cancel = DispatchDeepTouchEvent(f.vm, *f.context, 3, 20, 0, f.context->ui_touch_capture);
         CHECK_FALSE(cancel.error.has_value());
-        ScrollAndroidViewBy(f.vm, *f.context, scroll, 60);
+        {
+            const AndroidInputEvent event(f.vm, *f.context);
+            const auto lease = f.context->input_presentation;
+            REQUIRE(lease);
+            ScrollAndroidViewBy(f.vm, *f.context, scroll, 60);
+            CHECK(f.context->input_presentation == lease);
+            CHECK(f.context->ui_tree.PublishedProjection() == initial);
+            CHECK(AcquireAndroidPresentation(*f.context) == lease);
+            CHECK(ViewContainsPoint(f.vm, *f.context, child.Value(), 20, 20));
+        }
+        CHECK_FALSE(f.context->input_presentation);
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                   AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 150}));
         const auto snap = f.context->ui_tree.PublishedProjection();
         CHECK(Get(f, scroll, "getScrollY") == 60);
         CHECK(snap->Get(id)->screen_frame.top == bounds.top - 60);

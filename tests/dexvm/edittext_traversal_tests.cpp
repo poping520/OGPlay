@@ -298,7 +298,12 @@ TEST_CASE("DVM-298 EditText actual input Java focus chain watchers reentry measu
             event.pressed = true;
             event.code = code;
             event.unicode_char = unicode;
+            const AndroidInputEvent transaction(f.vm, *f.context);
+            const auto lease = f.context->input_presentation;
+            REQUIRE(lease);
             CHECK(DispatchAndroidBoundedEditInput(f.vm, *f.context, event));
+            CHECK(f.context->input_presentation == lease);
+            CHECK(AcquireAndroidPresentation(*f.context) == lease);
         };
         f.On(edit, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.vm.NewStringUtf8("abcd"))});
         f.On(edit, "setSelection", "(II)V", {VmValue::Int(1), VmValue::Int(3)});

@@ -939,6 +939,8 @@ struct DexVmAndroidContext final {
 
   // Binding only; the stable Rect is a normal GC-traced field on each holder.
   std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
+  std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_width_field;
+  std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_height_field;
 };
 
 void RegisterAndroidAudioTrackStateTable(

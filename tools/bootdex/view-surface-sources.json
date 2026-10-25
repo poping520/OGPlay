@@ -1,0 +1,767 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView$1;",
+      "smali_sha256": "a4bdc789458f1798e3336a6e3f707145f38f8976eb68c7611daf0ed79ea8b4a4",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/view/SurfaceView;)V",
+          "flags": 65536,
+          "body_sha256": "a79be62b5128df6911d036bbe122da5501ff2a72950d3b0f3d9e60117dad2bf0",
+          "source": "failure"
+        },
+        {
+          "signature": "handleMessage(Landroid/os/Message;)V",
+          "flags": 1,
+          "body_sha256": "6e9c7d40846e9bbfe38ad8abcdd2cd6bbe8e1f5d0468eb878fd2517e3170864f",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "this$0:Landroid/view/SurfaceView;",
+          "flags": 4112,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView$2;",
+      "smali_sha256": "20eba04de5108afd055e169ae3692c3852772acc2e264a5303b36e86d9d6e0e7",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/view/SurfaceView;)V",
+          "flags": 65536,
+          "body_sha256": "0e5b37293027111fd5b2a45fa53ad243cac300ba32c9f633499f116b6b950b4f",
+          "source": "failure"
+        },
+        {
+          "signature": "onScrollChanged()V",
+          "flags": 1,
+          "body_sha256": "d2bf139ff3b84f5902da2d4f832d09bdee8b2795e290abaa88325e5654f6b922",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "this$0:Landroid/view/SurfaceView;",
+          "flags": 4112,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView$3;",
+      "smali_sha256": "d3711f06bde41131248f35620797e512a0839bdfeed20e1b21bc42202dd22db1",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/view/SurfaceView;)V",
+          "flags": 65536,
+          "body_sha256": "97947cdfa65b5b4a6d5e1f91a7bafc30e7b3cb6ed5c681d3d29dc5eaf8374539",
+          "source": "failure"
+        },
+        {
+          "signature": "onPreDraw()Z",
+          "flags": 1,
+          "body_sha256": "d579d0817a83d114ff178c12f241a07cd0a0673b140f9386ec1a62b4507d348e",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "this$0:Landroid/view/SurfaceView;",
+          "flags": 4112,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView$4;",
+      "smali_sha256": "b69f4bfec6947c1d17be9e3de85efacc7424f9f52871cb034448b2041fb3eb16",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/view/SurfaceView;)V",
+          "flags": 65536,
+          "body_sha256": "438edc8a8a567a14cf5d56a13215bbd595235288af789415cf2b847ecf3c66ba",
+          "source": "failure"
+        },
+        {
+          "signature": "internalLockCanvas(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+          "flags": 18,
+          "body_sha256": "e629ddbaf4f04a74b5a1068f5e81ba2535e0818dcd5d2d3c7f31e8e4b739293d",
+          "source": "failure"
+        },
+        {
+          "signature": "addCallback(Landroid/view/SurfaceHolder$Callback;)V",
+          "flags": 1,
+          "body_sha256": "dc84e8f3342cfcef83af191b9b56463335a8f9d2775f84e6b4cd31f11d987d0a",
+          "source": "failure"
+        },
+        {
+          "signature": "getSurface()Landroid/view/Surface;",
+          "flags": 1,
+          "body_sha256": "4b051c986762060b76245890969dffd0436f8bee0d3ffff606aa1158e8eda4b4",
+          "source": "failure"
+        },
+        {
+          "signature": "getSurfaceFrame()Landroid/graphics/Rect;",
+          "flags": 1,
+          "body_sha256": "9210a55542c7636b32ac48fc615bb17141e4973d4c5e5df63803597294882bfb",
+          "source": "failure"
+        },
+        {
+          "signature": "isCreating()Z",
+          "flags": 1,
+          "body_sha256": "879d71b13e73ef6fec3852e23293e80c7c9fb3c5923e040f3f4c40a3a4e0d43c",
+          "source": "failure"
+        },
+        {
+          "signature": "lockCanvas()Landroid/graphics/Canvas;",
+          "flags": 1,
+          "body_sha256": "7d303eaf736f2c8a73855fba87b249918df3b75d96897729c9d3450db69ad268",
+          "source": "failure"
+        },
+        {
+          "signature": "lockCanvas(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+          "flags": 1,
+          "body_sha256": "e3c6a1183064bbc9de45c992e0c20339eb9d7a9c9a8a76f0cc2acbf243e952d6",
+          "source": "failure"
+        },
+        {
+          "signature": "removeCallback(Landroid/view/SurfaceHolder$Callback;)V",
+          "flags": 1,
+          "body_sha256": "a3c9cc7dc78cd742a7254bf79a29e4e9f6e17171d675fb9870a17ae1598502bb",
+          "source": "failure"
+        },
+        {
+          "signature": "setFixedSize(II)V",
+          "flags": 1,
+          "body_sha256": "39786a8747635188d83368da8a3d719078093fd5c6b8dd1f4bbf632e7f9e96ca",
+          "source": "failure"
+        },
+        {
+          "signature": "setFormat(I)V",
+          "flags": 1,
+          "body_sha256": "ccdbf75681c6cf21d7fad97302f25823b3da2375d84db45ad446a5824506b871",
+          "source": "failure"
+        },
+        {
+          "signature": "setKeepScreenOn(Z)V",
+          "flags": 1,
+          "body_sha256": "667bb87fff459987022d7ca0835f4c97d12f8a1f804aff98944186648dee9589",
+          "source": "failure"
+        },
+        {
+          "signature": "setSizeFromLayout()V",
+          "flags": 1,
+          "body_sha256": "6700e61f2201f5e5431f245d150e03c828c95acfa15f652c93b7297c8029626b",
+          "source": "failure"
+        },
+        {
+          "signature": "setType(I)V",
+          "flags": 1,
+          "body_sha256": "cc0c0a4d06ecc8d5f8467a7cb7b5c8ec95bbba894ce98a2f33147e894ad3d1fe",
+          "source": "failure"
+        },
+        {
+          "signature": "unlockCanvasAndPost(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "18e80be9fe30ad7fcb7dcac559be95d6dfca2130466554f657ab927b69e26564",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "LOG_TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "failure",
+          "initialization": "rom-encoded:\"SurfaceHolder\""
+        },
+        {
+          "signature": "this$0:Landroid/view/SurfaceView;",
+          "flags": 4112,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView$MyWindow;",
+      "smali_sha256": "82442481a3d2c4689922cfeab2deaa513f0a7f9889a08122585c4eb785e8fac5",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/view/SurfaceView;)V",
+          "flags": 65537,
+          "body_sha256": "6dd9dc6eee589bc2399364ee8d1d618f9ab25e55ae996874ecad8f07c260db1b",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchAppVisibility(Z)V",
+          "flags": 1,
+          "body_sha256": "5ffd02a99dac6c912dccce184e6ae991e1b3caedc96f8ed980b44a01f3b5b143",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchGetNewSurface()V",
+          "flags": 1,
+          "body_sha256": "f16bd471f2cc9776e254edf6b70289cb83471f577f48264bc476ef01dd3053b1",
+          "source": "failure"
+        },
+        {
+          "signature": "executeCommand(Ljava/lang/String;Ljava/lang/String;Landroid/os/ParcelFileDescriptor;)V",
+          "flags": 1,
+          "body_sha256": "b9ba9d9dc8425881ea87036a7b5168399be3a21aba5c485fc66f73c5a987dfa1",
+          "source": "failure"
+        },
+        {
+          "signature": "resized(Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;Landroid/graphics/Rect;ZLandroid/content/res/Configuration;)V",
+          "flags": 1,
+          "body_sha256": "13873c06e139e3525eabb5e280105b1098a1fdc7a550cfcf3f30fa630e959ea7",
+          "source": "failure"
+        },
+        {
+          "signature": "windowFocusChanged(ZZ)V",
+          "flags": 1,
+          "body_sha256": "fdaffeaa07a358823ebe417db522b2a9a1026be298d4e34480feb26cd17d1507",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mCurHeight:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mCurWidth:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurfaceView:Ljava/lang/ref/WeakReference;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-surface.surface.json.gz",
+      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "owner": "Landroid/view/SurfaceView;",
+      "smali_sha256": "9715827df06ed3569ca518ca9c08ba1baf552aa64deaa72a12c36b42e9b11a6e",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "1124e7aae0b7db46a1cb09fdc6e7f93b72eb8b860fbd0404a06efee99df58e30",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 bounded SurfaceView initialization replacing WMS-dependent instance initializers",
+            "inputs": "exact matching View constructor receives real Context, AttributeSet and defStyleAttr unchanged",
+            "outputs": "real parent initialization, ROM requestedWidth/Height=-1, real managed holder registration, setWillNotDraw(true)",
+            "state_owner": "Java owns requested dimensions and View flags; existing managed holder owns callback/buffer identity; all WMS-dependent fields remain failure",
+            "failure_boundary": "real theme/attribute errors propagate; no anonymous ROM holder, Handler, IWindowSession or MyWindow is fabricated"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+          "flags": 65537,
+          "body_sha256": "f7db8dc03bb608233234b7d9d750025b42ac21d7d0f599cc5552ea873e517fb3",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 bounded SurfaceView initialization replacing WMS-dependent instance initializers",
+            "inputs": "exact matching View constructor receives real Context, AttributeSet and defStyleAttr unchanged",
+            "outputs": "real parent initialization, ROM requestedWidth/Height=-1, real managed holder registration, setWillNotDraw(true)",
+            "state_owner": "Java owns requested dimensions and View flags; existing managed holder owns callback/buffer identity; all WMS-dependent fields remain failure",
+            "failure_boundary": "real theme/attribute errors propagate; no anonymous ROM holder, Handler, IWindowSession or MyWindow is fabricated"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+          "flags": 65537,
+          "body_sha256": "a7c165c13797a502ba3bdb2e2d916e72f40f0c20f2952023ffb0a01945421fe2",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 bounded SurfaceView initialization replacing WMS-dependent instance initializers",
+            "inputs": "exact matching View constructor receives real Context, AttributeSet and defStyleAttr unchanged",
+            "outputs": "real parent initialization, ROM requestedWidth/Height=-1, real managed holder registration, setWillNotDraw(true)",
+            "state_owner": "Java owns requested dimensions and View flags; existing managed holder owns callback/buffer identity; all WMS-dependent fields remain failure",
+            "failure_boundary": "real theme/attribute errors propagate; no anonymous ROM holder, Handler, IWindowSession or MyWindow is fabricated"
+          }
+        },
+        {
+          "signature": "access$000(Landroid/view/SurfaceView;ZZ)V",
+          "flags": 4104,
+          "body_sha256": "22be3647ff27acd84237cba291d784babc31a1dc32e433a42344b6ecce48d315",
+          "source": "failure"
+        },
+        {
+          "signature": "getSurfaceCallbacks()[Landroid/view/SurfaceHolder$Callback;",
+          "flags": 2,
+          "body_sha256": "080dfa842bb6c948cf582e5196395f4c2db3ca6ec7124a67bc726fa687c327ee",
+          "source": "failure"
+        },
+        {
+          "signature": "init()V",
+          "flags": 2,
+          "body_sha256": "d53ad0fdad72d2c93551ec3e14d891503198e8502382f97da97d3e2bed8f01ee",
+          "source": "failure"
+        },
+        {
+          "signature": "updateWindow(ZZ)V",
+          "flags": 2,
+          "body_sha256": "68142002641ed26fcafe3a424b54c2014d7c4a46fdde159c4b6bfa0cb9d09c65",
+          "source": "failure"
+        },
+        {
+          "signature": "dispatchDraw(Landroid/graphics/Canvas;)V",
+          "flags": 4,
+          "body_sha256": "e075469803fb91e8bc22d3d7d579ce4b7e88ba48fe1445c1d6091a200139517c",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "a1b814cd8addf348381ae345e2a0f9dbd691affe57d8aa6eb45ddbe9b4acc8bc",
+          "source": "failure"
+        },
+        {
+          "signature": "gatherTransparentRegion(Landroid/graphics/Region;)Z",
+          "flags": 1,
+          "body_sha256": "4f5acd1fc1d30748c4adb3ea5f6c5219e8e594d295e27503cd1328d967ea2a28",
+          "source": "failure"
+        },
+        {
+          "signature": "getHolder()Landroid/view/SurfaceHolder;",
+          "flags": 1,
+          "body_sha256": "deaf4bb00140aa57369c1f1028d47b2813b3165efc9d9ece927eb4e8189a4318",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 existing real managed holder in place of ROM anonymous WMS holder",
+            "inputs": "current receiver and existing managed generation registry",
+            "outputs": "same holder within generation; replacement after retirement following existing lifecycle policy",
+            "state_owner": "existing managed registry owns lifecycle identity; holder mSurfaceFrame Java strong edge owns stable Rect; no ROM mSurfaceHolder mirror",
+            "failure_boundary": "no attach/updateWindow/Surface activation; unavailable lifecycle remains explicit failure"
+          }
+        },
+        {
+          "signature": "handleGetNewSurface()V",
+          "flags": 0,
+          "body_sha256": "792ca8ae4951e6ef9e97b9a2ce42ecbc73bd7b468f4024938bfc484061e96f9c",
+          "source": "failure"
+        },
+        {
+          "signature": "isFixedSize()Z",
+          "flags": 1,
+          "body_sha256": "25e2cb79e4bbeee32279b59f7f592250867b6b49ad6e9101e35d356ffbfefde2",
+          "source": "rom"
+        },
+        {
+          "signature": "onAttachedToWindow()V",
+          "flags": 4,
+          "body_sha256": "6eb485afa9ff0960a1cf93e754941a50df5ba347d4fe140ddf1633b840dabbab",
+          "source": "failure"
+        },
+        {
+          "signature": "onDetachedFromWindow()V",
+          "flags": 4,
+          "body_sha256": "49abc9626a95da2660d90a9679924219fc8528ee14ca3334c8b9b7bbdbf12354",
+          "source": "failure"
+        },
+        {
+          "signature": "onMeasure(II)V",
+          "flags": 4,
+          "body_sha256": "9fffba3b378bdf8c73e4a091d64d49ebf388a25f2b95060b2083618648244fb9",
+          "source": "rom"
+        },
+        {
+          "signature": "onWindowVisibilityChanged(I)V",
+          "flags": 4,
+          "body_sha256": "633d65796012a66ae2e58620f355eac992afe1cb7c83ee780dcfffad9fa2dbc3",
+          "source": "failure"
+        },
+        {
+          "signature": "setFrame(IIII)Z",
+          "flags": 4,
+          "body_sha256": "01a6325abc578f9df0fb4ad85db45f880fd51fd03a1fa65d499b7a5bc86cd13c",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 exact View.setFrame without the unavailable WMS updateWindow tail",
+            "inputs": "four local coordinates; unchanged receiver",
+            "outputs": "exact parent ROM setFrame result and synchronous onSizeChanged; no Surface update",
+            "state_owner": "Java ROM View owns bounds/flags/old sizes; holder/buffer facts unchanged",
+            "failure_boundary": "parent failures propagate; no WMS relayout or bounds-derived buffer"
+          }
+        },
+        {
+          "signature": "setSecure(Z)V",
+          "flags": 1,
+          "body_sha256": "256e12937f373a9ba78fdf66d88275f5a145e1390c49f0cdf1fcc0bf41aafb7e",
+          "source": "failure"
+        },
+        {
+          "signature": "setVisibility(I)V",
+          "flags": 1,
+          "body_sha256": "9dbee2e58e0e843d452a27579959e3e500c6c835b6a26635d2548beae0c09498",
+          "source": "failure"
+        },
+        {
+          "signature": "setWindowType(I)V",
+          "flags": 1,
+          "body_sha256": "9fbfe9ef1f00f2802b9aac344da892d44dd92edc9785dcdbb58287de75676873",
+          "source": "failure"
+        },
+        {
+          "signature": "setZOrderMediaOverlay(Z)V",
+          "flags": 1,
+          "body_sha256": "344e2b788bf7e96583264ba3e994702c694623b047d8ebb344b2e9b761a687a3",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 existing managed compositor layer seam",
+            "inputs": "requested top or media-overlay boolean and actual registered UiNode",
+            "outputs": "real UiNode surface_layer update using existing compositor contract",
+            "state_owner": "UiTree owns compositor layer only; no WMS mWindowType mirror",
+            "failure_boundary": "missing UiNode fails; arbitrary WMS/layer rebuilding unsupported"
+          }
+        },
+        {
+          "signature": "setZOrderOnTop(Z)V",
+          "flags": 1,
+          "body_sha256": "643f5a09ce4a90b2d35995a5c9ccf9110beb4c93af750519ad692337beeba820",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-302 existing managed compositor layer seam",
+            "inputs": "requested top or media-overlay boolean and actual registered UiNode",
+            "outputs": "real UiNode surface_layer update using existing compositor contract",
+            "state_owner": "UiTree owns compositor layer only; no WMS mWindowType mirror",
+            "failure_boundary": "missing UiNode fails; arbitrary WMS/layer rebuilding unsupported"
+          }
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEBUG:Z",
+          "flags": 26,
+          "source": "failure",
+          "initialization": "rom-encoded:false"
+        },
+        {
+          "signature": "GET_NEW_SURFACE_MSG:I",
+          "flags": 24,
+          "source": "failure",
+          "initialization": "rom-encoded:0x2"
+        },
+        {
+          "signature": "KEEP_SCREEN_ON_MSG:I",
+          "flags": 24,
+          "source": "failure",
+          "initialization": "rom-encoded:0x1"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "failure",
+          "initialization": "rom-encoded:\"SurfaceView\""
+        },
+        {
+          "signature": "UPDATE_WINDOW_MSG:I",
+          "flags": 24,
+          "source": "failure",
+          "initialization": "rom-encoded:0x3"
+        },
+        {
+          "signature": "mCallbacks:Ljava/util/ArrayList;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mConfiguration:Landroid/content/res/Configuration;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mContentInsets:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDrawListener:Landroid/view/ViewTreeObserver$OnPreDrawListener;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDrawingStopped:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFormat:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mGlobalListenersAdded:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHandler:Landroid/os/Handler;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHaveFrame:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHeight:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mIsCreating:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastLockTime:J",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastSurfaceHeight:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastSurfaceWidth:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLayout:Landroid/view/WindowManager$LayoutParams;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLeft:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLocation:[I",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNewSurface:Landroid/view/Surface;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverscanInsets:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mReportDrawNeeded:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRequestedFormat:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRequestedHeight:I",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRequestedVisible:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRequestedWidth:I",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mScrollChangedListener:Landroid/view/ViewTreeObserver$OnScrollChangedListener;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSession:Landroid/view/IWindowSession;",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurface:Landroid/view/Surface;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurfaceCreated:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurfaceFrame:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurfaceHolder:Landroid/view/SurfaceHolder;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mSurfaceLock:Ljava/util/concurrent/locks/ReentrantLock;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTop:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTranslator:Landroid/content/res/CompatibilityInfo$Translator;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mUpdateWindowNeeded:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mViewVisibility:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVisible:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVisibleInsets:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWidth:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWinFrame:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWindow:Landroid/view/SurfaceView$MyWindow;",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWindowType:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWindowVisibility:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

@@ -2130,8 +2130,8 @@ note = "DVM-255/265/266/267、ADR-0148/0154/0155/0156：固定ROM规则准入，
 
 [dexvm.bootdex_member_composition]
 status = "partial"
-note = "DVM-306：封存JavaTraversal v1配对，三入口在VM/catalog前验证DEX/成员/主题身份并固定owner；平台显式无accessibility服务，staging隔离生产。无标识生产Legacy默认及字节保持。实验ROM层次/测量/投影/叶服务沿原范围；test-root、生产根/时序、系统附着与E2E尚未开放。"
-test = "tests/dexvm/android_view_state_tests.cpp#DVM-306; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
+note = "DVM-306/307：封存JavaTraversal v1配对，VM主context绑定owner；稳定Window FrameLayout根含空Activity，逐窗口两pass/逻辑tick延期、clean复用与回调只读投影。仅OwnerTick/BeforeInput ResolveOnly生产根开放；帧/Surface安全点、窗口adapter、系统附着与E2E待后续。生产Legacy默认及字节保持。"
+test = "tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/android_view_state_tests.cpp#DVM-306; tools.bootdex_builder_self_test; tools/bootdex/compose_bootdex.py check; tests/dexvm/bootdex_library_tests.cpp#DVM-276; tests/dexvm/android_view_state_tests.cpp#DVM-277; tests/dexvm/android_view_state_tests.cpp#DVM-277B; tests/dexvm/android_view_state_tests.cpp#DVM-279; tests/dexvm/android_view_state_tests.cpp#DVM-280; tests/dexvm/android_view_state_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-281; tests/dexvm/viewgroup_traversal_tests.cpp#DVM-282; tests/dexvm/framelayout_traversal_tests.cpp#DVM-283; tests/dexvm/linearlayout_traversal_tests.cpp#DVM-284; tests/dexvm/relativelayout_traversal_tests.cpp#DVM-285; tests/runtime/ui_tree_tests.cpp#VD-06a"
 
 [dexvm.scroll_constructor]
 status = "partial"

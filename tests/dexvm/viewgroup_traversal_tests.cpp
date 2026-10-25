@@ -1,4 +1,5 @@
 #include "android_value_fixture.h"
+#include "container_traversal_fixture.h"
 #include "boot_dex.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include <doctest/doctest.h>
@@ -216,18 +217,18 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
         f.On(root, "requestDuringLayout", "(Landroid/view/View;I)V", {VmValue::Ref(leaf), VmValue::Int(1)});
         REQUIRE(tick());
         CHECK(layouts() == before + 2);
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         before = layouts();
         f.On(root, "requestDuringLayout", "(Landroid/view/View;I)V", {VmValue::Ref(leaf), VmValue::Int(2)});
         REQUIRE(tick());
         CHECK(layouts() == before + 2);
-        CHECK(f.context->ui_measure_requests.contains(leaf));
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).contains(leaf));
         before = layouts();
         REQUIRE(tick());
         CHECK(layouts() == before + 2);
         f.On(root, "requestDuringLayout", "(Landroid/view/View;I)V", {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
         REQUIRE(tick());
-        CHECK(f.context->ui_measure_requests.empty());
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).empty());
         const auto hook_object = f.New("Ltest/TraversalHook;");
         f.On(root, "setHook", "(Ljava/lang/Runnable;)V", {VmValue::Ref(hook_object)});
         const auto before_callback = f.context->ui_tree.PublishedProjection();
@@ -272,7 +273,7 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
         CHECK(f.model.IsValidRef(margin) == false);
         f.On(second, "requestLayout", "()V");
         remove(first, second);
-        CHECK(f.context->ui_measure_requests.contains(second));
+        CHECK(AndroidUiMeasureRequests(f.vm, *f.context).contains(second));
         static_cast<void>(f.vm.CollectGarbage("vd06a-removed-hierarchy"));
         CHECK_FALSE(f.model.IsValidRef(second));
         CHECK_FALSE(f.model.IsValidRef(leaf));
@@ -515,8 +516,7 @@ TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state"
 
 TEST_CASE("DVM-282 absent providers and real attached system state fail explicitly") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend, {}, false, "view_measure.dex", false, AndroidUiTraversalOwner::JavaTraversal,
-                         OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar");
+        ogplay::test::container_traversal::ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         const auto root = f.New("Ltest/HierarchyGroup;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         f.context->content_view = root;
@@ -529,6 +529,7 @@ TEST_CASE("DVM-282 absent providers and real attached system state fail explicit
         f.On(root, "setClickable", "(Z)V", {VmValue::Int(1)});
         CHECK(f.On(root, "isClickable", "()Z").AsInt());
         f.context->activity = owner;
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(root)});
         f.context->window_has_focus = true;
         f.context->window_focus_activity = owner.Value();
         const auto input = f.vm.NewIntrinsicInstance("Landroid/view/inputmethod/InputMethodManager;");

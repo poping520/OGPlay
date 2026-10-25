@@ -3,6 +3,7 @@
 // ---- migrated from android_view_Display.cpp ----
 #include "catalog.h"
 #include "ogplay/runtime/integration/android_guest_call_session.h"
+#include "ogplay/runtime/integration/bitmap_pixels.h"
 
 #include <bit>
 #include <array>
@@ -2305,6 +2306,9 @@ Decl Declare_android_view_View(const Context& context) {
         [context](dx::IntrinsicContext& call) {
             const auto node = EnsureViewUiNode(
                 *context, call.receiver, ui::UiClass::View);
+            if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
+                AndroidViewBelongsToRoot(call.vm, *context, call.receiver))
+                context->ui_window_schedules[AndroidUiTraversalRoot(call.vm, *context)].published.reset();
             context->ui_tree.MarkDrawDirty(node);
             return dx::VmValue::Void();
         });
@@ -2321,6 +2325,8 @@ Decl Declare_android_view_View(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "View hardware, animation or attached system state is not supported"};
         }
+        if (AndroidViewBelongsToRoot(call.vm, *context, call.receiver))
+            context->ui_window_schedules[AndroidUiTraversalRoot(call.vm, *context)].published.reset();
         context->ui_tree.MarkDrawDirty(EnsureViewUiNode(*context, call.receiver, ui::UiClass::View));
         return dx::VmValue::Void();
     });
@@ -2448,7 +2454,8 @@ Decl Declare_android_view_View(const Context& context) {
             const auto cache = fields.GetRef(tokens.cache);
             if (cache.IsValid()) static_cast<void>(CallAndroidMethod(call.vm, cache, "clear", "()V"));
             const bool attached = AndroidViewBelongsToRoot(call.vm, *context, call.receiver);
-            if (attached && !context->ui_java_propagating_request) context->ui_measure_requests.insert(call.receiver);
+            if (attached && !context->ui_java_propagating_request)
+                AndroidUiMeasureRequests(call.vm, *context).insert(call.receiver);
             if (attached && context->ui_java_layout_pass == 2) return dx::VmValue::Void();
             fields.SetInt(tokens.flags[0], fields.GetInt(tokens.flags[0]) | static_cast<std::int32_t>(0x80001000U));
             const auto parent = fields.GetRef(context->view_java_hierarchy_fields->parent);
@@ -3733,18 +3740,34 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
+        if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
+             !(context.ui_layout_dispatching && reason == AndroidUiTraversalReason::GeometryRead)) ||
+            phase != AndroidUiTraversalPhase::ResolveOnly) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_traversal_phase", 0);
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                     "Traversal safe point is not enabled"};
+        }
         if (context.ui_layout_dispatching) {
+            if (reason == AndroidUiTraversalReason::GeometryRead) {
+                static_cast<void>(ReadAndroidUiGeometry(vm, context));
+                return false;
+            }
             if (reason == AndroidUiTraversalReason::BeforeInput) {
                 if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_reentrant_input", 0);
                 throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                         "Input during test traversal unsupported"};
+                                         "Input during Java traversal unsupported"};
             }
             return false;
         }
-        if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput) ||
-            phase != AndroidUiTraversalPhase::ResolveOnly)
-            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                     "Only test-root traversal is enabled"};
+        if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
+        // Materialize the Window's stable FrameLayout even for an empty Activity.
+        if (context.activity.IsValid()) {
+            const auto window =
+                android_intrinsics::CallAndroidMethod(vm, context.activity, "getWindow", "()Landroid/view/Window;").ref;
+            const auto window_root = vm.ProtectReferences(std::array{window});
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, window, "findViewById", "(I)Landroid/view/View;", {dexvm::VmValue::Int(0x01020002)}));
+        }
         const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
                                                         static_cast<std::int32_t>(context.surface_height)});
         if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff)
@@ -3765,8 +3788,80 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                    density == context.ui_density && node && FindViewUiNode(context, root.Value()) == node;
         };
         if (!current())
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound test root"};
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound window root"};
+        auto& schedule = context.ui_window_schedules[root];
+        const bool same_identity = schedule.generation == generation && schedule.content_revision == revision;
+        if (schedule.generation != generation) schedule = {};
+        if (schedule.deferred_until_tick > context.ui_owner_tick) return false;
+        dexvm::IntrinsicContext root_call{vm, root, {}};
+        const bool layout_requested =
+            (dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) != 0;
+        const auto projection_changed = [&] {
+            if (!schedule.published) return true;
+            for (const auto& [id, view] : context.ui_node_to_object) {
+                const auto* projected = schedule.published->Get(id);
+                if (!projected || !schedule.published->IsAttached(id)) continue;
+                if (projected->kind == ui::UiClass::ImageView || projected->kind == ui::UiClass::ImageButton) {
+                    // Reuse the existing leaf backing's invalidation facts without
+                    // refreshing pixels or entering guest code at a clean barrier.
+                    const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
+                    const auto field =
+                        vm.Linker().FindFieldRecursive(type, "mDrawable", "Landroid/graphics/drawable/Drawable;");
+                    if (!field) throw std::logic_error("ImageView drawable field unavailable");
+                    const dexvm::VmObjectRef drawable{
+                        vm.Model().InstanceSlots(view)[vm.Linker().Field(*field).slot].bits};
+                    if (drawable.IsValid()) {
+                        const auto index = context.ui_view_images.find(view.Value());
+                        if (index == context.ui_view_images.end() || index->second != drawable) return true;
+                        const auto state = context.ui_drawables.find(drawable.Value());
+                        if (state == context.ui_drawables.end()) return true;
+                        if (state->second.bitmap_drawable) {
+                            const auto bitmap_field = vm.Linker().FindFieldRecursive(
+                                vm.Model().ObjectClass(drawable), "mBitmap", "Landroid/graphics/Bitmap;");
+                            if (!bitmap_field || vm.Linker().Field(*bitmap_field).is_unimplemented)
+                                throw std::logic_error("BitmapDrawable bitmap field unavailable");
+                            const dexvm::VmObjectRef source{
+                                vm.Model().InstanceSlots(drawable)[vm.Linker().Field(*bitmap_field).slot].bits};
+                            const auto bitmap = context.bitmaps.find(source.Value());
+                            if (source.IsValid() &&
+                                (bitmap == context.bitmaps.end() || bitmap->second.recycled || !bitmap->second.pixels))
+                                return true;
+                            if (source.IsValid() && !state->second.leaf_pixels &&
+                                (state->second.bitmap_revision != bitmap->second.pixels->Revision() ||
+                                 bitmap->second.pixels->Locks() != 0))
+                                return true;
+                        }
+                    }
+                }
+                dexvm::IntrinsicContext call{vm, view, {}};
+                dexvm::IntrinsicCall fields(call);
+                const auto& tokens = *context.view_java_measure_fields;
+                const auto flags = fields.GetInt(tokens.view_flags);
+                const auto visibility = (flags & 0xc) == 8   ? ui::Visibility::Gone
+                                        : (flags & 0xc) == 4 ? ui::Visibility::Invisible
+                                                             : ui::Visibility::Visible;
+                if (projected->android_id != fields.GetInt(context.view_java_hierarchy_fields->id) ||
+                    projected->visibility != visibility || projected->enabled != ((flags & 0x20) == 0) ||
+                    projected->clickable != ((flags & 0x4000) != 0) || projected->focusable != ((flags & 1) != 0) ||
+                    projected->focusable_in_touch_mode != ((flags & 0x40000) != 0) ||
+                    projected->scroll_x != fields.GetInt(tokens.scroll[0]) ||
+                    projected->scroll_y != fields.GetInt(tokens.scroll[1]))
+                    return true;
+            }
+            return false;
+        };
+        if (same_identity && schedule.published && schedule.published == context.ui_tree.PublishedProjection() &&
+            schedule.requests.empty() && !layout_requested && schedule.metrics == metrics &&
+            schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty &&
+            !projection_changed())
+            return false;
+        schedule.generation = generation;
+        // An interrupted attempt cannot certify the next barrier as clean, even
+        // when the Java layout epilogue already cleared FORCE_LAYOUT.
+        schedule.published.reset();
+        auto& requests = schedule.requests;
         context.ui_layout_dispatching = true;
+        context.ui_java_active_metrics = metrics;
 
         struct Reset {
             DexVmAndroidContext& context;
@@ -3774,16 +3869,12 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             ~Reset() {
                 context.ui_layout_dispatching = false;
                 context.ui_java_layout_pass = 0;
+                context.ui_java_active_metrics.reset();
             }
         } reset{context};
 
-        if (context.ui_java_watchdog_root != root || context.ui_java_watchdog_generation != generation) {
-            context.ui_java_deferred_ticks = 0;
-            context.ui_java_watchdog_root = root;
-            context.ui_java_watchdog_generation = generation;
-        }
-        const auto pending = std::move(context.ui_measure_requests);
-        context.ui_measure_requests.clear();
+        const auto pending = std::move(requests);
+        requests.clear();
         std::vector<dexvm::VmObjectRef> pending_refs;
         for (const auto requester : pending)
             if (AndroidViewBelongsToRoot(vm, context, requester, true)) pending_refs.push_back(requester);
@@ -3793,7 +3884,7 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                 static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
             if (!current()) return false;
         }
-        context.ui_measure_requests.clear();
+        requests.clear();
         dexvm::IntrinsicContext call{vm, root, {}};
         dexvm::IntrinsicCall fields(call);
         const auto& tokens = *context.view_java_measure_fields;
@@ -3811,13 +3902,13 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             context.ui_java_layout_pass = 0;
             if (!current()) return false;
             if (pass == 2) {
-                std::erase_if(context.ui_measure_requests, [&](const auto requester) {
+                std::erase_if(requests, [&](const auto requester) {
                     return !AndroidViewBelongsToRoot(vm, context, requester, true);
                 });
                 break;
             }
-            const auto requested = std::move(context.ui_measure_requests);
-            context.ui_measure_requests.clear();
+            const auto requested = std::move(requests);
+            requests.clear();
             std::vector<dexvm::VmObjectRef> valid;
             for (const auto requester : requested) {
                 const bool attached = AndroidViewBelongsToRoot(vm, context, requester);
@@ -3842,10 +3933,15 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                 static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
                 if (!current()) return false;
             }
-            context.ui_measure_requests.clear();
+            requests.clear();
         }
-        if (!context.ui_measure_requests.empty()) {
-            if (++context.ui_java_deferred_ticks > 8) {
+        if (!requests.empty()) {
+            schedule.deferred_until_tick = context.ui_owner_tick + 1;
+            if (schedule.deferred_ticks == 0 || schedule.watchdog_tick != context.ui_owner_tick) {
+                schedule.watchdog_tick = context.ui_owner_tick;
+                ++schedule.deferred_ticks;
+            }
+            if (schedule.deferred_ticks > 8) {
                 const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
                                     " epoch=" + std::to_string(context.ui_measure_epoch + 1);
                 if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
@@ -3853,13 +3949,27 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
                 throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
             }
         } else {
-            context.ui_java_deferred_ticks = 0;
+            schedule.deferred_ticks = 0;
+            schedule.deferred_until_tick = 0;
         }
         const auto epoch = context.ui_measure_epoch + 1;
+        const auto previous_target = context.ui_tree.ProjectionTarget();
+        const auto metrics_revision =
+            previous_target
+                ? previous_target->metrics_revision + (previous_target->metrics.width != metrics.width ||
+                                                               previous_target->metrics.height != metrics.height ||
+                                                               context.ui_projection_density != density
+                                                           ? 1U
+                                                           : 0U)
+                : 1U;
         const ui::UiProjectionTarget target{
-            context.ui_tree.Root(), generation, revision, epoch, {metrics.width, metrics.height}};
+            context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
         context.ui_tree.SetProjectionTarget(target);
         CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+        schedule.published = context.ui_tree.PublishedProjection();
+        schedule.content_revision = revision;
+        schedule.metrics = metrics;
+        schedule.density = density;
         return true;
     }
     }

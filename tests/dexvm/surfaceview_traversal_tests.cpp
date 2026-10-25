@@ -1,4 +1,5 @@
 #include "container_traversal_fixture.h"
+#include "../../src/runtime/integration/dexvm_android/shared.h"
 #include <bit>
 
 using ogplay::test::container_traversal::ContainerVm;
@@ -162,17 +163,17 @@ TEST_CASE("DVM-302 SurfaceView managed holder generation and stable Rect without
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 150}));
         Shape(f, frame, 0, 0);
-        // Managed holder fixture: callbacks only, no native window, renderer or APK lifecycle.
-        // Explicit OwnerTick above supplies real geometry. Isolate the existing
-        // holder dispatcher through its reentrant scheduling guard; this fixture
-        // gives no credit to the still-disabled BeforeSurfaceCallbacks traversal.
+        // Prepare the created fixture explicitly: the production created safe point stays disabled.
         const auto dispatch = [&](SurfaceHolderPhase phase) {
-            struct Restore {
-                bool& flag;
-                bool old;
-                ~Restore() { flag = old; }
-            } restore{f.context->ui_layout_dispatching, f.context->ui_layout_dispatching};
-            f.context->ui_layout_dispatching = true;
+            if (phase == SurfaceHolderPhase::created) {
+                const auto current = Holder(f, view);
+                f.context->managed_host_surface_open = true;
+                if (f.context->active_surface_holders.insert(current.Value()).second) {
+                    android_intrinsics::PublishSurfaceHolderFrame(f.vm, *f.context, current);
+                    f.On(listener, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", {VmValue::Ref(current)});
+                }
+                return std::optional<std::string>{};
+            }
             return DispatchSurfaceHolderCallbacks(f.vm, *f.context, phase);
         };
         for (int repeat = 0; repeat < 2; ++repeat) {

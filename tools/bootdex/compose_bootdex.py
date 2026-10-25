@@ -17,6 +17,7 @@ import zipfile
 import build_bootdex as builder
 import member_sources
 import theme_projection
+import policy_rom
 
 
 def measure_sources(document):
@@ -66,6 +67,7 @@ def measure_sources(document):
     document['classes'].extend(json.loads(Path(__file__).with_name('view-scroll-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-surface-sources.json').read_text(encoding='utf-8'))['classes'])
     document['classes'].extend(json.loads(Path(__file__).with_name('view-observer-sources.json').read_text(encoding='utf-8'))['classes'])
+    document['classes'].extend(json.loads(Path(__file__).with_name('view-policy-sources.json').read_text(encoding='utf-8'))['classes'])
     return document
 
 
@@ -85,17 +87,6 @@ def assemble(recipe, work, measure=False):
             raise builder.BuildError('unexpected paired guest Java replacement')
         for replacement in replacements | {'Landroid/view/LayoutInflater$LocalInflater;'}:
             (guest / (replacement[1:-1] + '.smali')).unlink()
-        extra = work / 'experimental-classes'
-        extra.mkdir()
-        builder.run([str(builder.JAVAC), '-encoding', 'UTF-8', '-source', '7', '-target', '7',
-                     '-Xlint:-options', '-g:none', '-bootclasspath', str(builder.ANDROID_JAR),
-                     '-d', str(extra), str(Path(__file__).with_name('experimental-java') / 'android/view/LocalLayoutInflater.java')])
-        dex_dir = work / 'experimental-dex'
-        dex_dir.mkdir()
-        builder.run([str(builder.JAVA), '-cp', str(builder.D8_JAR), 'com.android.tools.r8.D8',
-                     '--min-api', '19', '--output', str(dex_dir), *map(str, sorted(extra.rglob('*.class')))])
-        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'), 'disassemble',
-                     '--api', '19', '--jobs', '1', '--output', str(guest), str(dex_dir / 'classes.dex')])
         output = work / 'classes.dex'
         roots = [str(work / (source + '-smali')) for source in recipe] + [str(guest)]
         builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'smali.jar'), 'assemble',
@@ -167,6 +158,9 @@ def build(measure=False):
         })
         recipe['framework2.jar'] = tuple(sorted(set(recipe['framework2.jar']) | {'Lcom/android/internal/util/FastMath;'}))
         recipe['framework.jar'] = tuple(sorted(set(recipe['framework.jar']) | hierarchy))
+    if measure:
+        recipe[policy_rom.SOURCE] = (policy_rom.OWNER,)
+        policy_rom.check_selection(recipe)
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
             tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:
@@ -176,9 +170,11 @@ def build(measure=False):
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
         if measure:
             _, custom = builder.compile_guest_java(Path(work))
-            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}) + ('Landroid/view/LocalLayoutInflater;',))
+            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}))
         else:
             selected = builder.compile_expected_class_names(recipe, Path(work))
+    if measure:
+        policy_rom.check_selection(recipe, dex)
     if builder.class_names(dex) != selected:
         raise builder.BuildError('generated classes differ from recipe')
     resources = builder.resource_payload(builder.load_resources())
@@ -206,7 +202,11 @@ def build(measure=False):
 
 
 def boot_metadata(jar, dex, recipe):
-    metadata = builder.boot_metadata(jar, dex, recipe)
+    metadata = builder.boot_metadata(jar, dex,
+        {source: owners for source, owners in recipe.items() if source != policy_rom.SOURCE})
+    if policy_rom.SOURCE in recipe:
+        metadata['sources'].insert(-1, dict(source_project='platform/frameworks/base',
+            source_jar=policy_rom.SOURCE, source_jar_sha256=policy_rom.SHA256))
     with zipfile.ZipFile(io.BytesIO(jar)) as archive:
         if 'META-INF/ogplay/vm-pairing.json' in archive.namelist():
             metadata['vm_pairing'] = dict(entry='META-INF/ogplay/vm-pairing.json',
@@ -231,9 +231,10 @@ def boot_metadata(jar, dex, recipe):
     if 'theme_projection' in metadata:
         review = Path(__file__).with_name('view-video-adapter.json')
         metadata['experimental_video_adapter'] = dict(review=str(review.relative_to(builder.ROOT)), sha256=builder.file_sha256(review), entry='META-INF/ogplay/view-video-adapter.json', rom_algorithm_credit=False)
-        companion = Path(__file__).with_name('experimental-java') / 'android/view/LocalLayoutInflater.java'
-        metadata['experimental_inflater'] = dict(companion=str(companion.relative_to(builder.ROOT)),
-            sha256=builder.file_sha256(companion), protocol='AOSP 4.4 PhoneLayoutInflater; absent from pinned ROM')
+        metadata['experimental_inflater'] = dict(source=policy_rom.SOURCE,
+            sha256=policy_rom.SHA256, owner=policy_rom.OWNER,
+            reference_sha256=builder.file_sha256(policy_rom.REFERENCE),
+            baseline_sha256=builder.file_sha256(policy_rom.BASELINE))
     return metadata
 
 

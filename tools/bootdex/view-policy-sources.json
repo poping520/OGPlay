@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "classes": [
+    {
+      "owner": "Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/android.policy.jar",
+      "rom_input_sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+      "smali_sha256": "827951740041f704891720b39197691e69a508c36525e0602d2fa85ec8d6f606",
+      "surface": "tools/bootdex/policy.surface.json",
+      "surface_sha256": "ce5cd51efe5338ce2ae45c210847525040cd17a61690e226413e92d45bedef50",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "b360d71f1e6f7781353217cf9f90c763a02312b9b0624c3c8e0edf6bdd1e68da",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65537,
+          "body_sha256": "fdeba161d1642332780c13a657d4d352c34a79ae924874b10f9e7933788faf8d",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/view/LayoutInflater;Landroid/content/Context;)V",
+          "flags": 65540,
+          "body_sha256": "2e9091b627caf086810ee663df5cff19d4f76f1972b6130315f5d05ed565aaf4",
+          "source": "rom"
+        },
+        {
+          "signature": "cloneInContext(Landroid/content/Context;)Landroid/view/LayoutInflater;",
+          "flags": 1,
+          "body_sha256": "f7fc89987af83aa9ccf0d551768f18449d10c4528b75ea600cf3e2825af2c62a",
+          "source": "rom"
+        },
+        {
+          "signature": "onCreateView(Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;",
+          "flags": 4,
+          "body_sha256": "a25e1819536b7be14749178f1a881d4806c57d5c7376b1daf30147f09a72734e",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "sClassPrefixList:[Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

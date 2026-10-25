@@ -420,7 +420,9 @@ View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属�
 createView 为受审反射 adapter，真实虚派 guest ClassLoader.loadClass/Class.asSubclass/
 getConstructor/Constructor.newInstance。sConstructorMap、mFilterMap、mConstructorArgs 为唯一
 Java 状态，参数恢复及 onFinishInflate 时序归 ROM；异常类型/文本/cause 沿 ROM 分支。
-固定 ROM 无 PhoneLayoutInflater，独立实验 companion 只实现 AOSP 前缀顺序和复制克隆协议。
+实验 Context 服务直接构造同 ROM policy 的 PhoneLayoutInflater，前缀顺序与克隆执行原版；
+仅准入该类，独立 policy reference/基线及成员、父成员、clinit 审计均须通过。
+不加载 Policy/PhoneWindow/PhoneWindowManager 或 Binder；生产 Legacy 配方保持。
 Resources.getLayout 在当前 APK 选择已知 layout，返回既有受检 XmlBlock.Parser；不读系统 XML。
 Window XML 先膨胀到未发布 FrameLayout，完整成功后转移到稳定 mContentParent；失败保留
 旧 Java 内容及旧代投影。View/LP 重载仍沿真实 Java hierarchy，无第二份几何写入。

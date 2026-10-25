@@ -1767,12 +1767,14 @@ Decl Declare_android_content_Context(const Context &context) {
                 constexpr auto key = "experimental_layout_inflater";
                 const auto cached = context->singletons.find(key);
                 if (cached != context->singletons.end()) return dx::VmValue::Ref(cached->second);
-                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/LocalLayoutInflater;");
+                const auto type =
+                    call.vm.Linker().ResolveDescriptor("Lcom/android/internal/policy/impl/PhoneLayoutInflater;");
                 const auto initialized = call.vm.EnsureClassInitialized(type);
                 if (initialized.exception.IsValid())
                     throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
                                           initialized.exception_message, initialized.exception};
-                const auto value = call.vm.NewIntrinsicInstance("Landroid/view/LocalLayoutInflater;");
+                const auto value =
+                    call.vm.NewIntrinsicInstance("Lcom/android/internal/policy/impl/PhoneLayoutInflater;");
                 const auto roots = call.vm.ProtectReferences(std::array{value});
                 const auto init = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
                 const auto result =

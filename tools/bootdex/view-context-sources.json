@@ -555,11 +555,11 @@
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "source": "overlay",
           "review": {
-            "reason": "DVM-289 preserve bounded Context platform provider; process base theme adapter",
-            "inputs": "current process Context and existing provider arguments",
-            "outputs": "real existing process resources/services; base theme initialized with ROM selectDefaultTheme/newTheme/applyStyle",
-            "state_owner": "ROM Theme plus native ThemeToken; singletons retain only Java object identity; no duplicate theme values",
-            "failure_boundary": "unknown theme/resource/service and experimental inflater explicitly fail; no system ContextImpl"
+            "reason": "DVM-322 retain bounded process services and construct the hash-locked same-ROM PhoneLayoutInflater directly; no Policy factory",
+            "inputs": "current process Context receiver and registered service name",
+            "outputs": "existing process services; layout_inflater returns the cached ROM PhoneLayoutInflater initialized with the receiver; ContextThemeWrapper clones via ROM cloneInContext",
+            "state_owner": "host singleton cache owns service identity only; ROM owns inflater context, factories, filter, constructor cache and argument array",
+            "failure_boundary": "registered unsupported services explicitly fail; unknown names retain API null result; no ContextImpl, Policy, PhoneWindow, Binder or WMS"
           }
         },
         {

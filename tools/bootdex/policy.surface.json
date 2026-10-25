@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "classes": [
+    {
+      "descriptor": "Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
+      "source": "bootdex",
+      "superclass": "Landroid/view/LayoutInflater;",
+      "interfaces": [],
+      "access_flags": 1,
+      "methods": [
+        {
+          "name": "<clinit>",
+          "descriptor": "()V",
+          "access_flags": 65544,
+          "status": "implemented",
+          "binding": "bytecode",
+          "origin": "bytecode",
+          "overridable": false
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Landroid/content/Context;)V",
+          "access_flags": 65537,
+          "status": "implemented",
+          "binding": "bytecode",
+          "origin": "bytecode",
+          "overridable": true
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(Landroid/view/LayoutInflater;Landroid/content/Context;)V",
+          "access_flags": 65540,
+          "status": "implemented",
+          "binding": "bytecode",
+          "origin": "bytecode",
+          "overridable": true
+        },
+        {
+          "name": "cloneInContext",
+          "descriptor": "(Landroid/content/Context;)Landroid/view/LayoutInflater;",
+          "access_flags": 1,
+          "status": "implemented",
+          "binding": "bytecode",
+          "origin": "bytecode",
+          "overridable": true
+        },
+        {
+          "name": "onCreateView",
+          "descriptor": "(Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;",
+          "access_flags": 4,
+          "status": "implemented",
+          "binding": "bytecode",
+          "origin": "bytecode",
+          "overridable": true
+        }
+      ],
+      "fields": [
+        {
+          "name": "sClassPrefixList",
+          "descriptor": "[Ljava/lang/String;",
+          "access_flags": 26,
+          "status": "implemented",
+          "static": true
+        }
+      ]
+    }
+  ]
+}

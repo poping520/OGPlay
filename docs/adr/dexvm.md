@@ -2336,3 +2336,26 @@ owner collector 将事实随完整批次发布到 synthetic partition root，批
 窗口事实独立变化时，owner 可通过空节点窗口事实批次重发最后完整几何并推进
 epoch，不能消费待布局请求或收集尚未测量的 Java 子树；正常 owner 屏障仍负责这些
 Java 变化。隐藏窗口的 Surface 泵只退役 holder，不为销毁回调额外测量。
+
+### VD-12-1 同 ROM policy 与 Inflater 替换（2026-10-26）
+
+[DVM-322](../tasks/dexvm/DVM-322.md) 落实决定6，仅实验配对选择哈希锁定的
+`android.policy.jar` 中 PhoneLayoutInflater；生产 BootDex 字节、默认 Legacy 与决定7不变。
+同 ROM 审计可由 `.local/analysis/vd-121/audit.py` 重算，结果为 `policy-audit.json`：
+五 JAR 无重复 class_def，manifest/DEX 打包日与 JDK 相同；共享类型、方法及字段引用按
+符号映射核对，不能把不同 DEX 的局部 ID 数值相同当成同源证明。外部引用本身没有
+flags/方法体，证据列出唯一声明的 flags、方法体摘要及签名解析，无重复定义可供跨包
+方法体比较；这些是与同批 ROM 一致的机器证据，不是共同构建的密码学认证。
+
+PhoneLayoutInflater 全部5个入口方法、父类/接口初始化及被调 ROM 符号闭包无
+Policy/PolicyManager/PhoneWindow/PhoneWindowManager、ServiceManager/IWindowManager 或
+Binder 路径。native、abstract 与开放虚派边界明确列账；任意应用覆写并非封闭世界，
+实际反射仍走 ADR-0160 已审 createView adapter，普通虚派沿 ADR-0159 dispatch ledger。
+只新增该类的完整 ROM shape、原 clinit、两构造、cloneInContext 与 onCreateView，
+不引入其他 policy 类。Context 服务直接构造该 ROM 类，删除实验 LocalLayoutInflater
+companion；克隆、前缀与状态仍归 Java。
+
+第五来源在 selector/形状工具与实验 composer 中校验完整来源冲突及 SHA-256；
+独立 `policy-reference.json`/`policy-baseline.json` 校验 ROM 和最终 DEX 的完整 own shape，
+不修改 api19-skeleton 或既有 framework baseline。成员、父成员、clinit、native 与
+“不伪造成功”规则均未放宽；本单无按常设原则自行调整审计适用范围的事项。

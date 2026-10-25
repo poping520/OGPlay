@@ -15,7 +15,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import build_bootdex as builder
 
-JARS = ('core.jar', 'framework.jar', 'framework2.jar', 'ext.jar')
+import policy_rom
+
+JARS = policy_rom.JARS
 OBJECT = re.compile(r'L[\w$/]+;')
 
 
@@ -80,6 +82,7 @@ def main():
         for gap in scan['gaps']:
             if gap['classification']=='api19-present-missing':referenced.add(gap['owner'])
     if scan_count!=summary['scanned']:raise ValueError('sample scan count mismatch')
+    policy_rom.verify_sources()
     candidates={};rejected=[];conflicts=[];inputs={}
     for jar in JARS:
         path=builder.source_path(jar);digest=builder.file_sha256(path);inputs[jar]=digest

@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "source": "android.policy.jar",
+  "sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+  "classes": {
+    "Lcom/android/internal/policy/impl/PhoneLayoutInflater;": {
+      "superclass": "Landroid/view/LayoutInflater;",
+      "interfaces": [],
+      "access_flags": 1,
+      "methods": [
+        [
+          "<clinit>",
+          "()V",
+          65544
+        ],
+        [
+          "<init>",
+          "(Landroid/content/Context;)V",
+          65537
+        ],
+        [
+          "<init>",
+          "(Landroid/view/LayoutInflater;Landroid/content/Context;)V",
+          65540
+        ],
+        [
+          "cloneInContext",
+          "(Landroid/content/Context;)Landroid/view/LayoutInflater;",
+          1
+        ],
+        [
+          "onCreateView",
+          "(Ljava/lang/String;Landroid/util/AttributeSet;)Landroid/view/View;",
+          4
+        ]
+      ],
+      "fields": [
+        [
+          "sClassPrefixList",
+          "[Ljava/lang/String;",
+          26
+        ]
+      ]
+    }
+  }
+}

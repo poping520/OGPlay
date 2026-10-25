@@ -4,6 +4,8 @@
 #include "ogplay/runtime/common/guest_memory_facts.h"
 #include "ogplay/runtime/boundary/sensor_directory.h"
 
+#include "ogplay/core/logger.h"
+
 #include <deque>
 
 #include <array>
@@ -1042,6 +1044,15 @@ struct DexVmAndroidContext final {
   std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_height_field;
   // Weak window identities; counters survive schedule invalidation, never root guest objects.
   std::map<dexvm::VmObjectRef, std::map<std::string, std::uint64_t>> ui_traversal_diagnostics;
+
+  // Process diagnostics contain values only: survive window retirement without GC roots.
+  struct UiDiagnosticCount final {
+      std::uint64_t count{}, epoch{}, tick{};
+  };
+
+  std::map<std::string, UiDiagnosticCount> ui_diagnostic_totals;
+  std::map<std::uint32_t, std::string> ui_producer_diagnostics;
+  bool ui_diagnostic_summary_emitted{};
 };
 
 void RegisterAndroidAudioTrackStateTable(
@@ -1088,6 +1099,14 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
 // Owner-only bounded input seam: Java scrollBy/clamp, then projection-only publication.
 void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                          std::int32_t delta_y, std::int32_t delta_x = 0);
+
+void RecordAndroidSurfaceDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context, std::string_view category,
+                                    const std::string& reason, std::vector<core::LogField> fields = {},
+                                    const core::RateLimitPolicy& rate_limit = {});
+void RecordAndroidProducerDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
+                                     const std::string& reason);
+// Owner stop boundary, before callbacks/teardown; idempotent, never executes guest code.
+void SummarizeAndroidUiDiagnostics(dexvm::Interpreter& vm, DexVmAndroidContext& context);
 
 void RecordAndroidTraversalDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef root,
                                       const std::string& reason);

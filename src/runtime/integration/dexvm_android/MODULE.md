@@ -722,3 +722,10 @@ Surface 回调的 holder 分型和真实尺寸；轮询决策按对象限流，�
 JavaTraversal 的 `ui.traversal` 按弱窗口根/原因保存计数，首次输出结构化 root、epoch、
 身份及 metrics；后续仅累计，窗口退役/GC/UI 重置清理。覆盖屏障跳过、clean、延期、
 回调身份取消及投影提交/异常；不改变失败、延期或旧完整发布协议。Legacy 不输出或计数。
+
+DVM-320：JavaTraversal 的 producer 重评估只读 Java 父链、绑定、可见性、测量尺寸及窗口，
+原因或事实变化时输出 `ui.surface.producer_state`，绕过默认 first-and-count；相同事实不刷屏。
+进程级原因累计保存 count/最后 epoch/tick，窗口退役不清除；producer 历史只保存值，
+不持有 guest 强根，已退役对象仅报告 last_observed。owner 退出边界调用幂等汇总，
+输出 `ui.diagnostics.summary/reason/producer`，不执行 guest、不改变选择或失败语义。
+Legacy 不采集、不输出；原按弱根的遍历计数清理协议保持。

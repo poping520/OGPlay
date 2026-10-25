@@ -1474,13 +1474,15 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                              : !visible         ? " outside visible projection"
                                                 : " outside content root"));
                 if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                    if (auto* logger = bindings_.bridge->Vm().Log())
-                        logger->Write(
-                            core::LogLevel::info, "ui.surface.projection",
-                            std::string(visible && current ? "visible producer "
-                                                           : "producer outside visible projection ") +
-                                std::to_string(state->view.Value()),
-                            {}, {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
+                    runtime::RecordAndroidSurfaceDiagnostic(
+                        bindings_.bridge->Vm(), context, "ui.surface.projection",
+                        std::string(visible && current ? "visible producer " : "producer outside visible projection ") +
+                            std::to_string(state->view.Value()),
+                        {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
+                runtime::RecordAndroidProducerDiagnostic(bindings_.bridge->Vm(), context, state->view,
+                                                         visible && current ? "selected"
+                                                         : !visible         ? "outside visible projection"
+                                                                            : "outside content root");
                 if (!visible || !current) continue;
                 if (selected) Fail("multiple intrinsic GL producers in one content tree are unsupported");
                 selected = state;
@@ -1612,11 +1614,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             });
         };
         if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            if (auto* logger = vm.Log())
-                logger->Write(
-                    core::LogLevel::info, "ui.surface.glthread", "GLThread start", {},
-                    {{"view", std::uint64_t(state->view.Value())}, {"surface_available", state->surface_available}},
-                    {.mode = core::RateLimitMode::none});
+            runtime::RecordAndroidSurfaceDiagnostic(
+                vm, *bindings_.context, "ui.surface.glthread", "GLThread start",
+                {{"view", std::uint64_t(state->view.Value())}, {"surface_available", state->surface_available}},
+                {.mode = core::RateLimitMode::none});
         try { CallOnView(worker->object, "start", "()V", {}); }
         catch (...) {
             state->wake = {}; state->pause = {};
@@ -1803,13 +1804,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             return array;
         };
         if (c.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            if (auto* logger = vm.Log())
-                logger->Write(core::LogLevel::info, "ui.surface.egl", "EGL creation request", {},
-                              {{"view", std::uint64_t(r.view.Value())},
-                               {"new_context", !r.renderer_context.IsValid()},
-                               {"width", std::uint64_t(c.surface_width)},
-                               {"height", std::uint64_t(c.surface_height)}},
-                              {.mode = core::RateLimitMode::none});
+            runtime::RecordAndroidSurfaceDiagnostic(vm, c, "ui.surface.egl", "EGL creation request",
+                                                    {{"view", std::uint64_t(r.view.Value())},
+                                                     {"new_context", !r.renderer_context.IsValid()},
+                                                     {"width", std::uint64_t(c.surface_width)},
+                                                     {"height", std::uint64_t(c.surface_height)}},
+                                                    {.mode = core::RateLimitMode::none});
         if (!r.renderer_context.IsValid()) {
         const auto type = vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLContext;");
         const auto get = vm.Linker().FindDirectMethod(type, "getEGL", "()Ljavax/microedition/khronos/egl/EGL;");
@@ -2038,6 +2038,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 }
             }
         };
+        attempt([&] { runtime::SummarizeAndroidUiDiagnostics(bindings_.bridge->Vm(), *bindings_.context); });
         phase("teardown.begin");
         const bool was_running = reason == DexProcessStopReason::host_shutdown &&
             state_ == LifecycleRunState::running && live();

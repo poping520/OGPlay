@@ -977,11 +977,10 @@ std::optional<std::string> DispatchHolderCallbacks(
     for (const auto holder_handle : holders) {
         if (!current(holder_handle)) {
             if (java)
-                if (auto* logger = vm.Log())
-                    logger->Write(core::LogLevel::info, "ui.surface.holder",
-                                  "holder rejected " + std::to_string(holder_handle), {},
-                                  {{"holder", std::uint64_t(holder_handle)},
-                                   {"reason", std::string("stale owner/root/mount/buffer")}});
+                RecordAndroidSurfaceDiagnostic(vm, context, "ui.surface.holder",
+                                               "holder rejected " + std::to_string(holder_handle),
+                                               {{"holder", std::uint64_t(holder_handle)},
+                                                {"reason", std::string("stale owner/root/mount/buffer")}});
             continue;
         }
         if (phase == SurfaceHolderPhase::created) {
@@ -999,12 +998,12 @@ std::optional<std::string> DispatchHolderCallbacks(
             // AOSP sets mSurfaceCreated before invoking callbacks.
             context.active_surface_holders.insert(holder_handle);
             if (java) {
-                if (auto* logger = vm.Log())
-                    logger->Write(core::LogLevel::info, "ui.surface.holder", "holder activated", {},
-                                  {{"holder", std::uint64_t(holder_handle)},
-                                   {"kind", std::string(holder_handle == window_holder.Value() ? "window" : "view")},
-                                   {"generation", std::uint64_t(generation)}},
-                                  {.mode = core::RateLimitMode::none});
+                RecordAndroidSurfaceDiagnostic(
+                    vm, context, "ui.surface.holder", "holder activated",
+                    {{"holder", std::uint64_t(holder_handle)},
+                     {"kind", std::string(holder_handle == window_holder.Value() ? "window" : "view")},
+                     {"generation", std::uint64_t(generation)}},
+                    {.mode = core::RateLimitMode::none});
                 if (holder_handle == window_holder.Value())
                     context.active_window_holder_generation = window_generation;
                 else
@@ -1066,23 +1065,22 @@ std::optional<std::string> DispatchHolderCallbacks(
                 android_intrinsics::PublishSurfaceHolderFrame(vm, context, dx::VmObjectRef(holder_handle));
             } catch (const dx::VmJavaThrow& error) {
                 if (java)
-                    if (auto* logger = vm.Log())
-                        logger->Write(core::LogLevel::info, "ui.surface.holder", "holder buffer rejected", {},
-                                      {{"holder", std::uint64_t(holder_handle)}, {"reason", error.message}});
+                    RecordAndroidSurfaceDiagnostic(
+                        vm, context, "ui.surface.holder", "holder buffer rejected",
+                        {{"holder", std::uint64_t(holder_handle)}, {"reason", error.message}});
                 return error.descriptor + ": " + error.message;
             }
         }
 
         if (java)
-            if (auto* logger = vm.Log())
-                logger->Write(
-                    core::LogLevel::info, "ui.surface.callback", "Surface callback dispatch", {},
-                    {{"holder", std::uint64_t(holder_handle)},
-                     {"phase", std::string(name)},
-                     {"kind", std::string(context.window_surface_holders.contains(holder_handle) ? "window" : "view")},
-                     {"width", std::uint64_t(width)},
-                     {"height", std::uint64_t(height)}},
-                    {.mode = core::RateLimitMode::none});
+            RecordAndroidSurfaceDiagnostic(
+                vm, context, "ui.surface.callback", "Surface callback dispatch",
+                {{"holder", std::uint64_t(holder_handle)},
+                 {"phase", std::string(name)},
+                 {"kind", std::string(context.window_surface_holders.contains(holder_handle) ? "window" : "view")},
+                 {"width", std::uint64_t(width)},
+                 {"height", std::uint64_t(height)}},
+                {.mode = core::RateLimitMode::none});
         std::vector<dx::VmObjectRef> callbacks;
         if (transaction_callbacks) {
             const auto found = transaction_callbacks->find(holder_handle);
@@ -1250,9 +1248,9 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
         if (SurfaceOwnerCurrent(vm, context, identity)) {
             holders.push_back(holder.Value());
             identities.emplace(holder.Value(), identity);
-        } else if (auto* logger = vm.Log()) {
-            logger->Write(
-                core::LogLevel::info, "ui.surface.holder", "holder inactive " + std::to_string(holder.Value()), {},
+        } else {
+            RecordAndroidSurfaceDiagnostic(
+                vm, context, "ui.surface.holder", "holder inactive " + std::to_string(holder.Value()),
                 {{"holder", std::uint64_t(holder.Value())},
                  {"view", std::uint64_t(view)},
                  {"reason", std::string(identity.mounts.empty() || identity.mounts.back().first != identity.root

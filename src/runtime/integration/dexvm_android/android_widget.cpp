@@ -1432,6 +1432,18 @@ Decl ExperimentalImageView(const Context& context) {
 
 Decl ExperimentalTextView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/TextView;", "Landroid/view/View;");
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        builder.OverrideMethod("onWindowFocusChanged", "(Z)V", [](dx::IntrinsicContext& call) {
+            const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto index = call.vm.Linker().FindVtableIndex(type, "onWindowFocusChanged", "(Z)V");
+            const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable.at(*index),
+                                             std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+            if (result.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                      result.exception_message, result.exception};
+            return dx::VmValue::Void();
+        });
+    }
     const auto chain = [](int kind) {
         return dx::IntrinsicHandler([kind](dx::IntrinsicContext& c) {
             const auto method =

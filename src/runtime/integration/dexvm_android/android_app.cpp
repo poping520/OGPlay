@@ -1102,7 +1102,16 @@ void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const SurfaceHolderPhase phase) {
-    const auto pending = context.surface_traversal_pending;
+    auto pending = context.surface_traversal_pending;
+    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && phase == SurfaceHolderPhase::changed) {
+        try {
+            static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
+                                                       AndroidUiTraversalPhase::ResolveAndNotifySizes));
+        } catch (const dexvm::VmJavaThrow& error) {
+            return error.descriptor + ": " + error.message;
+        }
+        pending = context.surface_traversal_pending;
+    }
     std::vector<std::uint32_t> holders;
     if (phase == SurfaceHolderPhase::created) {
         context.managed_host_surface_open = true;
@@ -1112,6 +1121,8 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
         } catch (const dexvm::VmJavaThrow& error) {
             return error.descriptor + ": " + error.message;
         }
+        if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+            pending = context.surface_traversal_pending;
         holders = AttachedHolderHandles(context);
         if (context.window_surface_callback.IsValid())
             holders.push_back(context.window_surface_holder.Value());

@@ -203,7 +203,8 @@ TEST_CASE("DVM-296 bitmap specs five raster targets immutable epochs versions an
         PaintBitmap(f, bitmap, 0xff00ff00U);
         f.On(image, "setImageAlpha", "(I)V", {VmValue::Int(128)});
         CHECK(f.context->ui_tree.PublishedProjection() == old);
-        CHECK(tick());
+        // Pixel/alpha changes freeze a new render snapshot without resolving layout.
+        CHECK_FALSE(tick());
         const auto next = f.context->ui_tree.PublishedProjection();
         CHECK(next->Get(node)->image_bitmap != old_pixels);
         CHECK(next->Get(node)->image_bitmap->rgba8[1] == 255);

@@ -420,6 +420,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             }
             // Surface geometry precedes renderer callbacks (GLSurfaceView
             // semantics; the pilot's onSurfaceCreated spins until size != -1).
+            EnsureOwnerFrame(true, false);
             SynchronizeContentView();
 
             // A title that brings its own GLSurfaceView is waiting on these
@@ -427,6 +428,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::created);
             DispatchSurfaceHolder(runtime::SurfaceHolderPhase::changed);
             runtime::DispatchAndroidGlobalLayout(vm, context);
+            EnsureOwnerFrame(false);
 
             // ViewRootImpl establishes and sizes the Surface during its first
             // traversal; window focus arrives later through a separate
@@ -487,6 +489,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         try {
             CallActivity("onResume", "()V", {});
             SetWindowFocus(true);
+            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+                EnsureOwnerFrame(true);
+                SynchronizeContentView();
+                EnsureOwnerFrame(false);
+            }
             suspended_ = false;
             previous_step_ns_ = 0;
             if (bindings_.diagnostics) bindings_.diagnostics->SetLifecyclePhase("running", false);
@@ -706,6 +713,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         previous_step_ns_ = 0;
     }
 
+    void DexActivityLifecycle::EnsureOwnerFrame(const bool begin_tick, const bool notify_global) {
+        auto& context = *bindings_.context;
+        if (context.ui_traversal_owner != runtime::AndroidUiTraversalOwner::JavaTraversal) return;
+        const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
+        runtime::RefreshAndroidImageDrawables(context);
+        runtime::RefreshAndroidSurfaceFrames(context);
+        if (runtime::EnsureAndroidUiTraversal(bindings_.bridge->Vm(), context,
+                                              begin_tick ? runtime::AndroidUiTraversalReason::OwnerTick
+                                                         : runtime::AndroidUiTraversalReason::BeforePresent,
+                                              runtime::AndroidUiTraversalPhase::ResolveAndNotifySizes) &&
+            notify_global)
+            runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
+        // Global-layout callbacks are mutations too. This is a barrier in the same tick.
+        static_cast<void>(runtime::EnsureAndroidUiTraversal(bindings_.bridge->Vm(), context,
+                                                            runtime::AndroidUiTraversalReason::BeforePresent,
+                                                            runtime::AndroidUiTraversalPhase::ResolveOnly));
+        runtime::PublishAndroidPresentation(context);
+    }
+
     LifecycleFrameState DexActivityLifecycle::StepFrame() {
         if (state_ != LifecycleRunState::running) {
             Fail("dex_activity lifecycle is not running");
@@ -741,6 +767,28 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 if (activity_started_) SetWindowFocus(true);
                 initial_focus_pending_ = false;
             }
+            EnsureOwnerFrame(false);
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
+                context.renderer.IsValid()) {
+                const auto snapshot = runtime::AcquireAndroidPresentation(context);
+                if (snapshot && snapshot->presentation_epoch != submitted_presentation_epoch_) {
+                    context.gl_surface_render_requests[context.gl_surface_renderer_view.Value()] = true;
+                    submitted_presentation_epoch_ = snapshot->presentation_epoch;
+                }
+            }
+            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
+                !context.renderer.IsValid() && context.active_surface_holders.empty() &&
+                !runtime::AnyVideoPlaying(context) && context.holder_canvases.empty() && context.session) {
+                const auto snapshot = runtime::AcquireAndroidPresentation(context);
+                if (snapshot && snapshot->presentation_epoch != submitted_presentation_epoch_) {
+                    const auto pixels = static_cast<std::size_t>(context.surface_width) * context.surface_height;
+                    std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);
+                    for (std::size_t pixel = 0; pixel < pixels; ++pixel)
+                        rgba8[pixel * 4U + 3U] = 0xffU;
+                    context.session->PublishSoftwareFrame(std::move(rgba8));
+                    submitted_presentation_epoch_ = snapshot->presentation_epoch;
+                }
+            }
             if (context.renderer.IsValid()) {
                 RunOnRenderer([this] {
                   auto& context = *bindings_.context;
@@ -763,15 +811,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     }
                   }
                 });
-            } else if (!bindings_.context->renderer.IsValid() &&
-                       bindings_.context->active_surface_holders.empty() &&
+            } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy &&
+                       !bindings_.context->renderer.IsValid() && bindings_.context->active_surface_holders.empty() &&
                        runtime::AnyVideoPlaying(*bindings_.context) == false &&
                        bindings_.context->holder_canvases.empty() &&
-                       !bindings_.context->ui_tree.Get(
-                           runtime::ActivityContentRoot(*bindings_.context))->children.empty() &&
+                       !bindings_.context->ui_tree.Get(runtime::ActivityContentRoot(*bindings_.context))
+                            ->children.empty() &&
                        bindings_.context->session != nullptr &&
-                       bindings_.context->ui_tree.Get(
-                           bindings_.context->ui_tree.Root())->draw_dirty) {
+                       bindings_.context->ui_tree.Get(bindings_.context->ui_tree.Root())->draw_dirty) {
                 // A View-only Activity has no GLES producer to create the
                 // boundary frame that the frontend uses as the UI composition
                 // trigger. Publish an opaque window-sized software base when
@@ -1384,7 +1431,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed = runtime::EnsureAndroidUiTraversal(
-            bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalReason::OwnerTick,
+            bindings_.bridge->Vm(), context,
+            context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal
+                ? runtime::AndroidUiTraversalReason::BeforeSurfaceCallbacks
+                : runtime::AndroidUiTraversalReason::OwnerTick,
             runtime::AndroidUiTraversalPhase::ResolveAndNotifySizes);
         if (!content_changed && !layout_changed && !layout_dirty &&
             context.surface_traversal_pending.empty()) return;

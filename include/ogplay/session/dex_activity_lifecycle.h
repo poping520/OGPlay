@@ -115,6 +115,8 @@ public:
     [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
 
 private:
+    void EnsureOwnerFrame(bool begin_tick, bool notify_global = true);
+    std::uint64_t submitted_presentation_epoch_{};
     void CallActivity(const std::string& name, const std::string& descriptor,
                       std::vector<runtime::dexvm::VmValue> arguments);
     runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver,

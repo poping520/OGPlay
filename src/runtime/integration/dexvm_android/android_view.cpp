@@ -1523,6 +1523,19 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
             });
         }
         builder.OverrideMethod(
+            "onWindowVisibilityChanged", "(I)V",
+            [](dx::IntrinsicContext& call) {
+                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+                const auto index = call.vm.Linker().FindVtableIndex(type, "onWindowVisibilityChanged", "(I)V");
+                const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable.at(*index),
+                                                 std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+                if (result.exception.IsValid())
+                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                          result.exception_message, result.exception};
+                return dx::VmValue::Void();
+            },
+            dx::kAccProtected);
+        builder.OverrideMethod(
             "setFrame", "(IIII)Z",
             [](dx::IntrinsicContext& call) {
                 const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
@@ -2008,8 +2021,9 @@ Decl Declare_android_view_View(const Context& context) {
     builder.VirtualMethod("onSizeChanged", "(IIII)V",
         [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
         dx::kAccProtected);
-    builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
+        builder.VirtualMethod("onWindowFocusChanged", "(Z)V",
+                              [](dx::IntrinsicContext&) { return dx::VmValue::Void(); });
     constexpr std::int32_t kScrollbarsStyleMask = 0x03000000;
     builder.VirtualMethod("setScrollBarStyle", "(I)V",
         [view_flags](dx::IntrinsicContext& call) {
@@ -2022,7 +2036,31 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Void();
         });
     builder.VirtualMethod("onWindowVisibilityChanged", "(I)V", WidgetNoopHandler());
-    builder.VirtualMethod("getWindowVisibility", "()I", [context](dx::IntrinsicContext& call) {
+    const auto managed_attached = [context](dx::IntrinsicContext& call) {
+        if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return true;
+        dx::IntrinsicCall fields(call);
+        auto view = call.receiver;
+        for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+            if (view == AndroidUiTraversalRoot(call.vm, *context)) return true;
+            const auto node = FindViewUiNode(*context, view.Value());
+            for (const auto& record : context->activity_stack)
+                if (node && record.window_root == node) return true;
+            view = fields.GetRef(context->view_java_hierarchy_fields->parent, view);
+        }
+        return false;
+    };
+    builder.VirtualMethod("getWindowVisibility", "()I", [context, managed_attached](dx::IntrinsicContext& call) {
+        if (!managed_attached(call)) return dx::VmValue::Int(8);
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            dx::IntrinsicCall fields(call);
+            auto view = call.receiver;
+            for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+                const auto node = FindViewUiNode(*context, view.Value());
+                if (node && !context->ui_tree.Get(*node)->window_visible) return dx::VmValue::Int(4);
+                view = fields.GetRef(context->view_java_hierarchy_fields->parent, view);
+            }
+            return dx::VmValue::Int(0);
+        }
         const auto node = FindViewUiNode(*context, call.receiver.Value());
         if (!node || !context->ui_tree.IsAttached(*node)) return dx::VmValue::Int(8);
         auto current = node;
@@ -2039,8 +2077,8 @@ Decl Declare_android_view_View(const Context& context) {
                 dx::IntrinsicCall(call).GetInt(view_flags) &
                 kScrollbarsStyleMask);
         });
-    builder.VirtualMethod("hasWindowFocus", "()Z", [context](dx::IntrinsicContext& call) {
-        if (!context->window_has_focus.load()) {
+    builder.VirtualMethod("hasWindowFocus", "()Z", [context, managed_attached](dx::IntrinsicContext& call) {
+        if (!managed_attached(call) || !context->window_has_focus.load()) {
             return dx::VmValue::Int(0);
         }
         const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
@@ -2325,8 +2363,6 @@ Decl Declare_android_view_View(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "View hardware, animation or attached system state is not supported"};
         }
-        if (AndroidViewBelongsToRoot(call.vm, *context, call.receiver))
-            context->ui_window_schedules[AndroidUiTraversalRoot(call.vm, *context)].published.reset();
         context->ui_tree.MarkDrawDirty(EnsureViewUiNode(*context, call.receiver, ui::UiClass::View));
         return dx::VmValue::Void();
     });
@@ -2355,6 +2391,19 @@ Decl Declare_android_view_View(const Context& context) {
         dx::kAccPrivate);
     builder.VirtualMethod("notifySubtreeAccessibilityStateChangedIfNeeded", "()V", software_dirty);
     if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        builder.VirtualMethod("onWindowFocusChanged", "(Z)V", [context, software_dirty](dx::IntrinsicContext& call) {
+            static_cast<void>(software_dirty(call));
+            if (!call.arguments[0].AsInt()) {
+                dx::IntrinsicCall fields(call);
+                const auto flags = context->view_java_measure_fields->flags[0];
+                // PFLAG_PRESSED / PFLAG_PREPRESSED: managed input has no IME or long-press timer.
+                fields.SetInt(flags, fields.GetInt(flags) & ~0x02004000);
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "cancelPendingInputEvents", "()V"));
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "onFocusLost", "()V"));
+            }
+            static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "refreshDrawableState", "()V"));
+            return dx::VmValue::Void();
+        });
         builder.VirtualMethod("needGlobalAttributesUpdate", "(Z)V", software_dirty, dx::kAccNone);
         builder.DirectMethod(
             "initialAwakenScrollBars", "()Z",
@@ -2531,16 +2580,44 @@ Decl Declare_android_view_View(const Context& context) {
     builder.FinalMethod("getBottom", "()I", geometry([](const ui::UiNode& node) {
         return node.frame.bottom;
     }));
-    builder.VirtualMethod("getLocationInWindow", "([I)V", [context](dx::IntrinsicContext& call) {
+    const auto location = [context](dx::IntrinsicContext& call) {
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !call.arguments[0].ref.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "location requires two entries"};
         const auto output = dx::IntrinsicCall(call).NonNullRef(0, "location");
         if (call.vm.Model().ArrayLength(output) < 2)
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "location requires two entries"};
-        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
-        const auto& frame = context->ui_tree.Get(node)->screen_frame;
-        call.vm.Model().SetPrimitiveElement(output, 0, static_cast<std::uint32_t>(frame.left));
-        call.vm.Model().SetPrimitiveElement(output, 1, static_cast<std::uint32_t>(frame.top));
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            const auto geometry = ReadAndroidUiGeometry(call.vm, *context);
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            if (!node || !geometry->IsAttached(*node) || !AndroidViewBelongsToRoot(call.vm, *context, call.receiver)) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_window_coordinates", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "Coordinates require managed attachment"};
+            }
+            dx::IntrinsicCall fields(call);
+            auto ancestor = call.receiver;
+            for (std::size_t depth = 0; ancestor.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
+                if (fields.GetRef(context->view_java_measure_fields->unsupported_state[1], ancestor).IsValid()) {
+                    if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_window_transform", 0);
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                          "Transformed window coordinates unsupported"};
+                }
+                ancestor = fields.GetRef(context->view_java_hierarchy_fields->parent, ancestor);
+            }
+            const auto& frame = geometry->Get(*node)->screen_frame;
+            call.vm.Model().SetPrimitiveElement(output, 0, static_cast<std::uint32_t>(frame.left));
+            call.vm.Model().SetPrimitiveElement(output, 1, static_cast<std::uint32_t>(frame.top));
+        } else {
+            const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
+            const auto& frame = context->ui_tree.Get(node)->screen_frame;
+            call.vm.Model().SetPrimitiveElement(output, 0, static_cast<std::uint32_t>(frame.left));
+            call.vm.Model().SetPrimitiveElement(output, 1, static_cast<std::uint32_t>(frame.top));
+        }
         return dx::VmValue::Void();
-    });
+    };
+    builder.VirtualMethod("getLocationInWindow", "([I)V", location);
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        builder.VirtualMethod("getLocationOnScreen", "([I)V", location);
     builder.FinalMethod("getWidth", "()I", geometry([](const ui::UiNode& node) {
         return node.frame.right - node.frame.left;
     }));
@@ -3457,6 +3534,12 @@ Decl Declare_android_view_Window(const Context& context) {
         if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
             static_cast<void>(CallAndroidMethod(call.vm, parent, "setId", "(I)V", {dx::VmValue::Int(0x01020002)}));
             fields.SetRef(content_parent, parent);
+            for (auto& record : context->activity_stack) {
+                if (record.object != activity) continue;
+                record.window_root = node;
+                record.visible = activity == context->activity;
+                context->ui_tree.SetWindowVisible(node, record.visible);
+            }
             return parent;
         }
         context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
@@ -3741,8 +3824,11 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
         if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
+             reason != AndroidUiTraversalReason::BeforePresent &&
+             reason != AndroidUiTraversalReason::BeforeSurfaceCallbacks &&
              !(context.ui_layout_dispatching && reason == AndroidUiTraversalReason::GeometryRead)) ||
-            phase != AndroidUiTraversalPhase::ResolveOnly) {
+            (phase != AndroidUiTraversalPhase::ResolveOnly &&
+             phase != AndroidUiTraversalPhase::ResolveAndNotifySizes)) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_traversal_phase", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                      "Traversal safe point is not enabled"};
@@ -3853,8 +3939,15 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         if (same_identity && schedule.published && schedule.published == context.ui_tree.PublishedProjection() &&
             schedule.requests.empty() && !layout_requested && schedule.metrics == metrics &&
             schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty &&
-            !projection_changed())
+            !projection_changed()) {
+            if (context.ui_tree.Get(context.ui_tree.Root())->draw_dirty) {
+                const auto target = *context.ui_tree.ProjectionTarget();
+                CommitAndroidMeasuredRootProjection(vm, context, root, target, context.ui_measure_epoch + 1);
+                context.ui_tree.ClearDrawDirty();
+                schedule.published = context.ui_tree.PublishedProjection();
+            }
             return false;
+        }
         schedule.generation = generation;
         // An interrupted attempt cannot certify the next barrier as clean, even
         // when the Java layout epilogue already cleared FORCE_LAYOUT.
@@ -3966,6 +4059,7 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
         context.ui_tree.SetProjectionTarget(target);
         CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+        context.ui_tree.ClearDrawDirty();
         schedule.published = context.ui_tree.PublishedProjection();
         schedule.content_revision = revision;
         schedule.metrics = metrics;

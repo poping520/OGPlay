@@ -165,7 +165,15 @@
     "getScrollY()I",
     "isLaidOut()Z",
     "postInvalidateOnAnimation()V",
-    "awakenScrollBars()Z"
+    "awakenScrollBars()Z",
+    "onWindowVisibilityChanged(I)V",
+    "initialAwakenScrollBars()Z",
+    "onFocusLost()V",
+    "resetPressedState()V",
+    "isPressed()Z",
+    "setPressed(Z)V",
+    "dispatchSetPressed(Z)V",
+    "removeLongPressCallback()V"
   ],
   "rom_fields": [
     "ACCESSIBILITY_CURSOR_POSITION_UNDEFINED:I",
@@ -506,7 +514,9 @@
     "sNextGeneratedId:Ljava/util/concurrent/atomic/AtomicInteger;",
     "sThreadLocal:Ljava/lang/ThreadLocal;",
     "sUseBrokenMakeMeasureSpec:Z",
-    "mScrollCache:Landroid/view/View$ScrollabilityCache;"
+    "mScrollCache:Landroid/view/View$ScrollabilityCache;",
+    "mHasPerformedLongPress:Z",
+    "mPendingCheckForLongPress:Landroid/view/View$CheckForLongPress;"
   ],
   "overlays": {
     "<init>(Landroid/content/Context;)V": {
@@ -663,13 +673,6 @@
       "state_owner": "Java flags/listeners/focus; integration capture identity only",
       "failure_boundary": "Only unattached test-container software path; system accessibility, attachment and unsupported actions explicitly fail"
     },
-    "initialAwakenScrollBars()Z": {
-      "reason": "Explicit unsupported attached scrollbar service reached only beyond null-attach test path",
-      "inputs": "Actual receiver requesting attached scrollbars",
-      "outputs": "Record unsupported service and throw UOE",
-      "state_owner": "Java only; no emulated scrollbar state",
-      "failure_boundary": "Always rejects; never called on supported unattached test path"
-    },
     "drawableStateChanged()V": {
       "reason": "VD-06b bounded test-container system seam",
       "inputs": "Real receiver Java fields and current process binding",
@@ -690,8 +693,43 @@
       "outputs": "mBackgroundSizeChanged=true; parent cache and invalidation remain ROM scrollTo",
       "state_owner": "Java mScrollX/Y and background-size flag only; no host position or layout writes",
       "failure_boundary": "attached system view or enabled accessibility explicitly fails; no ViewRootImpl/WMS"
+    },
+    "getLocationInWindow([I)V": {
+      "reason": "ADR-0162 / DVM-308 bounded managed software window without AttachInfo or IME",
+      "inputs": "Owner thread, Java frame/parent/scroll and real managed window focus",
+      "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
+      "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
+      "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
+    },
+    "getLocationOnScreen([I)V": {
+      "reason": "ADR-0162 / DVM-308 bounded managed software window without AttachInfo or IME",
+      "inputs": "Owner thread, Java frame/parent/scroll and real managed window focus",
+      "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
+      "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
+      "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
+    },
+    "onWindowFocusChanged(Z)V": {
+      "reason": "ADR-0162 / DVM-308 bounded managed software window without AttachInfo or IME",
+      "inputs": "Owner thread, Java frame/parent/scroll and real managed window focus",
+      "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
+      "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
+      "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
+    },
+    "hasWindowFocus()Z": {
+      "reason": "ADR-0162 / DVM-308 bounded managed software window without AttachInfo or IME",
+      "inputs": "Owner thread, Java frame/parent/scroll and real managed window focus",
+      "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
+      "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
+      "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
+    },
+    "getWindowVisibility()I": {
+      "reason": "ADR-0162 / DVM-308 bounded managed software window without AttachInfo or IME",
+      "inputs": "Owner thread, Java frame/parent/scroll and real managed window focus",
+      "outputs": "Managed window coordinates; focus loss cancels software input and invalidates drawable state",
+      "state_owner": "Java frame/scroll/private flags; lifecycle owns window focus; no AttachInfo",
+      "failure_boundary": "Transforms, detached coordinates, system attachment, drawable state skins and IME unsupported; ADR-0147 explicit failure"
     }
   },
-  "surface": "tools/bootdex/view-scroll.surface.json.gz",
-  "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d"
+  "surface": "tools/bootdex/view-owner.surface.json.gz",
+  "surface_sha256": "ea38caf65e1b03dd1b9a92f2e04f8689b679166486ef8ce3d86ba0878f728872"
 }

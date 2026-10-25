@@ -154,6 +154,11 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   lifecycle 发布不透明软件基帧，再走同一合成入口。screenshot/window 只读取返回结果，
   video 不依赖 UI。EditText 键盘编辑和 ScrollView 手势都更新 UiTree 的唯一状态，绘制、
   裁剪与命中使用同一次布局产生的 frame。
+- JavaTraversal 的 Start/Resume/StepFrame 由 owner 建立首个完整快照；输入前开始逻辑 tick，
+  Looper/媒体/音频/switch/focus 等 mutation 批后以同 tick 屏障重新确保遍历。
+  内容与 Surface 同步使用 BeforeSurfaceCallbacks，不额外递增逻辑 tick；延期请求不被屏障偷跑。
+  owner 刷新 producer/叶像素事实，纯绘制只冻结快照；presentation epoch 变化触发纯 View
+  软件基帧或 intrinsic renderer draw request，空窗口与纯 modal 也可呈现。Legacy 时序保持。
 - JavaTraversal 的 `ComposePresentedFrame` 只读一次 AcquireAndroidPresentation 得到的共同快照，
   按 video下层→guest UI→video上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
   新帧尺寸须与共同快照一致，失败保留发布序列。Legacy 继续原刷新/布局/cache/合成路径。

@@ -285,8 +285,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-surface.surface.json.gz",
-      "surface_sha256": "2bc5866f8870a808b35885df0486d25fee5f46d77b614b9c2303d894b3f9ac9b",
+      "surface": "tools/bootdex/view-owner.surface.json.gz",
+      "surface_sha256": "ea38caf65e1b03dd1b9a92f2e04f8689b679166486ef8ce3d86ba0878f728872",
       "owner": "Landroid/view/SurfaceView;",
       "smali_sha256": "9715827df06ed3569ca518ca9c08ba1baf552aa64deaa72a12c36b42e9b11a6e",
       "methods": [
@@ -418,7 +418,14 @@
           "signature": "onWindowVisibilityChanged(I)V",
           "flags": 4,
           "body_sha256": "633d65796012a66ae2e58620f355eac992afe1cb7c83ee780dcfffad9fa2dbc3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0162 / DVM-308 managed software parent callback, excludes WMS / Editor",
+            "inputs": "Actual receiver and lifecycle window event",
+            "outputs": "Exact View callback, cancellation and software invalidation",
+            "state_owner": "Java View; managed holder lifecycle stays integration-owned",
+            "failure_boundary": "No WMS updateWindow or Editor/IME; unsupported state fails under ADR-0147"
+          }
         },
         {
           "signature": "setFrame(IIII)Z",

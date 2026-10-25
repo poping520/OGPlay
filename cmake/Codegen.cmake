@@ -87,6 +87,7 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member_sources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/member-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-measure-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-owner.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-button-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-edittext-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-edittext.surface.json.gz"

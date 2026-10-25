@@ -31,3 +31,11 @@ ValidateExternalGuestDirectory 为 CLI、导入与游戏设置提供统一 /sdca
 `frontend.frame_timing`：最后至多 4096 个呈现帧的 active wall-time 中位数。统一 Clock
 计时覆盖 step、离线音频混合与 present，累计无呈现的有效 step；不含 MCP 等待、截图、
 启动与循环外 idle sleep。关闭时不读额外时间源，不输出逐帧明细。
+
+
+ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
+归档，校验固定 java-traversal v1 模式及 DEX/成员表/主题投影 SHA-256 与主题 schema，
+再选择不可变 context owner；未知模式、错配、缺投影或无标识实验制品明确失败，无自动
+Legacy fallback。无标识生产制品仍 Legacy。frontend 三入口共用此装配，显式注入不可变
+平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
+本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。

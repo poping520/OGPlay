@@ -60,6 +60,7 @@
 - [ADR-0159 · 组合 ROM 普通方法的开放世界虚派闭包](#adr-0159)
 - [ADR-0160 · 有界生成式主题投影与属性构造 native 接缝](#adr-0160)
 - [ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界](#adr-0161)
+- [ADR-0162 · VD-11 JavaTraversal 生产接线](#adr-0162)
 
 <a id="adr-0017"></a>
 
@@ -2103,3 +2104,57 @@ Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保�
 最上层 modal 捕获绑定分区及代次；撤销捕获先于集合发布，取消的尾事件不穿透新 owner。
 普通 guest 触摸也持有共同快照的事件租约，listener 改树沿既有 requestLayout 由 owner 调度。
 无组合/准入审计规则范围调整；ADR-0147、精确调用、本类 failure 字段及 clinit 规则保持。
+
+
+<a id="adr-0162"></a>
+
+## ADR-0162 · VD-11 JavaTraversal 生产接线
+
+- 状态：Accepted（编排方按用户授权于 2026-10-25 决定）
+- 日期：2026-10-25
+- 依据：编排方 VD-11 方案决定；关联 [ADR-0157](#adr-0157)～[ADR-0161](#adr-0161)、
+  [DVM-306](../tasks/dexvm/DVM-306.md)。VD-12 条款为前置决定，VD-12 追加修订。
+
+### 七项决定
+
+1. 封存整套 VM 配对模式：模式标识、版本与身份在 VM 建立、catalog 注册前由装配层
+   校验并选择 context owner；run-apk/run-dex/dump-surface 使用同一判定。
+   实验制品独立 staging bundle 运行九场景，生产默认 Legacy 直至 VD-12。
+   不加 Profile quirk、成员开关、运行期切换或自动 Legacy fallback。
+2. 采用有界 managed-window adapter：窗口可见、焦点、getLocationInWindow/OnScreen
+   按已附着 managed 窗口的坐标语义支持，单列其边界；不冒充 AttachInfo=null 的 ROM
+   分支、不伪造 AttachInfo。平台显式声明无 accessibility 服务，不复用测试 bool。
+3. owner 唯一执行 guest；回调内几何查询读临时只读投影；输入重入拒绝或排到后续
+   owner 事件。两 pass/延期按逻辑 tick 计数，跨 tick watchdog 作为宿主预算保留。
+4. 保持 managed buffer 限制；window holder 与 View holder 分型，每次 guest 回调后
+   核验代次。尺寸先于 managed Surface，ROM onSizeChanged 不重复；不启 updateWindow/WMS。
+5. 不放宽实验首错门禁。接线完成（11-1～11-8）和端到端通过（11-9）分开记账。
+   新首错按 ROM 依赖类别另开通用能力 WU，不删请求、不改 APK、不用 Profile 默认值
+   压首错；单类超过单会话或越界即按 VD-11 停止边界报告。
+6. **前置决定，VD-12 追加修订**：只取同 ROM PhoneLayoutInflater 及机器证明的纯依赖，
+   禁止 Policy/PhoneWindow/PhoneWindowManager 全包。用户于 2026-10-25 提供
+   `.local/aosp/android.policy.jar`（SHA-256
+   `23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae`），
+   含 PhoneLayoutInflater，打包时间 2014-11-20、JDK 1.7.0_65 与既有四 JAR 同批。
+   12-1 不再 blocked；同源交叉身份审计后由 12-2 替换 LocalLayoutInflater companion。
+   若审计证明闭包需要 Policy/PhoneWindow/Binder，停止该路线并另行记录延期。
+   本单不引入 policy.jar 内容。
+7. **前置决定，VD-12 追加修订**：保留 ADR-0157 冻结差分口径与 ≤10% 性能门槛。
+   仅切默认时移除 guest Legacy fallback，HostLayout 保留；Windows 未验单列，不由 macOS 覆盖。
+
+select_rom_java.py 实验 closure 索引误读 builder.OUTPUT 的问题留给 12-3，届时改为严格
+`<60000`；本阶段不据其显示值证明实验索引预算。
+
+### 11-1 封存格式与失败边界
+
+实验 JAR 的 `META-INF/ogplay/vm-pairing.json` 固定 schema=1、mode=java-traversal、
+version=1，并绑定 classes.dex、member-sources.json、theme-projection.json 的 SHA-256。
+compose build/check 同时封存模式、成员来源和主题；生产 JAR 不增加标识且字节保持。
+装配层读取同一份归档字节，先验证模式/身份及主题 provider schema，再构造不可变 owner
+和平台服务事实。未知模式/版本、错配、缺投影或无标识实验 JAR 均明确失败，不创建 VM。
+无标识且无实验 ROM measured 状态/主题投影的既有生产制品选择 Legacy。
+哈希用于一致性校验，不宣称签名认证。测试仍可显式构造 context/设置测试缺席 bool；
+生产三入口独立注入平台无 accessibility 服务事实，不设置测试 bool。
+
+本阶段只交付装配与平台事实；不放开 test-root，不改变 StepFrame 或系统附着行为。
+窗口 adapter、根/owner 调度、帧安全点和 E2E 由 11-2～11-9 分别验收。

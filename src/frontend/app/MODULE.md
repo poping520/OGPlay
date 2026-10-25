@@ -16,9 +16,10 @@ GameRunOptions 显式携带 surface_width/surface_height（默认 800×480，每
 解析、格式化和直接调用共用边界校验；DataPaths 不再暴露模板目录。
 
 DumpDexSurface 显式读取 BootDex 归档，以生产相同的 bound core/Android catalog 装配独立 linker，
-返回 JSON 表面及 API19 native exports；实验成员表的 measured 字段选择 ROM 时，诊断装配
-对应 JavaTraversal catalog，以导出真实 adapter 状态。此选择仅用于表面诊断，不改变生产默认；
-不运行 guest、类初始化、图形或游戏会话。
+返回 JSON 表面及 API19 native exports；与 run-apk/run-dex 共用 AssembleAndroidContext，
+在 catalog 注册/VM 建立前校验封存模式、DEX/成员表/主题身份，选择不可变 owner；未知或
+错配实验制品明确失败，不回落 Legacy。平台注入无 accessibility 服务事实，测试 bool 不参与
+生产装配。既有无标识生产制品默认 Legacy。不运行 guest、类初始化、图形或游戏会话。
 
 DumpDexSurface 同时装配 bundled API19 骨架索引；只有该显式诊断枚举会物化完整骨架，字段状态区分常量与未实现访问。
 

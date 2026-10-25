@@ -20,7 +20,7 @@ import theme_projection
 
 
 def measure_sources(document):
-    """Fixed test-only counterpart; never selected by runtime/user settings."""
+    """Fixed sealed experimental counterpart; no user member switches."""
     policy = json.loads(Path(__file__).with_name('view-measure-sources.json').read_text(encoding='utf-8'))
     document = copy.deepcopy(document)
     cls, = document['classes']
@@ -190,6 +190,11 @@ def build(measure=False):
         projected = theme_projection.generate()
         theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
         resources[theme_projection.ENTRY] = projected
+        resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
+            schema=1, mode='java-traversal', version=1,
+            dex_sha256=builder.sha256(dex),
+            member_sources_sha256=builder.sha256(payload),
+            theme_projection_sha256=builder.sha256(projected)))
         review = json.loads(Path(__file__).with_name('view-video-adapter.json').read_text(encoding='utf-8'))
         if (review['implementation_source'] != 'adapter' or review['rom_algorithm_credit'] is not False
                 or review['owner'] != 'Landroid/widget/VideoView;' or review['signature'] != 'onMeasure(II)V'
@@ -202,6 +207,10 @@ def build(measure=False):
 def boot_metadata(jar, dex, recipe):
     metadata = builder.boot_metadata(jar, dex, recipe)
     with zipfile.ZipFile(io.BytesIO(jar)) as archive:
+        if 'META-INF/ogplay/vm-pairing.json' in archive.namelist():
+            metadata['vm_pairing'] = dict(entry='META-INF/ogplay/vm-pairing.json',
+                sha256=builder.sha256(archive.read('META-INF/ogplay/vm-pairing.json')),
+                mode='java-traversal', version=1)
         if member_sources.ENTRY in archive.namelist():
             metadata['member_sources'] = dict(
                 entry=member_sources.ENTRY,
@@ -237,7 +246,7 @@ def main():
     parser.add_argument('mode', nargs='?', choices=('build', 'check'))
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--view-measure-test-output', type=Path,
-                        help='write/check the fixed experimental test counterpart instead of production')
+                        help='write/check the fixed sealed JavaTraversal counterpart instead of production')
     args = parser.parse_args()
     try:
         if args.self_test:

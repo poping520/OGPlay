@@ -380,7 +380,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     {
         std::shared_ptr<runtime::DexVmAndroidContext> dex_context;
         {
-            dex_context = std::make_shared<runtime::DexVmAndroidContext>();
+            dex_context = runtime::AssembleAndroidContext(
+                ReadBytes(bundled_data.root / bionic.data_directory / "framework" / "bootdex.jar"), {true});
             dex_context->native_output_sample_rate =
                 kDesktopAudioOutputSpec.sample_rate;
             dex_context->apk_bytes = *apk_bytes;
@@ -469,18 +470,10 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             loader::ReadApkEntry(*apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
-        auto boot_archive_bytes = ReadBytes(
-            bundled_data.root / bionic.data_directory / "framework" /
-            "bootdex.jar");
-        const auto boot_archive =
-            loader::ParseApkArchive(boot_archive_bytes);
-        const auto boot_entry = loader::ReadApkEntry(
-            boot_archive_bytes, boot_archive, "classes.dex");
+        const auto boot_entry =
+            loader::ReadApkEntry(dex_context->boot_classpath_bytes, dex_context->boot_classpath_archive, "classes.dex");
         std::vector<std::uint8_t> boot_dex_bytes(boot_entry.size());
-        std::memcpy(boot_dex_bytes.data(), boot_entry.data(),
-                    boot_entry.size());
-        dex_context->boot_classpath_archive = boot_archive;
-        dex_context->boot_classpath_bytes = std::move(boot_archive_bytes);
+        std::memcpy(boot_dex_bytes.data(), boot_entry.data(), boot_entry.size());
         runtime::DexVmBridgeConfig bridge_config;
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter == app::InterpreterBackend::threaded

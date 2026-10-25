@@ -1869,7 +1869,7 @@ Decl Declare_android_view_View(const Context& context) {
             "onScrollChanged", "(IIII)V",
             [=](dx::IntrinsicContext& c) {
                 dx::IntrinsicCall fields(c);
-                if (!context->ui_test_accessibility_disabled ||
+                if (!context->UiAccessibilityUnavailable() ||
                     fields.GetRef(context->view_java_measure_fields->unsupported_state[4]).IsValid()) {
                     if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_scroll_notification", 0);
                     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -2387,7 +2387,7 @@ Decl Declare_android_view_View(const Context& context) {
         builder.VirtualMethod(
             "onFocusChanged", "(ZILandroid/graphics/Rect;)V",
             [context, software_dirty](dx::IntrinsicContext& call) {
-                if (!context->ui_test_accessibility_disabled) {
+                if (!context->UiAccessibilityUnavailable()) {
                     if (auto* ledger = call.vm.Ledger())
                         ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
                     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -3954,7 +3954,7 @@ Decl Declare_test_AccessibilityManager(const Context& context) {
         "getInstance", "(Landroid/content/Context;)Landroid/view/accessibility/AccessibilityManager;",
         [context, singleton, enabled](dx::IntrinsicContext& call) {
             if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
-                !context->ui_test_accessibility_disabled) {
+                !context->UiAccessibilityUnavailable()) {
                 if (auto* ledger = call.vm.Ledger())
                     ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -3973,7 +3973,7 @@ Decl Declare_test_AccessibilityManager(const Context& context) {
             return dx::VmValue::Ref(instance);
         });
     builder.VirtualMethod("isEnabled", "()Z", [context, enabled](dx::IntrinsicContext& call) {
-        if (!context->ui_test_accessibility_disabled) {
+        if (!context->UiAccessibilityUnavailable()) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_accessibility_provider", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "Test accessibility provider is not configured"};

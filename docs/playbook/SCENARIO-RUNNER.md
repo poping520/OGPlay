@@ -50,6 +50,25 @@ python tools/run_scenario.py \
   是单个 JSON 文档，失败时形如 `{"schema":1,"status":"invalid","reason":"…"}`，
   可直接被包装脚本消费。
 
+## JavaTraversal 独立 staging（VD-11）
+
+先构建当前 `ogplay-cli` 并生成配对制品，再复制为新的独立目录；脚本不启动游戏，
+不会覆盖仓库 data 或原 CLI。可执行文件相邻依赖库与 data 副本一起复制，只有
+`data/android/19/framework/bootdex.jar` 被实验 JAR 替换；生产 manifest 仍是原副本，
+实验身份以配对 JAR 与 staging-manifest.json 为准。
+
+```text
+python3 tools/bootdex/compose_bootdex.py build --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar
+python3 tools/stage_java_traversal.py --ogplay-cli build/release/ogplay-cli \
+  --bootdex build/release/dexvm_fixtures/view-measure.jar --output .local/staging/java-traversal
+```
+
+`staging-manifest.json` 列出全部相对路径/SHA-256、模式版本和唯一替换项，可逐项重算。
+输出目录必须不存在；未知模式、封存身份不符、缺主题投影拒绝。VM owner 在建立前固定，
+运行中不可切换，不自动回落 Legacy。后续运行沿用上节 runner 参数，改为
+`--ogplay-cli <staging>/ogplay-cli`（Windows 为 `.exe`）；保持相同 fixture/存档源/显示/
+后端并使用新证据目录。11-1 尚未完成生产遍历接线，不代表实验九场景已通过。
+
 ## 适配与回归：相同输入，两种模式
 
 先按 MCP 已验证路径固化启动与输入 checkpoint；只加已知能走通的交互。每次点击后

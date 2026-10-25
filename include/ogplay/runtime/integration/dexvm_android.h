@@ -101,16 +101,32 @@ struct AndroidInputDevice final {
 // code-defined immutable list; handlers bind to the running guest session
 // (sound mixer, VFS, platform identity) through this shared context.
 
-// Fixed before VM startup; JavaTraversal is paired with a test-only payload.
+// Fixed before VM startup; JavaTraversal requires a sealed paired payload.
 enum class AndroidUiTraversalOwner : std::uint8_t { Legacy, JavaTraversal };
 
+// Assembly facts, independent of host service discovery and test overrides.
+struct AndroidPlatformServices final {
+    bool accessibility_service_absent{};
+};
+
+// Validates mode/version and payload identities before constructing any context,
+// registering catalogs or creating a VM. Unmarked experimental payloads fail closed.
+[[nodiscard]] std::shared_ptr<struct DexVmAndroidContext> AssembleAndroidContext(std::vector<std::byte> boot_archive,
+                                                                                 AndroidPlatformServices platform);
+
 struct DexVmAndroidContext final {
-    explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy)
-        : ui_traversal_owner(owner),
+    explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy,
+                                 AndroidPlatformServices platform = {})
+        : ui_traversal_owner(owner), platform_services(platform),
           ui_tree(owner == AndroidUiTraversalOwner::Legacy ? ui::UiGeometryOwner::HostLayout
                                                            : ui::UiGeometryOwner::ExternalProjection) {}
 
     const AndroidUiTraversalOwner ui_traversal_owner;
+    const AndroidPlatformServices platform_services;
+
+    [[nodiscard]] bool UiAccessibilityUnavailable() const noexcept {
+        return platform_services.accessibility_service_absent || ui_test_accessibility_disabled;
+    }
     std::uint64_t ui_measure_epoch{};
     float ui_projection_density{};  // Density used by the last completed owner traversal.
     // Weak identities in JavaTraversal; live hierarchy edges belong to Java.

@@ -4,6 +4,8 @@
 NativeNormalizer、Pattern/Matcher、字符集名称枚举与 TimeZoneNames native。源码只调用 ICU 51 C ABI；禁止包含 ICU C++ API、链接 NDK
 libc++，或跨越 API 19 STLport C++ ABI。
 
+- 不在宿主下载、编译或链接 ICU，也不嵌入 ICU 数据，因为区域语义与数据统一由固定 API19 guest ICU 提供。
+
 `JNI_OnLoad` 由 `src/guest/crypto/crypto_jni.c` 唯一定义并调用本模块注册入口。ICU data
 从 guest VFS 固定路径 `/system/usr/icu/icudt51l.dat` 读取，校验精确大小后交给
 `udata_setCommonData_51`；随后禁用文件回退并以 `u_init_51` 立即验证。卸载先关闭 formatter/regex peer、

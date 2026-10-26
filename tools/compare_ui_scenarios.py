@@ -191,6 +191,10 @@ def normalize_fault(case, result, base):
             raise ValueError('unrecognized native invocation report')
         signature = dict(category='native_entry_report', member='L' + entry[1] + ';->' + entry[2] + entry[3],
                          report_sha256=hashlib.sha256(log.encode('utf-8')).hexdigest(), requires_review=True)
+    elif re.match(r'error[^\n]*frontend\.run_apk\.fault UI node is stale(?:\r?\n|$)', log):
+        # Exact host boundary only: do not infer a guest member or hide the fault.
+        signature = dict(category='host_ui_stale_node', boundary='frontend.run_apk.fault',
+                         message='UI node is stale', requires_review=True)
     elif (phase == 'shutdown' and fatal and 'frontend.run_apk.teardown ' in fatal[0] and
           re.fullmatch(r'error[^\n]*frontend\.run_apk\.teardown Android guest invocation failed: teardown cleanup wall-time budget exhausted\s*', log)):
         # A proven host cleanup budget is not a fabricated Java/native member.
@@ -500,6 +504,11 @@ def self_test():
         boundary = normalize_fault(source, result, base)
         assert boundary['signature']['category'] == 'java_boundary'
         assert boundary['signature']['requires_review'] is True
+        source['fault_source']['log'] = ref('host-stale.log',
+            '[owner] phase=Activity\nerror [f=0] frontend.run_apk.fault UI node is stale\n')
+        stale = normalize_fault(source, result, base)
+        assert stale['signature'] == dict(category='host_ui_stale_node', boundary='frontend.run_apk.fault',
+                                          message='UI node is stale', requires_review=True)
         cause_log = ('[owner] phase=Activity\nerror [f=1] frontend.run_apk.fault scheduled callback raised: '
             'Landroid/view/InflateException;: root inflate failed\n'
             '  at Landroid/view/LayoutInflater;.createView (pc 20)\n'

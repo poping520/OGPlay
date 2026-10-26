@@ -301,8 +301,9 @@ Legacy 的非 ROM decor owner、focus/system-UI listener 由 integration 的 own
 mResources 是构造时 Context.getResources 的 Java 强引用；Context 预绑定只写 mContext，
 构造每次解析资源且异常透传，失败不提前置位 SDK 兼容标志。padding 四边、minimum 两维及有界 absolute user-padding/defined
 字段由 Java 唯一拥有；构造、XML、已支持 widget defaults/背景 adapter 写 Java，不写宿主权威。
-UiNode.padding/minimum 对 guest 仅为输入投影；所有 traversal 入口先读绑定 token，即使布局
-原本 clean 也比较并导入直接 guest 写入。无 Java 回调的只读导入不改变 S 类几何 owner。
+UiNode.padding/minimum 对 guest 仅为输入投影；Legacy 保留逐屏障导入绑定字段，
+JavaTraversal 仅在真实请求/窗口变化触发遍历时导入。干净帧不比较直接字段写入；
+直接写字段或修改派生缓存不等于 Java requestLayout/invalidate。只读导入不改变几何 owner。
 getResources、上下 padding 与 minimum getter 执行 ROM；左右 absolute padding getter 和
 minimum setter 保留受审 adapter，后者真实虚派 requestLayout。完整 RTL/scrollbar padding
 解析和原版 setter 的 CHA 闭包仍未启用，相关未选成员继续明确失败。
@@ -781,3 +782,9 @@ JavaTraversal showSoftInput/hideSoftInputFromWindow 与 restartInput、Legacy �
 
 DVM-328：实验 TextView 构造按同 ROM getResourceId 消费选择手柄、光标和建议项布局，
 只将真实 id 保存至原版五个 Java int 字段；读取不加载内容、不取得 Editor/绘制信用。
+
+DVM-329：owner 屏障先检查窗口请求/Java 根 FORCE_LAYOUT、首次附着与窗口输入变化；
+干净帧不调用 guest getter/measure/layout，不遍历或比较各节点投影输入。requestLayout
+与 invalidate 的既有 ROM/受审接缝登记真实工作；不靠跳帧或投影过期策略调度。
+宿主输入消费冻结快照前验证节点存在；构建绑定不能证明节点属于所持快照，guest 失败
+边界及 UiTree 严格 stale 检查保持。

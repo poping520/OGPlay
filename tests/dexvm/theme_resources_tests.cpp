@@ -1220,8 +1220,10 @@ TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic f
         f.On(visible, "setClickable", "(Z)V", {VmValue::Int(1)});
         const auto visible_id = *FindViewUiNode(*f.context, visible.Value());
         f.context->ui_tree.Get(visible_id)->background_color = 0x123456ff;
-        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
+        // Freeze draw attributes on a real View invalidation, without layout.
+        f.On(visible, "invalidate", "()V");
+        CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                             AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
         const auto old_projection = f.context->ui_tree.PublishedProjection();
         CHECK(old_projection->Get(visible_id)->frame == ui::Rect{0, 0, 40, 20});
         CHECK(old_projection->HitTestProjection(1, 1) == visible_id);

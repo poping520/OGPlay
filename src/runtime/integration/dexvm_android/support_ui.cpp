@@ -2553,7 +2553,7 @@ bool TouchLive(DexVmAndroidContext& context, VmObjectRef view) {
     const InputTreeLease lease(context);
     const auto& tree = lease.tree;
     const auto node = FindViewUiNode(context, view.Value());
-    return node && tree.IsAttached(*node) && tree.IsVisible(*node) && tree.Get(*node)->enabled;
+    return node && tree.Get(*node) && tree.IsAttached(*node) && tree.IsVisible(*node) && tree.Get(*node)->enabled;
 }
 void ClearTouch(DexVmAndroidContext& context) {
     context.ui_touch_capture = 0;

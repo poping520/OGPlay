@@ -216,11 +216,19 @@ TEST_CASE("DVM-296 bitmap specs five raster targets immutable epochs versions an
         CHECK(f.model.IsValidRef(drawable));
         CHECK(f.model.IsValidRef(bitmap));
         CHECK(f.On(image, "getDrawable", "()Landroid/graphics/drawable/Drawable;").ref == drawable);
-        CHECK(tick());
+        // A derived index/GC change is not a Java traversal request. Rebuild
+        // it only when the View actually invalidates, as on the ROM draw path.
+        CHECK_FALSE(tick());
+        CHECK(f.context->ui_view_images.empty());
+        f.On(image, "invalidate", "()V");
+        CHECK_FALSE(tick());
         CHECK(f.context->ui_view_images.at(image.Value()) == drawable);
         f.On(bitmap, "recycle", "()V");
         bool rejected{};
         const auto before_recycle = f.context->ui_tree.PublishedProjection();
+        CHECK_FALSE(tick());
+        CHECK(f.context->ui_tree.PublishedProjection() == before_recycle);
+        f.On(image, "invalidate", "()V");
         try {
             static_cast<void>(tick());
         } catch (const VmJavaThrow&) {

@@ -651,7 +651,7 @@ bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
         if (frame.width == 0 || frame.height == 0 ||
             frame.rgba8.size() != static_cast<std::uint64_t>(frame.width) * frame.height * 4U) continue;
         const auto id = FindViewUiNode(context, state.media_player ? state.display_view.Value() : handle);
-        if (!id || !tree.IsVisible(*id)) continue;
+        if (!id || !tree.Get(*id) || !tree.IsVisible(*id)) continue;
         const auto* node = tree.Get(*id);
         const ui::Rect window{0, 0, static_cast<std::int32_t>(context.surface_width),
                                   static_cast<std::int32_t>(context.surface_height)};

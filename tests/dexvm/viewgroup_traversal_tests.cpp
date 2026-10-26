@@ -127,10 +127,15 @@ TEST_CASE("DVM-281 ROM multi-level hierarchy parameters projection scheduling an
         f.On(leaf, "setId", "(I)V", {VmValue::Int(-1)});
         CHECK(f.On(leaf, "getId", "()I").AsInt() == -1);
         CHECK_FALSE(f.On(root, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(101)}).ref.IsValid());
+        // setId alone does not schedule ViewRoot traversal in the ROM.
+        CHECK_FALSE(tick());
+        CHECK(f.context->ui_tree.PublishedProjection() == prior_id_snapshot);
+        f.On(root, "requestLayout", "()V");
         REQUIRE(tick());
         CHECK_FALSE(f.context->ui_tree.PublishedProjection()->FindByAndroidId(101).has_value());
         CHECK(prior_id_snapshot->FindByAndroidId(101).has_value());
         f.On(leaf, "setId", "(I)V", {VmValue::Int(101)});
+        f.On(root, "requestLayout", "()V");
         REQUIRE(tick());
         // All public add overloads share the ROM array and parameter reference.
         const auto extra = make(false);
@@ -440,12 +445,15 @@ TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state"
         static_cast<void>(f.vm.CollectGarbage("vd06b-java-listeners"));
         CHECK(f.model.IsValidRef(first));
         CHECK(f.model.IsValidRef(second));
-        REQUIRE(tick());
+        // Focus/clickability changes do not themselves request ROM layout.
+        f.On(root, "invalidate", "()V");
+        CHECK_FALSE(tick());
         const auto node = *FindViewUiNode(*f.context, leaf.Value());
         for (const auto visibility : {4, 8, 0}) {
             f.On(leaf, "setVisibility", "(I)V", {VmValue::Int(visibility)});
             f.context->ui_tree.Get(node)->visibility = ui::Visibility::Visible;
-            REQUIRE(tick());
+            // INVISIBLE only invalidates; GONE transitions request layout.
+            CHECK(tick() == (visibility != 4));
             CHECK(f.On(leaf, "getVisibility", "()I").AsInt() == visibility);
             CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->visibility ==
                   (visibility == 4   ? ui::Visibility::Invisible
@@ -469,7 +477,7 @@ TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state"
         f.On(leaf, "setEnabled", "(Z)V", {VmValue::Int(0)});
         f.context->ui_tree.Get(node)->enabled = true;
         f.context->ui_tree.Get(node)->clickable = false;
-        REQUIRE(tick());
+        CHECK_FALSE(tick());
         CHECK_FALSE(f.context->ui_tree.PublishedProjection()->Get(node)->enabled);
         CHECK(f.context->ui_tree.PublishedProjection()->Get(node)->clickable);
         CHECK_FALSE(ViewContainsPoint(f.vm, *f.context, leaf.Value(), 1, 1));

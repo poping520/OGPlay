@@ -323,3 +323,7 @@ JavaTraversal 的窗口可见事实由 Activity 生命周期单独拥有：resum
 suspend、stop 与 handoff 隐藏；即使尚无 Java Window root 也记录事实。变化在 owner 上
 重发最后完整几何及窗口事实，保留待布局请求；producer 仅从完整投影选择。退役空窗口
 不隐藏共用 synthetic root。Legacy 的窗口写入与选择路径保持原契约。
+
+DVM-329：producer 每次选择按 Java View 身份重新查询绑定，并检查该 NodeId 存在于
+本次读取的完整 projection 后才查询可见/祖先；未发布或退役的绑定本轮不激活，下次
+owner 发布后重新查询。不能将构建树中新节点当作旧投影节点，也不放宽 guest stale 失败。

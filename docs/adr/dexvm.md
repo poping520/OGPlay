@@ -2502,3 +2502,17 @@ getApplicationWindowToken 返回每窗口稳定的进程内 token 对象；未�
 跨进程使用等 Binder 操作记账并明确失败，不创建 Binder/WMS/system_server。
 APK 后续进入 InputMethodManager/IME 时停在 ADR-0161 决定7边界，记录而不扩 IME。
 实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。
+
+### VD-11-19 按需遍历与投影节点引用（编排方决定 2026-10-26（六））
+
+1. JavaTraversal 只在 ROM ViewRootImpl 语义下已登记 traversal（requestLayout、invalidate、
+   窗口与尺寸变化、首次附着）时进入 performTraversals。干净帧不进入 Java 遍历，不重建或
+   逐节点比较 projection；宿主每帧只消费已提交 projection。不得以跳帧、降频或过期投影
+   换取性能；调度依据必须来自 Java View 的真实请求/flags 与窗口输入变化。
+2. projection 换代时，宿主持有的 NodeId/句柄按真实身份重查，或明确失效后重新查询；
+   构建树绑定不证明该节点存在于当前完整快照。宿主 producer/input 消费前校验快照身份，
+   未发布或已退役节点不得进入需要有效节点的查询并触发宿主 stale 故障。
+   真实不可达的 guest 请求仍按 ADR-0147 明确失败，不改变 UiTree::Require 的严格语义。
+
+实现与验证见 [DVM-329](../tasks/dexvm/DVM-329.md)。未新增 ViewRootImpl、Binder/WMS
+或完整 Android；生产默认 Legacy 保持。实施方按常设原则调整审计规则范围：无。

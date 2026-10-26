@@ -8,6 +8,8 @@
 #include <functional>
 #include <algorithm>
 #include <thread>
+#include "ogplay/runtime/ui/ui_renderer.h"
+#include <chrono>
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -1476,4 +1478,180 @@ TEST_CASE("DVM-320 producer facts change after projection and summarize once bef
             CHECK(std::get<std::uint64_t>(repeated->fields.front().value) == 2);
             CHECK(f.ledger.Unimplemented().empty());
         }
+}
+
+TEST_CASE("DVM-329 ROM bringToFront publishes child paint order") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->surface_width = 80;
+        f.context->surface_height = 50;
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->background_color = 0xff0000ffU;
+        f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->background_color = 0x0000ffffU;
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly);
+        };
+        REQUIRE(tick());
+        auto before = f.context->ui_tree.PublishedProjection();
+        CHECK(ui::RasterizeUiOverlay(ui::BuildUiRenderList(*before, {}), {80, 50}).rgba8[2] == 255);
+        const auto node = *FindViewUiNode(*f.context, group.Value());
+        const auto a = *FindViewUiNode(*f.context, first.Value());
+        const auto b = *FindViewUiNode(*f.context, second.Value());
+        CHECK(before->Get(node)->children == std::vector<ui::UiNodeId>{a, b});
+        f.On(first, "bringToFront", "()V");
+        CHECK(f.On(group, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(1)}).ref == first);
+        CHECK(f.context->ui_tree.PublishedProjection() == before);
+        REQUIRE(tick());
+        auto after = f.context->ui_tree.PublishedProjection();
+        CHECK(after->Get(node)->children == std::vector<ui::UiNodeId>{b, a});
+        const auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*after, {}), {80, 50});
+        CHECK(pixels.rgba8[0] == 255);
+        CHECK(pixels.rgba8[2] == 0);
+        CHECK(before->Get(node)->children == std::vector<ui::UiNodeId>{a, b});
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-329 producer binding outside the retained projection waits for publication") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Ltest/OwnerActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        const auto old = f.context->ui_tree.PublishedProjection();
+        REQUIRE(old);
+        const auto view = f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V",
+                                {VmValue::Ref(f.context->activity)});
+        const auto renderer = f.New("Ltest/OwnerMutation;");
+        f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(renderer)});
+        const auto binding = *FindViewUiNode(*f.context, view.Value());
+        CHECK(old->Get(binding) == nullptr);
+        // Suspend republishes only window facts from the old complete epoch,
+        // then reevaluates all registered producers, including this new binding.
+        CHECK_NOTHROW(static_cast<void>(lifecycle.Suspend()));
+        CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
+        CHECK(f.context->ui_tree.PublishedProjection()->Get(binding) == nullptr);
+        CHECK(f.context->ui_tree.Get(binding) != nullptr);
+        CHECK(f.context->ui_tree.PublishedProjection()->ProjectionEpoch() > old->ProjectionEpoch());
+        const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+        f.On(root, "requestLayout", "()V");
+        CHECK_NOTHROW(static_cast<void>(lifecycle.Resume()));
+        CHECK(f.context->ui_tree.PublishedProjection()->Get(binding) != nullptr);
+        CHECK(old->Get(binding) == nullptr);
+        CHECK_FALSE(f.context->gl_surface_renderer_view.IsValid());
+        CHECK_NOTHROW(static_cast<void>(lifecycle.Stop()));
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-329 clean owner ticks never enter traversal and Java requests resume it") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->surface_width = 800;
+        f.context->surface_height = 480;
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly);
+        };
+        REQUIRE(tick());
+        const auto root = AndroidUiTraversalRoot(f.vm, *f.context);
+        const auto before = f.context->ui_tree.PublishedProjection();
+        const auto entered = [&] { return f.context->ui_traversal_diagnostics[root]["traversal entered"]; };
+        const auto count = entered();
+        const auto trace_before = f.vm.Trace("", 10000);
+        REQUIRE_FALSE(trace_before.empty());
+        for (int i = 0; i < 100; ++i) {
+            CHECK_FALSE(tick());
+            for (int j = 0; j < 5; ++j)
+                CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
+                                                     AndroidUiTraversalPhase::ResolveOnly));
+        }
+        CHECK(entered() == count);
+        CHECK(f.vm.Trace("", 10000).back().sequence == trace_before.back().sequence);
+        CHECK(f.context->ui_tree.PublishedProjection() == before);
+        f.On(root, "invalidate", "()V");
+        static_cast<void>(tick());
+        CHECK(entered() == count + 1);
+        CHECK(f.context->ui_tree.PublishedProjection() != before);
+        const auto invalidated = f.context->ui_tree.PublishedProjection();
+        f.On(root, "requestLayout", "()V");
+        REQUIRE(tick());
+        CHECK(entered() == count + 2);
+        CHECK(f.context->ui_tree.PublishedProjection() != invalidated);
+        f.context->surface_width = 960;
+        REQUIRE(tick());
+        CHECK(entered() == count + 3);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-329 headless clean frame scheduling benchmark") {
+    const auto run = [](auto& f, const char* mode, const char* workload, const ui::Size size) {
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = static_cast<std::uint32_t>(size.width);
+        f.context->surface_height = static_cast<std::uint32_t>(size.height);
+        const auto content =
+            f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(content)});
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
+        f.context->ui_tree.ClearDrawDirty();
+        std::vector<double> times;
+        const auto counts = [&] {
+            std::uint64_t count{};
+            for (const auto& [root, values] : f.context->ui_traversal_diagnostics) {
+                static_cast<void>(root);
+                if (const auto it = values.find("traversal entered"); it != values.end()) count += it->second;
+            }
+            return count;
+        };
+        const auto before = counts();
+        for (int sample = 0; sample < 21; ++sample) {
+            const auto start = std::chrono::steady_clock::now();
+            for (int tick = 0; tick < 100; ++tick) {
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                for (int barrier = 0; barrier < 5; ++barrier)
+                    static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context,
+                                                               AndroidUiTraversalReason::BeforePresent,
+                                                               AndroidUiTraversalPhase::ResolveOnly));
+            }
+            times.push_back(
+                std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count() / 100.0);
+        }
+        std::sort(times.begin(), times.end());
+        MESSAGE("DVM329 benchmark mode=" << std::string(mode) << " workload=" << std::string(workload)
+                                         << " median_us=" << times[times.size() / 2]
+                                         << " entries_per_tick=" << static_cast<double>(counts() - before) / 2100.0);
+        CHECK(f.ledger.Unimplemented().empty());
+    };
+    for (const auto size : {ui::Size{800, 480}, ui::Size{1920, 1080}}) {
+        const auto* workload = size.width == 800 ? "tml-window" : "tales-window";
+        AndroidValueVm legacy;
+        run(legacy, "B", workload, size);
+        ogplay::test::container_traversal::ContainerVm java(InterpreterBackend::switch_dispatch);
+        run(java, "C", workload, size);
+    }
 }

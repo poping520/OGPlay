@@ -3935,7 +3935,6 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             RecordAndroidTraversalDiagnostic(vm, context, dexvm::VmObjectRef{}, "owner thread rejected");
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
         }
-        diagnostic("traversal entered");
         if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
              reason != AndroidUiTraversalReason::BeforePresent &&
              reason != AndroidUiTraversalReason::BeforeSurfaceCallbacks &&
@@ -3967,6 +3966,28 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             return false;
         }
         if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
+        // ViewRootImpl's scheduleTraversals boundary: only Java requests,
+        // first attachment, or changed window inputs enter performTraversals.
+        // Do not execute guest getters or compare a projection on a clean frame.
+        const auto scheduled_root = AndroidUiTraversalRoot(vm, context);
+        const auto found = context.ui_window_schedules.find(scheduled_root);
+        if (found != context.ui_window_schedules.end()) {
+            const auto& scheduled = found->second;
+            const auto requested_metrics = viewport.value_or(ui::Size{
+                static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
+            dexvm::IntrinsicContext call{vm, scheduled_root, {}};
+            const auto* host = context.ui_tree.Get(context.ui_tree.Root());
+            if (scheduled.published && scheduled.published == context.ui_tree.PublishedProjection() &&
+                scheduled.generation == context.ui_tree.Generation() &&
+                scheduled.content_revision == context.ui_content_revision && scheduled.metrics == requested_metrics &&
+                scheduled.density == context.ui_density && scheduled.requests.empty() &&
+                scheduled.deferred_until_tick == 0 && !host->layout_dirty && !host->draw_dirty &&
+                (dexvm::IntrinsicCall(call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) == 0) {
+                diagnostic("clean snapshot");
+                return false;
+            }
+        }
+        diagnostic("traversal entered");
         // Materialize the Window's stable FrameLayout even for an empty Activity.
         if (context.activity.IsValid()) {
             const auto window =
@@ -4015,64 +4036,9 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         dexvm::IntrinsicContext root_call{vm, root, {}};
         const bool layout_requested =
             (dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) != 0;
-        const auto projection_changed = [&] {
-            if (!schedule.published) return true;
-            for (const auto& [id, view] : context.ui_node_to_object) {
-                const auto* projected = schedule.published->Get(id);
-                if (!projected || !schedule.published->IsAttached(id)) continue;
-                if (projected->kind == ui::UiClass::ImageView || projected->kind == ui::UiClass::ImageButton) {
-                    // Reuse the existing leaf backing's invalidation facts without
-                    // refreshing pixels or entering guest code at a clean barrier.
-                    const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
-                    const auto field =
-                        vm.Linker().FindFieldRecursive(type, "mDrawable", "Landroid/graphics/drawable/Drawable;");
-                    if (!field) throw std::logic_error("ImageView drawable field unavailable");
-                    const dexvm::VmObjectRef drawable{
-                        vm.Model().InstanceSlots(view)[vm.Linker().Field(*field).slot].bits};
-                    if (drawable.IsValid()) {
-                        const auto index = context.ui_view_images.find(view.Value());
-                        if (index == context.ui_view_images.end() || index->second != drawable) return true;
-                        const auto state = context.ui_drawables.find(drawable.Value());
-                        if (state == context.ui_drawables.end()) return true;
-                        if (state->second.bitmap_drawable) {
-                            const auto bitmap_field = vm.Linker().FindFieldRecursive(
-                                vm.Model().ObjectClass(drawable), "mBitmap", "Landroid/graphics/Bitmap;");
-                            if (!bitmap_field || vm.Linker().Field(*bitmap_field).is_unimplemented)
-                                throw std::logic_error("BitmapDrawable bitmap field unavailable");
-                            const dexvm::VmObjectRef source{
-                                vm.Model().InstanceSlots(drawable)[vm.Linker().Field(*bitmap_field).slot].bits};
-                            const auto bitmap = context.bitmaps.find(source.Value());
-                            if (source.IsValid() &&
-                                (bitmap == context.bitmaps.end() || bitmap->second.recycled || !bitmap->second.pixels))
-                                return true;
-                            if (source.IsValid() && !state->second.leaf_pixels &&
-                                (state->second.bitmap_revision != bitmap->second.pixels->Revision() ||
-                                 bitmap->second.pixels->Locks() != 0))
-                                return true;
-                        }
-                    }
-                }
-                dexvm::IntrinsicContext call{vm, view, {}};
-                dexvm::IntrinsicCall fields(call);
-                const auto& tokens = *context.view_java_measure_fields;
-                const auto flags = fields.GetInt(tokens.view_flags);
-                const auto visibility = (flags & 0xc) == 8   ? ui::Visibility::Gone
-                                        : (flags & 0xc) == 4 ? ui::Visibility::Invisible
-                                                             : ui::Visibility::Visible;
-                if (projected->android_id != fields.GetInt(context.view_java_hierarchy_fields->id) ||
-                    projected->visibility != visibility || projected->enabled != ((flags & 0x20) == 0) ||
-                    projected->clickable != ((flags & 0x4000) != 0) || projected->focusable != ((flags & 1) != 0) ||
-                    projected->focusable_in_touch_mode != ((flags & 0x40000) != 0) ||
-                    projected->scroll_x != fields.GetInt(tokens.scroll[0]) ||
-                    projected->scroll_y != fields.GetInt(tokens.scroll[1]))
-                    return true;
-            }
-            return false;
-        };
         if (same_identity && schedule.published && schedule.published == context.ui_tree.PublishedProjection() &&
             schedule.requests.empty() && !layout_requested && schedule.metrics == metrics &&
-            schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty &&
-            !projection_changed()) {
+            schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
             diagnostic("clean snapshot");
             if (context.ui_tree.Get(context.ui_tree.Root())->draw_dirty) {
                 const auto target = *context.ui_tree.ProjectionTarget();

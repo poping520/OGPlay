@@ -825,7 +825,7 @@ bool SurfaceOwnerCurrent(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                          DexVmAndroidContext::UiOwnerIdentity identity) {
     const auto projection = context.ui_tree.PublishedProjection();
     const auto node = FindViewUiNode(context, identity.view.Value());
-    if (!projection || !node || !projection->IsVisible(*node)) return false;
+    if (!projection || !node || !projection->Get(*node) || !projection->IsVisible(*node)) return false;
     identity.revision = context.ui_content_revision;
     return IsAndroidUiOwnerCurrent(vm, context, identity, false);
 }

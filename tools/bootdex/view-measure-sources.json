@@ -177,7 +177,8 @@
     "getSystemUiVisibility()I",
     "getDrawableState()[I",
     "mergeDrawableStates([I[I)[I",
-    "getBackground()Landroid/graphics/drawable/Drawable;"
+    "getBackground()Landroid/graphics/drawable/Drawable;",
+    "bringToFront()V"
   ],
   "rom_fields": [
     "ACCESSIBILITY_CURSOR_POSITION_UNDEFINED:I",

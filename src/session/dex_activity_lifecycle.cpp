@@ -1501,7 +1501,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             for (const auto& [_, state] : context.gl_surface_runtimes) {
                 if (!state->renderer.IsValid()) continue;
                 auto current = runtime::FindViewUiNode(context, state->view.Value());
-                const bool visible = current && (!java || projection) && tree.IsVisible(*current);
+                const bool visible = current && (!java || projection) && tree.Get(*current) && tree.IsVisible(*current);
                 if (visible)
                     while (current && *current != *node)
                         current = tree.Get(*current)->parent;

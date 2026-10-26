@@ -119,6 +119,7 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   只读记录/符号/字符串/SysV hash 位于 `[0x79000000,0x7a000000)` 有界 arena，宿主更新引用
   时临时切换记录页权限；Virtual SO 的 base/size/load_bias 为 0，符号指向真实 thunk/data。
   不提供完整私有 linker 状态或其他 API/ABI 布局，不接管模块、构造器或 JNI 初始化。
+- soinfo 仅投影名称、base/size/flags、符号/字符串/SysV hash、引用数及 link_map 地址/名称、load_bias（≤65536 导出、≤4 MiB）；不提供 phdr/dynamic/链表遍历、linker 写入或 debugger 协议，因为它只是当前进程的只读元数据视图。
 - NativeLibraryLoader 以 canonical path + ClassLoader token 维护唯一 Loading/Loaded/Failed
   registry：同 loader 幂等、同线程递归返回现有 handle、跨 loader 拒绝、Failed 重试稳定失败。
   app resolver 只用 selected-ABI inventory，basename 为身份，DT_SONAME 为受检别名；

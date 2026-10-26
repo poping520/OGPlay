@@ -51,9 +51,16 @@ using runtime::DispatchDeepTouchEvent;
 // through interpreted onTouchEvent/onKeyDown overrides. Manifest MAIN/LAUNCHER
 // selects the initial Activity.
 
+// Owner-scoped raster cache; only immutable complete projection identities are retained.
+struct AndroidPresentationCache final {
+    std::shared_ptr<const runtime::DexVmAndroidContext::PresentationSnapshot> snapshot;
+    std::vector<std::shared_ptr<const runtime::ui::UiOverlayFrame>> normal, modal;
+};
+
 // Read-only experimental compositor. Uses one acquired presentation for every UI plane.
 [[nodiscard]] runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
-                                                                            runtime::AndroidBoundaryFrame frame);
+                                                                            runtime::AndroidBoundaryFrame frame,
+                                                                            AndroidPresentationCache* cache = nullptr);
 
 struct DexActivityLifecycleBindings final {
     runtime::DexVmGuestBridge* bridge{};
@@ -170,6 +177,7 @@ private:
     // Activity and every currently attached View. Repeated values are silent.
     void SetWindowFocus(bool has_focus);
 
+    AndroidPresentationCache presentation_cache_;
     DexActivityLifecycleBindings bindings_;
     std::vector<runtime::AndroidBoundaryInput> pending_input_;
     AndroidInputTimeline input_timeline_;

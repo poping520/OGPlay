@@ -2516,3 +2516,16 @@ APK 后续进入 InputMethodManager/IME 时停在 ADR-0161 决定7边界，记�
 
 实现与验证见 [DVM-329](../tasks/dexvm/DVM-329.md)。未新增 ViewRootImpl、Binder/WMS
 或完整 Android；生产默认 Legacy 保持。实施方按常设原则调整审计规则范围：无。
+
+### VD-11-20 按需呈现（编排方决定 2026-10-26（七））
+
+projection 未换代、无 draw_dirty、无 producer/surface 变化时，present 不得重新栅格化
+或重新合成 UI 投影层，复用上次结果；只有真实变化才重绘。不得跳过 guest 帧或降低呈现频率。
+
+session 按完整不可变投影/宿主 modal 身份、viewport 与冻结 bitmap 输入缓存各 UI 平面的
+RGBA；相同发布直接复用，producer 单独换帧可复用相同 UI 平面。每个新 producer 底图仍按
+原 video下层→guest UI→video上层→modal 顺序混合并照常上传/呈现，不复用旧 producer
+合成的最终帧。栅格失败或尺寸不匹配保留旧完整缓存，发布与输入租约不变。
+`ViewGroup.removeViewInLayout(View)` 执行 ROM 的 removeViewInternal 链，不额外伪造
+requestLayout；调用方真实 invalidation/布局屏障提交更新的 Java 子序。
+实施与证据见 [DVM-330](../tasks/dexvm/DVM-330.md)。实施方按常设原则调整审计范围：无。

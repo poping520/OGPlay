@@ -352,9 +352,25 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             const auto background = fields.GetRef((*context.view_java_input_fields)[1]);
             const auto skin = context.ui_drawables.find(background.Value());
             if (skin != context.ui_drawables.end() && skin->second.rom_skin) {
-                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.rom_skin_draw", 0);
-                throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                         "ROM skin drawing is unsupported"};
+                const auto& state = skin->second;
+                const auto selected = state.skin_children.empty() ? background
+                                      : state.skin_current >= 0
+                                          ? state.skin_children.at(static_cast<std::size_t>(state.skin_current))
+                                          : dexvm::VmObjectRef{};
+                const auto leaf = context.ui_drawables.find(selected.Value());
+                if (leaf == context.ui_drawables.end() || !leaf->second.leaf_pixels ||
+                    !leaf->second.leaf_pixels->nine_patch) {
+                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.rom_skin_draw", 0);
+                    throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                             "ROM skin pixels unavailable"};
+                }
+                // Freeze the selected immutable leaf into the existing bitmap plane.
+                // Java remains the owner of selector state and all View geometry.
+                context.ui_bitmaps[leaf->second.resource_id] = leaf->second.leaf_pixels;
+                auto& target = *context.ui_tree.Get(*node);
+                target.background_color.reset();
+                target.background_resource_id = leaf->second.resource_id;
+                target.background_alpha = state.alpha / 255.0F;
             }
         }
         if (prepare_render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))

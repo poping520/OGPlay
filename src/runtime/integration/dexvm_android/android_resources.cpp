@@ -710,7 +710,7 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
             context->theme_resources.Resource(static_cast<std::uint32_t>(c.arguments[0].AsInt()),
                                               static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
         ThemeOutput(c, c.arguments[2].ref, value);
-        return XmlInt(0);
+        return XmlInt(value.type == 3 ? value.cookie - 1 : 0);
     });
     method("loadResourceBagValue", "(IILandroid/util/TypedValue;Z)I", false, [context](dx::IntrinsicContext& c) {
         ThemeAssetLive(context, c.receiver);
@@ -734,7 +734,7 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
                 context->rom_string_pool = context->xml_cursors.CreateStringPool(context->theme_resources.Strings());
             return XmlInt(context->rom_string_pool.value);
         }
-        if (index != 0 || (context->arsc.global_string_pool.empty() && context->theme_resources.Strings().empty()))
+        if (index != 0 || context->arsc.global_string_pool.empty())
             throw std::runtime_error("resource pool index unavailable");
         if (!context->resource_string_pool.value)
             context->resource_string_pool = context->xml_cursors.CreateStringPool(context->arsc.global_string_pool);
@@ -767,6 +767,9 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
                 c.vm.Linker().ResolveDescriptor("[Landroid/content/res/StringBlock;"), owner, count);
             const auto roots = c.vm.ProtectReferences(std::array{array});
             for (int index = 0; index < count; ++index) {
+                // An owner without an APK ARSC has no cookie1 pool. Keep that
+                // slot absent while preserving the sealed ROM cookie2 identity.
+                if (index == 0 && context->arsc.global_string_pool.empty()) continue;
                 auto& pool = index == 0 ? context->resource_string_pool : context->rom_string_pool;
                 if (!pool.value)
                     pool = context->xml_cursors.CreateStringPool(index == 0 ? context->arsc.global_string_pool
@@ -1355,7 +1358,53 @@ Decl Declare_android_content_res_Resources(const Context &context) {
               return ThemeChecked(call, context, [&] {
                   const auto value = call.arguments[0].ref;
                   const auto type = XmlField(call.vm, value, "type");
-                  if (type < 28 || type > 31) throw std::runtime_error("only scalar single-state colors are supported");
+                  if (type == 3) {
+                      const auto id = XmlField(call.vm, value, "resourceId");
+                      const auto color = context->theme_resources.Color(id);
+                      if (!color || color->xml.empty() || XmlField(call.vm, value, "data") != color->value.data ||
+                          XmlField(call.vm, value, "assetCookie") != static_cast<std::uint32_t>(color->value.cookie))
+                          throw std::runtime_error("unknown ROM ColorStateList XML");
+                      for (const auto* descriptor :
+                           {"Landroid/content/res/XmlBlock;", "Landroid/content/res/ColorStateList;"}) {
+                          const auto initialized =
+                              call.vm.EnsureClassInitialized(call.vm.Linker().ResolveDescriptor(descriptor));
+                          if (initialized.exception.IsValid())
+                              throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                                                    initialized.exception_message, initialized.exception};
+                      }
+                      const auto array = call.vm.Model().NewPrimitiveArray(
+                          call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte,
+                          static_cast<std::int32_t>(color->xml.size()));
+                      const auto block = call.vm.NewIntrinsicInstance("Landroid/content/res/XmlBlock;");
+                      const auto roots = call.vm.ProtectReferences(std::array{array, block});
+                      call.vm.Model().FillPrimitiveData(array, color->xml);
+                      const auto ctor =
+                          call.vm.Linker().FindDirectMethod(call.vm.Model().ObjectClass(block), "<init>", "([B)V");
+                      const auto built =
+                          call.vm.Call(*ctor, std::array{dx::VmValue::Ref(block), dx::VmValue::Ref(array)});
+                      if (built.exception.IsValid())
+                          throw dx::VmJavaThrow{call.vm.Linker().Class(built.exception_class).descriptor,
+                                                built.exception_message, built.exception};
+                      const auto parser =
+                          CallAndroidMethod(call.vm, block, "newParser", "()Landroid/content/res/XmlResourceParser;")
+                              .ref;
+                      const auto parser_root = call.vm.ProtectReferences(std::array{parser});
+                      static_cast<void>(CallAndroidMethod(call.vm, block, "close", "()V"));
+                      const auto klass = call.vm.Linker().ResolveDescriptor("Landroid/content/res/ColorStateList;");
+                      const auto method = call.vm.Linker().FindDirectMethod(
+                          klass, "createFromXml",
+                          "(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;)Landroid/content/res/ColorStateList;");
+                      const auto result =
+                          call.vm.Call(*method, std::array{dx::VmValue::Ref(call.receiver), dx::VmValue::Ref(parser)});
+                      const auto result_root =
+                          call.vm.ProtectReferences(std::array{result.value.ref, result.exception});
+                      static_cast<void>(CallAndroidMethod(call.vm, parser, "close", "()V"));
+                      if (result.exception.IsValid())
+                          throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                                result.exception_message, result.exception};
+                      return result.value;
+                  }
+                  if (type < 28 || type > 31) throw std::runtime_error("unsupported ColorStateList value");
                   const auto method = call.vm.Linker().FindDirectMethod(
                       call.vm.Linker().ResolveDescriptor("Landroid/content/res/ColorStateList;"), "valueOf",
                       "(I)Landroid/content/res/ColorStateList;");
@@ -1775,7 +1824,6 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
             pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24));
         }
         auto& state = context->ui_drawables.at(object.Value());
-        state.leaf_pixels = std::move(pixels);
         const auto scale = [&](std::int32_t value) {
             return resource->density == 0
                        ? value
@@ -1784,6 +1832,25 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
         };
         state.skin_width = scale(static_cast<std::int32_t>(resource->width));
         state.skin_height = scale(static_cast<std::int32_t>(resource->height));
+        auto scaled = std::make_shared<ui::UiBitmap>();
+        scaled->width = state.skin_width;
+        scaled->height = state.skin_height;
+        if (scaled->width <= 0 || scaled->height <= 0 || scaled->width > 4096 || scaled->height > 4096)
+            throw std::runtime_error("ROM skin scaled pixels exceed bounds");
+        scaled->nine_patch = true;
+        for (std::size_t i = 0; i < 2; ++i) {
+            scaled->stretch_x[i] = scale(resource->stretch_x[i]);
+            scaled->stretch_y[i] = scale(resource->stretch_y[i]);
+        }
+        for (int y = 0; y < scaled->height; ++y) {
+            const auto sy = static_cast<std::int64_t>(y) * pixels->height / scaled->height;
+            for (int x = 0; x < scaled->width; ++x) {
+                const auto sx = static_cast<std::int64_t>(x) * pixels->width / scaled->width;
+                const auto at = static_cast<std::size_t>(sy * pixels->width + sx) * 4;
+                scaled->rgba8.insert(scaled->rgba8.end(), pixels->rgba8.data() + at, pixels->rgba8.data() + at + 4);
+            }
+        }
+        state.leaf_pixels = std::move(scaled);
         for (std::size_t i = 0; i < 4; ++i) {
             state.skin_padding[i] = scale(resource->padding[i]);
             state.skin_optical[i] = scale(resource->optical[i]);

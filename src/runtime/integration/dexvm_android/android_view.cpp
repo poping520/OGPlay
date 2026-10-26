@@ -386,20 +386,10 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
             return dx::VmValue::Void();
         });
     builder.FinalMethod("showSoftInput", "(Landroid/view/View;I)Z", [context](dx::IntrinsicContext& call) {
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "IME sessions are unsupported (ADR-0161 decision 7)"};
-        }
         CheckInputFocusWithoutConnection(call, context);
         return dx::VmValue::Int(0);
     });
     builder.FinalMethod("hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z", [context](dx::IntrinsicContext& call) {
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "IME sessions are unsupported (ADR-0161 decision 7)"};
-        }
         CheckInputFocusWithoutConnection(call, context);
         return dx::VmValue::Int(0);
     });

@@ -65,6 +65,7 @@ public:
 
         std::uint32_t id{}, density{}, width{}, height{};
         std::array<std::int32_t, 4> padding{}, optical{};
+        std::array<std::int32_t, 2> stretch_x{}, stretch_y{};
         std::vector<std::byte> png;
         std::vector<Item> items;
     };
@@ -72,6 +73,13 @@ public:
     [[nodiscard]] const RomDrawable* Drawable(std::uint32_t id, std::uint32_t density) const;
 
     [[nodiscard]] const std::vector<std::byte>& Strings() const { return string_pool_; }
+
+    struct RomColor final {
+        ThemeValue value;
+        std::vector<std::byte> xml;
+    };
+
+    [[nodiscard]] const RomColor* Color(std::uint32_t id) const;
     void Shutdown();
 
     [[nodiscard]] std::size_t LiveThemes() const { return themes_.size(); }
@@ -102,6 +110,7 @@ private:
     std::set<std::uint32_t> projected_reference_ids_;
     std::vector<std::byte> string_pool_;
     std::vector<RomDrawable> rom_drawables_;
+    std::map<std::uint32_t, RomColor> rom_colors_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

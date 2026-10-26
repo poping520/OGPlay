@@ -45,7 +45,43 @@ def self_test():
     assert named_value('bold|typo', 'textStyle', formats['textStyle'])['state'] == 'unsupported'
     assert named_value('bold', 'typeface', formats['typeface'])['state'] == 'unsupported'
     assert named_value('normal', 'fontFamily', formats['fontFamily']) is None
-    print('same-ROM enum/flags format positive and unknown/cross-attribute negatives passed')
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+        by_id = {r['id']: r for r in rows}
+        selectors = color_resources()
+        assert sum('xml' in r for r in selectors) == sum(
+            v.get('path', '').startswith('res/color/') for r in rows for v in r['configurations'])
+        row = next(r for r in selectors if r['name'] == 'primary_text_light')
+        raw = bytes.fromhex(row['xml'])
+        validate_color_xml(raw, by_id)
+        changes = []
+        for at, kind, header, size in rom.ResourceTable(raw).chunks(8, len(raw)):
+            if kind == 0x102:
+                _, name, start, width, count, _, _, _ = struct.unpack_from('<II6H', raw, at + 16)
+                if not count:
+                    changed = bytearray(raw)
+                    struct.pack_into('<I', changed, at + 20, 0)
+                    changes.append(changed)  # non-selector root
+                else:
+                    for i in range(count):
+                        a = at + 16 + start + i * width
+                        if raw[a + 15] == 1:
+                            changed = bytearray(raw)
+                            struct.pack_into('<I', changed, a + 16, 0x0106ffff)
+                            changes.append(changed)  # unknown color reference
+                    changed = bytearray(raw)
+                    struct.pack_into('<I', changed, at + 16 + start + 4, 0xffffffff)
+                    changes.append(changed)  # unknown attribute
+                    break
+        assert len(changes) >= 3
+        for changed in changes:
+            try:
+                validate_color_xml(changed, by_id)
+            except (ValueError, IndexError):
+                pass
+            else:
+                raise AssertionError('invalid ColorStateList XML accepted')
+    print('same-ROM enum/flags and ColorStateList grammar/reference positive and negative checks passed')
 
 
 def string_pool(strings):
@@ -152,12 +188,114 @@ def drawable_closure():
                         raise ValueError('invalid ninepatch padding')
                     optical = list(struct.unpack('<4i', chunks[b'npLb'])) if b'npLb' in chunks else [0]*4
                     facts.update(kind='ninepatch', png=raw.hex(), width=width, height=height,
+                                 stretch_x=list(struct.unpack_from('>2i', chunk, 32)) if nx == 2 else [],
+                                 stretch_y=list(struct.unpack_from('>2i', chunk, 32 + 4 * nx)) if ny == 2 else [],
                                  padding=[left, top, right, bottom], optical=optical)
                 else:
                     raise ValueError('unreviewed skin drawable type')
                 variants.append(facts)
             result.append(dict(id=ident, name=row['name'], variants=variants))
         return sorted(result, key=lambda row: row['id'])
+
+
+def validate_color_xml(raw, by_id):
+    """Validate the capability grammar before the unmodified ROM XML parser."""
+    table = rom.ResourceTable(raw)
+    if table.words('<HHI', 0) != (3, 8, len(raw)):
+        raise ValueError('invalid ColorStateList XML header')
+    strings, ids, stack, count = [], [], [], 0
+    root_seen = False
+    for at, kind, header, size in table.chunks(8, len(raw)):
+        if kind == 1:
+            strings = table.pool(at)
+        elif kind == 0x180:
+            ids = list(table.words('<%dI' % ((size - header) // 4), at + header))
+        elif kind == 0x102:
+            _, name, start, width, number, _, _, _ = table.words('<II6H', at + 16)
+            tag = strings[name]
+            if (not stack and (tag != 'selector' or root_seen)) or (stack and (stack != ['selector'] or tag != 'item')):
+                raise ValueError('unsupported ColorStateList XML structure')
+            if tag == 'selector':
+                root_seen = True
+            if tag == 'selector' and number:
+                raise ValueError('unknown ColorStateList selector attribute')
+            color = False
+            attributes = set()
+            for i in range(number):
+                ns, name, text, vs, zero, typ, data = table.words('<IIIHBBI', at + 16 + start + i * width)
+                aid = ids[name] if name < len(ids) else 0
+                attr = by_id.get(aid, {})
+                if aid in attributes:
+                    raise ValueError('duplicate ColorStateList attribute')
+                attributes.add(aid)
+                if ns >= len(strings) or strings[ns] != 'http://schemas.android.com/apk/res/android':
+                    raise ValueError('unknown ColorStateList attribute namespace')
+                if attr.get('type') != 'attr':
+                    raise ValueError('unknown ColorStateList attribute')
+                if attr['name'] == 'color':
+                    color = True
+                    if typ == 1:
+                        resolve_rom_color(data, by_id)
+                    elif not 28 <= typ <= 31:
+                        raise ValueError('unsupported ColorStateList color value')
+                elif not attr['name'].startswith('state_') or typ != 18:
+                    raise ValueError('unknown ColorStateList item attribute')
+            if tag == 'item':
+                if not color:
+                    raise ValueError('ColorStateList item without color')
+                count += 1
+            stack.append(tag)
+        elif kind == 0x103:
+            _, name = table.words('<II', at + 16)
+            if not stack or stack.pop() != strings[name]:
+                raise ValueError('invalid ColorStateList end tag')
+        elif kind not in (0x100, 0x101):
+            raise ValueError('unsupported ColorStateList XML chunk')
+    if stack or not count:
+        raise ValueError('empty/unclosed ColorStateList')
+
+
+def resolve_rom_color(ident, by_id, seen=()):
+    if ident in seen or len(seen) >= 64:
+        raise ValueError('ROM color reference cycle/depth')
+    row = by_id.get(ident)
+    if not row or row['type'] != 'color':
+        raise ValueError('unknown ROM color reference')
+    defaults = [v for v in row['configurations'] if not any(bytes.fromhex(v['config_hex'])[4:])]
+    if len(defaults) != 1:
+        raise ValueError('unsupported ROM color configuration')
+    v = defaults[0]
+    if v['value_type'] == 1:
+        return resolve_rom_color(v['data'], by_id, seen + (ident,))
+    if not 28 <= v['value_type'] <= 31:
+        raise ValueError('ROM color reference is not scalar')
+    return dict(type=v['value_type'], data=v['data'])
+
+
+def color_resources():
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+        by_id = {r['id']: r for r in rows}
+        result = []
+        for row in rows:
+            if row['type'] != 'color':
+                continue
+            entry = dict(id=row['id'], name=row['name'])
+            try:
+                defaults = [v for v in row['configurations'] if not any(bytes.fromhex(v['config_hex'])[4:])]
+                if len(defaults) != 1:
+                    raise ValueError('unsupported ROM color configuration')
+                v = defaults[0]
+                if v.get('path', '').startswith('res/color/') and v['path'].endswith('.xml'):
+                    raw = archive.read(v['path'])
+                    validate_color_xml(raw, by_id)
+                    entry.update(type=1, data=row['id'], xml=raw.hex(), path=v['path'], sha256=rom.sha(raw))
+                else:
+                    entry.update(resolve_rom_color(row['id'], by_id))
+            except ValueError as error:
+                entry['unsupported'] = str(error)
+            result.append(entry)
+        return result
 
 
 def generate(negative_rom_id=False):
@@ -236,13 +374,23 @@ def generate(negative_rom_id=False):
             break
     attribute_demands = [dict(name=name, resource_id=attrs[name]) for name in sorted(extra_demands)]
 
+    colors = color_resources()
+    color_bindings = {r['name']: r for r in colors}
     projected_references = {}
-    strings = []
+    strings = [row['path'] for row in colors if 'xml' in row]
+    for row in colors:
+        if 'xml' in row:
+            row['string_index'] = strings.index(row['path'])
 
     def value(text, attr_name, seen=()):
         if text in seen or len(seen) >= 64:
             raise ValueError('projected scalar reference cycle/depth: ' + text)
         ref = re.fullmatch(r'@(?:android:)?(color|dimen|integer|bool|string)/(.+)', text)
+        if ref and ref[1] == 'color':
+            row = color_bindings.get(ref[2])
+            if row and 'unsupported' not in row:
+                return dict(state='known', type=row['type'], data=row['data'])
+            return dict(state='unsupported', reason='unsupported ROM color reference: ' + text)
         if ref and (ref[1], ref[2]) in scalar_resources:
             return value(scalar_resources[(ref[1], ref[2])], attr_name, seen + (text,))
         style = re.fullmatch(r'@(?:android:)?style/(.+)', text)
@@ -340,7 +488,7 @@ def generate(negative_rom_id=False):
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs),
-                    rom_drawables=drawable_closure(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    rom_colors=colors, rom_drawables=drawable_closure(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
     return canonical(document)
 

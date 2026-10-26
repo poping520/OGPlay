@@ -107,7 +107,7 @@
       "scope": "JavaTraversal paired payload only",
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "baafcc7ce9568326c1f90b8513f8a603a71630783646c5086e9d48a69e23c75e",
+      "sha256": "f0ea15cac5ac61e37687d8f11ad144e1e3f389b8d3f69e4cd4e9c51bc9599e68",
       "generator": "tools/bootdex/theme_projection.py",
       "inputs_sha256": "40265974bd25a2ed3063479c00288222771da0a81969f36436b7c7412955a691"
     }

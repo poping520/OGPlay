@@ -2065,6 +2065,14 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 不跨属性复用名称。字符串使用独立 ROM StringBlock/cookie，不能解释为 APK 字符串索引。
 实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。
 
+### VD-11-17 ROM 颜色状态列表（编排方决定 2026-10-26（四））
+
+主题/样式指向同 ROM framework-res `res/color/*.xml` 的引用，通过原版
+ColorStateList XML 路径构造。按 selector/item、android:color 与 state_* 结构开放整个
+color 目录中的同构条目，不按名称白名单。颜色引用沿同 ROM ARSC 解析；结构外 XML、
+未知属性、未知或不可解析引用明确失败。普通 `#AARRGGBB` 按 format=color 直接投影。
+仅封存 values 默认配置；未登记配置不获得支持信用。实施见 [DVM-327](../tasks/dexvm/DVM-327.md)。
+
 ## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
 
 - 状态：Accepted（编排方按用户授权于 2026-10-25 决定）
@@ -2180,6 +2188,16 @@ StateListDrawable XML 与 NinePatchDrawable（.9.png 解码及 npTc padding/inse
 edit_text selector 及其 ninepatch 闭包；未知皮肤不获得信用。
 决定7的 Editor/InputConnection/IME 边界保持，进入 IME 则记账并明确失败。
 实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。
+
+### VD-11-17 状态色与 IME 查询（编排方决定 2026-10-26（四））
+
+精确修订决定2、3：采用 ADR-0160 的上述 ROM ColorStateList 结构能力及明确失败边界。
+决定7细化：JavaTraversal 的 showSoftInput/hideSoftInputFromWindow 与 restartInput、
+Legacy 一致，先经 CheckInputFocusWithoutConnection 检查真实焦点。当前窗口无获得焦点
+且附着的被服务 View 时返回 false；restartInput 无连接时正常返回。需要 InputConnection
+或 IME 会话时记账并明确失败。不新增 IME、Editor、InputConnection 或 Binder。
+颜色消费者保留 TextView 原 Java 颜色字段及 ColorStateList 身份，按原 View 状态选择颜色。
+已允许的 edit_text 默认背景在现有叶 bitmap 平面冻结选中 ninepatch；guest draw 仍明确失败。
 
 ## ADR-0162 · VD-11 JavaTraversal 生产接线
 

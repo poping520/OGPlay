@@ -48,6 +48,11 @@ std::array<std::uint32_t, 6> ThemeValue::Slots() const {
     return {type, data, static_cast<std::uint32_t>(cookie), resource_id, flags, density};
 }
 
+const ThemeResources::RomColor* ThemeResources::Color(std::uint32_t id) const {
+    const auto found = rom_colors_.find(id);
+    return found == rom_colors_.end() ? nullptr : &found->second;
+}
+
 void ThemeResources::Load(std::string_view projection) {
     if (loaded_ || stopped_) throw std::logic_error("theme projection cannot be replaced");
     core::JsonParseError error;
@@ -62,6 +67,45 @@ void ThemeResources::Load(std::string_view projection) {
         if (!pool->IsArray() || pool->Size() > 4096) throw std::runtime_error("invalid ROM string pool");
         for (std::size_t i = 0; i < pool->Size(); ++i)
             strings.push_back(Text(*pool->Element(i)));
+    }
+    std::map<std::uint32_t, RomColor> colors;
+    if (const auto rows = root.Member("rom_colors")) {
+        if (!rows->IsArray() || rows->Size() > 1024) throw std::runtime_error("invalid ROM color bounds");
+        for (std::size_t i = 0; i < rows->Size(); ++i) {
+            const auto row = *rows->Element(i);
+            const auto id = Number(Member(row, "id"));
+            RomColor color;
+            if (const auto unsupported = row.Member("unsupported"))
+                color.value.unsupported = Text(*unsupported);
+            else {
+                color.value.type = Number(Member(row, "type"));
+                color.value.data = Number(Member(row, "data"));
+                color.value.resource_id = id;
+                if (const auto xml = row.Member("xml")) {
+                    const auto hex = Text(*xml);
+                    if (hex.size() % 2 || hex.size() > 131072) throw std::runtime_error("invalid ROM color XML bounds");
+                    const auto digit = [](char c) -> unsigned {
+                        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                        throw std::runtime_error("invalid ROM color XML hex");
+                    };
+                    for (std::size_t n = 0; n < hex.size(); n += 2)
+                        color.xml.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                }
+                if ((!color.xml.empty() && (color.value.type != 1 || color.value.data != id)) ||
+                    (color.xml.empty() && (color.value.type < 28 || color.value.type > 31)))
+                    throw std::runtime_error("invalid ROM color value");
+                if (!color.xml.empty()) {
+                    color.value.type = 3;
+                    color.value.cookie = 2;
+                    color.value.data = Number(Member(row, "string_index"));
+                    if (color.value.data >= strings.size() || strings[color.value.data] != Text(Member(row, "path")))
+                        throw std::runtime_error("invalid ROM color path string");
+                }
+            }
+            if ((id >> 16) != 0x0106 || !colors.emplace(id, std::move(color)).second)
+                throw std::runtime_error("invalid/duplicate ROM color ID");
+        }
     }
     std::vector<RomDrawable> skins;
     if (const auto rows = root.Member("rom_drawables")) {
@@ -108,6 +152,19 @@ void ThemeResources::Load(std::string_view projection) {
                             if (value > INT32_MAX) throw std::runtime_error("invalid skin inset");
                             target[n] = static_cast<std::int32_t>(value);
                         }
+                    }
+                    for (const auto name : {"stretch_x", "stretch_y"}) {
+                        const auto divisions = Member(variant, name);
+                        if (!divisions.IsArray() || divisions.Size() != 2)
+                            throw std::runtime_error("unsupported ROM ninepatch divisions");
+                        auto& target = std::string_view(name) == "stretch_x" ? skin.stretch_x : skin.stretch_y;
+                        const auto extent = std::string_view(name) == "stretch_x" ? skin.width : skin.height;
+                        for (std::size_t n = 0; n < 2; ++n) {
+                            const auto v = Number(*divisions.Element(n));
+                            if (v > extent || v > INT32_MAX) throw std::runtime_error("invalid ninepatch division");
+                            target[n] = static_cast<std::int32_t>(v);
+                        }
+                        if (target[0] >= target[1]) throw std::runtime_error("empty ninepatch stretch");
                     }
                     const auto hex = Text(Member(variant, "png"));
                     if (hex.size() % 2 || hex.size() > 1048576) throw std::runtime_error("invalid skin PNG bounds");
@@ -212,6 +269,7 @@ void ThemeResources::Load(std::string_view projection) {
             string_pool.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
     }
     string_pool_ = std::move(string_pool);
+    rom_colors_ = std::move(colors);
     rom_drawables_ = std::move(skins);
     drawable_attributes_ = std::move(drawables);
     projected_reference_ids_ = std::move(reference_ids);
@@ -404,8 +462,12 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
         if (!seen.emplace(1, value.data).second) throw std::runtime_error("resource reference cycle");
         const auto id = value.data;
         if ((id >> 24U) == 1) {
-            if (!projection_.contains(id) && !projected_reference_ids_.contains(id) && !Drawable(id, 160))
+            if (!projection_.contains(id) && !projected_reference_ids_.contains(id) && !Drawable(id, 160) && !Color(id))
                 throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
+            if (const auto color = Color(id)) {
+                Supported(color->value);
+                return color->value;
+            }
             // Styles and reviewed View drawable IDs are terminal, lazy references.
             // No system drawable is loaded or rasterized by this provider.
             value.resource_id = id;
@@ -442,7 +504,7 @@ std::optional<ThemeValue> ThemeResources::Attribute(ThemeToken token, std::uint3
 }
 
 ThemeValue ThemeResources::Resource(std::uint32_t resource, bool resolve, const loader::ArscTable& table) const {
-    if ((resource >> 24U) == 1 && Drawable(resource, 160))
+    if ((resource >> 24U) == 1 && (Drawable(resource, 160) || Color(resource)))
         return Resolve(ThemeValue{1, resource, 1, resource, 0, 0, {}}, nullptr, resolve, table);
     const auto* entry = Entry(resource, table);
     if ((resource >> 24U) == 1 || !entry || entry->is_complex)

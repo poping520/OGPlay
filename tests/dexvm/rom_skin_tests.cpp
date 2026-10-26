@@ -115,8 +115,8 @@ TEST_CASE("DVM-326 window tokens follow attachment stable window identity and pe
                              .ref;
         const auto ime = f.OnOutcome(imm, "hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z",
                                      {VmValue::Ref(token), VmValue::Int(0)});
-        CHECK(ime.exception.IsValid());
-        CHECK(ime.exception_message.find("IME sessions are unsupported") != std::string::npos);
+        CHECK_FALSE(ime.exception.IsValid());
+        CHECK(ime.value.AsInt() == 0);
         CHECK(f.OnOutcome(token, "transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z",
                           {VmValue::Int(1), VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)})
                   .exception.IsValid());
@@ -230,5 +230,75 @@ TEST_CASE("DVM-326 selector traces its ninepatch children and releases decoded b
         for (const auto child : children)
             CHECK_FALSE(f.context->ui_drawables.contains(child.Value()));
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-327 ROM color selectors execute XML inflation and state/default selection") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        for (const auto id : {0x01060003, 0x01060005}) {
+            const auto color =
+                f.On(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(id)}).ref;
+            const auto roots = f.vm.ProtectReferences(std::array{owner, res, color});
+            REQUIRE(color.IsValid());
+            CHECK(f.On(color, "isStateful", "()Z").AsInt() == 1);
+            CHECK(static_cast<std::uint32_t>(f.On(res, "getColor", "(I)I", {VmValue::Int(id)}).AsInt()) ==
+                  (id == 0x01060003 ? 0xff000000U : 0xffbebebeU));
+            const auto states =
+                f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
+            f.model.SetPrimitiveElement(states, 0, 0x0101009e);
+            const auto selected =
+                f.On(color, "getColorForState", "([II)I", {VmValue::Ref(states), VmValue::Int(0)}).AsInt();
+            CHECK(static_cast<std::uint32_t>(selected) == (id == 0x01060003 ? 0xff000000U : 0xffbebebeU));
+            CHECK(static_cast<std::uint32_t>(f.On(color, "getDefaultColor", "()I").AsInt()) ==
+                  (id == 0x01060003 ? 0xff000000U : 0xffbebebeU));
+            f.model.SetPrimitiveElement(states, 0, 0x0101009d);  // window focused, disabled
+            CHECK(static_cast<std::uint32_t>(
+                      f.On(color, "getColorForState", "([II)I", {VmValue::Ref(states), VmValue::Int(0)}).AsInt()) ==
+                  (id == 0x01060003 ? 0x80000000U : 0x80bebebeU));
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        CHECK(
+            f.OnOutcome(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(0x0106ffff)})
+                .exception.IsValid());
+    }
+}
+
+TEST_CASE("DVM-327 JavaTraversal IME uses real bounded focus before rejecting connections") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto leaf = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto imm = f.On(owner, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                              {VmValue::Ref(f.vm.NewStringUtf8("input_method"))})
+                             .ref;
+        const auto check = [&](bool active) {
+            const auto show =
+                f.OnOutcome(imm, "showSoftInput", "(Landroid/view/View;I)Z", {VmValue::Ref(leaf), VmValue::Int(0)});
+            const auto hide = f.OnOutcome(imm, "hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z",
+                                          {VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+            for (const auto* result : {&show, &hide}) {
+                CHECK(result->exception.IsValid() == active);
+                if (active)
+                    CHECK(result->exception_message == "InputConnection creation for the focused View is unsupported");
+                else
+                    CHECK(result->value.AsInt() == 0);
+            }
+        };
+        check(false);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(leaf)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        f.context->window_focus_activity.store(owner.Value());
+        f.context->window_has_focus.store(true);
+        check(false);
+        f.On(leaf, "setFocusable", "(Z)V", {VmValue::Int(1)});
+        REQUIRE(f.On(leaf, "requestFocus", "()Z").AsInt() == 1);
+        CHECK(f.ledger.Unimplemented().empty());
+        check(true);
+        f.context->window_has_focus.store(false);
+        check(false);
     }
 }

@@ -821,6 +821,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         };
         const bool measure_frames = hal::HostEnvironmentValue("OGPLAY_FRAME_BENCHMARK") == "1";
         std::array<std::uint64_t, 4096> frame_samples{};
+        std::array<std::uint64_t, 4096> step_samples{}, present_samples{};
+        std::uint64_t active_step_ns{}, active_present_ns{};
         std::size_t frame_sample_count{};
         std::uint64_t active_frame_ns{};
         while (!quit && !guest->ExitRequested() &&
@@ -956,6 +958,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
                     throw;
                 }
+                if (measure_frames) active_step_ns += hal::Clock::SteadyTimestampNs() - frame_started_ns;
                 if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
                 const auto stepped = driver.state();
                 if (mcp_manual_step && audio_pump) {
@@ -986,11 +989,17 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 } else {
                     video_pace_deadline_ns = 0;
                 }
+                const auto present_started_ns = measure_frames ? hal::Clock::SteadyTimestampNs() : 0;
                 frame_presented = present_latest();
                 if (measure_frames) {
+                    active_present_ns += hal::Clock::SteadyTimestampNs() - present_started_ns;
                     active_frame_ns += hal::Clock::SteadyTimestampNs() - frame_started_ns;
                     if (frame_presented) {
-                        frame_samples[frame_sample_count++ % frame_samples.size()] = active_frame_ns;
+                        const auto index = frame_sample_count++ % frame_samples.size();
+                        frame_samples[index] = active_frame_ns;
+                        step_samples[index] = active_step_ns;
+                        present_samples[index] = active_present_ns;
+                        active_step_ns = active_present_ns = 0;
                         active_frame_ns = 0;
                     }
                 }
@@ -1021,9 +1030,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (measure_frames && frame_sample_count) {
             const auto count = std::min(frame_sample_count, frame_samples.size());
             std::sort(frame_samples.begin(), frame_samples.begin() + static_cast<std::ptrdiff_t>(count));
+            std::sort(step_samples.begin(), step_samples.begin() + static_cast<std::ptrdiff_t>(count));
+            std::sort(present_samples.begin(), present_samples.begin() + static_cast<std::ptrdiff_t>(count));
             logger.Write(core::LogLevel::info, "frontend.frame_timing", "presented active frame timing", {},
                          {{"samples", static_cast<std::uint64_t>(count)},
                           {"median_ns", frame_samples[count / 2]},
+                          {"step_median_ns", step_samples[count / 2]},
+                          {"present_median_ns", present_samples[count / 2]},
                           {"presented_samples", static_cast<std::uint64_t>(frame_sample_count)}},
                          kUnrestrictedLog);
         }

@@ -911,26 +911,56 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
     }
 
     runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndroidContext& context,
-                                                                  runtime::AndroidBoundaryFrame frame) {
+                                                                  runtime::AndroidBoundaryFrame frame,
+                                                                  AndroidPresentationCache* retained) {
         const auto snapshot = runtime::AcquireAndroidPresentation(context);
         if (!snapshot) throw std::runtime_error("No complete presentation snapshot");
         if (snapshot->viewport !=
             runtime::ui::Size{static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)})
             throw std::runtime_error("Presented frame does not match published presentation metrics");
+        AndroidPresentationCache temporary;
+        auto& cache = retained ? *retained : temporary;
+        if (cache.snapshot != snapshot) {
+            AndroidPresentationCache next;
+            next.snapshot = snapshot;
+            const bool reusable = cache.snapshot && cache.snapshot->viewport == snapshot->viewport &&
+                                  cache.snapshot->bitmaps == snapshot->bitmaps;
+            const auto raster = [&](const auto& tree, runtime::ui::UiRenderPlane plane) {
+                return std::make_shared<const runtime::ui::UiOverlayFrame>(
+                    runtime::ui::RasterizeUiOverlay(runtime::ui::BuildUiRenderList(*tree, snapshot->bitmaps, plane),
+                                                    {snapshot->viewport.width, snapshot->viewport.height}));
+            };
+            for (const auto& guest : snapshot->guest_window_epoch_refs) {
+                std::shared_ptr<const runtime::ui::UiOverlayFrame> pixels;
+                if (reusable) {
+                    const auto& old = cache.snapshot->guest_window_epoch_refs;
+                    const auto found = std::find(old.begin(), old.end(), guest);
+                    if (found != old.end()) pixels = cache.normal[static_cast<std::size_t>(found - old.begin())];
+                }
+                next.normal.push_back(pixels ? std::move(pixels) : raster(guest, runtime::ui::UiRenderPlane::normal));
+            }
+            for (const auto& modal : snapshot->modal_stack) {
+                std::shared_ptr<const runtime::ui::UiOverlayFrame> pixels;
+                if (reusable) {
+                    const auto& old = cache.snapshot->modal_stack;
+                    for (std::size_t i = 0; i < old.size(); ++i)
+                        if (old[i].tree == modal.tree) {
+                            pixels = cache.modal[i];
+                            break;
+                        }
+                }
+                next.modal.push_back(pixels ? std::move(pixels) : raster(modal.tree, runtime::ui::UiRenderPlane::all));
+            }
+            // A failed raster cannot replace a complete cache. Video-only publications
+            // reuse their UI planes; blending onto each new producer frame is still required.
+            cache = std::move(next);
+        }
         runtime::ComposeVideoViews(*snapshot, frame.rgba8, frame.width, frame.height, false);
-        for (const auto& guest : std::views::reverse(snapshot->guest_window_epoch_refs)) {
-            const auto overlay = runtime::ui::RasterizeUiOverlay(
-                runtime::ui::BuildUiRenderList(*guest, snapshot->bitmaps, runtime::ui::UiRenderPlane::normal),
-                {snapshot->viewport.width, snapshot->viewport.height});
-            ComposeUiOverlayInPlace(frame.rgba8, overlay);
-        }
+        for (const auto& overlay : std::views::reverse(cache.normal))
+            ComposeUiOverlayInPlace(frame.rgba8, *overlay);
         runtime::ComposeVideoViews(*snapshot, frame.rgba8, frame.width, frame.height, true);
-        for (const auto& modal : snapshot->modal_stack) {
-            const auto overlay =
-                runtime::ui::RasterizeUiOverlay(runtime::ui::BuildUiRenderList(*modal.tree, snapshot->bitmaps),
-                                                {snapshot->viewport.width, snapshot->viewport.height});
-            ComposeUiOverlayInPlace(frame.rgba8, overlay);
-        }
+        for (const auto& overlay : cache.modal)
+            ComposeUiOverlayInPlace(frame.rgba8, *overlay);
         return frame;
     }
 
@@ -939,7 +969,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            return ComposeAndroidPresentationFrame(context, std::move(frame));
+            return ComposeAndroidPresentationFrame(context, std::move(frame), &presentation_cache_);
         runtime::RefreshAndroidImageDrawables(context);
         runtime::RefreshAndroidSurfaceFrames(context);
         runtime::EnsureAndroidUiTraversal(

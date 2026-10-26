@@ -163,6 +163,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   软件基帧或 intrinsic renderer draw request，空窗口与纯 modal 也可呈现。Legacy 时序保持。
 - JavaTraversal 的 `ComposePresentedFrame` 只读一次 AcquireAndroidPresentation 得到的共同快照，
   按 video下层→guest UI→video上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
+  session 持有有界 UI 平面缓存：完整投影/冻结 modal 身份、viewport 和 bitmap 输入未变时
+  复用栅格结果；producer 单独更新不重绘 UI。新 producer 底图仍每帧按原顺序混合、上传，
+  不缓存替代 guest 帧；缓存仅保留当前发布的平面，失败不替换完整缓存。
   新帧尺寸须与共同快照一致，失败保留发布序列。Legacy 继续原刷新/布局/cache/合成路径。
   modal 输入先由 integration 使用同一发布对象命中/捕获，再进入 Java Dialog 协议；
   每个输入事件从 modal、NativeActivity 队列、编辑/键、pointer/焦点/scroll 到 deep/Activity

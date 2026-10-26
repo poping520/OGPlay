@@ -10,6 +10,7 @@
 #include <thread>
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include <chrono>
+#include "ogplay/session/ui_compositor.h"
 
 using namespace ogplay::test::android_value;
 using namespace ogplay::runtime;
@@ -1653,5 +1654,209 @@ TEST_CASE("DVM-329 headless clean frame scheduling benchmark") {
         run(legacy, "B", workload, size);
         ogplay::test::container_traversal::ContainerVm java(InterpreterBackend::switch_dispatch);
         run(java, "C", workload, size);
+    }
+}
+
+TEST_CASE("DVM-330 headless step and present benchmark") {
+    const auto run = [](auto& f, const char* mode, ui::Size size) {
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->surface_width = static_cast<std::uint32_t>(size.width);
+        f.context->surface_height = static_cast<std::uint32_t>(size.height);
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        const auto view = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        if (f.context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+            REQUIRE(PublishAndroidPresentation(*f.context));
+        ogplay::session::AndroidPresentationCache cache;
+        AndroidBoundaryFrame frame;
+        frame.width = static_cast<std::uint32_t>(size.width);
+        frame.height = static_cast<std::uint32_t>(size.height);
+        frame.rgba8.assign(static_cast<std::size_t>(size.width) * static_cast<std::size_t>(size.height) * 4U, 0);
+        std::vector<double> steps, presents;
+        for (int batch = 0; batch < 15; ++batch) {
+            std::uint64_t step_ns{}, present_ns{};
+            for (int tick = 0; tick < 50; ++tick) {
+                const auto start = ogplay::hal::Clock::SteadyTimestampNs();
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                for (int barrier = 0; barrier < 5; ++barrier)
+                    static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context,
+                                                               AndroidUiTraversalReason::BeforePresent,
+                                                               AndroidUiTraversalPhase::ResolveOnly));
+                const auto middle = ogplay::hal::Clock::SteadyTimestampNs();
+                if (f.context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                    frame = ogplay::session::ComposeAndroidPresentationFrame(*f.context, std::move(frame), &cache);
+                } else {
+                    RefreshAndroidImageDrawables(*f.context);
+                    RefreshAndroidSurfaceFrames(*f.context);
+                    static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context,
+                                                               AndroidUiTraversalReason::BeforePresent,
+                                                               AndroidUiTraversalPhase::ResolveOnly, size));
+                    ComposeVideoViews(*f.context, frame.rgba8, frame.width, frame.height, false);
+                    const auto& overlay =
+                        f.context->ui_overlay_renderer.Render(f.context->ui_tree, f.context->ui_bitmaps,
+                                                              {size.width, size.height}, ui::UiRenderPlane::normal);
+                    ogplay::session::ComposeUiOverlayInPlace(frame.rgba8, overlay);
+                    ComposeVideoViews(*f.context, frame.rgba8, frame.width, frame.height, true);
+                }
+                const auto end = ogplay::hal::Clock::SteadyTimestampNs();
+                step_ns += middle - start;
+                present_ns += end - middle;
+            }
+            steps.push_back(static_cast<double>(step_ns) / 50000.0);
+            presents.push_back(static_cast<double>(present_ns) / 50000.0);
+        }
+        std::sort(steps.begin(), steps.end());
+        std::sort(presents.begin(), presents.end());
+        MESSAGE("DVM330 benchmark mode=" << std::string(mode) << " width=" << size.width << " step_us=" << steps[7]
+                                         << " present_us=" << presents[7]);
+        CHECK(f.ledger.Unimplemented().empty());
+    };
+    for (const auto size : {ui::Size{800, 480}, ui::Size{1920, 1080}}) {
+        AndroidValueVm legacy;
+        run(legacy, "B", size);
+        ogplay::test::container_traversal::ContainerVm java(InterpreterBackend::switch_dispatch);
+        run(java, "C", size);
+    }
+}
+
+TEST_CASE("DVM-330 ROM removeViewInLayout publishes remaining child order") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->surface_width = 80;
+        f.context->surface_height = 50;
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.context->ui_tree.Get(*FindViewUiNode(*f.context, first.Value()))->background_color = 0xff0000ffU;
+        f.context->ui_tree.Get(*FindViewUiNode(*f.context, second.Value()))->background_color = 0x0000ffffU;
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(first)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly);
+        };
+        REQUIRE(tick());
+        auto before = f.context->ui_tree.PublishedProjection();
+        CHECK(ui::RasterizeUiOverlay(ui::BuildUiRenderList(*before, {}), {80, 50}).rgba8[2] == 255);
+        const auto node = *FindViewUiNode(*f.context, group.Value());
+        const auto a = *FindViewUiNode(*f.context, first.Value());
+        const auto b = *FindViewUiNode(*f.context, second.Value());
+        CHECK(before->Get(node)->children == std::vector<ui::UiNodeId>{a, b});
+        f.On(group, "removeViewInLayout", "(Landroid/view/View;)V", {VmValue::Ref(second)});
+        CHECK(f.On(second, "getParent", "()Landroid/view/ViewParent;").ref == VmObjectRef{});
+        CHECK(f.On(group, "getChildCount", "()I").AsInt() == 1);
+        CHECK(f.On(group, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(0)}).ref == first);
+        CHECK(f.context->ui_tree.PublishedProjection() == before);
+        // In-layout removal deliberately does not request layout. The caller's
+        // genuine invalidation publishes the changed Java child array.
+        f.On(group, "invalidate", "()V");
+        static_cast<void>(tick());
+        auto after = f.context->ui_tree.PublishedProjection();
+        CHECK(after->Get(node)->children == std::vector<ui::UiNodeId>{a});
+        CHECK_FALSE(after->IsAttached(b));
+        CHECK(before->IsAttached(b));
+        const auto pixels = ui::RasterizeUiOverlay(ui::BuildUiRenderList(*after, {}), {80, 50});
+        CHECK(pixels.rgba8[0] == 255);
+        CHECK(pixels.rgba8[2] == 0);
+        CHECK(before->Get(node)->children == std::vector<ui::UiNodeId>{a, b});
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-330 presentation cache follows immutable planes and producer frames") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.context->activity = owner;
+        f.context->surface_width = 80;
+        f.context->surface_height = 50;
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        const auto tick = [&] {
+            static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                       AndroidUiTraversalPhase::ResolveOnly));
+            REQUIRE(PublishAndroidPresentation(*f.context));
+        };
+        tick();
+        ogplay::session::AndroidPresentationCache cache;
+        const auto present = [&](std::uint8_t base) {
+            AndroidBoundaryFrame frame;
+            frame.width = f.context->surface_width;
+            frame.height = f.context->surface_height;
+            frame.rgba8.assign(static_cast<std::size_t>(frame.width) * frame.height * 4U, base);
+            return ogplay::session::ComposeAndroidPresentationFrame(*f.context, std::move(frame), &cache);
+        };
+        CHECK(present(17).rgba8[0] == 17);
+        REQUIRE(cache.normal.size() == 1);
+        const auto empty = cache.normal.front();
+        for (int i = 0; i < 10; ++i)
+            CHECK(present(29).rgba8[0] == 29);
+        CHECK(cache.normal.front() == empty);
+        const auto old = AcquireAndroidPresentation(*f.context);
+        auto producer = std::make_shared<DexVmAndroidContext::PresentationSnapshot>(*old);
+        ++producer->presentation_epoch;
+        std::atomic_store(&f.context->presentation_snapshot,
+                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{producer});
+        CHECK(present(31).rgba8[0] == 31);
+        CHECK(cache.snapshot == producer);
+        CHECK(cache.normal.front() == empty);
+        const auto node = *FindViewUiNode(*f.context, view.Value());
+        f.context->ui_tree.Get(node)->background_color = 0xff0000ffU;
+        f.On(view, "invalidate", "()V");
+        tick();
+        CHECK(present(0).rgba8[0] == 255);
+        CHECK(cache.normal.front() != empty);
+        const auto red = cache.normal.front();
+        // A newly published modal plane leaves the guest raster reusable.
+        auto next =
+            std::make_shared<DexVmAndroidContext::PresentationSnapshot>(*AcquireAndroidPresentation(*f.context));
+        DexVmAndroidContext::PresentationSnapshot::ModalSnapshot plane;
+        plane.tree = next->guest_window_epoch_refs.front();
+        next->modal_stack.push_back(plane);
+        ++next->presentation_epoch;
+        std::atomic_store(&f.context->presentation_snapshot,
+                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{next});
+        CHECK(present(0).rgba8[0] == 255);
+        CHECK(cache.normal.front() == red);
+        REQUIRE(cache.modal.size() == 1);
+        const auto complete = cache.snapshot;
+        next = std::make_shared<DexVmAndroidContext::PresentationSnapshot>(*next);
+        next->viewport.width = 81;
+        std::atomic_store(&f.context->presentation_snapshot,
+                          std::shared_ptr<const DexVmAndroidContext::PresentationSnapshot>{next});
+        CHECK_THROWS(present(0));
+        CHECK(cache.snapshot == complete);
+        CHECK(cache.normal.front() == red);
+        // Restoring the real owner publication removes the modal plane.
+        tick();
+        CHECK(present(0).rgba8[0] == 255);
+        CHECK(cache.modal.empty());
+        CHECK(cache.normal.front() == red);
+        const auto bitmap = std::make_shared<ui::UiBitmap>();
+        bitmap->width = bitmap->height = 1;
+        bitmap->rgba8 = {0, 255, 0, 255};
+        f.context->ui_bitmaps[123] = bitmap;
+        REQUIRE(PublishAndroidPresentation(*f.context));
+        CHECK(present(0).rgba8[0] == 255);
+        CHECK(cache.normal.front() != red);
+        const auto with_bitmap = cache.normal.front();
+        f.context->surface_width = 90;
+        tick();
+        CHECK(present(0).rgba8.size() == 90U * 50U * 4U);
+        CHECK(cache.normal.front() != with_bitmap);
+        CHECK(cache.snapshot->viewport.width == 90);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

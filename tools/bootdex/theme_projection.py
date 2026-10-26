@@ -36,8 +36,39 @@ def named_value(text, attr_name, fmt):
     return dict(state='unsupported', reason='unknown ROM enum/flags name for ' + attr_name + ': ' + text)
 
 
+def reference_index(rows):
+    """Bind names to identities only; never inspect a target's configurations."""
+    result, ids, types = {}, set(), {}
+    for row in rows:
+        kind, name, ident, type_id = (row[k] for k in ('resource_type', 'name', 'resource_id', 'type_id'))
+        if (ident >> 24, (ident >> 16) & 255) != (1, type_id) or not 0 < type_id < 256:
+            raise ValueError('ROM resource reference type mismatch')
+        if types.setdefault(kind, type_id) != type_id or (kind, name) in result or ident in ids:
+            raise ValueError('ROM resource reference identity conflict')
+        ids.add(ident)
+        result[(kind, name)] = dict(name=name, resource_type=kind, resource_id=ident, type_id=type_id)
+    if len(types) != len(set(types.values())):
+        raise ValueError('ROM resource type alias')
+    return result
+
+
 def self_test():
-    formats = theme_inputs.inspect_inputs()['attribute_formats']
+    report = theme_inputs.inspect_inputs()
+    formats = report['attribute_formats']
+    refs = reference_index(report['resource_bindings'])
+    for kind in ('drawable', 'color', 'anim', 'layout', 'xml', 'string', 'dimen', 'style'):
+        assert any(k[0] == kind for k in refs)
+    assert ('drawable', 'text_select_handle_left') in refs
+    assert ('layout', 'text_edit_suggestion_item') in refs
+    assert ('drawable', 'missing_OGPlay_reference') not in refs
+    row = refs[('drawable', 'text_select_handle_left')]
+    for rows in ([row, row], [{**row, 'type_id': 6}]):
+        try:
+            reference_index(rows)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('invalid reference identity accepted')
     assert named_value('normal', 'textStyle', formats['textStyle']) == dict(state='known', type=17, data=0)
     assert named_value('bold|italic', 'textStyle', formats['textStyle'])['data'] == 3
     assert named_value('normal', 'typeface', formats['typeface'])['data'] == 0
@@ -337,23 +368,15 @@ def generate(negative_rom_id=False):
         return result
 
     demanded_styles = set()
-    scalar_resources = {}
-    for path in sorted(values.glob('*.xml')):
-        for node in ET.parse(path).getroot():
-            kind = node.get('type') if node.tag == 'item' else node.tag
-            if kind in ('color', 'dimen', 'integer', 'bool', 'string') and node.get('name'):
-                scalar_resources[(kind, node.get('name'))] = ''.join(node.itertext()).strip()
-
     # Constructor defStyleAttr inputs are demands even though they are not
     # members of the styleable arrays. Follow ?attr and style edges to a fixed
     # point, proving every ID against the same pinned ROM field inventory.
     implicit = ('textViewStyle', 'buttonStyle', 'editTextStyle', 'imageButtonStyle',
                 'scrollViewStyle', 'horizontalScrollViewStyle')
     extra_demands = set(implicit)
-    drawable_attrs = {row['name'] for row in report['styleable_slot_checks'] if row['group'] == 'View'}
     pending_styles = {row['name'] for row in report['themes'] if row['resource_id'] is not None}
     while True:
-        before = (len(extra_demands), len(pending_styles), len(drawable_attrs))
+        before = (len(extra_demands), len(pending_styles))
         for name in sorted(extra_demands):
             if name not in report['attr_bindings']:
                 raise ValueError('unbound demanded ROM attr: ' + name)
@@ -365,17 +388,15 @@ def generate(negative_rom_id=False):
                 ref = re.fullmatch(r'\?(?:android:)?(?:attr/)?(.+)', text)
                 if ref and ref[1] in report['attr_bindings']:
                     extra_demands.add(ref[1])
-                    if attr_name in drawable_attrs:
-                        drawable_attrs.add(ref[1])
                 ref = re.fullmatch(r'@(?:android:)?style/(.+)', text)
                 if ref and ref[1] in report['style_bindings'] and ref[1] in styles:
                     pending_styles.add(ref[1])
-        if before == (len(extra_demands), len(pending_styles), len(drawable_attrs)):
+        if before == (len(extra_demands), len(pending_styles)):
             break
     attribute_demands = [dict(name=name, resource_id=attrs[name]) for name in sorted(extra_demands)]
 
     colors = color_resources()
-    color_bindings = {r['name']: r for r in colors}
+    references = reference_index(report['resource_bindings'])
     projected_references = {}
     strings = [row['path'] for row in colors if 'xml' in row]
     for row in colors:
@@ -385,29 +406,19 @@ def generate(negative_rom_id=False):
     def value(text, attr_name, seen=()):
         if text in seen or len(seen) >= 64:
             raise ValueError('projected scalar reference cycle/depth: ' + text)
-        ref = re.fullmatch(r'@(?:android:)?(color|dimen|integer|bool|string)/(.+)', text)
-        if ref and ref[1] == 'color':
-            row = color_bindings.get(ref[2])
-            if row and 'unsupported' not in row:
-                return dict(state='known', type=row['type'], data=row['data'])
-            return dict(state='unsupported', reason='unsupported ROM color reference: ' + text)
-        if ref and (ref[1], ref[2]) in scalar_resources:
-            return value(scalar_resources[(ref[1], ref[2])], attr_name, seen + (text,))
-        style = re.fullmatch(r'@(?:android:)?style/(.+)', text)
-        if style and style[1] in report['style_bindings'] and style[1] in styles:
-            demanded_styles.add(style[1])
-            return dict(state='known', type=1, data=report['style_bindings'][style[1]])
+        ref = re.fullmatch(r'@(?:android:)?([a-zA-Z_]+)/(.+)', text)
+        if ref:
+            row = references.get((ref[1], ref[2]))
+            if row is None:
+                return dict(state='unsupported', reason='unsupported projected value: ' + text)
+            if ref[1] == 'style' and ref[2] in styles:
+                demanded_styles.add(ref[2])
+            projected_references[row['resource_id']] = row
+            return dict(state='known', type=1, data=row['resource_id'])
         attr = re.fullmatch(r'\?(?:android:)?(?:attr/)?(.+)', text)
         if attr and attr[1] in attrs and attr[1] in report['attr_bindings']:
             return dict(state='known', type=2, data=report['attr_bindings'][attr[1]])
 
-        drawable = re.fullmatch(r'@(?:android:)?drawable/(.+)', text)
-        if drawable and attr_name in drawable_attrs and drawable[1] in report['drawable_bindings']:
-            ident = report['drawable_bindings'][drawable[1]]
-            if (ident >> 24, (ident >> 16) & 255) != (1, 8):
-                raise ValueError('ROM drawable reference type mismatch: ' + text)
-            projected_references[drawable[1]] = dict(name=drawable[1], resource_id=ident, resource_type='drawable')
-            return dict(state='known', type=1, data=ident)
         fmt = report['attribute_formats'].get(attr_name)
         if not fmt:
             raise ValueError('missing same-ROM attribute format: ' + attr_name)
@@ -444,8 +455,8 @@ def generate(negative_rom_id=False):
             if text not in strings:
                 strings.append(text)
             return dict(state='known', type=3, data=strings.index(text), cookie=2)
-        # Unregistered drawable/selector/ninepatch/animation values keep the
-        # original reference text, without inventing an ID or a successful value.
+        # Unknown literals keep the original diagnostic; missing ARSC names
+        # are rejected above without granting any resource loader credit.
         return dict(state='unsupported', reason='unsupported projected value: ' + text)
 
     themes = []
@@ -472,7 +483,7 @@ def generate(negative_rom_id=False):
         for attr_name, ident in sorted(attrs.items(), key=lambda x: x[1]):
             result = value(inherited[attr_name], attr_name) if attr_name in inherited else dict(state='absent')
             projected.append(dict(id=ident, name=attr_name, **result))
-        style_closure.append(dict(id=report['style_bindings'][name], name=name, attributes=projected))
+        style_closure.append(dict(id=references[('style', name)]['resource_id'], name=name, attributes=projected))
     ids = [row['id'] for row in themes]
     if len(ids) != len(set(ids)):
         raise ValueError('theme resource ID alias')
@@ -489,6 +500,7 @@ def generate(negative_rom_id=False):
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs),
                     rom_colors=colors, rom_drawables=drawable_closure(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
     return canonical(document)
 

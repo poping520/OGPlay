@@ -731,11 +731,12 @@ recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callba
 WebView 仅准入已有父构造接缝，AbsoluteLayout 的测量/布局失败边界保留。
 Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 changed；同代同值仍去重。
 
-有界主题允许清单内固定 ROM 具名 drawable ID 作为惰性引用进入六槽；读取引用不加载
-系统 drawable，实际未支持皮肤加载仍失败。DVM-325 的 scrollbar 私有 ID 来自哈希锁定
-同 ROM framework-res.apk 的 ARSC，与全部共享 R 常量交叉核对后封存；未知/类型冲突
-拒绝。引用投影不提供 NinePatch/ScrollabilityCache 构造或绘制信用，非零 scrollbars
-构造仍明确失败；没有 Display/Shader 等新增 adapter。
+有界主题中同 ROM ARSC 能绑定的任意类型引用均以真实 TYPE_REFERENCE/id 进入六槽；
+不按属性名白名单发放、不预先解析目标内容。资源类型编号与 ID type 段一致，输入锁定
+同 ROM framework-res.apk 并交叉核对共享 R 常量；真实缺名、冲突仍拒绝。
+TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检查加载支持，未支持
+目标按 ADR-0147 记账失败。不新增 drawable/动画加载；既有 ColorStateList/edit_text
+范围保持，非零 scrollbars 构造仍失败，没有 Display/Shader 等新增 adapter。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
 共享窗口 observer 与真实父链坐标；Legacy 仍使用原 decor facade。Surface 回调事务以
@@ -777,3 +778,6 @@ transact、Binder interface/death/dump 操作及 Parcel marshalling 均记账失
 JavaTraversal showSoftInput/hideSoftInputFromWindow 与 restartInput、Legacy 共用真实窗口/附着
 焦点检查；无被服务候选返回 false，需要建立 InputConnection 时记账并明确失败。
 不创建 InputConnection 或 IME Binder。Legacy 的查询/输入路径保持。
+
+DVM-328：实验 TextView 构造按同 ROM getResourceId 消费选择手柄、光标和建议项布局，
+只将真实 id 保存至原版五个 Java int 字段；读取不加载内容、不取得 Editor/绘制信用。

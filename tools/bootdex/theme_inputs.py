@@ -232,5 +232,7 @@ def inspect_inputs(negative_rom_id=False):
                   public_id_checks=public_checks, styleable_slot_checks=styleable_checks,
                   styleable_group_count=len(GROUPS), styleable_slot_count=len(styleable_checks), errors=errors,
                   negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids,
-                  drawable_bindings=drawable_bindings, attribute_formats=formats)
+                  drawable_bindings=drawable_bindings, attribute_formats=formats,
+                  resource_bindings=[dict(name=r['name'], resource_type=r['type'], resource_id=r['id'],
+                                          type_id=r['type_id']) for r in resource_audit['entries']])
     return report

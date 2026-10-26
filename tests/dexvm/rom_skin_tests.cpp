@@ -131,7 +131,7 @@ TEST_CASE("DVM-326 window tokens follow attachment stable window identity and pe
 
 TEST_CASE("DVM-326 projected strings retain ROM cookie and reject an invalid pool index") {
     const std::string projection =
-        R"({"schema":"ogplay.bounded-theme","schema_version":1,"api_level":19,"configuration":"values","styleables":[],"registered":[{"id":16973829,"name":"Theme","attributes":[{"id":16843692,"name":"fontFamily","state":"known","type":3,"data":0,"cookie":2}]}],"unregistered":[],"style_closure":[],"strings":["normal"],"string_pool":"01001c003000000001000000000000000000000020000000000000000000000006006e006f0072006d0061006c000000"})";
+        R"({"schema":"ogplay.bounded-theme","schema_version":1,"api_level":19,"configuration":"values","resource_types":{},"projected_references":[],"styleables":[],"registered":[{"id":16973829,"name":"Theme","attributes":[{"id":16843692,"name":"fontFamily","state":"known","type":3,"data":0,"cookie":2}]}],"unregistered":[],"style_closure":[],"strings":["normal"],"string_pool":"01001c003000000001000000000000000000000020000000000000000000000006006e006f0072006d0061006c000000"})";
     ThemeResources resources;
     resources.Load(projection);
     ogplay::loader::ArscTable table;

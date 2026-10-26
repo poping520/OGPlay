@@ -1342,10 +1342,10 @@
           "body_sha256": "455a6450fe1187e9cbacf70436d96655fc7041854b9383a51a7ad6861930d6d7",
           "source": "overlay",
           "review": {
-            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
-            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
-            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
-            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "reason": "DVM-328 ADR-0160/0161 typed same-ROM references and ROM constructor identity reads",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values; real TypedArray.getResourceId for handle/cursor/suggestion layout",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels; original five Java resource ID fields, no target content load",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields; resource IDs live only in original Java integer fields",
             "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
@@ -4036,7 +4036,7 @@
         {
           "signature": "mCursorDrawableRes:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4396,7 +4396,7 @@
         {
           "signature": "mTextEditSuggestionItemLayout:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4408,19 +4408,19 @@
         {
           "signature": "mTextSelectHandleLeftRes:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mTextSelectHandleRes:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mTextSelectHandleRightRes:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

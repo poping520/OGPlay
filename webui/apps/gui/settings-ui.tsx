@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { choiceLabel, fieldMeta, RESERVED_MARK, stepValue, type SettingField, type SettingValue } from './settings';
 import { shellPalette } from './library';
 import { t } from './i18n';
-import logo from './assets/logo.png';
+import { Brand, Key } from './kit';
 import './settings.css';
 
 // Settings pages ("主机之夜" layout): top bar with save actions, group sidebar, field rows, gamepad legend. The
@@ -42,9 +42,6 @@ export function GroupIcon({ name, tone = name }: { name: string; tone?: string }
     <svg viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICON[name] ?? ICON.info }} />
   </span>;
 }
-// Launcher wordmark shared by the library and settings top bars; OG takes the splash yellow.
-export function Brand() { return <div class="brand"><img src={logo} alt="" /><b><span>OG</span>Play</b></div>; }
-export function Key({ children }: { children: ComponentChildren }) { return <span class="key" aria-hidden="true">{children}</span>; }
 export function Note({ icon, title, warn = false, children }: { icon: string; title?: string; warn?: boolean; children?: ComponentChildren }) {
   return <div class={`note ${warn ? 'warn' : ''}`}><GroupIcon name={icon} tone={warn ? 'warn' : icon} /><div>{title && <b>{title}</b>}{children}</div></div>;
 }

@@ -1,10 +1,10 @@
+import { Brand, Key } from './kit';
 import { render, type ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { rpc, type Library, type LibraryItem } from './rpc';
 import { cycle, filters, statuses, validatePackageSelection, versionLabel, visibleItems, type Filter, type Sort } from './library';
 import { SettingsPage } from './settings-page';
 import { GameSettingsPage } from './game-settings-page';
-import { Brand } from './settings-ui';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { DataHintDialog } from './data-hint';
@@ -14,13 +14,11 @@ import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
 import logo from './assets/logo.png';
 import { setLanguage, t, useLanguage } from './i18n';
-import '../../packages/ui-kit/theme.css';
 import './console.css';
 interface DashboardInfo { installation_id: string; process_id: number; port: number | null; status: string; detail: string; key_editor_status: string; key_editor_detail: string }
 
 const statusOf = (item: LibraryItem) => { const status = statuses[item.status] ?? { label: '状态未知', tone: 'warning' }; return { ...status, label: t(status.label) }; };
 const editable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
-function Key({ children }: { children: ComponentChildren }) { return <span class="key" aria-hidden="true">{children}</span>; }
 function Modal({ title, onDismiss, children }: { title: string; onDismiss: () => void; children: ComponentChildren }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);

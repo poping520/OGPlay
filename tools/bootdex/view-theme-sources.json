@@ -1434,7 +1434,7 @@
           "signature": "getColor(I)I",
           "flags": 1,
           "body_sha256": "ef6283049746e161b4331d5a5a38615a74379a4e9bb759350591de5ec7bcba02",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getColorStateList(I)Landroid/content/res/ColorStateList;",
@@ -1752,11 +1752,11 @@
           "body_sha256": "f03021b59a985971b3e6a1b6e988804b2aff5accc54fcf64d087c37deccf1c1c",
           "source": "overlay",
           "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+            "reason": "DVM-327 ADR-0160/0161 same-ROM ColorStateList XML capability",
+            "inputs": "sealed same-ROM color TypedValue, selector/item compiled XML, scalar color references from same-ROM ARSC",
+            "outputs": "original ROM createFromXml/inflate object and ordered state/default colors; scalar ROM valueOf",
+            "state_owner": "ROM ColorStateList fields; existing checked XmlBlock cursor ownership and GC retirement",
+            "failure_boundary": "unknown color ID/reference, XML outside selector/item/android:color/state_* grammar and unregistered configuration fail with ADR-0147; no APK fallback"
           }
         },
         {

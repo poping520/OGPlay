@@ -126,7 +126,7 @@ note = "DVM-246/304/305：Legacy原路径保持；JavaTraversal独立HostLayout 
 [dexvm.drawable_resource]
 status = "partial"
 test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "Legacy 保持 BitmapDrawable/ColorDrawable 像素版本；实验 ROM 叶对象及 APK PNG/JPEG/纯色保持。DVM-326 封存同 ROM edit_text selector 与 ninepatch，可解码、选择状态、查询 density 尺寸/padding/光学 insets并随GC退役；guest draw/呈现冻结明确失败。其他皮肤、动画/过渡、任意XML/custom draw失败，不回退APK。"
+note = "Legacy 保持；实验同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与选中像素在现有叶 bitmap 平面冻结；guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 明确失败。DVM-327 同 ROM ColorStateList 经原版 XML 路径构造，不回退 APK。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -1995,8 +1995,8 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "ADR-0160/0161：实验固定ROM主题与styleable消费闭包三态/六槽投影，真实优先级与@null；DVM-326属性类型及enum/flags名称取同ROM attr表，未知名失败，字符串独立cookie2。View默认背景edit_text闭包支持selector状态及ninepatch padding/密度测量；其他皮肤/绘制/非零scrollbar失败。Legacy保持。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "ADR-0160/0161：实验同 ROM 三态/六槽投影，属性 format/enum/flags 来自 ROM，字符串独立 cookie2。DVM-327 color 目录按 selector/item/color/state_* 结构开放，引用沿 ROM ARSC；未知结构/属性/引用失败。edit_text 状态/padding/叶像素冻结支持，其他皮肤与非零 scrollbar 失败。Legacy保持。"
 
 [runtime.guest_proc_maps]
 status = "partial"
@@ -2145,8 +2145,8 @@ note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字�
 
 [dexvm.text_constructor]
 status = "partial"
-test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "实验TextView真实主题构造、有界文本/叶测量与冻结line-plan；Button/EditText保持ROM薄构造和默认style，编辑事务/selection/watcher与焦点输入共用原owner。DVM-326默认edit_text背景可参与状态与padding测量；绘制、其他皮肤/状态色、RTL/shaping、完整Spannable/Editor/IME/Layout失败。生产Legacy保持。"
+test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
+note = "实验 TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；Button/EditText 保持 ROM 薄构造和默认 style。DVM-327 ROM 状态色与 edit_text 背景叶冻结；IME show/hide/restart 经真实焦点检查，无候选返回 false，需要 InputConnection 明确失败。完整 Editor/IME/Layout、RTL/shaping 失败。生产 Legacy 保持。"
 
 [dexvm.image_leaf]
 status = "partial"

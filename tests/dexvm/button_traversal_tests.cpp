@@ -324,11 +324,15 @@ TEST_CASE("DVM-297 Button default theme fails actual unsupported requests") {
             const auto owner = Owner(f, defaults);
             const auto root = f.vm.ProtectReferences(std::array{owner});
             const auto failed = Construct(f, owner);
-            CHECK(failed.exception.IsValid());
             INFO(defaults, failed.exception_message);
-            CHECK(failed.exception_message.find(defaults <= 2 ? "unreviewed ROM drawable load"
-                                                              : "primary_text_light") != std::string::npos);
-            CHECK_FALSE(f.ledger.Unimplemented().empty());
+            if (defaults <= 2) {
+                CHECK(failed.exception.IsValid());
+                CHECK(failed.exception_message.find("unreviewed ROM drawable load") != std::string::npos);
+                CHECK_FALSE(f.ledger.Unimplemented().empty());
+            } else {
+                CHECK_FALSE(failed.exception.IsValid());
+                CHECK(f.ledger.Unimplemented().empty());
+            }
         }
     }
 }

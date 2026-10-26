@@ -367,10 +367,16 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
             ContainerVm f(backend);
             const auto owner = Owner(f, defaults);
             const auto failed = Construct(f, owner);
-            CHECK(failed.exception.IsValid());
             INFO(failed.exception_message);
-            CHECK(failed.exception_message.find("primary_text_light") != std::string::npos);
-            CHECK_FALSE(f.ledger.Unimplemented().empty());
+            if (defaults == 1) {
+                CHECK(failed.exception.IsValid());
+                CHECK(failed.exception_message ==
+                      "unsupported projected value: @android:drawable/text_select_handle_left");
+                CHECK_FALSE(f.ledger.Unimplemented().empty());
+            } else {
+                CHECK_FALSE(failed.exception.IsValid());
+                CHECK(f.ledger.Unimplemented().empty());
+            }
         }
         ContainerVm f(backend);
         const auto owner = Owner(f);
@@ -390,7 +396,7 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
     }
 }
 
-TEST_CASE("DVM-326 EditText consumes actual default background padding in bounded measurement and rejects rendering") {
+TEST_CASE("DVM-326 EditText consumes actual default background padding and freezes bounded leaf pixels") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         const auto owner = Owner(f, 5);
@@ -415,16 +421,62 @@ TEST_CASE("DVM-326 EditText consumes actual default background padding in bounde
         CHECK(pressed);
         f.On(edit, "setPressed", "(Z)V", {VmValue::Int(0)});
         CHECK(f.ledger.Unimplemented().empty());
+        f.context->activity = owner;
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(edit)});
+        const auto before = f.context->ui_tree.PublishedProjection();
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        const auto frozen = f.context->ui_tree.PublishedProjection();
+        REQUIRE(frozen);
+        CHECK(frozen != before);
+        const auto id = *FindViewUiNode(*f.context, edit.Value());
+        const auto resource = frozen->Get(id)->background_resource_id;
+        REQUIRE(f.context->ui_bitmaps.contains(resource));
+        CHECK(f.context->ui_bitmaps.at(resource)->nine_patch);
+        const auto commands = ui::BuildUiRenderList(*frozen, f.context->ui_bitmaps);
+        bool found = false;
+        for (const auto& command : commands) {
+            if (const auto* bitmap = std::get_if<ui::DrawBitmap>(&command)) {
+                CHECK(bitmap->bitmap == f.context->ui_bitmaps.at(resource));
+                found = true;
+            }
+        }
+        CHECK(found);
+        const auto pixels = ui::RasterizeUiOverlay(commands, {800, 480});
+        CHECK(std::any_of(pixels.rgba8.begin(), pixels.rgba8.end(), [](auto v) { return v != 0; }));
+        CHECK(f.ledger.Unimplemented().empty());
         const auto failed =
             f.OnOutcome(background, "draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
         CHECK(failed.exception.IsValid());
         CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-327 TextView retains ROM state colors through focus flags and GC") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto text = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, text});
         f.context->activity = owner;
-        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(edit)});
-        const auto before = f.context->ui_tree.PublishedProjection();
-        CHECK_THROWS_AS(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                                 AndroidUiTraversalPhase::ResolveOnly),
-                        VmJavaThrow);
-        CHECK(f.context->ui_tree.PublishedProjection() == before);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(text)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        f.context->window_focus_activity.store(owner.Value());
+        f.context->window_has_focus.store(true);
+        f.On(text, "onWindowFocusChanged", "(Z)V", {VmValue::Int(1)});
+        const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto list =
+            f.On(res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;", {VmValue::Int(0x01060005)}).ref;
+        f.On(text, "setTextColor", "(Landroid/content/res/ColorStateList;)V", {VmValue::Ref(list)});
+        CHECK(f.On(text, "getTextColors", "()Landroid/content/res/ColorStateList;").ref == list);
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xffbebebeU);
+        f.On(text, "setPressed", "(Z)V", {VmValue::Int(1)});
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xff323232U);
+        static_cast<void>(f.vm.CollectGarbage("rom-text-color-retention"));
+        CHECK(f.On(text, "getTextColors", "()Landroid/content/res/ColorStateList;").ref == list);
+        f.On(text, "setPressed", "(Z)V", {VmValue::Int(0)});
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xffbebebeU);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

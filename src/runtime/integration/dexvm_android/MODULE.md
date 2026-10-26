@@ -154,8 +154,14 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner 与封存 ROM 投影，init(true)、完整系统池、
   未登记 selector/ninepatch、animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
   执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
+  同 ROM res/color XML 按 selector/item、android:color 与 state_* 结构开放，原始编译 XML
+  通过既有 XmlBlock cursor 交 ROM createFromXml/inflate；颜色引用沿同 ROM ARSC 标量解析。
+  结构外 XML、未知属性/引用及未登记配置明确失败，不按颜色名称白名单。
+  ROM color XML 路径使用 cookie2；无 APK ARSC 时 cookie1 StringBlock 槽保持缺席，
+  对缺席池的查询仍失败，不合成空成功池。
   缺席或 @null 返回 null；仅封存清单内 View drawable 引用可惰性进入六槽，
-  background 仅额外支持封存 edit_text 闭包的状态和测量，未开放其他系统皮肤；
+  background 额外支持封存 edit_text 闭包的状态、测量及现有叶 bitmap 平面冻结；
+  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结，guest draw 仍失败；未开放其他系统皮肤；
   foreground/divider/scrollbar 的其他非空值仍明确失败。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
@@ -165,8 +171,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   默认背景另允许封存同 ROM edit_text selector 与 ninepatch，DrawableContainer/StateListDrawable/
   NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
-  不支持任意 inflateFromXml、动画/过渡或皮肤 draw；guest draw 及带皮肤的呈现冻结明确失败。
-  不可变 leaf_pixels 由 Java Drawable 身份拥有，不进入 ui_bitmaps 缓存；mBitmap 为 Java 强边，
+  不支持任意 inflateFromXml、动画/过渡或 guest 皮肤 draw。edit_text 选中叶的 ninepatch
+  divisions/像素按密度缩放后进入既有 ui_bitmaps 平面，与 View 几何及颜色共同冻结；
+  不可变 leaf_pixels 由 Java Drawable 身份拥有，发布快照仅持有不可变像素；mBitmap 为 Java 强边，
   sweep/teardown 退役 backing。Legacy 构造/像素/主题路径保持。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
   清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。Legacy 不加载投影。
@@ -556,14 +563,21 @@ measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mT
 
 ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，精确调用 ROM View
 属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
-UiNode 的文本、字号、颜色、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
+UiNode 的文本、字号、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
+颜色身份归 Java 字段，UiNode 仅持派生 RGBA；
 View adapter 状态另存独立 singleLine 位，并保活 Typeface/Drawable 身份及其不可变 backing，随 View trace/sweep。
 不写 mText/mLayout/mEditor，不开放 getPaint singleton。
+ROM 状态色的 TextView 消费：mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor 保存
+真实 Java 值；getTextColors 保持列表身份，hint/link/highlight getter 执行 ROM。
+getCurrentTextColor 与叶 RGBA 按真实 getDrawableState→ROM getColorForState 派生，
+drawableStateChanged 先执行 View 协议再刷新颜色；GC 通过 Java 字段保活列表。
+颜色变化仅失效绘制，不改变测量几何。hint/link 的布局与 Editor 能力仍未开放。
+
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。
 
 实验 TextView onMeasure 为 overlay：读取宿主输入及虚派 Java compound padding/suggested minimum，
 调用纯文本叶服务，再虚派 setMeasuredDimension；不写 measured/bounds/flags、不遍历子树。
-setText/getText、字号、Typeface、纯色/单态颜色、gravity、singleLine/maxLines、四位图 compound
+setText/getText、字号、Typeface、ROM 颜色列表、gravity、singleLine/maxLines、四位图 compound
 按逐签名 review 开放，setter 经 Java requestLayout/invalidate，owner tick 重测后完整发布。
 每输入版本按最终宽度保存 immutable plan，以兼容 ROM measure cache/补测；baseline 读取同一服务结果，
 附加 Java 高度下的 gravity offset。构造/输入与 plan 随 View sweep 退役；无宿主全局强根。
@@ -760,5 +774,6 @@ JavaTraversal 的 getWindowToken/getApplicationWindowToken 沿实际 Java 父链
 改变身份；窗口退役/GC/UI reset 撤销有效性，新窗口不能复活旧 token。窗口根通过
 owner-attached GC 边保活 token，token 仅弱记根身份。isBinderAlive/pingBinder 查询本地有效性；
 transact、Binder interface/death/dump 操作及 Parcel marshalling 均记账失败。
-JavaTraversal showSoftInput/hideSoftInputFromWindow 直接停在 ADR-0161 决定7；不初始化
-InputConnection 或 IME Binder。Legacy 的查询/输入路径保持。
+JavaTraversal showSoftInput/hideSoftInputFromWindow 与 restartInput、Legacy 共用真实窗口/附着
+焦点检查；无被服务候选返回 false，需要建立 InputConnection 时记账并明确失败。
+不创建 InputConnection 或 IME Binder。Legacy 的查询/输入路径保持。

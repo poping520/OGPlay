@@ -1444,6 +1444,25 @@ Decl ExperimentalTextView(const Context& context) {
             return dx::VmValue::Void();
         });
     }
+    const auto text_colors =
+        builder.BoundInstanceField("mTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
+    const auto hint_colors =
+        builder.BoundInstanceField("mHintTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
+    const auto link_colors =
+        builder.BoundInstanceField("mLinkTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
+    const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
+    const auto update_color = [context, text_colors](dx::IntrinsicContext& c) {
+        const auto colors = dx::IntrinsicCall(c).GetRef(text_colors);
+        if (!colors.IsValid()) return;
+        const auto roots = c.vm.ProtectReferences(std::array{colors});
+        const auto states = CallAndroidMethod(c.vm, c.receiver, "getDrawableState", "()[I").ref;
+        const auto color = CallAndroidMethod(c.vm, colors, "getColorForState", "([II)I",
+                                             {dx::VmValue::Ref(states), dx::VmValue::Int(0)})
+                               .AsInt();
+        const auto node = TextNode(c, context);
+        context->ui_tree.Get(node)->text_color = AndroidColorToRgba(static_cast<std::uint32_t>(color));
+        context->ui_tree.MarkDrawDirty(node);
+    };
     const auto chain = [](int kind) {
         return dx::IntrinsicHandler([kind](dx::IntrinsicContext& c) {
             const auto method =
@@ -1463,7 +1482,10 @@ Decl ExperimentalTextView(const Context& context) {
     };
     builder.Constructor("(Landroid/content/Context;)V", chain(1));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V", chain(2));
-    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context](dx::IntrinsicContext& c) {
+    builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context, text_colors, hint_colors,
+                                                                                     link_colors, highlight,
+                                                                                     update_color](
+                                                                                        dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
         const bool editing = UiClassForObject(vm, c.receiver) == ui::UiClass::EditText;
@@ -1475,6 +1497,8 @@ Decl ExperimentalTextView(const Context& context) {
         if (initialized.exception.IsValid())
             throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
                                   initialized.exception_message, initialized.exception};
+        // Pinned ROM constructor pc210..217, before style consumption.
+        dx::IntrinsicCall(c).SetInt(highlight, 0x6633b5e5);
         const auto theme = CallAndroidMethod(vm, owner, "getTheme", "()Landroid/content/res/Resources$Theme;").ref;
         const auto theme_root = vm.ProtectReferences(std::array{theme});
         const auto tva = RomTextAttributes(vm, "TextViewAppearance"), ta = RomTextAttributes(vm, "TextAppearance"),
@@ -1554,9 +1578,20 @@ Decl ExperimentalTextView(const Context& context) {
                                           {dx::VmValue::Int(index)})
                             .ref;
                     const auto root = vm.ProtectReferences(std::array{list});
-                    if (!list.IsValid() || CallAndroidMethod(vm, list, "isStateful", "()Z").AsInt())
-                        TextInputFailure(vm, "non-scalar textColor");
+                    if (!list.IsValid()) TextInputFailure(vm, "null textColor");
+                    dx::IntrinsicCall(c).SetRef(text_colors, list);
                     color = static_cast<std::uint32_t>(CallAndroidMethod(vm, list, "getDefaultColor", "()I").AsInt());
+                } else if (name == "textColorHint" || name == "textColorLink") {
+                    const auto list =
+                        CallAndroidMethod(vm, values, "getColorStateList", "(I)Landroid/content/res/ColorStateList;",
+                                          {dx::VmValue::Int(index)})
+                            .ref;
+                    dx::IntrinsicCall(c).SetRef(name == "textColorHint" ? hint_colors : link_colors, list);
+                } else if (name == "textColorHighlight") {
+                    const auto selected = CallAndroidMethod(vm, values, "getColor", "(II)I",
+                                                            {dx::VmValue::Int(index), dx::VmValue::Int(0)})
+                                              .AsInt();
+                    dx::IntrinsicCall(c).SetInt(highlight, selected);
                 } else if (name == "fontFamily") {
                     const auto ref =
                         CallAndroidMethod(vm, values, "getString", "(I)Ljava/lang/String;", {dx::VmValue::Int(index)})
@@ -1740,6 +1775,14 @@ Decl ExperimentalTextView(const Context& context) {
             static_cast<void>(CallAndroidMethod(vm, c.receiver, "setText", "(Ljava/lang/CharSequence;)V",
                                                 {dx::VmValue::Ref(initial)}));
         }
+        if (!dx::IntrinsicCall(c).GetRef(text_colors).IsValid()) {
+            const auto list = TextStatic(vm, "Landroid/content/res/ColorStateList;", "valueOf",
+                                         "(I)Landroid/content/res/ColorStateList;",
+                                         {dx::VmValue::Int(static_cast<std::int32_t>(color))})
+                                  .ref;
+            dx::IntrinsicCall(c).SetRef(text_colors, list);
+        }
+        update_color(c);
         context->ui_tree.MarkLayoutDirty(node);
         return dx::VmValue::Void();
     });
@@ -1871,27 +1914,30 @@ Decl ExperimentalTextView(const Context& context) {
     builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [context](dx::IntrinsicContext& c) {
         return dx::VmValue::Ref(context->view_adapter_references.at(c.receiver.Value()).text_typeface);
     });
-    builder.VirtualMethod("setTextColor", "(I)V", [context, changed](dx::IntrinsicContext& c) {
-        context->ui_tree.Get(TextNode(c, context))->text_color =
-            AndroidColorToRgba(static_cast<std::uint32_t>(c.arguments[0].AsInt()));
-        return changed(c);
+    builder.VirtualMethod("setTextColor", "(I)V", [](dx::IntrinsicContext& c) {
+        const auto list = TextStatic(c.vm, "Landroid/content/res/ColorStateList;", "valueOf",
+                                     "(I)Landroid/content/res/ColorStateList;", {c.arguments[0]})
+                              .ref;
+        const auto root = c.vm.ProtectReferences(std::array{list});
+        return CallAndroidMethod(c.vm, c.receiver, "setTextColor", "(Landroid/content/res/ColorStateList;)V",
+                                 {dx::VmValue::Ref(list)});
     });
-    builder.VirtualMethod("setTextColor", "(Landroid/content/res/ColorStateList;)V", [](dx::IntrinsicContext& c) {
-        const auto ref = c.arguments[0].ref;
-        if (!ref.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text colors"};
-        if (CallAndroidMethod(c.vm, ref, "isStateful", "()Z").AsInt()) TextInputFailure(c.vm, "stateful text color");
-        return CallAndroidMethod(c.vm, c.receiver, "setTextColor", "(I)V",
-                                 {CallAndroidMethod(c.vm, ref, "getDefaultColor", "()I")});
-    });
+    builder.VirtualMethod("setTextColor", "(Landroid/content/res/ColorStateList;)V",
+                          [text_colors, update_color](dx::IntrinsicContext& c) {
+                              const auto ref = c.arguments[0].ref;
+                              if (!ref.IsValid())
+                                  throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "text colors"};
+                              dx::IntrinsicCall(c).SetRef(text_colors, ref);
+                              update_color(c);
+                              return CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V");
+                          });
     builder.FinalMethod("getCurrentTextColor", "()I", [context](dx::IntrinsicContext& c) {
         const auto rgba = context->ui_tree.Get(TextNode(c, context))->text_color;
         return dx::VmValue::Int(static_cast<std::int32_t>((rgba >> 8U) | (rgba << 24U)));
     });
-    builder.FinalMethod("getTextColors", "()Landroid/content/res/ColorStateList;", [](dx::IntrinsicContext& c) {
-        return TextStatic(c.vm, "Landroid/content/res/ColorStateList;", "valueOf",
-                          "(I)Landroid/content/res/ColorStateList;",
-                          {CallAndroidMethod(c.vm, c.receiver, "getCurrentTextColor", "()I")});
-    });
+    builder.FinalMethod(
+        "getTextColors", "()Landroid/content/res/ColorStateList;",
+        [text_colors](dx::IntrinsicContext& c) { return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(text_colors)); });
     builder.VirtualMethod("setGravity", "(I)V", [context, changed](dx::IntrinsicContext& c) {
         auto gravity = c.arguments[0].AsInt();
         if ((gravity & ~0x77) ||
@@ -2087,7 +2133,7 @@ Decl ExperimentalTextView(const Context& context) {
                                                              {"setFrame", "(IIII)Z"},
                                                              {"resetResolvedDrawables", "()V"},
                                                              {"onResolveDrawables", "(I)V"}}}) {
-        builder.VirtualMethod(name, sig, [name, sig](dx::IntrinsicContext& c) {
+        builder.VirtualMethod(name, sig, [name, sig, update_color](dx::IntrinsicContext& c) {
             if ((std::string_view(name) == "onRtlPropertiesChanged" ||
                  std::string_view(name) == "onResolveDrawables") &&
                 c.arguments[0].AsInt() != 0)
@@ -2100,6 +2146,7 @@ Decl ExperimentalTextView(const Context& context) {
             if (result.exception.IsValid())
                 throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
                                       result.exception};
+            if (std::string_view(name) == "drawableStateChanged") update_color(c);
             return result.value;
         });
     }

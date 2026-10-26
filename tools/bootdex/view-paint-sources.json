@@ -1316,11 +1316,11 @@
           "body_sha256": "4e6f2be693ffbe8b3cb520963d6caab3f3566dac89355e0ec4b0088f6c4eb2e9",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
-            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
-            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
-            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
-            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1329,11 +1329,11 @@
           "body_sha256": "57887375504f4aee92348db0b2a3abe27e151b855bb42fda24e2c3b9088a198c",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
-            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
-            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
-            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
-            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1342,11 +1342,11 @@
           "body_sha256": "455a6450fe1187e9cbacf70436d96655fc7041854b9383a51a7ad6861930d6d7",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-294 audited plain text construction; ROM TextView.java:613-1320",
-            "inputs": "actual Context, AttributeSet and defStyleAttr through ROM View and Theme/TypedArray in appearance/TextView/View order",
-            "outputs": "validated text px size scalar color Typeface absolute gravity bounded line policy and four absolute bitmap compounds",
-            "state_owner": "UiNode text/style input is sole semantic owner; owner-traced Typeface/Drawable identities; no mText/mLayout/mEditor writes",
-            "failure_boundary": "unknown themes/attributes, non-plain text, unsupported styling/editing/layout/skin requests fail; singleLine implicit END fails; getPaint/onMeasure/setText/getText remain failure"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1860,11 +1860,11 @@
           "body_sha256": "ea28a43b3e182244196f503183dd7d403e5f23ef218374ba595378e94d321418",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "plain text with scalar colors, supported compound images and reviewed ROM skin background",
-            "outputs": "real View drawable state change protocol; stateful text colors/Editor/compound state remain unsupported",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -2118,7 +2118,7 @@
           "signature": "getHighlightColor()I",
           "flags": 1,
           "body_sha256": "b813e3718d9181dee7c16826580c0334bcbfbc752300aa022a17d5b62ad40b0e",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getHint()Ljava/lang/CharSequence;",
@@ -2136,7 +2136,7 @@
           "signature": "getHintTextColors()Landroid/content/res/ColorStateList;",
           "flags": 17,
           "body_sha256": "20433a1ba29d8dbcbbc32253c36c4f43bccff1403b437c200c17e010309729a8",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getHorizontalOffsetForDrawables()I",
@@ -2262,7 +2262,7 @@
           "signature": "getLinkTextColors()Landroid/content/res/ColorStateList;",
           "flags": 17,
           "body_sha256": "7eee3148b017b203fd794f205e3c87a7ea9d5d20aab330d169ad955baf9b66fe",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getLinksClickable()Z",
@@ -2454,11 +2454,11 @@
           "body_sha256": "c967197b6f1f3411ed80048a6448050406693af009549e8a31b36106323e8687",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -3653,11 +3653,11 @@
           "body_sha256": "584304c3e77c1b2137b9ea948658b3c4ac769be5b25517e2a0c784e8d9aee80b",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -3666,11 +3666,11 @@
           "body_sha256": "0b4bc6fb7e5f767d5362c1de44e4ecc58c21a78cd396695a69a769bfc97bee21",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
+            "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
+            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -4102,7 +4102,7 @@
         {
           "signature": "mHighlightColor:I",
           "flags": 0,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4144,7 +4144,7 @@
         {
           "signature": "mHintTextColor:Landroid/content/res/ColorStateList;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4180,7 +4180,7 @@
         {
           "signature": "mLinkTextColor:Landroid/content/res/ColorStateList;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4384,7 +4384,7 @@
         {
           "signature": "mTextColor:Landroid/content/res/ColorStateList;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

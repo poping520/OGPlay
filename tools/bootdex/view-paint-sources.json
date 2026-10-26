@@ -1299,8 +1299,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-owner.surface.json.gz",
-      "surface_sha256": "ea38caf65e1b03dd1b9a92f2e04f8689b679166486ef8ce3d86ba0878f728872",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -1860,11 +1860,11 @@
           "body_sha256": "ea28a43b3e182244196f503183dd7d403e5f23ef218374ba595378e94d321418",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "plain text with scalar colors, supported compound images and reviewed ROM skin background",
+            "outputs": "real View drawable state change protocol; stateful text colors/Editor/compound state remain unsupported",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
           }
         },
         {
@@ -2755,7 +2755,14 @@
           "signature": "onCreateDrawableState(I)[I",
           "flags": 4,
           "body_sha256": "8fe13a2589e64d90412966f9c4291cfb838989dd750c8ce313bc761af80d8b11",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "bounded plain-text single-line owner (default false during super construction), actual Java View state and ROM MULTILINE_STATE_SET",
+            "outputs": "parent View state plus original ROM multiline merge; no text-selectable/Editor state credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
         },
         {
           "signature": "onCreateInputConnection(Landroid/view/inputmethod/EditorInfo;)Landroid/view/inputmethod/InputConnection;",

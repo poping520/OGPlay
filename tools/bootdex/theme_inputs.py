@@ -119,7 +119,8 @@ def inspect_inputs(negative_rom_id=False):
     resource_audit = framework_res_audit.inspect()
     require(not resource_audit['errors'], 'framework-res/R identity conflict')
     hashes.update({rel: row['sha256'] for rel, row in resource_audit['inputs'].items()})
-    drawable_bindings = dict(rom['Lcom/android/internal/R$drawable;'])
+    drawable_bindings = dict(rom['Landroid/R$drawable;'])
+    drawable_bindings.update(rom['Lcom/android/internal/R$drawable;'])
     for row in resource_audit['demanded_drawables']:
         if row['name'] not in framework_res_audit.SCROLLBARS:
             continue
@@ -206,6 +207,23 @@ def inspect_inputs(negative_rom_id=False):
         for name, ident in rom[owner].items():
             require(name not in attr_ids or attr_ids[name] == ident, 'conflicting ROM attr: ' + name)
             attr_ids[name] = ident
+    by_id = {row['id']: row for row in resource_audit['entries']}
+    formats = {}
+    for row in resource_audit['entries']:
+        if row['type'] != 'attr':
+            continue
+        variants = row['configurations']
+        require(len(variants) == 1 and variants[0]['complex'], 'ambiguous ROM attr format')
+        bag = variants[0]['bag']
+        masks = [v['data'] for v in bag if v['name'] == 0x01000000]
+        require(len(masks) == 1, 'missing ROM attr format')
+        names = {}
+        for v in bag:
+            if v['name'] < 0x01000004:
+                continue  # format/min/max/localization metadata
+            require(v['name'] in by_id and by_id[v['name']]['type'] == 'id', 'invalid enum name')
+            names[by_id[v['name']]['name']] = v['data']
+        formats[row['name']] = dict(format=masks[0], names=names)
     report = dict(schema_version=1, task='DVM-288', status='rejected' if errors else 'preflight-passed',
                   accepted_projection=False, input_sha256=hashes, rom_shapes=shapes,
                   themes=bindings, theme_count=len(bindings),
@@ -214,5 +232,5 @@ def inspect_inputs(negative_rom_id=False):
                   public_id_checks=public_checks, styleable_slot_checks=styleable_checks,
                   styleable_group_count=len(GROUPS), styleable_slot_count=len(styleable_checks), errors=errors,
                   negative_control=negative_rom_id, style_bindings=all_styles, attr_bindings=attr_ids,
-                  drawable_bindings=drawable_bindings)
+                  drawable_bindings=drawable_bindings, attribute_formats=formats)
     return report

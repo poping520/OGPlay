@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "catalog.h"
+#include "ogplay/runtime/integration/host_image_decode.h"
 #include "ogplay/core/json.h"
 #include <limits>
 #include <mutex>
@@ -685,7 +686,7 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
             static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
         if (!value) return XmlInt(-1);
         ThemeOutput(c, c.arguments[2].ref, *value);
-        return XmlInt(0);
+        return XmlInt(value->type == 3 ? value->cookie - 1 : 0);
     });
     method("applyStyle", "(IIII[I[I[I)Z", true, [context](dx::IntrinsicContext& c) {
         const auto attrs = ThemeAttrs(c, c.arguments[4].ref);
@@ -718,15 +719,22 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
             static_cast<std::uint32_t>(c.arguments[3].AsInt()), context->arsc);
         if (!value) return XmlInt(-1);
         ThemeOutput(c, c.arguments[2].ref, *value);
-        return XmlInt(0);
+        return XmlInt(value->type == 3 ? value->cookie - 1 : 0);
     });
     method("getStringBlockCount", "()I", false, [context](dx::IntrinsicContext& c) {
         ThemeAssetLive(context, c.receiver);
-        return XmlInt(context->arsc.global_string_pool.empty() ? 0 : 1);
+        return XmlInt(context->theme_resources.Strings().empty() ? (context->arsc.global_string_pool.empty() ? 0 : 1)
+                                                                 : 2);
     });
     method("getNativeStringBlock", "(I)I", false, [context](dx::IntrinsicContext& c) {
         ThemeAssetLive(context, c.receiver);
-        if (static_cast<std::uint32_t>(c.arguments[0].AsInt()) != 0 || context->arsc.global_string_pool.empty())
+        const auto index = c.arguments[0].AsInt();
+        if (index == 1 && !context->theme_resources.Strings().empty()) {
+            if (!context->rom_string_pool.value)
+                context->rom_string_pool = context->xml_cursors.CreateStringPool(context->theme_resources.Strings());
+            return XmlInt(context->rom_string_pool.value);
+        }
+        if (index != 0 || (context->arsc.global_string_pool.empty() && context->theme_resources.Strings().empty()))
             throw std::runtime_error("resource pool index unavailable");
         if (!context->resource_string_pool.value)
             context->resource_string_pool = context->xml_cursors.CreateStringPool(context->arsc.global_string_pool);
@@ -753,24 +761,26 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
         return ThemeChecked(c, context, [&] {
             ThemeAssetLive(context, c.receiver);
             const auto owner = c.vm.Linker().ResolveDescriptor("Landroid/content/res/StringBlock;");
-            const auto count = context->arsc.global_string_pool.empty() ? 0 : 1;
+            const auto count =
+                context->theme_resources.Strings().empty() ? (context->arsc.global_string_pool.empty() ? 0 : 1) : 2;
             const auto array = c.vm.Model().NewObjectArray(
                 c.vm.Linker().ResolveDescriptor("[Landroid/content/res/StringBlock;"), owner, count);
             const auto roots = c.vm.ProtectReferences(std::array{array});
-            if (count) {
-                if (!context->resource_string_pool.value)
-                    context->resource_string_pool =
-                        context->xml_cursors.CreateStringPool(context->arsc.global_string_pool);
+            for (int index = 0; index < count; ++index) {
+                auto& pool = index == 0 ? context->resource_string_pool : context->rom_string_pool;
+                if (!pool.value)
+                    pool = context->xml_cursors.CreateStringPool(index == 0 ? context->arsc.global_string_pool
+                                                                            : context->theme_resources.Strings());
                 const auto block = c.vm.NewIntrinsicInstance("Landroid/content/res/StringBlock;");
                 const auto block_root = c.vm.ProtectReferences(std::array{block});
                 const auto ctor = c.vm.Linker().FindDirectMethod(owner, "<init>", "(IZ)V");
                 if (!ctor) throw std::logic_error("StringBlock native-pool constructor missing");
-                const auto result = c.vm.Call(
-                    *ctor, std::array{dx::VmValue::Ref(block), XmlInt(context->resource_string_pool.value), XmlInt(0)});
+                const auto result =
+                    c.vm.Call(*ctor, std::array{dx::VmValue::Ref(block), XmlInt(pool.value), XmlInt(0)});
                 if (result.exception.IsValid())
                     throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor,
                                           result.exception_message, result.exception};
-                c.vm.Model().SetObjectElement(array, 0, block);
+                c.vm.Model().SetObjectElement(array, index, block);
             }
             ThemeField(c.vm, c.receiver, "mStringBlocks", "[Landroid/content/res/StringBlock;", array.Value(),
                        dx::SlotTag::ref);
@@ -1371,6 +1381,8 @@ Decl Declare_android_content_res_Resources(const Context &context) {
                   const auto data = XmlField(call.vm, value, "data");
                   const bool color = type >= 28 && type <= 31;
                   const auto id = XmlField(call.vm, value, "resourceId");
+                  if ((id >> 24) == 1 && type == 1 && data == id)
+                      return dx::VmValue::Ref(MakeRomSkin(call, context, id));
                   std::shared_ptr<const ui::UiBitmap> pixels;
                   if (!color) {
                       if (type != 3 || !id || XmlField(call.vm, value, "assetCookie") != 1)
@@ -1713,3 +1725,70 @@ Decl Declare_android_content_res_Resources(const Context &context) {
 }
 
 } // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, std::uint32_t id) {
+    const auto density = static_cast<std::uint32_t>(std::lround(context->ui_density * 160.0F));
+    const auto* resource = context->theme_resources.Drawable(id, density);
+    if (!resource) throw std::runtime_error("unreviewed ROM drawable load");
+    const bool selector = !resource->items.empty();
+    const char* descriptor =
+        selector ? "Landroid/graphics/drawable/StateListDrawable;" : "Landroid/graphics/drawable/NinePatchDrawable;";
+    const auto klass = call.vm.Linker().ResolveDescriptor(descriptor);
+    const auto init = call.vm.EnsureClassInitialized(klass);
+    if (init.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(init.exception_class).descriptor, init.exception_message,
+                              init.exception};
+    const auto object = call.vm.NewIntrinsicInstance(descriptor);
+    const auto roots = call.vm.ProtectReferences(std::array{object});
+    const auto ctor = call.vm.Linker().FindDirectMethod(klass, "<init>", "()V");
+    const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(object)});
+    if (out.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                              out.exception};
+    // Do not retain unordered-map references across recursive allocations.
+    context->ui_drawables.at(object.Value()).resource_id = id;
+    if (selector) {
+        for (const auto& item : resource->items) {
+            const auto child = MakeRomSkin(call, context, item.drawable);
+            auto& state = context->ui_drawables.at(object.Value());
+            state.skin_children.push_back(child);
+            state.skin_states.push_back(item.states);
+            const auto padding = context->ui_drawables.at(child.Value()).skin_padding;
+            for (std::size_t i = 0; i < 4; ++i)
+                state.skin_padding[i] = std::max(state.skin_padding[i], padding[i]);
+        }
+        const auto states = CallAndroidMethod(call.vm, object, "getState", "()[I").ref;
+        static_cast<void>(CallAndroidMethod(call.vm, object, "onStateChange", "([I)Z", {dx::VmValue::Ref(states)}));
+    } else {
+        const auto decoded = DecodeImageToArgb(resource->png);
+        if (!decoded || decoded->width != static_cast<int>(resource->width) ||
+            decoded->height != static_cast<int>(resource->height))
+            throw std::runtime_error("ROM ninepatch PNG decode/facts mismatch");
+        auto pixels = std::make_shared<ui::UiBitmap>();
+        pixels->width = decoded->width;
+        pixels->height = decoded->height;
+        for (auto argb : decoded->argb) {
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 16));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 8));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb));
+            pixels->rgba8.push_back(static_cast<std::uint8_t>(argb >> 24));
+        }
+        auto& state = context->ui_drawables.at(object.Value());
+        state.leaf_pixels = std::move(pixels);
+        const auto scale = [&](std::int32_t value) {
+            return resource->density == 0
+                       ? value
+                       : static_cast<std::int32_t>(
+                             (static_cast<std::int64_t>(value) * density + resource->density / 2) / resource->density);
+        };
+        state.skin_width = scale(static_cast<std::int32_t>(resource->width));
+        state.skin_height = scale(static_cast<std::int32_t>(resource->height));
+        for (std::size_t i = 0; i < 4; ++i) {
+            state.skin_padding[i] = scale(resource->padding[i]);
+            state.skin_optical[i] = scale(resource->optical[i]);
+        }
+    }
+    return object;
+}
+}  // namespace ogplay::runtime::android_intrinsics

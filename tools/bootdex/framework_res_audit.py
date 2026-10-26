@@ -158,6 +158,12 @@ class ResourceTable:
                         require(ep + esize + 12 * bag_count <= pos + extent, 'truncated bag')
                         variant.update(parent=parent, bag_count=bag_count,
                                        bag_sha256=sha(self.data[ep + esize:ep + esize + 12 * bag_count]))
+                        bag = []
+                        for j in range(bag_count):
+                            name_id, vsize, zero, vtype, value = self.words('<IHBBI', ep + esize + 12 * j)
+                            require(vsize == 8 and zero == 0, 'invalid bag value')
+                            bag.append(dict(name=name_id, type=vtype, data=value))
+                        variant['bag'] = bag
                     require(all(v['config_hex'] != variant['config_hex'] for v in row['configurations']), 'duplicate config')
                     row['configurations'].append(variant)
         require(len(packages) == package_count == 1, 'invalid package count')

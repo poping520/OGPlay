@@ -179,7 +179,7 @@ VmObjectRef Owner(ContainerVm& f, int defaults = 0) {
     if (defaults >= 3) {
         b.parent = 0x01030023;  // Actual Widget.EditText; mask background/gravity, retain stateful textColor.
         if (defaults == 3) std::erase_if(b.bag, [](const auto& v) { return v.name == 0x01010098; });
-        b.bag.push_back({0x010100d4, 1, 0, {}});
+        if (defaults != 5) b.bag.push_back({0x010100d4, 1, 0, {}});
         b.bag.push_back({0x01010034, 1, 0, {}});
         b.bag.push_back({0x010100af, 16, 0x11, {}});
     }
@@ -369,7 +369,7 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
             const auto failed = Construct(f, owner);
             CHECK(failed.exception.IsValid());
             INFO(failed.exception_message);
-            CHECK(failed.exception_message.find("edit_text") != std::string::npos);
+            CHECK(failed.exception_message.find("primary_text_light") != std::string::npos);
             CHECK_FALSE(f.ledger.Unimplemented().empty());
         }
         ContainerVm f(backend);
@@ -387,5 +387,44 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
         CHECK(ime.exception.IsValid());
         CHECK(ime.exception_message.find("onCreateInputConnection") != std::string::npos);
         CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-326 EditText consumes actual default background padding in bounded measurement and rejects rendering") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f, 5);
+        const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, edit});
+        const auto background = f.On(edit, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+        REQUIRE(background.IsValid());
+        CHECK(f.context->ui_drawables.at(background.Value()).resource_id == 0x01080016);
+        CHECK(f.On(edit, "getPaddingLeft", "()I").AsInt() == 11);
+        CHECK(f.On(edit, "getPaddingTop", "()I").AsInt() == 7);
+        CHECK(f.On(edit, "getPaddingRight", "()I").AsInt() == 11);
+        CHECK(f.On(edit, "getPaddingBottom", "()I").AsInt() == 13);
+        f.On(edit, "measure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+        CHECK(f.On(edit, "getMeasuredWidth", "()I").AsInt() >= 22);
+        CHECK(f.On(edit, "getMeasuredHeight", "()I").AsInt() >= 20);
+        f.On(edit, "setPressed", "(Z)V", {VmValue::Int(1)});
+        const auto states = f.On(edit, "getDrawableState", "()[I").ref;
+        CHECK(f.On(background, "getState", "()[I").ref == states);
+        bool pressed = false;
+        for (JniSize i = 0; i < f.model.ArrayLength(states); ++i)
+            pressed |= f.model.GetPrimitiveElement(states, i) == 0x010100a7;
+        CHECK(pressed);
+        f.On(edit, "setPressed", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto failed =
+            f.OnOutcome(background, "draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
+        CHECK(failed.exception.IsValid());
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        f.context->activity = owner;
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(edit)});
+        const auto before = f.context->ui_tree.PublishedProjection();
+        CHECK_THROWS_AS(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                 AndroidUiTraversalPhase::ResolveOnly),
+                        VmJavaThrow);
+        CHECK(f.context->ui_tree.PublishedProjection() == before);
     }
 }

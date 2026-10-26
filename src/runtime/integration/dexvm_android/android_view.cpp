@@ -385,16 +385,24 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
             CheckInputFocusWithoutConnection(call, context);
             return dx::VmValue::Void();
         });
-    builder.FinalMethod("showSoftInput", "(Landroid/view/View;I)Z",
-        [context](dx::IntrinsicContext& call) {
-            CheckInputFocusWithoutConnection(call, context);
-            return dx::VmValue::Int(0);
-        });
-    builder.FinalMethod("hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z",
-        [context](dx::IntrinsicContext& call) {
-            CheckInputFocusWithoutConnection(call, context);
-            return dx::VmValue::Int(0);
-        });
+    builder.FinalMethod("showSoftInput", "(Landroid/view/View;I)Z", [context](dx::IntrinsicContext& call) {
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "IME sessions are unsupported (ADR-0161 decision 7)"};
+        }
+        CheckInputFocusWithoutConnection(call, context);
+        return dx::VmValue::Int(0);
+    });
+    builder.FinalMethod("hideSoftInputFromWindow", "(Landroid/os/IBinder;I)Z", [context](dx::IntrinsicContext& call) {
+        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "IME sessions are unsupported (ADR-0161 decision 7)"};
+        }
+        CheckInputFocusWithoutConnection(call, context);
+        return dx::VmValue::Int(0);
+    });
     return std::move(builder).Build();
 }
 
@@ -2431,11 +2439,67 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Int(0);
         });
         builder.VirtualMethod(
+            "onCreateDrawableState", "(I)[I",
+            [context](dx::IntrinsicContext& c) {
+                dx::IntrinsicCall fields(c);
+                for (const auto token : context->view_java_measure_fields->unsupported_state)
+                    if (fields.GetRef(token).IsValid()) {
+                        if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_drawable_state", 0);
+                        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                              "system-attached drawable state unsupported"};
+                    }
+                const auto extra = c.arguments[0].AsInt();
+                if (extra < 0 || extra > 1024)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "drawable extraSpace outside bounds"};
+                const auto flags = fields.GetInt(context->view_java_measure_fields->flags[0]);
+                const auto flags2 = fields.GetInt(context->view_java_measure_fields->flags[1]);
+                const auto view_flags = fields.GetInt(context->view_java_measure_fields->view_flags);
+                const auto parent = fields.GetRef(context->view_java_hierarchy_fields->parent);
+                const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+                if ((view_flags & 0x400000) && parent.IsValid() &&
+                    c.vm.Linker().IsAssignable(klass, c.vm.Model().ObjectClass(parent)))
+                    return CallAndroidMethod(c.vm, parent, "onCreateDrawableState", "(I)[I", {c.arguments[0]});
+                std::uint32_t index = 0;
+                const auto bit = [&](const char* name, bool active) {
+                    if (!active) return;
+                    const auto f = c.vm.Linker().FindFieldRecursive(klass, name, "I");
+                    index |= c.vm.Linker().Class(klass).static_storage[c.vm.Linker().Field(*f).slot];
+                };
+                bit("VIEW_STATE_PRESSED", (flags & 0x4000) != 0);
+                bit("VIEW_STATE_ENABLED", (view_flags & 0x20) == 0);
+                bit("VIEW_STATE_FOCUSED", CallAndroidMethod(c.vm, c.receiver, "isFocused", "()Z").AsInt() != 0);
+                bit("VIEW_STATE_SELECTED", (flags & 4) != 0);
+                bit("VIEW_STATE_WINDOW_FOCUSED",
+                    CallAndroidMethod(c.vm, c.receiver, "hasWindowFocus", "()Z").AsInt() != 0);
+                bit("VIEW_STATE_ACTIVATED", (flags & 0x40000000) != 0);
+                bit("VIEW_STATE_HOVERED", (flags & 0x10000000) != 0);
+                bit("VIEW_STATE_DRAG_CAN_ACCEPT", (flags2 & 1) != 0);
+                bit("VIEW_STATE_DRAG_HOVERED", (flags2 & 2) != 0);
+                const auto f = c.vm.Linker().FindFieldRecursive(klass, "VIEW_STATE_SETS", "[[I");
+                const dx::VmObjectRef sets{c.vm.Linker().Class(klass).static_storage[c.vm.Linker().Field(*f).slot]};
+                const auto state = c.vm.Model().GetObjectElement(sets, static_cast<JniSize>(index));
+                if (!extra) return dx::VmValue::Ref(state);
+                const auto length = c.vm.Model().ArrayLength(state);
+                const auto copy = c.vm.Model().NewPrimitiveArray(c.vm.Linker().ResolveDescriptor("[I"),
+                                                                 JniPrimitiveKind::integer, length + extra);
+                c.vm.Model().CopyPrimitiveElements(state, 0, copy, 0, length);
+                return dx::VmValue::Ref(copy);
+            },
+            dx::kAccProtected);
+        builder.VirtualMethod(
             "drawableStateChanged", "()V",
             [context, software_dirty](dx::IntrinsicContext& call) {
                 static_cast<void>(software_dirty(call));
                 dx::IntrinsicCall fields(call);
-                if (fields.GetRef((*context->view_java_input_fields)[1]).IsValid()) {
+                const auto background = fields.GetRef((*context->view_java_input_fields)[1]);
+                if (background.IsValid()) {
+                    const auto state = context->ui_drawables.find(background.Value());
+                    if (state != context->ui_drawables.end() && state->second.rom_skin) {
+                        const auto states = CallAndroidMethod(call.vm, call.receiver, "getDrawableState", "()[I").ref;
+                        static_cast<void>(
+                            CallAndroidMethod(call.vm, background, "setState", "([I)Z", {dx::VmValue::Ref(states)}));
+                        return dx::VmValue::Void();
+                    }
                     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_drawable_state", 0);
                     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state unsupported"};
                 }
@@ -2825,8 +2889,16 @@ Decl Declare_android_view_View(const Context& context) {
             context->view_adapter_references[call.receiver.Value()].system_ui_listener = call.arguments[0].ref;
             return dx::VmValue::Void();
         });
-    builder.VirtualMethod("getWindowToken", "()Landroid/os/IBinder;",
-                          [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+    builder.VirtualMethod("getWindowToken", "()Landroid/os/IBinder;", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Ref(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
+                                    ? ManagedWindowToken(c.vm, *context, c.receiver)
+                                    : dx::VmObjectRef{});
+    });
+    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
+        builder.VirtualMethod("getApplicationWindowToken", "()Landroid/os/IBinder;",
+                              [context](dx::IntrinsicContext& c) {
+                                  return dx::VmValue::Ref(ManagedWindowToken(c.vm, *context, c.receiver));
+                              });
     builder.VirtualMethod("getViewTreeObserver", "()Landroid/view/ViewTreeObserver;",
                           [context](dx::IntrinsicContext& call) {
                               if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
@@ -3941,7 +4013,11 @@ bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         if (!metrics.width || !metrics.height) diagnostic("zero metrics");
         auto& schedule = context.ui_window_schedules[root];
         const bool same_identity = schedule.generation == generation && schedule.content_revision == revision;
-        if (schedule.generation != generation) schedule = {};
+        if (schedule.generation != generation) {
+            const auto token = schedule.window_token;
+            schedule = {};
+            schedule.window_token = token;
+        }
         if (schedule.deferred_until_tick > context.ui_owner_tick) {
             diagnostic("deferred next tick");
             return false;
@@ -4392,5 +4468,50 @@ void MergeManagedViewTreeObservers(dx::Interpreter& vm, DexVmAndroidContext& con
             CallAndroidMethod(vm, subtree, "getChildAt", "(I)Landroid/view/View;", {dx::VmValue::Int(index)}).ref;
         MergeManagedViewTreeObservers(vm, context, child);
     }
+}
+}  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+dx::VmObjectRef ManagedWindowToken(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window token requires owner thread"};
+    const auto root = ObserverWindowRoot(vm, context, view);
+    if (!root.IsValid()) return dx::VmObjectRef{};
+    auto& schedule = context.ui_window_schedules.at(root);
+    if (!schedule.window_token.IsValid()) {
+        const auto token = vm.NewIntrinsicInstance("Logplay/runtime/ManagedWindowToken;");
+        context.managed_window_tokens.emplace(token.Value(),
+                                              DexVmAndroidContext::ManagedTokenState{root, schedule.generation});
+        schedule.window_token = token;
+    }
+    return schedule.window_token;
+}
+
+Decl Declare_managed_WindowToken(const Context& context) {
+    auto b = dx::IntrinsicClassBuilder::Class("Logplay/runtime/ManagedWindowToken;", "Ljava/lang/Object;",
+                                              {"Landroid/os/IBinder;"}, dx::kAccPublic | dx::kAccFinal);
+    const auto alive = [context](dx::IntrinsicContext& c) {
+        const auto state = context->managed_window_tokens.find(c.receiver.Value());
+        if (state == context->managed_window_tokens.end()) return dx::VmValue::Int(0);
+        const auto window = context->ui_window_schedules.find(state->second.root);
+        const bool valid = window != context->ui_window_schedules.end() && window->second.window_token == c.receiver &&
+                           ObserverWindowRoot(c.vm, *context, state->second.root) == state->second.root;
+        return dx::VmValue::Int(valid);
+    };
+    b.VirtualMethod("isBinderAlive", "()Z", alive);
+    b.VirtualMethod("pingBinder", "()Z", alive);
+    const auto unsupported = [](dx::IntrinsicContext& c) -> dx::VmValue {
+        if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.managed_window_token_ipc", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "managed window token is process-local; Binder operations are unsupported"};
+    };
+    b.VirtualMethod("transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z", unsupported);
+    b.VirtualMethod("getInterfaceDescriptor", "()Ljava/lang/String;", unsupported);
+    b.VirtualMethod("queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", unsupported);
+    b.VirtualMethod("dump", "(Ljava/io/FileDescriptor;[Ljava/lang/String;)V", unsupported);
+    b.VirtualMethod("dumpAsync", "(Ljava/io/FileDescriptor;[Ljava/lang/String;)V", unsupported);
+    b.VirtualMethod("linkToDeath", "(Landroid/os/IBinder$DeathRecipient;I)V", unsupported);
+    b.VirtualMethod("unlinkToDeath", "(Landroid/os/IBinder$DeathRecipient;I)Z", unsupported);
+    return std::move(b).Build();
 }
 }  // namespace ogplay::runtime::android_intrinsics

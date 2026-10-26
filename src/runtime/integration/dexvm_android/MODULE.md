@@ -148,19 +148,24 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   ROM Theme/TypedArray 独占字段、缓存与 recycle；selectDefaultTheme 执行 ROM targetSdk 算法。
   AssetManager 普通构造 adapter 初始化真实 mOpen/mNumRefs/mValue/mOffsets，Resources 应用
   对象工厂初始化 mAccessLock/mMetrics，原 clinit 与 Theme/TypedArray 构造执行 ROM。
-  makeStringBlocks 将唯一 APK 原池绑定真实 ROM StringBlock，不合成 system AssetManager；
-  原池由 context 保活至 Shutdown，StringBlock 不拥有该借用池。
-  native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner，init(true)、系统池、
-  selector/ninepatch/animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
+  makeStringBlocks 将 APK 原池/cookie1 与投影 ROM 字符串池/cookie2 分别绑定真实 ROM
+  StringBlock，不合成 system AssetManager；池由 context 保活至 Shutdown，StringBlock
+  不拥有借用池。投影按同 ROM attr format 和本属性枚举表解析，不跨属性猜名称。
+  native 准入逐签名封存在 view-theme-sources；支持域限当前 APK owner 与封存 ROM 投影，init(true)、完整系统池、
+  未登记 selector/ninepatch、animation/spans 请求失败；TypedArray/Resources 的 getDrawable/getColorStateList
   执行 ROM，loadDrawable/loadColorStateList 为逐签名 adapter，单态颜色调用 ROM valueOf。
   缺席或 @null 返回 null；仅封存清单内 View drawable 引用可惰性进入六槽，
-  background/foreground/divider/scrollbar 的其他非空值仍明确失败。
+  background 仅额外支持封存 edit_text 闭包的状态和测量，未开放其他系统皮肤；
+  foreground/divider/scrollbar 的其他非空值仍明确失败。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
   资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
   换算；ColorDrawable 仅宿主 color 为值 owner，未启用的 mPaint/mState 访问明确失败。
-  不支持 draw、inflateFromXml、StateListDrawable、NinePatchDrawable；无叶控件构造准入。
+  默认背景另允许封存同 ROM edit_text selector 与 ninepatch，DrawableContainer/StateListDrawable/
+  NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
+  npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
+  不支持任意 inflateFromXml、动画/过渡或皮肤 draw；guest draw 及带皮肤的呈现冻结明确失败。
   不可变 leaf_pixels 由 Java Drawable 身份拥有，不进入 ui_bitmaps 缓存；mBitmap 为 Java 强边，
   sweep/teardown 退役 backing。Legacy 构造/像素/主题路径保持。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
@@ -606,7 +611,8 @@ Legacy 控件默认值与生产配方保持。
 
 JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认 editable/movement、
 EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
-selector/ninepatch/系统皮肤失败，应用可显式覆盖。复用同一 TextView 文本与冻结测量服务。
+系统皮肤仅封存 edit_text selector/ninepatch 可参与状态与 padding/叶测量，其他皮肤失败；
+应用可显式覆盖。复用同一 TextView 文本与冻结测量服务，皮肤绘制请求仍失败。
 宿主 UiNode 唯一拥有可变文本；View adapter 仅保存有界 selection 与 Editable/movement 身份，
 不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用 Legacy 的
 length/toString/clear/replace 服务；实验身份从 View 强边保活，反向保活 View，循环随 GC 回收。
@@ -746,3 +752,13 @@ partition root，子节点不继承构建缓存窗口位。producer 与 View/win
 
 纯窗口可见变化可由 owner 重发最后完整投影的窗口事实，更新调度 published 引用而不
 消费 Java requestLayout。隐藏窗口的 Surface 泵仅退役 holder，不为销毁回调触发遍历。
+
+## 进程内 managed-window token
+
+JavaTraversal 的 getWindowToken/getApplicationWindowToken 沿实际 Java 父链查 owner-attached
+窗口根；首次遍历前或脱离后返回 null。每存活窗口持有稳定 token，内容替换与调度刷新不
+改变身份；窗口退役/GC/UI reset 撤销有效性，新窗口不能复活旧 token。窗口根通过
+owner-attached GC 边保活 token，token 仅弱记根身份。isBinderAlive/pingBinder 查询本地有效性；
+transact、Binder interface/death/dump 操作及 Parcel marshalling 均记账失败。
+JavaTraversal showSoftInput/hideSoftInputFromWindow 直接停在 ADR-0161 决定7；不初始化
+InputConnection 或 IME Binder。Legacy 的查询/输入路径保持。

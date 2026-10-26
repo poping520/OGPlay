@@ -278,6 +278,9 @@ void RegisterAndroidOwnerAttachedStateTable(
                 found != context->surface_callbacks.end()) {
                 for (const auto callback : found->second) visit_ref(callback);
             }
+            if (const auto schedule = context->ui_window_schedules.find(owner);
+                schedule != context->ui_window_schedules.end())
+                visit_ref(schedule->second.window_token);
             if (const auto found = context->view_tree_observers.find(key);
                 found != context->view_tree_observers.end()) visit_ref(found->second);
             if (const auto found = context->global_layout_listeners.find(key);
@@ -302,7 +305,11 @@ void RegisterAndroidOwnerAttachedStateTable(
             if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
                 if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end())
                     visit_ref(image->second);
-            if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) visit_ref(state->second.bitmap);
+            if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
+                visit_ref(state->second.bitmap);
+                for (const auto child : state->second.skin_children)
+                    visit_ref(child);
+            }
             if (const auto node = context->object_to_ui_node.find(key);
                 node != context->object_to_ui_node.end()) {
                 if (const auto found = context->ui_click_listeners.find(node->second);
@@ -333,6 +340,7 @@ void RegisterAndroidOwnerAttachedStateTable(
             context->surface_callbacks.erase(key);
             if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
             context->active_surface_holders.erase(key);
+            context->managed_window_tokens.erase(key);
             context->view_tree_observers.erase(key);
             context->global_layout_listeners.erase(key);
             context->sax_content_handlers.erase(key);

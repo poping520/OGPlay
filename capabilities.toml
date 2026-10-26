@@ -65,8 +65,8 @@ note = "Legacy 保持固定 registry、typed AXML、include/merge 与有界样�
 
 [dexvm.window_content]
 status = "partial"
-test = "tests/dexvm/widget_window_dialog_tests.cpp#DVM-245; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/dexvm/widget_inflater_tests.cpp#DVM-245; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
-note = "DVM-245/LUI-18：每 Window 稳定内容容器、android.R.id.content 与独立 LayoutParams；内容替换/追加、onContentChanged 虚派及 Surface/焦点往返。API19 公开属性真实读写，setAttributes 按 copyFrom 复制且保留已赋 token/packageName；亮度等仅保存，不影响宿主屏幕。后台修改拒绝；完整 Decor、主题、ActionBar、透明窗口与跨平台未验收。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/widget_window_dialog_tests.cpp#DVM-245; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/dexvm/widget_inflater_tests.cpp#DVM-245; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
+note = "每Window稳定内容容器与布局参数、内容替换/追加、onContentChanged及焦点往返保持；实验DVM-326已附着View返回每窗口稳定的进程内window/application token，未附着null，退役失效。transact/IPC marshalling与IME明确失败；无Binder/WMS/完整Decor，Legacy保持，GPU/跨平台未验收。"
 
 [runtime.ui_frame_layout]
 status = "complete"
@@ -125,8 +125,8 @@ note = "DVM-246/304/305：Legacy原路径保持；JavaTraversal独立HostLayout 
 
 [dexvm.drawable_resource]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "Legacy DVM-229 保持真实 BitmapDrawable/ColorDrawable 与像素版本。DVM-292 实验配对：受审 ROM 形状叶对象、APK PNG/JPEG/纯色、density intrinsic、单态 ColorStateList.valueOf 与对象 GC；无叶控件构造。selector/XML/资源 NinePatch/系统皮肤/custom draw 明确失败，系统资源不回退 APK。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_inflater_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "Legacy 保持 BitmapDrawable/ColorDrawable 像素版本；实验 ROM 叶对象及 APK PNG/JPEG/纯色保持。DVM-326 封存同 ROM edit_text selector 与 ninepatch，可解码、选择状态、查询 density 尺寸/padding/光学 insets并随GC退役；guest draw/呈现冻结明确失败。其他皮肤、动画/过渡、任意XML/custom draw失败，不回退APK。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -1995,8 +1995,8 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-288..292/ADR-0160/0161：实验配对固定 ROM 主题、styleable 与默认 style/?attr 消费闭包三态投影；完整优先级/@null 与六槽，APK PNG/JPEG/纯色叶 Drawable、ROM valueOf 单态颜色列表，配置/density/ID/cookie 与对象 GC。DVM-325 同ROM scrollbar 引用可惰性投影；selector/ninepatch/系统皮肤加载及未登记非空值失败，非零 scrollbar 构造未开放；Legacy 不变。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "ADR-0160/0161：实验固定ROM主题与styleable消费闭包三态/六槽投影，真实优先级与@null；DVM-326属性类型及enum/flags名称取同ROM attr表，未知名失败，字符串独立cookie2。View默认背景edit_text闭包支持selector状态及ninepatch padding/密度测量；其他皮肤/绘制/非零scrollbar失败。Legacy保持。"
 
 [runtime.guest_proc_maps]
 status = "partial"
@@ -2145,8 +2145,8 @@ note = "DVM-293：仅实验配对的实例 Paint flags/antiAlias、1..128px字�
 
 [dexvm.text_constructor]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "DVM-294/295/297/298：实验TextView真主题构造与有界文本、叶测量及冻结line-plan；Button/EditText保留ROM薄构造与默认style，EditText的editable/movement/EDITABLE强制执行ROM，复用宿主编辑事务、selection、watcher及Java焦点输入。文本单一owner，身份随View GC。默认皮肤/状态色、未知主题/属性、RTL/shaping、完整Spannable/TextPaint/Editor/IME/Layout明确失败；生产Legacy保持。"
+test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
+note = "实验TextView真实主题构造、有界文本/叶测量与冻结line-plan；Button/EditText保持ROM薄构造和默认style，编辑事务/selection/watcher与焦点输入共用原owner。DVM-326默认edit_text背景可参与状态与padding测量；绘制、其他皮肤/状态色、RTL/shaping、完整Spannable/Editor/IME/Layout失败。生产Legacy保持。"
 
 [dexvm.image_leaf]
 status = "partial"

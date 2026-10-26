@@ -1,0 +1,1069 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/DrawableContainer;",
+      "smali_sha256": "36e1b54bd56dca432d453c5e4b60f53672992e9faf7b2403526fab4438370e42",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "3de698620c378bee64acbfbf18ab67bd69955daee24d88381f1279c9f93b81ff",
+          "source": "failure"
+        },
+        {
+          "signature": "animate(Z)V",
+          "flags": 0,
+          "body_sha256": "b6f31cd13ebe98fff42db7631af550130d62cdf565d369313565cec2a0e1d560",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "b65a45a6c2b97b6afff851b04c0f13fa7e3b88f250e232bb4a14d9d94f997aec",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "5d1e9891477d3ab7f864f6e3f576b6dc28e44fdfe9c6f58db67635f1049eb70c",
+          "source": "failure"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "6a0239757f982790171185a2cb67ef9d984706d0ce67e007ab4bbaaee8fa53f1",
+          "source": "failure"
+        },
+        {
+          "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
+          "flags": 1,
+          "body_sha256": "5db23116f2c083cc1af238f0111cceaa4f5da7f4daa2c1341c1044e9e63506fc",
+          "source": "failure"
+        },
+        {
+          "signature": "getCurrent()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "6fe9bef6e605993beaeb9d2bcbac4438803c30ea8a9a8f146d2f34678ea8505a",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getIntrinsicHeight()I",
+          "flags": 1,
+          "body_sha256": "8334bd5ab462e3128ff1c312f43ac372d33abde4cfa3cb0cf8e6ec60cb51f837",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getIntrinsicWidth()I",
+          "flags": 1,
+          "body_sha256": "52f43327e19f20907ed028e09791557f9206b7273fa9ab39425f68b2b7cddd44",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getMinimumHeight()I",
+          "flags": 1,
+          "body_sha256": "0fa6f2acdf9686567e153defdbd048211e75c54064fd737c90c4b5cea8aa6de5",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getMinimumWidth()I",
+          "flags": 1,
+          "body_sha256": "7b71b62e1b477c248dc1afdd9796f4dae58f0b1b142cceddbb71ed8a7f17f914",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1,
+          "body_sha256": "edca6e7ac002f6c932678ef672ed70ea7630d26b636f903af49e9f7984df3ca8",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getOpticalInsets()Landroid/graphics/Insets;",
+          "flags": 1,
+          "body_sha256": "5f486c4dc243b451e922f93fb1c1b3558723544fd9613801f5331c03e90db247",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getPadding(Landroid/graphics/Rect;)Z",
+          "flags": 1,
+          "body_sha256": "47168a8a47dbf0519f27608dd0d335fe27020dcde7ce9d7ef5df7513546b0810",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "invalidateDrawable(Landroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "8cd3fe652eca94ee25cb3842087d4373349ad1a568bd30c815e2f7a467eb9e89",
+          "source": "failure"
+        },
+        {
+          "signature": "isAutoMirrored()Z",
+          "flags": 1,
+          "body_sha256": "e4f017b1211a20765cbef56a004400cf450b3fb36d1ab482685c399102864c20",
+          "source": "failure"
+        },
+        {
+          "signature": "isStateful()Z",
+          "flags": 1,
+          "body_sha256": "650848dfce6741a081ed7a8e4cb9a708d4a7bd5a34bd9744ed5bad36ea7f7c94",
+          "source": "failure"
+        },
+        {
+          "signature": "jumpToCurrentState()V",
+          "flags": 1,
+          "body_sha256": "1a7d3b13209b19926d0d6c9e34bb1e31e60241dfeb978c992b6c916bb4c8ba58",
+          "source": "failure"
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "f39bc47117b9ee6b7a5c256d075f4a49aa3c60e06a87d39b8bffa6ba0c7566dc",
+          "source": "failure"
+        },
+        {
+          "signature": "needsMirroring()Z",
+          "flags": 2,
+          "body_sha256": "b09ad681918384dd660daabd9ad2b8f5fc7989a803dd56d7824580e47bc8126d",
+          "source": "failure"
+        },
+        {
+          "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
+          "flags": 4,
+          "body_sha256": "73ec46a814a76f2d6c91b00da5b8906a911a7dafef5bec5cad98eeede8a3763e",
+          "source": "failure"
+        },
+        {
+          "signature": "onLevelChange(I)Z",
+          "flags": 4,
+          "body_sha256": "4f9c5fef185b0f8ce1c5d199cd35d342be0014bfcc0e5584d6a2558a0a5a6f28",
+          "source": "failure"
+        },
+        {
+          "signature": "onStateChange([I)Z",
+          "flags": 4,
+          "body_sha256": "360cb9ada270fa8b658ff7a32143a891caab391235ea44079c6e3e9f986250e5",
+          "source": "failure"
+        },
+        {
+          "signature": "scheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;J)V",
+          "flags": 1,
+          "body_sha256": "346c894a89b3fc6bfb2c3a3f72a2e6f14b96118a53da4ddec4bde9b982ee6c16",
+          "source": "failure"
+        },
+        {
+          "signature": "selectDrawable(I)Z",
+          "flags": 1,
+          "body_sha256": "72b6b2e0dec22fd67c9905743ec6d3996a478c80b70efc24103879d6cb2dd851",
+          "source": "failure"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1,
+          "body_sha256": "8d723ba3511c4e97ba286922b82c9c727d9c6249c8174730bd73a6ca08ba63fe",
+          "source": "failure"
+        },
+        {
+          "signature": "setAutoMirrored(Z)V",
+          "flags": 1,
+          "body_sha256": "4605a960881e994dcbc0e7735fd109b1d0fd7bc43a6ec3873de760b5ea434f91",
+          "source": "failure"
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1,
+          "body_sha256": "1e2a85b12cbb8346290ec02c84e3283826138237d95d37222f85fbafd3673fab",
+          "source": "failure"
+        },
+        {
+          "signature": "setConstantState(Landroid/graphics/drawable/DrawableContainer$DrawableContainerState;)V",
+          "flags": 4,
+          "body_sha256": "4db092cf4581c23c327dc22358fd781d45519f7905dde1c86278d03e5394c385",
+          "source": "failure"
+        },
+        {
+          "signature": "setDither(Z)V",
+          "flags": 1,
+          "body_sha256": "cfe9e8b707b32a2c7d3704c8fe4126b2139bddfdc0ff5353056f2cb6b04e52d9",
+          "source": "failure"
+        },
+        {
+          "signature": "setEnterFadeDuration(I)V",
+          "flags": 1,
+          "body_sha256": "e9477fa9398fc28621486e7a1cd4c01589d5ac890b17d4173d95eb1a9b3869b4",
+          "source": "failure"
+        },
+        {
+          "signature": "setExitFadeDuration(I)V",
+          "flags": 1,
+          "body_sha256": "7b70475334c0646227cb75d4fb73b5517c980be2b9e5a1dd83936a5d4a65839d",
+          "source": "failure"
+        },
+        {
+          "signature": "setVisible(ZZ)Z",
+          "flags": 1,
+          "body_sha256": "59d4b26ed34ac8b13da8ff738602dd9f44a4cdce111cb29a3b6324508bf5c643",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "unscheduleDrawable(Landroid/graphics/drawable/Drawable;Ljava/lang/Runnable;)V",
+          "flags": 1,
+          "body_sha256": "c38f54445ee76820dd8f6017d195fd9a353a11ffebe997345041c99a6805a5c3",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEBUG:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:false"
+        },
+        {
+          "signature": "DEFAULT_DITHER:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:true"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"DrawableContainer\""
+        },
+        {
+          "signature": "mAlpha:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mAnimationRunnable:Ljava/lang/Runnable;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mColorFilter:Landroid/graphics/ColorFilter;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mCurIndex:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mCurrDrawable:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDrawableContainerState:Landroid/graphics/drawable/DrawableContainer$DrawableContainerState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEnterAnimationEnd:J",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mExitAnimationEnd:J",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mInsets:Landroid/graphics/Insets;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastDrawable:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMutated:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/StateListDrawable;",
+      "smali_sha256": "4713b48c679cf15c15d791dad458196efe60f48217a167c4ddc31fb2cab5ed00",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "c6d0113605a3085feeda81163384f143e030b5c8931bdf76292657d0bfff9c70",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/StateListDrawable$StateListState;Landroid/content/res/Resources;)V",
+          "flags": 65538,
+          "body_sha256": "90f2e5701f80b4f4e57c99a32a20f7309edeeb4cb494ab030d50e1e6e3ca143b",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/StateListDrawable$StateListState;Landroid/content/res/Resources;Landroid/graphics/drawable/StateListDrawable$1;)V",
+          "flags": 69632,
+          "body_sha256": "2436aa75581590a185ca4c12d09738463e3407ffd045160a30b12104becd1425",
+          "source": "failure"
+        },
+        {
+          "signature": "addState([ILandroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "c2a59ed07db07bba3d071c5c73eaf1e2196b4f83d35156eab1264079a5be671d",
+          "source": "failure"
+        },
+        {
+          "signature": "getStateCount()I",
+          "flags": 1,
+          "body_sha256": "b6c1a0f1cfd6660fa5aafe16eff998b294d3429d934b3ff3d3ee0de973305d5d",
+          "source": "failure"
+        },
+        {
+          "signature": "getStateDrawable(I)Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "6992dfe72ae6b4efbe6eee776df13f6145d7b78fc69b496dd1e2f498da7fe4b0",
+          "source": "failure"
+        },
+        {
+          "signature": "getStateDrawableIndex([I)I",
+          "flags": 1,
+          "body_sha256": "20cf25e757d0ee76b9a6a4916ebba9771ba807cd4f01b41caaf8c2b57a838f3d",
+          "source": "failure"
+        },
+        {
+          "signature": "getStateListState()Landroid/graphics/drawable/StateListDrawable$StateListState;",
+          "flags": 0,
+          "body_sha256": "44b22806e2a28e08852d02b1c50f381cfc0188bde2fe3fa5e2554e5840a5d450",
+          "source": "failure"
+        },
+        {
+          "signature": "getStateSet(I)[I",
+          "flags": 1,
+          "body_sha256": "2ed36022aac08d78f1e4b9dee81610f49c177996549a9130d92deec7294399e4",
+          "source": "failure"
+        },
+        {
+          "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+          "flags": 1,
+          "body_sha256": "26ab045092b0986134d289d361c47cf577a21a17a45596b7437abfaffd2afc40",
+          "source": "failure"
+        },
+        {
+          "signature": "isStateful()Z",
+          "flags": 1,
+          "body_sha256": "0ea6dce1c28d8e3678210d80a9eb9a8fe9d6ab9f66912b5fac4eafea5176eebe",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "8642d08d5c5ffdd8395bdc700d41c3ceb4c8e2bd1d3838af349f881ebf340fb3",
+          "source": "failure"
+        },
+        {
+          "signature": "onStateChange([I)Z",
+          "flags": 4,
+          "body_sha256": "b87f20f5abf6eca7652e007e65c0adee72cb1e0086bfe69a17dd711505868ca3",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "setLayoutDirection(I)V",
+          "flags": 1,
+          "body_sha256": "2965b0b6087ff82f31cf5dc87cbbaa24e3f1c838e6e25d8bfdfe8f11da1f3036",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEBUG:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:false"
+        },
+        {
+          "signature": "DEFAULT_DITHER:Z",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:true"
+        },
+        {
+          "signature": "TAG:Ljava/lang/String;",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:\"StateListDrawable\""
+        },
+        {
+          "signature": "mMutated:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mStateListState:Landroid/graphics/drawable/StateListDrawable$StateListState;",
+          "flags": 18,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/NinePatchDrawable;",
+      "smali_sha256": "fc189612255501987bc397f5412c66f16784d8709f3cdb680e0bcd94b6e4e391",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65536,
+          "body_sha256": "d7e75864370ef1396da6de728098b26c4aa5a5cc95ead7ebc14e69e17b1bf7bf",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Landroid/graphics/Bitmap;[BLandroid/graphics/Rect;Landroid/graphics/Rect;Ljava/lang/String;)V",
+          "flags": 65537,
+          "body_sha256": "8cac05b2be5db95ef6198098a227eb0bcf7a25288e6ea222c43d087eafb864a5",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Landroid/graphics/Bitmap;[BLandroid/graphics/Rect;Ljava/lang/String;)V",
+          "flags": 65537,
+          "body_sha256": "727c6f10c2d10c94ffe157af2ee829eaa3562e3f2036565b744694f1c831f31f",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/content/res/Resources;Landroid/graphics/NinePatch;)V",
+          "flags": 65537,
+          "body_sha256": "c165402172ca5e34cc4ade58b478cfbe2ea8c47b9793552781bdbf095c1b8bf4",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/Bitmap;[BLandroid/graphics/Rect;Ljava/lang/String;)V",
+          "flags": 65537,
+          "body_sha256": "e7dd3ac25b753fd1c93c460f8253435251f820e9043ff07248fd68e81f8fcad5",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/NinePatch;)V",
+          "flags": 65537,
+          "body_sha256": "661249c293bef5791596efcebf389e86c4f5ed4f1aa441e463c4e8fbaa2a924a",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;Landroid/content/res/Resources;)V",
+          "flags": 65538,
+          "body_sha256": "47f09678abeb4dbb92e12c1207da1ddbb174e703eeb2f5ba47deac230fb7e697",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;Landroid/content/res/Resources;Landroid/graphics/drawable/NinePatchDrawable$1;)V",
+          "flags": 69632,
+          "body_sha256": "65e11fc4c8412e03eb950d0734cd1b914d2546a7706d0ba1c647a70f03e2c751",
+          "source": "failure"
+        },
+        {
+          "signature": "computeBitmapSize()V",
+          "flags": 2,
+          "body_sha256": "ff8b8142313fff105e07e748b0f9ab238fb3f091b137bc4c3267a8c66f35b43b",
+          "source": "failure"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "d0f73f73e1ffd53fe2127ed3f9176c84c0a6d585743ab76001ddbed9c506effb",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "6ea5ec305cf6db2a58dd3e768bfbea987545bb1218f1c6071917a02dfa99496f",
+          "source": "failure"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "0c05eacd1976500cc2905469449eb9fb53f67318a98bdfe19d646325fe1fbd39",
+          "source": "failure"
+        },
+        {
+          "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
+          "flags": 1,
+          "body_sha256": "aa6d2d90017144f4ac2ed6d9c926254312cf8b30f6c44fd48201ea51c8221bfc",
+          "source": "failure"
+        },
+        {
+          "signature": "getIntrinsicHeight()I",
+          "flags": 1,
+          "body_sha256": "7b801003cbd37597a6842548f7ab8c57eb45938d646b7dac57063827d0e0561b",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getIntrinsicWidth()I",
+          "flags": 1,
+          "body_sha256": "9bbc8eee2decc03ef9d72c71ef1d2fd0caca5ae2887291a53b8202f470f5df43",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getMinimumHeight()I",
+          "flags": 1,
+          "body_sha256": "4c9cb3ed9af447070e9ca7c2932fe6e643eddacd16507647f9deeec848548e1a",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getMinimumWidth()I",
+          "flags": 1,
+          "body_sha256": "54a0ae5e8412471e3e650a8fda2127156709f28c0fbd822bbf81e83b128767f3",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1,
+          "body_sha256": "ccf4ef34b039962a99bf1fe36aa0ea34ab1d3e436ab4dfb5ba99d3dee31c7172",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getOpticalInsets()Landroid/graphics/Insets;",
+          "flags": 1,
+          "body_sha256": "d6913eb1ca2b6e1d04c4eade5af600a63e2e5e1e6cbf562d4cab6acb3d77a4a6",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getPadding(Landroid/graphics/Rect;)Z",
+          "flags": 1,
+          "body_sha256": "eb7484746614db6f536e41c424ac94ff591f944a1fc4dfdf045404ef4e36bfd9",
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
+            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+          }
+        },
+        {
+          "signature": "getPaint()Landroid/graphics/Paint;",
+          "flags": 1,
+          "body_sha256": "36fe2d350137998571aac3ea83273f4965097cf75c985e8e54dcef0767b6fc4d",
+          "source": "failure"
+        },
+        {
+          "signature": "getTransparentRegion()Landroid/graphics/Region;",
+          "flags": 1,
+          "body_sha256": "d8019f831e3b6d2b2e9290ea174a5f57d435c58360998b950f36bce4cefe4757",
+          "source": "failure"
+        },
+        {
+          "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
+          "flags": 1,
+          "body_sha256": "e9d5f20de1ac36bf1e6b19d5b08039bdea90b60276c8a93e9fe3a9ffe18b7528",
+          "source": "failure"
+        },
+        {
+          "signature": "isAutoMirrored()Z",
+          "flags": 1,
+          "body_sha256": "ed21d8adb65c615a5fb9fc5ce350cc2fcfb4fbbf62524a258dbfc50699c89c3d",
+          "source": "failure"
+        },
+        {
+          "signature": "mutate()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "4512b6f91d0de297cfce461099315c35b83cbe7fe41f392c48bf7c901fe08306",
+          "source": "failure"
+        },
+        {
+          "signature": "needsMirroring()Z",
+          "flags": 2,
+          "body_sha256": "22f704958fce873e29d21b459d8a3ea7417db1296ad89d8297fc2ba856168bc2",
+          "source": "failure"
+        },
+        {
+          "signature": "scaleFromDensity(Landroid/graphics/Insets;II)Landroid/graphics/Insets;",
+          "flags": 10,
+          "body_sha256": "085eb6853e92478cc3d373f7ed7f48c0b9233958b810d111a3163c160f45dfc8",
+          "source": "failure"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1,
+          "body_sha256": "feff643248bd22e1e2415525d55ec014e01d29340b5986fe45a25322742a77b3",
+          "source": "failure"
+        },
+        {
+          "signature": "setAutoMirrored(Z)V",
+          "flags": 1,
+          "body_sha256": "92abbff305ed8824a25c1518bc6e43ed38e39bf3b8e50e68de9c77af129eb716",
+          "source": "failure"
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1,
+          "body_sha256": "d132fb4be3e81ddf8e1f3c709925276ee93a3574d5b4b0ef4810a2740470bd63",
+          "source": "failure"
+        },
+        {
+          "signature": "setDither(Z)V",
+          "flags": 1,
+          "body_sha256": "7866d8815dc5d31b98179da2ac59d2633b7d6e75921f97f5df1dc80b24ad5dfc",
+          "source": "failure"
+        },
+        {
+          "signature": "setFilterBitmap(Z)V",
+          "flags": 1,
+          "body_sha256": "fa53384c6837a689bab2097b89a880a877c79f6a69027bef6a642c859bfbf7dc",
+          "source": "failure"
+        },
+        {
+          "signature": "setNinePatchState(Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;Landroid/content/res/Resources;)V",
+          "flags": 2,
+          "body_sha256": "99828101c404b7b9c4da73c9969507ed0a9bbc47b02970c667f7c50b1e5b1067",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(I)V",
+          "flags": 1,
+          "body_sha256": "4f9d01b67830c1bb037d4582f9c4b7f869ece2de2b8d96dd1abb1f1ce7f996b9",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "27dca6de3d0cc352f554c1c780717cd1d640e2513d761f19b66a9647548661f2",
+          "source": "failure"
+        },
+        {
+          "signature": "setTargetDensity(Landroid/util/DisplayMetrics;)V",
+          "flags": 1,
+          "body_sha256": "0722dbcb760de92f7ea5dc10cf436399441fd573248845af1ea798c306fb4269",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEFAULT_DITHER:Z",
+          "flags": 26,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmapHeight:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mBitmapWidth:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMutated:Z",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNinePatch:Landroid/graphics/NinePatch;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNinePatchState:Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOpticalInsets:Landroid/graphics/Insets;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPadding:Landroid/graphics/Rect;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPaint:Landroid/graphics/Paint;",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTargetDensity:I",
+          "flags": 2,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/DrawableContainer$1;",
+      "smali_sha256": "b047de47518cd8eef076fe6b19c076069fada8baec4ddc3810695c5ad1ea8288",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/graphics/drawable/DrawableContainer;)V",
+          "flags": 65536,
+          "body_sha256": "bc0de45e49137064b8814fe6fb6c0a9c61e82c45aec8dabba6d9d5ff68874591",
+          "source": "failure"
+        },
+        {
+          "signature": "run()V",
+          "flags": 1,
+          "body_sha256": "459948a0372d7f72c8b1f5e652d7d96e70c5f58755a128423cdf1f40f01587bd",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "this$0:Landroid/graphics/drawable/DrawableContainer;",
+          "flags": 4112,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
+      "smali_sha256": "9c54834cc0d13a4ee9d22ff9e7b6f80ec384ccc259e0f9f87ad947d73b9289c9",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/graphics/NinePatch;Landroid/graphics/Rect;)V",
+          "flags": 65536,
+          "body_sha256": "af4851557fcf66f3605f9dd6538c790d4b534e4194c574a302f8a42ada7d19cc",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/NinePatch;Landroid/graphics/Rect;Landroid/graphics/Rect;)V",
+          "flags": 65536,
+          "body_sha256": "1fe6f489757c5aaba36cdd1f291a0b5c4021cd9e999cf972855f683c25be4291",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/NinePatch;Landroid/graphics/Rect;Landroid/graphics/Rect;ZZ)V",
+          "flags": 65536,
+          "body_sha256": "4a663d1f80def590a4bec0ad9399cf59e11bef744ab452ed4b2f08f4129f2bae",
+          "source": "failure"
+        },
+        {
+          "signature": "<init>(Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;)V",
+          "flags": 65536,
+          "body_sha256": "0d660c83bce0af38860b2918e6fbfe93163772773d00356752bd9d75cdbc39f6",
+          "source": "failure"
+        },
+        {
+          "signature": "getBitmap()Landroid/graphics/Bitmap;",
+          "flags": 1,
+          "body_sha256": "ca001305bb6662e847dcea5afe2b70e36f6094c6dfc4761d72e8a5bc675cc623",
+          "source": "failure"
+        },
+        {
+          "signature": "getChangingConfigurations()I",
+          "flags": 1,
+          "body_sha256": "40135e763a6f0b2de382deff1703e07b279c089899412e48e61c4a036c106eb3",
+          "source": "failure"
+        },
+        {
+          "signature": "newDrawable()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "bd3075512ad087d7d0a7b230ff8e04c0878ea8164f5455e9f60749bf946a548d",
+          "source": "failure"
+        },
+        {
+          "signature": "newDrawable(Landroid/content/res/Resources;)Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "5da3894ddded777d9b7cae23c3ff081112dd7bb952b31c6139058b2a356597dd",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mAutoMirrored:Z",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mChangingConfigurations:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDither:Z",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mNinePatch:Landroid/graphics/NinePatch;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOpticalInsets:Landroid/graphics/Insets;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPadding:Landroid/graphics/Rect;",
+          "flags": 16,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTargetDensity:I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "owner": "Landroid/graphics/drawable/StateListDrawable$StateListState;",
+      "smali_sha256": "3120d38add389c34572db67bb9f90ba167e5c27a5dba0e2e5e03a71265aa9454",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/graphics/drawable/StateListDrawable$StateListState;Landroid/graphics/drawable/StateListDrawable;Landroid/content/res/Resources;)V",
+          "flags": 65536,
+          "body_sha256": "cf12b3803b37e48e1087ee874396e389f2235ff7013f93b7b54300981aaa50b3",
+          "source": "failure"
+        },
+        {
+          "signature": "access$000(Landroid/graphics/drawable/StateListDrawable$StateListState;[I)I",
+          "flags": 4104,
+          "body_sha256": "22dac874ef68b13edb82f287dbd63da77f55a721b5c9e4804552e2b0d4714283",
+          "source": "failure"
+        },
+        {
+          "signature": "addStateSet([ILandroid/graphics/drawable/Drawable;)I",
+          "flags": 0,
+          "body_sha256": "29363a4ad36e31274828df4821bcd5604a1cdf1368ab1e2b7eb7b163ad7789fc",
+          "source": "failure"
+        },
+        {
+          "signature": "growArray(II)V",
+          "flags": 1,
+          "body_sha256": "f6c0f106cf784c24a0e3a79425b6c9427dbb7ddd2ff30fd4e0920fa163832241",
+          "source": "failure"
+        },
+        {
+          "signature": "indexOfStateSet([I)I",
+          "flags": 2,
+          "body_sha256": "1a27203f213ca82ccec7fa778dee658939fddb246a4cdaf8aa573da3ecfda6f6",
+          "source": "failure"
+        },
+        {
+          "signature": "newDrawable()Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "1a89cacbe427aa93f614cfa9b7db1a853994626390ff99c452b3dbbae51fcaad",
+          "source": "failure"
+        },
+        {
+          "signature": "newDrawable(Landroid/content/res/Resources;)Landroid/graphics/drawable/Drawable;",
+          "flags": 1,
+          "body_sha256": "a639612aa353dd46077484513f4e5d597fb0e4bf882da5b8152d730e6a45f56e",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mStateSets:[[I",
+          "flags": 0,
+          "source": "failure",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

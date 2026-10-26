@@ -326,7 +326,7 @@ TEST_CASE("DVM-297 Button default theme fails actual unsupported requests") {
             const auto failed = Construct(f, owner);
             CHECK(failed.exception.IsValid());
             INFO(defaults, failed.exception_message);
-            CHECK(failed.exception_message.find(defaults <= 2 ? "leaf Drawable requires APK bitmap or scalar color"
+            CHECK(failed.exception_message.find(defaults <= 2 ? "unreviewed ROM drawable load"
                                                               : "primary_text_light") != std::string::npos);
             CHECK_FALSE(f.ledger.Unimplemented().empty());
         }

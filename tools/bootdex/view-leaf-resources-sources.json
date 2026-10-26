@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
-      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
       "owner": "Landroid/graphics/drawable/Drawable;",
       "smali_sha256": "19a924b772dd354f6697ff3ff28e6d259ea0f430fa6318153ffeed930eb218da",
       "methods": [
@@ -98,19 +98,19 @@
           "signature": "getBounds()Landroid/graphics/Rect;",
           "flags": 17,
           "body_sha256": "e664fd78775c3b8daf01b11a78713e8c827f43c363e59611eecacc33e0a9c952",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getCallback()Landroid/graphics/drawable/Drawable$Callback;",
           "flags": 1,
           "body_sha256": "f7a0db4c6bcb6a9045d49e19340ec428f9ec7c60d8e6b36e612662b5f0861da9",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getChangingConfigurations()I",
           "flags": 1,
           "body_sha256": "6ed7f23545e549616b4c98186034d34762709d033b50c78659af6363806d5590",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
@@ -122,7 +122,7 @@
           "signature": "getCurrent()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "ec8f78e6b3d8ceebd0d9df36b182969f85d94dfd649286d918d4a27c492b8ffe",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getIntrinsicHeight()I",
@@ -140,25 +140,25 @@
           "signature": "getLayoutDirection()I",
           "flags": 1,
           "body_sha256": "248dcbbe112379cc23f26b42fb6621635c87d492c0cccd2ac21831d3361b8a8a",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getLevel()I",
           "flags": 17,
           "body_sha256": "7b03a99b839aaaccbb2c1c7cd184336a902666ecbbb52e55d2013cbf1d326d8d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getMinimumHeight()I",
           "flags": 1,
           "body_sha256": "91b2921bcba2df5781ef37a42a1dfe6a0e7528a280d68a360a6da6ed2d688f6d",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getMinimumWidth()I",
           "flags": 1,
           "body_sha256": "afa529ffd6b9818d4c291575f3c0b0445a33240a88815e022e9f2edf9415c5b9",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getOpacity()I",
@@ -170,19 +170,19 @@
           "signature": "getOpticalInsets()Landroid/graphics/Insets;",
           "flags": 1,
           "body_sha256": "1f4cf9b5a6047737955b169c8064169fddd5bfc20300d32eb9d35ab5be1a439a",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getPadding(Landroid/graphics/Rect;)Z",
           "flags": 1,
           "body_sha256": "52ea0159a9727256b3f0b2f9d7b367edf27ebca2527cd5f224824b7f9a2488e1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getState()[I",
           "flags": 1,
           "body_sha256": "5965308b3994e36b6e83e22a9b2b3b32c83e2bcaedd84058f4280fde535b2b63",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getTransparentRegion()Landroid/graphics/Region;",
@@ -206,7 +206,7 @@
           "signature": "invalidateSelf()V",
           "flags": 1,
           "body_sha256": "6c362c91ecea728f8b228d4533718bae4d29ea0579a3053bf05557781935ed11",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isAutoMirrored()Z",
@@ -218,13 +218,13 @@
           "signature": "isStateful()Z",
           "flags": 1,
           "body_sha256": "f03756b0c937f9de52c549c34ae49812d5477d2ec5d06c31518a3cfad7d277e9",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isVisible()Z",
           "flags": 17,
           "body_sha256": "dadc9708ee81c0884ddf535c593972f87571f9cb46a1f7a49c49aaffee2ef190",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "jumpToCurrentState()V",
@@ -242,19 +242,19 @@
           "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
           "flags": 4,
           "body_sha256": "a444aab815ea6aff13d87032d314fc71f5ae0115ec4cf70c1e37b276c5a1bf84",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onLevelChange(I)Z",
           "flags": 4,
           "body_sha256": "e1998e49cf77864fbb9c61da3fc236d69edfd61cf9363f682facd4ddf1223757",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onStateChange([I)Z",
           "flags": 4,
           "body_sha256": "0c797ddca981d8d5becb623b209c972e531a8eb3a88e2fc1d32f0dd0082e6eef",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "resolveOpacity(II)I",
@@ -284,19 +284,19 @@
           "signature": "setBounds(IIII)V",
           "flags": 1,
           "body_sha256": "0d4c49e97d3b592e2ffed52781c819f4abd267f57007eec692ebb0e67b6b65b7",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setBounds(Landroid/graphics/Rect;)V",
           "flags": 1,
           "body_sha256": "c160b75b3d3071f9c4951b4fa480c5e2d4bd4464a9ba8c6c91e6f3bb1465fd5a",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setCallback(Landroid/graphics/drawable/Drawable$Callback;)V",
           "flags": 17,
           "body_sha256": "96d8bebc22aeecdc93888746f13c310c8d1e3b405871703f1886be119eda2445",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setChangingConfigurations(I)V",
@@ -320,37 +320,37 @@
           "signature": "setDither(Z)V",
           "flags": 1,
           "body_sha256": "99dd1965b0a3a229faa92eefdf57ccf4e0dcd8212c155e2d9e82acabaf9c5c1f",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setFilterBitmap(Z)V",
           "flags": 1,
           "body_sha256": "0e610f5e565b2d065b7a3fddb9e525f94c5bedf1a4297c5145ae65b668ab20d1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setLayoutDirection(I)V",
           "flags": 1,
           "body_sha256": "13b0cd760aed2deeee1758c3c3a06604aa84f128c3be8aab675838014c92cd84",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setLevel(I)Z",
           "flags": 17,
           "body_sha256": "283f91b99c3c1484a77fc53e16d0a9f2474bdc01364cd3bd8a8d750e7208b253",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setState([I)Z",
           "flags": 1,
           "body_sha256": "339465589ee8ef13d8832f634024bbaf81ba71a934ff3736e89ef1521e7a5760",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setVisible(ZZ)Z",
           "flags": 1,
           "body_sha256": "02af002d5378311c8f2a0493c5de223528e2e3546dee17a4a47843d752de9447",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setXfermode(Landroid/graphics/Xfermode;)V",
@@ -393,7 +393,7 @@
         {
           "signature": "mLayoutDirection:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

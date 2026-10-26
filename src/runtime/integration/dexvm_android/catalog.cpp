@@ -311,6 +311,10 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_android_app_Application(context),
   };
   if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+      result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
+      result.push_back(Declare_android_graphics_drawable_DrawableContainer(context));
+      result.push_back(Declare_android_graphics_drawable_NinePatchDrawable(context));
+      result.push_back(Declare_managed_WindowToken(context));
       result.push_back(Declare_android_widget_EdgeEffect(context));
       result.push_back(Declare_android_widget_HorizontalScrollView(context));
       result.push_back(Declare_android_view_LayoutInflater_BlinkLayout(context));

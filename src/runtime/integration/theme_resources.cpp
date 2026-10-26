@@ -57,6 +57,81 @@ void ThemeResources::Load(std::string_view projection) {
     if (Text(Member(root, "schema")) != "ogplay.bounded-theme" || Number(Member(root, "schema_version")) != 1 ||
         Number(Member(root, "api_level")) != 19 || Text(Member(root, "configuration")) != "values")
         throw std::runtime_error("unsupported theme projection schema/configuration");
+    std::vector<std::string> strings;
+    if (const auto pool = root.Member("strings")) {
+        if (!pool->IsArray() || pool->Size() > 4096) throw std::runtime_error("invalid ROM string pool");
+        for (std::size_t i = 0; i < pool->Size(); ++i)
+            strings.push_back(Text(*pool->Element(i)));
+    }
+    std::vector<RomDrawable> skins;
+    if (const auto rows = root.Member("rom_drawables")) {
+        if (!rows->IsArray() || rows->Size() > 64) throw std::runtime_error("invalid ROM skin bounds");
+        for (std::size_t i = 0; i < rows->Size(); ++i) {
+            const auto row = *rows->Element(i);
+            const auto id = Number(Member(row, "id"));
+            if ((id >> 16) != 0x0108) throw std::runtime_error("invalid ROM skin ID");
+            const auto variants = Member(row, "variants");
+            if (!variants.IsArray() || variants.Size() > 16) throw std::runtime_error("invalid skin variants");
+            for (std::size_t j = 0; j < variants.Size(); ++j) {
+                const auto variant = *variants.Element(j);
+                RomDrawable skin;
+                skin.id = id;
+                skin.density = Number(Member(variant, "density"));
+                const auto kind = Text(Member(variant, "kind"));
+                if (kind == "selector") {
+                    const auto items = Member(variant, "items");
+                    if (!items.IsArray() || items.Size() > 64) throw std::runtime_error("invalid selector items");
+                    for (std::size_t k = 0; k < items.Size(); ++k) {
+                        const auto item = *items.Element(k);
+                        RomDrawable::Item entry;
+                        entry.drawable = Number(Member(item, "drawable"));
+                        const auto states = Member(item, "states");
+                        if (!states.IsArray() || states.Size() > 32)
+                            throw std::runtime_error("invalid selector states");
+                        for (std::size_t n = 0; n < states.Size(); ++n) {
+                            const auto state = states.Element(n)->Integer();
+                            if (!state || *state < INT32_MIN || *state > INT32_MAX)
+                                throw std::runtime_error("invalid state ID");
+                            entry.states.push_back(static_cast<std::int32_t>(*state));
+                        }
+                        skin.items.push_back(std::move(entry));
+                    }
+                } else if (kind == "ninepatch") {
+                    skin.width = Number(Member(variant, "width"));
+                    skin.height = Number(Member(variant, "height"));
+                    for (const auto name : {"padding", "optical"}) {
+                        const auto values = Member(variant, name);
+                        if (!values.IsArray() || values.Size() != 4) throw std::runtime_error("invalid skin insets");
+                        auto& target = std::string_view(name) == "padding" ? skin.padding : skin.optical;
+                        for (std::size_t n = 0; n < 4; ++n) {
+                            const auto value = Number(*values.Element(n));
+                            if (value > INT32_MAX) throw std::runtime_error("invalid skin inset");
+                            target[n] = static_cast<std::int32_t>(value);
+                        }
+                    }
+                    const auto hex = Text(Member(variant, "png"));
+                    if (hex.size() % 2 || hex.size() > 1048576) throw std::runtime_error("invalid skin PNG bounds");
+                    const auto digit = [](char c) -> unsigned {
+                        if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+                        if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+                        throw std::runtime_error("invalid PNG hex");
+                    };
+                    for (std::size_t n = 0; n < hex.size(); n += 2)
+                        skin.png.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+                } else
+                    throw std::runtime_error("unsupported ROM drawable kind");
+                if (std::any_of(skins.begin(), skins.end(),
+                                [&](const auto& other) { return other.id == id && other.density == skin.density; }))
+                    throw std::runtime_error("duplicate ROM drawable variant");
+                skins.push_back(std::move(skin));
+            }
+        }
+        for (const auto& skin : skins)
+            for (const auto& item : skin.items)
+                if (std::none_of(skins.begin(), skins.end(),
+                                 [&](const auto& leaf) { return leaf.id == item.drawable && !leaf.png.empty(); }))
+                    throw std::runtime_error("unclosed ROM selector");
+    }
     std::set<std::uint32_t> reference_ids;
     if (const auto references = root.Member("projected_references")) {
         if (!references->IsArray() || references->Size() > 1024)
@@ -104,6 +179,10 @@ void ThemeResources::Load(std::string_view projection) {
             if (state == "known") {
                 value.type = Number(Member(attr, "type"));
                 value.data = Number(Member(attr, "data"));
+                if (const auto cookie = attr.Member("cookie"))
+                    value.cookie = static_cast<std::int32_t>(Number(*cookie));
+                if (value.type == 3 && (value.cookie != 2 || value.data >= strings.size()))
+                    throw std::runtime_error("invalid projected string reference");
                 if (value.type > 31) throw std::runtime_error("invalid projected value type");
             } else if (state == "unsupported") {
                 value.unsupported = Text(Member(attr, "reason"));
@@ -120,12 +199,49 @@ void ThemeResources::Load(std::string_view projection) {
         if (!rejected.emplace(Text(Member(row, "name")), Text(Member(row, "reason"))).second)
             throw std::runtime_error("duplicate unregistered theme");
     }
+    std::vector<std::byte> string_pool;
+    if (!strings.empty()) {
+        const auto hex = Text(Member(root, "string_pool"));
+        if (hex.size() % 2 || hex.size() > 1048576) throw std::runtime_error("invalid ROM string pool bounds");
+        const auto digit = [](char c) -> unsigned {
+            if (c >= '0' && c <= '9') return static_cast<unsigned>(c - '0');
+            if (c >= 'a' && c <= 'f') return static_cast<unsigned>(c - 'a' + 10);
+            throw std::runtime_error("invalid string pool hex");
+        };
+        for (std::size_t n = 0; n < hex.size(); n += 2)
+            string_pool.push_back(static_cast<std::byte>((digit(hex[n]) << 4) | digit(hex[n + 1])));
+    }
+    string_pool_ = std::move(string_pool);
+    rom_drawables_ = std::move(skins);
     drawable_attributes_ = std::move(drawables);
     projected_reference_ids_ = std::move(reference_ids);
     projection_ = std::move(projected);
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
     loaded_ = true;
+}
+
+const ThemeResources::RomDrawable* ThemeResources::Drawable(std::uint32_t id, std::uint32_t density) const {
+    const RomDrawable* best = nullptr;
+    for (const auto& row : rom_drawables_) {
+        if (row.id != id) continue;
+        if (!best) {
+            best = &row;
+            continue;
+        }
+        int high = row.density ? static_cast<int>(row.density) : 160;
+        int low = best->density ? static_cast<int>(best->density) : 160;
+        bool candidate_high = true;
+        if (low > high) {
+            std::swap(low, high);
+            candidate_high = false;
+        }
+        const int requested = density ? static_cast<int>(density) : 160;
+        const bool prefer_high =
+            requested >= high || (requested > low && ((2 * low - requested) * high <= requested * requested));
+        if (high != low && prefer_high == candidate_high) best = &row;
+    }
+    return best;
 }
 
 void ThemeResources::SetResourceHooks(ResourceSelector select, FileValidator validate) {
@@ -282,13 +398,13 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
             continue;
         }
         if (value.type != 1 || !value.data || !resources) {
-            if (value.type == 3) ValidateFile(value, table);
+            if (value.type == 3 && value.cookie != 2) ValidateFile(value, table);
             return value;
         }
         if (!seen.emplace(1, value.data).second) throw std::runtime_error("resource reference cycle");
         const auto id = value.data;
         if ((id >> 24U) == 1) {
-            if (!projection_.contains(id) && !projected_reference_ids_.contains(id))
+            if (!projection_.contains(id) && !projected_reference_ids_.contains(id) && !Drawable(id, 160))
                 throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
             // Styles and reviewed View drawable IDs are terminal, lazy references.
             // No system drawable is loaded or rasterized by this provider.
@@ -326,6 +442,8 @@ std::optional<ThemeValue> ThemeResources::Attribute(ThemeToken token, std::uint3
 }
 
 ThemeValue ThemeResources::Resource(std::uint32_t resource, bool resolve, const loader::ArscTable& table) const {
+    if ((resource >> 24U) == 1 && Drawable(resource, 160))
+        return Resolve(ThemeValue{1, resource, 1, resource, 0, 0, {}}, nullptr, resolve, table);
     const auto* entry = Entry(resource, table);
     if ((resource >> 24U) == 1 || !entry || entry->is_complex)
         throw std::runtime_error("unknown or non-scalar resource");
@@ -389,7 +507,7 @@ std::vector<ThemeValue> ThemeResources::Styled(ThemeToken token, std::uint32_t d
             if (const auto themed = Lookup(theme, attr)) {
                 const auto prior_cookie = value.cookie;
                 value = *themed;
-                value.cookie = prior_cookie;
+                if (value.type != 3 || value.cookie != 2) value.cookie = prior_cookie;
             }
         }
         value = Resolve(value, &theme, true, table);

@@ -50,11 +50,18 @@ python tools/run_scenario.py \
   是单个 JSON 文档，失败时形如 `{"schema":1,"status":"invalid","reason":"…"}`，
   可直接被包装脚本消费。
 
+> DVM-331：默认载荷及装配均为 JavaTraversal。下述 staging 工具保留为隔离调试用途，
+> 不再用于启用实验模式；旧 Legacy 只能使用冻结基线整包，不能交给当前 CLI 回落。
+
+默认制品使用 `python3 tools/bootdex/compose_bootdex.py build` 重建，再执行同工具 `check`；
+旧 `build_bootdex.py` 仅保留固定 native/JNI 来源生成与审计职责，不用于重建默认 guest View 制品。
+默认和调试候选必须具有相同五项配对身份；当前 CLI 对旧无配对归档明确失败。
+
 ## JavaTraversal 独立 staging（VD-11）
 
 先构建当前 `ogplay-cli` 并生成配对制品，再复制为新的独立目录；脚本不启动游戏，
 不会覆盖仓库 data 或原 CLI。可执行文件相邻依赖库与 data 副本一起复制，只有
-`data/android/19/framework/bootdex.jar` 被实验 JAR 替换；生产 manifest 仍是原副本，
+`data/android/19/framework/bootdex.jar` 被指定配对 JAR 替换；生产 manifest 仍是原副本，
 实验身份以配对 JAR 与 staging-manifest.json 为准。
 
 ```text

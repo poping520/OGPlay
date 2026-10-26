@@ -1387,11 +1387,8 @@ void LoadPreferencesOnce(const Context &context, const std::string &name) {
 Decl Declare_android_content_Context(const Context &context) {
   auto builder = dx::IntrinsicClassBuilder::Class("Landroid/content/Context;",
                                                   "Ljava/lang/Object;");
-  const auto inflater = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                            ? std::optional<dx::IntrinsicFieldHandle>{}
-                            : std::optional{builder.BoundInstanceField(
-                                  "mOgplayInflater", "Landroid/view/LayoutInflater;", dx::kAccPrivate)};
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+  const auto inflater = std::optional<dx::IntrinsicFieldHandle>{};
+  {
       builder.VirtualMethod(
           "getTheme", "()Landroid/content/res/Resources$Theme;", [context](dx::IntrinsicContext& call) {
               constexpr auto key = "application_theme";
@@ -2063,8 +2060,7 @@ Decl Declare_android_content_ContextWrapper(const Context &context) {
   delegate("openFileOutput", "(Ljava/lang/String;I)Ljava/io/FileOutputStream;");
   delegate("getCacheDir", "()Ljava/io/File;");
   delegate("getResources", "()Landroid/content/res/Resources;");
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-      delegate("getTheme", "()Landroid/content/res/Resources$Theme;");
+  delegate("getTheme", "()Landroid/content/res/Resources$Theme;");
   delegate("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
   delegate("bindService",
            "(Landroid/content/Intent;Landroid/content/ServiceConnection;I)Z");

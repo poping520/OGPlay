@@ -160,12 +160,24 @@ TEST_CASE("View system UI visibility exposes API 19 state and listener shape") {
                     .FindFieldRecursive(vm.model.ObjectClass(decor), "mOgplaySystemUiVisibilityListener",
                                         "Landroid/view/View$OnSystemUiVisibilityChangeListener;")
                     .has_value());
-    CHECK(vm.context->view_adapter_references.at(decor.Value()).system_ui_listener == listener);
+    const auto read_listener = [&] {
+        const auto info_field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(decor), "mListenerInfo",
+                                                             "Landroid/view/View$ListenerInfo;");
+        REQUIRE(info_field);
+        const auto info = VmObjectRef(vm.model.InstanceSlots(decor)[vm.linker.Field(*info_field).slot].bits);
+        REQUIRE(info.IsValid());
+        const auto field =
+            vm.linker.FindFieldRecursive(vm.model.ObjectClass(info), "mOnSystemUiVisibilityChangeListener",
+                                         "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
+        REQUIRE(field);
+        return VmObjectRef(vm.model.InstanceSlots(info)[vm.linker.Field(*field).slot].bits);
+    };
+    CHECK(read_listener() == listener);
     vm.CallOn(
         decor, "setOnSystemUiVisibilityChangeListener",
         "(Landroid/view/View$OnSystemUiVisibilityChangeListener;)V",
         {VmValue::Ref(VmObjectRef{})});
-    CHECK_FALSE(vm.context->view_adapter_references.at(decor.Value()).system_ui_listener.IsValid());
+    CHECK_FALSE(read_listener().IsValid());
 }
 
 TEST_CASE("View system UI constants are public and reflect their API 19 values") {
@@ -190,45 +202,6 @@ TEST_CASE("View system UI constants are public and reflect their API 19 values")
     CHECK(read_public_int("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN") == 0x0400);
     CHECK(read_public_int("SYSTEM_UI_FLAG_IMMERSIVE") == 0x0800);
     CHECK(read_public_int("SYSTEM_UI_FLAG_IMMERSIVE_STICKY") == 0x1000);
-}
-
-TEST_CASE("View dispatchKeyEvent routes bounded KeyEvent actions to overrides") {
-    ClickVm vm;
-    const auto view = vm.interpreter.NewIntrinsicInstance("LTestKeyView;");
-    vm.CallDirect(view, "Landroid/view/View;", "<init>",
-                  "(Landroid/content/Context;)V",
-                  {VmValue::Ref(vm.activity)});
-    const auto event = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/KeyEvent;");
-    vm.CallDirect(event, "Landroid/view/KeyEvent;", "<init>", "(II)V",
-                  {VmValue::Int(0), VmValue::Int(42)});
-
-    CHECK(vm.CallOn(view, "dispatchKeyEvent",
-                    "(Landroid/view/KeyEvent;)Z",
-                    {VmValue::Ref(event)}).AsInt() == 1);
-    CHECK(vm.key_down_events == 1);
-    CHECK(vm.key_up_events == 0);
-    CHECK(vm.last_key_code == 42);
-
-    const auto up = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/KeyEvent;");
-    vm.CallDirect(up, "Landroid/view/KeyEvent;", "<init>", "(II)V",
-                  {VmValue::Int(1), VmValue::Int(42)});
-    CHECK(vm.CallOn(view, "dispatchKeyEvent",
-                    "(Landroid/view/KeyEvent;)Z",
-                    {VmValue::Ref(up)}).AsInt() == 1);
-    CHECK(vm.key_down_events == 1);
-    CHECK(vm.key_up_events == 1);
-
-    const auto multiple = vm.interpreter.NewIntrinsicInstance(
-        "Landroid/view/KeyEvent;");
-    vm.CallDirect(multiple, "Landroid/view/KeyEvent;", "<init>", "(II)V",
-                  {VmValue::Int(2), VmValue::Int(7)});
-    CHECK(vm.CallOn(view, "dispatchKeyEvent",
-                    "(Landroid/view/KeyEvent;)Z",
-                    {VmValue::Ref(multiple)}).AsInt() == 1);
-    CHECK(vm.key_multiple_events == 1);
-    CHECK(vm.last_key_code == 7);
 }
 
 TEST_CASE("KeyEvent exposes API19 unicode meta and repeat semantics") {

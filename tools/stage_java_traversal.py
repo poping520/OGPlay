@@ -27,7 +27,9 @@ def validate(bootdex: Path) -> dict:
             raise ValueError('unknown BootDex pairing')
         for key, entry in [('dex_sha256', 'classes.dex'),
                            ('member_sources_sha256', 'META-INF/ogplay/member-sources.json'),
-                           ('theme_projection_sha256', 'META-INF/ogplay/theme-projection.json')]:
+                           ('theme_projection_sha256', 'META-INF/ogplay/theme-projection.json'),
+                           ('video_adapter_sha256', 'META-INF/ogplay/view-video-adapter.json'),
+                           ('candidate_recipe_sha256', 'META-INF/ogplay/java-traversal-recipe.json')]:
             if pairing.get(key) != sha(archive.read(entry)):
                 raise ValueError('BootDex pairing identity mismatch: ' + key)
         return pairing

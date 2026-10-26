@@ -73,10 +73,11 @@ namespace ogplay::test::widget {
 }
 
 ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
-    : model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()),
-      interpreter(
-          [this]() -> DexClassLinker& {
-              linker.RegisterIntrinsics(CoreIntrinsicCatalog());
+    : context(std::make_shared<DexVmAndroidContext>()),
+      runtime(
+          [this, backend] {
+              ogplay::test::BindBootDexArchive(*context);
+              std::vector<IntrinsicClassDecl> catalog;
               auto android = AndroidIntrinsicCatalog(context);
               for (auto& owner : android)
                   for (auto& method : owner.methods) {
@@ -90,17 +91,8 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
                               return VmValue::Void();
                           };
                       }
-                      if (owner.descriptor == "Landroid/view/LayoutInflater;" && method.name == "nativeInflate") {
-                          const auto original = method.implementation;
-                          method.implementation = [this, original](IntrinsicContext& call) {
-                              if (inflater_elements.empty()) return original(call);
-                              return VmValue::Ref(BuildUiElements(call.vm, *context, inflater_elements,
-                                                                  call.arguments[0].ref, call.arguments[2].ref,
-                                                                  call.arguments[3].AsInt() != 0));
-                          };
-                      }
                   }
-              linker.RegisterIntrinsics(android);
+              catalog = std::move(android);
               std::vector<IntrinsicClassDecl> touch_probes;
               auto activity_probe = IntrinsicClassBuilder::Class("LTouchActivityProbe;", "Landroid/app/Activity;");
               activity_probe.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
@@ -120,7 +112,7 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
                   ++intercept_events; return VmValue::Int(intercept_touches);
               });
               touch_probes.push_back(std::move(group_probe).Build());
-              linker.RegisterIntrinsics(touch_probes);
+              catalog.insert(catalog.end(), touch_probes.begin(), touch_probes.end());
               auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
               content_view.OverrideMethod("onTouchEvent",
                                "(Landroid/view/MotionEvent;)Z",
@@ -306,21 +298,19 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
                   return VmValue::Int(dialog_key_consumed ? 1 : 0);
               });
               test_catalog.push_back(std::move(observer).Build());
-              linker.RegisterIntrinsics(test_catalog);
-              linker.RegisterDex(ReadFixture("widgetclick.dex"));
-              ogplay::test::RegisterBootDex(linker);
-              linker.Link();
-              return linker;
-          }(),
-          model, nullptr, ledger, {.backend = backend}) {
+              catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
+              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                  context, ledger, logger, std::move(catalog), ReadFixture("widgetclick.dex"),
+                  InterpreterConfig{.backend = backend}, false, &vfs);
+          }()),
+      model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {
     interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
     context->surface_width = 100U;
     context->surface_height = 100U;
     context->vfs = &vfs;
     context->encoded_music = &music;
-    threads = std::make_unique<VmThreadRuntime>(interpreter);
-    context->threads = threads.get();
-    RegisterAndroidSchedulerStateTable(interpreter, context);
+    threads = &runtime->bridge->Threads();
+    context->threads = threads;
     const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
     const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
     REQUIRE(prepare.has_value());
@@ -332,11 +322,7 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
             return factory({});
         };
     interpreter.SetLogger(&logger);
-    RegisterAndroidOwnerAttachedStateTable(interpreter, context);
-    interpreter.SetGcIntegration({
-        {}, {}, [state = context](const VmRootVisitor& visit) {
-            VisitAndroidSessionRoots(*state, visit);
-        }});
+    context->ui_test_accessibility_disabled = true;
     vfs.MountHostDirectory(
         "/sdcard",
         std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
@@ -352,41 +338,71 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
     other_button = interpreter.NewIntrinsicInstance(
         "Landroid/widget/ImageButton;");
 
-    const auto video_node = context->ui_tree.CreateNode(
-        ui::UiClass::VideoView);
-    const auto bar_node = context->ui_tree.CreateNode(
-        ui::UiClass::LinearLayout);
-    const auto other_node = context->ui_tree.CreateNode(
-        ui::UiClass::ImageButton);
-    const auto skip_node = context->ui_tree.CreateNode(
-        ui::UiClass::ImageButton);
-    BindViewToUiNode(*context, video_view, video_node);
-    BindViewToUiNode(*context, bar, bar_node);
-    BindViewToUiNode(*context, other_button, other_node);
-    BindViewToUiNode(*context, skip_button, skip_node);
-    context->ui_tree.Attach(context->ui_tree.Root(), video_node);
-    context->ui_tree.Attach(context->ui_tree.Root(), bar_node);
-    context->ui_tree.Attach(bar_node, other_node);
-    context->ui_tree.Attach(bar_node, skip_node);
-    auto* video_state = context->ui_tree.Get(video_node);
-    video_state->layout.width.mode = ui::SizeMode::MatchParent;
-    video_state->layout.height.mode = ui::SizeMode::MatchParent;
-    auto* bar_state = context->ui_tree.Get(bar_node);
-    bar_state->layout.width.mode = ui::SizeMode::MatchParent;
-    bar_state->layout.height.mode = ui::SizeMode::WrapContent;
-    bar_state->layout.layout_gravity = 0x50U;
-    bar_state->gravity = 0x01U;
-    bar_state->padding.top = 4;
-    context->ui_tree.Get(other_node)->intrinsic = {20, 10};
-    context->ui_tree.Get(skip_node)->intrinsic = {20, 10};
+    if (!attach_activity) return;
+    context->activity = activity;
+    const auto construct = [&](VmObjectRef view, const char* type, bool styled) {
+        if (styled)
+            CallDirect(view, type, "<init>", "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                       {VmValue::Ref(activity), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+        else
+            CallDirect(view, type, "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
+    };
+    construct(video_view, "Landroid/widget/VideoView;", false);
+    construct(bar, "Landroid/widget/LinearLayout;", false);
+    construct(other_button, "Landroid/widget/ImageButton;", true);
+    construct(skip_button, "Landroid/widget/ImageButton;", true);
+    CallOn(bar, "setGravity", "(I)V", {VmValue::Int(1)});
+    CallOn(bar, "setPadding", "(IIII)V", {VmValue::Int(0), VmValue::Int(4), VmValue::Int(0), VmValue::Int(0)});
+    for (auto button : {other_button, skip_button})
+        CallOn(bar, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(button), VmValue::Int(20), VmValue::Int(10)});
+    CallOn(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(video_view)});
+    const auto params = interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout$LayoutParams;");
+    CallDirect(params, "Landroid/widget/FrameLayout$LayoutParams;", "<init>", "(III)V",
+               {VmValue::Int(-1), VmValue::Int(-2), VmValue::Int(0x50)});
+    CallOn(activity, "addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+           {VmValue::Ref(bar), VmValue::Ref(params)});
+    static_cast<void>(EnsureAndroidUiTraversal(interpreter, *context, AndroidUiTraversalReason::OwnerTick,
+                                               AndroidUiTraversalPhase::ResolveOnly));
 }
 
 VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name,
                const std::string& descriptor,
                std::vector<VmValue> arguments) {
+    const auto activity_type = linker.ResolveDescriptor("Landroid/app/Activity;");
+    if (linker.IsAssignable(activity_type, model.ObjectClass(receiver)) && context->activity == receiver &&
+        (context->activity_stack.empty() || context->activity_stack.back().object != receiver)) {
+        context->content_view = VmObjectRef{};
+        context->activity_stack.clear();
+        DexVmAndroidContext::ActivityRecord record;
+        record.object = receiver;
+        record.visible = true;
+        context->activity_stack.push_back(record);
+    }
+    const auto construct_view = [&](VmObjectRef object) {
+        if (!object.IsValid()) return;
+        const auto view_type = linker.ResolveDescriptor("Landroid/view/View;");
+        auto type = model.ObjectClass(object);
+        if (!linker.IsAssignable(view_type, type)) return;
+        const auto field = linker.FindFieldRecursive(type, "mContext", "Landroid/content/Context;");
+        if (field && model.InstanceSlots(object)[linker.Field(*field).slot].bits != 0) return;
+        while (!linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V"))
+            type = *linker.Class(type).super;
+        CallDirect(object, linker.Class(type).descriptor, "<init>", "(Landroid/content/Context;)V",
+                   {VmValue::Ref(activity)});
+    };
+    construct_view(receiver);
+    if ((name == "addView" || name == "setContentView" || name == "addContentView") && !arguments.empty() &&
+        !descriptor.starts_with("(I"))
+        construct_view(arguments[0].ref);
     if (name == "getWindow" || name == "getDecorView" || name == "findViewById" || name == "setContentView" ||
         name == "addContentView")
         ogplay::test::AttachViewTestContext(interpreter, receiver);
+    // Historical fixture assertions query geometry only after an explicit owner barrier.
+    if (context->activity.IsValid() &&
+        (name == "getWidth" || name == "getHeight" || name == "getLeft" || name == "getRight" || name == "getTop" ||
+         name == "getBottom" || name == "getMeasuredWidth" || name == "getMeasuredHeight"))
+        static_cast<void>(EnsureAndroidUiTraversal(interpreter, *context, AndroidUiTraversalReason::OwnerTick,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
     const auto receiver_class = model.ObjectClass(receiver);
     const auto index =
         linker.FindVtableIndex(receiver_class, name, descriptor);
@@ -428,6 +444,10 @@ VmValue ClickVm::CallDirect(const VmObjectRef receiver,
     }
     const auto java_class = linker.FindClass(class_descriptor);
     REQUIRE_MESSAGE(java_class.has_value(), class_descriptor);
+    if (name == "<init>") {
+        const auto initialized = interpreter.EnsureClassInitialized(*java_class);
+        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+    }
     const auto method =
         linker.FindDirectMethod(*java_class, name, descriptor);
     REQUIRE_MESSAGE(method.has_value(), name);

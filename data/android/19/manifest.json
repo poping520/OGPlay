@@ -75,6 +75,11 @@
         "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
       },
       {
+        "source_project": "platform/frameworks/base",
+        "source_jar": "android.policy.jar",
+        "source_jar_sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae"
+      },
+      {
         "source_project": "OGPlay",
         "source_root": "src/guest",
         "source_roots": [
@@ -88,28 +93,50 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 6153572,
-    "sha256": "909a702b3ec2a483c473778c3a405d43917b87100a5d7b0709fc4bf61c1acbe8",
+    "size": 10288016,
+    "sha256": "9c24cd41c92ad655cdae3bc43db04710c0615ef45b4b2c7fa4342d5c8d3693e3",
     "dex_entry": "classes.dex",
-    "dex_size": 5957980,
-    "dex_sha256": "f0bf35f2fb3fe4e0a2dd81f1c7c1fe0c143199ae7177b3d8e47588c9daee4763",
-    "class_count": 3807,
+    "dex_size": 6317284,
+    "dex_sha256": "44482bdde68598ad59b5c67d78cad5a990bf5e78607f80e416b6973baca4c923",
+    "class_count": 3889,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
+    "candidate_recipe": {
+      "path": "tools/bootdex/java-traversal.json",
+      "sha256": "d886141832241904f584c6520c5e4d26571c7eb31b16dfe0b6bfbe6bec8ed01f",
+      "entry": "META-INF/ogplay/java-traversal-recipe.json",
+      "payload_sha256": "c9e3f7338ea490b3f747db03bd6f2bc677208837de6ab071f83bfc5924cdcaed"
+    },
+    "vm_pairing": {
+      "entry": "META-INF/ogplay/vm-pairing.json",
+      "sha256": "67fe1fe9e2a032d745e8fb2f8409cdba1dfcab5ccfe64da203649421a4c9e16e",
+      "mode": "java-traversal",
+      "version": 1
+    },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "bc54a5a6f754098ab7e0daaa76eb2d84476bfafe78bec785dcb5121ae6c138e6",
+      "manifest_sha256": "61b41827ea10fca4bdfe1e88f3cce29f4d57ea7ec3fa6c06d82a4af9e70b7bfb",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "75c3d800b56364c39aac954f16f8da60529dff17af2da72a9ad90e89ab98a434"
+      "composer_sha256": "8ebb22d81ab7cb6960cbec910b148c142fc77231298b3dae79111fcbd1e1bec9"
     },
-    "experimental_theme_projection": {
-      "scope": "JavaTraversal paired payload only",
+    "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "885d83a0161f8cc634ea1569c3caf180f6dd3bfd0b10f9f1688936102d2b4102",
-      "generator": "tools/bootdex/theme_projection.py",
-      "inputs_sha256": "40265974bd25a2ed3063479c00288222771da0a81969f36436b7c7412955a691"
+      "sha256": "885d83a0161f8cc634ea1569c3caf180f6dd3bfd0b10f9f1688936102d2b4102"
+    },
+    "experimental_video_adapter": {
+      "review": "tools/bootdex/view-video-adapter.json",
+      "sha256": "60254644776b857c344aea28148619cae5005baee74f3eb155f5f6c7cafe188a",
+      "entry": "META-INF/ogplay/view-video-adapter.json",
+      "rom_algorithm_credit": false
+    },
+    "experimental_inflater": {
+      "source": "android.policy.jar",
+      "sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+      "owner": "Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
+      "reference_sha256": "c351a5c6e5a012f68810db5d87f9932dd40e3658c07a88f4ba6a72c9f43f629a",
+      "baseline_sha256": "551bb6bd9317f62ed618b55175831c3101b64b00bc12878742012bf1909051bc"
     }
   },
   "icu": {

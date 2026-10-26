@@ -48,8 +48,8 @@ std::shared_ptr<DexVmAndroidContext> AssembleAndroidContext(std::vector<std::byt
     };
     const auto sources = dexvm::DexClassLinker::BootDexMemberSources(boot_archive);
     const bool java_fields = !sources.empty() && JavaMeasuredField(Parse(sources).Root());
-    auto owner = AndroidUiTraversalOwner::Legacy;
-    if (has(kPairing)) {
+    if (!has(kPairing)) throw std::runtime_error("BootDex pairing: missing sealed JavaTraversal mode");
+    {
         const auto bytes = read(kPairing);
         const auto document = Parse({reinterpret_cast<const char*>(bytes.data()), bytes.size()});
         const auto root = document.Root();
@@ -65,15 +65,14 @@ std::shared_ptr<DexVmAndroidContext> AssembleAndroidContext(std::vector<std::byt
         verify("member_sources_sha256", std::as_bytes(std::span(sources.data(), sources.size())));
         const auto projection = read(kProjection);
         verify("theme_projection_sha256", projection);
+        verify("video_adapter_sha256", read("META-INF/ogplay/view-video-adapter.json"));
+        verify("candidate_recipe_sha256", read("META-INF/ogplay/java-traversal-recipe.json"));
         if (!java_fields) throw std::runtime_error("BootDex pairing: JavaTraversal requires ROM View state");
         // Validate the projection's schema/ROM binding as well as its sealed hash.
         ThemeResources checked_projection;
         checked_projection.Load({reinterpret_cast<const char*>(projection.data()), projection.size()});
-        owner = AndroidUiTraversalOwner::JavaTraversal;
-    } else if (java_fields || has(kProjection)) {
-        throw std::runtime_error("BootDex pairing: experimental payload lacks sealed mode; no Legacy fallback");
     }
-    const auto context = std::make_shared<DexVmAndroidContext>(owner, platform);
+    const auto context = std::make_shared<DexVmAndroidContext>(AndroidUiTraversalOwner::JavaTraversal, platform);
     context->boot_classpath_archive = archive;
     context->boot_classpath_bytes = std::move(boot_archive);
     return context;

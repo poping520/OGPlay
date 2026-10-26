@@ -171,13 +171,6 @@ dx::VmValue XmlInt(T value) {
     return dx::VmValue::Int(static_cast<std::int32_t>(value));
 }
 
-void RequireXmlExperiment(dx::IntrinsicContext& call, const Context& context) {
-    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.xml_block.experimental", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "XML block requires experimental payload"};
-    }
-}
-
 std::uint32_t XmlField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type = "I") {
     const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
     if (!field) throw std::logic_error("ROM XML field missing");
@@ -224,7 +217,6 @@ std::vector<std::byte> XmlBytes(dx::IntrinsicContext& call) {
 
 template <class F>
 dx::VmValue XmlChecked(dx::IntrinsicContext& call, const Context& context, F operation) {
-    RequireXmlExperiment(call, context);
     RegisterXmlGc(call.vm, context);
     try {
         return operation();
@@ -518,7 +510,6 @@ void ThemeField(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, c
 }
 
 void ThemeLoad(dx::IntrinsicContext& call, const Context& context) {
-    RequireXmlExperiment(call, context);
     if (!context->theme_projection_loaded) {
         constexpr std::string_view entry = "META-INF/ogplay/theme-projection.json";
         const auto count = std::count_if(
@@ -621,7 +612,6 @@ void ThemeAssetLive(const Context& context, dx::VmObjectRef assets) {
 }
 
 void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
-    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     const auto method = [&](const char* name, const char* desc, bool is_static, auto operation) {
         auto handler = [context, operation](dx::IntrinsicContext& call) {
             return ThemeChecked(call, context, [&] { return operation(call); });
@@ -795,7 +785,6 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
 
 void InitializeThemeResourceOwner(dx::IntrinsicContext& c, const Context& context, dx::VmObjectRef resources,
                                   dx::VmObjectRef assets) {
-    if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     ThemeLoad(c, context);
     const auto initialized = c.vm.EnsureClassInitialized(c.vm.Model().ObjectClass(resources));
     if (initialized.exception.IsValid())
@@ -820,7 +809,7 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
   // Equivalent APK-only opening boundary. Construction/counts stay in ROM;
   // no AssetManager native declaration is admitted by this adapter.
   const auto open_xml = [context](dx::IntrinsicContext& call, int cookie, dx::VmObjectRef file) {
-      RequireXmlExperiment(call, context);
+
       if (IsSystemAssets(context, call.receiver) || (cookie != 0 && cookie != 1)) {
           if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.xml_block.system_xml", 0);
           throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "system XML/cookie is unsupported"};
@@ -855,7 +844,7 @@ Decl Declare_android_content_res_AssetManager(const Context &context) {
       static_cast<void>(CallAndroidMethod(call.vm, block, "close", "()V"));
       return parser;
   };
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+  {
       builder.FinalMethod(
           "openXmlResourceParser", "(ILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
           [open_xml](dx::IntrinsicContext& c) { return open_xml(c, c.arguments[0].AsInt(), c.arguments[1].ref); });
@@ -1337,7 +1326,7 @@ Decl Declare_android_content_res_Resources(const Context &context) {
               throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
           }
       });
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+  {
       builder.VirtualMethod("getValue", "(ILandroid/util/TypedValue;ZZ)V", [context](dx::IntrinsicContext& call) {
           return ThemeChecked(call, context, [&] {
               if (XmlField(call.vm, call.receiver, "mIcons", "Landroid/util/SparseArray;") ||
@@ -1598,8 +1587,7 @@ Decl Declare_android_content_res_Resources(const Context &context) {
   builder.VirtualMethod(
       "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
       [context](dx::IntrinsicContext& call) {
-          if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
-              call.arguments[1].ref.IsValid() && call.vm.StringUtf8(call.arguments[1].ref) == "style" &&
+          if (call.arguments[1].ref.IsValid() && call.vm.StringUtf8(call.arguments[1].ref) == "style" &&
               (IsSystemResources(context, call.receiver) ||
                (call.arguments[2].ref.IsValid() && call.vm.StringUtf8(call.arguments[2].ref) == "android"))) {
               return ThemeChecked(call, context, [&] {
@@ -1664,7 +1652,7 @@ Decl Declare_android_content_res_Resources(const Context &context) {
               throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.message};
           }
       });
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+  {
       builder.VirtualMethod(
           "getLayout", "(I)Landroid/content/res/XmlResourceParser;", [context](dx::IntrinsicContext& call) {
               const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());

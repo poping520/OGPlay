@@ -5,8 +5,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/widget/ScrollView;",
       "smali_sha256": "26af15b7841e69243cf158c9734586de860308a35dcd57aa9ccc5c44bafa9635",
       "methods": [
@@ -598,8 +598,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/widget/HorizontalScrollView;",
       "smali_sha256": "cfdd3ec3f3b29f9102045d9c30f7adc7ccdd9db1faa004b63479c97baf7ce471",
       "methods": [
@@ -1180,8 +1180,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-scroll.surface.json.gz",
-      "surface_sha256": "509c33ea13a1b20e04615f3a13a079cdc58d6a269b92fa6ab1f0dbfa40ccdc5d",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/widget/EdgeEffect;",
       "smali_sha256": "8f66f625288c6c86ef8fcefde2acd7781ffa0b6e4bee73bdc1b1145c1c9ddb9a",
       "methods": [

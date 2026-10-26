@@ -308,8 +308,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 void RequireVideoOwner(const Context& context, dx::Interpreter& vm) {
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
-        (vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id()))
+    if ((vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id()))
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "VideoView metadata requires owner"};
 }
 
@@ -343,14 +342,7 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
         state.duration_ms = state.player->Metadata().duration_ms;
         state.pending_event = 1;
         context->video_views.insert_or_assign(call.receiver.Value(), std::move(state));
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
-            if (const auto view_node = FindViewUiNode(*context, call.receiver.Value())) {
-                auto* view = context->ui_tree.Get(*view_node);
-                const auto& metadata = context->video_views.at(call.receiver.Value()).player->Metadata();
-                view->intrinsic = {static_cast<std::int32_t>(metadata.width),
-                                   static_cast<std::int32_t>(metadata.height)};
-                context->ui_tree.MarkLayoutDirty(*view_node);
-            }
+
         GuestLog(call, core::LogLevel::info, "VideoView: local video prepared; callback pending");
     } catch (const video::VideoCodecUnsupportedError& error) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("android.video.codec." + error.codec(), 0);
@@ -363,7 +355,7 @@ void OpenVideoSource(const Context& context, dx::IntrinsicContext& call,
 
 Decl Declare_android_widget_VideoView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/VideoView;", "Landroid/view/SurfaceView;");
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         // Bounded Java playback protocol is retained; this is deliberately not
         // ROM VideoView.onMeasure (ADR-0161). No ROM geometry is written here.
         context->video_view_generation_field = builder.BoundInstanceField("mGeneration", "I", dx::kAccPrivate);
@@ -471,13 +463,11 @@ Decl Declare_android_widget_VideoView(const Context& context) {
                     released = true;
                     if (const auto node = FindViewUiNode(*context, call.receiver.Value())) {
                         context->ui_tree.MarkDrawDirty(*node);
-                        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-                            context->ui_tree.Get(*node)->intrinsic = {};
+                        context->ui_tree.Get(*node)->intrinsic = {};
                     }
                 }
             }
-            if (released && context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V"));
+            if (released) static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V"));
             return dx::VmValue::Void();
         },
         flags);
@@ -530,10 +520,9 @@ Decl Declare_android_widget_VideoView(const Context& context) {
     builder.DirectMethod("nativeHeight", "(I)I", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(static_cast<std::int32_t>(state.player->Metadata().height)); }), flags);
     builder.DirectMethod("nativeIsPlaying", "(I)Z", with_state([](auto& state, auto&, auto&) { return dx::VmValue::Int(state.playing ? 1 : 0); }), flags);
     auto declaration = std::move(builder).Build();
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        for (auto& method : declaration.methods)
-            if (method.name == "onMeasure" && method.descriptor == "(II)V")
-                method.adapter_review = "tools/bootdex/view-video-adapter.json#onMeasure";
+    for (auto& method : declaration.methods)
+        if (method.name == "onMeasure" && method.descriptor == "(II)V")
+            method.adapter_review = "tools/bootdex/view-video-adapter.json#onMeasure";
     return declaration;
 }
 
@@ -636,14 +625,12 @@ bool AnyVideoPlaying(const DexVmAndroidContext& context) {
 
 bool HasOpaqueFullscreenVideo(const DexVmAndroidContext& context) {
     if (context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) return false;
-    const auto presentation = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                                  ? AcquireAndroidPresentation(context)
-                                  : nullptr;
+    const auto presentation = AcquireAndroidPresentation(context);
     const auto snapshot = presentation && !presentation->guest_window_epoch_refs.empty()
                               ? presentation->guest_window_epoch_refs.front()
                               : nullptr;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !snapshot) return false;
-    const auto& tree = snapshot ? *snapshot : context.ui_tree;
+    if (!snapshot) return false;
+    const auto& tree = *snapshot;
     std::scoped_lock lock(context.video_views_mutex);
     for (const auto& [handle, state] : context.video_views) {
         if (!state.latest_frame) continue;
@@ -1111,33 +1098,16 @@ void ComposeVideoViews(const DexVmAndroidContext::PresentationSnapshot& presenta
 void ComposeVideoViews(DexVmAndroidContext& context, std::vector<std::uint8_t>& canvas, std::uint32_t width,
                        std::uint32_t height, bool on_top) {
     if (width == 0 || height == 0 || canvas.size() != static_cast<std::uint64_t>(width) * height * 4U) return;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         const auto lease = AcquireAndroidPresentation(context);
         if (lease) ComposeVideoViews(*lease, canvas, width, height, on_top);
         return;
     }
-    std::scoped_lock lock(context.video_views_mutex);
-    if (context.video_views.empty()) return;
-    ComposeFrozenVideo(
-        context.ui_tree,
-        [&](ui::UiNodeId id) -> const video::VideoFrame* {
-            const auto object = context.ui_node_to_object.find(id);
-            if (object == context.ui_node_to_object.end()) return nullptr;
-            const auto found =
-                std::find_if(context.video_views.begin(), context.video_views.end(), [&](const auto& entry) {
-                    return (entry.second.media_player ? entry.second.display_view.Value() : entry.first) ==
-                           object->second.Value();
-                });
-            return found != context.video_views.end() && found->second.latest_frame ? &*found->second.latest_frame
-                                                                                    : nullptr;
-        },
-        canvas, width, height, on_top);
 }
 
-std::optional<std::string> PumpVideoViews(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::function<void(std::vector<std::uint8_t> rgba8)>& publish,
-    const bool compose_canvas) {
+std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidContext& context,
+                                          const std::function<void(std::vector<std::uint8_t>)>& publish,
+                                          const bool compose_canvas) {
     std::vector<std::uint64_t> handles;
     {
         std::scoped_lock lock(context.video_views_mutex);

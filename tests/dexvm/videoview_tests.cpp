@@ -1,5 +1,6 @@
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 #include "boot_dex.h"
+#include "container_traversal_fixture.h"
 // VideoView real-playback semantics against the deterministic Fake backend:
 // frames publish letterboxed to the surface, position follows the shared
 // uptime clock, onCompletion fires exactly once per playback, and the
@@ -138,55 +139,42 @@ std::vector<std::byte> MakeStoredZip(const std::string_view name,
 }
 
 struct VideoVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model;
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system{vfs};
     ogplay::audio::EncodedMusicMixer music;
-    Interpreter interpreter;
-    std::unique_ptr<VmThreadRuntime> threads;
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& interpreter;
+    VmThreadRuntime* threads{};
 
     explicit VideoVm(ogplay::video::VideoPlayerFactory factory, const InterpreterConfig config = {})
-        : model(strings, arrays),
-          context(std::make_shared<DexVmAndroidContext>()),
-          interpreter(
-              [this]() -> DexClassLinker& {
-                  CoreIntrinsicServices services;
-                  services.current_time_millis = [state = context] { return state->uptime_millis.load(); };
-                  linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-                  linker.RegisterIntrinsics(AndroidIntrinsicCatalog(context));
-                  linker.RegisterDex(ReadFixture("videoview.dex"));
-                  ogplay::test::RegisterBootDex(linker);
-                  linker.Link();
-                  return linker;
-              }(),
-              model, nullptr, ledger, config) {
+        : context(std::make_shared<DexVmAndroidContext>()), runtime([&] {
+              context->surface_width = 64;
+              context->surface_height = 32;
+              ogplay::test::BindBootDexArchive(*context);
+              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+                  context, ledger, logger, AndroidIntrinsicCatalog(context), ReadFixture("videoview.dex"), config,
+                  false, &vfs);
+          }()),
+          model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {
         interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
         context->surface_width = 64U;
         context->surface_height = 32U;
         context->vfs = &vfs;
         interpreter.IO().SetFileSystem(&io_file_system);
         context->encoded_music = &music;
-        threads = std::make_unique<VmThreadRuntime>(interpreter);
-        context->threads = threads.get();
-        RegisterAndroidSchedulerStateTable(interpreter, context);
+        threads = &runtime->bridge->Threads();
+        context->threads = threads;
         const auto looper = linker.ResolveDescriptor("Landroid/os/Looper;");
         const auto prepare = linker.FindDirectMethod(looper, "prepareMainLooper", "()V");
         REQUIRE(prepare.has_value());
         const auto prepared = interpreter.Call(*prepare, {});
         REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
-        RegisterAndroidOwnerAttachedStateTable(interpreter, context);
-        RegisterAndroidAudioTrackStateTable(interpreter, context);
-        interpreter.SetGcIntegration({{}, {}, [state = context](const VmRootVisitor& visit) {
-            VisitAndroidSessionRoots(*state, visit);
-        }});
+
         if (factory) {
             context->video_source_player_factory =
                 [factory = std::move(factory)](
@@ -200,6 +188,25 @@ struct VideoVm final {
             std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
     }
 
+    VmObjectRef content_root;
+
+    void AttachView(VmObjectRef view, VmObjectRef owner) {
+        if (!content_root.IsValid()) {
+            content_root = interpreter.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+            const auto type = linker.ResolveDescriptor("Landroid/widget/FrameLayout;");
+            const auto initialized = interpreter.EnsureClassInitialized(type);
+            REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+            const auto ctor = linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+            REQUIRE(ctor);
+            const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(content_root), VmValue::Ref(owner)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            context->content_view = content_root;
+        }
+        CallOn(content_root, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        static_cast<void>(EnsureAndroidUiTraversal(interpreter, *context, AndroidUiTraversalReason::OwnerTick,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
+    }
+
     [[nodiscard]] VmObjectRef NewVideoView() {
         const auto view = interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
         const auto owner = linker.ResolveDescriptor("Landroid/widget/VideoView;");
@@ -210,10 +217,7 @@ struct VideoVm final {
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         const auto node = FindViewUiNode(*context, view.Value());
         REQUIRE(node.has_value());
-        context->ui_tree.Attach(context->ui_tree.Root(), *node);
-        auto* state = context->ui_tree.Get(*node);
-        state->layout.width.mode = ui::SizeMode::MatchParent;
-        state->layout.height.mode = ui::SizeMode::MatchParent;
+        AttachView(view, activity);
         return view;
     }
 
@@ -236,12 +240,12 @@ struct VideoVm final {
         const auto result = interpreter.Call(*ctor, std::array{VmValue::Ref(view), VmValue::Ref(activity)});
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         const auto node = *FindViewUiNode(*context, view.Value());
-        context->ui_tree.Attach(context->ui_tree.Root(), node);
-        context->ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
-        context->ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
+        AttachView(view, activity);
         context->managed_host_surface_open = true;
         const auto error = AttachSurfaceViewSubtree(interpreter, *context, node);
         REQUIRE_MESSAGE(!error, error.value_or(""));
+        const auto pumped = PumpAndroidSurfaceEvents(interpreter, *context);
+        REQUIRE_MESSAGE(!pumped, pumped.value_or(""));
         return view;
     }
 
@@ -337,6 +341,9 @@ struct VideoVm final {
         for (const auto& record : logger.Snapshot(ogplay::core::LogLevel::warn)) diagnostics += record.message + "\n";
         INFO(diagnostics);
         REQUIRE_MESSAGE(!error.has_value(), error.value_or(""));
+        if (context->content_view.IsValid())
+            static_cast<void>(EnsureAndroidUiTraversal(interpreter, *context, AndroidUiTraversalReason::OwnerTick,
+                                                       AndroidUiTraversalPhase::ResolveOnly));
         return published;
     }
 };
@@ -878,46 +885,6 @@ TEST_CASE("DVM216 VideoView releases and replaces pending generations") {
     CHECK(vm.context->media_players.empty());
 }
 
-TEST_CASE("DVM216 VideoView surface composition respects bounds visibility clip and onTop") {
-    VideoVm vm(FakeFactory());
-    const auto view = vm.NewVideoView();
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
-    vm.CallOn(view, "start", "()V");
-    static_cast<void>(vm.Pump());
-    const auto node = *FindViewUiNode(*vm.context, view.Value());
-    auto* state = vm.context->ui_tree.Get(node);
-    state->layout.width = {ui::SizeMode::Fixed, 16};
-    state->layout.height = {ui::SizeMode::Fixed, 8};
-    state->layout.margin.left = 4;
-    state->layout.margin.top = 2;
-    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
-    const auto original = std::vector<std::uint8_t>(64U * 32U * 4U, 123U);
-    auto canvas = original;
-    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
-    CHECK(canvas[0] == 123);
-    const auto offset = (2U * 64U + 4U) * 4U;
-    CHECK(canvas[offset + 3] == 255);
-    CHECK(canvas[offset] != 123);
-    vm.CallOn(view, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
-    canvas = original;
-    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
-    CHECK(canvas == original);
-    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
-    CHECK(canvas[offset + 3] == 255);
-    vm.context->ui_tree.Get(vm.context->ui_tree.Root())->padding.left = 10;
-    canvas = original;
-    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
-    CHECK(canvas[offset] == 123);
-    state->visibility = ui::Visibility::Invisible;
-    canvas = original;
-    ComposeVideoViews(*vm.context, canvas, 64, 32, true);
-    CHECK(canvas == original);
-    vm.context->ui_tree.Detach(node);
-    static_cast<void>(vm.Pump());
-    CHECK(vm.context->video_views.empty());
-    CHECK(vm.context->media_players.empty());
-}
-
 TEST_CASE("DVM216 VideoView resource URIs retain a sealed APK range after AFD close") {
     VideoVm vm(FakeFactory());
     vm.context->package_name = "org.ogplay.video";
@@ -954,28 +921,6 @@ TEST_CASE("DVM216 VideoView resource URIs retain a sealed APK range after AFD cl
     vm.CallOn(view, "stopPlayback", "()V");
     retained.reset();
     CHECK(vm.context->video_views.empty());
-}
-
-TEST_CASE("DVM216 VideoView owners and Java listeners survive GC then release backend state") {
-    VideoVm vm(FakeFactory());
-    const auto view = vm.NewVideoView();
-    const auto listener = vm.NewListener();
-    vm.CallOn(view, "setOnCompletionListener", "(Landroid/media/MediaPlayer$OnCompletionListener;)V", {VmValue::Ref(listener)});
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
-    static_cast<void>(vm.interpreter.CollectGarbage("video-prepared-owner"));
-    vm.CallOn(view, "start", "()V");
-    static_cast<void>(vm.Pump());
-    vm.context->uptime_millis += 1000;
-    static_cast<void>(vm.Pump());
-    CHECK(vm.Completions() == 1);
-    // Remove the fixture's static callback identity and all UI session roots.
-    vm.interpreter.SetStaticFieldBits("LVideoListener;", "completedPlayer", "Landroid/media/MediaPlayer;", 0);
-    const auto node = *FindViewUiNode(*vm.context, view.Value());
-    vm.context->ui_tree.Detach(node);
-    vm.context->ui_node_to_object.erase(node);
-    static_cast<void>(vm.interpreter.CollectGarbage("video-unreachable-owner"));
-    CHECK(vm.context->video_views.empty());
-    CHECK(vm.context->media_players.empty());
 }
 
 TEST_CASE("DVM216 local video event protocol runs in both interpreter backends") {
@@ -1046,65 +991,6 @@ TEST_CASE("DVM216 decoder and audio failures dispatch error through the main vid
     }
 }
 
-TEST_CASE("fullscreen video readback certificate rejects transparency clipping dirty layout and detach") {
-    VideoVm vm(FakeFactory());
-    const auto view = vm.NewVideoView();
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
-    vm.CallOn(view, "start", "()V");
-    static_cast<void>(vm.Pump());
-    const auto node = *FindViewUiNode(*vm.context, view.Value());
-    auto* state = vm.context->ui_tree.Get(node);
-    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
-    REQUIRE(HasOpaqueFullscreenVideo(*vm.context));
-    // Letterboxed pictures still replace their rectangle with opaque black.
-    vm.context->video_views.at(view.Value()).latest_frame->height = 16;
-    vm.context->video_views.at(view.Value()).latest_frame->rgba8.resize(8U * 16U * 4U);
-    CHECK(HasOpaqueFullscreenVideo(*vm.context));
-    state->alpha = 0.5F;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    state->alpha = 1.0F;
-    auto* root = vm.context->ui_tree.Get(vm.context->ui_tree.Root());
-    root->alpha = 0.5F;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    root->alpha = 1.0F;
-    root->padding.left = 1;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    root->padding.left = 0;
-    state->visibility = ui::Visibility::Invisible;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    state->visibility = ui::Visibility::Visible;
-    state->screen_frame.right = 63;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    state->screen_frame.right = 64;
-    root->layout_dirty = true;
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-    root->layout_dirty = false;
-    vm.context->ui_tree.Detach(node);
-    CHECK_FALSE(HasOpaqueFullscreenVideo(*vm.context));
-}
-
-TEST_CASE("videoview opaque scaled rows preserve nearest-neighbour pixels and letterbox bars") {
-    VideoVm vm(FakeFactory());
-    const auto view = vm.NewVideoView();
-    vm.CallOn(view, "setVideoPath", "(Ljava/lang/String;)V", {VmValue::Ref(vm.interpreter.NewStringUtf8(kGuestVideoPath))});
-    vm.CallOn(view, "start", "()V");
-    static_cast<void>(vm.Pump());
-    ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
-    auto& frame = *vm.context->video_views.at(view.Value()).latest_frame;
-    frame.width = 7;
-    frame.height = 3;
-    frame.rgba8.resize(7U * 3U * 4U);
-    for (std::size_t i = 0; i < frame.rgba8.size(); i += 4) {
-        frame.rgba8[i] = static_cast<std::uint8_t>(i);
-        frame.rgba8[i + 1] = static_cast<std::uint8_t>(i / 4U);
-        frame.rgba8[i + 2] = static_cast<std::uint8_t>(255U - i);
-        frame.rgba8[i + 3] = 255;
-    }
-    auto canvas = std::vector<std::uint8_t>(64U * 32U * 4U, 123U);
-    ComposeVideoViews(*vm.context, canvas, 64, 32, false);
-    CHECK(canvas == ogplay::video::ComposeRgbaOnCanvas(frame, 64, 32));
-}
-
 TEST_CASE("video APK media source validates once and retains exact stored range reads") {
     VideoVm vm(FakeFactory());
     const std::vector<std::byte> payload{std::byte{1},std::byte{2},std::byte{3},std::byte{4},
@@ -1133,62 +1019,6 @@ TEST_CASE("video APK media source validates once and retains exact stored range 
     const auto offset = ogplay::loader::StoredApkEntryDataOffset(vm.context->apk_bytes, vm.context->archive, source.name);
     vm.context->apk_bytes[static_cast<std::size_t>(offset)] = std::byte{9};
     CHECK(LoadEncodedAudioSource(*vm.context, source) == nullptr);
-}
-
-TEST_CASE("DVM-248 Surface layer override isolation and exact media overlay composition") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        InterpreterConfig config; config.backend = backend;
-        VideoVm vm(FakeFactory(), config);
-        vm.context->ui_tree.Get(vm.context->ui_tree.Root())->background_color = 0x000000ffU;
-        const auto overlay = vm.NewSurfaceView(), ordinary = vm.NewSurfaceView();
-        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
-        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(1)});
-        auto* node = vm.context->ui_tree.Get(*FindViewUiNode(*vm.context, overlay.Value()));
-        auto* other = vm.context->ui_tree.Get(*FindViewUiNode(*vm.context, ordinary.Value()));
-        CHECK(node->surface_layer == ui::SurfaceLayer::media_overlay);
-        CHECK(other->surface_layer == ui::SurfaceLayer::media);
-        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(0)});
-        CHECK(node->surface_layer == ui::SurfaceLayer::media);
-        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
-        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(0)});
-        CHECK(node->surface_layer == ui::SurfaceLayer::media);
-        vm.CallOn(overlay, "setZOrderMediaOverlay", "(Z)V", {VmValue::Int(1)});
-        const auto first = vm.NewPlainPlayer(), second = vm.NewPlainPlayer();
-        vm.PreparePlain(first, overlay); vm.PreparePlain(second, ordinary);
-        vm.CallOn(first, "start", "()V"); vm.CallOn(second, "start", "()V");
-        vm.PumpMediaEvents();
-        auto& top = *vm.context->video_views.at(first.Value()).latest_frame;
-        auto& lower = *vm.context->video_views.at(second.Value()).latest_frame;
-        for (std::size_t i = 0; i < top.rgba8.size(); i += 4) {
-            top.rgba8[i] = 200; lower.rgba8[i] = 50;
-        }
-        // A regular UI item painted after the Surface must survive its hole.
-        const auto label = vm.context->ui_tree.CreateNode(ui::UiClass::View);
-        vm.context->ui_tree.Get(label)->layout.width = {ui::SizeMode::Fixed, 2};
-        vm.context->ui_tree.Get(label)->layout.height = {ui::SizeMode::Fixed, 2};
-        vm.context->ui_tree.Get(label)->background_color = 0xffffffffU;
-        vm.context->ui_tree.Attach(vm.context->ui_tree.Root(), label);
-        RefreshAndroidSurfaceFrames(*vm.context);
-        ui::LayoutUiTree(vm.context->ui_tree, {64, 32});
-        const auto compose = [&] {
-            std::vector<std::uint8_t> canvas(64U * 32U * 4U, 123);
-            ComposeVideoViews(*vm.context, canvas, 64, 32, false);
-            const auto ui_frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(vm.context->ui_tree, {}), {64, 32});
-            ogplay::session::ComposeUiOverlayInPlace(canvas, ui_frame);
-            ComposeVideoViews(*vm.context, canvas, 64, 32, true);
-            return canvas;
-        };
-        auto canvas = compose();
-        CHECK(canvas[0] == 255); // upper window UI
-        CHECK(canvas[(10U * 64U + 10U) * 4U] == 200); // media overlay beats later ordinary Surface
-        vm.CallOn(overlay, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
-        canvas = compose();
-        CHECK(canvas[0] == 200); // onTop covers window UI
-        vm.CallOn(first, "release", "()V"); vm.CallOn(second, "release", "()V");
-        RefreshAndroidSurfaceFrames(*vm.context);
-        CHECK_FALSE(node->surface_has_frame);
-        CHECK_FALSE(other->surface_has_frame);
-    }
 }
 
 TEST_CASE("DVM-249 ordinary MediaPlayer video events transport looping and Surface retirement") {
@@ -1383,9 +1213,17 @@ TEST_CASE("DVM-249 async video preparation failure GC and owner shutdown are hon
         CHECK(vm.context->media_players.empty()); CHECK(vm.context->encoded_audio_leases.empty());
     }
     VideoVm vm(FakeFactory());
+    vm.runtime->session->Environment().PushLocalFrame(1, 64);
     const auto player = vm.NewPlainPlayer(), surface = vm.NewSurfaceView();
     vm.PreparePlain(player, surface);
     REQUIRE(vm.context->video_views.size() == 1);
+    // A live managed holder is a session root. Retire its generation before
+    // testing collection of the unreachable owner in the real bridge.
+    const auto retired = RetireSurfaceHolderGeneration(vm.interpreter, *vm.context);
+    REQUIRE_MESSAGE(!retired, retired.value_or(""));
+    vm.context->content_view = VmObjectRef{};
+    vm.content_root = VmObjectRef{};
+    static_cast<void>(vm.runtime->session->Environment().PopLocalFrame(1));
     static_cast<void>(vm.interpreter.CollectGarbage("ordinary-video-unreachable-owner"));
     CHECK(vm.context->video_views.empty()); CHECK(vm.context->media_players.empty());
 }

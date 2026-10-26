@@ -3,8 +3,8 @@
   "clinit_owner": "rom",
   "rom_input": ".local/aosp/framework.jar",
   "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-  "surface": "tools/bootdex/view-measure.surface.json.gz",
-  "surface_sha256": "c11a54daa8c8ae25cc813f64274741082efbd8d38cfcb34d70cea51fa629e8f0",
+  "surface": "tools/bootdex/view-default.surface.json.gz",
+  "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
   "owner": "Landroid/view/accessibility/AccessibilityManager;",
   "smali_sha256": "f5e5f6f7a4c174af21896346276c4dd56bd7d8b29c28ae0209c0728f1fc20ae4",
   "fields": [
@@ -170,7 +170,7 @@
         "inputs": "Non-null Context and explicit ui_test_accessibility_disabled test input",
         "outputs": "Stable Java singleton with actual mIsEnabled=false; no Binder service or subscriber state",
         "state_owner": "Java sInstance/mIsEnabled only",
-        "failure_boundary": "Unconfigured or Legacy provider records and throws; constructors and all other manager APIs remain failure"
+        "failure_boundary": "Unconfigured provider records and throws; constructors and all other manager APIs remain failure"
       }
     },
     {
@@ -189,7 +189,7 @@
         "inputs": "Non-null Context and explicit ui_test_accessibility_disabled test input",
         "outputs": "Stable Java singleton with actual mIsEnabled=false; no Binder service or subscriber state",
         "state_owner": "Java sInstance/mIsEnabled only",
-        "failure_boundary": "Unconfigured or Legacy provider records and throws; constructors and all other manager APIs remain failure"
+        "failure_boundary": "Unconfigured provider records and throws; constructors and all other manager APIs remain failure"
       }
     },
     {

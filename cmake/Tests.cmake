@@ -281,7 +281,6 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/videoview_tests.cpp
     tests/dexvm/widget_click_tests.cpp
     tests/dexvm/widget_hierarchy_tests.cpp
-    tests/dexvm/widget_inflater_tests.cpp
     tests/dexvm/widget_resources_tests.cpp
     tests/dexvm/widget_focus_input_tests.cpp
     tests/dexvm/dialog_host_layout_tests.cpp

@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-skin.surface.json.gz",
-      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/drawable/Drawable;",
       "smali_sha256": "19a924b772dd354f6697ff3ff28e6d259ea0f430fa6318153ffeed930eb218da",
       "methods": [
@@ -421,8 +421,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
-      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/drawable/BitmapDrawable;",
       "smali_sha256": "660a01d12ebeb584153e3c3567af510ef4c1343f4e67b400701978b3b73a1cae",
       "methods": [
@@ -791,8 +791,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
-      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/drawable/ColorDrawable;",
       "smali_sha256": "02bc11f751baccc3d315a606ff50186e588a0b02683a5d5b599de585bf42e0b6",
       "methods": [

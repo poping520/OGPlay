@@ -1,5 +1,7 @@
 #include "native_library_fixture.h"
 
+#include "ogplay/runtime/bionic/bionic_profile.h"
+
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
@@ -402,6 +404,8 @@ ApplicationProcess::ApplicationProcess(
         session->Process(), *selected);
     context =
         std::make_shared<ogplay::runtime::DexVmAndroidContext>();
+    ogplay::test::BindBootDexArchive(*context);
+    context->ui_test_accessibility_disabled = true;
     context->session = session.get();
     context->native_libraries = libraries.get();
     if (working_directory.has_value()) context->vfs = &filesystem;
@@ -452,8 +456,14 @@ OrchestratedApp::OrchestratedApp(const std::string& activity,
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity") native_a = NativeActivityElf();
     context->apk_bytes = {
         std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
-    const ogplay::runtime::BionicModuleSource system{
-        "libc.so", libc};
+    // Match production process assembly: the pinned guest JNI library supplies
+    // ICU regex natives used by ROM Rect initialization during View construction.
+    std::vector<std::vector<std::byte>> system_bytes;
+    std::vector<ogplay::runtime::BionicModuleSource> system;
+    for (const auto name : ogplay::runtime::SelectBionicProfile(19).guest_libraries) {
+        system_bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
+        system.push_back({std::string(name), system_bytes.back()});
+    }
     std::vector<ogplay::loader::ApkNativeLibrary> libraries;
     if (with_native) libraries.push_back(Library("liba.so", native_a));
     ogplay::session::AndroidAppProcessRequest request;
@@ -493,13 +503,18 @@ OrchestratedApp::OrchestratedApp(const std::string& activity,
              launcher_alias, activity, true, std::move(filters)});
     }
     request.native_libraries = std::move(libraries);
-    request.system_libraries = std::span{&system, 1};
+    request.system_libraries = system;
+    request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+    request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
     request.dex_bytes = ReadDexFixture("application.dex");
     request.boot_dex_bytes = ogplay::test::ReadBootDex();
+    ogplay::test::BindBootDexArchive(*context);
+    context->ui_test_accessibility_disabled = true;
     request.context = context;
     request.surface_width = static_cast<std::uint32_t>(viewport.width);
     request.surface_height = static_cast<std::uint32_t>(viewport.height);
-    request.maximum_ticks_per_call = UINT64_C(200000);
+    // Real guest JNI/ICU initialization uses the same bounded budget as IcuVm.
+    request.maximum_ticks_per_call = UINT64_C(100000000);
 #if defined(_WIN32)
     request.backend = {ogplay::gles::AngleRenderer::d3d11,
                        ogplay::gles::AngleDevice::hardware};

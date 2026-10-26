@@ -269,9 +269,9 @@ Decl Declare_android_webkit_WebView(const Context& context) {
             throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
                                   result.exception};
         const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
-        auto* state = context->ui_tree.Get(node);
-        state->focusable = true;
-        state->focusable_in_touch_mode = true;
+        static_cast<void>(node);
+        static_cast<void>(
+            CallAndroidMethod(call.vm, call.receiver, "setFocusableInTouchMode", "(Z)V", {dx::VmValue::Int(1)}));
         dx::IntrinsicCall(call).SetRef(webview_thread, CurrentLooper(context, call.vm.CurrentContextToken()));
         return result.value;
     });

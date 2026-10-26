@@ -7,6 +7,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER = Path("src/runtime/integration/dexvm_android/android_view.cpp")
+RETIRED = re.compile(r"AndroidUiTraversalOwner::Legacy|RefreshAndroidLayoutParams|RefreshAndroidViewLayoutInputs|"
+                     r"BuildUiElements|InflateUiElements|UiWidgetRegistry|ui_click_listeners|ui_touch_listeners|"
+                     r"ui_notified_view_sizes|ui_notified_window_focus|focused_edit_text")
+
+
+def guest_legacy_errors(code):
+    return ["retired guest Legacy traversal/state entry"] if RETIRED.search(code) else []
 
 
 def code_only(source):
@@ -32,13 +39,7 @@ def presentation_errors(code):
     errors = []
     start, end = function_body(code, "RestoreActivity")
     body = code[start:end]
-    # A host focus restore is legal only under the explicit Legacy guard.
-    guarded = re.sub(
-        r"if\s*\(context.ui_traversal_owner\s*==\s*runtime::AndroidUiTraversalOwner::Legacy\s*&&"
-        r"\s*record.focused_node\s*&&\s*context.ui_tree.Get\(\*record.focused_node\)\)"
-        r"\s*static_cast<void>\(context.ui_tree.RequestFocus\(\*record.focused_node,\s*false\)\);",
-        "", body)
-    if "RequestFocus" in guarded:
+    if "RequestFocus" in body:
         errors.append("ExternalProjection window focus restore bypass")
     start, end = function_body(code, "ComposeAndroidPresentationFrame")
     body = code[start:end]
@@ -87,35 +88,37 @@ def main():
                     errors.append(f"layout bypass: {location}")
             if re.search(r"\bEnsureLayout\s*\(", code):
                 errors.append(f"old layout entry: {relative}")
-    # DVM-300: session may mutate a host scroll position only in an explicit Legacy block.
     session = ROOT / "src/session/dex_activity_lifecycle.cpp"
     code = code_only(session.read_text(encoding="utf-8"))
     errors.extend(presentation_errors(code))
+    if re.search(r"\.scroll_[xy]\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
+        errors.append("session writes guest scroll coordinates")
+    for path in (ROOT / "src").rglob("*"):
+        if path.suffix not in {".cpp", ".h", ".cc", ".hpp", ".mm"}:
+            continue
+        source = code_only(path.read_text(encoding="utf-8"))
+        errors.extend(f"{error}: {path.relative_to(ROOT)}" for error in guest_legacy_errors(source))
+        if "UiGeometryOwner::HostLayout" in source:
+            allowed = Path("src/runtime/integration/dexvm_android/support_ui.cpp")
+            if path.relative_to(ROOT) != allowed or source.count("UiGeometryOwner::HostLayout") != 1:
+                errors.append(f"guest Legacy geometry owner: {path.relative_to(ROOT)}")
     if '--self-test' in sys.argv:
         assert not presentation_errors(code)
-        assert presentation_errors(code.replace('record.focused_node &&', 'true &&'))
+        start, end = function_body(code, "RestoreActivity")
+        assert presentation_errors(code[:start + 1] + "RequestFocus();" + code[start + 1:])
         assert presentation_errors(code.replace('ComposeVideoViews(*snapshot,', 'ComposeVideoViews(context,'))
-        print('UI presentation static negative fixtures passed')
-    legacy_blocks = []
-    for match in re.finditer(r"else\s+if\s*\(context.ui_traversal_owner\s*==\s*runtime::AndroidUiTraversalOwner::Legacy\)\s*\{", code):
-        start = match.end() - 1
-        depth = 1
-        for end in range(start + 1, len(code)):
-            depth += (code[end] == "{") - (code[end] == "}")
-            if not depth:
-                legacy_blocks.append((start, end))
-                break
-    for write in re.finditer(r"\.scroll_[xy]\s*(?:=(?!=)|[+*/-]=|\+\+|--)", code):
-        if not any(start < write.start() < end for start, end in legacy_blocks):
-            errors.append("session scroll coordinate write outside explicit Legacy branch")
+        for retired in ('AndroidUiTraversalOwner::Legacy', 'RefreshAndroidLayoutParams(vm, context)',
+                        'context.ui_click_listeners', 'context.ui_notified_window_focus', 'BuildUiElements(vm, context)'):
+            assert guest_legacy_errors(retired)
+        print('UI presentation and guest Legacy static negative fixtures passed')
     if len(host_calls) != 2:
         errors.append(f"expected two isolated HostLayout calls, found {len(host_calls)}")
-    if len(calls) != 1:
-        errors.append(f"expected one Legacy implementation call, found {len(calls)}")
+    if calls:
+        errors.append(f"expected zero guest HostLayout calls, found {len(calls)}")
     if errors:
         raise SystemExit("\n".join(errors))
     print(f"UI HostLayout: {len(host_calls)} isolated modal call")
-    print(f"UI traversal: {len(calls)} scheduler call, 0 bypasses ({calls[0]})")
+    print(f"UI traversal: {len(calls)} guest HostLayout calls, 0 bypasses")
 
 
 if __name__ == "__main__":

@@ -54,38 +54,6 @@
 
 using namespace ogplay::test::native_library;
 
-TEST_CASE("VD-01 ComposePresentedFrame resolves dirty geometry without guest callbacks") {
-    using namespace ogplay;
-    namespace dx = runtime::dexvm;
-    for (const auto backend : {dx::InterpreterBackend::switch_dispatch, dx::InterpreterBackend::threaded}) {
-        // Create the fixture VM without starting its graphics-backed Activity.
-        OrchestratedApp fixture("fixture.HandshakeActivity", true, false, {}, {}, true, backend);
-        auto& vm = fixture.app->DexVm().Vm();
-        auto& context = *fixture.context;
-        const auto view = vm.NewIntrinsicInstance("Lfixture/HandshakeView;");
-        const auto node = context.ui_tree.CreateNode(runtime::ui::UiClass::View);
-        runtime::BindViewToUiNode(context, view, node);
-        auto* state = context.ui_tree.Get(node);
-        state->layout.width = {runtime::ui::SizeMode::MatchParent, 0};
-        state->layout.height = {runtime::ui::SizeMode::MatchParent, 0};
-        state->background_color = 0x123456ffU;
-        context.ui_tree.Attach(context.ui_tree.Root(), node);
-        const auto callbacks = fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount");
-        const auto notified = context.ui_notified_view_sizes;
-        const auto composed = fixture.app->ActivityLifecycle().ComposePresentedFrame(
-            {.width = 64, .height = 36, .rgba8 = std::vector<std::uint8_t>(64 * 36 * 4)});
-        CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount") == callbacks);
-        CHECK(context.ui_notified_view_sizes == notified);
-        CHECK_FALSE(context.ui_tree.Get(context.ui_tree.Root())->layout_dirty);
-        CHECK(state->screen_frame == runtime::ui::Rect{0, 0, 64, 36});
-        REQUIRE(composed.rgba8.size() == 64 * 36 * 4);
-        CHECK(composed.rgba8[0] == 0x12);
-        CHECK(composed.rgba8[1] == 0x34);
-        CHECK(composed.rgba8[2] == 0x56);
-        CHECK(runtime::DispatchAndroidViewSizes(vm, context));
-        CHECK(fixture.CallStaticInt("Lfixture/HandshakeView;", "getTraversalCount") == callbacks + 1);
-    }
-}
 
 TEST_CASE("DVM-89 initial traversal waits until an existing worker parks") {
     using namespace ogplay;
@@ -372,23 +340,31 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
         CHECK(composed.rgba8[2] == 119); // Exactly one modal scrim, above the base producer.
         REQUIRE(f.context->dialog_presentations.size() == 1);
         const auto modal_root = f.context->dialog_presentations.front().root;
+        const auto modal_tree = [&]() -> const runtime::ui::UiTree& {
+            REQUIRE_FALSE(f.context->dialog_presentations.empty());
+            REQUIRE(f.context->dialog_presentations.front().host_tree);
+            return *f.context->dialog_presentations.front().host_tree;
+        };
         const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
         const auto intent_root = vm.ProtectReferences(std::array{intent}); construct(intent, "()V", {});
         call(intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
              {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
         call(owner, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
         static_cast<void>(lifecycle.StepFrame());
-        CHECK_FALSE(f.context->ui_tree.IsVisible(modal_root));
+        CHECK_FALSE(modal_tree().IsVisible(modal_root));
         CHECK_FALSE(runtime::HasAndroidModalDialog(*f.context));
         call(f.context->activity, "finish", "()V"); static_cast<void>(lifecycle.StepFrame());
-        CHECK(f.context->activity == owner); CHECK(f.context->ui_tree.IsVisible(modal_root));
+        CHECK(f.context->activity == owner);
+        CHECK(modal_tree().IsVisible(modal_root));
         CHECK_FALSE(f.context->window_has_focus.load());
         const auto counter = [&](const char* method_name) {
             return f.CallStaticInt("Lfixture/DialogClickObserver;", method_name);
         };
         const auto pointer = [&](int action) {
             const auto button = *f.context->dialog_presentations.front().buttons[2];
-            const auto rect = f.context->ui_tree.Get(button)->screen_frame;
+            const auto* state = modal_tree().Get(button);
+            REQUIRE(state);
+            const auto rect = state->screen_frame;
             lifecycle.QueueInput({.type=runtime::AndroidBoundaryInputType::pointer_button,
                 .x=static_cast<float>(rect.left + 2), .y=static_cast<float>(rect.top + 2),
                 .pressed=action==0});

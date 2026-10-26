@@ -328,7 +328,6 @@ TEST_CASE("DVM-308 real lifecycle owner barriers cover input Looper focus and fi
         for (unsigned i = 0; i < 3; ++i)
             CHECK_FALSE(DispatchAndroidViewSizes(f.vm, *f.context));
         CHECK(size_calls() == delivered_sizes);
-        CHECK(f.context->ui_notified_view_sizes.empty());
         const auto epoch = f.context->ui_measure_epoch;
         const auto trace = f.vm.Trace("", 10000).size();
         const auto viewport = complete->viewport;
@@ -823,6 +822,7 @@ TEST_CASE("DVM-314 reviewed WebView construction retains explicit AbsoluteLayout
     using ogplay::test::container_traversal::ContainerVm;
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
         const auto owner = f.New("Landroid/app/Activity;");
         const auto view = f.New("Landroid/webkit/WebView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         CHECK(f.On(view, "getSettings", "()Landroid/webkit/WebSettings;").ref.IsValid());
@@ -1276,29 +1276,6 @@ TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface n
         }
 }
 
-TEST_CASE("DVM-318 Legacy producer registration and Surface callbacks emit no traversal diagnostics") {
-    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        const auto owner = f.New("Landroid/app/Activity;");
-        const auto view =
-            f.New("Landroid/opengl/GLSurfaceView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        f.On(view, "setRenderer", "(Landroid/opengl/GLSurfaceView$Renderer;)V", {VmValue::Ref(owner)});
-        f.context->activity = owner;
-        f.context->content_view = view;
-        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
-        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
-        CHECK(f.logger.Snapshot(std::nullopt, "ui.surface.").empty());
-        CHECK(f.logger.Snapshot(std::nullopt, "ui.traversal").empty());
-        CHECK(f.context->ui_traversal_diagnostics.empty());
-        RecordAndroidProducerDiagnostic(f.vm, *f.context, view, "ignored Legacy");
-        SummarizeAndroidUiDiagnostics(f.vm, *f.context);
-        CHECK(f.context->ui_diagnostic_totals.empty());
-        CHECK(f.context->ui_producer_diagnostics.empty());
-        CHECK_FALSE(f.context->ui_diagnostic_summary_emitted);
-        CHECK(f.logger.Snapshot(std::nullopt, "ui.diagnostics.").empty());
-        CHECK(f.ledger.Unimplemented().empty());
-    }
-}
 
 TEST_CASE("DVM-319 owner projection selects late producer before its first Surface callback") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -1650,8 +1627,7 @@ TEST_CASE("DVM-329 headless clean frame scheduling benchmark") {
     };
     for (const auto size : {ui::Size{800, 480}, ui::Size{1920, 1080}}) {
         const auto* workload = size.width == 800 ? "tml-window" : "tales-window";
-        AndroidValueVm legacy;
-        run(legacy, "B", workload, size);
+
         ogplay::test::container_traversal::ContainerVm java(InterpreterBackend::switch_dispatch);
         run(java, "C", workload, size);
     }
@@ -1669,8 +1645,7 @@ TEST_CASE("DVM-330 headless step and present benchmark") {
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));
-        if (f.context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-            REQUIRE(PublishAndroidPresentation(*f.context));
+        REQUIRE(PublishAndroidPresentation(*f.context));
         ogplay::session::AndroidPresentationCache cache;
         AndroidBoundaryFrame frame;
         frame.width = static_cast<std::uint32_t>(size.width);
@@ -1688,21 +1663,7 @@ TEST_CASE("DVM-330 headless step and present benchmark") {
                                                                AndroidUiTraversalReason::BeforePresent,
                                                                AndroidUiTraversalPhase::ResolveOnly));
                 const auto middle = ogplay::hal::Clock::SteadyTimestampNs();
-                if (f.context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
-                    frame = ogplay::session::ComposeAndroidPresentationFrame(*f.context, std::move(frame), &cache);
-                } else {
-                    RefreshAndroidImageDrawables(*f.context);
-                    RefreshAndroidSurfaceFrames(*f.context);
-                    static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context,
-                                                               AndroidUiTraversalReason::BeforePresent,
-                                                               AndroidUiTraversalPhase::ResolveOnly, size));
-                    ComposeVideoViews(*f.context, frame.rgba8, frame.width, frame.height, false);
-                    const auto& overlay =
-                        f.context->ui_overlay_renderer.Render(f.context->ui_tree, f.context->ui_bitmaps,
-                                                              {size.width, size.height}, ui::UiRenderPlane::normal);
-                    ogplay::session::ComposeUiOverlayInPlace(frame.rgba8, overlay);
-                    ComposeVideoViews(*f.context, frame.rgba8, frame.width, frame.height, true);
-                }
+                frame = ogplay::session::ComposeAndroidPresentationFrame(*f.context, std::move(frame), &cache);
                 const auto end = ogplay::hal::Clock::SteadyTimestampNs();
                 step_ns += middle - start;
                 present_ns += end - middle;
@@ -1717,8 +1678,6 @@ TEST_CASE("DVM-330 headless step and present benchmark") {
         CHECK(f.ledger.Unimplemented().empty());
     };
     for (const auto size : {ui::Size{800, 480}, ui::Size{1920, 1080}}) {
-        AndroidValueVm legacy;
-        run(legacy, "B", size);
         ogplay::test::container_traversal::ContainerVm java(InterpreterBackend::switch_dispatch);
         run(java, "C", size);
     }
@@ -1857,6 +1816,42 @@ TEST_CASE("DVM-330 presentation cache follows immutable planes and producer fram
         CHECK(present(0).rgba8.size() == 90U * 50U * 4U);
         CHECK(cache.normal.front() != with_bitmap);
         CHECK(cache.snapshot->viewport.width == 90);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-331 window focus reaches the Java window tree across Activity switches without graphics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::native_library::OrchestratedApp f("fixture.WindowFocusActivity", true, false, {}, {}, true,
+                                                        backend);
+        ogplay::session::DexActivityLifecycleBindings bindings;
+        bindings.bridge = &f.app->DexVm();
+        bindings.context = f.context;
+        bindings.launcher_descriptor = "Lfixture/WindowFocusActivity;";
+        bindings.application_descriptor = "Landroid/app/Application;";
+        ogplay::session::DexActivityLifecycle lifecycle(std::move(bindings), 1, 60);
+        static_cast<void>(lifecycle.Start());
+        const auto parent = f.context->activity;
+        const auto events = [&] { return f.CallStaticInt("Lfixture/WindowFocusView;", "getEvents"); };
+        CHECK(events() == 0);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(events() == 1);
+        static_cast<void>(lifecycle.Suspend());
+        CHECK(events() == 2);
+        static_cast<void>(lifecycle.Resume());
+        CHECK(events() == 3);
+        const auto switched = f.app->DexVm().Linker().FindVtableIndex(f.app->DexVm().Vm().Model().ObjectClass(parent),
+                                                                      "switchActivity", "()V");
+        REQUIRE(switched);
+        const auto target =
+            f.app->DexVm().Linker().Class(f.app->DexVm().Vm().Model().ObjectClass(parent)).vtable[*switched];
+        const auto outcome = f.app->DexVm().Vm().Call(target, std::array{VmValue::Ref(parent)});
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(f.context->activity != parent);
+        CHECK(events() == 5);
+        static_cast<void>(lifecycle.Stop());
+        CHECK(events() == 6);
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

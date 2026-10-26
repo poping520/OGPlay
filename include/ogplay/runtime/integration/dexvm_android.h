@@ -104,7 +104,7 @@ struct AndroidInputDevice final {
 // (sound mixer, VFS, platform identity) through this shared context.
 
 // Fixed before VM startup; JavaTraversal requires a sealed paired payload.
-enum class AndroidUiTraversalOwner : std::uint8_t { Legacy, JavaTraversal };
+enum class AndroidUiTraversalOwner : std::uint8_t { JavaTraversal };
 
 // Assembly facts, independent of host service discovery and test overrides.
 struct AndroidPlatformServices final {
@@ -117,11 +117,9 @@ struct AndroidPlatformServices final {
                                                                                  AndroidPlatformServices platform);
 
 struct DexVmAndroidContext final {
-    explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy,
+    explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
                                  AndroidPlatformServices platform = {})
-        : ui_traversal_owner(owner), platform_services(platform),
-          ui_tree(owner == AndroidUiTraversalOwner::Legacy ? ui::UiGeometryOwner::HostLayout
-                                                           : ui::UiGeometryOwner::ExternalProjection) {}
+        : ui_traversal_owner(owner), platform_services(platform), ui_tree(ui::UiGeometryOwner::ExternalProjection) {}
 
     const AndroidUiTraversalOwner ui_traversal_owner;
     const AndroidPlatformServices platform_services;
@@ -307,8 +305,7 @@ struct DexVmAndroidContext final {
     std::int32_t request_code{-1};
     bool started{};
     std::vector<ActivityResult> results{};
-    std::optional<ui::UiNodeId> focused_node{};
-    dexvm::VmObjectRef focused_edit_text{};
+
     std::optional<ui::UiNodeId> window_root{};
     bool resumed{}, visible{}, stopped{};
     dexvm::VmObjectRef render_view{};
@@ -387,8 +384,7 @@ struct DexVmAndroidContext final {
     std::array<std::optional<ui::UiNodeId>, 3> buttons;
     std::optional<ui::UiNodeId> prior_focus;
     bool visible{true};
-    // Null only for Legacy's original mixed-tree presentation. All node IDs
-    // above belong to host_tree when present, never to the guest projection.
+    // All modal node IDs belong to this required independent HostLayout tree.
     std::shared_ptr<ui::UiTree> host_tree;
     std::uint64_t partition{}, generation{}, revision{};
     ui::Size viewport{};
@@ -570,7 +566,6 @@ struct DexVmAndroidContext final {
   std::unordered_map<std::uint32_t, std::uint32_t> editable_owner;
   std::unordered_map<std::uint32_t, std::vector<dexvm::VmObjectRef>>
       text_watchers;
-  dexvm::VmObjectRef focused_edit_text;
 
   // Cached service/singleton intrinsic instances by handler-defined key.
   std::unordered_map<std::string, dexvm::VmObjectRef> singletons;
@@ -879,17 +874,12 @@ struct DexVmAndroidContext final {
   std::uint32_t ui_bitmap_config_density_bits{};
   ui::UiOverlayRenderer ui_overlay_renderer;
   ui::UiOverlayRenderer ui_modal_renderer;
-  std::unordered_map<ui::UiNodeId, ui::Size, ui::UiNodeIdHash> ui_notified_view_sizes;
-  std::unordered_map<ui::UiNodeId, bool, ui::UiNodeIdHash> ui_notified_window_focus;
+
   std::optional<ui::Size> ui_layout_metrics;
   bool ui_layout_dispatching{};
   std::unordered_map<std::uint64_t, ui::UiNodeId> object_to_ui_node;
   std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
       ui_node_to_object;
-  std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
-      ui_click_listeners;
-  std::unordered_map<ui::UiNodeId, dexvm::VmObjectRef, ui::UiNodeIdHash>
-      ui_touch_listeners;
   // One non-split gesture shared by host and guest dispatch. View bindings
   // retain receivers; capture is validated against attachment and Activity.
   bool ui_bounded_scroll_dispatch{};  // Scoped host non-split dispatch; never a position owner.
@@ -1093,13 +1083,6 @@ void RegisterAndroidDatabaseStateTables(
 void ReleaseAndroidDatabaseResources(
     const std::shared_ptr<DexVmAndroidContext> &context);
 
-struct UiWidgetDescriptor final {
-  std::string_view xml_tag;
-  std::string_view dex_descriptor;
-  ui::UiClass kind;
-};
-
-[[nodiscard]] std::span<const UiWidgetDescriptor> UiWidgetRegistry();
 using UiLayoutLoader =
     std::function<std::vector<loader::BinaryXmlElement>(std::uint32_t)>;
 [[nodiscard]] std::vector<loader::BinaryXmlElement>
@@ -1135,25 +1118,6 @@ void WriteAndroidViewPadding(dexvm::Interpreter& vm, DexVmAndroidContext& contex
                              ui::Insets padding, std::optional<bool> explicit_padding = true);
 void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                              ui::Size minimum);
-void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context);
-[[nodiscard]] dexvm::VmObjectRef
-InflateUiElements(dexvm::Interpreter &vm, DexVmAndroidContext &context,
-                  std::span<const loader::BinaryXmlElement> elements,
-                  dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{},
-                  std::optional<ui::UiNodeId> parent = std::nullopt);
-[[nodiscard]] dexvm::VmObjectRef InflateUiLayoutResource(
-    dexvm::Interpreter &vm, DexVmAndroidContext &context,
-    std::uint32_t layout_id,
-    dexvm::VmObjectRef inflater_context = dexvm::VmObjectRef{},
-    std::optional<ui::UiNodeId> parent = std::nullopt);
-// Non-destructive XML construction. root=null always leaves the subtree detached.
-[[nodiscard]] dexvm::VmObjectRef BuildUiElements(
-    dexvm::Interpreter &vm, DexVmAndroidContext &context,
-    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
-    dexvm::VmObjectRef root = dexvm::VmObjectRef{}, bool attach_to_root = false);
-[[nodiscard]] dexvm::VmObjectRef BuildUiLayoutResource(
-    dexvm::Interpreter &vm, DexVmAndroidContext &context, std::uint32_t layout_id,
-    dexvm::VmObjectRef inflater_context, dexvm::VmObjectRef root, bool attach_to_root);
 [[nodiscard]] std::u16string ResolveUiString(const DexVmAndroidContext &context,
                                              std::uint32_t resource_id);
 [[nodiscard]] std::string
@@ -1362,10 +1326,6 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, ui::UiNodeId node);
 [[nodiscard]] ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
     dexvm::VmObjectRef owner = dexvm::VmObjectRef{});
 void DetachGlSurfaceSubtree(DexVmAndroidContext& context, ui::UiNodeId subtree);
-void InitializeDefaultViewBackground(dexvm::Interpreter &vm,
-                                     DexVmAndroidContext &context,
-                                     dexvm::VmObjectRef view,
-                                     ui::UiNodeId node);
 
 // Applies one filtered text replacement and synchronously delivers the API 19
 // TextWatcher transaction on the guest thread.
@@ -1495,7 +1455,6 @@ void RegisterAndroidOwnerAttachedStateTable(
     const std::shared_ptr<DexVmAndroidContext> &context);
 void VisitAndroidSessionRoots(const DexVmAndroidContext &context,
                               const dexvm::VmRootVisitor &visit);
-void RefreshAndroidImageDrawables(DexVmAndroidContext& context);
 
 // True when the guest asked for the session to end: System.exit(), or the
 // activity that currently owns the screen finished itself with no successor

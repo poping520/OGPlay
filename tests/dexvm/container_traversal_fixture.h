@@ -38,3 +38,22 @@ struct ContainerVm {
     VmObjectRef New(const char* owner, const char* descriptor = "()V", std::vector<VmValue> args = {});
 };
 }  // namespace ogplay::test::container_traversal
+
+// Native-backed VM for the Android fixture family. Uses the pinned JNI payload,
+// including ROM constructors' Rect/Pattern initialization, without opening a window.
+namespace ogplay::test::container_traversal {
+struct AndroidTestRuntime final {
+    VirtualFileSystem owned_filesystem;
+    ogplay::loader::ApkNativeLibraryInventory inventory;
+    ogplay::loader::ApkSelectedNativeLibraries selected;
+    std::unique_ptr<AndroidGuestCallSession> session;
+    std::unique_ptr<NativeLibraryLoader> libraries;
+    std::unique_ptr<DexVmGuestBridge> bridge;
+
+    AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context, ogplay::core::CapabilityLedger& ledger,
+                       ogplay::core::Logger& logger, std::vector<IntrinsicClassDecl> catalog,
+                       std::vector<std::uint8_t> dex, InterpreterConfig config = {}, bool skeleton = false,
+                       VirtualFileSystem* filesystem = nullptr);
+    ~AndroidTestRuntime();
+};
+}  // namespace ogplay::test::container_traversal

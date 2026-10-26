@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-text.surface.json.gz",
-      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "b9326994375bd4796481ce695e5a6a36ff4c9c0a975615e36cc931ba59139841",
       "methods": [
@@ -25,7 +25,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -38,7 +38,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -376,7 +376,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           },
           "platform_seam": true
@@ -564,7 +564,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           },
           "platform_seam": true
@@ -608,7 +608,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -627,7 +627,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -682,7 +682,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -695,7 +695,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -708,7 +708,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -721,7 +721,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -758,7 +758,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           },
           "platform_seam": true
@@ -814,7 +814,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           },
           "platform_seam": true
@@ -930,7 +930,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           },
           "platform_seam": true
@@ -950,7 +950,7 @@
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
             "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree fallback identical to Legacy",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
           }
         },
@@ -1299,8 +1299,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-skin.surface.json.gz",
-      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -4448,8 +4448,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-text.surface.json.gz",
-      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4732,8 +4732,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-text.surface.json.gz",
-      "surface_sha256": "3b6032a8865c0b19ea2f5b8d38ac777c2b3ef501223545e0bfbb53622651e608",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

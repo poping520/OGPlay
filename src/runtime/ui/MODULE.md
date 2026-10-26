@@ -16,14 +16,14 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   MeasureSpec；不依赖 tree/node/VM/children，不写 geometry。Size/Insets/MeasureSpec 与固定
   字体测量声明归此独立头。输出 desired/constrained 与每轴 AT_MOST TOO_SMALL 位；这是
   有界服务状态。java_text_view 模式按 AOSP TextView 先选宽再断行，直接裁剪尺寸且不置 TOO_SMALL；
-  返回固定字形首行 baseline，未实现完整 Android 字体排版。Legacy baseline 仍缺席。
+  返回固定字形首行 baseline，未实现完整 Android 字体排版。HostLayout 文本 baseline 仍缺席。
   intrinsic+padding/minimum 可独立供 image/video 使用；不提供 adjustViewBounds/比例算法。
 - 文本输入包含固定字号/四样式、固定 fallback、行数策略及四槽 compound 尺寸。默认按
   spec 扣 padding 与左右 compound 生成 immutable `TextLinePlan`，记录实际行文本、字体及
   metrics；空串 desired 仍留 M cell，plan 不绘制占位字。DrawText 携带 plan 时只消费其
   文本/字体/metrics，不重新换行。plan 的生命周期独立于输入和树。
-  Legacy 显式选择 `LegacyPadding` 保留原测量公式，仍由原遍历写 node.measured；现有
-  renderer 继续按最终 text band 换行，不将 Legacy 路径称为统一 line-plan。
+  HostLayout 显式选择 `LegacyPadding` 保留宿主文本测量公式，由宿主遍历写 node.measured；
+  renderer 继续按最终 text band 换行，该宿主路径不承诺统一 line-plan。
   JavaTraversal 节点携带与完整 projection epoch 一起冻结的 text_line_plan，presenter 不再测量/断行；
   Java 模式空串宽度为0，maxLines 截断可见行，singleLine 转换由 integration 提供。
 
@@ -36,7 +36,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   dirty state。
 - guest View 的 `padding` / `minimum` 是 integration 从 Java 权威导入的布局、渲染输入，
   本层不维护另一份 setter 状态，不读取 Java 或执行回调。纯宿主节点（如 Dialog 平面）
-  继续直接拥有这两个输入；Legacy guest measured/frame 仍由现有宿主遍历计算。
+  继续直接拥有这两个输入；guest measured/frame 只来自完整 Java 投影。
 - `window_visible` 及 `SetWindowVisible` 保存独立窗口可见性；隐藏窗口保留 hierarchy，
   不改变 guest View.visibility。有效可见性包含祖先窗口状态，绘制、输入、焦点共同使用。
 - direct content-root child 的 `modal_layer` 标记合成平面；render-list 可选 all/normal/modal，
@@ -58,8 +58,8 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - `Reset`：推进 generation，销毁全部旧 node/id index 并创建新的 content root；旧
   `UiNodeId` 永不重新变为有效。
 - `UiTree` 的 geometry owner 在构造时固定：HostLayout 与 ExternalProjection 分区不能切换。
-  每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。当前生产 guest 只用 Legacy；
-  实验 View/ViewGroup、LinearLayout/RelativeLayout 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
+  每个外部分区代表一个窗口 root；纯宿主 UI 使用独立布局根。生产 guest 唯一使用 JavaTraversal；
+  View/ViewGroup、LinearLayout/RelativeLayout 与真实 Window FrameLayout 根投影提交整棵 Java 树的局部 frame、hierarchy 与 ID，
   本层不补算 guest bounds；render/hit-test 消费同一完整窗口 epoch。
 - `SetProjectionTarget` 由上层提供 root、window generation、content/metrics revision 及 viewport；
   同代 revision 不回退，尺寸改变必须推进 metrics revision。`CommitProjection` 只接受完全匹配
@@ -88,7 +88,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   parent gravity 定位整组，child layout_gravity 覆盖交叉轴；INVISIBLE 保留 geometry。
   指定主轴约束下，finite non-negative weight 按剩余像素确定性分配，padding/margin 同时
   参与可用空间和最终 frame；负值/NaN/Inf 明确失败。
-- HostLayout / Legacy 的 `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
+- HostLayout 的 `RelativeLayout`：LayoutParams 保存 parent align/center 与 sibling above/below/left/right/
   align-edge 规则；横纵依赖图分别确定性解析且不依赖 document order，missing sibling、重复
   sibling id 与 cycle 明确失败。同轴边缘规则按 API19 覆盖顺序解析，双边缘确定尺寸，
   居中仅在两边均未定位时生效。sibling 规则值为非正数（含
@@ -97,7 +97,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   边界平移，支持右/下/居中，默认 START/TOP 保留原定位。Java 参数经 integration
   映射为 UiTree 布局输入快照；UI 不保存 guest 引用或读取 Java 字段。
 - ExternalProjection 的 RelativeLayout 规则、margin/方向、缺失或 GONE 锚点与依赖环均由上层 ROM 处理；
-  本层只接收成功遍历的完整 frame，不能套用上述 Legacy 拒绝语义或另算规则。
+  本层只接收成功遍历的完整 frame，不能套用上述 HostLayout 拒绝语义或另算规则。
 - `BuildUiRenderList` / `RasterizeUiOverlay`：从 resolved tree 生成 solid/bitmap/clip 命令，
   以整数 source-over 输出透明 RGBA8；`UiOverlayRenderer` 仅在 generation、metrics 或
   draw dirty 改变时重建。窗口先裁剪 content root；父容器 `clipChildren`（默认 true）把子
@@ -131,12 +131,12 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
 - 纯宿主分区的 hierarchy、visibility、layout params、geometry 与 clip 由 UiTree 拥有。
   JavaTraversal 的 guest hierarchy/geometry 由 Java 唯一拥有，integration 收集并受检发布，
   UiTree 只保存宿主投影，不回填 Java measured/bounds。实验测试根提交 ROM layout 后的局部 frame，
-  仅完整成功的 epoch 可供 render/hit-test 同时消费；Legacy 迁移阶段仍保留宿主遍历。
+  仅完整成功的 epoch 可供 render/hit-test 同时消费；宿主遍历仅服务独立 HostLayout。
   本层不执行 guest、不持 Java 引用、不读 Java 字段；未迁移文本/样式仍沿既有宿主单一存储。
 - renderer 与 input 只能读取同一 `screen_frame`；不得各自推导 bounds。
   integration 的共同 presentation 只持有完整 guest 投影引用和已布局宿主树的 const 冻结副本；
   本层不拥有该发布序列、不新增 guest 几何权威。宿主树复制仅冻结宿主分区，不对 guest 分区重排。
-- integration/session 的 Legacy 布局由 integration 统一调度；本层仍只接收 UiTree/UiMetrics，
+- integration/session 仅为独立宿主 Dialog 调用 HostLayout；本层仍只接收 UiTree/UiMetrics，
   不获取解释器、guest 回调或 Java 引用。
 - `ClearLayoutDirty` 与 `ClearDrawDirty` 只能由各自阶段消费；禁止恢复同时清除两类状态的
   模糊入口。
@@ -169,13 +169,13 @@ SurfaceView 三种 surface_layer 为 UiNode 唯一配置事实；上层发布 su
 UiTree 不持有播放器或 guest 引用，不依赖解码器。
 
 实验 ImageView 光栅以同一投影 epoch 的 Drawable intrinsic（含 density）计算五种缩放目标，
-不可变像素 backing 保留原尺寸用于采样；纯色 intrinsic=-1 仍填充内容区。HostLayout Legacy
+不可变像素 backing 保留原尺寸用于采样；纯色 intrinsic=-1 仍填充内容区。HostLayout
 继续用原像素尺寸，renderer 不重新测量或改写投影几何。
 
 JavaTraversal managed 窗口批次显式携带 `window_visible`：CommitProjection 将该事实赋给
 synthetic root，并清除本批子节点的历史窗口位；Java visibility 仍逐节点提交。窗口隐藏
 与恢复同 hierarchy/geometry 原子发布，IsVisible 不绕过任何祖先。未提供该字段的通用
-投影调用保留原契约；managed collector 必须提供，Legacy SetWindowVisible 不变。
+投影调用保留原契约；managed collector 必须提供，HostLayout SetWindowVisible 保持。
 
 `CommitProjection` 的空节点窗口事实批次仅为 ExternalProjection 重发最后完整几何与新窗口事实，推进
 epoch、原子替换快照，保留构建属性、target 与待布局工作；不测量或收集未完成 Java 几何。

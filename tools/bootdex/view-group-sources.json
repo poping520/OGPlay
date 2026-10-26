@@ -3,8 +3,8 @@
   "clinit_owner": "rom",
   "rom_input": ".local/aosp/framework.jar",
   "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-  "surface": "tools/bootdex/view-window.surface.json.gz",
-  "surface_sha256": "cd4106e0fdc4c32811522a535d37354fde5f7f8f53066f355279e2bfb4804a6d",
+  "surface": "tools/bootdex/view-default.surface.json.gz",
+  "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
   "owner": "Landroid/view/ViewGroup;",
   "smali_sha256": "584d5f2dcdd5b89b8d125aeacd12a5781c765b7546d26d87e76ae245a6b9b065",
   "fields": [
@@ -1183,7 +1183,7 @@
       "signature": "dispatchWindowFocusChanged(Z)V",
       "flags": 1,
       "body_sha256": "b9552dd95be3bda1fed921cdb4da969eff9156fc7aacd5e28269c99879031e5b",
-      "source": "failure"
+      "source": "rom"
     },
     {
       "signature": "dispatchWindowSystemUiVisiblityChanged(I)V",

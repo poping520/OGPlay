@@ -121,7 +121,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   查询返回值/不可变所有权，不发布可悬空的可变引用。close 立即退役 cursor，owner 退役
   同时撤销其 parsers；bridge teardown Shutdown 后活跃数为零，context 析构也释放所有权。
   旧/关闭/跨 context token、错误属性索引均抛确定的 C++ 异常。
-  实验 JavaTraversal 配对逐签名批准 XmlBlock native 与 StringBlock 四个 plain-string native；
+  JavaTraversal 配对逐签名批准 XmlBlock native 与 StringBlock 四个 plain-string native；
   Parser typed getter/event/depth/open-count/close 执行原 ROM。document/cursor/string-pool token
   分型且共用不复用 ID 域；XML 借用池随 document 退役，不能由 StringBlock 销毁。
   独立池由 StringBlock owner/原 finalizer 退役；GC hooks 只读原 owner 字段，Java 强边保活
@@ -131,8 +131,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   索引与无样式池；nativeGetStyle/样式 helper 保留 failure，含样式的池记账并抛 UOE。
   AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
   执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
-  Legacy getXml/inflater 不变；实验 inflater 的有界接入见下文。
-- 实验 JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
+  ROM XmlBlock/inflater 的有界接入见下文。
+- JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
   32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
   API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
   查询域冲突在构建期校验。仅登记投影主题及消费闭包属性可报告确证缺席；无 ROM ID 绑定
@@ -142,7 +142,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   force 与独立 copy 遵循 API19。retrieveAttributes 只读 XML/资源，不套 style/theme。
   六槽 type/data/cookie/resourceId/configFlags/density 和 indices 先受检容量再写 Java int[]；
   XML cookie=-1，APK 原池 cookie=1，flags/density 来自 ARSC。APK owner 注入单 entry 配置
-  选择与文件验证回调，与 Legacy 共用候选优先级；引用链保留累计 flags 和最终资源 ID。
+  选择与文件验证回调，沿 API19 候选优先级；引用链保留累计 flags 和最终资源 ID。
   仅 APK drawable PNG/JPEG 与 TYPE_INT_COLOR_* 可供叶消费；文件编码/扩展名、解码边界、
   ninepatch/光学布局 chunk 在六槽发布前验证，未知文件和类型明确失败。
   ROM Theme/TypedArray 独占字段、缓存与 recycle；selectDefaultTheme 执行 ROM targetSdk 算法。
@@ -174,9 +174,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   不支持任意 inflateFromXml、动画/过渡或 guest 皮肤 draw。edit_text 选中叶的 ninepatch
   divisions/像素按密度缩放后进入既有 ui_bitmaps 平面，与 View 几何及颜色共同冻结；
   不可变 leaf_pixels 由 Java Drawable 身份拥有，发布快照仅持有不可变像素；mBitmap 为 Java 强边，
-  sweep/teardown 退役 backing。Legacy 构造/像素/主题路径保持。
+  sweep/teardown 退役 backing。
   GC hooks 不加 native 强根：Theme 原字段及 AssetManager owner 退役 token，destroy/Shutdown
-  清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。Legacy 不加载投影。
+  清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。默认配对必须加载投影。
 
 - Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，
@@ -219,11 +219,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 ## UI、Surface 与输入
 
 `EnsureAndroidUiTraversal` 是 integration/session 的唯一 guest 布局调度入口，调用方显式提供 VM、
-reason 与 phase；Legacy 仅 GeometryRead 在脏布局前刷新 Java LayoutParams，BeforePresent
-沿呈现帧尺寸解析。ResolveOnly 不派尺寸回调、不校验 guest owner；ResolveAndNotifySizes
-保留 root guest 线程、重入、8 轮与异常协议。`DispatchAndroidViewSizes` 仅兼容包装。
-owner 模式在 context 构造时固定且运行中不可切换，生产默认唯一为 Legacy，无用户配置。
-JavaTraversal 由固定实验 payload 配对启用，支持已受审 View/容器的 managed Window 根：ROM 执行 hierarchy、参数、measure/RTL/缓存及
+reason 与 phase。owner 在 context 构造时固定为 JavaTraversal，无用户配置、运行期切换或
+Legacy guest 遍历。生产 BootDex 必须具有封存模式、DEX/成员表/主题投影配对；缺失、未知
+版本及身份错配均在 VM/catalog 创建前明确失败。ROM 执行 hierarchy、参数、measure/RTL/缓存及
 layout/setFrame/sizeChange，Java 唯一拥有 measured、局部 bounds、旧 specs 与相关 flags。
 onSizeChanged 由 ROM 同步调用，先于 onLayout；getter 读当前 Java 字段，重入不再遍历。
 `ReadAndroidUiGeometry` 在 owner 回调内从当前 Java 字段建立临时 const 投影，
@@ -244,12 +242,12 @@ ID、measured/bounds/padding/clip，检查双向父子、数组计数、环与�
 同一 epoch；合成根使用 viewport。mParent、mChildren 数组与 mLayoutParams 引用均为 Java 唯一权威，
 其强边由 VM 正常追踪。绑定/请求/watchdog 仅保存弱身份，不作为 JavaTraversal GC roots；
 GC sweep 仅退役构建缓存身份，最后不可变投影保持到下一完整发布，发布期间使用 RootScope。
-实验根 mParent 为真实 null，不存在 ViewRootImpl。回调异常保留原异常和已发生的 Java 修改，
+guest 根 mParent 为真实 null，不存在 ViewRootImpl。回调异常保留原异常和已发生的 Java 修改，
 不发布半成品；换根、binding、内容/窗口代际或 managed metrics 改变取消旧发布。
 C++ 不写 measured/bounds，不重排外部树；ui 不获得 VM、Java 字段或引用。
-实验 flags/listener/focus 以 Java mViewFlags、mListenerInfo、PFLAG_FOCUSED 与 ViewGroup.mFocused
+Java flags/listener/focus 以 Java mViewFlags、mListenerInfo、PFLAG_FOCUSED 与 ViewGroup.mFocused
 为唯一权威。ROM setter/getter 和 requestFocus/clearFocus/父链转移执行字节码；integration
-通过逐字段绑定 token 读取 ListenerInfo 强边，不复制到 Legacy listener/focus 表。visibility、
+通过逐字段绑定 token 读取 ListenerInfo 强边；不保留宿主 listener/focus 镜像。visibility、
 enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事务提交；ui 不持 listener。
 输入沿既有单目标、不 split 协议，捕获仅保存服务身份；提交后发现 detach、隐藏、禁用或换根
 即清捕获。InputMethodManager 每次服务调用从 Java findFocus 捕获候选，不建立宿主焦点 owner。
@@ -258,15 +256,14 @@ enabled/clickable/focusable/touch-mode 与 hierarchy/geometry 在同一投影事
 不宣称构造完整 AccessibilityManager 服务；除受审 getInstance/isEnabled 外其成员均 failure。
 输入重入未完成 traversal 明确拒绝；GeometryRead 仅允许进行中的回调读取临时投影。
 HostDialog 与回调外 GeometryRead 明确失败并记账；Surface 生命周期完整代次校验与 E2E 待后续 WU，
-Legacy 仍为生产默认。Java 分支的尺寸 phase 由 ROM layout 同步完成 onSizeChanged，
-不进入 Legacy 多轮尺寸派发；Surface 消费遍历后的本轮 pending。
+尺寸 phase 由 ROM layout 同步完成 onSizeChanged；Surface 消费遍历后的本轮 pending。
 managed-window 坐标查询读取临时 Java 投影，含父链/祖先 scroll；全屏窗口 screen 原点为0，
 不创建 AttachInfo。窗口可见性与空 scrollbar cache 使用 ROM；focus adapter 取消软件捕获、
 清 Java pressed/prepressed、虚派 ROM onFocusLost 并刷新 drawable state，不创建 IME。
 TextView 的窗口焦点及 SurfaceView 的可见性接缝精确调用 View 父实现，排除 Editor/WMS。
-GLSurfaceView 在实验配对精确调用 SurfaceView 父构造，保留 requested=-1、willNotDraw 与真实 holder。
+GLSurfaceView 在配对精确调用 SurfaceView 父构造，保留 requested=-1、willNotDraw 与真实 holder。
 Activity 栈的窗口根关联真实 Java 内容 FrameLayout；创建前仅查询空投影根，不附着第二棵宿主层级。
-实验来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
+来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
 failure 虚派按 ADR-0159 封存 a/b/unproven 信息，运行期仍明确失败；支持路径须动态零命中。
@@ -287,31 +284,27 @@ resize 失败不发布新 guest epoch，Java 已执行状态不回滚。尺寸/d
 输入持共同快照，最上层可见 modal 优先吞输入；捕获含 partition/generation/Dialog 身份。
 更新/隐藏/取消/owner退役使捕获失效，已取消序列仅消费尾事件，不对新 modal/guest 触发动作。
 按钮/Back/Tab/Enter 进入既有 Java 协议及 owner Looper；回调改树只请求下一 owner 遍历。
-实验普通触摸也持有事件快照租约；几何命中读该快照，不在嵌套分发中重测。
+普通触摸也持有事件快照租约；几何命中读该快照，不在嵌套分发中重测。
 Compose 只读同一共同快照，video/raster/hit 共用 guest 投影与 modal screen_frame；帧尺寸
-不匹配明确失败，不把新 viewport 与旧几何混合。Legacy HostDialog 及合成逐值保持原路径。
+不匹配明确失败，不把新 viewport 与旧几何混合。Dialog 必须有独立 HostLayout 树，缺树明确失败。
 UI 下层不获 VM 或 Java 引用。
 
 View 使用封存成员组合：ROM 唯一拥有完整形状及 clinit；保留受审的既有行为 handler。
 未迁移、仍由宿主维护的 ROM 实例字段在 guest 访问时明确失败；integration 的受审 adapter
 可访问自身绑定槽，不以这些槽宣称 Java 已拥有整组状态。mContext 由构造/inflation 写入；
 SDK 兼容静态 flags 从注入的当前进程 targetSdk 按 API19 条件初始化。
-Legacy 的非 ROM decor owner、focus/system-UI listener 由 integration 的 owner-attached 引用表保存，
+非 ROM decor owner 与叶文本服务引用由 integration 的 owner-attached 表保存，
 从 View trace、随 View sweep，脱离 UiTree 后仍保持引用；不向 View 添加额外字段。
 mResources 是构造时 Context.getResources 的 Java 强引用；Context 预绑定只写 mContext，
 构造每次解析资源且异常透传，失败不提前置位 SDK 兼容标志。padding 四边、minimum 两维及有界 absolute user-padding/defined
 字段由 Java 唯一拥有；构造、XML、已支持 widget defaults/背景 adapter 写 Java，不写宿主权威。
-UiNode.padding/minimum 对 guest 仅为输入投影；Legacy 保留逐屏障导入绑定字段，
-JavaTraversal 仅在真实请求/窗口变化触发遍历时导入。干净帧不比较直接字段写入；
+UiNode.padding/minimum 对 guest 仅为输入投影；
+仅在真实请求/窗口变化触发遍历时导入。干净帧不比较直接字段写入；
 直接写字段或修改派生缓存不等于 Java requestLayout/invalidate。只读导入不改变几何 owner。
 getResources、上下 padding 与 minimum getter 执行 ROM；左右 absolute padding getter 和
 minimum setter 保留受审 adapter，后者真实虚派 requestLayout。完整 RTL/scrollbar padding
 解析和原版 setter 的 CHA 闭包仍未启用，相关未选成员继续明确失败。
-ui 不读取 Java 字段；Legacy measured/bounds 与遍历权威仍在宿主。
-
-Legacy live View 一一绑定 UiNode，hierarchy/id/visibility/layout/text/style/查找/attach/detach 共用 UiTree；
-Java 字段修改不自动 traversal，getContext 是构造/inflation 的 mContext。addView(width,height)
-虚派默认 LayoutParams、写原 Java 字段再统一 attach，不复制参数。
+ui 不读取 Java 字段；guest measured/bounds 与遍历权威唯一归 Java。
 
 Window 在每实例 synthetic root 下持有稳定真实 FrameLayout，android.R.id.content/parent 保持身份且
 不跨窗口；Activity 委托 Window，setContentView 替换、addContentView 追加，null 参数用默认值。
@@ -325,13 +318,9 @@ ViewGroup 先 intercept 再 reverse-Z 子树，接管以 CANCEL 取消子目标�
 捕获 owner，DOWN 捕获目标接收 MOVE/UP/POINTER_DOWN/UP，不 split，其他 action 记账失败；
 detach/隐藏或 Activity 切换清捕获（ADR-0149）。
 
-LayoutInflater Context/from/clone/重载归 Java，基础 Context 用 guest 字段缓存服务，wrapper 缓存克隆，
-Window/Activity 查同一 owner 服务。registry 独立构建并生成父类型 Java LayoutParams，再 addView：
-root=null 不附着、attach=false 只生成参数、attach=true 返回 root；merge 要求 root 非空且 attach，
-可空 merge。onFinishInflate 按文档顺序子到父、加入父容器前执行，GC/节点/总深度受检；失败仅清
-本次节点/绑定、保留容器/旧窗口/Dialog。仅固定控件及登记属性/样式，无 parser 重载、完整
-AttributeSet/theme、Factory/反射。属性按默认/textAppearance/ProgressBar→style→显式 XML 覆盖，
-未知 style 失败；Legacy LinearLayout(Context,null) 默认水平、null Context NPE、非空 AttributeSet 构造失败。
+LayoutInflater inflate/Factory/Filter/cache/clone 与 include/merge 执行配对 ROM；Context
+直接构造同 ROM PhoneLayoutInflater。旧 native registry 构建树接口不再提供 guest inflater。
+Window XML 通过未发布父容器隔离失败，再将成功 Java 子树安装到稳定内容根。
 
 removeViewInLayout 为 public virtual，复用普通移除的退役/层级/焦点；只失效绘制、不调
 requestLayout/invalidate，普通移除仍虚派 requestLayout。ViewGroup 子节点 API 按 API19 public virtual，以 UiTree children
@@ -355,13 +344,13 @@ SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
 像素尺寸、destroyed 保留末值，旧 holder 不随新代更新；不从 View bounds 推导独立 buffer。
 setFixedSize 仅物理托管尺寸、保存请求，setSizeFromLayout 解除固定，不匹配独立几何失败。
-实验 SurfaceView 保留完整 ROM shape，onMeasure/isFixedSize 执行 ROM；三构造受审调用对应 View
+SurfaceView 保留完整 ROM shape，onMeasure/isFixedSize 执行 ROM；三构造受审调用对应 View
 构造并初始化请求为 −1、setWillNotDraw(true)，getHolder 继续返回真实 managed holder。setFrame
 仅精确调用 ROM View 父协议，不执行 WMS updateWindow；WMS 相关字段/方法保留 failure。
-实验 holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1，正数只接受真实 managed
+holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1，正数只接受真实 managed
 buffer 尺寸；先校验双轴再原子写 Java 请求，改变时真实 requestLayout。setSizeFromLayout
 恢复两轴 −1。请求与 View 重排不改 buffer/Rect；回调前仍只发布实际 managed 尺寸。
-请求由 Java mRequestedWidth/Height 唯一持有，Impl 请求字段仅供 Legacy，不建实验镜像。
+请求由 Java mRequestedWidth/Height 唯一持有，不建宿主请求镜像。
 SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 AttributeSet/三参数 defStyle
 不支持；注册 XML 沿 Context 构造及既有属性投影。层序唯一归 UiTree，setZOrderMediaOverlay/
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
@@ -374,7 +363,7 @@ takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner，首次遍�
 Callback2 changed 后 redraw，首次/dirty traversal 向 attached observer 发 global layout，
 getLocationInWindow 用 UiTree screen frame。
 
-Legacy 焦点唯一归 lifecycle/UiTree，requestFocus 共用可聚焦/触摸模式/祖先状态/转移/清除/listener。
+guest 焦点归 Java；纯宿主 Dialog 的焦点由其独立 UiTree 拥有。
 clickable 方法可覆盖；setOnClickListener 先虚派 isClickable/setClickable(true)，null 仍设 clickable
 但解绑，setClickable(false) 不删 listener；触摸点击需 clickable、InvokeViewOnClick 不需，基础
 onTouchEvent 只消费、不伪造点击/禁用子类。setText/Editable/host EditText 共用过滤/区间变更/
@@ -395,7 +384,7 @@ SDL scancode 映射 keyCode/Unicode/meta/repeat；AndroidBoundaryInput 快照物
 归 VM/GC、保存触点/轴/offset/精度/纳秒时间/历史，getter 不读 host、API19 毫秒/纳秒转换、越界 IAE，
 recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/source。
 
-实验 JavaTraversal 的 Window 根从 Activity.mWindow→Window.mContentParent 的受审只读 token
+JavaTraversal 的 Window 根从 Activity.mWindow→Window.mContentParent 的受审只读 token
 取得真实 FrameLayout，content_view 仅保留首个内容身份；owner 屏障即使空 Activity 也建立该根，
 不能用内容 child 代替。无 Activity 的独立测试根沿用原夹具；有 Activity 却无根不回退。
 生产 MeasureSpec 取 managed surface 与配置；显式 viewport 参数仅用于受控 CPU 夹具，
@@ -403,9 +392,9 @@ recycle 清引用后读取失败；KeyEvent 保留 down/event time、flags/sourc
 Window 的默认参数、增添/替换内容沿真实 Java hierarchy；替换复用 ROM removeAllViews。
 FrameLayout 的 Context 构造（含 Rect/ArrayList）、measure/layout、默认/复制参数、foreground
 padding 算法与 MarginLayoutParams 方向解析、Gravity 归 ROM。未启用容器的 own
-onMeasure/onLayout 在实验表面显式 failure，不能继承基础算法取得实现信用。
+onMeasure/onLayout 在配对表面显式 failure，不能继承基础算法取得实现信用。
 仅有界 managed 窗口；foreground Drawable 设置/绘制与系统附着仍明确失败。
-完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，Legacy 路径保持。
+完整窗口树成功后只提交一个 VD-02 投影事务；UiTree 不回填几何，
 LinearLayout 的 Context 构造、weight/baseline/largest-child 状态、双方向测量/布局、参数生成/
 复制与 Gravity/RTL 解析归 ROM；共享 View/Group adapter 只初始化既有基础字段，不写
 LinearLayout 的算法状态或几何。Context-only 默认 weightSum=0，与属性构造的 -1 不混用。
@@ -414,16 +403,16 @@ helper 只读取 Java 输入，测试直接写尺寸不代表 Drawable 服务。
 RelativeLayout 的非属性构造、双轴依赖图排序、size/position/center/baseline、onMeasure/onLayout
 及 LayoutParams addRule/removeRule/getRules/resolveRules/resolveLayoutDirection 归固定 ROM；
 MarginLayoutParams 方向解析继续执行 ROM。缺失锚点与 GONE 链按原算法回退，依赖环由 ROM
-抛 ISE；不套用 Legacy host 的缺失锚点拒绝。SDK 测量兼容字段由原构造查询真实 ApplicationInfo，
-宿主只扩大实验初始化类型守卫，不写 RelativeLayout 算法字段。系统
+抛 ISE；不套用 HostLayout 的缺失锚点拒绝。SDK 测量兼容字段由原构造查询真实 ApplicationInfo，
+宿主只扩大初始化类型守卫，不写 RelativeLayout 算法字段。系统
 accessibility 入口保持 failure，Window 整树仍经同一事务投影。
 
-实验属性构造沿原 ROM Context 四个 obtainStyledAttributes、ContextThemeWrapper 的主题初始化/
+属性构造沿原 ROM Context 四个 obtainStyledAttributes、ContextThemeWrapper 的主题初始化/
 覆盖与 Resources/Theme/TypedArray。基础 Context 的进程主题 adapter 只缓存真实 Java Theme
 身份，采用 Manifest application theme 与 ROM 默认主题选择；wrapper 保留真实虚派与 setTo。
-ROM Context 没有 mOgplayInflater，实验 catalog 不声明额外字段；基础进程 Context 服务
+ROM Context 没有 mOgplayInflater，catalog 不声明额外字段；基础进程 Context 服务
 缓存本地 ROM inflater 子类，ContextThemeWrapper 沿 ROM 每实例 cloneInContext/缓存。
-Legacy 字段及缓存行为保持。
+不再维护旧 inflater 字段或缓存。
 View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
 属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
 抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
@@ -431,13 +420,13 @@ View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属�
 仍明确失败。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
 null divider 设置沿 ROM，绘制仍失败。
 
-实验 LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
+LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
 createView 为受审反射 adapter，真实虚派 guest ClassLoader.loadClass/Class.asSubclass/
 getConstructor/Constructor.newInstance。sConstructorMap、mFilterMap、mConstructorArgs 为唯一
 Java 状态，参数恢复及 onFinishInflate 时序归 ROM；异常类型/文本/cause 沿 ROM 分支。
-实验 Context 服务直接构造同 ROM policy 的 PhoneLayoutInflater，前缀顺序与克隆执行原版；
+Context 服务直接构造同 ROM policy 的 PhoneLayoutInflater，前缀顺序与克隆执行原版；
 仅准入该类，独立 policy reference/基线及成员、父成员、clinit 审计均须通过。
-不加载 Policy/PhoneWindow/PhoneWindowManager 或 Binder；生产 Legacy 配方保持。
+不加载 Policy/PhoneWindow/PhoneWindowManager 或 Binder。
 Resources.getLayout 在当前 APK 选择已知 layout，返回既有受检 XmlBlock.Parser；不读系统 XML。
 Window XML 先膨胀到未发布 FrameLayout，完整成功后转移到稳定 mContentParent；失败保留
 旧 Java 内容及旧代投影。View/LP 重载仍沿真实 Java hierarchy，无第二份几何写入。
@@ -504,7 +493,7 @@ Dialog/AlertDialog 协议归 Java，native 只投影 plain String 标题/消息/
 owner Looper 排队，owner 隐藏/恢复同步可见性，实例退役先 dismiss、进程停止仅退役投影。
 不替换内容/退役 Surface/另建协议或层级权威；最多 8 窗口，title/message/button≤512/4096/128
 UTF-16、density (0,8]、viewport≥48×48，须完整适配否则 UOE；theme/items/custom view/Window facade
-拒绝。Legacy 模态根为 direct content-root child；实验每 modal 为独立 HostLayout，
+拒绝。每个 modal 为独立 HostLayout，
 字体/布局/像素复用既有底座，经共同呈现快照合成与命中。
 
 WebView.destroy 可覆盖、检查构造 Looper，targetSdk≥18 跨线程 RuntimeException；清理 settings/
@@ -550,17 +539,17 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 外接/虚拟显示及监听。属性来源经显式 core 回调注入；有 ICU 导出时查询 guest，
 无导出时保留随附 manifest 元数据生成的默认值，不隐式加载或访问宿主 ICU。
 
-## 实验 Paint 测量接缝
+## JavaTraversal Paint 测量接缝
 
 固定 JavaTraversal 配对中，ROM TextView clinit 原样执行 Paint 默认构造、antiAlias 与测量。
 Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
 measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
-测量只向纯固定字体服务传值，fallback 与 Legacy 共用 UiTree 注入事实，不写 guest 几何。
+测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
 固定ASCII字表/基本CJK、1024单位、1..128px、flags位集0x501以外明确失败并记账；
 完整 shaping、Paint 绘制与 TextPaint/Layout/Editor 保持 failure。
-真实finalize及GC sweep/teardown 删除实例测量状态；生产 Legacy handler 与 payload 保持原行为。
+真实finalize及GC sweep/teardown 删除实例测量状态。
 
-## 实验 TextView 构造输入
+## JavaTraversal TextView 构造输入
 
 ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，精确调用 ROM View
 属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
@@ -576,7 +565,7 @@ drawableStateChanged 先执行 View 协议再刷新颜色；GC 通过 Java 字�
 
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。
 
-实验 TextView onMeasure 为 overlay：读取宿主输入及虚派 Java compound padding/suggested minimum，
+TextView onMeasure 为 overlay：读取宿主输入及虚派 Java compound padding/suggested minimum，
 调用纯文本叶服务，再虚派 setMeasuredDimension；不写 measured/bounds/flags、不遍历子树。
 setText/getText、字号、Typeface、ROM 颜色列表、gravity、singleLine/maxLines、四位图 compound
 按逐签名 review 开放，setter 经 Java requestLayout/invalidate，owner tick 重测后完整发布。
@@ -586,9 +575,9 @@ setText/getText、字号、Typeface、ROM 颜色列表、gravity、singleLine/ma
 子类 onMeasure 不调用 super 时保留其 Java 自定尺寸，owner 发布阶段只按最终尺寸准备光栅 plan，
 不进入 adapter、不写 guest 几何；没有叶测量结果时基线沿 View 缺席值 -1。
 有限 plain text 的 onLayout/setFrame/RTL/drawable-state/padding 回调执行真实 View 父协议；RTL、Editor/状态 Drawable
-等未覆盖语义仍失败，ROM 原 TextView 方法不获实现信用。Legacy 公式和路径不变。
+等未覆盖语义仍失败，ROM 原 TextView 方法不获实现信用。
 
-## 实验 ImageView 叶输入与光栅
+## JavaTraversal ImageView 叶输入与光栅
 
 JavaTraversal 配对保留 ImageView/ImageButton、八成员 ScaleType 及 Matrix 的完整 ROM 形状和
 原 clinit。ImageView 构造接缝执行真实 View/Theme/TypedArray；Context-only 沿源码只初始化，
@@ -604,42 +593,41 @@ padding/suggested minimum，不写 measured/bounds/flags，不递归。无 adjus
 ColorDrawable 原 intrinsic=-1，光栅为内容区纯色填充。
 FIT_XY/FIT_CENTER/CENTER/CENTER_CROP/CENTER_INSIDE 复用 ImageDestination；投影同时冻结
 intrinsic、像素版本、scale、alpha 和几何，CENTER/INSIDE 使用 density 后 Drawable 尺寸，
-像素采样仍用原 backing 尺寸。Legacy 继续以原像素尺寸计算，行为保持。
+像素采样仍用原 backing 尺寸。
 Matrix 接缝只初始化实际 identity 状态并提供 isIdentity/getValues/finalize，随 Java 对象 sweep 退役；
 原 Matrix.IDENTITY_MATRIX 单例由 ROM clinit/Matrix$1 构造。native_instance/变换操作仍失败。
 其余 scaleType、matrix、tint、adjustViewBounds/maxWidth/maxHeight/baseline/crop 等非中性
 请求、任意 Drawable/custom draw 继续记账失败；原方法不因 adapter 获得 ROM 算法实现信用。
 
-## 实验 Button 文本路径
+## JavaTraversal Button 文本路径
 
 JavaTraversal 配对保留 Button 的完整 ROM 形状；三个薄构造执行 ROM，保留非零 buttonStyle
 及调用方 defStyleAttr，委托已有 TextView 构造和同一文本/字体/compound/叶测量服务。
 Button 与 TextView 同步冻结 line-plan；focus/click 沿真实 View 协议，不增 Button adapter。
 plain 文本的 TextView.onFocusChanged 为受审父协议接缝；Editor/spans/marquee/
 transformation 不在支持输入内，不读取相应 failure 字段或伪初始化其状态。
-实验 Button 不取得 Legacy 默认背景、padding、clickable 或行数投影；属性仍通过真实
+Button 不取得旧宿主默认背景、padding、clickable 或行数投影；属性仍通过真实
 Theme/TypedArray 解析。默认主题的不支持背景/状态色等请求沿 ADR-0147 明确失败，
 应用 style/主题可用纯色或 @null 显式覆盖。accessibility 两个 Button 覆写仍 failure。
-Legacy 控件默认值与生产配方保持。
 
-## 实验 EditText 有界编辑
+## JavaTraversal EditText 有界编辑
 
 JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认 editable/movement、
 EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
 系统皮肤仅封存 edit_text selector/ninepatch 可参与状态与 padding/叶测量，其他皮肤失败；
 应用可显式覆盖。复用同一 TextView 文本与冻结测量服务，皮肤绘制请求仍失败。
 宿主 UiNode 唯一拥有可变文本；View adapter 仅保存有界 selection 与 Editable/movement 身份，
-不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用 Legacy 的
-length/toString/clear/replace 服务；实验身份从 View 强边保活，反向保活 View，循环随 GC 回收。
-编辑使用已有 ApplyTextEdit；实验分支提交 selection、失效测量缓存并调用 Java requestLayout/
-invalidate，先全部 before、提交、全部 on、全部 after，after 可重入；Legacy 原事务顺序保持。
+不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用既有的
+length/toString/clear/replace 服务；其身份从 View 强边保活，反向保活 View，循环随 GC 回收。
+编辑使用已有 ApplyTextEdit；提交接缝提交 selection、失效测量缓存并调用 Java requestLayout/
+invalidate，先全部 before、提交、全部 on、全部 after，after 可重入。
 边界为1024 UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；完整 Spannable、
 IME/composition、Editor、布局对象、修改键移动/删除及未支持字形请求均记账失败。
 输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
-不使用 focused_edit_text 或 UiTree 焦点作实验 owner。失败校验不改 selection；提交后回调
+不使用 focused_edit_text 或 UiTree 焦点作owner。失败校验不改 selection；提交后回调
 异常保留已发生的 guest 动作，下一成功 owner tick 才发布新 text/line-plan/geometry epoch。
 
-## 实验 Scroll 构造与双轴滚动
+## JavaTraversal Scroll 构造与双轴滚动
 
 JavaTraversal 配对保留两 Scroll 完整 ROM 形状；构造、Rect/默认字段、fillViewport 属性
 消费归 ROM。initScrollView 的配置/scroller 接缝保持真实 Context/metrics 与 ROM OverScroller。
@@ -664,9 +652,8 @@ View.onScrollChanged 接缝只接受未系统附着且 accessibility 显式 disa
 宿主仅持拖动捕获/slop/delta，拦截时向单一旧目标发 CANCEL。两轴 onInterceptTouchEvent/
 onTouchEvent 接缝只在宿主单指分发作用域内开放：前者委托 ROM ViewGroup 父协议，后者
 接受有内容的捕获供宿主 delta 路径使用；作用域外/null/多指明确失败，不写 Java 手势镜像。
-Legacy 位置与输入路径保持。
 
-## 实验 VideoView 测量与 metadata
+## JavaTraversal VideoView 测量与 metadata
 
 JavaTraversal 保留有界 VideoView/VideoMediaPlayer Java 播放协议与媒体 native owner，
 不迁 ROM VideoView 字段、构造或比例算法。onMeasure 为逐签名受审 adapter，读取 owner
@@ -677,17 +664,17 @@ intrinsic 输入并 requestLayout。换源/释放撤销输入，旧事件不能�
 回调期间不持视频锁；工作线程不进 VM、不写输入或发布快照。Java owner tick 完整提交后
 才发布新几何，视频合成与 raster/hit 读取同一 PublishedProjection 的 frame/clip。
 原播放状态、字幕/网络/MediaController/未处理错误 UI 的明确失败边界保持。
-Legacy 继续原打开即导入 intrinsic、宿主测量路径；生产 BootDex 字节不变。
 
-
-ADR-0162 / DVM-306：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
-归档，校验固定 java-traversal v1 模式及 DEX/成员表/主题投影 SHA-256 与主题 schema，
-再选择不可变 context owner；未知模式、错配、缺投影或无标识实验制品明确失败，无自动
-Legacy fallback。候选与实验 fixture 共用固定 JavaTraversal 配方；候选封存的 video/配方
-哈希用于构建期审计，不扩展此处 VM 装配校验范围。无标识生产制品仍 Legacy。
-frontend 三入口共用此装配，显式注入不可变
-平台无 accessibility 服务事实，生产不设置测试 bool；测试覆盖入口保留。
-本阶段不开放 test-root、不改变 StepFrame；模式选择不等于生产遍历/E2E 验收。
+ADR-0162 / DVM-331：AssembleAndroidContext 在 catalog 注册/VM 建立前读取同一份 BootDex
+归档，要求 java-traversal v1 模式及 DEX/成员表/主题投影/video review/recipe 五项 SHA-256，
+并校验主题 schema。缺项、未知模式/版本、身份错配均明确失败；无标识旧制品也拒绝。
+默认、调试候选与 fixture 共用 java-traversal.json，不存在 guest Legacy 选择或回落。
+frontend 三入口共用此装配，显式注入平台无 accessibility 服务事实，生产不设置测试 bool。
+宿主 Dialog 必须拥有独立 HostLayout 树；缺失时拒绝，不向 guest 构建树回落。
+`setClickable` 按原 setter 虚派 ROM `setFlags(II)V`，仅在真实 CLICKABLE 位改变时标投影
+绘制脏；下一 owner 屏障发布输入资格，不写几何、不改当前输入租约。
+AbsoluteLayout 构造调用受审 ViewGroup 父构造，WebView 经 Java setter 设置焦点能力；
+不承诺 AbsoluteLayout 的测量/布局或浏览器后端。
 
 ## Owner 事件事务
 
@@ -702,22 +689,20 @@ PumpAndroidSurfaceEvents 只在 owner 帧屏障执行 size→created→changed�
 同尺寸不重发；迟建/迟挂 holder 由下一轮发现，addCallback 只更新列表。View holder 校验
 SurfaceView 请求，Window.takeSurface holder 只用真实 managed window buffer，不反查 View。
 Rect 身份稳定，销毁后 retire native surface；完整 WMS/updateWindow/独立 buffer resize 仍失败。
-Legacy 输入、焦点与 Surface 调度保持原路径。
-
 
 ## 窗口与呈现事实
 
 JavaTraversal每个Activity保留真实Window Java根与最后完整投影；后台几何不依赖当前构建树。
 共同发布仅在前台完整投影匹配身份/viewport后更新；首分区供输入，额外可见handoff分区
-按后到前合成。后台退役使用保留层级清绑定。窗口焦点由Java拥有，禁止外部投影RequestFocus。
+按后到前合成。后台退役使用保留层级清绑定。View焦点由Java拥有，窗口焦点事实由lifecycle拥有，禁止外部投影RequestFocus。
 owner收集前刷新开孔/叶像素，发布冻结bitmap缓存版本及视频节点/像素；发布只允许owner，
 输入lease内延期。消费者显式共享同一PresentationSnapshot，禁止再读播放器、可变缓存或
 反查guest绑定；无效producer像素明确失败。未知窗口/metrics保留最后完整快照。
-Legacy视频继续原锁与frame引用、原像素算法；不扩大managed窗口/Surface支持范围。
+不扩大 managed 窗口/Surface 支持范围。
 
 JavaTraversal的destroyed回调完成后永久撤销旧managed endpoint的holder有效性；
 holder恢复需新Surface，新active代次不能复活旧Surface。旧owner token只保留给release/GC，
-不再可作为managed producer绑定；Legacy销毁顺序与endpoint路径保持。
+不再可作为 managed producer 绑定。
 
 ## Managed-window observer 与基础引用
 
@@ -726,7 +711,7 @@ GC 边保活；首次 owner traversal 建立窗口附着身份后，存活子树
 mFloatingTreeObserver 才经 ROM merge/kill 转移并清空。首次遍历前 setContentView/addView
 只建立 Java 父链；被替换内容保留 floating observer，不参与窗口 global layout。已附着
 窗口后续挂载仍即时合并；真正未附着坐标查询继续明确失败。owner global layout 通过该窗口 observer 的 ROM dispatchOnGlobalLayout
-一次派发；不按每个 View 重复派发，Legacy 原表保持。其他 observer 系统能力仍明确失败。
+一次派发；不按每个 View 重复派发。其他 observer 系统能力仍明确失败。
 setSystemUiVisibility adapter 写真实 Java 字段，ROM getter 读取；附着改变调用父
 recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callback 或 AttachInfo。
 WebView 仅准入已有父构造接缝，AbsoluteLayout 的测量/布局失败边界保留。
@@ -740,25 +725,25 @@ TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检
 范围保持，非零 scrollbars 构造仍失败，没有 Display/Shader 等新增 adapter。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
-共享窗口 observer 与真实父链坐标；Legacy 仍使用原 decor facade。Surface 回调事务以
+共享窗口 observer 与真实父链坐标。Surface 回调事务以
 实际 owner/root/holder/mount/buffer 核验连续性，不以无关 sibling 的 content revision
 变化销毁仍存活的 holder；新挂载延后，换根/重挂及 callback owner 替换仍撤销旧派发。
 owner 直接调用 ROM observer 和 Surface 事务在 VM execution lock 下捕获与复核。
 
 JavaTraversal 的 `ui.surface.*` 结构化诊断记录 producer 注册、holder 激活/拒绝原因及
 Surface 回调的 holder 分型和真实尺寸；轮询决策按对象限流，实际生命周期派发不合并。
-诊断不参与准入判断，不改变代次、buffer 或 ADR-0147 失败语义；Legacy 不输出该诊断域。
+诊断不参与准入判断，不改变代次、buffer 或 ADR-0147 失败语义。
 
 JavaTraversal 的 `ui.traversal` 按弱窗口根/原因保存计数，首次输出结构化 root、epoch、
 身份及 metrics；后续仅累计，窗口退役/GC/UI 重置清理。覆盖屏障跳过、clean、延期、
-回调身份取消及投影提交/异常；不改变失败、延期或旧完整发布协议。Legacy 不输出或计数。
+回调身份取消及投影提交/异常；不改变失败、延期或旧完整发布协议。
 
 DVM-320：JavaTraversal 的 producer 重评估只读 Java 父链、绑定、可见性、测量尺寸及窗口，
 原因或事实变化时输出 `ui.surface.producer_state`，绕过默认 first-and-count；相同事实不刷屏。
 进程级原因累计保存 count/最后 epoch/tick，窗口退役不清除；producer 历史只保存值，
 不持有 guest 强根，已退役对象仅报告 last_observed。owner 退出边界调用幂等汇总，
 输出 `ui.diagnostics.summary/reason/producer`，不执行 guest、不改变选择或失败语义。
-Legacy 不采集、不输出；原按弱根的遍历计数清理协议保持。
+按弱根的遍历计数清理协议保持。
 
 DVM-321：JavaTraversal managed-window 的 visible 只由 Activity 生命周期记录拥有；
 Window 内容根的创建不改变它。collector 将当前 Activity 的事实显式提交到 synthetic
@@ -776,11 +761,11 @@ JavaTraversal 的 getWindowToken/getApplicationWindowToken 沿实际 Java 父链
 改变身份；窗口退役/GC/UI reset 撤销有效性，新窗口不能复活旧 token。窗口根通过
 owner-attached GC 边保活 token，token 仅弱记根身份。isBinderAlive/pingBinder 查询本地有效性；
 transact、Binder interface/death/dump 操作及 Parcel marshalling 均记账失败。
-JavaTraversal showSoftInput/hideSoftInputFromWindow 与 restartInput、Legacy 共用真实窗口/附着
+JavaTraversal showSoftInput/hideSoftInputFromWindow 与 restartInput 使用真实窗口/附着
 焦点检查；无被服务候选返回 false，需要建立 InputConnection 时记账并明确失败。
-不创建 InputConnection 或 IME Binder。Legacy 的查询/输入路径保持。
+不创建 InputConnection 或 IME Binder。
 
-DVM-328：实验 TextView 构造按同 ROM getResourceId 消费选择手柄、光标和建议项布局，
+DVM-328：TextView 构造按同 ROM getResourceId 消费选择手柄、光标和建议项布局，
 只将真实 id 保存至原版五个 Java int 字段；读取不加载内容、不取得 Editor/绘制信用。
 
 DVM-329：owner 屏障先检查窗口请求/Java 根 FORCE_LAYOUT、首次附着与窗口输入变化；
@@ -788,3 +773,8 @@ DVM-329：owner 屏障先检查窗口请求/Java 根 FORCE_LAYOUT、首次附着
 与 invalidate 的既有 ROM/受审接缝登记真实工作；不靠跳帧或投影过期策略调度。
 宿主输入消费冻结快照前验证节点存在；构建绑定不能证明节点属于所持快照，guest 失败
 边界及 UiTree 严格 stale 检查保持。
+
+
+窗口焦点的 dispatchWindowFocusChanged 在 View/ViewGroup 执行固定ROM：View虚派
+onWindowFocusChanged，ViewGroup按真实mChildren/mChildrenCount递归虚派。生命周期仅从窗口
+Java根进入，window_has_focus/window_focus_activity仍是既有宿主窗口事实，不建立逐View状态。

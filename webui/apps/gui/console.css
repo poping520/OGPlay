@@ -1,20 +1,14 @@
-/* Launcher main screen ("主机之夜"): dark console look, scoped to .console so settings pages keep the shared theme. */
+/* Launcher main screen ("主机之夜"): layout and screen-specific parts. Tokens and shared controls live in ui-kit. */
 .console {
-  --bg: #090c16; --ink: #f2f4fa; --soft: #c4cadb; --muted: #8f97ad; --dim: #5d6680; --glass: rgba(255,255,255,.06); --glass2: rgba(255,255,255,.1);
-  --yellow: #ffc21a; --yellow-hi: #ffd04d; --cream: #f6e9d2; --cream-ink: #3a2f22;
-  --ready: #3ddc84; --warning: #ffb020; --danger: #ff5a52; --running: #4aa3ff;
-  --panel: #141a2a; --line: #262f45; --accent: var(--yellow);
-  --font: ui-rounded, 'SF Pro Rounded', -apple-system, 'PingFang SC', 'Segoe UI Variable Display', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
-  --code: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
   position: relative; height: 100dvh; min-width: 900px; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 68px minmax(0, 1fr) auto 42px; font: 14px/1.5 var(--font); color: var(--ink); background: var(--bg); color-scheme: dark;
   -webkit-font-smoothing: antialiased; user-select: none;
 }
-.console button { font: inherit; color: inherit; background: none; border: 0; padding: 0; border-radius: 0; }
-.console button:hover:not(:disabled) { background: none; }
-.console button:focus-visible, .console select:focus-visible, .console input:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
+/* screen buttons fade between states and dim when disabled */
+.console button { transition: background .15s, border-color .15s; }
+.console button:disabled { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .console button { transition: none; } }
 .console .mono { font: 13px var(--code); }
-.console h1, .console h2 { margin: 0; }
 
 /* backdrop: blurred icon art, vignette, grain */
 .backdrop { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
@@ -25,8 +19,7 @@
 @keyframes backdrop-in { from { opacity: 0; } }
 .backdrop-fade { position: absolute; inset: 0; background: radial-gradient(70% 60% at 75% 35%, transparent, rgba(9,12,22,.6) 70%),
   linear-gradient(180deg, rgba(9,12,22,.2), rgba(9,12,22,0) 30%, rgba(9,12,22,.85) 68%, var(--bg) 100%); }
-.backdrop-grain { position: absolute; inset: 0; opacity: .08; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); }
+.backdrop-grain { position: absolute; inset: 0; opacity: .08; mix-blend-mode: overlay; background-image: var(--grain); }
 .top, .stage, .rail, .foot { position: relative; z-index: 1; min-width: 0; }
 
 /* launch splash: app icon and wordmark over the console background until the main screen is ready */
@@ -45,21 +38,8 @@
 @keyframes splash-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 @keyframes splash-out { to { opacity: 0; transform: scale(1.05); } }
 
-/* LEDs and key badges */
-.led { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dim); }
-.led.ready { background: var(--ready); box-shadow: 0 0 8px var(--ready); }
-.led.warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
-.led.danger { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
-.led.running { background: var(--running); box-shadow: 0 0 10px var(--running); animation: led-pulse 1.4s infinite; }
-.key { display: grid; place-items: center; flex: none; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 999px; background: var(--cream); color: var(--cream-ink);
-  font-size: 14px; font-weight: 900; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); white-space: nowrap; }
-
 /* top bar */
 .top { display: flex; align-items: center; gap: 20px; padding: 0 32px; }
-.brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 900; letter-spacing: -.01em; flex: none; }
-.brand img { width: 34px; height: 34px; }
-.brand b { font: inherit; }
-.brand b span { color: var(--yellow); }
 .tabs { display: flex; align-items: center; gap: 6px; margin: 0 auto; }
 .tabs button { padding: 7px 16px; border-radius: 999px; font-weight: 800; color: var(--muted); white-space: nowrap; transition: color .15s, background .15s; }
 .console .tabs button:hover:not([aria-pressed=true]) { color: var(--ink); background: var(--glass); }
@@ -79,6 +59,7 @@
 .search.open input { width: 200px; padding: 0 14px 0 4px; }
 .console .running-pill { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--glass); color: var(--muted); font-size: 13px; font-weight: 800; }
 .console .running-pill.live { background: rgba(74,163,255,.14); color: #b9dbff; }
+.console .running-pill:hover:not(:disabled) { background: none; } /* existing behaviour: no fill while hovered */
 .clock { margin-left: 6px; font-size: 15px; font-weight: 700; color: #cdd3e2; font-variant-numeric: tabular-nums; }
 
 /* hero */
@@ -87,8 +68,6 @@
 .hero-text > * { animation: rise .3s backwards cubic-bezier(.2,.8,.2,1); }
 .hero-text > :nth-child(2) { animation-delay: .02s; } .hero-text > :nth-child(3) { animation-delay: .04s; } .hero-text > :nth-child(4) { animation-delay: .06s; }
 .hero-text > :nth-child(5) { animation-delay: .08s; } .hero-text > :nth-child(6) { animation-delay: .1s; }
-.kicker { display: flex; align-items: center; gap: 12px; color: var(--yellow); font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; }
-.kicker i { width: 28px; height: 2px; background: var(--yellow); }
 .hero-text h1 { margin: 12px 0 4px; font-size: clamp(40px, min(5.4vw, 8.4vh), 76px); line-height: 1.08; font-weight: 900; letter-spacing: -.02em;
   text-shadow: 0 6px 40px rgba(0,0,0,.4); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .hero-text h1.small { font-size: clamp(30px, 3.4vw, 42px); }
@@ -105,13 +84,10 @@
 .console .link:hover { text-decoration: underline; }
 .hero-text > .state:last-child { margin-top: 22px; }
 .cta { display: flex; align-items: center; gap: 12px; margin-top: clamp(18px, 3vh, 28px); }
-.console .pill { height: 52px; padding: 0 22px 0 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 12px; flex: none; font-size: 15px; font-weight: 900;
-  background: var(--glass); backdrop-filter: blur(10px); transition: transform .12s, background .12s; }
-.console .pill:hover:not(:disabled) { background: var(--glass2); transform: translateY(-2px); }
-.console .pill.main { height: 58px; padding-right: 30px; font-size: 17px; background: var(--yellow); color: #2a2000; box-shadow: 0 10px 30px -6px rgba(255,194,26,.55); }
-.console .pill.main:hover:not(:disabled) { background: var(--yellow-hi); }
-.pill.main .key { background: #2a2000; color: var(--yellow); }
-.console .pill:disabled { opacity: .4; cursor: not-allowed; }
+.console .pill { height: 52px; padding: 0 22px 0 10px; gap: 12px; font-size: 15px; transition: transform .12s, background .12s; }
+.console .pill:hover:not(:disabled) { transform: translateY(-2px); }
+.console .pill.main { height: 58px; padding-right: 30px; font-size: 17px; box-shadow: 0 10px 30px -6px rgba(255,194,26,.55); }
+.console .pill:disabled { opacity: .4; }
 .more { position: relative; }
 .menu { position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 10; min-width: 220px; padding: 6px; border-radius: 16px; background: rgba(20,26,42,.96);
   border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0,0,0,.5); backdrop-filter: blur(16px); animation: rise .18s cubic-bezier(.2,.8,.2,1); }
@@ -298,10 +274,10 @@
 .iw-row { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
 .iw-row { flex-wrap: wrap; }
 .iw-row > span { flex: none; width: 64px; color: var(--muted); font-size: 13px; font-weight: 800; }
-.import-wizard .seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: rgba(0,0,0,.28); }
-.console .import-wizard .seg button { margin: 0; height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 13px; line-height: 1; }
-.console .import-wizard .seg button:hover:not(:disabled):not(.on) { background: none; color: var(--ink); }
-.console .import-wizard .seg button.on { background: var(--ink); color: var(--bg); }
+/* ui-kit segments inside a dialog: undo the dialog button chrome, slightly wider options */
+.console .import-wizard .seg button { margin: 0; padding: 0 16px; border: 0; background: none; }
+.console .import-wizard .seg button:hover:not(:disabled):not(.on) { background: none; }
+.console .import-wizard .seg button.on { background: var(--ink); }
 .iw-txt { display: flex; flex: 1; align-items: center; height: 40px; padding: 0 16px; border: 1px solid transparent; border-radius: 999px; background: rgba(0,0,0,.28); }
 .iw-txt.bad { border-color: var(--danger); }
 .iw-txt input { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--ink); font: 13px var(--code); }
@@ -378,7 +354,6 @@
 .console dialog button.danger { background: var(--danger); border-color: var(--danger); color: #2b0705; }
 .console dialog button.danger:hover:not(:disabled) { background: #ff7a73; border-color: #ff7a73; }
 
-@keyframes led-pulse { 50% { opacity: .4; } }
 @keyframes float { 50% { transform: translateY(-14px) rotateY(7deg) rotateX(-3deg); } }
 @keyframes ghost { 50% { transform: rotateY(-14deg) rotateX(4deg) translateY(-14px); } }
 @keyframes foil { from { background-position: 18% 0; } to { background-position: 96% 0; } }

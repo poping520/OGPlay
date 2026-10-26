@@ -5,8 +5,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-theme.surface.json.gz",
-      "surface_sha256": "89a1f82963ed1119883994af2f684d8c8e1dfca860dd9b58f71904885b9b128c",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
       "owner": "Landroid/content/res/AssetManager;",
       "smali_sha256": "32a4dcc7ec5ca62be08c9f53bdaf20568c5f0dfbcfb78e195d37c7fbf5b05537",
       "fields": [
@@ -582,11 +582,11 @@
           "source": "overlay",
           "platform_seam": true,
           "review": {
-            "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
-            "inputs": "live current-APK AssetManager receiver, available pool index 0",
-            "outputs": "typed context-owned original global-pool token; no synthetic pool",
+            "reason": "DVM-326 ADR-0160 same-ROM typed values and distinct string pool",
+            "inputs": "live APK resource owner; index0/cookie1 APK pool or index1/cookie2 sealed ROM pool; scalar APK or reviewed ROM drawable ID",
+            "outputs": "checked six-slot values or genuine StringBlock pool/token; no APK/ROM index alias",
             "state_owner": "context ThemeResources owns theme state; original ROM fields own TypedArray, caches and reference counts",
-            "failure_boundary": "unknown/unbound themes, unsupported projected values, invalid tokens/indices, drawable/selector/spans and system AssetManager fail with ledger"
+            "failure_boundary": "unknown attributes/enumerators/resources, invalid pools/tokens, unreviewed skin, spans/system AssetManager fail with ledger"
           }
         },
         {
@@ -662,11 +662,11 @@
           "source": "overlay",
           "platform_seam": true,
           "review": {
-            "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
-            "inputs": "live current-APK AssetManager receiver",
-            "outputs": "actual original APK global-pool count 0 or 1",
+            "reason": "DVM-326 ADR-0160 same-ROM typed values and distinct string pool",
+            "inputs": "live APK resource owner; index0/cookie1 APK pool or index1/cookie2 sealed ROM pool; scalar APK or reviewed ROM drawable ID",
+            "outputs": "checked six-slot values or genuine StringBlock pool/token; no APK/ROM index alias",
             "state_owner": "context ThemeResources owns theme state; original ROM fields own TypedArray, caches and reference counts",
-            "failure_boundary": "unknown/unbound themes, unsupported projected values, invalid tokens/indices, drawable/selector/spans and system AssetManager fail with ledger"
+            "failure_boundary": "unknown attributes/enumerators/resources, invalid pools/tokens, unreviewed skin, spans/system AssetManager fail with ledger"
           }
         },
         {
@@ -760,11 +760,11 @@
           "source": "overlay",
           "platform_seam": true,
           "review": {
-            "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
-            "inputs": "live APK owner, scalar APK ID, density override 0 only, TypedValue output, resolveRefs",
-            "outputs": "real ARSC scalar six fields and block 0; nonzero density override explicitly fails; existing table selection",
+            "reason": "DVM-326 ADR-0160 same-ROM typed values and distinct string pool",
+            "inputs": "live APK resource owner; index0/cookie1 APK pool or index1/cookie2 sealed ROM pool; scalar APK or reviewed ROM drawable ID",
+            "outputs": "checked six-slot values or genuine StringBlock pool/token; no APK/ROM index alias",
             "state_owner": "context ThemeResources owns theme state; original ROM fields own TypedArray, caches and reference counts",
-            "failure_boundary": "unknown/unbound themes, unsupported projected values, invalid tokens/indices, drawable/selector/spans and system AssetManager fail with ledger"
+            "failure_boundary": "unknown attributes/enumerators/resources, invalid pools/tokens, unreviewed skin, spans/system AssetManager fail with ledger"
           }
         },
         {
@@ -787,11 +787,11 @@
           "body_sha256": "0293c7269921a1a293fadda8ac26ce79c4dfc09756c9b69fa237364081d233a9",
           "source": "overlay",
           "review": {
-            "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
-            "inputs": "current APK resource owner, live typed Theme/XML token, checked attribute/output arrays or resource ID",
-            "outputs": "real resource values and TypedArray six-slot ABI; absent only for registered queries",
+            "reason": "DVM-326 ADR-0160 same-ROM typed values and distinct string pool",
+            "inputs": "live APK resource owner; index0/cookie1 APK pool or index1/cookie2 sealed ROM pool; scalar APK or reviewed ROM drawable ID",
+            "outputs": "checked six-slot values or genuine StringBlock pool/token; no APK/ROM index alias",
             "state_owner": "context ThemeResources owns theme state; original ROM fields own TypedArray, caches and reference counts",
-            "failure_boundary": "unknown/unbound themes, unsupported projected values, invalid tokens/indices, drawable/selector/spans and system AssetManager fail with ledger"
+            "failure_boundary": "unknown attributes/enumerators/resources, invalid pools/tokens, unreviewed skin, spans/system AssetManager fail with ledger"
           }
         },
         {
@@ -1074,8 +1074,8 @@
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-leaf-resources.surface.json.gz",
-      "surface_sha256": "37c84c1f9d48e9c8a5662deae21389dee29a01984796f7b2408a82d884991535",
+      "surface": "tools/bootdex/view-skin.surface.json.gz",
+      "surface_sha256": "e117f861e78e1ff765212ba16771bf187f75600493025f4945d1f5f6ce07d1af",
       "owner": "Landroid/content/res/Resources;",
       "smali_sha256": "b1efcad3806f9c44845bb8f780b1c37620e7e024e16641ced0a8af086ca10cf8",
       "fields": [
@@ -1708,11 +1708,11 @@
           "body_sha256": "eb9b03d9f8d330879f3fee992992eff2e39faa1403bc8f14f8e737a24b428df2",
           "source": "overlay",
           "review": {
-            "reason": "DVM-292 scalar APK resource adapter; reject populated ROM composed-icon state instead of importing system icon customization",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "actual APK scalar/bitmap TypedValue or sealed same-ROM edit_text drawable ID with runtime density",
+            "outputs": "actual six-slot scalar or ROM-shaped Drawable backing; no composed-icon or drawing credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
           }
         },
         {
@@ -1765,11 +1765,11 @@
           "body_sha256": "62f021f6118af60676c17e5eb5897133cd2082e9f259d702b9226f42ba3c8e6e",
           "source": "overlay",
           "review": {
-            "reason": "DVM-292 ADR-0161 bounded leaf resource consumer",
-            "inputs": "selected APK scalar TypedValue or actual Bitmap plus Resources density",
-            "outputs": "Java Drawable identity, immutable pixel backing or ROM valueOf single-state color",
-            "state_owner": "ROM fields for identity/intrinsic; per-Java-object host color/pixels; GC/teardown retire backing",
-            "failure_boundary": "selector/ninepatch/XML/unknown files/system skin/custom draw explicitly fail; no leaf widget constructors"
+            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
+            "inputs": "actual APK scalar/bitmap TypedValue or sealed same-ROM edit_text drawable ID with runtime density",
+            "outputs": "actual six-slot scalar or ROM-shaped Drawable backing; no composed-icon or drawing credit",
+            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
           }
         },
         {

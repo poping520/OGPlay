@@ -1369,13 +1369,22 @@ Decl Declare_android_os_Parcel(const Context& context) {
             while ((p.position & 3U) != 0U) static_cast<void>(read(p, 1U));
             return dx::VmValue::Ref(result);
         }, native_flags);
-    builder.StaticMethod("nativeWriteStrongBinder", "(ILandroid/os/IBinder;)V",
-        [require, write](dx::IntrinsicContext& call) {
-            auto& p = require(call.arguments[0].AsInt()); const auto offset = p.position;
-            std::array<std::byte, 16> flat{}; write(p, flat);
+    builder.StaticMethod(
+        "nativeWriteStrongBinder", "(ILandroid/os/IBinder;)V",
+        [context, require, write](dx::IntrinsicContext& call) {
+            if (context->managed_window_tokens.contains(call.arguments[1].ref.Value())) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.managed_window_token_ipc", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "managed window token cannot be marshalled"};
+            }
+            auto& p = require(call.arguments[0].AsInt());
+            const auto offset = p.position;
+            std::array<std::byte, 16> flat{};
+            write(p, flat);
             if (call.arguments[1].ref.IsValid()) p.binders.push_back({offset, flat.size(), call.arguments[1].ref});
             return dx::VmValue::Void();
-        }, native_flags);
+        },
+        native_flags);
     builder.StaticMethod("nativeReadStrongBinder", "(I)Landroid/os/IBinder;",
         [require, read](dx::IntrinsicContext& call) {
             auto& p = require(call.arguments[0].AsInt()); const auto offset = p.position;

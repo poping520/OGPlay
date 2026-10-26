@@ -285,7 +285,7 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
                                       std::array{VmValue::Ref(failed_button), VmValue::Ref(default_owner)});
         INFO(failed.exception_message);
         CHECK(failed.exception.IsValid());
-        CHECK(failed.exception_message.find("leaf Drawable requires APK bitmap or scalar color") != std::string::npos);
+        CHECK(failed.exception_message.find("unreviewed ROM drawable load") != std::string::npos);
     }
 }
 

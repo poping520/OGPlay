@@ -2042,10 +2042,43 @@ Decl ExperimentalTextView(const Context& context) {
         if ((gravity & 0x70) == 0x50) baseline += extra;
         return dx::VmValue::Int(baseline);
     });
+    builder.VirtualMethod(
+        "onCreateDrawableState", "(I)[I",
+        [context](dx::IntrinsicContext& c) {
+            const auto extra = c.arguments[0].AsInt();
+            if (extra < 0 || extra > 1023) TextInputFailure(c.vm, "drawable extraSpace outside bounds");
+            const auto state = context->view_adapter_references.find(c.receiver.Value());
+            // The View super constructor can ask before the bounded text owner exists.
+            const bool single = state != context->view_adapter_references.end() && state->second.text_single_line;
+            const auto base = c.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto index = c.vm.Linker().FindVtableIndex(base, "onCreateDrawableState", "(I)[I");
+            const auto out =
+                c.vm.Call(c.vm.Linker().Class(base).vtable.at(*index),
+                          std::array{dx::VmValue::Ref(c.receiver), dx::VmValue::Int(extra + (single ? 0 : 1))});
+            if (out.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                      out.exception};
+            if (!single) {
+                const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
+                const auto f = c.vm.Linker().FindFieldRecursive(klass, "MULTILINE_STATE_SET", "[I");
+                const dx::VmObjectRef multiline{
+                    c.vm.Linker().Class(klass).static_storage[c.vm.Linker().Field(*f).slot]};
+                const auto method = c.vm.Linker().FindDirectMethod(base, "mergeDrawableStates", "([I[I)[I");
+                const auto merged = c.vm.Call(*method, std::array{out.value, dx::VmValue::Ref(multiline)});
+                if (merged.exception.IsValid())
+                    throw dx::VmJavaThrow{c.vm.Linker().Class(merged.exception_class).descriptor,
+                                          merged.exception_message, merged.exception};
+            }
+            // Text-selectable/Editor construction remains unsupported, so its pressed-state
+            // suppression cannot be requested by this plain-text leaf owner.
+            return out.value;
+        },
+        dx::kAccProtected);
     // No Editor/Layout/Drawables object graph is installed. These callbacks
     // execute the genuine View protocol; all text work belongs to the leaf owner.
     for (const auto& [name, sig] :
          std::array<std::pair<const char*, const char*>, 9>{{{"onLayout", "(ZIIII)V"},
+
                                                              {"onFocusChanged", "(ZILandroid/graphics/Rect;)V"},
                                                              {"onRtlPropertiesChanged", "(I)V"},
                                                              {"drawableStateChanged", "()V"},

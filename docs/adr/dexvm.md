@@ -2058,6 +2058,13 @@ LayoutInflater 声明。Legacy 仍必须有 nativeInflate；实验 ROM 必须无
 
 <a id="adr-0161"></a>
 
+### VD-11-16 样式值类型（编排方决定 2026-10-26（三））
+
+主题/样式投影按同 ROM framework-res 属性真实 format（enum/flags/string/reference 等）
+解析。enum/flags 名称仅经该属性同 ROM 枚举表转换为整数；未知名称明确失败，不猜值、
+不跨属性复用名称。字符串使用独立 ROM StringBlock/cookie，不能解释为 APK 字符串索引。
+实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。
+
 ## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
 
 - 状态：Accepted（编排方按用户授权于 2026-10-25 决定）
@@ -2163,6 +2170,16 @@ Java 测量/独立 guest 提交已经发生的动作不回滚，不能将此保�
 
 
 <a id="adr-0162"></a>
+
+### VD-11-16 默认控件皮肤（编排方决定 2026-10-26（三））
+
+精确修订决定2、3：允许从同 ROM framework-res 加载默认控件背景所需的
+StateListDrawable XML 与 NinePatchDrawable（.9.png 解码及 npTc padding/insets），
+作为 ROM Drawable 对象参与 getPadding、测量和状态。绘制仅在现有叶渲染路径确实需要
+时实施；否则 guest 绘制请求明确失败。动画/过渡 drawable 不开放。当前有界输入为
+edit_text selector 及其 ninepatch 闭包；未知皮肤不获得信用。
+决定7的 Editor/InputConnection/IME 边界保持，进入 IME 则记账并明确失败。
+实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。
 
 ## ADR-0162 · VD-11 JavaTraversal 生产接线
 
@@ -2437,3 +2454,12 @@ framework-res.apk 缺口保持，不补猜 scrollbar ID/值，不宣称主题或
 来源、类集合、A1及既有契约偏差相对冻结 Legacy 的差分见本单 closure-diff 证据。
 默认仍 Legacy；默认切换、移除 guest fallback、性能/GPU/九场景及 Windows 发布门禁
 均留 VD-12-3。没有按常设原则自行放宽审计范围，ADR-0147与clinit规则不变。
+
+### VD-11-16 进程内窗口 token（编排方决定 2026-10-26（三））
+
+扩展决定2的 managed-window adapter：已附着 View 的 getWindowToken /
+getApplicationWindowToken 返回每窗口稳定的进程内 token 对象；未附着返回 null。
+窗口退役永久撤销旧 token 有效性，内容替换不改变存活窗口身份。transact、序列化以供
+跨进程使用等 Binder 操作记账并明确失败，不创建 Binder/WMS/system_server。
+APK 后续进入 InputMethodManager/IME 时停在 ADR-0161 决定7边界，记录而不扩 IME。
+实施与证据见 [DVM-326](../tasks/dexvm/DVM-326.md)。

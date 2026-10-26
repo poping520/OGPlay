@@ -1587,3 +1587,184 @@ Decl Declare_android_graphics_Typeface(const Context&) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
+
+namespace ogplay::runtime::android_intrinsics {
+namespace {
+DexVmAndroidContext::UiDrawableState& Skin(dx::IntrinsicContext& call, const Context& context) {
+    const auto it = context->ui_drawables.find(call.receiver.Value());
+    if (it == context->ui_drawables.end() || !it->second.rom_skin)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "ROM skin backing unavailable"};
+    return it->second;
+}
+
+void SkinInit(dx::IntrinsicContext& call, const Context& context) {
+    const auto ctor = call.vm.Linker().FindDirectMethod(
+        call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
+    const auto out = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
+    if (out.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                              out.exception};
+    context->ui_drawables[call.receiver.Value()].rom_skin = true;
+}
+
+void AddSkinQueries(dx::IntrinsicClassBuilder& b, const Context& context, bool container) {
+    b.VirtualMethod("getOpticalInsets", "()Landroid/graphics/Insets;", [context, container](dx::IntrinsicContext& c) {
+        const auto& state = Skin(c, context);
+        if (container && state.skin_current >= 0)
+            return CallAndroidMethod(c.vm, state.skin_children.at(static_cast<std::size_t>(state.skin_current)),
+                                     "getOpticalInsets", "()Landroid/graphics/Insets;");
+        const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/graphics/Insets;");
+        const auto method = c.vm.Linker().FindDirectMethod(klass, "of", "(IIII)Landroid/graphics/Insets;");
+        const auto init = c.vm.EnsureClassInitialized(klass);
+        if (init.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(init.exception_class).descriptor, init.exception_message,
+                                  init.exception};
+        const auto out = c.vm.Call(
+            *method, std::array{dx::VmValue::Int(state.skin_optical[0]), dx::VmValue::Int(state.skin_optical[1]),
+                                dx::VmValue::Int(state.skin_optical[2]), dx::VmValue::Int(state.skin_optical[3])});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        return out.value;
+    });
+    b.VirtualMethod("getOpacity", "()I", [context, container](dx::IntrinsicContext& c) {
+        const auto& state = Skin(c, context);
+        if (container) {
+            if (state.skin_current < 0) return dx::VmValue::Int(-2);
+            int opacity = -1;
+            for (const auto child : state.skin_children) {
+                const auto value = CallAndroidMethod(c.vm, child, "getOpacity", "()I").AsInt();
+                if (value != -1) opacity = -3;
+            }
+            return dx::VmValue::Int(opacity);
+        }
+        if (!state.leaf_pixels)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "NinePatch has no decoded backing"};
+        for (std::size_t i = 3; i < state.leaf_pixels->rgba8.size(); i += 4)
+            if (state.leaf_pixels->rgba8[i] != 255) return dx::VmValue::Int(-3);
+        return dx::VmValue::Int(-1);
+    });
+    b.VirtualMethod("getPadding", "(Landroid/graphics/Rect;)Z", [context](dx::IntrinsicContext& call) {
+        const auto& state = Skin(call, context);
+        const auto rect = call.arguments[0].ref;
+        if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "padding rect == null"};
+        bool nonzero = false;
+        std::size_t i = 0;
+        for (const auto name : {"left", "top", "right", "bottom"}) {
+            const auto f = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(rect), name, "I");
+            call.vm.Model().InstanceSlots(rect)[call.vm.Linker().Field(*f).slot] = {
+                static_cast<std::uint32_t>(state.skin_padding[i]), dx::SlotTag::cat1};
+            nonzero |= state.skin_padding[i++] != 0;
+        }
+        return dx::VmValue::Int(nonzero);
+    });
+    for (const auto width : {true, false}) {
+        const auto size = [context, width, container](dx::IntrinsicContext& call) {
+            const auto& state = Skin(call, context);
+            if (container && state.skin_current >= 0) {
+                const auto child = state.skin_children.at(static_cast<std::size_t>(state.skin_current));
+                return CallAndroidMethod(call.vm, child, width ? "getIntrinsicWidth" : "getIntrinsicHeight", "()I");
+            }
+            return dx::VmValue::Int(width ? state.skin_width : state.skin_height);
+        };
+        b.VirtualMethod(width ? "getIntrinsicWidth" : "getIntrinsicHeight", "()I", size);
+        b.VirtualMethod(width ? "getMinimumWidth" : "getMinimumHeight", "()I",
+                        [size](dx::IntrinsicContext& c) { return dx::VmValue::Int(std::max(0, size(c).AsInt())); });
+    }
+}
+}  // namespace
+
+Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context) {
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/DrawableContainer;",
+                                              "Landroid/graphics/drawable/Drawable;",
+                                              {"Landroid/graphics/drawable/Drawable$Callback;"});
+    AddSkinQueries(b, context, true);
+    b.VirtualMethod("setVisible", "(ZZ)Z", [context](dx::IntrinsicContext& c) {
+        // A virtual base method is resolved explicitly to preserve its ROM field protocol.
+        const auto index = c.vm.Linker().FindVtableIndex(
+            c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "setVisible", "(ZZ)Z");
+        const auto id = c.vm.Linker()
+                            .Class(c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"))
+                            .vtable.at(*index);
+        const auto out = c.vm.Call(id, std::array{dx::VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1]});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        for (const auto child : Skin(c, context).skin_children)
+            static_cast<void>(CallAndroidMethod(c.vm, child, "setVisible", "(ZZ)Z", {c.arguments[0], c.arguments[1]}));
+        return out.value;
+    });
+    b.VirtualMethod("getCurrent", "()Landroid/graphics/drawable/Drawable;", [context](dx::IntrinsicContext& c) {
+        const auto& s = Skin(c, context);
+        return dx::VmValue::Ref(s.skin_current < 0 ? dx::VmObjectRef{}
+                                                   : s.skin_children.at(static_cast<std::size_t>(s.skin_current)));
+    });
+    return std::move(b).Build();
+}
+
+Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context) {
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/NinePatchDrawable;",
+                                              "Landroid/graphics/drawable/Drawable;");
+    b.Constructor("()V", [context](dx::IntrinsicContext& c) {
+        SkinInit(c, context);
+        return dx::VmValue::Void();
+    });
+    AddSkinQueries(b, context, false);
+    return std::move(b).Build();
+}
+
+Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context) {
+    auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/StateListDrawable;",
+                                              "Landroid/graphics/drawable/DrawableContainer;");
+    b.Constructor("()V", [context](dx::IntrinsicContext& c) {
+        SkinInit(c, context);
+        return dx::VmValue::Void();
+    });
+    b.VirtualMethod("setLayoutDirection", "(I)V", [context](dx::IntrinsicContext& c) {
+        const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;");
+        const auto index = c.vm.Linker().FindVtableIndex(klass, "setLayoutDirection", "(I)V");
+        const auto out = c.vm.Call(c.vm.Linker().Class(klass).vtable.at(*index),
+                                   std::array{dx::VmValue::Ref(c.receiver), c.arguments[0]});
+        if (out.exception.IsValid())
+            throw dx::VmJavaThrow{c.vm.Linker().Class(out.exception_class).descriptor, out.exception_message,
+                                  out.exception};
+        for (const auto child : Skin(c, context).skin_children)
+            static_cast<void>(CallAndroidMethod(c.vm, child, "setLayoutDirection", "(I)V", {c.arguments[0]}));
+        return dx::VmValue::Void();
+    });
+    b.VirtualMethod("isStateful", "()Z", [context](dx::IntrinsicContext& c) {
+        static_cast<void>(Skin(c, context));
+        return dx::VmValue::Int(1);
+    });
+    b.VirtualMethod(
+        "onStateChange", "([I)Z",
+        [context](dx::IntrinsicContext& c) {
+            auto& s = Skin(c, context);
+            std::vector<std::int32_t> states;
+            const auto array = c.arguments[0].ref;
+            if (array.IsValid())
+                for (std::int32_t i = 0; i < c.vm.Model().ArrayLength(array); ++i)
+                    states.push_back(static_cast<std::int32_t>(c.vm.Model().GetPrimitiveElement(array, i)));
+            std::int32_t selected = -1;
+            for (std::size_t i = 0; i < s.skin_states.size(); ++i) {
+                const bool match =
+                    std::all_of(s.skin_states[i].begin(), s.skin_states[i].end(), [&](std::int32_t state) {
+                        const bool present = std::find(states.begin(), states.end(), std::abs(state)) != states.end();
+                        return state > 0 ? present : !present;
+                    });
+                if (match) {
+                    selected = static_cast<std::int32_t>(i);
+                    break;
+                }
+            }
+            const bool changed = selected != s.skin_current;
+            s.skin_current = selected;
+            if (selected >= 0)
+                static_cast<void>(CallAndroidMethod(c.vm, s.skin_children.at(static_cast<std::size_t>(selected)),
+                                                    "setState", "([I)Z", {c.arguments[0]}));
+            return dx::VmValue::Int(changed);
+        },
+        dx::kAccProtected);
+    return std::move(b).Build();
+}
+}  // namespace ogplay::runtime::android_intrinsics

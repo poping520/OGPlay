@@ -228,6 +228,7 @@ set(OGPLAY_TEST_SOURCES
     tests/dexvm/linearlayout_traversal_tests.cpp
     tests/dexvm/relativelayout_traversal_tests.cpp
     tests/dexvm/xml_block_tests.cpp
+    tests/dexvm/rom_skin_tests.cpp
     tests/dexvm/theme_resources_tests.cpp
     tests/dexvm/imageview_traversal_tests.cpp
     tests/dexvm/button_traversal_tests.cpp

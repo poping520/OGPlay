@@ -22,7 +22,8 @@
     "view-scroll-sources.json",
     "view-surface-sources.json",
     "view-observer-sources.json",
-    "view-policy-sources.json"
+    "view-policy-sources.json",
+    "view-skin-sources.json"
   ],
   "class_additions": {
     "framework.jar": [
@@ -47,6 +48,12 @@
       "Landroid/graphics/drawable/BitmapDrawable;",
       "Landroid/graphics/drawable/ColorDrawable;",
       "Landroid/graphics/drawable/Drawable;",
+      "Landroid/graphics/drawable/DrawableContainer$1;",
+      "Landroid/graphics/drawable/DrawableContainer;",
+      "Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
+      "Landroid/graphics/drawable/NinePatchDrawable;",
+      "Landroid/graphics/drawable/StateListDrawable$StateListState;",
+      "Landroid/graphics/drawable/StateListDrawable;",
       "Landroid/text/Annotation;",
       "Landroid/text/method/AllCapsTransformationMethod;",
       "Landroid/text/method/ArrowKeyMovementMethod;",

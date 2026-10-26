@@ -45,7 +45,9 @@ session 宿主输入和 guest Window 入口共用相同状态与算法；integra
 
 实验主题 provider 的资源选择与文件验证通过 APK owner 显式回调注入；六槽与 indices
 完整解析、校验后发布。叶 drawable 的不可变像素按 Java 对象身份持有并随 sweep/teardown
-释放，不建立全局强根；布局与几何不在值桥写入。
+释放，不建立全局强根；布局与几何不在值桥写入。同 ROM 属性 format/枚举表决定投影类型，
+ROM 字符串独立使用 cookie2/StringBlock；cookie1 保持 APK。封存的默认背景 selector/ninepatch
+可提供状态、padding/密度尺寸与像素 backing；未支持绘制时在 guest draw 或呈现冻结明确失败。
 
 Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 [DexVM](../dexvm/MODULE.md)拥有解释/GC/线程，[session](../../session/MODULE.md)编排生命周期，
@@ -418,6 +420,9 @@ GC sweep 清理对应根与请求；不进入 session 强根，完整投影独�
 DVM-308：JavaTraversal 帧遍历由 lifecycle owner 在输入前、mutation 批后及 Surface 回调前
 调度；重复屏障不推进逻辑 tick，尺寸通知由 ROM layout 唯一派发。纯绘制重新冻结投影，
 Compose 只消费完整快照、不进入 guest。managed-window adapter 不创建 AttachInfo/IME/WMS；
+已附着 View 的窗口/application token 为每窗口稳定的进程内身份，未附着返回 null；
+窗口退役后旧 token 失效。窗口根通过 GC 强边保活 token，token 不反向保活窗口；
+transact/跨进程 marshalling 以及 JavaTraversal 的 show/hide IME 请求记账并明确失败。
 Activity 窗口记录关联 Java 内容根并独占生命周期可见事实，该事实随 owner 完整投影发布；
 producer/holder 使用同一快照的可见性。UiTree 不附着第二棵 guest 层级，Legacy 时序保持。
 

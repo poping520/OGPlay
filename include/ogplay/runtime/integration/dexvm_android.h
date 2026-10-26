@@ -139,6 +139,7 @@ struct DexVmAndroidContext final {
         std::uint64_t watchdog_tick{};
         unsigned deferred_ticks{};
         std::uint64_t generation{}, content_revision{};
+        dexvm::VmObjectRef window_token{};
         ui::Size metrics{};
         float density{};
         std::shared_ptr<const ui::UiTree> published;
@@ -182,6 +183,7 @@ struct DexVmAndroidContext final {
     bool theme_projection_loaded{};
     bool theme_gc_registered{};
     XmlStringPoolToken resource_string_pool;
+    XmlStringPoolToken rom_string_pool;
     XmlCursorRegistry xml_cursors;
     bool xml_gc_registered{};
     loader::ArscTable arsc;
@@ -673,6 +675,13 @@ struct DexVmAndroidContext final {
   // until a managed main-thread traversal. Detached observers do not receive
   // global layout events; registration itself does not invent an event.
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> view_tree_observers;
+
+  struct ManagedTokenState final {
+      dexvm::VmObjectRef root{};
+      std::uint64_t generation{};
+  };
+
+  std::unordered_map<std::uint32_t, ManagedTokenState> managed_window_tokens;
   std::unordered_map<std::uint32_t, dexvm::VmObjectRef> global_layout_listeners;
 
   // SAX reader setup is real local state. Parsing remains an explicit gap
@@ -924,6 +933,12 @@ struct DexVmAndroidContext final {
     std::shared_ptr<const ui::UiBitmap> image_projection;
     std::uint64_t bitmap_revision{};
     std::shared_ptr<const ui::UiBitmap> leaf_pixels;
+    bool rom_skin{};
+    std::array<std::int32_t, 4> skin_padding{}, skin_optical{};
+    std::int32_t skin_width{-1}, skin_height{-1};
+    std::vector<dexvm::VmObjectRef> skin_children;
+    std::vector<std::vector<std::int32_t>> skin_states;
+    std::int32_t skin_current{-1};
   };
 
   // Immutable leaf-resource backing belongs to its Java Drawable, never to a cache.

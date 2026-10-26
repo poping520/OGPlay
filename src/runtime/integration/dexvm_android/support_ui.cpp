@@ -348,6 +348,15 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             entry.clip_to_padding = (flags & 2) != 0;
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
+        if (prepare_render && visibility != ui::Visibility::Gone) {
+            const auto background = fields.GetRef((*context.view_java_input_fields)[1]);
+            const auto skin = context.ui_drawables.find(background.Value());
+            if (skin != context.ui_drawables.end() && skin->second.rom_skin) {
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.rom_skin_draw", 0);
+                throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                         "ROM skin drawing is unsupported"};
+            }
+        }
         if (prepare_render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))
             android_intrinsics::ProjectAndroidImage(vm, context, view);
         if (prepare_render &&
@@ -824,6 +833,10 @@ ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
 void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) {
     std::shared_ptr<const ui::UiTree> retained;
     if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        if (const auto object = context.ui_node_to_object.find(node); object != context.ui_node_to_object.end()) {
+            context.ui_window_schedules.erase(object->second);
+            context.ui_traversal_diagnostics.erase(object->second);
+        }
         for (const auto& record : context.activity_stack) {
             if (record.window_root != node) continue;
             retained = record.projection;

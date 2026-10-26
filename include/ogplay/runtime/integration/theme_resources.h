@@ -56,6 +56,22 @@ public:
                                                    const loader::ArscTable& table) const;
     void RequireRegistered(std::string_view theme) const;
     [[nodiscard]] std::uint32_t ThemeId(std::string_view theme) const;
+
+    struct RomDrawable final {
+        struct Item final {
+            std::vector<std::int32_t> states;
+            std::uint32_t drawable{};
+        };
+
+        std::uint32_t id{}, density{}, width{}, height{};
+        std::array<std::int32_t, 4> padding{}, optical{};
+        std::vector<std::byte> png;
+        std::vector<Item> items;
+    };
+
+    [[nodiscard]] const RomDrawable* Drawable(std::uint32_t id, std::uint32_t density) const;
+
+    [[nodiscard]] const std::vector<std::byte>& Strings() const { return string_pool_; }
     void Shutdown();
 
     [[nodiscard]] std::size_t LiveThemes() const { return themes_.size(); }
@@ -84,6 +100,8 @@ private:
     std::map<ThemeToken, State> themes_;
     std::set<std::uint32_t> drawable_attributes_;
     std::set<std::uint32_t> projected_reference_ids_;
+    std::vector<std::byte> string_pool_;
+    std::vector<RomDrawable> rom_drawables_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

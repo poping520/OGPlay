@@ -8,6 +8,7 @@ import { Brand } from './settings-ui';
 import type { Settings } from './settings';
 import { ImportWizard } from './import-wizard';
 import { DataHintDialog } from './data-hint';
+import { InstallInfoDialog, RemoveGameDialog } from './game-dialogs';
 import type { DataHint } from './import';
 import { Cartridge, shellStyle, useBackdropArt, useIconColor } from './cartridge';
 import { Hero3D, TileCart, useCart3D, type CartMode } from './cartridge3d';
@@ -80,7 +81,6 @@ function App() {
   const [dashboards, setDashboards] = useState<DashboardInfo[]>([]);
   const [removing, setRemoving] = useState<LibraryItem | null>(null);
   const [dataHint, setDataHint] = useState<{ id: string; hint: DataHint } | null>(null);
-  const [deleteSaves, setDeleteSaves] = useState(false);
   const [dashboardListOpen, setDashboardListOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -190,7 +190,7 @@ function App() {
     setMenuOpen(false);
     if (game.running || busy || importing) return;
     if (settingsRef.current?.values.confirm_delete === false) void remove(game);
-    else { setDeleteSaves(false); setRemoving(game); }
+    else setRemoving(game);
   };
   const intake = (files: File[]) => {
     const error = validatePackageSelection(files);
@@ -383,21 +383,8 @@ function App() {
         setDataHint(null); await refresh();
         if (relaunch) await rpc('library.launch', { installation_id: id });
       }} />}
-    {removing && <Modal title={t('删除游戏')} onDismiss={() => { if (!busy) setRemoving(null); }}>
-      <p>{t('确认删除「{name}」？', { name: removing.display_name })}</p><p class="mono">{removing.installation_id}</p>
-      <p>{t('删除库内 APK、复制入库的数据包、设置和日志。引用的原数据目录及原始 APK 不受影响。')}</p>
-      <label class="import-confirm"><input type="checkbox" checked={deleteSaves} disabled={busy} onChange={event => setDeleteSaves(event.currentTarget.checked)} />{t('同时删除存档（不可恢复）')}</label>
-      <p>{deleteSaves ? t('存档将被永久删除；重新导入后从头开始。') : t('存档保留在沙盒中；重新导入同一游戏时自动恢复。')}</p>
-      <button class={deleteSaves ? 'danger' : undefined} disabled={busy} onClick={() => void remove(removing, deleteSaves)}>{deleteSaves ? t('删除游戏和存档') : t('确认删除')}</button>
-    </Modal>}
-    {infoOpen && item && <Modal title={t('安装信息')} onDismiss={() => setInfoOpen(false)}>
-      <dl class="info"><dt>{t('游戏')}</dt><dd>{item.display_name}<small>{versionLabel(item)}</small></dd>
-        <dt>{t('安装 ID')}</dt><dd class="mono">{item.installation_id}</dd><dt>{t('包名')}</dt><dd class="mono">{item.package || t('包名不可用')}</dd>
-        {item.profile && <><dt>Profile</dt><dd>{item.profile.value}<small>{item.profile.detail}</small></dd></>}<dt>{t('数据包')}</dt><dd>{item.external.value}<small>{item.external.detail}</small></dd>
-        <dt>{t('沙盒路径')}</dt><dd class="mono">{item.sandbox_path}</dd><dt>{t('日志目录')}</dt><dd class="mono">{item.log_directory}</dd><dt>{t('导入时间')}</dt><dd>{item.imported_at || t('未记录')}</dd>
-        <dt>Dashboard</dt><dd>{instance?.detail ?? t('游戏尚未运行')}</dd>
-        <dt>{t('按键设置')}</dt><dd>{instance?.key_editor_detail ?? t('先启动游戏；运行中按 F1 查看键位、F2 打开按键设置。')}</dd></dl>
-    </Modal>}
+    {removing && <RemoveGameDialog item={removing} busy={busy} onConfirm={withSaves => void remove(removing, withSaves)} onClose={() => { if (!busy) setRemoving(null); }} />}
+    {infoOpen && item && <InstallInfoDialog item={item} runtime={instance} busy={busy} openDir={kind => void act('library.open_dir', item, kind)} onClose={() => setInfoOpen(false)} />}
     {dashboardListOpen && <Modal title={t('运行中的游戏')} onDismiss={() => setDashboardListOpen(false)}>
       {dashboards.length === 0 ? <p>{t('当前启动器没有运行中的游戏。')}</p> : dashboards.map(instance => <section key={instance.installation_id}>
         <h3>{library.items.find(game => game.installation_id === instance.installation_id)?.display_name ?? instance.installation_id}</h3>

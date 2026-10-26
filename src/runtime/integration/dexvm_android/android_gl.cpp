@@ -94,7 +94,7 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                                                     {"Landroid/view/SurfaceHolder$Callback;"});
     builder.ConstantInt("RENDERMODE_WHEN_DIRTY", "I", 0)
         .ConstantInt("RENDERMODE_CONTINUOUSLY", "I", 1);
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
             const auto parent =
                 call.vm.Linker().FindDirectMethod(call.vm.Linker().ResolveDescriptor("Landroid/view/SurfaceView;"),
@@ -105,8 +105,6 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                                       result.exception_message, result.exception};
             return dx::VmValue::Void();
         });
-    } else {
-        builder.Constructor("(Landroid/content/Context;)V", SurfaceViewInitHandler(context));
     }
     // API19 stores this preference on the View, independently of renderer
     // creation. It is a request, not evidence that an EGL context survived.
@@ -137,12 +135,11 @@ Decl Declare_android_opengl_GLSurfaceView(const Context& context) {
                               context->gl_surface_render_requests[call.receiver.Value()] = true;
                               state->renderer = call.arguments[0].ref;
                               state->stopped = false;
-                              if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-                                  RecordAndroidSurfaceDiagnostic(call.vm, *context, "ui.surface.producer",
-                                                                 "renderer registered",
-                                                                 {{"view", std::uint64_t(call.receiver.Value())},
-                                                                  {"owner", std::uint64_t(state->owner.Value())}},
-                                                                 {.mode = core::RateLimitMode::none});
+                              RecordAndroidSurfaceDiagnostic(call.vm, *context, "ui.surface.producer",
+                                                             "renderer registered",
+                                                             {{"view", std::uint64_t(call.receiver.Value())},
+                                                              {"owner", std::uint64_t(state->owner.Value())}},
+                                                             {.mode = core::RateLimitMode::none});
                               RecordAndroidProducerDiagnostic(call.vm, *context, call.receiver, "registered");
                               return dx::VmValue::Void();
                           });

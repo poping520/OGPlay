@@ -2529,3 +2529,16 @@ RGBA；相同发布直接复用，producer 单独换帧可复用相同 UI 平面
 `ViewGroup.removeViewInLayout(View)` 执行 ROM 的 removeViewInternal 链，不额外伪造
 requestLayout；调用方真实 invalidation/布局屏障提交更新的 Java 子序。
 实施与证据见 [DVM-330](../tasks/dexvm/DVM-330.md)。实施方按常设原则调整审计范围：无。
+
+### ADR-0162 · VD-12 默认切换（DVM-331，2026-10-26）
+
+决定7实施：当前固定 java-traversal.json 重建制品作为默认 BootDex，配对模式为
+JavaTraversal v1。context/catalog、guest 遍历、输入及呈现仅保留 Java 路径；
+缺配对、未知模式/版本、DEX/成员表/主题不匹配一律明确失败，无运行期回落。
+纯宿主 Dialog 保留独立 HostLayout/LayoutUiTree；legacy JNI 与 targetSdk 兼容不变。
+PhoneLayoutInflater 沿已审同 ROM policy 闭包；不引入 Policy/PhoneWindow/Binder/WMS。
+候选与默认同源同字节、确定性、CPU 与一致性证据见 [DVM-331](../tasks/dexvm/DVM-331.md)。
+本修订不调整组合/准入审计范围，不放宽 ADR-0147；支持路径未实现命中仍须为0。
+冻结 Legacy 基线为 vd-11-20/gate B 组，VD-11 已于 2026-10-26 以9/9持平验收；
+本次默认发布的 GPU/EGL、lifecycle、九场景与帧时≤10%由编排方单独外验。
+Windows `windows-msvc` 未验证，须单列，macOS 的结果不能覆盖 Windows。

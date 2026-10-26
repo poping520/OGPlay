@@ -15,56 +15,6 @@
 
 namespace ogplay::runtime {
 
-void RefreshAndroidImageDrawables(DexVmAndroidContext& context) {
-    // JavaTraversal derives image inputs from Java fields at measure/publication.
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return;
-    for (const auto& [view, drawable] : context.ui_view_images) {
-        const auto node = FindViewUiNode(context, view);
-        if (!node) continue;
-        auto& state = context.ui_drawables.at(drawable.Value());
-        std::shared_ptr<const ui::UiBitmap> image;
-        std::optional<std::uint32_t> color;
-        ui::Size intrinsic{};
-        if (state.bitmap.IsValid()) {
-            const auto found = context.bitmaps.find(state.bitmap.Value());
-            if (found == context.bitmaps.end() || found->second.recycled)
-                throw std::runtime_error("ImageView Drawable bitmap is recycled or unavailable");
-            const auto& bitmap = found->second;
-            if (!state.image_projection || state.bitmap_revision != bitmap.pixels->Revision() || bitmap.pixels->Locks() != 0) {
-                auto projected = std::make_shared<ui::UiBitmap>();
-                projected->width = bitmap.width; projected->height = bitmap.height;
-                const auto argb = bitmap.pixels->Snapshot();
-                projected->rgba8.reserve(argb.size() * 4U);
-                for (const auto value : argb) {
-                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 16U));
-                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 8U));
-                    projected->rgba8.push_back(static_cast<std::uint8_t>(value));
-                    projected->rgba8.push_back(static_cast<std::uint8_t>(value >> 24U));
-                }
-                state.image_projection = std::move(projected);
-                state.bitmap_revision = bitmap.pixels->Revision();
-            }
-            image = state.image_projection; intrinsic = {bitmap.width, bitmap.height};
-        } else if (state.color) {
-            color = (*state.color << 8U) | (*state.color >> 24U);
-        } else if (state.resource_id != 0) {
-            image = ResolveUiDrawable(context, state.resource_id);
-            intrinsic = {image->width, image->height};
-        } else if (!state.bitmap_drawable) {
-            throw std::runtime_error("ImageView Drawable has no supported backing");
-        }
-        auto* target = context.ui_tree.Get(*node);
-        const auto alpha = static_cast<float>(state.alpha) / 255.0F;
-        if (target->intrinsic != intrinsic) {
-            target->intrinsic = intrinsic; context.ui_tree.MarkLayoutDirty(*node);
-        }
-        if (target->image_bitmap != image || target->image_color != color || target->image_alpha != alpha) {
-            target->image_bitmap = std::move(image); target->image_color = color; target->image_alpha = alpha;
-            context.ui_tree.MarkDrawDirty(*node);
-        }
-    }
-}
-
 void AssignViewContext(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                        const dexvm::VmObjectRef view,
                        const dexvm::VmObjectRef owner) {
@@ -139,7 +89,7 @@ void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 
 void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                      const dexvm::VmObjectRef view) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View initialization requires owner thread"};
         const auto type = vm.Linker().ResolveDescriptor("Landroid/view/View;");
@@ -179,7 +129,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     // View.java:3438. Context prebinding is separate from construction:
     // a failed constructor must never suppress a later resource exception.
     const auto owner = fields.GetRef(*context.view_context_field);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !owner.IsValid())
+    if (!owner.IsValid())
         throw dexvm::VmJavaThrow{"Ljava/lang/NullPointerException;", "Measured View requires Context"};
     const auto roots = vm.ProtectReferences(std::array{view, owner});
     const auto resources =
@@ -198,7 +148,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
     fields.SetInt(tokens.user_padding[4], std::numeric_limits<std::int32_t>::min());
     for (const auto token : tokens.padding_defined)
         fields.SetInt(token, 0);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         const auto& measure = *context.view_java_measure_fields;
         // Pinned ROM View(Context): old specs MIN_VALUE, flags2 0x22408,
         // SOUND_EFFECTS_ENABLED | HAPTIC_FEEDBACK_ENABLED. Measured fields
@@ -212,11 +162,7 @@ void InitializeAndroidViewJavaLayout(dexvm::Interpreter& vm, DexVmAndroidContext
         fields.SetInt(context.view_java_hierarchy_fields->id, -1);
         fields.SetInt(context.view_java_hierarchy_fields->label_for_id, -1);
     }
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy &&
-        android_intrinsics::UiClassForObject(vm, view) == ui::UiClass::Button) {
-        // Preserve the existing bounded Widget.Button background projection.
-        WriteAndroidViewPadding(vm, context, view, {6, 4, 6, 4}, false);
-    }
+
     // API19 View.java:3453-3463. The sealed process target SDK is the
     // ApplicationInfo fact exposed by this bounded Context implementation.
     if (owner.IsValid() && context.view_compatibility_fields) {
@@ -243,9 +189,7 @@ dexvm::VmObjectRef AndroidUiTraversalRoot(dexvm::Interpreter& vm, DexVmAndroidCo
         }
     }
     // A missing Activity is the explicit VD-04/05 standalone fixture path.
-    return context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && context.activity.IsValid()
-               ? dexvm::VmObjectRef{}
-               : context.content_view;
+    return context.activity.IsValid() ? dexvm::VmObjectRef{} : context.content_view;
 }
 
 bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
@@ -270,8 +214,8 @@ bool AndroidViewBelongsToRoot(dexvm::Interpreter& vm, DexVmAndroidContext& conte
 void ScrollAndroidViewBy(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
                          const std::int32_t delta_y, const std::int32_t delta_x) {
     dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
-        context.ui_java_owner_thread != std::this_thread::get_id() || context.ui_layout_dispatching)
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id() ||
+        context.ui_layout_dispatching)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
                                  "Scroll input requires Java owner outside layout"};
     const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/ScrollView;");
@@ -430,16 +374,14 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
 }  // namespace
 
 std::set<dexvm::VmObjectRef>& AndroidUiMeasureRequests(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
-        context.ui_java_owner_thread != std::this_thread::get_id())
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Layout requests require Java owner"};
     return context.ui_window_schedules[AndroidUiTraversalRoot(vm, context)].requests;
 }
 
 std::shared_ptr<const ui::UiTree> ReadAndroidUiGeometry(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || vm.CurrentContextToken() != 1U ||
-        context.ui_java_owner_thread != std::this_thread::get_id())
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Geometry projection requires Java owner"};
     const auto root = AndroidUiTraversalRoot(vm, context);
     if (!root.IsValid() || !FindViewUiNode(context, root.Value()))
@@ -553,7 +495,6 @@ std::string DescribeProducer(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 void RecordAndroidSurfaceDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                     const std::string_view category, const std::string& reason,
                                     std::vector<core::LogField> fields, const core::RateLimitPolicy& rate_limit) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
     std::string key = std::string(category) + ": " + reason;
     for (const auto& field : fields)
@@ -569,7 +510,6 @@ void RecordAndroidSurfaceDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext&
 
 void RecordAndroidProducerDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                      const dexvm::VmObjectRef view, const std::string& reason) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
     auto description = "reason=" + reason + " " + DescribeProducer(vm, context, view);
     auto& previous = context.ui_producer_diagnostics[view.Value()];
@@ -584,7 +524,6 @@ void RecordAndroidProducerDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext
 }
 
 void SummarizeAndroidUiDiagnostics(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     const dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
     if (context.ui_diagnostic_summary_emitted) return;
     context.ui_diagnostic_summary_emitted = true;
@@ -611,7 +550,6 @@ void SummarizeAndroidUiDiagnostics(dexvm::Interpreter& vm, DexVmAndroidContext& 
 
 void RecordAndroidTraversalDiagnostic(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                       const dexvm::VmObjectRef root, const std::string& reason) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     auto& total = context.ui_diagnostic_totals["ui.traversal: " + reason];
     ++total.count;
     total.epoch = context.ui_measure_epoch;
@@ -635,8 +573,7 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
                                          const dexvm::VmObjectRef root, const ui::UiProjectionTarget& target,
                                          const std::uint64_t epoch) {
     dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
-        (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
+    if ((vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Measured projection requires Java owner thread"};
     if (root != AndroidUiTraversalRoot(vm, context) || target.content_revision != context.ui_content_revision ||
         target.window_generation != context.ui_tree.Generation()) {
@@ -654,7 +591,6 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Root has no completed ROM measurement"};
     }
     try {
-        RefreshAndroidImageDrawables(context);
         RefreshAndroidSurfaceFrames(context);
         auto projection = CollectAndroidRootProjection(vm, context, root, target, epoch, true);
         ResizeAndroidDialogs(vm, context);
@@ -692,8 +628,6 @@ void CommitAndroidMeasuredRootProjection(dexvm::Interpreter& vm, DexVmAndroidCon
 
 dexvm::VmObjectRef ReadAndroidViewListener(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                            dexvm::VmObjectRef view, AndroidViewListener listener) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal)
-        throw std::logic_error("Java listener read requires JavaTraversal");
     dexvm::IntrinsicContext call{vm, view, {}};
     dexvm::IntrinsicCall fields(call);
     const auto info = fields.GetRef((*context.view_java_input_fields)[0]);
@@ -701,10 +635,6 @@ dexvm::VmObjectRef ReadAndroidViewListener(dexvm::Interpreter& vm, DexVmAndroidC
     return fields.GetRef((*context.view_java_listener_fields)[static_cast<std::size_t>(listener)], info);
 }
 
-void RefreshAndroidViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    for (const auto& [_, view] : context.ui_node_to_object)
-        ProjectViewLayoutInputs(vm, context, view);
-}
 
 void BindViewToUiNode(DexVmAndroidContext& context,
                       const dexvm::VmObjectRef view,
@@ -735,8 +665,7 @@ ui::UiNodeId EnsureViewUiNode(DexVmAndroidContext& context,
     const auto found = context.object_to_ui_node.find(view.Value());
     if (found != context.object_to_ui_node.end()) return found->second;
     const auto node = context.ui_tree.CreateNode(kind);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
-        (kind == ui::UiClass::Button || kind == ui::UiClass::EditText)) {
+    if ((kind == ui::UiClass::Button || kind == ui::UiClass::EditText)) {
         // Legacy defaults have no authority over the ROM theme consumption path.
         auto& text = *context.ui_tree.Get(node);
         text.background_color.reset();
@@ -765,24 +694,6 @@ dexvm::VmObjectRef ViewObjectForUiNode(const DexVmAndroidContext& context,
                                                      : found->second;
 }
 
-void InitializeDefaultViewBackground(dexvm::Interpreter& vm,
-                                     DexVmAndroidContext& context,
-                                     const dexvm::VmObjectRef view,
-                                     const ui::UiNodeId node) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal ||
-        context.ui_tree.Get(node)->kind != ui::UiClass::Button || context.ui_view_backgrounds.contains(view.Value())) {
-        return;
-    }
-    const auto drawable =
-        vm.NewIntrinsicInstance("Landroid/graphics/drawable/Drawable;");
-    context.ui_view_backgrounds.emplace(view.Value(), drawable);
-    context.ui_drawables.emplace(
-        drawable.Value(),
-        DexVmAndroidContext::UiDrawableState{
-            .color = context.ui_tree.Get(node)->background_color,
-            .callback_node = node});
-}
-
 void ResetViewUiState(DexVmAndroidContext& context) {
     context.ui_window_schedules.clear();
     context.ui_traversal_diagnostics.clear();
@@ -792,23 +703,18 @@ void ResetViewUiState(DexVmAndroidContext& context) {
     if (!context.activity_stack.empty()) {
         const auto children = context.ui_tree.Get(ActivityContentRoot(context))->children;
         for (const auto child : children) RetireViewUiSubtree(context, child);
-        context.focused_edit_text = dexvm::VmObjectRef{};
         return;
     }
     context.ui_tree.Reset();
-    context.ui_notified_view_sizes.clear();context.ui_layout_metrics.reset();
-    context.ui_notified_window_focus.clear();
+    context.ui_layout_metrics.reset();
     context.object_to_ui_node.clear();
     context.ui_node_to_object.clear();
-    context.ui_click_listeners.clear();
-    context.ui_touch_listeners.clear();
     context.ui_view_layout_params.clear();
     context.ui_view_backgrounds.clear();
     context.ui_view_images.clear();
     context.ui_drawables.clear();
     context.paint_measure_states.clear();
     context.text_watchers.clear();
-    context.focused_edit_text = dexvm::VmObjectRef{};
 }
 
 void DetachGlSurfaceSubtree(DexVmAndroidContext& context, const ui::UiNodeId subtree) {
@@ -834,21 +740,14 @@ ui::UiNodeId ActivityContentRoot(DexVmAndroidContext& context,
     if (!found->window_root || !context.ui_tree.Get(*found->window_root)) {
         // The owner barrier materializes the Java Window content root. Until
         // then an empty window has only the synthetic projection root.
-        if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) return context.ui_tree.Root();
-        const auto node = context.ui_tree.CreateNode(ui::UiClass::FrameLayout);
-        context.ui_tree.Get(node)->layout.width.mode = ui::SizeMode::MatchParent;
-        context.ui_tree.Get(node)->layout.height.mode = ui::SizeMode::MatchParent;
-        context.ui_tree.Attach(context.ui_tree.Root(), node);
-        found->window_root = node;
-        found->visible = !owner.IsValid() || owner == context.activity;
-        context.ui_tree.SetWindowVisible(node, found->visible);
+        return context.ui_tree.Root();
     }
     return *found->window_root;
 }
 
 void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) {
     std::shared_ptr<const ui::UiTree> retained;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         if (const auto object = context.ui_node_to_object.find(node); object != context.ui_node_to_object.end()) {
             context.ui_window_schedules.erase(object->second);
             context.ui_traversal_diagnostics.erase(object->second);
@@ -869,8 +768,6 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
         const auto* state = tree.Get(current);
         if (!state) continue;
         retired.push_back(current);
-        context.ui_notified_view_sizes.erase(current);
-        context.ui_notified_window_focus.erase(current);
         nodes.insert(nodes.end(), state->children.begin(), state->children.end());
         const auto found = context.ui_node_to_object.find(current);
         if (found != context.ui_node_to_object.end()) {
@@ -900,20 +797,15 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
             context.ui_view_backgrounds.erase(object);
             context.ui_view_images.erase(object);
             context.text_watchers.erase(object);
-            if (context.focused_edit_text.Value() == object)
-                context.focused_edit_text = dexvm::VmObjectRef{};
             context.ui_node_to_object.erase(found);
         }
-        context.ui_click_listeners.erase(current);
-        context.ui_touch_listeners.erase(current);
     }
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         // Background nodes have been disconnected in the foreground builder;
         // retire the saved complete hierarchy, not only its now-empty root.
         for (auto it = retired.rbegin(); it != retired.rend(); ++it)
             context.ui_tree.RetireProjectedIdentity(*it);
-    } else
-        context.ui_tree.DestroySubtree(node);
+    }
 }
 
 }  // namespace ogplay::runtime
@@ -993,40 +885,12 @@ namespace {
 constexpr std::string_view kAndroidNamespace =
     "http://schemas.android.com/apk/res/android";
 constexpr std::uint8_t kTypeDimension = 0x05;
-constexpr std::uint8_t kTypeFloat = 0x04;
+
 constexpr std::uint8_t kTypeReference = 0x01;
-constexpr std::uint8_t kTypeAttribute = 0x02;
+
 constexpr std::uint8_t kTypeString = 0x03;
 constexpr std::uint8_t kTypeFirstColor = 0x1c;
 constexpr std::uint8_t kTypeLastColor = 0x1f;
-
-constexpr std::array<UiWidgetDescriptor, 17> kWidgets{{
-    {"View", "Landroid/view/View;", ui::UiClass::View},
-    {"SurfaceView", "Landroid/view/SurfaceView;", ui::UiClass::View},
-    {"TextView", "Landroid/widget/TextView;", ui::UiClass::TextView},
-    {"Button", "Landroid/widget/Button;", ui::UiClass::Button},
-    {"EditText", "Landroid/widget/EditText;", ui::UiClass::EditText},
-    {"ImageView", "Landroid/widget/ImageView;", ui::UiClass::ImageView},
-    {"ImageButton", "Landroid/widget/ImageButton;", ui::UiClass::ImageButton},
-    {"ProgressBar", "Landroid/widget/ProgressBar;", ui::UiClass::View},
-    {"VideoView", "Landroid/widget/VideoView;", ui::UiClass::VideoView},
-    {"WebView", "Landroid/webkit/WebView;", ui::UiClass::View},
-    {"LinearLayout", "Landroid/widget/LinearLayout;", ui::UiClass::LinearLayout},
-    {"FrameLayout", "Landroid/widget/FrameLayout;", ui::UiClass::FrameLayout},
-    {"RelativeLayout", "Landroid/widget/RelativeLayout;", ui::UiClass::RelativeLayout},
-    {"TableLayout", "Landroid/widget/TableLayout;", ui::UiClass::TableLayout},
-    {"TableRow", "Landroid/widget/TableRow;", ui::UiClass::TableRow},
-    {"ScrollView", "Landroid/widget/ScrollView;", ui::UiClass::ScrollView},
-    {"AbsoluteLayout", "Landroid/widget/AbsoluteLayout;", ui::UiClass::FrameLayout},
-}};
-
-[[nodiscard]] const UiWidgetDescriptor* FindWidget(
-    const std::string_view tag) {
-    for (const auto& widget : kWidgets) {
-        if (widget.xml_tag == tag) return &widget;
-    }
-    return nullptr;
-}
 
 [[nodiscard]] std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
     return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
@@ -1145,116 +1009,6 @@ namespace {
     return static_cast<std::int32_t>(std::lround(value));
 }
 
-[[nodiscard]] std::int32_t DimensionValue(
-    const DexVmAndroidContext& context,
-    const loader::BinaryXmlAttribute& attribute, const bool scaled = false) {
-    if (attribute.value_type == kTypeReference) {
-        return ResolveUiDimension(context, attribute.data, scaled);
-    }
-    if (attribute.value_type == kTypeDimension) {
-        return ComplexDimensionPx(context, attribute.data, scaled);
-    }
-    return static_cast<std::int32_t>(attribute.data);
-}
-
-void ApplyInflatedWidgetDefaults(dexvm::Interpreter& vm, DexVmAndroidContext& context, ui::UiNode& node) {
-    const auto dp = [&context](const float value) {
-        return static_cast<std::int32_t>(
-            std::lround(value * context.ui_density));
-    };
-    const auto sp = [&context](const float value) {
-        return value * context.ui_scaled_density;
-    };
-    if (node.kind == ui::UiClass::TextView) {
-        node.text_size_px = sp(14.0F);
-    } else if (node.kind == ui::UiClass::Button) {
-        node.text_size_px = sp(14.0F);
-        WriteAndroidViewMinimum(vm, context, ViewObjectForUiNode(context, node.id), {dp(64.0F), dp(48.0F)});
-        node.gravity = 0x11U;
-        node.clickable = true;
-    } else if (node.kind == ui::UiClass::EditText) {
-        node.text_size_px = sp(18.0F);
-        WriteAndroidViewMinimum(vm, context, ViewObjectForUiNode(context, node.id), {0, dp(48.0F)});
-        node.gravity = 0x10U;
-        node.clickable = true;
-    }
-}
-
-void ApplyTextAppearance(const DexVmAndroidContext& context,
-                         ui::UiNode& node, const std::uint32_t resource_id) {
-    // API 19 public.xml and styles.xml: the six base text appearances differ
-    // here only by size; colors remain owned by the theme/app overrides.
-    switch (resource_id) {
-        case 0x01030042U:
-        case 0x01030043U:
-        case 0x010300fdU:
-        case 0x010300feU:
-            node.text_size_px = 22.0F * context.ui_scaled_density;
-            return;
-        case 0x01030044U:
-        case 0x01030045U:
-        case 0x010300ffU:
-        case 0x01030100U:
-            node.text_size_px = 18.0F * context.ui_scaled_density;
-            return;
-        case 0x01030046U:
-        case 0x01030047U:
-        case 0x01030101U:
-        case 0x01030102U:
-            node.text_size_px = 14.0F * context.ui_scaled_density;
-            return;
-        default: break;
-    }
-    const auto& style = ResolveUiResourceEntry(context, resource_id);
-    if (!style.is_complex || style.type_name != "style") {
-        throw std::runtime_error("TextView textAppearance is not a style");
-    }
-    for (const auto& item : style.bag) {
-        if (item.name == 0x01010095U && item.value_type == kTypeDimension) {
-            node.text_size_px = static_cast<float>(
-                ComplexDimensionPx(context, item.value_data, true));
-        } else if (item.name == 0x01010098U &&
-                   item.value_type >= kTypeFirstColor &&
-                   item.value_type <= kTypeLastColor) {
-            node.text_color = AndroidColorToRgba(item.value_data);
-        }
-    }
-}
-
-void ApplyStyleAttribute(const DexVmAndroidContext& context,
-                         const UiWidgetDescriptor& widget, ui::UiNode& node,
-                         const loader::BinaryXmlAttribute& attribute) {
-    if (attribute.value_type == kTypeAttribute &&
-        attribute.data == 0x01010078U &&
-        widget.dex_descriptor == "Landroid/widget/ProgressBar;") {
-        // API 19 R.attr.progressBarStyleHorizontal. All registered API 19
-        // platform themes resolve it to the horizontal ProgressBar family.
-        // Progress state/rendering is a separate widget capability; accepting
-        // this constructor style must not imply that capability.
-        return;
-    }
-    if (attribute.value_type == kTypeReference &&
-        (node.kind == ui::UiClass::TextView ||
-         node.kind == ui::UiClass::Button ||
-         node.kind == ui::UiClass::EditText)) {
-        ApplyTextAppearance(context, node, attribute.data);
-        return;
-    }
-    throw std::runtime_error(
-        "UI style resource is outside the registered API 19 projection");
-}
-
-[[nodiscard]] std::int32_t SiblingResourceId(
-    const loader::BinaryXmlAttribute& attribute) {
-    if (attribute.data == 0U ||
-        attribute.data >
-            static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max())) {
-        throw std::runtime_error(
-            "RelativeLayout sibling rule requires a positive resource id");
-    }
-    return static_cast<std::int32_t>(attribute.data);
-}
-
 [[nodiscard]] std::u16string AsciiText(const std::string& text) {
     std::u16string value;
     value.reserve(text.size());
@@ -1267,218 +1021,6 @@ void ApplyStyleAttribute(const DexVmAndroidContext& context,
     }
     static_cast<void>(ui::MeasureFixedText(value, 8.0F));
     return value;
-}
-
-void ApplyAttribute(dexvm::Interpreter& vm, DexVmAndroidContext& context, const ui::UiNodeId node_id,
-                    const loader::BinaryXmlAttribute& attribute, std::uint32_t& drawable_id) {
-    if (attribute.namespace_uri.empty() && attribute.name == "style") return;
-    if (attribute.namespace_uri != kAndroidNamespace) return;
-    auto& node = *context.ui_tree.Get(node_id);
-    const auto& name = attribute.name;
-    if (name == "id") {
-        context.ui_tree.SetAndroidId(
-            node_id, static_cast<std::int32_t>(attribute.data));
-    } else if (name == "visibility") {
-        if (attribute.data > 2U) {
-            throw std::runtime_error("unsupported UI visibility enum");
-        }
-        context.ui_tree.SetVisibility(
-            node_id, attribute.data == 0U
-                         ? ui::Visibility::Visible
-                         : attribute.data == 1U ? ui::Visibility::Invisible
-                                                : ui::Visibility::Gone);
-    } else if (name == "enabled") {
-        node.enabled = attribute.data != 0U;
-    } else if (name == "clickable") {
-        context.ui_tree.SetClickable(node_id, attribute.data != 0U);
-    } else if (name == "layout_width") {
-        const auto value = DimensionValue(context, attribute);
-        node.layout.width = value == -1
-                                ? ui::DimensionSpec{ui::SizeMode::MatchParent, 0}
-                                : value == -2
-                                      ? ui::DimensionSpec{ui::SizeMode::WrapContent, 0}
-                                      : ui::DimensionSpec{ui::SizeMode::Fixed, value};
-    } else if (name == "layout_height") {
-        const auto value = DimensionValue(context, attribute);
-        node.layout.height = value == -1
-                                 ? ui::DimensionSpec{ui::SizeMode::MatchParent, 0}
-                                 : value == -2
-                                       ? ui::DimensionSpec{ui::SizeMode::WrapContent, 0}
-                                       : ui::DimensionSpec{ui::SizeMode::Fixed, value};
-    } else if (name == "gravity") {
-        node.gravity = attribute.data;
-    } else if (name == "layout_gravity") {
-        node.layout.layout_gravity = attribute.data;
-    } else if (name == "orientation") {
-        if (attribute.data > 1U) {
-            throw std::runtime_error("unsupported UI orientation enum");
-        }
-        node.orientation = node.kind == ui::UiClass::TableLayout
-                               ? ui::Orientation::Vertical
-                           : node.kind == ui::UiClass::TableRow
-                               ? ui::Orientation::Horizontal
-                               : attribute.data == 0U
-                                     ? ui::Orientation::Horizontal
-                                     : ui::Orientation::Vertical;
-    } else if (name == "layout_weight") {
-        if (attribute.value_type != kTypeFloat) {
-            throw std::runtime_error("UI layout_weight is not a float");
-        }
-        node.layout.weight = std::bit_cast<float>(attribute.data);
-    } else if (name == "padding") {
-        const auto value = DimensionValue(context, attribute);
-        WriteAndroidViewPadding(vm, context, ViewObjectForUiNode(context, node_id), {value, value, value, value});
-    } else if (name == "paddingLeft") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto padding = ReadAndroidViewPadding(vm, context, view);
-        padding.left = DimensionValue(context, attribute);
-        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
-        dexvm::IntrinsicContext call{vm, view, {}};
-        dexvm::IntrinsicCall(call).SetInt(context.view_java_layout_fields->padding_defined[0], 1);
-    } else if (name == "paddingTop") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto padding = ReadAndroidViewPadding(vm, context, view);
-        padding.top = DimensionValue(context, attribute);
-        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
-    } else if (name == "paddingRight") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto padding = ReadAndroidViewPadding(vm, context, view);
-        padding.right = DimensionValue(context, attribute);
-        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
-        dexvm::IntrinsicContext call{vm, view, {}};
-        dexvm::IntrinsicCall(call).SetInt(context.view_java_layout_fields->padding_defined[1], 1);
-    } else if (name == "paddingBottom") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto padding = ReadAndroidViewPadding(vm, context, view);
-        padding.bottom = DimensionValue(context, attribute);
-        WriteAndroidViewPadding(vm, context, view, padding, std::nullopt);
-    } else if (name == "layout_margin") {
-        const auto value = DimensionValue(context, attribute);
-        node.layout.margin = ui::Insets{value, value, value, value};
-    } else if (name == "layout_marginLeft") {
-        node.layout.margin.left = DimensionValue(context, attribute);
-    } else if (name == "layout_marginTop") {
-        node.layout.margin.top = DimensionValue(context, attribute);
-    } else if (name == "layout_marginRight") {
-        node.layout.margin.right = DimensionValue(context, attribute);
-    } else if (name == "layout_marginBottom") {
-        node.layout.margin.bottom = DimensionValue(context, attribute);
-    } else if (name == "minWidth") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto minimum = ReadAndroidViewMinimum(vm, context, view);
-        minimum.width = DimensionValue(context, attribute);
-        WriteAndroidViewMinimum(vm, context, view, minimum);
-    } else if (name == "minHeight") {
-        const auto view = ViewObjectForUiNode(context, node_id);
-        auto minimum = ReadAndroidViewMinimum(vm, context, view);
-        minimum.height = DimensionValue(context, attribute);
-        WriteAndroidViewMinimum(vm, context, view, minimum);
-    } else if (name == "text") {
-        node.text = attribute.value_type == kTypeReference
-                        ? ResolveUiString(context, attribute.data)
-                        : attribute.raw_string.has_value()
-                              ? AsciiText(*attribute.raw_string)
-                              : throw std::runtime_error(
-                                    "TextView text is not a string");
-    } else if (name == "textColor") {
-        node.text_color = attribute.value_type == kTypeReference
-                              ? ResolveUiColor(context, attribute.data)
-                              : attribute.value_type >= kTypeFirstColor &&
-                                        attribute.value_type <= kTypeLastColor
-                                    ? AndroidColorToRgba(attribute.data)
-                                    : throw std::runtime_error(
-                                          "TextView textColor is not a color");
-    } else if (name == "textAppearance") {
-        if (attribute.value_type != kTypeReference || attribute.data == 0U) {
-            throw std::runtime_error(
-                "TextView textAppearance is not a resource reference");
-        }
-        ApplyTextAppearance(context, node, attribute.data);
-    } else if (name == "textSize") {
-        const auto size = static_cast<float>(
-            DimensionValue(context, attribute, true));
-        static_cast<void>(ui::MeasureFixedText(node.text, size, 0, node.fallback_font.get()));
-        node.text_size_px = size;
-    } else if (name == "singleLine") {
-        node.max_lines = attribute.data == 0U
-                             ? std::numeric_limits<std::int32_t>::max()
-                             : 1;
-    } else if (name == "maxLines") {
-        if (attribute.data == 0U ||
-            attribute.data > static_cast<std::uint32_t>(
-                                 std::numeric_limits<std::int32_t>::max())) {
-            throw std::runtime_error("TextView maxLines is out of range");
-        }
-        node.max_lines = static_cast<std::int32_t>(attribute.data);
-    } else if (name == "maxLength") {
-        if (attribute.data > static_cast<std::uint32_t>(
-                                 std::numeric_limits<std::int32_t>::max())) {
-            throw std::runtime_error("TextView maxLength is out of range");
-        }
-        node.max_length = static_cast<std::int32_t>(attribute.data);
-    } else if (name == "inputType") {
-        node.numeric_input = (attribute.data & 0x0fU) == 0x02U;
-    } else if (name == "background") {
-        if (attribute.value_type == kTypeReference) {
-            static_cast<void>(ResolveUiDrawable(context, attribute.data));
-            node.background_color.reset();
-            node.background_resource_id = attribute.data;
-        } else if (attribute.value_type >= kTypeFirstColor &&
-                   attribute.value_type <= kTypeLastColor) {
-            node.background_color = AndroidColorToRgba(attribute.data);
-            node.background_resource_id = 0;
-        } else {
-            throw std::runtime_error("UI background is not a drawable resource");
-        }
-    } else if (name == "layout_alignParentLeft") {
-        node.layout.relative.align_parent_left = attribute.data != 0U;
-    } else if (name == "layout_alignParentRight") {
-        node.layout.relative.align_parent_right = attribute.data != 0U;
-    } else if (name == "layout_alignParentTop") {
-        node.layout.relative.align_parent_top = attribute.data != 0U;
-    } else if (name == "layout_alignParentBottom") {
-        node.layout.relative.align_parent_bottom = attribute.data != 0U;
-    } else if (name == "layout_centerInParent") {
-        node.layout.relative.center_in_parent = attribute.data != 0U;
-    } else if (name == "layout_centerHorizontal") {
-        node.layout.relative.center_horizontal = attribute.data != 0U;
-    } else if (name == "layout_centerVertical") {
-        node.layout.relative.center_vertical = attribute.data != 0U;
-    } else if (name == "layout_toLeftOf") {
-        node.layout.relative.left_of = SiblingResourceId(attribute);
-    } else if (name == "layout_toRightOf") {
-        node.layout.relative.right_of = SiblingResourceId(attribute);
-    } else if (name == "layout_above") {
-        node.layout.relative.above = SiblingResourceId(attribute);
-    } else if (name == "layout_below") {
-        node.layout.relative.below = SiblingResourceId(attribute);
-    } else if (name == "layout_alignLeft") {
-        node.layout.relative.align_left = SiblingResourceId(attribute);
-    } else if (name == "layout_alignRight") {
-        node.layout.relative.align_right = SiblingResourceId(attribute);
-    } else if (name == "layout_alignTop") {
-        node.layout.relative.align_top = SiblingResourceId(attribute);
-    } else if (name == "layout_alignBottom") {
-        node.layout.relative.align_bottom = SiblingResourceId(attribute);
-    } else if (name == "src") {
-        drawable_id = attribute.data;
-        node.image_resource_id = attribute.data;
-    } else if (name == "scaleType") {
-        switch (attribute.data) {
-            case 1: node.image_scale_type = ui::ImageScaleType::FitXy; break;
-            case 3: node.image_scale_type = ui::ImageScaleType::FitCenter; break;
-            case 5: node.image_scale_type = ui::ImageScaleType::Center; break;
-            case 6: node.image_scale_type = ui::ImageScaleType::CenterCrop; break;
-            case 7:
-                node.image_scale_type = ui::ImageScaleType::CenterInside;
-                break;
-            default:
-                throw std::runtime_error("unsupported ImageView scaleType");
-        }
-    } else if (name.starts_with("layout_")) {
-        throw std::runtime_error("unsupported structural UI attribute: " +
-                                 name);
-    }
 }
 
 }  // namespace
@@ -1779,41 +1321,6 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
     context.ui_tree.MarkDrawDirty(node);
 }
 
-void BindImageDrawable(dx::Interpreter& vm, const Context& context,
-    const dx::VmObjectRef view, const dx::VmObjectRef drawable) {
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        throw std::logic_error("Java image identity must be written through its reviewed adapter");
-    const auto node = EnsureViewUiNode(*context, view, UiClassForObject(vm, view));
-    if (drawable.IsValid() && !context->ui_drawables.contains(drawable.Value())) {
-        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unregistered Drawable image backing"};
-    }
-    if (drawable.IsValid()) {
-        const auto& state = context->ui_drawables.at(drawable.Value());
-        if (!state.bitmap_drawable && !state.color && state.resource_id == 0) {
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable image backing is not implemented"};
-        }
-        if (state.bitmap.IsValid()) {
-            const auto bitmap = context->bitmaps.find(state.bitmap.Value());
-            if (bitmap == context->bitmaps.end() || bitmap->second.recycled)
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Drawable bitmap is recycled"};
-        }
-    }
-    if (const auto old = context->ui_view_images.find(view.Value()); old != context->ui_view_images.end()) {
-        if (const auto state = context->ui_drawables.find(old->second.Value()); state != context->ui_drawables.end() && state->second.callback_node == node)
-            state->second.callback_node.reset();
-    }
-    auto* projected = context->ui_tree.Get(node);
-    projected->image_resource_id = 0; projected->image_bitmap.reset(); projected->image_color.reset();
-    projected->image_alpha = 1.0F; projected->intrinsic = {};
-    if (drawable.IsValid()) {
-        context->ui_view_images[view.Value()] = drawable;
-        context->ui_drawables.at(drawable.Value()).callback_node = node;
-        RefreshAndroidImageDrawables(*context);
-    } else context->ui_view_images.erase(view.Value());
-    context->ui_tree.MarkLayoutDirty(node);
-}
 } // namespace android_intrinsics
 
 namespace {
@@ -1974,17 +1481,6 @@ private:
     std::vector<loader::BinaryXmlElement> output_;
 };
 
-[[nodiscard]] std::vector<loader::BinaryXmlElement> LoadLayout(
-    const DexVmAndroidContext& context, const std::uint32_t layout_id) {
-    const auto& entry = ResolveUiResourceEntry(context, layout_id);
-    if (entry.type_name != "layout" || !entry.string_value.has_value()) {
-        throw std::runtime_error("UI resource is not a layout file");
-    }
-    const auto bytes = loader::ReadApkEntry(
-        context.apk_bytes, context.archive, *entry.string_value);
-    return loader::ParseBinaryXmlElements(bytes);
-}
-
 }  // namespace
 
 std::vector<loader::BinaryXmlElement> ExpandUiIncludes(
@@ -1995,319 +1491,8 @@ std::vector<loader::BinaryXmlElement> ExpandUiIncludes(
     return IncludeExpander(loader).Expand(elements, root_layout_id);
 }
 
-std::span<const UiWidgetDescriptor> UiWidgetRegistry() { return kWidgets; }
 
-namespace {
-// Attribute parsing stays in the shared registry. Java LayoutParams fields become
-// the sole mutable parameter state before the ordinary ViewGroup attach path.
-void AssignInflatedParams(dexvm::Interpreter& vm, DexVmAndroidContext& context,
-                          dexvm::VmObjectRef parent, dexvm::VmObjectRef view,
-                          ui::UiNodeId node) {
-    using namespace android_intrinsics;
-    if (!parent.IsValid()) return; // legacy synthetic roots are not ViewGroups
-    const auto layout = context.ui_tree.Get(node)->layout;
-    const auto params = CallAndroidMethod(vm, parent, "generateDefaultLayoutParams",
-        "()Landroid/view/ViewGroup$LayoutParams;").ref;
-    const auto roots = vm.ProtectReferences(std::array{parent, view, params});
-    if (!params.IsValid()) throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "null generated LayoutParams"};
-    const auto type = vm.Model().ObjectClass(params);
-    const auto put = [&](const char* name, std::uint32_t bits, const char* descriptor = "I") {
-        const auto field = vm.Linker().FindFieldRecursive(type, name, descriptor);
-        if (!field) throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported inflated LayoutParams field: " + std::string(name)};
-        vm.Model().InstanceSlots(params)[vm.Linker().Field(*field).slot] = {bits, dexvm::SlotTag::cat1};
-    };
-    const auto dim = [](const ui::DimensionSpec value) {
-        return static_cast<std::uint32_t>(value.mode == ui::SizeMode::MatchParent ? -1 :
-            value.mode == ui::SizeMode::WrapContent ? -2 : value.px);
-    };
-    put("width", dim(layout.width)); put("height", dim(layout.height));
-    const auto is = [&](const char* descriptor) { return vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor(descriptor), type); };
-    if (is("Landroid/view/ViewGroup$MarginLayoutParams;")) {
-        static_cast<void>(CallAndroidMethod(vm, params, "setMargins", "(IIII)V", {
-            dexvm::VmValue::Int(layout.margin.left), dexvm::VmValue::Int(layout.margin.top),
-            dexvm::VmValue::Int(layout.margin.right), dexvm::VmValue::Int(layout.margin.bottom)}));
-    }
-    if (layout.layout_gravity != 0 && (is("Landroid/widget/FrameLayout$LayoutParams;") || is("Landroid/widget/LinearLayout$LayoutParams;")))
-        put("gravity", layout.layout_gravity);
-    if (is("Landroid/widget/LinearLayout$LayoutParams;")) put("weight", std::bit_cast<std::uint32_t>(layout.weight), "F");
-    if (is("Landroid/widget/RelativeLayout$LayoutParams;")) {
-        const auto& r = layout.relative;
-        const std::array<int, 16> rules{r.left_of.value_or(0), r.right_of.value_or(0),
-            r.above.value_or(0), r.below.value_or(0), 0, r.align_left.value_or(0),
-            r.align_top.value_or(0), r.align_right.value_or(0), r.align_bottom.value_or(0),
-            r.align_parent_left ? -1 : 0, r.align_parent_top ? -1 : 0,
-            r.align_parent_right ? -1 : 0, r.align_parent_bottom ? -1 : 0,
-            r.center_in_parent ? -1 : 0, r.center_horizontal ? -1 : 0, r.center_vertical ? -1 : 0};
-        for (std::size_t i = 0; i < rules.size(); ++i) if (rules[i] != 0)
-            static_cast<void>(CallAndroidMethod(vm, params, "addRule", "(II)V", {
-                dexvm::VmValue::Int(static_cast<int>(i)), dexvm::VmValue::Int(rules[i])}));
-    }
-    static_cast<void>(CallAndroidMethod(vm, view, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {dexvm::VmValue::Ref(params)}));
-}
 
-dexvm::VmObjectRef BuildUiElementsAt(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::span<const loader::BinaryXmlElement> elements,
-    const dexvm::VmObjectRef inflater_context,
-    const std::optional<ui::UiNodeId> parent, const bool attach) {
-    const auto owner_roots = vm.ProtectReferences(std::array{inflater_context,
-        parent ? ViewObjectForUiNode(context, *parent) : dexvm::VmObjectRef{}});
-    std::vector<ui::UiNodeId> created;
-    try {
-        const auto expanded = ExpandUiIncludes(elements, [&context](std::uint32_t id) { return LoadLayout(context, id); });
-        const auto document = std::span<const loader::BinaryXmlElement>{expanded};
-        if (document.empty()) throw std::runtime_error("layout has no root element");
-        std::size_t root_count{};
-        for (std::size_t i = 0; i < document.size(); ++i) {
-            if (document[i].parent < 0) { ++root_count; if (i != 0) throw std::runtime_error("layout root must be first"); }
-            else if (static_cast<std::size_t>(document[i].parent) >= i) throw std::runtime_error("layout parent order is invalid");
-        }
-        if (root_count != 1) throw std::runtime_error("layout must have exactly one root element");
-        const bool merge = document.front().name == "merge";
-        if (merge && (!parent || !attach)) throw std::runtime_error("merge requires a root and attachToRoot=true");
-        dexvm::VmObjectRef content_view;
-        // Construct children in document order, finish each subtree before adding
-        // it to its parent, and publish the document roots only after construction.
-        const auto build = [&](auto&& self, std::size_t index,
-                               std::optional<ui::UiNodeId> parent_node) -> dexvm::VmObjectRef {
-            const auto& element = document[index];
-            if (element.name == "merge") throw std::runtime_error("merge must be the layout root");
-            const auto* widget = FindWidget(element.name);
-            if (widget == nullptr) {
-                if (auto* ledger = vm.Ledger(); ledger != nullptr) {
-                    ledger->RecordUnimplemented(
-                        "runtime.ui.inflate.tag." + element.name, 0);
-                }
-                throw std::runtime_error("unsupported structural UI tag: " +
-                                         element.name);
-            }
-            const auto view = vm.NewIntrinsicInstance(widget->dex_descriptor);
-            const auto view_root = vm.ProtectReferences(std::array{view});
-            const auto node = context.ui_tree.CreateNode(widget->kind);
-            created.push_back(node);
-            BindViewToUiNode(context, view, node);
-            AssignViewContext(vm, context, view, inflater_context);
-            const auto constructor = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(view),
-                "<init>", "(Landroid/content/Context;)V");
-            if (!constructor) throw std::runtime_error("inflatable widget requires a Context constructor");
-            const auto initialized = vm.Call(*constructor,
-                std::array{dexvm::VmValue::Ref(view), dexvm::VmValue::Ref(inflater_context)});
-            if (initialized.exception.IsValid())
-                throw dexvm::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
-                    initialized.exception_message, initialized.exception};
-            ApplyInflatedWidgetDefaults(vm, context, *context.ui_tree.Get(node));
-            InitializeDefaultViewBackground(vm, context, view, node);
-            std::uint32_t drawable_id = element.src;
-            const loader::BinaryXmlAttribute* style = nullptr;
-            for (const auto& attribute : element.attributes) {
-                if (!attribute.namespace_uri.empty() ||
-                    attribute.name != "style") {
-                    continue;
-                }
-                if (style != nullptr) {
-                    throw std::runtime_error(
-                        "UI element has duplicate style attributes");
-                }
-                style = &attribute;
-            }
-            if (style != nullptr) {
-                try {
-                    ApplyStyleAttribute(context, *widget,
-                                        *context.ui_tree.Get(node), *style);
-                } catch (const std::runtime_error&) {
-                    if (auto* ledger = vm.Ledger(); ledger != nullptr) {
-                        ledger->RecordUnimplemented(
-                            "runtime.ui.inflate.attribute.style", 0);
-                    }
-                    throw;
-                }
-            }
-            for (const auto& attribute : element.attributes) {
-                if (attribute.namespace_uri.empty() &&
-                    attribute.name == "style") {
-                    continue;
-                }
-                try {
-                    if (attribute.name == "textAppearance" && attribute.value_type == 2) {
-                        auto resolved = attribute;
-                        resolved.value_type = kTypeReference;
-                        resolved.data = android_intrinsics::ResolveTextAppearanceAttribute(
-                            vm, context, inflater_context, attribute.data);
-                        ApplyAttribute(vm, context, node, resolved, drawable_id);
-                    } else {
-                        ApplyAttribute(vm, context, node, attribute, drawable_id);
-                    }
-                } catch (const std::runtime_error&) {
-                    if (auto* ledger = vm.Ledger(); ledger != nullptr) {
-                        ledger->RecordUnimplemented(
-                            "runtime.ui.inflate.attribute." + attribute.name,
-                            0);
-                    }
-                    throw;
-                }
-            }
-            if (const auto* state = context.ui_tree.Get(node);
-                state->background_resource_id != 0U) {
-                const auto old = context.ui_view_backgrounds.find(view.Value());
-                if (old != context.ui_view_backgrounds.end()) {
-                    auto old_state = context.ui_drawables.find(old->second.Value());
-                    if (old_state != context.ui_drawables.end() &&
-                        old_state->second.callback_node == node) {
-                        old_state->second.callback_node.reset();
-                    }
-                }
-                const auto drawable = vm.NewIntrinsicInstance(
-                    "Landroid/graphics/drawable/Drawable;");
-                context.ui_drawables[drawable.Value()] = {
-                    .resource_id = state->background_resource_id,
-                    .callback_node = node};
-                context.ui_view_backgrounds[view.Value()] = drawable;
-            }
-            if (element.id != 0 &&
-                context.ui_tree.Get(node)->android_id < 0) {
-                context.ui_tree.SetAndroidId(
-                    node, static_cast<std::int32_t>(element.id));
-            }
-
-            if (parent_node) AssignInflatedParams(vm, context, ViewObjectForUiNode(context, *parent_node), view, node);
-            if (drawable_id != 0U) {
-                const auto image = ResolveUiDrawable(context, drawable_id);
-                context.ui_tree.Get(node)->intrinsic = {image->width, image->height};
-            }
-            for (std::size_t child = index + 1; child < document.size(); ++child) {
-                if (document[child].parent != static_cast<std::int32_t>(index)) continue;
-                if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"), vm.Model().ObjectClass(view)))
-                    throw std::runtime_error("inflated children require a ViewGroup parent");
-                const auto child_view = self(self, child, node);
-                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "addView",
-                    "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-                    {dexvm::VmValue::Ref(child_view), dexvm::VmValue::Ref(context.ui_view_layout_params.at(child_view.Value()))}));
-                if (FindViewUiNode(context, view.Value()) != node || !context.ui_tree.Get(node))
-                    throw std::runtime_error("inflated parent retired during callback");
-            }
-            static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "onFinishInflate", "()V"));
-            if (FindViewUiNode(context, view.Value()) != node || !context.ui_tree.Get(node) || context.ui_tree.Get(node)->parent)
-                throw std::runtime_error("inflated view retired or attached during callback");
-            return view;
-        };
-        std::vector<dexvm::VmObjectRef> document_roots;
-        if (merge) {
-            for (std::size_t i = 1; i < document.size(); ++i)
-                if (document[i].parent == 0) document_roots.push_back(build(build, i, parent));
-        } else document_roots.push_back(build(build, 0, parent));
-        if (document_roots.empty()) {
-            // Empty merge is a valid append of zero children.
-            return parent ? ViewObjectForUiNode(context, *parent) : dexvm::VmObjectRef{};
-        }
-        content_view = document_roots.front();
-        const auto result_roots = vm.ProtectReferences(document_roots);
-        if (parent && attach) {
-            const auto parent_view = ViewObjectForUiNode(context, *parent);
-            if (!context.ui_tree.Get(*parent)) throw std::runtime_error("inflation root retired during callback");
-            for (const auto view : document_roots) {
-                const auto node = FindViewUiNode(context, view.Value());
-                if (!node) throw std::runtime_error("inflated root retired during callback");
-                if (parent_view.IsValid()) {
-                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, parent_view, "addView",
-                        "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-                        {dexvm::VmValue::Ref(view), dexvm::VmValue::Ref(context.ui_view_layout_params.at(view.Value()))}));
-                } else context.ui_tree.Attach(*parent, *node);
-            }
-        }
-        return content_view;
-    } catch (...) {
-        // Do not reset existing content or reclaim an external View moved by a callback.
-        for (auto it = created.rbegin(); it != created.rend(); ++it) {
-            if (const auto* state = context.ui_tree.Get(*it)) {
-                const auto children = state->children;
-                for (const auto child : children)
-                    if (std::find(created.begin(), created.end(), child) == created.end()) context.ui_tree.Detach(child);
-                RetireViewUiSubtree(context, *it);
-            }
-        }
-        throw;
-    }
-}
-} // namespace
-
-dexvm::VmObjectRef BuildUiElements(dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
-    dexvm::VmObjectRef root, bool attach_to_root) {
-    const auto roots = vm.ProtectReferences(std::array{root, inflater_context});
-    std::optional<ui::UiNodeId> parent;
-    if (root.IsValid()) {
-        if (!vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"), vm.Model().ObjectClass(root)))
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "inflation root is not a ViewGroup"};
-        parent = EnsureViewUiNode(context, root, android_intrinsics::UiClassForObject(vm, root));
-    }
-    try {
-        const auto view = BuildUiElementsAt(vm, context, elements, inflater_context, parent, attach_to_root);
-        return root.IsValid() && attach_to_root ? root : view;
-    } catch (const dexvm::VmJavaThrow&) { throw; }
-      catch (const dexvm::DexVmError&) { throw; }
-      catch (const std::runtime_error& error) {
-        throw dexvm::VmJavaThrow{"Landroid/view/InflateException;", error.what()};
-    }
-}
-
-dexvm::VmObjectRef InflateUiElements(dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    std::span<const loader::BinaryXmlElement> elements, dexvm::VmObjectRef inflater_context,
-    std::optional<ui::UiNodeId> parent) {
-    // Compatibility install API: its caller explicitly requests replacement.
-    if (!parent) ResetViewUiState(context);
-    else {
-        const auto children = context.ui_tree.Get(*parent)->children;
-        for (const auto child : children) RetireViewUiSubtree(context, child);
-    }
-    return BuildUiElementsAt(vm, context, elements, inflater_context,
-        parent ? parent : std::optional{ActivityContentRoot(context)}, true);
-}
-
-dexvm::VmObjectRef BuildUiLayoutResource(dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    std::uint32_t layout_id, dexvm::VmObjectRef inflater_context, dexvm::VmObjectRef root, bool attach_to_root) {
-    const auto roots = vm.ProtectReferences(std::array{inflater_context, root});
-    // Resource lookup failures have the API19 Resources exception, not an empty View.
-    const auto& entry = [&]() -> const loader::ArscEntry& {
-        try { return ResolveUiResourceEntry(context, layout_id); }
-        catch (const std::runtime_error& error) {
-            throw dexvm::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", error.what()};
-        }
-    }();
-    if (entry.type_name != "layout" || !entry.string_value)
-        throw dexvm::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "resource is not a layout file"};
-    try {
-        const auto expanded = ExpandUiIncludes(LoadLayout(context, layout_id),
-            [&context](std::uint32_t id) { return LoadLayout(context, id); }, layout_id);
-        return BuildUiElements(vm, context, expanded, inflater_context, root, attach_to_root);
-    } catch (const dexvm::VmJavaThrow&) { throw; }
-      catch (const dexvm::DexVmError&) { throw; }
-      catch (const std::runtime_error& error) {
-        throw dexvm::VmJavaThrow{"Landroid/view/InflateException;", error.what()};
-    }
-}
-
-dexvm::VmObjectRef InflateUiLayoutResource(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const std::uint32_t layout_id,
-    const dexvm::VmObjectRef inflater_context,
-    const std::optional<ui::UiNodeId> parent) {
-    try {
-        const auto root = LoadLayout(context, layout_id);
-        const auto expanded = ExpandUiIncludes(
-            root,
-            [&context](const std::uint32_t included_id) {
-                return LoadLayout(context, included_id);
-            },
-            layout_id);
-        return InflateUiElements(vm, context, expanded, inflater_context, parent);
-    } catch (...) {
-        if (parent) {
-            const auto children = context.ui_tree.Get(*parent)->children;
-            for (const auto child : children) RetireViewUiSubtree(context, child);
-        } else ResetViewUiState(context);
-        throw;
-    }
-}
 
 }  // namespace ogplay::runtime
 
@@ -2327,12 +1512,16 @@ struct InputTreeLease final {
 
     explicit InputTreeLease(const DexVmAndroidContext& context)
         : snapshot(context.input_presentation ? context.input_presentation : AcquireAndroidPresentation(context)),
-          tree(snapshot ? *snapshot->guest_window_epoch_refs.front() : context.ui_tree) {}
+          tree([&]() -> const ui::UiTree& {
+              if (!snapshot || snapshot->guest_window_epoch_refs.empty())
+                  throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                           "Input requires a complete presentation"};
+              return *snapshot->guest_window_epoch_refs.front();
+          }()) {}
 };
 
 void EnsureInputProjection(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && !context.ui_layout_dispatching &&
-        context.input_presentation) {
+    if (!context.ui_layout_dispatching && context.input_presentation) {
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Input requires Java owner thread"};
         return;
@@ -2346,7 +1535,7 @@ struct InputDispatchScope final {
 
     InputDispatchScope(dexvm::Interpreter& vm, DexVmAndroidContext& state)
         : context(state), previous(state.input_presentation) {
-        if (state.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        {
             EnsureInputProjection(vm, state);
             if (!state.input_presentation) state.input_presentation = AcquireAndroidPresentation(state);
         }
@@ -2392,7 +1581,7 @@ bool IsAndroidUiOwnerCurrent(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 }
 
 AndroidInputEvent::AndroidInputEvent(dexvm::Interpreter& vm, DexVmAndroidContext& context)
-    : context_(context), java_(context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    : context_(context), java_(true) {
     if (!java_) return;
     if (context.input_presentation)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Reentrant owner input event"};
@@ -2455,22 +1644,13 @@ namespace {
             return hit;
         }
     }
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         const auto view = ViewObjectForUiNode(context, id);
         if (!view.IsValid() || !Contains(node->screen_clip, x, y)) return std::nullopt;
         const auto touch = ReadAndroidViewListener(vm, context, view, AndroidViewListener::Touch);
         const auto click = ReadAndroidViewListener(vm, context, view, AndroidViewListener::Click);
         return (touch.IsValid() || (click.IsValid() && node->clickable)) ? std::optional{id} : std::nullopt;
     }
-    const auto click = context.ui_click_listeners.find(id);
-    const auto touch = context.ui_touch_listeners.find(id);
-    const bool has_click = click != context.ui_click_listeners.end() &&
-                           click->second.IsValid();
-    const bool has_touch = touch != context.ui_touch_listeners.end() &&
-                           touch->second.IsValid();
-    return (has_touch || (has_click && node->clickable))
-               ? std::optional<ui::UiNodeId>{id}
-               : std::nullopt;
 }
 
 void CollectTouchReceivers(const DexVmAndroidContext& context,
@@ -2521,14 +1701,7 @@ std::vector<std::uint64_t> FindTouchReceiversAt(dexvm::Interpreter& vm, DexVmAnd
 namespace {
 dexvm::VmObjectRef InputListener(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view,
                                  bool touch) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        return ReadAndroidViewListener(vm, context, view,
-                                       touch ? AndroidViewListener::Touch : AndroidViewListener::Click);
-    const auto id = FindViewUiNode(context, view.Value());
-    if (!id) return dexvm::VmObjectRef{};
-    const auto& listeners = touch ? context.ui_touch_listeners : context.ui_click_listeners;
-    const auto found = listeners.find(*id);
-    return found == listeners.end() ? dexvm::VmObjectRef{} : found->second;
+    return ReadAndroidViewListener(vm, context, view, touch ? AndroidViewListener::Touch : AndroidViewListener::Click);
 }
 }  // namespace
 
@@ -2581,8 +1754,8 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     const auto roots = vm.ProtectReferences(std::array{view, event});
     EnsureInputProjection(vm, context);
     const auto node = FindViewUiNode(context, view.Value());
-    if (!node) {
-        if (action == 3 && context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    if (!node || !tree.Get(*node)) {
+        if (action == 3) {
             const auto listener = InputListener(vm, context, view, true);
             if (listener.IsValid())
                 return android_intrinsics::CallAndroidMethod(vm, listener, "onTouch",
@@ -2625,9 +1798,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
             for (auto child = children.rbegin(); child != children.rend(); ++child) {
                 const auto receiver = ViewObjectForUiNode(context, *child);
                 if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
-                const auto identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                                          ? std::optional{CaptureAndroidUiOwner(vm, context, receiver)}
-                                          : std::nullopt;
+                const auto identity = std::optional{CaptureAndroidUiOwner(vm, context, receiver)};
                 if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
                     if (identity && !context.input_capture_identity) context.input_capture_identity = identity;
                     if (TouchLive(context, receiver)) context.ui_touch_targets[key] = receiver;
@@ -2639,9 +1810,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     }
     // API19 View dispatch: an enabled OnTouchListener gets first refusal.
     const auto state = *tree.Get(*node);
-    const auto owner_identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && action == 0
-                                    ? std::optional{CaptureAndroidUiOwner(vm, context, view)}
-                                    : std::nullopt;
+    const auto owner_identity = action == 0 ? std::optional{CaptureAndroidUiOwner(vm, context, view)} : std::nullopt;
     bool listener_handled = false;
     const auto listener = InputListener(vm, context, view, true);
     const auto listener_root = vm.ProtectReferences(std::array{listener});
@@ -2656,7 +1825,7 @@ bool DispatchAndroidViewTouch(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     auto click = context.ui_touch_clicks[key];
     bool enabled = state.enabled, clickable = state.clickable;
     bool live = TouchLive(context, view);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         dexvm::IntrinsicContext call{vm, view, {}};
         const auto flags = dexvm::IntrinsicCall(call).GetInt(context.view_java_measure_fields->view_flags);
         enabled = (flags & 0x20) == 0;
@@ -2698,15 +1867,15 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
     if (action == 0) {
         EnsureInputProjection(vm, context);
         const auto root = ActivityContentRoot(context, context.activity);
+        if (!tree.Get(root))
+            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Input window has no complete projection"};
         const auto children = tree.Get(root)->children;
         const auto x = android_intrinsics::CallAndroidMethod(vm, event, "getX", "()F").AsFloat();
         const auto y = android_intrinsics::CallAndroidMethod(vm, event, "getY", "()F").AsFloat();
         for (auto child = children.rbegin(); child != children.rend(); ++child) {
             const auto receiver = ViewObjectForUiNode(context, *child);
             if (!receiver.IsValid() || !ViewContainsPoint(vm, context, receiver.Value(), x, y)) continue;
-            const auto identity = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal
-                                      ? std::optional{CaptureAndroidUiOwner(vm, context, receiver)}
-                                      : std::nullopt;
+            const auto identity = std::optional{CaptureAndroidUiOwner(vm, context, receiver)};
             if (TouchCall(vm, receiver, event, "dispatchTouchEvent")) {
                 if (identity && !context.input_capture_identity) context.input_capture_identity = identity;
                 if (TouchLive(context, receiver)) context.ui_touch_targets[0] = receiver;
@@ -2725,8 +1894,7 @@ bool DispatchContentTouchEvent(dexvm::Interpreter& vm, DexVmAndroidContext& cont
 DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     DexVmAndroidContext& context, const std::int32_t action, const float x, const float y,
     const std::uint64_t captured_view, const AndroidBoundaryInput* snapshot) {
-    const bool owner_event = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-    if (owner_event && context.input_deep_dispatching)
+    if (context.input_deep_dispatching)
         throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Reentrant pointer event"};
 
     struct DeepScope {
@@ -2736,8 +1904,8 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
         ~DeepScope() { flag = previous; }
     } deep_scope{context.input_deep_dispatching, context.input_deep_dispatching};
 
-    if (owner_event) context.input_deep_dispatching = true;
-    if (owner_event) EnsureInputProjection(vm, context);
+    context.input_deep_dispatching = true;
+    EnsureInputProjection(vm, context);
     const auto previous_presentation = context.input_presentation;
     if (!context.input_presentation) context.input_presentation = AcquireAndroidPresentation(context);
 
@@ -2748,7 +1916,7 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
         ~RestorePresentation() { context.input_presentation = std::move(previous); }
     } restore_presentation{context, previous_presentation};
     const auto previous = context.ui_bounded_scroll_dispatch;
-    context.ui_bounded_scroll_dispatch = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
+    context.ui_bounded_scroll_dispatch = true;
 
     struct RestoreDispatch {
         bool& flag;
@@ -2762,8 +1930,7 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
     if (snapshot && action == 3) adjusted.action = 3;
     const auto event = snapshot ? MakeMotionEvent(vm, adjusted) : MakeMotionEvent(vm, action, x, y, 0);
     try {
-        const bool java = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-        if (java && action == 0) {
+        if (action == 0) {
             context.input_pointer_tail = false;
             context.input_capture_identity.reset();
         }
@@ -2780,7 +1947,7 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
             ClearTouch(context);
             return true;
         };
-        if (java) {
+        {
             static_cast<void>(cancel_invalid());
             if (context.input_pointer_tail && action != 0) {
                 if (action == 1 || action == 3) context.input_pointer_tail = false;
@@ -2788,7 +1955,7 @@ DeepTouchDispatchResult DispatchDeepTouchEvent(dexvm::Interpreter& vm,
             }
         }
         const auto handled = DispatchContentTouchEvent(vm, context, event);
-        if (java) {
+        {
             static_cast<void>(cancel_invalid());
             if (action == 1 || action == 3) context.input_capture_identity.reset();
         }
@@ -2808,8 +1975,7 @@ bool ViewContainsPoint(dexvm::Interpreter& vm, DexVmAndroidContext& context, con
     const auto* state = tree.Get(*node);
     return state != nullptr && tree.IsAttached(*node) && tree.IsVisible(*node) &&
            state->visibility == ui::Visibility::Visible && state->enabled &&
-           (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
-            android_intrinsics::Contains(state->screen_clip, x, y)) &&
+           (android_intrinsics::Contains(state->screen_clip, x, y)) &&
            android_intrinsics::Contains(state->screen_frame, x, y);
 }
 
@@ -2929,12 +2095,14 @@ namespace ogplay::runtime {
 namespace {
 using Modal = DexVmAndroidContext::DialogPresentation;
 
-ui::UiTree& DialogTree(DexVmAndroidContext& context, const Modal& modal) {
-    return modal.host_tree ? *modal.host_tree : context.ui_tree;
+ui::UiTree& DialogTree(DexVmAndroidContext&, const Modal& modal) {
+    if (!modal.host_tree) throw std::logic_error("Dialog requires an isolated HostLayout tree");
+    return *modal.host_tree;
 }
 
-const ui::UiTree& DialogTree(const DexVmAndroidContext& context, const Modal& modal) {
-    return modal.host_tree ? *modal.host_tree : context.ui_tree;
+const ui::UiTree& DialogTree(const DexVmAndroidContext&, const Modal& modal) {
+    if (!modal.host_tree) throw std::logic_error("Dialog requires an isolated HostLayout tree");
+    return *modal.host_tree;
 }
 
 bool DialogOwnerVisible(const DexVmAndroidContext& context, const dexvm::VmObjectRef owner) {
@@ -2960,13 +2128,6 @@ void FocusModal(DexVmAndroidContext& context, const Modal& modal) {
             static_cast<void>(tree.RequestFocus(*node, false));
             return;
     }
-}
-bool ContainsDialogButton(const DexVmAndroidContext& context, ui::UiNodeId button, float x, float y) {
-    const auto* node = context.ui_tree.Get(button);
-    if (!node || !context.ui_tree.IsVisible(button)) return false;
-    const auto& rect = node->screen_frame;
-    return x >= static_cast<float>(rect.left) && x < static_cast<float>(rect.right) &&
-           y >= static_cast<float>(rect.top) && y < static_cast<float>(rect.bottom);
 }
 
 void ClearModalCapture(DexVmAndroidContext& context) {
@@ -2996,7 +2157,6 @@ AcquireAndroidPresentation(const DexVmAndroidContext& context) {
 }
 
 bool PublishAndroidPresentation(DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return false;
     if (context.ui_java_owner_thread != std::this_thread::get_id())
         throw std::logic_error("Presentation publication requires Java owner thread");
     if (context.input_presentation) return false;
@@ -3119,7 +2279,6 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
 }
 
 void ResizeAndroidDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal) return;
     const ui::Size viewport{static_cast<std::int32_t>(context.surface_width),
                             static_cast<std::int32_t>(context.surface_height)};
     auto prepared = context.dialog_presentations;
@@ -3177,11 +2336,9 @@ bool HasAndroidModalDialog(const DexVmAndroidContext& context) {
     return false;
 }
 void ReleaseAndroidDialogs(DexVmAndroidContext& context) {
-    for (const auto& modal : context.dialog_presentations)
-        if (!modal.host_tree && context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
     context.dialog_presentations.clear();
     context.dialog_pointer_active = false; context.dialog_pressed_button.reset(); context.dialog_keys_down.clear();
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         ClearModalCapture(context);
         PublishAndroidPresentation(context);
     }
@@ -3203,7 +2360,6 @@ void SynchronizeAndroidDialogs(DexVmAndroidContext& context) {
         const bool alive = context.activity_stack.empty() || std::any_of(context.activity_stack.begin(), context.activity_stack.end(),
             [&](const auto& record) { return record.object == modal.owner; });
         if (alive) return false;
-        if (!modal.host_tree && context.ui_tree.Get(modal.root)) context.ui_tree.DestroySubtree(modal.root);
         return true;
     });
     for (const auto& modal : context.dialog_presentations)
@@ -3222,15 +2378,11 @@ void DismissAndroidDialog(DexVmAndroidContext& context, const dx::VmObjectRef di
     const auto found = std::find_if(context.dialog_presentations.begin(), context.dialog_presentations.end(),
         [dialog](const Modal& modal) { return modal.dialog == dialog; });
     if (found == context.dialog_presentations.end()) return;
-    const auto prior_focus = found->prior_focus;
-    if (!found->host_tree && context.ui_tree.Get(found->root)) context.ui_tree.DestroySubtree(found->root);
     context.dialog_presentations.erase(found);
     context.dialog_pressed_button.reset();
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy && prior_focus &&
-        context.ui_tree.Get(*prior_focus))
-        static_cast<void>(context.ui_tree.RequestFocus(*prior_focus, false));
+
     if (const auto* top = TopDialog(context)) FocusModal(context, *top);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) ClearModalCapture(context);
+    ClearModalCapture(context);
     PublishAndroidPresentation(context);
 }
 void SetAndroidDialogVisible(DexVmAndroidContext& context, const dx::VmObjectRef dialog, bool visible) {
@@ -3239,13 +2391,10 @@ void SetAndroidDialogVisible(DexVmAndroidContext& context, const dx::VmObjectRef
         DialogTree(context, modal).SetWindowVisible(modal.root, visible && DialogOwnerVisible(context, modal.owner));
         if (!visible) {
             context.dialog_pressed_button.reset();
-            if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy && modal.prior_focus &&
-                context.ui_tree.Get(*modal.prior_focus))
-                static_cast<void>(context.ui_tree.RequestFocus(*modal.prior_focus, false));
         }
     }
     if (const auto* top = TopDialog(context)) FocusModal(context, *top);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) ClearModalCapture(context);
+    ClearModalCapture(context);
     PublishAndroidPresentation(context);
 }
 std::int32_t FocusAndroidDialog(DexVmAndroidContext& context, const dx::VmObjectRef dialog, const std::int32_t direction) {
@@ -3305,12 +2454,11 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         [&](const Modal& modal) { return modal.dialog == call.receiver; });
     if (previous == context->dialog_presentations.end() && context->dialog_presentations.size() >= 8)
         unsupported("Dialog window limit exceeded");
-    const bool isolated = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-    const auto prior_focus = previous == context->dialog_presentations.end()
-                                 ? (isolated ? std::optional<ui::UiNodeId>{} : context->ui_tree.Focused())
-                                 : previous->prior_focus;
+
+    const auto prior_focus =
+        previous == context->dialog_presentations.end() ? (std::optional<ui::UiNodeId>{}) : previous->prior_focus;
     std::optional<Modal::GuestFocus> prior_guest_focus;
-    if (isolated) {
+    {
         if (previous != context->dialog_presentations.end())
             prior_guest_focus = previous->prior_guest_focus;
         else {
@@ -3338,7 +2486,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
     if (!std::isfinite(density) || density <= 0 || density > 8 || context->surface_width < 48 || context->surface_height < 48)
         unsupported("Dialog viewport is unavailable or too small");
     Modal modal{.dialog = call.receiver, .owner = owner, .root = {}, .buttons = {}, .prior_focus = prior_focus};
-    if (isolated) {
+    {
         if (context->dialog_host_revision == std::numeric_limits<std::uint64_t>::max())
             unsupported("Dialog host revision exhausted");
         modal.host_tree = std::make_shared<ui::UiTree>(ui::UiGeometryOwner::HostLayout);
@@ -3394,13 +2542,10 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             node->layout.width.mode = ui::SizeMode::WrapContent; node->layout.height.mode = ui::SizeMode::WrapContent;
             tree.Attach(row, id);
         }
-        if (isolated) {
+        {
             const ui::UiMetrics managed_viewport{static_cast<std::int32_t>(context->surface_width),
                                                  static_cast<std::int32_t>(context->surface_height)};
             ui::LayoutUiTree(*modal.host_tree, managed_viewport);
-        } else {
-            EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::HostDialog,
-                                     AndroidUiTraversalPhase::ResolveOnly);
         }
         const auto bounds = tree.Get(panel)->screen_frame;
         if (bounds.top < 8 || bounds.bottom > static_cast<std::int32_t>(context->surface_height) - 8)
@@ -3409,14 +2554,13 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
             unsupported("Dialog buttons cannot fit the bounded viewport");
         // No guest callbacks occur during geometry construction. Commit after validation.
         if (previous != context->dialog_presentations.end()) {
-            if (!previous->host_tree) tree.DestroySubtree(previous->root);
             *previous = modal;
         } else context->dialog_presentations.push_back(modal);
-        if (isolated) context->dialog_host_revision = modal.revision;
+        context->dialog_host_revision = modal.revision;
         context->dialog_pressed_button.reset();
         tree.SetWindowVisible(root, DialogOwnerVisible(*context, owner));
         FocusModal(*context, modal);
-        if (isolated) ClearModalCapture(*context);
+        ClearModalCapture(*context);
         PublishAndroidPresentation(*context);
     } catch (...) {
         if (tree.Get(root)) tree.DestroySubtree(root);
@@ -3444,7 +2588,7 @@ dexvm::VmObjectRef MakeAndroidKeyEvent(dexvm::Interpreter& vm, const AndroidBoun
 
 bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& context, const AndroidBoundaryInput& input) {
     using namespace dexvm;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
             throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "Modal input requires owner thread"};
         SynchronizeAndroidDialogs(context);
@@ -3540,55 +2684,13 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
         }
         return true;
     }
-    SynchronizeAndroidDialogs(context);
-    auto* top = TopDialog(context);
-    if (input.type == AndroidBoundaryInputType::key) {
-        if (!top && !context.dialog_keys_down.contains(input.code)) return false;
-        if (input.action == 0) context.dialog_keys_down.insert(input.code);
-        if (input.action == 1) context.dialog_keys_down.erase(input.code);
-        if (top) {
-            const auto dialog = top->dialog;
-            const auto event = MakeAndroidKeyEvent(vm, input);
-            const auto roots = vm.ProtectReferences(std::array{dialog, event});
-            static_cast<void>(android_intrinsics::CallAndroidMethod(vm, dialog, "dispatchKeyEvent", "(Landroid/view/KeyEvent;)Z", {VmValue::Ref(event)}));
-        }
-        return true;
-    }
-    const auto action = input.action & 0xff;
-    if (!top && !context.dialog_pointer_active) return false;
-    EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::HostDialog, AndroidUiTraversalPhase::ResolveOnly);
-    if (action == 0) {
-        context.dialog_pointer_active = true; context.dialog_pressed_button.reset();
-        if (top) for (const auto button : top->buttons)
-            if (button && ContainsDialogButton(context, *button, input.x, input.y)) {
-                context.dialog_pressed_button = button;
-                static_cast<void>(context.ui_tree.RequestFocus(*button, true));
-            }
-    } else if (action == 1) {
-        const auto pressed = context.dialog_pressed_button;
-        context.dialog_pressed_button.reset(); context.dialog_pointer_active = false;
-        if (top && pressed && ContainsDialogButton(context, *pressed, input.x, input.y)) {
-            const auto dialog = top->dialog;
-            for (std::size_t i = 0; i < 3; ++i) if (top->buttons[i] == pressed) {
-                const auto roots = vm.ProtectReferences(std::array{dialog});
-                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, dialog, "performButtonClick", "(I)V", {VmValue::Int(-static_cast<std::int32_t>(i) - 1)}));
-                break;
-            }
-        }
-    } else if (action == 2 && context.dialog_pressed_button &&
-               !ContainsDialogButton(context, *context.dialog_pressed_button, input.x, input.y)) {
-        context.dialog_pressed_button.reset();
-    } else if (action == 3) { context.dialog_pressed_button.reset(); context.dialog_pointer_active = false; }
-    return true;
 }
 } // namespace ogplay::runtime
 
 namespace ogplay::runtime {
 bool DispatchAndroidBoundedEditInput(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                                      const AndroidBoundaryInput& input) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal ||
-        input.type != AndroidBoundaryInputType::key || !context.content_view.IsValid())
-        return false;
+    if (input.type != AndroidBoundaryInputType::key || !context.content_view.IsValid()) return false;
     const auto focused =
         android_intrinsics::CallAndroidMethod(vm, context.content_view, "findFocus", "()Landroid/view/View;").ref;
     if (!focused.IsValid() || !AndroidViewBelongsToRoot(vm, context, focused) ||

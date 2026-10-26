@@ -498,8 +498,6 @@ TEST_CASE("DVM-282 ROM flags listeners focus and bounded capture use Java state"
         REQUIRE(tick());
         CHECK(f.context->ui_touch_capture == 0);
         CHECK(f.context->ui_touch_targets.empty());
-        CHECK(f.context->ui_click_listeners.empty());
-        CHECK(f.context->ui_touch_listeners.empty());
         CHECK(f.context->ui_view_layout_params.empty());
         CHECK_FALSE(f.context->ui_tree.Focused());
         for (const auto& [_, references] : f.context->view_adapter_references)

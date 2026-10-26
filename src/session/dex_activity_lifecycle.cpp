@@ -301,35 +301,13 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     void DexActivityLifecycle::DispatchViewWindowFocus(const bool has_focus) {
         auto& context = *bindings_.context;
-        std::vector<dx::VmObjectRef> attached;
-        std::vector<runtime::ui::UiNodeId> pending{
-            runtime::ActivityContentRoot(context)};
-        while (!pending.empty()) {
-            const auto node = pending.back();
-            pending.pop_back();
-            const auto* state = context.ui_tree.Get(node);
-            if (state == nullptr || !context.ui_tree.IsVisible(node)) continue;
-            for (auto child = state->children.rbegin();
-                 child != state->children.rend(); ++child) {
-                pending.push_back(*child);
-            }
-            if (node == context.ui_tree.Root() ||
-                !context.ui_tree.IsAttached(node)) {
-                continue;
-            }
-            const auto view = runtime::ViewObjectForUiNode(context, node);
-            if (view.IsValid()) attached.push_back(view);
-        }
-        const auto roots = bindings_.bridge->Vm().ProtectReferences(attached);
-        for (const auto view : attached) {
-            const auto node = runtime::FindViewUiNode(context, view.Value());
-            if (!node || !context.ui_tree.IsVisible(*node)) continue;
-            const auto delivered = context.ui_notified_window_focus.find(*node);
-            if (delivered != context.ui_notified_window_focus.end() && delivered->second == has_focus) continue;
-            context.ui_notified_window_focus[*node] = has_focus;
-            CallOnView(view, "onWindowFocusChanged", "(Z)V",
-                       {dx::VmValue::Int(has_focus ? 1 : 0)});
-        }
+        auto& vm = bindings_.bridge->Vm();
+        // ViewRootImpl dispatches through the window's Java root, even when its
+        // previous projection is hidden or no longer the foreground projection.
+        const auto root = runtime::AndroidUiTraversalRoot(vm, context);
+        if (!root.IsValid()) return;
+        const auto roots = vm.ProtectReferences(std::array{root});
+        CallOnView(root, "dispatchWindowFocusChanged", "(Z)V", {dx::VmValue::Int(has_focus ? 1 : 0)});
     }
 
     LifecycleFrameState DexActivityLifecycle::Start() {
@@ -474,7 +452,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (bindings_.flush_persistent_state) {
                 bindings_.flush_persistent_state();
             }
-            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+            {
                 SetActivityWindowVisible(bindings_.context->activity, false);
                 runtime::PublishAndroidPresentation(*bindings_.context);
                 if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), *bindings_.context))
@@ -505,11 +483,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             Fail("dex_activity lifecycle cannot resume in this state");
         }
         try {
-            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                SetActivityWindowVisible(bindings_.context->activity, true);
+            SetActivityWindowVisible(bindings_.context->activity, true);
             CallActivity("onResume", "()V", {});
             SetWindowFocus(true);
-            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+            {
                 EnsureOwnerFrame(true);
                 SynchronizeContentView();
                 EnsureOwnerFrame(false);
@@ -572,36 +549,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     using Type = runtime::AndroidBoundaryInputType;
                     if (input.type == Type::key) {
                         if (runtime::DispatchAndroidBoundedEditInput(vm, context, input)) return;
-                        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && input.pressed &&
-                            context.focused_edit_text.IsValid()) {
-                            const auto node = runtime::FindViewUiNode(context, context.focused_edit_text.Value());
-                            if (node.has_value()) {
-                                auto& state = *context.ui_tree.Get(*node);
-                                auto changed = state.text;
-                                if (input.code == 67 && !changed.empty()) {
-                                    changed.pop_back();
-                                } else if (input.unicode_char > 0 &&
-                                           (!state.numeric_input ||
-                                            (input.unicode_char >= '0' && input.unicode_char <= '9')) &&
-                                           changed.size() < static_cast<std::size_t>(state.max_length)) {
-                                    changed.push_back(static_cast<char16_t>(input.unicode_char));
-                                }
-                                if (changed != state.text) {
-                                    const auto before_size = state.text.size();
-                                    if (changed.size() < before_size) {
-                                        static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
-                                            vm, context, context.focused_edit_text,
-                                            static_cast<std::int32_t>(before_size - 1), 1, {}));
-                                    } else {
-                                        static_cast<void>(runtime::android_intrinsics::ApplyTextEdit(
-                                            vm, context, context.focused_edit_text,
-                                            static_cast<std::int32_t>(before_size), 0,
-                                            std::u16string(1, changed.back())));
-                                    }
-                                    return;
-                                }
-                            }
-                        }
+
                         const auto key_event = runtime::MakeAndroidKeyEvent(vm, input);
                         if (input.action == 2) {
                             CallActivity("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
@@ -622,7 +570,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     // click eligibility are independent; an unconsumed touch-only DOWN
                     // falls through to Activity and does not retain the gesture.
                     if (action == kMotionActionDown) {
-                        context.focused_edit_text = dx::VmObjectRef{};
                         scroll_view_handle_ = 0U;
                         context.input_scroll_identity.reset();
                         scroll_dragging_ = false;
@@ -635,32 +582,25 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         for (const auto handle : runtime::FindTouchReceiversAt(vm, context, pointer_x_, pointer_y_)) {
                             const dx::VmObjectRef candidate{static_cast<std::uint32_t>(handle)};
                             if (vm.Linker().IsAssignable(edit_class, vm.Model().ObjectClass(candidate))) {
-                                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                                    static_cast<void>(CallOnView(candidate, "requestFocus", "()Z", {}));
-                                else
-                                    context.focused_edit_text = candidate;
+                                static_cast<void>(CallOnView(candidate, "requestFocus", "()Z", {}));
                             }
                             const auto node = runtime::FindViewUiNode(context, handle);
                             if (node.has_value()) {
-                                const auto& input_tree =
-                                    context.input_presentation
-                                        ? *context.input_presentation->guest_window_epoch_refs.front()
-                                        : context.ui_tree;
+                                if (!context.input_presentation)
+                                    throw std::logic_error("Input requires a complete presentation");
+                                const auto& input_tree = *context.input_presentation->guest_window_epoch_refs.front();
                                 const auto kind = input_tree.Get(*node)->kind;
                                 if (kind == runtime::ui::UiClass::ScrollView ||
-                                    (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
-                                     kind == runtime::ui::UiClass::HorizontalScrollView)) {
+                                    (kind == runtime::ui::UiClass::HorizontalScrollView)) {
                                     scroll_view_handle_ = handle;
-                                    if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                                        context.input_scroll_identity =
-                                            runtime::CaptureAndroidUiOwner(vm, context, candidate);
+                                    context.input_scroll_identity =
+                                        runtime::CaptureAndroidUiOwner(vm, context, candidate);
                                     scroll_horizontal_ = kind == runtime::ui::UiClass::HorizontalScrollView;
                                 }
                             }
                         }
                     }
-                    if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
-                        context.input_scroll_identity &&
+                    if (context.input_scroll_identity &&
                         !runtime::IsAndroidUiOwnerCurrent(vm, context, *context.input_scroll_identity)) {
                         scroll_view_handle_ = 0;
                         scroll_dragging_ = false;
@@ -670,11 +610,11 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     if (action == kMotionActionMove && scroll_view_handle_ != 0U) {
                         const auto node = runtime::FindViewUiNode(context, scroll_view_handle_);
                         if (node.has_value()) {
-                            const auto& input_tree = context.input_presentation
-                                                         ? *context.input_presentation->guest_window_epoch_refs.front()
-                                                         : context.ui_tree;
+                            if (!context.input_presentation)
+                                throw std::logic_error("Input requires a complete presentation");
+                            const auto& input_tree = *context.input_presentation->guest_window_epoch_refs.front();
                             const auto& frozen_scroll = *input_tree.Get(*node);
-                            auto& scroll = *context.ui_tree.Get(*node);
+
                             const auto content = frozen_scroll.children.empty()
                                                      ? runtime::ui::Size{}
                                                      : input_tree.Get(frozen_scroll.children.front())->measured;
@@ -698,7 +638,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                 scroll_dragging_ = true;
                             }
                             if (scroll_dragging_) {
-                                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+                                {
                                     runtime::ScrollAndroidViewBy(
                                         vm, context, dx::VmObjectRef{static_cast<std::uint32_t>(scroll_view_handle_)},
                                         scroll_horizontal_
@@ -709,16 +649,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                                             : 0);
                                     scroll_last_x_ = pointer_x_;
                                     scroll_last_y_ = pointer_y_;
-                                } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) {
-                                    const auto previous = scroll.scroll_y;
-                                    scroll.scroll_y =
-                                        std::clamp(scroll.scroll_y + static_cast<std::int32_t>(
-                                                                         std::lround(scroll_last_y_ - pointer_y_)),
-                                                   0, maximum);
-                                    scroll_last_y_ = pointer_y_;
-                                    if (scroll.scroll_y != previous) {
-                                        context.ui_tree.MarkLayoutDirty(*node);
-                                    }
                                 }
                                 return;
                             }
@@ -759,9 +689,9 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
 
     void DexActivityLifecycle::EnsureOwnerFrame(const bool begin_tick, const bool notify_global) {
         auto& context = *bindings_.context;
-        if (context.ui_traversal_owner != runtime::AndroidUiTraversalOwner::JavaTraversal) return;
+
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
-        runtime::RefreshAndroidImageDrawables(context);
+
         runtime::RefreshAndroidSurfaceFrames(context);
         if (runtime::EnsureAndroidUiTraversal(bindings_.bridge->Vm(), context,
                                               begin_tick ? runtime::AndroidUiTraversalReason::OwnerTick
@@ -803,8 +733,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                   runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
               }
             }
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                ReevaluateContentRenderer();
+            ReevaluateContentRenderer();
             if (const auto error = runtime::PumpAndroidSurfaceEvents(bindings_.bridge->Vm(), context)) Fail(*error);
             DispatchInput();
             PumpJavaThreads();
@@ -818,16 +747,14 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 initial_focus_pending_ = false;
             }
             EnsureOwnerFrame(false);
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
-                context.renderer.IsValid()) {
+            if (context.renderer.IsValid()) {
                 const auto snapshot = runtime::AcquireAndroidPresentation(context);
                 if (snapshot && snapshot->presentation_epoch != submitted_presentation_epoch_) {
                     context.gl_surface_render_requests[context.gl_surface_renderer_view.Value()] = true;
                     submitted_presentation_epoch_ = snapshot->presentation_epoch;
                 }
             }
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal &&
-                !context.renderer.IsValid() && context.active_surface_holders.empty() &&
+            if (!context.renderer.IsValid() && context.active_surface_holders.empty() &&
                 !runtime::AnyVideoPlaying(context) && context.holder_canvases.empty() && context.session) {
                 const auto snapshot = runtime::AcquireAndroidPresentation(context);
                 if (snapshot && snapshot->presentation_epoch != submitted_presentation_epoch_) {
@@ -861,28 +788,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     }
                   }
                 });
-            } else if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy &&
-                       !bindings_.context->renderer.IsValid() && bindings_.context->active_surface_holders.empty() &&
-                       runtime::AnyVideoPlaying(*bindings_.context) == false &&
-                       bindings_.context->holder_canvases.empty() &&
-                       !bindings_.context->ui_tree.Get(runtime::ActivityContentRoot(*bindings_.context))
-                            ->children.empty() &&
-                       bindings_.context->session != nullptr &&
-                       bindings_.context->ui_tree.Get(bindings_.context->ui_tree.Root())->draw_dirty) {
-                // A View-only Activity has no GLES producer to create the
-                // boundary frame that the frontend uses as the UI composition
-                // trigger. Publish an opaque window-sized software base when
-                // the retained tree is dirty; ComposePresentedFrame remains
-                // the single authority for layout and drawing.
-                const auto pixels =
-                    static_cast<std::size_t>(bindings_.context->surface_width) *
-                    bindings_.context->surface_height;
-                std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);
-                for (std::size_t pixel = 0; pixel < pixels; ++pixel) {
-                    rgba8[pixel * 4U + 3U] = 0xffU;
-                }
-                bindings_.context->session->PublishSoftwareFrame(
-                    std::move(rgba8));
             }
             clock_.AdvanceFrames(1);
             runtime::AdvanceAndroidClock(*bindings_.context,
@@ -968,31 +873,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         runtime::AndroidBoundaryFrame frame) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
-        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            return ComposeAndroidPresentationFrame(context, std::move(frame), &presentation_cache_);
-        runtime::RefreshAndroidImageDrawables(context);
-        runtime::RefreshAndroidSurfaceFrames(context);
-        runtime::EnsureAndroidUiTraversal(
-            bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalReason::BeforePresent,
-            runtime::AndroidUiTraversalPhase::ResolveOnly,
-            runtime::ui::Size{static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)});
-        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, false);
-        const bool ui_dirty = context.ui_tree.Get(context.ui_tree.Root())->draw_dirty;
-        const auto& overlay = context.ui_overlay_renderer.Render(
-            context.ui_tree, context.ui_bitmaps,
-            {
-                static_cast<std::int32_t>(frame.width),
-                static_cast<std::int32_t>(frame.height)
-            }, runtime::ui::UiRenderPlane::normal);
-        ComposeUiOverlayInPlace(frame.rgba8, overlay);
-        runtime::ComposeVideoViews(context, frame.rgba8, frame.width, frame.height, true);
-        if (runtime::HasAndroidModalDialog(context)) {
-            const auto& modal = context.ui_modal_renderer.Render(context.ui_tree, context.ui_bitmaps,
-                {static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)},
-                runtime::ui::UiRenderPlane::modal, ui_dirty);
-            ComposeUiOverlayInPlace(frame.rgba8, modal);
-        }
-        return frame;
+        return ComposeAndroidPresentationFrame(context, std::move(frame), &presentation_cache_);
     }
 
     void DexActivityLifecycle::RethrowFatalThreadFailure() {
@@ -1116,8 +997,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         if (transitioning() || runtime::SessionExitRequested(context)) return;
         DeliverActivityResults();
         if (!transitioning() && !runtime::SessionExitRequested(context)) {
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                SetActivityWindowVisible(context.activity, true);
+            SetActivityWindowVisible(context.activity, true);
             CallActivity("onResume", "()V", {});
             activity_resumed_ = true;
             context.activity_stack.back().resumed = true;
@@ -1142,11 +1022,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         const auto found = std::find_if(context.activity_stack.begin(), context.activity_stack.end(),
             [&](const auto& record) { return record.object == activity; });
-        const bool java = context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal;
-        if (found == context.activity_stack.end() || (!java && !found->window_root) || found->visible == visible)
-            return;
+
+        if (found == context.activity_stack.end() || found->visible == visible) return;
         found->visible = visible;
-        if (java) {
+        {
             // Publish the host-owned fact without consuming pending Java layout
             // requests (focus loss/gain must still coalesce at the next barrier).
             const auto previous = context.ui_tree.PublishedProjection();
@@ -1162,14 +1041,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             } else {
                 context.ui_tree.MarkDrawDirty(context.ui_tree.Root());
             }
-        } else {
-            context.ui_tree.SetWindowVisible(*found->window_root, visible);
         }
         if (!found->window_root) return;
-        const auto& tree =
-            context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal && found->projection
-                ? *found->projection
-                : context.ui_tree;
+        if (!found->projection) return;
+        const auto& tree = *found->projection;
         std::vector<dx::VmObjectRef> views;
         std::vector<runtime::ui::UiNodeId> nodes{*found->window_root};
         while (!nodes.empty()) {
@@ -1192,7 +1067,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         context.activity = record.object;
         context.current_intent = record.intent;
         context.content_view = record.content;
-        context.focused_edit_text = record.focused_edit_text;
         context.gl_surface_renderer_view = record.render_view;
         context.renderer = dx::VmObjectRef{};
         if (const auto state = context.gl_surface_runtimes.find(record.render_view.Value()); state != context.gl_surface_runtimes.end()) {
@@ -1202,9 +1076,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         activity_started_ = false;
         activity_resumed_ = false;
         SetActivityWindowVisible(record.object, true);
-        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy && record.focused_node &&
-            context.ui_tree.Get(*record.focused_node))
-            static_cast<void>(context.ui_tree.RequestFocus(*record.focused_node, false));
+
         if (new_intent.IsValid()) {
             CallActivity("onNewIntent", "(Landroid/content/Intent;)V", {dx::VmValue::Ref(new_intent)});
             record.intent = CallOnView(record.object, "getIntent", "()Landroid/content/Intent;", {}).ref;
@@ -1235,8 +1107,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (!context.activity_stack.empty() && context.activity_stack.back().object == context.activity) {
                 auto& record = context.activity_stack.back();
                 record.content = context.content_view;
-                record.focused_node = context.ui_tree.Focused();
-                record.focused_edit_text = context.focused_edit_text;
                 record.render_view = context.gl_surface_renderer_view;
                 record.resumed = false;
                 record.stopped = record.started;
@@ -1246,12 +1116,8 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             } else if (const auto error = runtime::DetachSurfaceViewSubtree(
                 vm, context, runtime::ActivityContentRoot(context))) Fail(*error);
             StopRendererThread();
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                SetActivityWindowVisible(context.activity, false);
-            else
-                context.ui_tree.SetWindowVisible(runtime::ActivityContentRoot(context), false);
+            SetActivityWindowVisible(context.activity, false);
             context.content_view = dx::VmObjectRef{};
-            context.focused_edit_text = dx::VmObjectRef{};
             context.renderer = dx::VmObjectRef{}; context.egl_context_factory = dx::VmObjectRef{}; context.egl_config_chooser = dx::VmObjectRef{};
             sized_content_view_ = dx::VmObjectRef{}; sized_content_node_.reset();
             context.ui_touch_capture = 0;
@@ -1392,8 +1258,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
             if (!context.activity_stack.empty()) {
                 auto& record = context.activity_stack.back();
                 record.content = context.content_view;
-                record.focused_node = context.ui_tree.Focused();
-                record.focused_edit_text = context.focused_edit_text;
                 record.intent = CallOnView(record.object, "getIntent", "()Landroid/content/Intent;", {}).ref;
                 record.started = activity_started_;
                 record.render_view = context.gl_surface_renderer_view;
@@ -1410,7 +1274,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                     context.renderer_egl = dx::VmObjectRef{}; context.renderer_display = dx::VmObjectRef{}; context.renderer_config = dx::VmObjectRef{};
                     context.renderer_context = dx::VmObjectRef{}; context.renderer_surface = dx::VmObjectRef{}; context.renderer_gl = dx::VmObjectRef{};
                     context.content_view = dx::VmObjectRef{};
-                    context.focused_edit_text = dx::VmObjectRef{};
                     sized_content_view_ = dx::VmObjectRef{};
                     sized_content_node_.reset();
                     activity_started_ = false;
@@ -1481,8 +1344,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         refresh();
         CompleteWindowHandoffs();
         if (activity_started_ && !activity_resumed_ && !runtime::SessionExitRequested(context)) {
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                SetActivityWindowVisible(context.activity, true);
+            SetActivityWindowVisible(context.activity, true);
             CallActivity("onResume", "()V", {});
             activity_resumed_ = true;
         }
@@ -1523,32 +1385,29 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const dx::VmExecutionLockScope execution(bindings_.bridge->Vm().ExecutionLock());
         auto& context = *bindings_.context;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
-        const bool java = context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal;
-        const auto projection = java ? context.ui_tree.PublishedProjection() : nullptr;
-        const auto& tree = projection ? *projection : context.ui_tree;
+
+        const auto projection = context.ui_tree.PublishedProjection();
+        const auto* tree = projection.get();
         std::shared_ptr<GlSurfaceRuntime> selected;
         if (node) {
             for (const auto& [_, state] : context.gl_surface_runtimes) {
                 if (!state->renderer.IsValid()) continue;
                 auto current = runtime::FindViewUiNode(context, state->view.Value());
-                const bool visible = current && (!java || projection) && tree.Get(*current) && tree.IsVisible(*current);
+                const bool visible = current && (projection) && tree->Get(*current) && tree->IsVisible(*current);
                 if (visible)
                     while (current && *current != *node)
-                        current = tree.Get(*current)->parent;
-                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                    runtime::RecordAndroidTraversalDiagnostic(
-                        bindings_.bridge->Vm(), context,
-                        runtime::AndroidUiTraversalRoot(bindings_.bridge->Vm(), context),
-                        std::string("producer ") + std::to_string(state->view.Value()) +
-                            (visible && current ? " selected"
-                             : !visible         ? " outside visible projection"
-                                                : " outside content root"));
-                if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                    runtime::RecordAndroidSurfaceDiagnostic(
-                        bindings_.bridge->Vm(), context, "ui.surface.projection",
-                        std::string(visible && current ? "visible producer " : "producer outside visible projection ") +
-                            std::to_string(state->view.Value()),
-                        {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
+                        current = tree->Get(*current)->parent;
+                runtime::RecordAndroidTraversalDiagnostic(
+                    bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalRoot(bindings_.bridge->Vm(), context),
+                    std::string("producer ") + std::to_string(state->view.Value()) +
+                        (visible && current ? " selected"
+                         : !visible         ? " outside visible projection"
+                                            : " outside content root"));
+                runtime::RecordAndroidSurfaceDiagnostic(
+                    bindings_.bridge->Vm(), context, "ui.surface.projection",
+                    std::string(visible && current ? "visible producer " : "producer outside visible projection ") +
+                        std::to_string(state->view.Value()),
+                    {{"view", std::uint64_t(state->view.Value())}, {"epoch", context.ui_measure_epoch}});
                 runtime::RecordAndroidProducerDiagnostic(bindings_.bridge->Vm(), context, state->view,
                                                          visible && current ? "selected"
                                                          : !visible         ? "outside visible projection"
@@ -1571,7 +1430,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         auto& context = *bindings_.context;
         runtime::SynchronizeAndroidDialogs(context);
         if (activity_resumed_) SetWindowFocus(requested_window_focus_);
-        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) {
+        {
             // setRenderer starts a GLThread even before its View is attached.
             // Native initialization queued there can post the very UI mutation
             // that attaches the producer. It must not depend on a drawable Surface.
@@ -1593,26 +1452,22 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         const auto content = context.content_view;
         const auto node = std::optional{runtime::ActivityContentRoot(context)};
         const auto content_revision = context.ui_content_revision;
-        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::Legacy) ReevaluateContentRenderer();
+
         const bool content_changed=content!=sized_content_view_ || node!=sized_content_node_ ||
             content_revision != sized_content_revision_;
         sized_content_revision_ = content_revision;
         sized_content_view_ = content;
         sized_content_node_ = node;
         if (context.ui_tree.Get(*node)->children.empty()) {
-            if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                ReevaluateContentRenderer();
+            ReevaluateContentRenderer();
             return;
         }
         const auto roots = bindings_.bridge->Vm().ProtectReferences(std::array{content});
         const bool layout_dirty = context.ui_tree.Get(context.ui_tree.Root())->layout_dirty;
         const bool layout_changed = runtime::EnsureAndroidUiTraversal(
-            bindings_.bridge->Vm(), context,
-            context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal
-                ? runtime::AndroidUiTraversalReason::BeforeSurfaceCallbacks
-                : runtime::AndroidUiTraversalReason::OwnerTick,
+            bindings_.bridge->Vm(), context, runtime::AndroidUiTraversalReason::BeforeSurfaceCallbacks,
             runtime::AndroidUiTraversalPhase::ResolveAndNotifySizes);
-        if (context.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal) ReevaluateContentRenderer();
+        ReevaluateContentRenderer();
         if (!content_changed && !layout_changed && !layout_dirty &&
             context.surface_traversal_pending.empty()) return;
         // A virtual size callback may replace its own content. Reconcile the
@@ -1627,7 +1482,6 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
         }
         if (content_changed || layout_changed) {
             runtime::DispatchAndroidGlobalLayout(bindings_.bridge->Vm(), context);
-            if (context.window_has_focus.load()) DispatchViewWindowFocus(true);
         }
     }
 
@@ -1683,11 +1537,10 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 runtime->paused = paused;
             });
         };
-        if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            runtime::RecordAndroidSurfaceDiagnostic(
-                vm, *bindings_.context, "ui.surface.glthread", "GLThread start",
-                {{"view", std::uint64_t(state->view.Value())}, {"surface_available", state->surface_available}},
-                {.mode = core::RateLimitMode::none});
+        runtime::RecordAndroidSurfaceDiagnostic(
+            vm, *bindings_.context, "ui.surface.glthread", "GLThread start",
+            {{"view", std::uint64_t(state->view.Value())}, {"surface_available", state->surface_available}},
+            {.mode = core::RateLimitMode::none});
         try { CallOnView(worker->object, "start", "()V", {}); }
         catch (...) {
             state->wake = {}; state->pause = {};
@@ -1873,13 +1726,12 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                 vm.Model().SetPrimitiveElement(array, static_cast<runtime::JniSize>(i), static_cast<std::uint32_t>(values[i]));
             return array;
         };
-        if (c.ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-            runtime::RecordAndroidSurfaceDiagnostic(vm, c, "ui.surface.egl", "EGL creation request",
-                                                    {{"view", std::uint64_t(r.view.Value())},
-                                                     {"new_context", !r.renderer_context.IsValid()},
-                                                     {"width", std::uint64_t(c.surface_width)},
-                                                     {"height", std::uint64_t(c.surface_height)}},
-                                                    {.mode = core::RateLimitMode::none});
+        runtime::RecordAndroidSurfaceDiagnostic(vm, c, "ui.surface.egl", "EGL creation request",
+                                                {{"view", std::uint64_t(r.view.Value())},
+                                                 {"new_context", !r.renderer_context.IsValid()},
+                                                 {"width", std::uint64_t(c.surface_width)},
+                                                 {"height", std::uint64_t(c.surface_height)}},
+                                                {.mode = core::RateLimitMode::none});
         if (!r.renderer_context.IsValid()) {
         const auto type = vm.Linker().ResolveDescriptor("Ljavax/microedition/khronos/egl/EGLContext;");
         const auto get = vm.Linker().FindDirectMethod(type, "getEGL", "()Ljavax/microedition/khronos/egl/EGL;");
@@ -2127,8 +1979,7 @@ bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context) {
                         bindings_.bridge->Vm(), *bindings_.context))
                     throw std::runtime_error(*error);
             });
-            if (bindings_.context->ui_traversal_owner == runtime::AndroidUiTraversalOwner::JavaTraversal)
-                guest([&] { SetActivityWindowVisible(bindings_.context->activity, false); });
+            guest([&] { SetActivityWindowVisible(bindings_.context->activity, false); });
             if (activity_started_) guest([&] { CallActivity("onStop", "()V", {}); });
             if (bindings_.context->activity.IsValid())
                 guest([&] { CallActivity("onDestroy", "()V", {}); });

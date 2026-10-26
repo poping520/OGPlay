@@ -1683,7 +1683,7 @@ void RegisterAndroidValueStateTables(
     dexvm::Interpreter& vm,
     const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         if (vm.CurrentContextToken() != 1U ||
             (context->ui_java_owner_thread && context->ui_java_owner_thread != std::this_thread::get_id()))
             throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View owner binding requires main context"};

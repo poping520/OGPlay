@@ -648,75 +648,8 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
             return dx::VmValue::Int(-1);
         });
     };
-    builder.VirtualMethod("getIntrinsicWidth", "()I", dimension(true));
-    builder.VirtualMethod("getIntrinsicHeight", "()I", dimension(false));
-    builder.VirtualMethod("setAlpha", "(I)V", [context](dx::IntrinsicContext& call) {
-        const auto alpha = call.arguments[0].AsInt();
-        if (alpha < 0 || alpha > 255) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "Drawable alpha is outside 0..255"};
-        }
-        auto& state = context->ui_drawables[call.receiver.Value()];
-        state.alpha = static_cast<std::uint8_t>(alpha);
-        const auto still_bound = [&]() {
-            if (!state.callback_node.has_value() ||
-                context->ui_tree.Get(*state.callback_node) == nullptr) {
-                return false;
-            }
-            const auto view = context->ui_node_to_object.find(*state.callback_node);
-            if (view == context->ui_node_to_object.end()) return false;
-            const auto current = context->ui_view_backgrounds.find(view->second.Value());
-            return current != context->ui_view_backgrounds.end() &&
-                   current->second == call.receiver;
-        }();
-        if (still_bound) {
-            context->ui_tree.Get(*state.callback_node)->background_alpha =
-                static_cast<float>(alpha) / 255.0F;
-            context->ui_tree.MarkDrawDirty(*state.callback_node);
-        }
-        RefreshAndroidImageDrawables(*context);
-        return dx::VmValue::Void();
-    });
-    builder.VirtualMethod("setBounds", "(IIII)V", [context](dx::IntrinsicContext& call) {
-        const ui::Rect bounds{call.arguments[0].AsInt(), call.arguments[1].AsInt(),
-                              call.arguments[2].AsInt(), call.arguments[3].AsInt()};
-        if (bounds.right < bounds.left || bounds.bottom < bounds.top) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "Drawable bounds are inverted"};
-        }
-        auto& state = context->ui_drawables[call.receiver.Value()];
-        state.bounds = bounds;
-        const auto still_bound = [&]() {
-            if (!state.callback_node.has_value() ||
-                context->ui_tree.Get(*state.callback_node) == nullptr) {
-                return false;
-            }
-            const auto view = context->ui_node_to_object.find(*state.callback_node);
-            if (view == context->ui_node_to_object.end()) return false;
-            const auto current = context->ui_view_backgrounds.find(view->second.Value());
-            return current != context->ui_view_backgrounds.end() &&
-                   current->second == call.receiver;
-        }();
-        if (still_bound) {
-            context->ui_tree.MarkDrawDirty(*state.callback_node);
-        }
-        return dx::VmValue::Void();
-    });
+
     // AOSP 4.4 ROM line 165.
-    builder.VirtualMethod(
-        "setBounds", "(Landroid/graphics/Rect;)V",
-        [](dx::IntrinsicContext& c) {
-            const auto rect = c.arguments[0].ref;
-            if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "bounds == null"};
-            std::vector<dx::VmValue> args;
-            for (const auto name : {"left", "top", "right", "bottom"}) {
-                const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(rect), name, "I");
-                args.push_back(dx::VmValue::Int(static_cast<std::int32_t>(
-                    c.vm.Model().InstanceSlots(rect)[c.vm.Linker().Field(*field).slot].bits)));
-            }
-            return CallAndroidMethod(c.vm, c.receiver, "setBounds", "(IIII)V", args);
-        },
-        dx::kAccPublic);
 
     return std::move(builder).Build();
 }
@@ -746,7 +679,7 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Matrix(const Context& context) {
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;", "Ljava/lang/Object;");
         builder.Constructor("()V", [context](dx::IntrinsicContext& c) {
             context->identity_matrices.insert(c.receiver.Value());
@@ -784,10 +717,6 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
             dx::kAccProtected);
         return std::move(builder).Build();
     }
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Matrix;", "Ljava/lang/Object;");
-    builder.Constructor("()V", GraphicsNoopHandler());
-    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -806,7 +735,7 @@ namespace {
 }  // namespace
 
 Decl Declare_android_graphics_Paint(const Context& context) {
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
         const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
         const auto state = [context](dx::IntrinsicContext& call) -> DexVmAndroidContext::PaintMeasureState& {
@@ -938,19 +867,6 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         builder.VirtualMethod("measureText", "(Ljava/lang/CharSequence;II)F", measure(3));
         return std::move(builder).Build();
     }
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
-    builder.Constructor("()V", GraphicsNoopHandler());
-    builder.Constructor("(I)V", GraphicsNoopHandler());
-    builder.VirtualMethod("setColor", "(I)V", GraphicsNoopHandler());
-    builder.VirtualMethod("setAntiAlias", "(Z)V", GraphicsNoopHandler());
-    builder.VirtualMethod("setTextSize", "(F)V", GraphicsNoopHandler());
-    builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
-                          [](dx::IntrinsicContext& call) {
-                              // Returns the typeface that was set, per the platform contract.
-                              return dx::VmValue::Ref(call.arguments[0].ref);
-                          });
-    return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
@@ -1422,14 +1338,13 @@ Decl Declare_android_graphics_PorterDuff(const Context& context) {
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/BitmapDrawable;", "Landroid/graphics/drawable/Drawable;");
-    const bool leaf = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-    if (!leaf) builder.InstanceField("bitmap", "Landroid/graphics/Bitmap;", dx::kAccPrivate | dx::kAccFinal);
+
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
             const auto bitmap = call.arguments[index].ref;
             if (bitmap.IsValid() && !context->bitmaps.contains(bitmap.Value()))
                 throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "BitmapDrawable requires a Bitmap backing"};
-            if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+            {
                 const auto ctor = call.vm.Linker().FindDirectMethod(
                     call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
                 const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
@@ -1464,11 +1379,8 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
                 };
                 write("mBitmapWidth", "I", static_cast<std::uint32_t>(dimension(true)));
                 write("mBitmapHeight", "I", static_cast<std::uint32_t>(dimension(false)));
-            } else {
-                call.vm.Model().InstanceSlots(call.receiver)[0] = {bitmap.Value(), dx::SlotTag::ref};
             }
-            if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal)
-                context->ui_drawables[call.receiver.Value()].bitmap = bitmap;
+
             context->ui_drawables[call.receiver.Value()].bitmap_drawable = true;
             return dx::VmValue::Void();
         });
@@ -1484,10 +1396,9 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
 Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class(
         "Landroid/graphics/drawable/ColorDrawable;", "Landroid/graphics/drawable/Drawable;");
-    const bool leaf = context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-    if (!leaf) builder.InstanceField("color", "I", dx::kAccPrivate);
+
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+        {
             const auto ctor = call.vm.Linker().FindDirectMethod(
                 call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
             const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
@@ -1499,17 +1410,15 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
         return dx::VmValue::Void();
     });
     const auto set = [context](dx::IntrinsicContext& call) {
-        if (context->ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal)
-            call.vm.Model().InstanceSlots(call.receiver)[0] = {static_cast<std::uint32_t>(call.arguments[0].AsInt()),
-                                                               dx::SlotTag::cat1};
+
         context->ui_drawables[call.receiver.Value()].color = call.arguments[0].cat1;
-        RefreshAndroidImageDrawables(*context);
+
         return dx::VmValue::Void();
     };
     builder
         .Constructor("(I)V",
                      [context](dx::IntrinsicContext& call) {
-                         if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                         {
                              const auto ctor = call.vm.Linker().FindDirectMethod(
                                  call.vm.Model().ObjectClass(call.receiver), "<init>", "()V");
                              const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
@@ -1521,10 +1430,7 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
                      })
         .VirtualMethod("setColor", "(I)V", set);
     builder.VirtualMethod("getColor", "()I", [context](dx::IntrinsicContext& call) {
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-            return dx::VmValue::Int(static_cast<std::int32_t>(*context->ui_drawables.at(call.receiver.Value()).color));
-        return dx::VmValue::Int(static_cast<std::int32_t>(
-            call.vm.Model().InstanceSlots(call.receiver)[0].bits));
+        return dx::VmValue::Int(static_cast<std::int32_t>(*context->ui_drawables.at(call.receiver.Value()).color));
     });
     return std::move(builder).Build();
 }

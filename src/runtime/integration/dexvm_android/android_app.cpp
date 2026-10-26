@@ -292,8 +292,7 @@ Decl Declare_android_app_Activity(const Context& context) {
     builder.VirtualMethod("onConfigurationChanged",
         "(Landroid/content/res/Configuration;)V", lifecycle_noop);
     const auto window = builder.BoundInstanceField("mWindow", "Landroid/view/Window;", dx::kAccPrivate);
-    if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-        context->ui_java_activity_window = window;
+    context->ui_java_activity_window = window;
     builder.FinalMethod("getWindow", "()Landroid/view/Window;",
         [window](dx::IntrinsicContext& call) {
             dx::IntrinsicCall fields(call);
@@ -941,23 +940,21 @@ std::optional<std::string> DispatchHolderCallbacks(
         name = "surfaceDestroyed";
     }
 
-    const bool java = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
     const auto activity = context.activity;
-    const auto root = java ? AndroidUiTraversalRoot(vm, context) : dx::VmObjectRef{};
+    const auto root = AndroidUiTraversalRoot(vm, context);
     const auto generation = context.ui_tree.Generation();
     const auto window_generation = context.window_holder_generation;
     const auto window_holder = context.window_surface_holder;
     const auto width = context.surface_width, height = context.surface_height;
     std::map<std::uint32_t, DexVmAndroidContext::UiOwnerIdentity> identities;
-    if (java)
-        for (const auto holder : holders) {
-            if (context.window_surface_holders.contains(holder) || holder == window_holder.Value()) continue;
-            for (const auto& [view, candidate] : context.surface_holders)
-                if (candidate.Value() == holder)
-                    identities.emplace(holder, CaptureAndroidUiOwner(vm, context, dx::VmObjectRef{view}));
-        }
+    for (const auto holder : holders) {
+        if (context.window_surface_holders.contains(holder) || holder == window_holder.Value()) continue;
+        for (const auto& [view, candidate] : context.surface_holders)
+            if (candidate.Value() == holder)
+                identities.emplace(holder, CaptureAndroidUiOwner(vm, context, dx::VmObjectRef{view}));
+    }
     const auto current = [&](std::uint32_t holder) {
-        if (!java) return true;
+
         if (activity != context.activity || root != AndroidUiTraversalRoot(vm, context) ||
             generation != context.ui_tree.Generation() || width != context.surface_width ||
             height != context.surface_height)
@@ -981,11 +978,9 @@ std::optional<std::string> DispatchHolderCallbacks(
     std::size_t delivered = 0;
     for (const auto holder_handle : holders) {
         if (!current(holder_handle)) {
-            if (java)
-                RecordAndroidSurfaceDiagnostic(vm, context, "ui.surface.holder",
-                                               "holder rejected " + std::to_string(holder_handle),
-                                               {{"holder", std::uint64_t(holder_handle)},
-                                                {"reason", std::string("stale owner/root/mount/buffer")}});
+            RecordAndroidSurfaceDiagnostic(
+                vm, context, "ui.surface.holder", "holder rejected " + std::to_string(holder_handle),
+                {{"holder", std::uint64_t(holder_handle)}, {"reason", std::string("stale owner/root/mount/buffer")}});
             continue;
         }
         if (phase == SurfaceHolderPhase::created) {
@@ -999,10 +994,10 @@ std::optional<std::string> DispatchHolderCallbacks(
             if (hidden) continue;
             if (context.active_surface_holders.contains(holder_handle)) continue;
             // A new Surface must receive changed even when its buffer size is unchanged.
-            if (java) context.surface_callback_sizes.erase(holder_handle);
+            context.surface_callback_sizes.erase(holder_handle);
             // AOSP sets mSurfaceCreated before invoking callbacks.
             context.active_surface_holders.insert(holder_handle);
-            if (java) {
+            {
                 RecordAndroidSurfaceDiagnostic(
                     vm, context, "ui.surface.holder", "holder activated",
                     {{"holder", std::uint64_t(holder_handle)},
@@ -1035,7 +1030,7 @@ std::optional<std::string> DispatchHolderCallbacks(
                 if (context.retire_native_surface)
                     context.retire_native_surface(dexvm::VmObjectRef(holder));
                 context.destroying_surface_holders.erase(holder);
-                if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+                {
                     const auto surface = context.holder_surfaces.find(holder);
                     if (surface != context.holder_surfaces.end()) {
                         // Invalidate this endpoint permanently before a later
@@ -1069,23 +1064,20 @@ std::optional<std::string> DispatchHolderCallbacks(
             try {
                 android_intrinsics::PublishSurfaceHolderFrame(vm, context, dx::VmObjectRef(holder_handle));
             } catch (const dx::VmJavaThrow& error) {
-                if (java)
-                    RecordAndroidSurfaceDiagnostic(
-                        vm, context, "ui.surface.holder", "holder buffer rejected",
-                        {{"holder", std::uint64_t(holder_handle)}, {"reason", error.message}});
+                RecordAndroidSurfaceDiagnostic(vm, context, "ui.surface.holder", "holder buffer rejected",
+                                               {{"holder", std::uint64_t(holder_handle)}, {"reason", error.message}});
                 return error.descriptor + ": " + error.message;
             }
         }
 
-        if (java)
-            RecordAndroidSurfaceDiagnostic(
-                vm, context, "ui.surface.callback", "Surface callback dispatch",
-                {{"holder", std::uint64_t(holder_handle)},
-                 {"phase", std::string(name)},
-                 {"kind", std::string(context.window_surface_holders.contains(holder_handle) ? "window" : "view")},
-                 {"width", std::uint64_t(width)},
-                 {"height", std::uint64_t(height)}},
-                {.mode = core::RateLimitMode::none});
+        RecordAndroidSurfaceDiagnostic(
+            vm, context, "ui.surface.callback", "Surface callback dispatch",
+            {{"holder", std::uint64_t(holder_handle)},
+             {"phase", std::string(name)},
+             {"kind", std::string(context.window_surface_holders.contains(holder_handle) ? "window" : "view")},
+             {"width", std::uint64_t(width)},
+             {"height", std::uint64_t(height)}},
+            {.mode = core::RateLimitMode::none});
         std::vector<dx::VmObjectRef> callbacks;
         if (transaction_callbacks) {
             const auto found = transaction_callbacks->find(holder_handle);
@@ -1189,7 +1181,7 @@ void SetWindowInputCallback(dexvm::Interpreter& vm, DexVmAndroidContext& context
 void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef callback) {
     if (context.window_surface_callback == callback) return;
     ++context.window_holder_generation;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         // Each callback owner gets a distinct holder generation. Retain the old
         // callbacks until the next safe point can deliver destroyed without reentry.
         const auto previous = context.window_surface_holder.Value();
@@ -1207,29 +1199,11 @@ void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& conte
         }
         return;
     }
-    const auto root = vm.ProtectReferences(std::array{callback});
-    if (context.window_surface_holder.IsValid()) {
-        if (const auto error = DispatchHolderCallbacks(vm, context,
-                std::array{context.window_surface_holder.Value()}, SurfaceHolderPhase::destroyed); error)
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", *error};
-        context.surface_callbacks.erase(context.window_surface_holder.Value());
-    }
-    context.window_surface_callback = callback;
-    if (!callback.IsValid()) return;
-    if (!context.window_surface_holder.IsValid())
-        context.window_surface_holder = vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
-    context.surface_callbacks[context.window_surface_holder.Value()] = {callback};
-    if (context.managed_host_surface_open && context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy) {
-        for (const auto phase : {SurfaceHolderPhase::created, SurfaceHolderPhase::changed})
-            if (const auto error = DispatchHolderCallbacks(vm, context,
-                    std::array{context.window_surface_holder.Value()}, phase); error)
-                throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", *error};
-    }
 }
 
 std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_traversal_owner != AndroidUiTraversalOwner::JavaTraversal || !context.managed_host_surface_open ||
-        context.surface_event_dispatching || context.input_presentation || context.ui_layout_dispatching)
+    if (!context.managed_host_surface_open || context.surface_event_dispatching || context.input_presentation ||
+        context.ui_layout_dispatching)
         return std::nullopt;
     const dexvm::VmExecutionLockScope execution(vm.ExecutionLock());
     const auto published = context.ui_tree.PublishedProjection();
@@ -1323,14 +1297,13 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
 std::optional<std::string> DispatchSurfaceHolderCallbacks(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const SurfaceHolderPhase phase) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
-        phase != SurfaceHolderPhase::destroyed) {
+    if (phase != SurfaceHolderPhase::destroyed) {
         if (phase == SurfaceHolderPhase::created) context.managed_host_surface_open = true;
         DispatchWindowInputQueue(vm, context, true);
         return PumpAndroidSurfaceEvents(vm, context);
     }
     auto pending = context.surface_traversal_pending;
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && phase == SurfaceHolderPhase::changed) {
+    if (phase == SurfaceHolderPhase::changed) {
         try {
             static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
                                                        AndroidUiTraversalPhase::ResolveAndNotifySizes));
@@ -1348,8 +1321,7 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
         } catch (const dexvm::VmJavaThrow& error) {
             return error.descriptor + ": " + error.message;
         }
-        if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal)
-            pending = context.surface_traversal_pending;
+        pending = context.surface_traversal_pending;
         holders = AttachedHolderHandles(context);
         if (context.window_surface_callback.IsValid())
             holders.push_back(context.window_surface_holder.Value());
@@ -1377,38 +1349,11 @@ std::optional<std::string> DispatchSurfaceHolderCallbacks(
 std::optional<std::string> AttachSurfaceViewSubtree(
     dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const ui::UiNodeId subtree) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         android_intrinsics::MergeManagedViewTreeObservers(vm, context, ViewObjectForUiNode(context, subtree));
         context.surface_traversal_pending.insert(subtree);
         return std::nullopt;
     }
-    if (!context.managed_host_surface_open ||
-        !context.ui_tree.IsVisible(subtree)) {
-        return std::nullopt;
-    }
-    if (context.ui_layout_dispatching) return std::nullopt;
-    try {
-        static_cast<void>(EnsureAndroidUiTraversal(vm, context, AndroidUiTraversalReason::BeforeSurfaceCallbacks,
-                                                   AndroidUiTraversalPhase::ResolveAndNotifySizes));
-    } catch (const dexvm::VmJavaThrow& error) {
-        return error.descriptor + ": " + error.message;
-    }
-    if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
-    const auto pending = context.surface_traversal_pending;
-    const auto holders = SubtreeHolderHandles(context, subtree);
-    if (const auto error = DispatchHolderCallbacks(
-            vm, context, holders, SurfaceHolderPhase::created);
-        error.has_value()) {
-        return error;
-    }
-    if (const auto error = DispatchHolderCallbacks(
-            vm, context, holders, SurfaceHolderPhase::changed);
-        error.has_value()) {
-        return error;
-    }
-    CompleteSurfaceTraversal(context, subtree, pending);
-    SetGlSurfaceAvailability(context, subtree, true);
-    return std::nullopt;
 }
 
 bool SurfaceTraversalPending(const DexVmAndroidContext& context,
@@ -1422,18 +1367,12 @@ bool SurfaceTraversalPending(const DexVmAndroidContext& context,
     return false;
 }
 
-std::optional<std::string> DetachSurfaceViewSubtree(
-    dexvm::Interpreter& vm, DexVmAndroidContext& context,
-    const ui::UiNodeId subtree) {
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+std::optional<std::string> DetachSurfaceViewSubtree(dexvm::Interpreter&, DexVmAndroidContext& context,
+                                                    const ui::UiNodeId subtree) {
+    {
         context.surface_traversal_pending.insert(subtree);
         return std::nullopt;
     }
-    if (!context.ui_tree.IsAttached(subtree)) return std::nullopt;
-    SetGlSurfaceAvailability(context, subtree, false);
-    const auto holders = SubtreeHolderHandles(context, subtree);
-    return DispatchHolderCallbacks(vm, context, holders,
-                                   SurfaceHolderPhase::destroyed);
 }
 
 std::optional<std::string> RetireSurfaceHolderGeneration(

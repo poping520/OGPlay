@@ -1,4 +1,5 @@
 #pragma once
+#include "container_traversal_fixture.h"
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
 
 #include "boot_dex.h"
@@ -45,12 +46,6 @@ using namespace ogplay::runtime::dexvm;
     const std::uint8_t type, const std::uint32_t data);
 
 struct ClickVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model;
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context;
@@ -85,8 +80,11 @@ struct ClickVm final {
     std::int32_t image_resource_queries{};
     VmObjectRef image_delegate_exception;
     std::array<std::int32_t, 3> last_text_range{};
-    Interpreter interpreter;
-    std::unique_ptr<VmThreadRuntime> threads;
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& interpreter;
+    VmThreadRuntime* threads{};
     VmObjectRef activity;
     VmObjectRef video_view;
     VmObjectRef skip_button;

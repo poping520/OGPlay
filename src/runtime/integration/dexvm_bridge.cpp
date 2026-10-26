@@ -147,7 +147,6 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.activity);
     for (const auto& record : context.activity_stack) {
         root(record.object); root(record.intent); root(record.content); root(record.caller);
-        root(record.focused_edit_text);
         for (const auto& result : record.results) root(result.data);
     }
     for (const auto& command : context.activity_commands) {
@@ -241,13 +240,8 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         for (const auto& [ref, _] : (*identity)->mounts)
             root(ref);
     }
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
-        for (const auto& [_, ref] : context.ui_node_to_object)
-            root(ref);
+
     for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
-        for (const auto& [_, ref] : context.ui_view_images)
-            root(ref);
 }
 
 void RegisterAndroidOwnerAttachedStateTable(
@@ -302,20 +296,11 @@ void RegisterAndroidOwnerAttachedStateTable(
             }
             if (const auto found = context->ui_view_layout_params.find(key);
                 found != context->ui_view_layout_params.end()) visit_ref(found->second);
-            if (context->ui_traversal_owner == AndroidUiTraversalOwner::Legacy)
-                if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end())
-                    visit_ref(image->second);
+
             if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
                 visit_ref(state->second.bitmap);
                 for (const auto child : state->second.skin_children)
                     visit_ref(child);
-            }
-            if (const auto node = context->object_to_ui_node.find(key);
-                node != context->object_to_ui_node.end()) {
-                if (const auto found = context->ui_click_listeners.find(node->second);
-                    found != context->ui_click_listeners.end()) visit_ref(found->second);
-                if (const auto found = context->ui_touch_listeners.find(node->second);
-                    found != context->ui_touch_listeners.end()) visit_ref(found->second);
             }
             if (const auto found = context->text_watchers.find(key);
                 found != context->text_watchers.end()) {

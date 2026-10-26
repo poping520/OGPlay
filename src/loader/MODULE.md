@@ -248,3 +248,7 @@ DVM-105：空 APK inventory 可建立空 ApkSelectedNativeLibraries 视图，以
 
 DVM-121：Manifest application/Activity 的 theme 保留 resource id；activity-alias 不覆盖
 目标 Activity 的 theme。loader 不应用主题或展开资源继承，0/缺省回退由 session 处理。
+
+DVM-331：loader 只提供受检 ZIP/DEX 事实；BootDex 的 JavaTraversal 模式及配对准入由
+integration 的 AssembleAndroidContext 在 catalog/VM 创建前执行。容器可解析不表示可装配；
+无元数据的旧 guest 制品不会通过装配，loader 不补模式、主题或成员来源。

@@ -455,17 +455,7 @@ TEST_CASE("DVM-280 ROM layout callbacks and two-pass owner scheduling publish Ja
     }
 }
 
-TEST_CASE("DVM-279 owner payload pairing is fixed before VM creation") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        CHECK_THROWS_AS(AndroidValueVm(backend, {}, false, nullptr, false, AndroidUiTraversalOwner::JavaTraversal),
-                        std::invalid_argument);
-        CHECK_THROWS_AS(AndroidValueVm(backend, {}, false, nullptr, false, AndroidUiTraversalOwner::Legacy,
-                                       OGPLAY_DEXVM_FIXTURE_DIR "/view-measure.jar"),
-                        std::invalid_argument);
-    }
-}
-
-TEST_CASE("DVM-277 ROM View shape preserves adapters and rejects host-owned fields") {
+TEST_CASE("DVM-277 ROM View shape preserves adapters and Java-owned fields") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         AndroidValueVm fixture(backend, {}, false, "view_field_access.dex");
         const auto owner = fixture.New("Landroid/app/Activity;");
@@ -484,13 +474,10 @@ TEST_CASE("DVM-277 ROM View shape preserves adapters and rejects host-owned fiel
         const auto array = VmObjectRef(fixture.linker.Class(type).static_storage[fixture.linker.Field(*states).slot]);
         REQUIRE(array.IsValid());
         CHECK(fixture.model.ArrayLength(array) == 1024);
-        for (const auto name : {"left", "writeLeft"}) {
-            const auto outcome = fixture.OnOutcome(view, name, "()I");
-            REQUIRE(outcome.exception.IsValid());
-            CHECK(fixture.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
-        }
+        CHECK(fixture.On(view, "left", "()I").AsInt() == 0);
+        CHECK(fixture.On(view, "writeLeft", "()I").AsInt() == 7);
+        CHECK(fixture.On(view, "left", "()I").AsInt() == 7);
         CHECK(fixture.On(view, "getId", "()I").AsInt() == -1);
-        RegisterAndroidOwnerAttachedStateTable(fixture.vm, fixture.context);
         const auto focus = fixture.New("Ljava/lang/Object;");
         const auto system_ui = fixture.New("Ljava/lang/Object;");
         const auto window_owner = fixture.New("Landroid/app/Activity;");
@@ -531,138 +518,6 @@ TEST_CASE("DVM-277 View constructor initializes ROM SDK compatibility flags once
             CHECK(flag("sUseBrokenMakeMeasureSpec") == (sdk <= 17U));
             CHECK(flag("sIgnoreMeasureCache") == (sdk < 19U));
         }
-    }
-}
-
-TEST_CASE("DVM-277B Java View layout fields feed ROM getters and host projections") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        VmObjectRef supplied_resources;
-        int resource_calls = 0;
-        auto owner_class = IntrinsicClassBuilder::Class("Ltest/ViewResourcesOwner;", "Landroid/content/Context;");
-        owner_class.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
-        owner_class.OverrideMethod("getResources", "()Landroid/content/res/Resources;", [&](IntrinsicContext&) {
-            ++resource_calls;
-            return VmValue::Ref(supplied_resources);
-        });
-        AndroidValueVm f(backend, {std::move(owner_class).Build()}, false, "view_java_layout.dex");
-        const auto base = f.New("Landroid/content/Context;");
-        supplied_resources = f.On(base, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto expected_resources = supplied_resources;
-        const auto owner = f.New("Ltest/ViewResourcesOwner;");
-        // The production adapter must propagate a genuinely unattached
-        // ContextWrapper failure; only valid UI fixtures attach a test base.
-        const auto empty_wrapper = f.New("Landroid/content/ContextWrapper;");
-        const auto uninitialized_view = f.vm.NewIntrinsicInstance("Landroid/view/View;");
-        const auto view_type = f.linker.ResolveDescriptor("Landroid/view/View;");
-        const auto constructor = f.linker.FindDirectMethod(view_type, "<init>", "(Landroid/content/Context;)V");
-        REQUIRE(constructor.has_value());
-        const auto failed =
-            f.vm.Call(*constructor, std::array{VmValue::Ref(uninitialized_view), VmValue::Ref(empty_wrapper)});
-        REQUIRE(failed.exception.IsValid());
-        CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        const auto retried =
-            f.vm.Call(*constructor, std::array{VmValue::Ref(uninitialized_view), VmValue::Ref(empty_wrapper)});
-        REQUIRE(retried.exception.IsValid());
-        CHECK(f.linker.Class(retried.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        const auto compatibility = f.linker.FindFieldRecursive(view_type, "sCompatibilityDone", "Z");
-        REQUIRE(compatibility.has_value());
-        CHECK(f.linker.Class(view_type).static_storage[f.linker.Field(*compatibility).slot] == 0);
-        const auto view = f.New("Ltest/ViewJavaLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto roots = f.vm.ProtectReferences(std::array{view, owner});
-        CHECK(resource_calls == 1);
-        supplied_resources =
-            f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
-        CHECK(f.On(view, "getResources", "()Landroid/content/res/Resources;").ref == expected_resources);
-        CHECK(resource_calls == 1);
-        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 0);
-        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 0);
-        const auto type = f.linker.ResolveDescriptor("Landroid/view/View;");
-        for (const auto name : {"getPaddingTop", "getPaddingBottom", "getMinimumWidth", "getMinimumHeight"}) {
-            const auto slot = f.linker.FindVtableIndex(type, name, "()I");
-            REQUIRE(slot.has_value());
-            CHECK(f.linker.Method(f.linker.Class(type).vtable[*slot]).kind == MethodKind::interpreted);
-        }
-        const auto resources_slot = f.linker.FindVtableIndex(type, "getResources", "()Landroid/content/res/Resources;");
-        REQUIRE(resources_slot.has_value());
-        CHECK(f.linker.Method(f.linker.Class(type).vtable[*resources_slot]).kind == MethodKind::interpreted);
-        const auto int_field = [&](const char* name, const char* descriptor = "I") {
-            const auto field = f.linker.FindFieldRecursive(type, name, descriptor);
-            REQUIRE(field.has_value());
-            CHECK_FALSE(f.linker.Field(*field).is_unimplemented);
-            return static_cast<std::int32_t>(f.model.InstanceSlots(view)[f.linker.Field(*field).slot].bits);
-        };
-        CHECK(int_field("mUserPaddingStart") == std::numeric_limits<std::int32_t>::min());
-        CHECK(int_field("mUserPaddingEnd") == std::numeric_limits<std::int32_t>::min());
-        CHECK(int_field("mLeftPaddingDefined", "Z") == 0);
-        f.On(view, "setPadding", "(IIII)V", {VmValue::Int(3), VmValue::Int(4), VmValue::Int(5), VmValue::Int(6)});
-        const std::array names{"Left", "Top", "Right", "Bottom"};
-        for (std::size_t i = 0; i < names.size(); ++i) {
-            CHECK(f.On(view, (std::string("padding") + names[i]).c_str(), "()I").AsInt() == static_cast<int>(i + 3));
-            CHECK(f.On(view, (std::string("getPadding") + names[i]).c_str(), "()I").AsInt() == static_cast<int>(i + 3));
-        }
-        CHECK(int_field("mUserPaddingLeft") == 3);
-        CHECK(int_field("mUserPaddingRightInitial") == 5);
-        CHECK(int_field("mUserPaddingBottom") == 6);
-        CHECK(int_field("mLeftPaddingDefined", "Z") == 1);
-        f.On(view, "setMinimumWidth", "(I)V", {VmValue::Int(31)});
-        f.On(view, "setMinimumHeight", "(I)V", {VmValue::Int(19)});
-        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 31);
-        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 19);
-        CHECK(f.Static("Ltest/ViewJavaLayout;", "requestCount", "()I").AsInt() == 3);
-        const auto node = FindViewUiNode(*f.context, view.Value());
-        REQUIRE(node.has_value());
-        const auto params =
-            f.New("Landroid/widget/FrameLayout$LayoutParams;", "(II)V", {VmValue::Int(-2), VmValue::Int(-2)});
-        f.On(view, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(params)});
-        f.context->ui_tree.Attach(f.context->ui_tree.Root(), *node);
-        const auto resolve = [&] {
-            static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
-                                                       AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 80}));
-        };
-        resolve();
-        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{31, 19}));
-        CHECK_FALSE(f.context->ui_tree.Get(f.context->ui_tree.Root())->layout_dirty);
-        f.On(view, "storePadding", "(IIII)V", {VmValue::Int(40), VmValue::Int(11), VmValue::Int(9), VmValue::Int(12)});
-        CHECK(f.On(view, "getPaddingLeft", "()I").AsInt() == 40);
-        // A direct guest field store must invalidate an otherwise clean input projection.
-        resolve();
-        CHECK(f.context->ui_tree.Get(*node)->padding == (ui::Insets{40, 11, 9, 12}));
-        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{49, 23}));
-        static_cast<void>(f.vm.CollectGarbage("dvm277b-java-layout"));
-        CHECK(f.On(view, "getResources", "()Landroid/content/res/Resources;").ref == expected_resources);
-    }
-}
-
-TEST_CASE("DVM-277B XML padding and minimum are Java-owned layout inputs") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        const auto owner = f.New("Landroid/content/Context;");
-        const auto attribute = [](const char* name, const std::uint8_t type, const std::uint32_t value) {
-            ogplay::loader::BinaryXmlAttribute result;
-            result.namespace_uri = "http://schemas.android.com/apk/res/android";
-            result.name = name;
-            result.value_type = type;
-            result.data = value;
-            return result;
-        };
-        std::vector<ogplay::loader::BinaryXmlElement> xml(1);
-        xml[0].name = "FrameLayout";
-        xml[0].attributes = {
-            attribute("layout_width", 0x10, 0xfffffffeU), attribute("layout_height", 0x10, 0xfffffffeU),
-            attribute("paddingLeft", 5, 3U << 8U),        attribute("paddingTop", 5, 4U << 8U),
-            attribute("paddingRight", 5, 5U << 8U),       attribute("paddingBottom", 5, 6U << 8U),
-            attribute("minWidth", 5, 31U << 8U),          attribute("minHeight", 5, 19U << 8U)};
-        const auto view = InflateUiElements(f.vm, *f.context, xml, owner);
-        const auto node = FindViewUiNode(*f.context, view.Value());
-        REQUIRE(node.has_value());
-        CHECK(f.On(view, "getPaddingLeft", "()I").AsInt() == 3);
-        CHECK(f.On(view, "getPaddingTop", "()I").AsInt() == 4);
-        CHECK(f.On(view, "getMinimumWidth", "()I").AsInt() == 31);
-        CHECK(f.On(view, "getMinimumHeight", "()I").AsInt() == 19);
-        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::BeforePresent,
-                                                   AndroidUiTraversalPhase::ResolveOnly, ui::Size{100, 80}));
-        CHECK(f.context->ui_tree.Get(*node)->padding == (ui::Insets{3, 4, 5, 6}));
-        CHECK(f.context->ui_tree.Get(*node)->measured == (ui::Size{31, 19}));
     }
 }
 
@@ -712,8 +567,10 @@ TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
              {VmValue::Ref(child)});
         CHECK(f.On(child, "getParent",
                    "()Landroid/view/ViewParent;").ref == second_parent);
-        f.On(second_parent, "removeViews", "(II)V",
-             {VmValue::Int(0), VmValue::Int(1)});
+        CHECK(
+            f.OnOutcome(second_parent, "removeViews", "(II)V", {VmValue::Int(0), VmValue::Int(1)}).exception.IsValid());
+        CHECK(f.On(child, "getParent", "()Landroid/view/ViewParent;").ref == second_parent);
+        f.On(second_parent, "removeView", "(Landroid/view/View;)V", {VmValue::Ref(child)});
         CHECK_FALSE(f.On(child, "getParent",
                          "()Landroid/view/ViewParent;").ref.IsValid());
 
@@ -721,96 +578,6 @@ TEST_CASE("DVM-138 View.getParent follows the live UiTree hierarchy") {
              {VmValue::Ref(first_parent)});
         CHECK(f.On(first_parent, "getParent", "()Landroid/view/ViewParent;").ref ==
               f.On(activity, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(0x01020002)}).ref);
-    }
-}
-
-TEST_CASE("DVM-119 Java layout params drive FrameLayout geometry and copy semantics") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
-        AndroidValueVm f(backend);
-        f.context->surface_width = 100;
-        f.context->surface_height = 100;
-        const auto activity = f.New("Landroid/app/Activity;");
-        const auto frame = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V",
-                                  {VmValue::Ref(activity)});
-        const auto frame_params = f.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V",
-                                         {VmValue::Int(-1), VmValue::Int(-1)});
-        f.On(frame, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(frame_params)});
-        const auto child = f.New("Landroid/view/View;", "(Landroid/content/Context;)V",
-                                  {VmValue::Ref(activity)});
-        const auto params = f.New("Landroid/widget/FrameLayout$LayoutParams;", "(III)V",
-                                   {VmValue::Int(20), VmValue::Int(10), VmValue::Int(85)});
-        f.On(params, "setMargins", "(IIII)V",
-             {VmValue::Int(1), VmValue::Int(2), VmValue::Int(3), VmValue::Int(4)});
-        CHECK(f.linker.Class(f.model.ObjectClass(params)).is_boot_dex);
-        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/view/ViewGroup$MarginLayoutParams;"),
-                                    f.model.ObjectClass(params)));
-        const auto copy = f.New("Landroid/widget/FrameLayout$LayoutParams;",
-                                "(Landroid/widget/FrameLayout$LayoutParams;)V", {VmValue::Ref(params)});
-        const auto copy_root = f.vm.ProtectReferences(std::array{copy});
-        const auto field = [&](VmObjectRef object, const char* name) -> Slot& {
-            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, "I");
-            REQUIRE(id.has_value());
-            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot];
-        };
-        CHECK(field(copy, "gravity").bits == 85);
-        CHECK(field(copy, "bottomMargin").bits == 4);
-        f.On(frame, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(child), VmValue::Ref(params)});
-        f.On(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(frame)});
-        CHECK(f.On(child, "getLeft", "()I").AsInt() == 77);
-        CHECK(f.On(child, "getTop", "()I").AsInt() == 86);
-        CHECK(f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref == params);
-        field(params, "width").bits = 30;
-        f.On(child, "requestLayout", "()V");
-        CHECK(f.On(child, "getLeft", "()I").AsInt() == 67);
-        CHECK(f.On(child, "getWidth", "()I").AsInt() == 30);
-        CHECK(field(copy, "width").bits == 20);
-        const auto bad = f.OnOutcome(child, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
-                                     {VmValue::Ref(VmObjectRef{})});
-        REQUIRE(bad.exception.IsValid());
-        CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
-        const auto relative = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
-                                    {VmValue::Int(10), VmValue::Int(10)});
-        f.On(relative, "addRule", "(I)V", {VmValue::Int(4)});
-        const auto baseline = f.OnOutcome(child, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V",
-                                          {VmValue::Ref(relative)});
-        REQUIRE(baseline.exception.IsValid());
-        CHECK(f.linker.Class(baseline.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
-        CHECK(f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref == params);
-        const auto invalid = f.OnOutcome(relative, "addRule", "(I)V", {VmValue::Int(22)});
-        REQUIRE(invalid.exception.IsValid());
-        CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/ArrayIndexOutOfBoundsException;");
-        const auto group = f.New("Landroid/widget/RelativeLayout;", "(Landroid/content/Context;)V",
-                                  {VmValue::Ref(activity)});
-        const auto group_params = f.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V",
-                                         {VmValue::Int(100), VmValue::Int(100)});
-        f.On(group, "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V", {VmValue::Ref(group_params)});
-        const auto first = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        const auto second = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
-        f.On(first, "setId", "(I)V", {VmValue::Int(1001)});
-        const auto first_params = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
-                                         {VmValue::Int(20), VmValue::Int(10)});
-        const auto second_params = f.New("Landroid/widget/RelativeLayout$LayoutParams;", "(II)V",
-                                          {VmValue::Int(10), VmValue::Int(10)});
-        f.On(second_params, "addRule", "(II)V", {VmValue::Int(1), VmValue::Int(1001)});
-        f.On(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(first), VmValue::Ref(first_params)});
-        f.On(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
-             {VmValue::Ref(second), VmValue::Ref(second_params)});
-        f.On(activity, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
-        CHECK(f.On(group, "getGravity", "()I").AsInt() == 0x00800033);
-        f.On(group, "setGravity", "(I)V", {VmValue::Int(85)});
-        CHECK(f.On(first, "getLeft", "()I").AsInt() == 70);
-        CHECK(f.On(second, "getLeft", "()I").AsInt() == 90);
-        CHECK(f.On(first, "getTop", "()I").AsInt() == 90);
-        f.On(group, "setGravity", "(I)V", {VmValue::Int(17)});
-        CHECK(f.On(first, "getLeft", "()I").AsInt() == 35);
-        CHECK(f.On(second, "getLeft", "()I").AsInt() == 55);
-        CHECK(f.On(first, "getTop", "()I").AsInt() == 45);
-        f.On(group, "setGravity", "(I)V", {VmValue::Int(0)});
-        CHECK(f.On(group, "getGravity", "()I").AsInt() == 0x00800033);
-        CHECK(f.On(first, "getLeft", "()I").AsInt() == 0);
     }
 }
 
@@ -930,602 +697,6 @@ TEST_CASE("DVM-174 AnimationListener type compatibility links and dispatches") {
     }
 }
 
-TEST_CASE("DVM-175 View.setOnClickListener is overridable and super registers the listener") {
-    constexpr auto kSignature = "(Landroid/view/View$OnClickListener;)V";
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch,
-          InterpreterBackend::threaded}) {
-        std::int32_t overrides{};
-        VmObjectRef last_wrapper{};
-        auto subclass = IntrinsicClassBuilder::Class(
-            "Ltest/WrappingView;", "Landroid/view/View;");
-        subclass.Constructor(
-            "(Landroid/content/Context;)V",
-            [](IntrinsicContext& call) {
-                const auto view = call.vm.Linker().ResolveDescriptor(
-                    "Landroid/view/View;");
-                const auto constructor = call.vm.Linker().FindDirectMethod(
-                    view, "<init>", "(Landroid/content/Context;)V");
-                const std::array arguments{
-                    VmValue::Ref(call.receiver), call.arguments[0]};
-                const auto outcome = call.vm.Call(*constructor, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        subclass.OverrideMethod(
-            "setOnClickListener", kSignature,
-            [&overrides, &last_wrapper](IntrinsicContext& call) {
-                ++overrides;
-                const auto incoming = call.arguments[0].ref;
-                last_wrapper = incoming.IsValid()
-                    ? call.vm.NewIntrinsicInstance("Ltest/ClickWrapper;")
-                    : VmObjectRef{};
-                const auto view = call.vm.Linker().ResolveDescriptor(
-                    "Landroid/view/View;");
-                std::optional<VmMethodId> inherited;
-                for (const auto method :
-                     call.vm.Linker().Class(view).own_virtual_methods) {
-                    const auto& linked = call.vm.Linker().Method(method);
-                    if (linked.name == "setOnClickListener" &&
-                        linked.descriptor == kSignature) {
-                        inherited = method;
-                        break;
-                    }
-                }
-                const std::array arguments{
-                    VmValue::Ref(call.receiver),
-                    VmValue::Ref(last_wrapper)};
-                const auto outcome = call.vm.Call(*inherited, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        auto wrapper = IntrinsicClassBuilder::Class("Ltest/ClickWrapper;");
-        wrapper.Constructor("()V", [](IntrinsicContext&) {
-            return VmValue::Void();
-        });
-        auto listener = IntrinsicClassBuilder::Class(
-            "Ltest/ClickListener;", "Ljava/lang/Object;",
-            {"Landroid/view/View$OnClickListener;"});
-        listener.Constructor("()V", [](IntrinsicContext&) {
-            return VmValue::Void();
-        });
-        AndroidValueVm fixture(
-            backend,
-            {std::move(subclass).Build(), std::move(wrapper).Build(),
-             std::move(listener).Build()});
-
-        const auto view_type =
-            fixture.linker.ResolveDescriptor("Landroid/view/View;");
-        std::optional<VmMethodId> view_method;
-        for (const auto method :
-             fixture.linker.Class(view_type).own_virtual_methods) {
-            const auto& linked = fixture.linker.Method(method);
-            if (linked.name == "setOnClickListener" &&
-                linked.descriptor == kSignature) {
-                view_method = method;
-                break;
-            }
-        }
-        REQUIRE(view_method.has_value());
-        CHECK(fixture.linker.Method(*view_method).overridable);
-        CHECK((fixture.linker.Method(*view_method).access_flags & kAccFinal) ==
-              0);
-
-        const auto context = fixture.New("Landroid/content/Context;");
-        const auto object = fixture.New(
-            "Ltest/WrappingView;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto object_class = fixture.model.ObjectClass(object);
-        const auto view_slot = fixture.linker.FindVtableIndex(
-            view_type, "setOnClickListener", kSignature);
-        const auto subclass_slot = fixture.linker.FindVtableIndex(
-            object_class, "setOnClickListener", kSignature);
-        REQUIRE(view_slot.has_value());
-        REQUIRE(subclass_slot.has_value());
-        CHECK(*view_slot == *subclass_slot);
-        CHECK(fixture.linker.Method(
-                  fixture.linker.Class(object_class).vtable[*subclass_slot])
-                  .owner == object_class);
-
-        const auto callback = fixture.New("Ltest/ClickListener;");
-        fixture.On(object, "setOnClickListener", kSignature,
-                   {VmValue::Ref(callback)});
-        CHECK(overrides == 1);
-        const auto node = FindViewUiNode(*fixture.context, object.Value());
-        REQUIRE(node.has_value());
-        REQUIRE(fixture.context->ui_click_listeners.contains(*node));
-        CHECK(fixture.context->ui_click_listeners.at(*node) == last_wrapper);
-        CHECK(last_wrapper != callback);
-
-        fixture.On(object, "setOnClickListener", kSignature,
-                   {VmValue::Ref(VmObjectRef{})});
-        CHECK(overrides == 2);
-        CHECK_FALSE(last_wrapper.IsValid());
-        CHECK_FALSE(fixture.context->ui_click_listeners.contains(*node));
-    }
-}
-
-TEST_CASE("DVM-177 LinearLayout programmatic AttributeSet constructor") {
-    constexpr auto kTwoArg =
-        "(Landroid/content/Context;Landroid/util/AttributeSet;)V";
-    const auto super_construct = [](IntrinsicContext& call, const char* owner,
-                                    const char* signature) {
-        const auto type = call.vm.Linker().ResolveDescriptor(owner);
-        const auto constructor =
-            call.vm.Linker().FindDirectMethod(type, "<init>", signature);
-        std::vector<VmValue> arguments{VmValue::Ref(call.receiver)};
-        arguments.insert(arguments.end(), call.arguments.begin(),
-                         call.arguments.end());
-        const auto outcome = call.vm.Call(*constructor, arguments);
-        if (outcome.exception.IsValid()) {
-            throw VmJavaThrow{
-                call.vm.Linker().Class(outcome.exception_class).descriptor,
-                outcome.exception_message, outcome.exception};
-        }
-        return VmValue::Void();
-    };
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch,
-          InterpreterBackend::threaded}) {
-        auto subclass = IntrinsicClassBuilder::Class(
-            "Ltest/ProgrammaticLinear;", "Landroid/widget/LinearLayout;");
-        subclass.Constructor(
-            "(Landroid/content/Context;)V",
-            [](IntrinsicContext& call) {
-                const auto type = call.vm.Model().ObjectClass(call.receiver);
-                const auto constructor = call.vm.Linker().FindDirectMethod(
-                    type, "<init>",
-                    "(Landroid/content/Context;Landroid/util/AttributeSet;)V");
-                const std::array arguments{
-                    VmValue::Ref(call.receiver), call.arguments[0],
-                    VmValue::Ref(VmObjectRef{})};
-                const auto outcome = call.vm.Call(*constructor, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        subclass.Constructor(
-            kTwoArg, [&super_construct](IntrinsicContext& call) {
-                return super_construct(
-                    call, "Landroid/widget/LinearLayout;", kTwoArg);
-            });
-        AndroidValueVm fixture(backend, {std::move(subclass).Build()});
-        const auto context = fixture.New("Landroid/content/Context;");
-        const auto activity = fixture.New("Landroid/app/Activity;");
-        ogplay::test::AttachViewTestContext(fixture.vm, activity);
-        const auto two_arg = fixture.linker.FindDirectMethod(
-            fixture.linker.ResolveDescriptor("Landroid/widget/LinearLayout;"),
-            "<init>", kTwoArg);
-        REQUIRE(two_arg.has_value());
-
-        const auto before = fixture.context->object_to_ui_node.size();
-        const auto layout = fixture.New(
-            "Landroid/widget/LinearLayout;", kTwoArg,
-            {VmValue::Ref(context), VmValue::Ref(VmObjectRef{})});
-        const auto layout_node = FindViewUiNode(*fixture.context, layout.Value());
-        REQUIRE(layout_node.has_value());
-        CHECK(fixture.context->ui_tree.Get(*layout_node)->kind ==
-              ui::UiClass::LinearLayout);
-        CHECK(fixture.context->ui_tree.Get(*layout_node)->orientation ==
-              ui::Orientation::Horizontal);
-        CHECK(fixture.On(layout, "getOrientation", "()I").AsInt() == 0);
-        CHECK(fixture.context->object_to_ui_node.size() == before + 1);
-        CHECK(fixture.context->ui_node_to_object.at(*layout_node) == layout);
-
-        const auto second = fixture.New(
-            "Landroid/widget/LinearLayout;", kTwoArg,
-            {VmValue::Ref(context), VmValue::Ref(VmObjectRef{})});
-        const auto second_node = FindViewUiNode(*fixture.context, second.Value());
-        REQUIRE(second_node.has_value());
-        CHECK(*second_node != *layout_node);
-        CHECK(second != layout);
-        CHECK(fixture.context->object_to_ui_node.size() == before + 2);
-        CHECK(fixture.On(layout, "getOrientation", "()I").AsInt() == 0);
-        CHECK(fixture.context->object_to_ui_node.size() == before + 2);
-
-        const auto subclass_object = fixture.New(
-            "Ltest/ProgrammaticLinear;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        CHECK(fixture.model.ObjectClass(subclass_object) ==
-              fixture.linker.ResolveDescriptor("Ltest/ProgrammaticLinear;"));
-        const auto subclass_node =
-            FindViewUiNode(*fixture.context, subclass_object.Value());
-        REQUIRE(subclass_node.has_value());
-        CHECK(fixture.context->ui_tree.Get(*subclass_node)->kind ==
-              ui::UiClass::LinearLayout);
-        CHECK(fixture.context->ui_tree.Get(*subclass_node)->orientation ==
-              ui::Orientation::Horizontal);
-        CHECK(*subclass_node != *layout_node);
-
-        fixture.On(subclass_object, "setOrientation", "(I)V",
-                   {VmValue::Int(1)});
-        CHECK(fixture.On(subclass_object, "getOrientation", "()I").AsInt() == 1);
-        const auto child = fixture.New(
-            "Landroid/view/View;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        fixture.On(subclass_object, "addView", "(Landroid/view/View;)V",
-                   {VmValue::Ref(child)});
-        fixture.On(activity, "setContentView", "(Landroid/view/View;)V",
-                   {VmValue::Ref(subclass_object)});
-        CHECK(fixture.On(child, "getParent", "()Landroid/view/ViewParent;")
-                  .ref == subclass_object);
-
-        const auto null_context = fixture.vm.NewIntrinsicInstance(
-            "Landroid/widget/LinearLayout;");
-        const auto null_outcome = fixture.vm.Call(
-            *two_arg,
-            std::array{VmValue::Ref(null_context),
-                       VmValue::Ref(VmObjectRef{}),
-                       VmValue::Ref(VmObjectRef{})});
-        REQUIRE(null_outcome.exception.IsValid());
-        CHECK(fixture.linker.Class(null_outcome.exception_class).descriptor ==
-              "Ljava/lang/NullPointerException;");
-
-        const auto attrs = fixture.vm.NewStringUtf8("not an AttributeSet");
-        const auto attr_target = fixture.vm.NewIntrinsicInstance(
-            "Landroid/widget/LinearLayout;");
-        const auto attr_outcome = fixture.vm.Call(
-            *two_arg,
-            std::array{VmValue::Ref(attr_target), VmValue::Ref(context),
-                       VmValue::Ref(attrs)});
-        REQUIRE(attr_outcome.exception.IsValid());
-        CHECK(fixture.linker.Class(attr_outcome.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
-        CHECK(attr_outcome.exception_message ==
-              "constructing a View from an AttributeSet is unsupported");
-        bool recorded = false;
-        for (const auto& hit : fixture.ledger.Unimplemented()) {
-            if (hit.id == "dexvm.view_xml_attributes") {
-                recorded = true;
-                CHECK(hit.count >= 1);
-            }
-        }
-        CHECK(recorded);
-    }
-}
-
-TEST_CASE("DVM-178 ViewGroup clipChildren and clipToPadding are overridable state") {
-    constexpr auto kSetClipChildren = "setClipChildren";
-    constexpr auto kSetClipToPadding = "setClipToPadding";
-    constexpr auto kGetClipChildren = "getClipChildren";
-    constexpr auto kBoolVoid = "(Z)V";
-    constexpr auto kBool = "()Z";
-    const auto find_virtual = [](const DexClassLinker& linker,
-                                 const DexClassId type, const char* name,
-                                 const char* signature) {
-        std::optional<VmMethodId> found;
-        for (const auto method : linker.Class(type).own_virtual_methods) {
-            const auto& linked = linker.Method(method);
-            if (linked.name == name && linked.descriptor == signature) {
-                found = method;
-                break;
-            }
-        }
-        return found;
-    };
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch,
-          InterpreterBackend::threaded}) {
-        std::int32_t overrides{};
-        auto subclass = IntrinsicClassBuilder::Class(
-            "Ltest/ClipLinear;", "Landroid/widget/LinearLayout;");
-        subclass.Constructor(
-            "(Landroid/content/Context;)V",
-            [](IntrinsicContext& call) {
-                const auto type = call.vm.Linker().ResolveDescriptor(
-                    "Landroid/widget/LinearLayout;");
-                const auto constructor = call.vm.Linker().FindDirectMethod(
-                    type, "<init>", "(Landroid/content/Context;)V");
-                const std::array arguments{
-                    VmValue::Ref(call.receiver), call.arguments[0]};
-                const auto outcome = call.vm.Call(*constructor, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        subclass.OverrideMethod(
-            kSetClipChildren, kBoolVoid,
-            [&overrides](IntrinsicContext& call) {
-                ++overrides;
-                const auto group = call.vm.Linker().ResolveDescriptor(
-                    "Landroid/view/ViewGroup;");
-                std::optional<VmMethodId> inherited;
-                for (const auto method :
-                     call.vm.Linker().Class(group).own_virtual_methods) {
-                    const auto& linked = call.vm.Linker().Method(method);
-                    if (linked.name == kSetClipChildren &&
-                        linked.descriptor == kBoolVoid) {
-                        inherited = method;
-                        break;
-                    }
-                }
-                const std::array arguments{VmValue::Ref(call.receiver),
-                                           call.arguments[0]};
-                const auto outcome = call.vm.Call(*inherited, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        AndroidValueVm fixture(backend, {std::move(subclass).Build()});
-        const auto group_type =
-            fixture.linker.ResolveDescriptor("Landroid/view/ViewGroup;");
-        const auto children_method =
-            find_virtual(fixture.linker, group_type, kSetClipChildren, kBoolVoid);
-        const auto padding_method =
-            find_virtual(fixture.linker, group_type, kSetClipToPadding, kBoolVoid);
-        const auto getter =
-            find_virtual(fixture.linker, group_type, kGetClipChildren, kBool);
-        REQUIRE(children_method.has_value());
-        REQUIRE(padding_method.has_value());
-        REQUIRE(getter.has_value());
-        CHECK(fixture.linker.Method(*children_method).overridable);
-        CHECK(fixture.linker.Method(*padding_method).overridable);
-        CHECK(fixture.linker.Method(*getter).overridable);
-        CHECK((fixture.linker.Method(*children_method).access_flags & kAccFinal) ==
-              0);
-        CHECK((fixture.linker.Method(*padding_method).access_flags & kAccFinal) ==
-              0);
-
-        const auto context = fixture.New("Landroid/content/Context;");
-        const auto first = fixture.New(
-            "Landroid/widget/LinearLayout;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto second = fixture.New(
-            "Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto first_node = FindViewUiNode(*fixture.context, first.Value());
-        const auto second_node = FindViewUiNode(*fixture.context, second.Value());
-        REQUIRE(first_node.has_value());
-        REQUIRE(second_node.has_value());
-        CHECK(fixture.context->ui_tree.Get(*first_node)->clip_children);
-        CHECK(fixture.context->ui_tree.Get(*first_node)->clip_to_padding);
-        CHECK(fixture.On(first, kGetClipChildren, kBool).AsInt() == 1);
-        CHECK(fixture.On(second, kGetClipChildren, kBool).AsInt() == 1);
-
-        fixture.context->ui_tree.ClearDrawDirty();
-        fixture.context->ui_tree.ClearLayoutDirty();
-        fixture.On(first, kSetClipChildren, kBoolVoid, {VmValue::Int(1)});
-        fixture.On(first, kSetClipToPadding, kBoolVoid, {VmValue::Int(1)});
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->draw_dirty);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->layout_dirty);
-
-        fixture.On(first, kSetClipChildren, kBoolVoid, {VmValue::Int(0)});
-        fixture.On(first, kSetClipToPadding, kBoolVoid, {VmValue::Int(0)});
-        CHECK(fixture.On(first, kGetClipChildren, kBool).AsInt() == 0);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->clip_children);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->clip_to_padding);
-        CHECK(fixture.context->ui_tree.Get(*first_node)->draw_dirty);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->layout_dirty);
-        CHECK(fixture.context->ui_tree.Get(*second_node)->clip_children);
-        CHECK(fixture.context->ui_tree.Get(*second_node)->clip_to_padding);
-        CHECK(fixture.On(second, kGetClipChildren, kBool).AsInt() == 1);
-
-        fixture.context->ui_tree.ClearDrawDirty();
-        fixture.On(first, kSetClipChildren, kBoolVoid, {VmValue::Int(0)});
-        fixture.On(first, kSetClipToPadding, kBoolVoid, {VmValue::Int(0)});
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->draw_dirty);
-
-        const auto object = fixture.New(
-            "Ltest/ClipLinear;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto object_class = fixture.model.ObjectClass(object);
-        const auto group_slot = fixture.linker.FindVtableIndex(
-            group_type, kSetClipChildren, kBoolVoid);
-        const auto subclass_slot = fixture.linker.FindVtableIndex(
-            object_class, kSetClipChildren, kBoolVoid);
-        REQUIRE(group_slot.has_value());
-        REQUIRE(subclass_slot.has_value());
-        CHECK(*group_slot == *subclass_slot);
-        CHECK(fixture.linker.Method(
-                  fixture.linker.Class(object_class).vtable[*subclass_slot])
-                  .owner == object_class);
-        fixture.On(object, kSetClipChildren, kBoolVoid, {VmValue::Int(0)});
-        CHECK(overrides == 1);
-        const auto subclass_node =
-            FindViewUiNode(*fixture.context, object.Value());
-        REQUIRE(subclass_node.has_value());
-        CHECK_FALSE(fixture.context->ui_tree.Get(*subclass_node)->clip_children);
-        CHECK(fixture.On(object, kGetClipChildren, kBool).AsInt() == 0);
-        fixture.On(object, kSetClipToPadding, kBoolVoid, {VmValue::Int(0)});
-        CHECK_FALSE(fixture.context->ui_tree.Get(*subclass_node)->clip_to_padding);
-    }
-}
-
-TEST_CASE("DVM-179 View clickable state is overridable and shared with UiNode") {
-    constexpr auto kSetClickable = "setClickable";
-    constexpr auto kIsClickable = "isClickable";
-    constexpr auto kSetListener = "setOnClickListener";
-    constexpr auto kBoolVoid = "(Z)V";
-    constexpr auto kBool = "()Z";
-    constexpr auto kListener = "(Landroid/view/View$OnClickListener;)V";
-    const auto find_virtual = [](const DexClassLinker& linker,
-                                 const DexClassId type, const char* name,
-                                 const char* signature) {
-        std::optional<VmMethodId> found;
-        for (const auto method : linker.Class(type).own_virtual_methods) {
-            const auto& linked = linker.Method(method);
-            if (linked.name == name && linked.descriptor == signature) {
-                found = method;
-                break;
-            }
-        }
-        return found;
-    };
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch,
-          InterpreterBackend::threaded}) {
-        std::int32_t setters{};
-        std::int32_t getters{};
-        std::int32_t clicks{};
-        auto subclass = IntrinsicClassBuilder::Class(
-            "Ltest/ClickableView;", "Landroid/view/View;");
-        subclass.Constructor(
-            "(Landroid/content/Context;)V",
-            [](IntrinsicContext& call) {
-                const auto view = call.vm.Linker().ResolveDescriptor(
-                    "Landroid/view/View;");
-                const auto constructor = call.vm.Linker().FindDirectMethod(
-                    view, "<init>", "(Landroid/content/Context;)V");
-                const std::array arguments{
-                    VmValue::Ref(call.receiver), call.arguments[0]};
-                const auto outcome = call.vm.Call(*constructor, arguments);
-                if (outcome.exception.IsValid()) {
-                    throw VmJavaThrow{
-                        call.vm.Linker().Class(outcome.exception_class)
-                            .descriptor,
-                        outcome.exception_message, outcome.exception};
-                }
-                return VmValue::Void();
-            });
-        const auto call_super = [](IntrinsicContext& call, const char* name,
-                                   const char* signature) {
-            const auto view = call.vm.Linker().ResolveDescriptor(
-                "Landroid/view/View;");
-            std::optional<VmMethodId> inherited;
-            for (const auto method :
-                 call.vm.Linker().Class(view).own_virtual_methods) {
-                const auto& linked = call.vm.Linker().Method(method);
-                if (linked.name == name && linked.descriptor == signature) {
-                    inherited = method;
-                    break;
-                }
-            }
-            std::vector<VmValue> arguments{VmValue::Ref(call.receiver)};
-            arguments.insert(arguments.end(), call.arguments.begin(),
-                             call.arguments.end());
-            const auto outcome = call.vm.Call(*inherited, arguments);
-            if (outcome.exception.IsValid()) {
-                throw VmJavaThrow{
-                    call.vm.Linker().Class(outcome.exception_class).descriptor,
-                    outcome.exception_message, outcome.exception};
-            }
-            return outcome.value;
-        };
-        subclass.OverrideMethod(
-            kSetClickable, kBoolVoid,
-            [&setters, &call_super](IntrinsicContext& call) {
-                ++setters;
-                return call_super(call, kSetClickable, kBoolVoid);
-            });
-        subclass.OverrideMethod(
-            kIsClickable, kBool,
-            [&getters, &call_super](IntrinsicContext& call) {
-                ++getters;
-                return call_super(call, kIsClickable, kBool);
-            });
-        auto listener = IntrinsicClassBuilder::Class(
-            "Ltest/CountClick;", "Ljava/lang/Object;",
-            {"Landroid/view/View$OnClickListener;"});
-        listener.Constructor("()V", [](IntrinsicContext&) {
-            return VmValue::Void();
-        });
-        listener.VirtualMethod(
-            "onClick", "(Landroid/view/View;)V",
-            [&clicks](IntrinsicContext&) {
-                ++clicks;
-                return VmValue::Void();
-            });
-        AndroidValueVm fixture(
-            backend, {std::move(subclass).Build(), std::move(listener).Build()});
-        const auto view_type =
-            fixture.linker.ResolveDescriptor("Landroid/view/View;");
-        REQUIRE(find_virtual(fixture.linker, view_type, kSetClickable, kBoolVoid)
-                    .has_value());
-        REQUIRE(find_virtual(fixture.linker, view_type, kIsClickable, kBool)
-                    .has_value());
-        CHECK(fixture.linker.Method(
-                          *find_virtual(fixture.linker, view_type, kSetClickable,
-                                        kBoolVoid))
-                  .overridable);
-        CHECK((fixture.linker.Method(
-                           *find_virtual(fixture.linker, view_type,
-                                         kSetClickable, kBoolVoid))
-                   .access_flags &
-               kAccFinal) == 0);
-
-        const auto context = fixture.New("Landroid/content/Context;");
-        const auto first = fixture.New(
-            "Landroid/view/View;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto second = fixture.New(
-            "Landroid/widget/LinearLayout;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto first_node = FindViewUiNode(*fixture.context, first.Value());
-        const auto second_node = FindViewUiNode(*fixture.context, second.Value());
-        REQUIRE(first_node.has_value());
-        REQUIRE(second_node.has_value());
-        CHECK(fixture.On(first, kIsClickable, kBool).AsInt() == 0);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*first_node)->clickable);
-        CHECK(fixture.On(second, kIsClickable, kBool).AsInt() == 0);
-
-        fixture.On(first, kSetClickable, kBoolVoid, {VmValue::Int(1)});
-        CHECK(fixture.On(first, kIsClickable, kBool).AsInt() == 1);
-        CHECK(fixture.context->ui_tree.Get(*first_node)->clickable);
-        CHECK(fixture.On(second, kIsClickable, kBool).AsInt() == 0);
-        CHECK_FALSE(fixture.context->ui_tree.Get(*second_node)->clickable);
-
-        const auto callback = fixture.New("Ltest/CountClick;");
-        fixture.On(first, kSetListener, kListener, {VmValue::Ref(callback)});
-        CHECK(fixture.context->ui_tree.Get(*first_node)->clickable);
-        REQUIRE(fixture.context->ui_click_listeners.contains(*first_node));
-        fixture.On(first, kSetClickable, kBoolVoid, {VmValue::Int(0)});
-        CHECK(fixture.On(first, kIsClickable, kBool).AsInt() == 0);
-        REQUIRE(fixture.context->ui_click_listeners.contains(*first_node));
-        CHECK(fixture.context->ui_click_listeners.at(*first_node) == callback);
-        CHECK_FALSE(InvokeViewOnClick(fixture.vm, *fixture.context, first.Value())
-                        .has_value());
-        CHECK(clicks == 1);
-
-        fixture.On(first, kSetListener, kListener,
-                   {VmValue::Ref(VmObjectRef{})});
-        CHECK(fixture.On(first, kIsClickable, kBool).AsInt() == 1);
-        CHECK_FALSE(fixture.context->ui_click_listeners.contains(*first_node));
-
-        const auto object = fixture.New(
-            "Ltest/ClickableView;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(context)});
-        const auto object_class = fixture.model.ObjectClass(object);
-        const auto view_slot = fixture.linker.FindVtableIndex(
-            view_type, kSetClickable, kBoolVoid);
-        const auto subclass_slot = fixture.linker.FindVtableIndex(
-            object_class, kSetClickable, kBoolVoid);
-        REQUIRE(view_slot.has_value());
-        REQUIRE(subclass_slot.has_value());
-        CHECK(*view_slot == *subclass_slot);
-        fixture.On(object, kSetListener, kListener,
-                   {VmValue::Ref(VmObjectRef{})});
-        CHECK(getters >= 1);
-        CHECK(setters >= 1);
-        CHECK(fixture.On(object, kIsClickable, kBool).AsInt() == 1);
-        const auto subclass_node =
-            FindViewUiNode(*fixture.context, object.Value());
-        REQUIRE(subclass_node.has_value());
-        CHECK(fixture.context->ui_tree.Get(*subclass_node)->clickable);
-    }
-}
-
 TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity") {
     constexpr auto kGetContext = "getContext";
     constexpr auto kContextSig = "()Landroid/content/Context;";
@@ -1610,76 +781,10 @@ TEST_CASE("DVM-184 View.getContext preserves constructor and inflation identity"
         CHECK(fixture.On(view, kGetContext, kContextSig).ref !=
               fixture.On(layout, kGetContext, kContextSig).ref);
 
-        std::vector<ogplay::loader::BinaryXmlElement> elements(1);
-        elements[0].name = "LinearLayout";
-        const auto inflated = InflateUiElements(
-            fixture.vm, *fixture.context, elements, activity);
-        CHECK(fixture.On(inflated, kGetContext, kContextSig).ref == activity);
 
         const auto roots = fixture.vm.ProtectReferences(std::array{burstly});
         static_cast<void>(fixture.vm.CollectGarbage("dvm184-view-context"));
         CHECK(fixture.On(burstly, kGetContext, kContextSig).ref == activity);
-    }
-}
-
-TEST_CASE("View scroll bar style is inherited and preserves unrelated flags") {
-    constexpr auto kSetStyle = "setScrollBarStyle";
-    constexpr auto kSetStyleSig = "(I)V";
-    constexpr auto kGetStyle = "getScrollBarStyle";
-    constexpr auto kGetStyleSig = "()I";
-    constexpr std::uint32_t kStyleMask = 0x03000000U;
-    for (const auto backend :
-         {InterpreterBackend::switch_dispatch,
-          InterpreterBackend::threaded}) {
-        AndroidValueVm fixture(backend);
-        const auto view_type =
-            fixture.linker.ResolveDescriptor("Landroid/view/View;");
-        const auto webview_type =
-            fixture.linker.ResolveDescriptor("Landroid/webkit/WebView;");
-        const auto setter = fixture.linker.FindVtableIndex(
-            webview_type, kSetStyle, kSetStyleSig);
-        const auto getter = fixture.linker.FindVtableIndex(
-            webview_type, kGetStyle, kGetStyleSig);
-        REQUIRE(setter.has_value());
-        REQUIRE(getter.has_value());
-        CHECK(fixture.linker.Method(
-                  fixture.linker.Class(webview_type).vtable[*setter]).owner ==
-              view_type);
-        CHECK(fixture.linker.Method(
-                  fixture.linker.Class(webview_type).vtable[*setter])
-                  .overridable);
-
-        const auto activity = fixture.New("Landroid/app/Activity;");
-        const auto first = fixture.New(
-            "Landroid/webkit/WebView;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(activity)});
-        const auto second = fixture.New(
-            "Landroid/view/View;", "(Landroid/content/Context;)V",
-            {VmValue::Ref(activity)});
-        CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() == 0);
-        CHECK(fixture.On(second, kGetStyle, kGetStyleSig).AsInt() == 0);
-
-        const auto flags_id = fixture.linker.FindFieldRecursive(
-            view_type, "mViewFlags", "I");
-        REQUIRE(flags_id.has_value());
-        auto& flags = fixture.model.InstanceSlots(first)
-                          [fixture.linker.Field(*flags_id).slot];
-        flags.bits = 0x40000040U;
-        flags.tag = SlotTag::cat1;
-        for (const auto style :
-             {0x00000000, 0x01000000, 0x02000000, 0x03000000}) {
-            fixture.On(first, kSetStyle, kSetStyleSig,
-                       {VmValue::Int(style)});
-            CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() ==
-                  style);
-            CHECK((flags.bits & ~kStyleMask) == 0x40000040U);
-            CHECK(fixture.On(second, kGetStyle, kGetStyleSig).AsInt() == 0);
-        }
-        fixture.On(first, kSetStyle, kSetStyleSig,
-                   {VmValue::Int(0x7fffffff)});
-        CHECK(fixture.On(first, kGetStyle, kGetStyleSig).AsInt() ==
-              0x03000000);
-        CHECK((flags.bits & ~kStyleMask) == 0x40000040U);
     }
 }
 
@@ -1691,10 +796,10 @@ TEST_CASE("DVM-306 sealed BootDex assembly fixes owner and platform facts before
         const auto bytes = std::as_bytes(std::span(raw));
         return std::vector<std::byte>(bytes.begin(), bytes.end());
     };
-    const auto legacy = AssembleAndroidContext(
+    const auto production = AssembleAndroidContext(
         read(std::filesystem::path(OGPLAY_SOURCE_DIR) / "data/android/19/framework/bootdex.jar"), {true});
-    CHECK(legacy->ui_traversal_owner == AndroidUiTraversalOwner::Legacy);
-    CHECK(legacy->ui_tree.GeometryOwner() == ui::UiGeometryOwner::HostLayout);
+    CHECK(production->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
+    CHECK(production->ui_tree.GeometryOwner() == ui::UiGeometryOwner::ExternalProjection);
     auto bytes = read(std::filesystem::path(OGPLAY_DEXVM_FIXTURE_DIR) / "view-measure.jar");
     const auto context = AssembleAndroidContext(bytes, {true});
     CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
@@ -1765,12 +870,131 @@ TEST_CASE("DVM-306 sealed BootDex assembly fixes owner and platform facts before
         static_cast<void>(AssembleAndroidContext(replace("theme-projection.json", "theme-projectioX.json"), {true})),
         "BootDex pairing: missing META-INF/ogplay/theme-projection.json");
     CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(replace("vm-pairing.json", "vm-pairinX.json"), {true})),
-                      "BootDex pairing: experimental payload lacks sealed mode; no Legacy fallback");
-    // Stored payload mutation leaves the ZIP readable but must fail its sealed identity.
+                      "BootDex pairing: missing sealed JavaTraversal mode");
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(
+                          replace("view-video-adapter.json", "view-video-adapteX.json"), {true})),
+                      "BootDex pairing: missing META-INF/ogplay/view-video-adapter.json");
+    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(
+                          replace("java-traversal-recipe.json", "java-traversal-recipX.json"), {true})),
+                      "BootDex pairing: missing META-INF/ogplay/java-traversal-recipe.json");
+    // Each sealed identity is required even when the archive remains readable.
     const auto archive = ogplay::loader::ParseApkArchive(bytes);
-    const auto offset = ogplay::loader::StoredApkEntryDataOffset(bytes, archive, "classes.dex");
-    bytes.at(offset + 20) ^= std::byte{1};
-    CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(bytes, {true})),
-                      "BootDex pairing: identity mismatch: dex_sha256");
+    const auto pairing_offset =
+        ogplay::loader::StoredApkEntryDataOffset(bytes, archive, "META-INF/ogplay/vm-pairing.json");
+    const auto pairing = ogplay::loader::ReadApkEntry(bytes, archive, "META-INF/ogplay/vm-pairing.json");
+    const std::string text(reinterpret_cast<const char*>(pairing.data()), pairing.size());
+    for (const auto* key : {"dex_sha256", "member_sources_sha256", "theme_projection_sha256", "video_adapter_sha256",
+                            "candidate_recipe_sha256"}) {
+        auto mismatched = bytes;
+        const auto position = text.find(std::string("\"") + key + "\":\"");
+        REQUIRE(position != std::string::npos);
+        const auto hash = position + std::string_view(key).size() + 4;
+        auto& digit = mismatched.at(pairing_offset + hash);
+        digit = digit == std::byte{'0'} ? std::byte{'1'} : std::byte{'0'};
+        CHECK_THROWS_WITH(static_cast<void>(AssembleAndroidContext(std::move(mismatched), {true})),
+                          (std::string("BootDex pairing: identity mismatch: ") + key).c_str());
+    }
     CHECK(context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal);
+}
+
+TEST_CASE("DVM-175 View.setOnClickListener is overridable and super registers the listener") {
+    constexpr auto kSignature = "(Landroid/view/View$OnClickListener;)V";
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::int32_t overrides{};
+        VmObjectRef last_wrapper{};
+        auto subclass = IntrinsicClassBuilder::Class("Ltest/WrappingView;", "Landroid/view/View;");
+        subclass.Constructor("(Landroid/content/Context;)V", [](IntrinsicContext& call) {
+            const auto view = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            const auto constructor = call.vm.Linker().FindDirectMethod(view, "<init>", "(Landroid/content/Context;)V");
+            const std::array arguments{VmValue::Ref(call.receiver), call.arguments[0]};
+            const auto outcome = call.vm.Call(*constructor, arguments);
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
+            }
+            return VmValue::Void();
+        });
+        subclass.OverrideMethod("setOnClickListener", kSignature, [&overrides, &last_wrapper](IntrinsicContext& call) {
+            ++overrides;
+            const auto incoming = call.arguments[0].ref;
+            last_wrapper = incoming.IsValid() ? call.vm.NewIntrinsicInstance("Ltest/ClickWrapper;") : VmObjectRef{};
+            const auto view = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+            std::optional<VmMethodId> inherited;
+            for (const auto method : call.vm.Linker().Class(view).own_virtual_methods) {
+                const auto& linked = call.vm.Linker().Method(method);
+                if (linked.name == "setOnClickListener" && linked.descriptor == kSignature) {
+                    inherited = method;
+                    break;
+                }
+            }
+            const std::array arguments{VmValue::Ref(call.receiver), VmValue::Ref(last_wrapper)};
+            const auto outcome = call.vm.Call(*inherited, arguments);
+            if (outcome.exception.IsValid()) {
+                throw VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
+            }
+            return VmValue::Void();
+        });
+        auto wrapper = IntrinsicClassBuilder::Class("Ltest/ClickWrapper;");
+        wrapper.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        auto listener = IntrinsicClassBuilder::Class("Ltest/ClickListener;", "Ljava/lang/Object;",
+                                                     {"Landroid/view/View$OnClickListener;"});
+        listener.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        AndroidValueVm fixture(backend,
+                               {std::move(subclass).Build(), std::move(wrapper).Build(), std::move(listener).Build()});
+
+        const auto view_type = fixture.linker.ResolveDescriptor("Landroid/view/View;");
+        std::optional<VmMethodId> view_method;
+        for (const auto method : fixture.linker.Class(view_type).own_virtual_methods) {
+            const auto& linked = fixture.linker.Method(method);
+            if (linked.name == "setOnClickListener" && linked.descriptor == kSignature) {
+                view_method = method;
+                break;
+            }
+        }
+        REQUIRE(view_method.has_value());
+        CHECK(fixture.linker.Method(*view_method).overridable);
+        CHECK((fixture.linker.Method(*view_method).access_flags & kAccFinal) == 0);
+
+        const auto context = fixture.New("Landroid/content/Context;");
+        const auto object = fixture.New("Ltest/WrappingView;", "(Landroid/content/Context;)V", {VmValue::Ref(context)});
+        const auto object_class = fixture.model.ObjectClass(object);
+        const auto view_slot = fixture.linker.FindVtableIndex(view_type, "setOnClickListener", kSignature);
+        const auto subclass_slot = fixture.linker.FindVtableIndex(object_class, "setOnClickListener", kSignature);
+        REQUIRE(view_slot.has_value());
+        REQUIRE(subclass_slot.has_value());
+        CHECK(*view_slot == *subclass_slot);
+        CHECK(fixture.linker.Method(fixture.linker.Class(object_class).vtable[*subclass_slot]).owner == object_class);
+
+        const auto callback = fixture.New("Ltest/ClickListener;");
+        fixture.On(object, "setOnClickListener", kSignature, {VmValue::Ref(callback)});
+        CHECK(overrides == 1);
+        const auto node = FindViewUiNode(*fixture.context, object.Value());
+        REQUIRE(node.has_value());
+        CHECK(ReadAndroidViewListener(fixture.vm, *fixture.context, object, AndroidViewListener::Click) ==
+              last_wrapper);
+        CHECK(last_wrapper != callback);
+
+        fixture.On(object, "setOnClickListener", kSignature, {VmValue::Ref(VmObjectRef{})});
+        CHECK(overrides == 2);
+        CHECK_FALSE(last_wrapper.IsValid());
+        CHECK_FALSE(
+            ReadAndroidViewListener(fixture.vm, *fixture.context, object, AndroidViewListener::Click).IsValid());
+    }
+}
+
+TEST_CASE("DVM-331 unselected Legacy View APIs fail explicitly without mutating state") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        const auto owner = f.New("Landroid/content/Context;");
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto before = f.On(view, "isClickable", "()Z").AsInt();
+        CHECK(f.OnOutcome(view, "getScrollBarStyle", "()I").exception.IsValid());
+        CHECK(f.OnOutcome(view, "setScrollBarStyle", "(I)V", {VmValue::Int(0)}).exception.IsValid());
+        CHECK(f.OnOutcome(group, "getClipChildren", "()Z").exception.IsValid());
+        CHECK(f.On(view, "isClickable", "()Z").AsInt() == before);
+        CHECK(f.ledger.Unimplemented().size() == 3);
+        CHECK_FALSE(f.context->ui_tree.PublishedProjection());
+    }
 }

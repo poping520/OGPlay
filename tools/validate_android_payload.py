@@ -272,20 +272,39 @@ def validate(root: Path) -> None:
         raise PayloadError("tzdata notice SHA-256 does not match")
 
     try:
-        recipe = bootdex.load_recipe()
+        recipe = composition.candidate_classes()
         resource_recipe = bootdex.load_resources()
         resources = bootdex.resource_payload(resource_recipe)
-        member_document = member_sources.load()
-        if member_document['classes']:
-            # The same reviewed table used by build/check must be sealed verbatim.
-            resources[member_sources.ENTRY] = member_sources.canonical(member_document)
+        member_document = composition.measure_sources(member_sources.load())
     except (bootdex.BuildError, OSError, ValueError, KeyError, TypeError) as error:
         raise PayloadError(f"BootDex recipe is invalid: {error}") from error
     try:
         jar_bytes = (root / BOOT_DEX).read_bytes()
         with zipfile.ZipFile(root / BOOT_DEX) as archive:
             dex = archive.read("classes.dex")
+            sealed_members = archive.read(member_sources.ENTRY)
+            sealed_document = json.loads(sealed_members)
+            review = {k: v for k, v in sealed_document.items()
+                      if k not in {'dispatch_ledger', 'allocation_ledger', 'host_allocation_scan'}}
+            if review != member_document or member_sources.canonical(sealed_document) != sealed_members:
+                raise PayloadError("boot_dex member review does not match the current composition")
+            if sealed_document.get('host_allocation_scan') != member_sources.scan_host_allocations(bootdex.ROOT):
+                raise PayloadError("boot_dex host allocation evidence is stale")
+            # The manifest seals the audited dispatch/allocation ledgers. Full
+            # body admission and deterministic regeneration remain composer check's job.
+            resources[member_sources.ENTRY] = sealed_members
             resources[bootdex.SYSTEM_RESOURCES_ENTRY] = bootdex.system_resources_payload(dex)
+            resources[composition.theme_projection.ENTRY] = composition.theme_projection.generate()
+            video_review = json.loads((TOOLS_DIR / 'bootdex/view-video-adapter.json').read_text(encoding='utf-8'))
+            resources[composition.VIDEO_ENTRY] = member_sources.canonical(video_review)
+            resources[composition.RECIPE_ENTRY] = composition.candidate_provenance()
+            resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
+                schema=1, mode='java-traversal', version=1,
+                dex_sha256=bootdex.sha256(dex),
+                member_sources_sha256=bootdex.sha256(sealed_members),
+                theme_projection_sha256=bootdex.sha256(resources[composition.theme_projection.ENTRY]),
+                video_adapter_sha256=bootdex.sha256(resources[composition.VIDEO_ENTRY]),
+                candidate_recipe_sha256=bootdex.sha256(resources[composition.RECIPE_ENTRY])))
             expected_entries = ["META-INF/MANIFEST.MF", "classes.dex"] + \
                 sorted(resources)
             if archive.namelist() != expected_entries:
@@ -295,7 +314,7 @@ def validate(root: Path) -> None:
                     bootdex.JAR_MANIFEST:
                 raise PayloadError("boot_dex JAR manifest is not canonical")
             dex = archive.read("classes.dex")
-    except (OSError, zipfile.BadZipFile, KeyError, bootdex.BuildError) as error:
+    except (OSError, zipfile.BadZipFile, KeyError, ValueError, TypeError, bootdex.BuildError) as error:
         raise PayloadError(f"boot_dex archive is invalid: {error}") from error
     try:
         expected_metadata = composition.boot_metadata(jar_bytes, dex, recipe)
@@ -304,7 +323,7 @@ def validate(root: Path) -> None:
     if _mapping(manifest.get("boot_dex"), "boot_dex") != expected_metadata:
         raise PayloadError("boot_dex metadata does not match its recipe")
     if any(bootdex.SOURCES[source][0] not in source_projects
-           for source in recipe if source != "conscrypt.jar"):
+           for source in recipe if source not in {"conscrypt.jar", composition.policy_rom.SOURCE}):
         raise PayloadError("BootDex source project is not pinned")
     if len(dex) < 0x70 or dex[:8] != b"dex\n035\0" or \
             struct.unpack_from("<I", dex, 0x20)[0] != len(dex) or \
@@ -320,7 +339,10 @@ def validate(root: Path) -> None:
     try:
         with tempfile.TemporaryDirectory(
                 prefix="ogplay-payload-bootdex-java-") as work:
-            selected = bootdex.compile_expected_class_names(recipe, Path(work))
+            _, custom = bootdex.compile_guest_java(Path(work))
+            replaced = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;',
+                        'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}
+            selected = bootdex.expected_class_names(recipe, tuple(c for c in custom if c not in replaced))
     except (bootdex.BuildError, OSError) as error:
         raise PayloadError(
             f"BootDex custom Java class selection is invalid: {error}") from error

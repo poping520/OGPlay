@@ -6,8 +6,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-edittext.surface.json.gz",
-      "surface_sha256": "23ceceb9f47e2be4acfccc081e108e5ac333bf69a7e6dfd552b60ea0456ad392",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "smali_sha256": "20930606797f097e09880cab45d237b2f6b64506cb16e60c2501d1c8566c281d",
       "fields": [],
       "methods": [

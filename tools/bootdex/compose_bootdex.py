@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/check opt-in ROM member composition without changing the pinned JNI generator.
+"""Build/check the sealed JavaTraversal ROM member composition without changing the pinned JNI generator.
 
 The original build_bootdex.py is itself native-payload provenance. Keep its bytes
 stable; reuse its assembly, audits, canonical ZIP and metadata implementations.
@@ -105,32 +105,27 @@ def measure_sources(document):
     return document
 
 
-def assemble(recipe, work, measure=False):
-    if measure:
-        # Replace the Legacy bounded wrapper only in this fixed ROM counterpart.
-        for source, classes in recipe.items():
-            for offset in range(0, len(classes), 100):
-                builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
-                             'disassemble', '--api', '19', '--jobs', '1', '--classes',
-                             ','.join(classes[offset:offset + 100]), '--output',
-                             str(work / (source + '-smali')), str(builder.source_path(source))])
-        guest, custom = builder.compile_guest_java(work)
-        replacements = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;'}
-        duplicates = {v for values in recipe.values() for v in values} & set(custom)
-        if duplicates != replacements:
-            raise builder.BuildError('unexpected paired guest Java replacement')
-        for replacement in replacements | {'Landroid/view/LayoutInflater$LocalInflater;'}:
-            (guest / (replacement[1:-1] + '.smali')).unlink()
-        output = work / 'classes.dex'
-        roots = [str(work / (source + '-smali')) for source in recipe] + [str(guest)]
-        builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'smali.jar'), 'assemble',
-                     '--api', '19', '--jobs', '1', '--output', str(output), *roots])
-        dex = output.read_bytes()
-    else:
-        dex = builder.assemble(recipe, work)
-    document = member_sources.load()
-    if measure:
-        document = measure_sources(document)
+def assemble(recipe, work):
+    # Replace the frozen generator wrappers with the paired ROM classes.
+    for source, classes in recipe.items():
+        for offset in range(0, len(classes), 100):
+            builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'baksmali.jar'),
+                         'disassemble', '--api', '19', '--jobs', '1', '--classes',
+                         ','.join(classes[offset:offset + 100]), '--output',
+                         str(work / (source + '-smali')), str(builder.source_path(source))])
+    guest, custom = builder.compile_guest_java(work)
+    replacements = {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;'}
+    duplicates = {v for values in recipe.values() for v in values} & set(custom)
+    if duplicates != replacements:
+        raise builder.BuildError('unexpected paired guest Java replacement')
+    for replacement in replacements | {'Landroid/view/LayoutInflater$LocalInflater;'}:
+        (guest / (replacement[1:-1] + '.smali')).unlink()
+    output = work / 'classes.dex'
+    roots = [str(work / (source + '-smali')) for source in recipe] + [str(guest)]
+    builder.run([str(builder.JAVA), '-jar', str(builder.SMALI / 'smali.jar'), 'assemble',
+                 '--api', '19', '--jobs', '1', '--output', str(output), *roots])
+    dex = output.read_bytes()
+    document = measure_sources(member_sources.load())
     for cls in document['classes']:
         sources = [s for s, owners in recipe.items() if cls['owner'] in owners]
         if len(sources) != 1 or (builder.ROOT / cls['rom_input']).resolve() != builder.source_path(sources[0]).resolve():
@@ -141,22 +136,18 @@ def assemble(recipe, work, measure=False):
     return dex, payload
 
 
-def build(measure=False):
-    recipe = candidate_classes() if measure else builder.load_recipe()
+def build():
+    recipe = candidate_classes()
     builder.verify_inputs(recipe)
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-a-') as first, \
             tempfile.TemporaryDirectory(prefix='ogplay-composition-b-') as second:
-        dex, payload = assemble(recipe, Path(first), measure)
-        if (dex, payload) != assemble(recipe, Path(second), measure):
+        dex, payload = assemble(recipe, Path(first))
+        if (dex, payload) != assemble(recipe, Path(second)):
             raise builder.BuildError('two BootDex DEX/member source assemblies differ')
     with tempfile.TemporaryDirectory(prefix='ogplay-composition-java-audit-') as work:
-        if measure:
-            _, custom = builder.compile_guest_java(Path(work))
-            selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}))
-        else:
-            selected = builder.compile_expected_class_names(recipe, Path(work))
-    if measure:
-        policy_rom.check_selection(recipe, dex)
+        _, custom = builder.compile_guest_java(Path(work))
+        selected = builder.expected_class_names(recipe, tuple(c for c in custom if c not in {'Landroid/view/ContextThemeWrapper;', 'Landroid/view/LayoutInflater;', 'Landroid/view/LayoutInflater$Factory;', 'Landroid/view/LayoutInflater$LocalInflater;'}))
+    policy_rom.check_selection(recipe, dex)
     if builder.class_names(dex) != selected:
         raise builder.BuildError('generated classes differ from recipe')
     resources = builder.resource_payload(builder.load_resources())
@@ -165,24 +156,23 @@ def build(measure=False):
     if payload is not None:
         resources[member_sources.ENTRY] = payload
     resources[builder.SYSTEM_RESOURCES_ENTRY] = builder.system_resources_payload(dex)
-    if measure:
-        projected = theme_projection.generate()
-        theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
-        resources[theme_projection.ENTRY] = projected
-        review = json.loads(Path(__file__).with_name('view-video-adapter.json').read_text(encoding='utf-8'))
-        if (review['implementation_source'] != 'adapter' or review['rom_algorithm_credit'] is not False
-                or review['owner'] != 'Landroid/widget/VideoView;' or review['signature'] != 'onMeasure(II)V'
-                or any(not review[k] for k in ('reason', 'inputs', 'outputs', 'state_owner', 'failure_boundary'))):
-            raise builder.BuildError('invalid bounded VideoView adapter review')
-        resources[VIDEO_ENTRY] = member_sources.canonical(review)
-        resources[RECIPE_ENTRY] = candidate_provenance()
-        resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
-            schema=1, mode='java-traversal', version=1,
-            dex_sha256=builder.sha256(dex),
-            member_sources_sha256=builder.sha256(payload),
-            theme_projection_sha256=builder.sha256(projected),
-            video_adapter_sha256=builder.sha256(resources[VIDEO_ENTRY]),
-            candidate_recipe_sha256=builder.sha256(resources[RECIPE_ENTRY])))
+    projected = theme_projection.generate()
+    theme_projection.check_conflicts(projected, resources[builder.SYSTEM_RESOURCES_ENTRY])
+    resources[theme_projection.ENTRY] = projected
+    review = json.loads(Path(__file__).with_name('view-video-adapter.json').read_text(encoding='utf-8'))
+    if (review['implementation_source'] != 'adapter' or review['rom_algorithm_credit'] is not False
+            or review['owner'] != 'Landroid/widget/VideoView;' or review['signature'] != 'onMeasure(II)V'
+            or any(not review[k] for k in ('reason', 'inputs', 'outputs', 'state_owner', 'failure_boundary'))):
+        raise builder.BuildError('invalid bounded VideoView adapter review')
+    resources[VIDEO_ENTRY] = member_sources.canonical(review)
+    resources[RECIPE_ENTRY] = candidate_provenance()
+    resources['META-INF/ogplay/vm-pairing.json'] = member_sources.canonical(dict(
+        schema=1, mode='java-traversal', version=1,
+        dex_sha256=builder.sha256(dex),
+        member_sources_sha256=builder.sha256(payload),
+        theme_projection_sha256=builder.sha256(projected),
+        video_adapter_sha256=builder.sha256(resources[VIDEO_ENTRY]),
+        candidate_recipe_sha256=builder.sha256(resources[RECIPE_ENTRY])))
     return builder.make_jar(dex, resources), dex, recipe
 
 
@@ -210,13 +200,6 @@ def boot_metadata(jar, dex, recipe):
         if theme_projection.ENTRY in archive.namelist():
             metadata['theme_projection'] = dict(entry=theme_projection.ENTRY, schema_version=1,
                 sha256=builder.sha256(archive.read(theme_projection.ENTRY)))
-    # Publish experimental provenance independently of the production JAR bytes.
-    if 'theme_projection' not in metadata:
-        metadata['experimental_theme_projection'] = dict(
-            scope='JavaTraversal paired payload only', entry=theme_projection.ENTRY,
-            schema_version=1, sha256=builder.sha256(theme_projection.generate()),
-            generator='tools/bootdex/theme_projection.py',
-            inputs_sha256=builder.file_sha256(theme_projection.POLICY))
     if 'theme_projection' in metadata:
         review = Path(__file__).with_name('view-video-adapter.json')
         metadata['experimental_video_adapter'] = dict(review=str(review.relative_to(builder.ROOT)), sha256=builder.file_sha256(review), entry='META-INF/ogplay/view-video-adapter.json', rom_algorithm_credit=False)
@@ -262,9 +245,9 @@ def main():
     parser.add_argument('--self-test', action='store_true')
     outputs = parser.add_mutually_exclusive_group()
     outputs.add_argument('--candidate-output', type=Path,
-                         help='write/check the fixed production candidate; does not switch the default')
+                         help='write/check the fixed production candidate; isolated debug output of the default recipe')
     outputs.add_argument('--view-measure-test-output', type=Path,
-                        help='write/check the fixed sealed JavaTraversal counterpart instead of production')
+                        help='write/check the fixed sealed JavaTraversal fixture instead of the default path')
     args = parser.parse_args()
     try:
         if args.self_test:
@@ -274,25 +257,22 @@ def main():
         paired_output = args.candidate_output or args.view_measure_test_output
         if paired_output and paired_output.resolve() == builder.OUTPUT.resolve():
             raise builder.BuildError('paired output must not overwrite the default BootDex')
-        jar, dex, recipe = build(paired_output is not None)
+        jar, dex, recipe = build()
         builder.audit_crc32(dex)
-        if paired_output:
-            # The fixed ROM inflater has no Legacy nativeInflate declaration.
-            expected = builder.zip_stream_native_signatures()
-            expected['Landroid/view/LayoutInflater;'] = {}
-            parsed = builder.dex_survey_lib.parse_dex(dex)
-            observed = {owner: {} for owner in expected}
-            for cls in parsed.classes:
-                owner = parsed.type_name(cls.type_index)
-                if owner in observed:
-                    for method in cls.direct_methods + cls.virtual_methods:
-                        if method.access_flags & builder.dex_survey_lib.ACC_NATIVE:
-                            _, name, descriptor = parsed.method_signature(method.method_index)
-                            observed[owner][name + descriptor] = method.access_flags
-            if observed != expected:
-                raise builder.BuildError('experimental native ABI drift: ' + str(observed))
-        else:
-            builder.audit_zip_streams(dex)
+        # The fixed ROM inflater has no Legacy nativeInflate declaration.
+        expected = builder.zip_stream_native_signatures()
+        expected['Landroid/view/LayoutInflater;'] = {}
+        parsed = builder.dex_survey_lib.parse_dex(dex)
+        observed = {owner: {} for owner in expected}
+        for cls in parsed.classes:
+            owner = parsed.type_name(cls.type_index)
+            if owner in observed:
+                for method in cls.direct_methods + cls.virtual_methods:
+                    if method.access_flags & builder.dex_survey_lib.ACC_NATIVE:
+                        _, name, descriptor = parsed.method_signature(method.method_index)
+                        observed[owner][name + descriptor] = method.access_flags
+        if observed != expected:
+            raise builder.BuildError('JavaTraversal native ABI drift: ' + str(observed))
         builder.audit_native_crypto(dex)
         manifest = builder.manifest_bytes(boot_metadata(jar, dex, recipe))
         output = paired_output or builder.OUTPUT

@@ -1,5 +1,6 @@
 #pragma once
 #include "ogplay/runtime/jni/host_copy_payload_provider.h"
+#include "container_traversal_fixture.h"
 
 #include <memory>
 #include <string>
@@ -20,23 +21,21 @@ using namespace ogplay::runtime::dexvm;
 
 
 struct AndroidValueVm final {
-    ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
-    JniStringStore strings{strings_payload};
-    ogplay::runtime::HostCopyJavaPayloadProvider arrays_payload;
-    JniPrimitiveArrayStore arrays{arrays_payload};
-    JavaObjectModel model{strings, arrays};
-    DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
     ogplay::core::Logger logger;
     std::shared_ptr<DexVmAndroidContext> context{
         std::make_shared<DexVmAndroidContext>()};
-    Interpreter vm;
-    VmThreadRuntime threads;
+    std::unique_ptr<ogplay::test::container_traversal::AndroidTestRuntime> runtime;
+    JavaObjectModel& model;
+    DexClassLinker& linker;
+    Interpreter& vm;
+    VmThreadRuntime& threads;
 
     AndroidValueVm(InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                    const std::vector<IntrinsicClassDecl>& extras = {}, bool force_all_bridge = false,
                    const char* dex_fixture = nullptr, bool include_skeleton = false,
-                   AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::Legacy, const char* test_bootdex = nullptr);
+                   AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
+                   const char* test_bootdex = nullptr);
 
     VmObjectRef New(const char* descriptor,
                     const char* constructor = "()V",

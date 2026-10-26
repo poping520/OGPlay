@@ -260,8 +260,8 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
         throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;",
                               "text replacement range is invalid"};
     }
-    const bool experimental = context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal;
-    if (experimental && state->text.size() - static_cast<std::size_t>(before_count) + replacement.size() > 1024) {
+
+    if (state->text.size() - static_cast<std::size_t>(before_count) + replacement.size() > 1024) {
         if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text exceeds bounded edit service"};
     }
@@ -283,21 +283,19 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
     auto after = state->text;
     after.replace(static_cast<std::size_t>(start),
                   static_cast<std::size_t>(before_count), filtered);
-    if (!experimental && after == state->text) return false;
+
     try {
-        static_cast<void>(ui::MeasureFixedText(after, experimental ? state->text_size_px : 8.0F,
-                                               experimental ? state->text_style : 0,
-                                               context.ui_tree.FallbackFont().get()));
+        static_cast<void>(
+            ui::MeasureFixedText(after, state->text_size_px, state->text_style, context.ui_tree.FallbackFont().get()));
     } catch (const std::runtime_error& error) {
-        if (experimental)
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               error.what()};
     }
 
-    if (experimental && (after.size() > 1024 || std::any_of(after.begin(), after.end(), [](char16_t ch) {
-                             return !(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff));
-                         }))) {
+    if ((after.size() > 1024 || std::any_of(after.begin(), after.end(), [](char16_t ch) {
+             return !(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff));
+         }))) {
         if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text outside bounded edit service"};
     }
@@ -338,7 +336,7 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
     state = context.ui_tree.Get(node);
     state->text = std::move(after);
     context.ui_tree.MarkLayoutDirty(node);
-    if (experimental) {
+    {
         auto& refs = context.view_adapter_references.at(view.Value());
         const auto adjust = [&](std::int32_t value) {
             if (before_count == 0 && value == start) return start + static_cast<std::int32_t>(filtered.size());
@@ -371,12 +369,9 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
                {dx::VmValue::Ref(new_text), dx::VmValue::Int(start),
                 dx::VmValue::Int(before_count),
                 dx::VmValue::Int(static_cast<std::int32_t>(filtered.size()))});
-        if (!experimental)
-            invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V", {dx::VmValue::Ref(editable)});
     }
-    if (experimental)
-        for (const auto watcher : watchers)
-            invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V", {dx::VmValue::Ref(editable)});
+    for (const auto watcher : watchers)
+        invoke(watcher, "afterTextChanged", "(Landroid/text/Editable;)V", {dx::VmValue::Ref(editable)});
     return true;
 }
 
@@ -545,7 +540,7 @@ dx::IntrinsicHandler EditableReplaceHandler(const Context& context) {
                 "Editable.replace range is invalid"};
         }
         const auto value = call.arguments[2].ref;
-        if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal && value.IsValid() &&
+        if (value.IsValid() &&
             call.vm.Linker().Class(call.vm.Model().ObjectClass(value)).descriptor != "Ljava/lang/String;") {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
@@ -870,9 +865,8 @@ dx::IntrinsicHandler TelephonyFalseHandler() {
 
 dx::IntrinsicHandler ViewInitHandler(const Context& context) {
     return dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
-        const auto node = EnsureViewUiNode(
-            *context, call.receiver, UiClassForObject(call.vm, call.receiver));
-        InitializeDefaultViewBackground(call.vm, *context, call.receiver, node);
+        static_cast<void>(EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver)));
+
         AssignViewContext(call.vm, *context, call.receiver,
                           call.arguments[0].ref);
         InitializeAndroidViewJavaLayout(call.vm, *context, call.receiver);
@@ -1945,13 +1939,12 @@ std::optional<std::string> InvokeVideoEvent(
             return post(event, event == 100 ? 1 : 0, event == 100 ? -1 : 0);
         }
     }
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal &&
-        (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
+    if ((vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()))
         return "VideoView event requires owner";
     const auto view = dx::VmObjectRef{static_cast<std::uint32_t>(handle)};
     const auto root = vm.ProtectReferences(std::array{view});
     const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/VideoView;");
-    if (context.ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+    {
         dx::IntrinsicContext call{vm, view, {}};
         if (dx::IntrinsicCall(call).GetInt(*context.video_view_generation_field) != generation) return std::nullopt;
         if (event == 1) {

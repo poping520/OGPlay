@@ -193,7 +193,12 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         on(child_content, "setId", "(I)V", {VmValue::Int(11)});
         CHECK(on(parent, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == content);
         CHECK(on(child, "findViewById", "(I)Landroid/view/View;", {VmValue::Int(11)}).ref == child_content);
-        CHECK(f.context->ui_tree.IsAttached(*node));
+        // JavaTraversal publishes only the foreground window's projection;
+        // the parent's Java content survives in its retained window state.
+        const auto foreground = f.context->ui_tree.PublishedProjection();
+        REQUIRE(foreground);
+        CHECK_FALSE(foreground->IsAttached(*node));
+        CHECK_FALSE(foreground->IsVisible(*node));
         CHECK_FALSE(f.context->ui_tree.IsVisible(*node));
         on(child, "setResult", "(I)V", {VmValue::Int(1)});
         static_cast<void>(vm.CollectGarbage("activity-return-roots"));
@@ -205,6 +210,9 @@ TEST_CASE("DVM-223 Activity result stack restores caller identity and content") 
         CHECK(f.context->activity == parent);
         CHECK(f.context->content_view == content);
         CHECK(f.context->ui_tree.IsAttached(*node));
+        const auto restored = f.context->ui_tree.PublishedProjection();
+        REQUIRE(restored);
+        CHECK(restored->IsAttached(*node));
         CHECK_FALSE(runtime::FindViewUiNode(*f.context, child_content.Value()).has_value());
         CHECK(on(parent, "getWindow", "()Landroid/view/Window;").ref == parent_window);
         CHECK(on(parent_window, "getDecorView", "()Landroid/view/View;").ref == parent_decor);

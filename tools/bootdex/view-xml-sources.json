@@ -5,8 +5,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-xml.surface.json.gz",
-      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/content/res/XmlBlock;",
       "smali_sha256": "5dbcf4b0b135484389d44d41bfa5c2edcf72533ac29a0bfbc80840ac7e4357a3",
       "fields": [
@@ -493,8 +493,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-xml.surface.json.gz",
-      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/content/res/XmlBlock$Parser;",
       "smali_sha256": "4b07eab2c142215666a8dd74744d73b13ba7842e2ec9adf7407a1ae247290a9f",
       "fields": [
@@ -897,8 +897,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-xml.surface.json.gz",
-      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/content/res/StringBlock;",
       "smali_sha256": "a55829d65e9ea0e1b6c44b26e09f0b7549e3ba9288208543ddffaebd041e37b6",
       "fields": [
@@ -1082,8 +1082,8 @@
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
-      "surface": "tools/bootdex/view-xml.surface.json.gz",
-      "surface_sha256": "ed2d502eefcb1681ac27d4e9bd9d9af16694bf3438ecb613a36b3bc748bfabe5",
+      "surface": "tools/bootdex/view-default.surface.json.gz",
+      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
       "owner": "Landroid/content/res/StringBlock$StyleIDs;",
       "smali_sha256": "dc1094191ea81032b66166acba7a70f04433b264f365db5736685a1539e880e6",
       "fields": [

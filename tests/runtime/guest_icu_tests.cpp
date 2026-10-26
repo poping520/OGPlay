@@ -32,6 +32,7 @@ struct IcuVm final {
         request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
         request.tzdata = ReadPayloadBytes("zoneinfo/tzdata");
         request.boot_dex_bytes = test::ReadBootDex();
+        test::BindBootDexArchive(*context);
         request.context = context;
         request.dexvm.interpreter.backend = backend;
         request.surface_width = 64;
@@ -406,5 +407,40 @@ TEST_CASE("DVM-260 guest String backing preserves char array builder substring a
         strings.Release(model.ToIdentity(text), 0, runtime::JniStringAccessKind::chars);
         strings.Release(model.ToIdentity(sub), 0, runtime::JniStringAccessKind::chars);
         strings.Release(model.ToIdentity(snapshot), 0, runtime::JniStringAccessKind::critical);
+    }
+}
+
+TEST_CASE("DVM-331 orchestrated ROM FrameLayout construction uses guest ICU regex without a window") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp fixture("fixture.ResultCaller", true, false, {}, {}, true, backend);
+        auto& vm = fixture.app->DexVm().Vm();
+        const auto owner = vm.NewIntrinsicInstance("Landroid/content/Context;");
+        test::AttachViewTestContext(vm, owner);
+        const auto frame = vm.NewIntrinsicInstance("Landroid/widget/FrameLayout;");
+        const auto roots = vm.ProtectReferences(std::array{owner, frame});
+        const auto type = vm.Linker().ResolveDescriptor("Landroid/widget/FrameLayout;");
+        const auto initialized = vm.EnsureClassInitialized(type);
+        REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+        const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor);
+        // The same ROM constructor reached from lifecycle onCreate initializes
+        // Rect, whose static regex and matcher must execute through guest ICU.
+        const auto constructed = vm.Call(*constructor, std::array{VmValue::Ref(frame), VmValue::Ref(owner)});
+        REQUIRE_MESSAGE(!constructed.exception.IsValid(), constructed.exception_message);
+        const auto rect_type = vm.Linker().ResolveDescriptor("Landroid/graphics/Rect;");
+        const auto parse = vm.Linker().FindDirectMethod(rect_type, "unflattenFromString",
+                                                        "(Ljava/lang/String;)Landroid/graphics/Rect;");
+        REQUIRE(parse);
+        const auto parsed = vm.Call(*parse, std::array{VmValue::Ref(vm.NewStringUtf8("1 2 3 4"))});
+        REQUIRE_MESSAGE(!parsed.exception.IsValid(), parsed.exception_message);
+        REQUIRE(parsed.value.ref.IsValid());
+        for (const auto& [field, expected] :
+             std::array{std::pair{"left", 1}, std::pair{"top", 2}, std::pair{"right", 3}, std::pair{"bottom", 4}}) {
+            const auto id = vm.Linker().FindFieldRecursive(rect_type, field, "I");
+            REQUIRE(id);
+            CHECK(static_cast<std::int32_t>(
+                      vm.Model().InstanceSlots(parsed.value.ref)[vm.Linker().Field(*id).slot].bits) == expected);
+        }
+        CHECK(fixture.ledger.Unimplemented().empty());
     }
 }

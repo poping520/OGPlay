@@ -310,7 +310,7 @@ AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
       Declare_com_google_android_gles_jni_GLImpl(context),
       Declare_android_app_Application(context),
   };
-  if (context->ui_traversal_owner == AndroidUiTraversalOwner::JavaTraversal) {
+  {
       result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
       result.push_back(Declare_android_graphics_drawable_DrawableContainer(context));
       result.push_back(Declare_android_graphics_drawable_NinePatchDrawable(context));

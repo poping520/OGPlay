@@ -354,7 +354,6 @@ TEST_CASE("DVM-298 EditText actual input Java focus chain watchers reentry measu
         const auto field = *f.linker.FindFieldRecursive(f.model.ObjectClass(listener), "focuses", "I");
         CHECK(f.model.InstanceSlots(listener)[f.linker.Field(field).slot].bits == 2);
         CHECK_FALSE(f.context->ui_tree.Focused().has_value());
-        CHECK_FALSE(f.context->focused_edit_text.IsValid());
         const auto editable = f.On(edit, "getText", "()Landroid/text/Editable;").ref;
         static_cast<void>(f.vm.CollectGarbage("bounded-edit-retain"));
         CHECK(f.On(editable, "length", "()I").AsInt() == 5);

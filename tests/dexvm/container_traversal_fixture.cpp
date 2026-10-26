@@ -1,4 +1,5 @@
 #include "container_traversal_fixture.h"
+#include "ogplay/runtime/bionic/bionic_module_set.h"
 
 namespace ogplay::test::container_traversal {
 std::unique_ptr<ogplay::session::AndroidAppProcess> ContainerVm::Create(InterpreterBackend backend) {
@@ -94,4 +95,62 @@ VmObjectRef ContainerVm::New(const char* owner, const char* descriptor, std::vec
     Static(owner, "<init>", descriptor, std::move(args));
     return result;
 }
+}  // namespace ogplay::test::container_traversal
+
+namespace ogplay::test::container_traversal {
+AndroidTestRuntime::AndroidTestRuntime(const std::shared_ptr<DexVmAndroidContext>& context,
+                                       ogplay::core::CapabilityLedger& ledger, ogplay::core::Logger& logger,
+                                       std::vector<IntrinsicClassDecl> catalog, std::vector<std::uint8_t> dex,
+                                       InterpreterConfig config, bool skeleton, VirtualFileSystem* filesystem)
+    : inventory(std::vector<ogplay::loader::ApkNativeLibrary>{}),
+      selected(inventory, ogplay::loader::AndroidArmAbi::armeabi_v7a) {
+    using namespace ogplay::test::native_library;
+    auto& fs = filesystem ? *filesystem : owned_filesystem;
+    fs.PutFile("/system/usr/icu/icudt51l.dat", ReadPayloadBytes("icu/icudt51l.dat"), false);
+    fs.PutFile("/system/usr/share/zoneinfo/tzdata", ReadPayloadBytes("zoneinfo/tzdata"), false);
+    std::vector<std::vector<std::byte>> bytes;
+    std::vector<BionicModuleSource> sources;
+    for (const auto name : SelectBionicProfile(19).guest_libraries) {
+        bytes.push_back(ReadPayloadBytes("lib/" + std::string(name)));
+        sources.push_back({std::string(name), bytes.back()});
+    }
+    const auto libc =
+        std::find_if(sources.begin(), sources.end(), [](const auto& source) { return source.name == "libc.so"; });
+    REQUIRE(libc != sources.end());
+    std::vector<BionicModuleSource> dependencies;
+    for (const auto& source : sources)
+        if (source.name != "libc.so") dependencies.push_back(source);
+    auto modules = BuildBionicModuleSet(SelectBionicProfile(19), "libc.so", libc->image, dependencies);
+    const auto inputs = modules.Inputs();
+    auto process = AndroidGuestProcess::Start({.system_modules = inputs,
+                                               .width = context->surface_width ? context->surface_width : 800,
+                                               .height = context->surface_height ? context->surface_height : 480,
+                                               .maximum_ticks_per_call = UINT64_C(100000000),
+                                               .filesystem = &fs});
+    session = AndroidGuestCallSession::AdoptProcess(std::move(process));
+    libraries =
+        std::make_unique<NativeLibraryLoader>(session->Process(), selected, SelectBionicProfile(19), sources, &logger);
+    context->session = session.get();
+    context->native_libraries = libraries.get();
+    context->vfs = &fs;
+    context->ui_test_accessibility_disabled = true;
+    const auto boot =
+        ogplay::loader::ReadApkEntry(context->boot_classpath_bytes, context->boot_classpath_archive, "classes.dex");
+    std::vector<std::uint8_t> boot_dex(boot.size());
+    std::memcpy(boot_dex.data(), boot.data(), boot.size());
+    std::vector<std::uint8_t> skeleton_bytes;
+    if (skeleton) {
+        std::ifstream stream(std::filesystem::path{OGPLAY_SOURCE_DIR} / "data/dexvm/api19-skeleton.bin",
+                             std::ios::binary);
+        REQUIRE(stream.good());
+        skeleton_bytes = {std::istreambuf_iterator<char>(stream), {}};
+    }
+    bridge = std::make_unique<DexVmGuestBridge>(*session, std::move(dex), catalog, context, ledger, &logger,
+                                                DexVmBridgeConfig{.interpreter = config}, std::move(boot_dex),
+                                                std::move(skeleton_bytes));
+    context->threads = &bridge->Threads();
+    static_cast<void>(libraries->LoadLibrary("ogplay_jni", context->application_class_loader_token));
+}
+
+AndroidTestRuntime::~AndroidTestRuntime() = default;
 }  // namespace ogplay::test::container_traversal

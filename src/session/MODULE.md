@@ -115,10 +115,9 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   `MapAndroidKey` 把 `ControlMapper` 的 Android keycode 输出投影为 key 事件；
   `MapControlOutput` 统一投影触摸、直通键与 keycode 三类输出。
   JavaTraversal 的有界 EditText 输入通过 integration 从 Java findFocus/父链取候选；
-  DOWN 走真实 requestFocus，字符/左右/删除复用宿主编辑事务。实验路径不读写 Legacy
-  focused_edit_text 候选，Editor/IME/composition 与修改键编辑明确失败。
+  DOWN 走真实 requestFocus，字符/左右/删除复用宿主编辑事务。输入不使用宿主焦点候选，Editor/IME/composition 与修改键编辑明确失败。
   JavaTraversal 的两轴拖动只持捕获/slop/delta；拦截时 CANCEL 单一旧目标，再调用 integration
-  的 Java scrollBy/clamp 与投影发布接缝，不写 UiNode.scroll_x/y。宿主位置写入仅限显式 Legacy 分支。
+  的 Java scrollBy/clamp 与投影发布接缝，不写 UiNode.scroll_x/y。不保留宿主写 guest 位置的分支。
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
@@ -127,12 +126,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   singleInstance 独占 task，其启动的其他组件进入默认 affinity task。任务分组切换保留身份，
   onNewIntent 在 resume 前交付，getIntent 不自动改写；finishing 实例不复用。
   自定义 affinity 匹配/跨 task 结果/向复用实例请求结果/复杂 flags/options 失败；普通同 task
-  启动不匹配 affinity，非默认 affinity 分组不被选作默认目的 task。每实例内容在唯一 UiTree
-  的窗口 root 下保持附着，后台以独立 window visibility 隐藏，Surface 按子树派发。
+  启动不匹配 affinity，非默认 affinity 分组不被选作默认目的 task。每实例保留 Java 内容与
+  窗口投影；后台节点不进入前台投影，Surface 按所属窗口派发。
   稳定内容容器下的全部兄弟子树共同参与 renderer/Surface 遍历、隐藏与恢复；
   content_view/record.content 仅作首个内容 View 投影。内容代次在尺寸回调后核对，
-  重入变更延后新树交付。每 live View 缓存已交付的窗口焦点，追加/布局不重复通知
-  原子树，detach/退役清理缓存；窗口焦点事实仍由 lifecycle 唯一持有。
+  重入变更延后新树交付。窗口焦点事实由 lifecycle 唯一持有；在状态转换时先更新可查询事实，
+  通知 Activity，再向该窗口 Java 根虚派 ROM dispatchWindowFocusChanged，沿真实 Java 子树
+  分发到 View；不按投影可见性过滤，不保存宿主逐节点焦点副本，布局/追加不重发焦点。
   模态输入在 Java View/NativeActivity 转发之前捕获，不进入底层游戏。实际宿主焦点请求
   与 Activity 有效窗口焦点分离，visible modal 暂使 Activity 失焦，不合成 pause/stop 或
   Surface 退役。合成顺序为普通媒体→媒体叠层→普通 UI→onTop 视频→模态 UI；
@@ -160,13 +160,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   Looper/媒体/音频/switch/focus 等 mutation 批后以同 tick 屏障重新确保遍历。
   内容与 Surface 同步使用 BeforeSurfaceCallbacks，不额外递增逻辑 tick；延期请求不被屏障偷跑。
   owner 刷新 producer/叶像素事实，纯绘制只冻结快照；presentation epoch 变化触发纯 View
-  软件基帧或 intrinsic renderer draw request，空窗口与纯 modal 也可呈现。Legacy 时序保持。
+  软件基帧或 intrinsic renderer draw request，空窗口与纯 modal 也可呈现。guest 仅使用此 owner 时序。
 - JavaTraversal 的 `ComposePresentedFrame` 只读一次 AcquireAndroidPresentation 得到的共同快照，
   按 video下层→guest UI→video上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
   session 持有有界 UI 平面缓存：完整投影/冻结 modal 身份、viewport 和 bitmap 输入未变时
   复用栅格结果；producer 单独更新不重绘 UI。新 producer 底图仍每帧按原顺序混合、上传，
   不缓存替代 guest 帧；缓存仅保留当前发布的平面，失败不替换完整缓存。
-  新帧尺寸须与共同快照一致，失败保留发布序列。Legacy 继续原刷新/布局/cache/合成路径。
+  新帧尺寸须与共同快照一致，失败保留发布序列。不保留 guest 刷新/宿主布局合成回落。
   modal 输入先由 integration 使用同一发布对象命中/捕获，再进入 Java Dialog 协议；
   每个输入事件从 modal、NativeActivity 队列、编辑/键、pointer/焦点/scroll 到 deep/Activity
   fallback 共享唯一 presentation lease；释放后才处理 mutation。scroll 范围取冻结投影。
@@ -299,7 +299,7 @@ Application 类初始化前从 Context.getCacheDir 取得缓存路径改写 java
 
 
 JavaTraversal窗口切换保留每窗口Java根及完整投影，前台输入分区与额外可见handoff分区
-同次发布；恢复焦点走Java软件adapter，HostLayout RequestFocus仅在Legacy恢复分支。
+同次发布；恢复焦点走Java软件adapter，不向 guest 投影调用 HostLayout RequestFocus。
 Compose的一次lease显式交给video上下层、UI与modal，bitmap版本/producer像素属于快照；
 呈现线程不读取当前播放器/绑定表或消费dirty，不为输出像素大小重测Java。
 
@@ -308,24 +308,24 @@ adapter 若在 vm.Call 外抛出 VmJavaThrow，转为 DexActivityLifecycleError�
 Java 类型、消息与宿主阶段；仍标 failed、保留原退出及异步 fatal 优先语义，不伪造成功。
 
 DVM-316：生命周期 Java 故障与宿主 guest 边界追加只读 cause/target 的类型、消息和首栈；
-既有主异常行、失败状态与退出语义保持，Legacy 仅新增 Caused by 行。
+既有主异常行、失败状态与退出语义保持。
 
 JavaTraversal 的 `ui.surface.*` 诊断记录 producer 投影可见性、所属 GLThread 启动与 EGL
 创建请求；初始化线程启动不代表已有可绘制 Surface，真实 EGL 与呈现仍需独立验证。
-Legacy 不输出该诊断域。
+
 
 JavaTraversal 在 owner 投影屏障及内容遍历后重评估已注册 intrinsic producer，先于该屏障的
 Surface 交付；仍要求可见且属于当前内容根。首条选择/拒绝原因按窗口记录，后续计数。
-GLThread 初始化不等于可绘制 Surface，Legacy 选择仍在原内容同步位置。
+GLThread 初始化不等于可绘制 Surface。
 
 DVM-320：JavaTraversal 在每次 producer 重评估比较只读父链事实；正常与失败 Stop
 均在 teardown 回调前经显式 integration 接口汇总一次。汇总保留清理前的最终状态，
-重复 Stop 不重发；失败清理仍沿原 attempt/首错协议，Legacy 不输出新域。
+重复 Stop 不重发；失败清理仍沿原 attempt/首错协议。
 
 JavaTraversal 的窗口可见事实由 Activity 生命周期单独拥有：resume/restore 显示，
 suspend、stop 与 handoff 隐藏；即使尚无 Java Window root 也记录事实。变化在 owner 上
 重发最后完整几何及窗口事实，保留待布局请求；producer 仅从完整投影选择。退役空窗口
-不隐藏共用 synthetic root。Legacy 的窗口写入与选择路径保持原契约。
+不隐藏共用 synthetic root。
 
 DVM-329：producer 每次选择按 Java View 身份重新查询绑定，并检查该 NodeId 存在于
 本次读取的完整 projection 后才查询可见/祖先；未发布或退役的绑定本轮不激活，下次

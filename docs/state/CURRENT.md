@@ -7,6 +7,8 @@
 契约见各模块 MODULE，任务见 [任务总览](../tasks/README.md)。上限 6 KB，由
 `architecture.documentation_layout` 检查。
 
+JavaTraversal默认；九场景与Legacy持平（DVM-331）。
+
 ## 游戏进度
 
 “到达点”指最近一次原 APK 实测；以下游戏均未通过正式 title gate、全关卡或跨平台验收。

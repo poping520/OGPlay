@@ -437,7 +437,8 @@ JavaTraversal共同发布冻结逐窗口完整投影、视频像素与bitmap版�
 消费者显式共享同一lease，不在consumer读取当前producer/绑定表。窗口退役只清构建
 身份，旧不可变presentation可继续保留；缺匹配新窗口投影时拒绝替换。
 
-有界主题投影可携带经过封存的 projected_references；provider 严查 drawable 名称、
-package/type 与数量，只保留 terminal 引用/resourceId，不获得系统皮肤加载或光栅信用。
-引用生成先锁定同 ROM framework-res.apk 并交叉核对共享 R 常量；scrollbar 私有 ID
-只取真实 ARSC 身份。未登记/冲突引用失败，实际 Drawable 加载仍不开放，详见 dexvm_android MODULE。
+有界主题投影携带封存的 projected_references 与 ARSC 类型编号；provider 严查名称、
+package/type 与数量，任意同 ROM 类型均可作为 terminal 引用/resourceId。生成器锁定
+framework-res.apk 并交叉核对共享 R 常量，只投影名称到真实 ID，不按属性名或加载能力
+筛选、不预先解析目标内容。消费者实际调用才加载，未支持目标按 ADR-0147 记账失败；
+既有 ColorStateList/edit_text 加载范围保持，详见 dexvm_android MODULE。

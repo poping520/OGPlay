@@ -2073,6 +2073,19 @@ color 目录中的同构条目，不按名称白名单。颜色引用沿同 ROM 
 未知属性、未知或不可解析引用明确失败。普通 `#AARRGGBB` 按 format=color 直接投影。
 仅封存 values 默认配置；未登记配置不获得支持信用。实施见 [DVM-327](../tasks/dexvm/DVM-327.md)。
 
+### VD-11-18 引用按类型投影、加载按需（编排方决定 2026-10-26（五））
+
+1. 主题/样式中的 `@android:<type>/<name>`（含 drawable、color、anim、layout、xml、
+   string 等）只要同 ROM framework-res ARSC 给出真实资源 id，一律投影为
+   TYPE_REFERENCE 与该 id；不按属性名白名单发放，不预先解析目标内容。
+   ID 的 package/type 与 ARSC 名称类型严格一致，保留继承、属性环与深度检查及确定性。
+   原“保留原文本、标 unsupported”的引用回落只用于 ARSC 中真实不存在的名称。
+2. 实际消费方 getDrawable/getColorStateList/getText/loadAnimation 等在调用时判定
+   能否加载；未支持目标在调用处按 ADR-0147 记账并明确失败。仅取 id 的
+   TypedArray.getResourceId/peekValue 不取得目标加载信用。
+3. 本单不新增 drawable 或动画加载能力，不扩展 Editor/IME 或完整 TextView 栈。
+   既有同 ROM 状态色、edit_text 加载边界保持；实施见 [DVM-328](../tasks/dexvm/DVM-328.md)。
+
 ## ADR-0161 · VD-10 叶服务、特殊容器与宿主 Dialog 边界
 
 - 状态：Accepted（编排方按用户授权于 2026-10-25 决定）
@@ -2198,6 +2211,14 @@ Legacy 一致，先经 CheckInputFocusWithoutConnection 检查真实焦点。当
 或 IME 会话时记账并明确失败。不新增 IME、Editor、InputConnection 或 Binder。
 颜色消费者保留 TextView 原 Java 颜色字段及 ColorStateList 身份，按原 View 状态选择颜色。
 已允许的 edit_text 默认背景在现有叶 bitmap 平面冻结选中 ninepatch；guest draw 仍明确失败。
+
+### VD-11-18 引用身份与消费边界（编排方决定 2026-10-26（五））
+
+采用 ADR-0160 的 VD-11-18 三项修订：同 ROM ARSC 中存在的任意类型引用按真实 id
+投影，不以属性白名单或加载器支持程度限制身份查询；内容加载延至真实消费调用。
+本次只改变投影与 TypedArray 取 id 路径，不新增 drawable/动画加载能力。
+实际未支持目标仍按 ADR-0147 记账失败，既有颜色/叶背景与完整 Editor/IME 边界保持。
+实施见 [DVM-328](../tasks/dexvm/DVM-328.md)。
 
 ## ADR-0162 · VD-11 JavaTraversal 生产接线
 

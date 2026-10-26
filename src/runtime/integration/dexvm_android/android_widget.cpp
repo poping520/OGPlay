@@ -1451,6 +1451,11 @@ Decl ExperimentalTextView(const Context& context) {
     const auto link_colors =
         builder.BoundInstanceField("mLinkTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
+    const std::array resource_fields{builder.BoundInstanceField("mTextSelectHandleLeftRes", "I", 0),
+                                     builder.BoundInstanceField("mTextSelectHandleRightRes", "I", 0),
+                                     builder.BoundInstanceField("mTextSelectHandleRes", "I", 0),
+                                     builder.BoundInstanceField("mCursorDrawableRes", "I", 0),
+                                     builder.BoundInstanceField("mTextEditSuggestionItemLayout", "I", 0)};
     const auto update_color = [context, text_colors](dx::IntrinsicContext& c) {
         const auto colors = dx::IntrinsicCall(c).GetRef(text_colors);
         if (!colors.IsValid()) return;
@@ -1484,7 +1489,7 @@ Decl ExperimentalTextView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;)V", chain(2));
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context, text_colors, hint_colors,
                                                                                      link_colors, highlight,
-                                                                                     update_color](
+                                                                                     resource_fields, update_color](
                                                                                         dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
@@ -1567,6 +1572,18 @@ Decl ExperimentalTextView(const Context& context) {
                                              {dx::VmValue::Int(index), dx::VmValue::Int(fallback)})
                                .AsInt() != 0;
                 };
+                const std::array<std::string_view, 5> resource_names{"textSelectHandleLeft", "textSelectHandleRight",
+                                                                     "textSelectHandle", "textCursorDrawable",
+                                                                     "textEditSuggestionItemLayout"};
+                const auto resource = std::find(resource_names.begin(), resource_names.end(), name);
+                if (resource != resource_names.end()) {
+                    const auto id = CallAndroidMethod(vm, values, "getResourceId", "(II)I",
+                                                      {dx::VmValue::Int(index), dx::VmValue::Int(0)})
+                                        .AsInt();
+                    dx::IntrinsicCall(c).SetInt(
+                        resource_fields[static_cast<std::size_t>(resource - resource_names.begin())], id);
+                    continue;
+                }
                 if (name == "textAppearance") continue;  // Already consumed through TextViewAppearance.
                 if (name == "textSize")
                     size = CallAndroidMethod(vm, values, "getDimensionPixelSize", "(II)I",
@@ -1648,6 +1665,10 @@ Decl ExperimentalTextView(const Context& context) {
                         compounds[slot] = {backing->second.resource_id, width, height};
                         compound_refs[slot] = ref;
                     }
+                } else if (name == "textEditPasteWindowLayout" || name == "textEditNoPasteWindowLayout" ||
+                           name == "textEditSidePasteWindowLayout" || name == "textEditSideNoPasteWindowLayout") {
+                    // Fixed ROM TextView constructor pc625 sends these legacy slots
+                    // to its default branch (pc628); no getter, field write or load.
                 } else if (name == "enabled") {
                     // The View super constructor consumed this same value.
                 } else if (name == "includeFontPadding" || name == "cursorVisible" || name == "linksClickable") {

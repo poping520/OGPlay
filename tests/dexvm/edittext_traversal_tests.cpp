@@ -84,14 +84,16 @@ struct XmlValue {
     std::uint32_t data;
 };
 
-std::vector<std::byte> AttributeXml(const std::vector<std::vector<XmlValue>>& tags) {
+std::vector<std::byte> AttributeXml(const std::vector<std::vector<XmlValue>>& tags,
+                                    const std::string& element = "style") {
     std::vector<std::uint32_t> ids{0};
     for (const auto& attrs : tags)
         for (const auto& attr : attrs)
             if (std::ranges::find(ids, attr.id) == ids.end()) ids.push_back(attr.id);
-    std::vector<std::string> names{"style"};
+    std::vector<std::string> names{element};
     for (std::size_t i = 1; i < ids.size(); ++i)
         names.push_back("a" + std::to_string(i));
+    names.push_back("");
     std::vector<std::byte> bytes;
     Append16(bytes, 3);
     Append16(bytes, 8);
@@ -125,7 +127,7 @@ std::vector<std::byte> AttributeXml(const std::vector<std::vector<XmlValue>>& ta
             Append16(bytes, 8);
             bytes.push_back(std::byte{0});
             bytes.push_back(static_cast<std::byte>(attr.type));
-            Append32(bytes, attr.data);
+            Append32(bytes, attr.type == 3 ? static_cast<std::uint32_t>(names.size() - 1) : attr.data);
         }
     }
     for (std::size_t i = 0; i < tags.size(); ++i) {
@@ -141,7 +143,8 @@ std::vector<std::byte> AttributeXml(const std::vector<std::vector<XmlValue>>& ta
     return bytes;
 }
 
-VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vector<std::byte>& xml) {
+VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vector<std::byte>& xml,
+                             bool advance = true) {
     f.context->apk_bytes = ogplay::test::file_vfs::MakeStoredZip("res/layout/attributes.xml", xml);
     f.context->archive = ogplay::loader::ParseApkArchive(f.context->apk_bytes);
     const auto assets = f.On(owner, "getAssets", "()Landroid/content/res/AssetManager;").ref;
@@ -150,8 +153,10 @@ VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vecto
              {VmValue::Ref(f.vm.NewStringUtf8("res/layout/attributes.xml"))})
             .ref;
     CHECK(f.linker.Class(f.model.ObjectClass(parser)).descriptor == "Landroid/content/res/XmlBlock$Parser;");
-    CHECK(f.On(parser, "next", "()I").AsInt() == 0);
-    CHECK(f.On(parser, "next", "()I").AsInt() == 2);
+    if (advance) {
+        CHECK(f.On(parser, "next", "()I").AsInt() == 0);
+        CHECK(f.On(parser, "next", "()I").AsInt() == 2);
+    }
     return parser;
 }
 
@@ -368,15 +373,8 @@ TEST_CASE("DVM-298 EditText real default style and unsupported Editor IME fail e
             const auto owner = Owner(f, defaults);
             const auto failed = Construct(f, owner);
             INFO(failed.exception_message);
-            if (defaults == 1) {
-                CHECK(failed.exception.IsValid());
-                CHECK(failed.exception_message ==
-                      "unsupported projected value: @android:drawable/text_select_handle_left");
-                CHECK_FALSE(f.ledger.Unimplemented().empty());
-            } else {
-                CHECK_FALSE(failed.exception.IsValid());
-                CHECK(f.ledger.Unimplemented().empty());
-            }
+            CHECK_FALSE(failed.exception.IsValid());
+            CHECK(f.ledger.Unimplemented().empty());
         }
         ContainerVm f(backend);
         const auto owner = Owner(f);
@@ -478,5 +476,91 @@ TEST_CASE("DVM-327 TextView retains ROM state colors through focus flags and GC"
         f.On(text, "setPressed", "(Z)V", {VmValue::Int(0)});
         CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xffbebebeU);
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain lazy resource identities") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f, 1);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+        // Original line-15 TextView attributes; layout parameters remain the parent's concern.
+        const auto parser = OpenAttributeXml(f, owner,
+                                             AttributeXml({{{0x01010095, 5, 0x2800},
+                                                            {0x01010098, 29, 0xffffffff},
+                                                            {0x010100d0, 1, 0x7f08003a},
+                                                            {0x010100f4, 16, 0xfffffffe},
+                                                            {0x010100f5, 16, 0xfffffffe},
+                                                            {0x010100fa, 5, 0xa00},
+                                                            {0x0101014f, 3, 0},
+                                                            {0x0101018a, 1, 0x7f080039},
+                                                            {0x01010190, 18, 0xffffffff}}},
+                                                          "TextView"),
+                                             false);
+        const auto input_roots = f.vm.ProtectReferences(std::array{owner, parser});
+        for (const auto id : {0x7f080039U, 0x7f08003aU}) {
+            ogplay::loader::ArscEntry entry;
+            entry.resource_id = id;
+            entry.type_name = "id";
+            entry.value_type = 18;
+            f.context->arsc.entries.push_back(entry);
+        }
+        const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
+        const auto inflater_root = f.vm.ProtectReferences(std::array{inflater});
+        const auto inflated = f.OnOutcome(inflater, "inflate",
+                                          "(Lorg/xmlpull/v1/XmlPullParser;Landroid/view/ViewGroup;)Landroid/view/View;",
+                                          {VmValue::Ref(parser), VmValue::Ref(VmObjectRef{})});
+        std::string stack;
+        for (const auto& frame : inflated.exception_stack)
+            stack += frame.class_descriptor + ";" + frame.method_name + ":" + std::to_string(frame.pc) + "\n";
+        INFO(stack);
+        REQUIRE_MESSAGE(!inflated.exception.IsValid(), inflated.exception_message);
+        const auto text = inflated.value.ref;
+        const auto text_root = f.vm.ProtectReferences(std::array{text});
+        const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, parser, text, edit});
+        CHECK(static_cast<std::uint32_t>(f.On(text, "getCurrentTextColor", "()I").AsInt()) == 0xffffffffU);
+
+        struct Identity {
+            std::uint32_t attr, id;
+            const char* field;
+        };
+
+        const std::array identities{Identity{0x010102c5, 0x01080666, "mTextSelectHandleLeftRes"},
+                                    Identity{0x010102c6, 0x01080668, "mTextSelectHandleRightRes"},
+                                    Identity{0x010102c7, 0x01080667, "mTextSelectHandleRes"},
+                                    Identity{0x01010362, 0x00000000, "mCursorDrawableRes"},
+                                    Identity{0x01010374, 0x010900b2, "mTextEditSuggestionItemLayout"}};
+        const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer,
+                                                     static_cast<JniSize>(identities.size()));
+        for (std::size_t i = 0; i < identities.size(); ++i)
+            f.model.SetPrimitiveElement(attrs, static_cast<JniSize>(i), identities[i].attr);
+        const auto array =
+            f.On(owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
+        for (std::size_t i = 0; i < identities.size(); ++i) {
+            const auto& identity = identities[i];
+            CHECK(static_cast<std::uint32_t>(
+                      f.On(array, "getResourceId", "(II)I", {VmValue::Int(static_cast<int>(i)), VmValue::Int(0)})
+                          .AsInt()) == identity.id);
+            const auto value =
+                f.On(array, "peekValue", "(I)Landroid/util/TypedValue;", {VmValue::Int(static_cast<int>(i))}).ref;
+            if (!identity.id) {
+                CHECK_FALSE(value.IsValid());  // Actual default cursor is @null.
+            } else {
+                for (const auto field_name : {"data", "resourceId"}) {
+                    const auto field = *f.linker.FindFieldRecursive(f.model.ObjectClass(value), field_name, "I");
+                    CHECK(f.model.InstanceSlots(value)[f.linker.Field(field).slot].bits == identity.id);
+                }
+            }
+            for (const auto view : {text, edit}) {
+                const auto field = *f.linker.FindFieldRecursive(f.model.ObjectClass(view), identity.field, "I");
+                CHECK(f.model.InstanceSlots(view)[f.linker.Field(field).slot].bits == identity.id);
+            }
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto failed =
+            f.OnOutcome(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
+        CHECK(failed.exception.IsValid());
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

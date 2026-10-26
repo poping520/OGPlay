@@ -189,17 +189,30 @@ void ThemeResources::Load(std::string_view projection) {
                                  [&](const auto& leaf) { return leaf.id == item.drawable && !leaf.png.empty(); }))
                     throw std::runtime_error("unclosed ROM selector");
     }
+    std::map<std::string, std::uint32_t> resource_types;
+    const auto types = Member(root, "resource_types");
+    if (!types.IsObject()) throw std::runtime_error("invalid ROM resource types");
+    for (const auto key : types.Keys()) {
+        const auto name = std::string(key);
+        const auto id = Number(*types.Member(name));
+        if (!id || id > 255 || std::any_of(resource_types.begin(), resource_types.end(), [&](const auto& row) {
+                return row.second == id;
+            }))
+            throw std::runtime_error("invalid/duplicate ROM resource type");
+        resource_types.emplace(name, id);
+    }
     std::set<std::uint32_t> reference_ids;
-    if (const auto references = root.Member("projected_references")) {
-        if (!references->IsArray() || references->Size() > 1024)
-            throw std::runtime_error("invalid projected reference bounds");
-        for (std::size_t i = 0; i < references->Size(); ++i) {
-            const auto row = *references->Element(i);
-            const auto id = Number(Member(row, "resource_id"));
-            if ((id >> 16U) != 0x0108U || Text(Member(row, "resource_type")) != "drawable" ||
-                Text(Member(row, "name")).empty() || !reference_ids.insert(id).second)
-                throw std::runtime_error("invalid projected drawable reference");
-        }
+    const auto references = Member(root, "projected_references");
+    if (!references.IsArray() || references.Size() > 8192)
+        throw std::runtime_error("invalid projected reference bounds");
+    for (std::size_t i = 0; i < references.Size(); ++i) {
+        const auto row = *references.Element(i);
+        const auto id = Number(Member(row, "resource_id"));
+        const auto type = resource_types.find(Text(Member(row, "resource_type")));
+        if ((id >> 24U) != 1 || type == resource_types.end() || ((id >> 16U) & 255U) != type->second ||
+            Number(Member(row, "type_id")) != type->second || Text(Member(row, "name")).empty() ||
+            !reference_ids.insert(id).second)
+            throw std::runtime_error("invalid projected resource reference");
     }
     std::set<std::uint32_t> drawables;
     const auto styleables = Member(root, "styleables");
@@ -464,11 +477,10 @@ ThemeValue ThemeResources::Resolve(ThemeValue value, const State* theme, bool re
         if ((id >> 24U) == 1) {
             if (!projection_.contains(id) && !projected_reference_ids_.contains(id) && !Drawable(id, 160) && !Color(id))
                 throw std::runtime_error("unsupported projected resource reference " + std::to_string(id));
-            if (const auto color = Color(id)) {
-                Supported(color->value);
-                return color->value;
-            }
-            // Styles and reviewed View drawable IDs are terminal, lazy references.
+            // Preserve existing Android scalar/color six-slot resolution, without
+            // rejecting an unsupported color merely because its ID was requested.
+            if (const auto color = Color(id); color && color->value.unsupported.empty()) return color->value;
+            // Same-ROM references are terminal identities, independent of loader support.
             // No system drawable is loaded or rasterized by this provider.
             value.resource_id = id;
             value.cookie = 1;
@@ -504,8 +516,16 @@ std::optional<ThemeValue> ThemeResources::Attribute(ThemeToken token, std::uint3
 }
 
 ThemeValue ThemeResources::Resource(std::uint32_t resource, bool resolve, const loader::ArscTable& table) const {
-    if ((resource >> 24U) == 1 && (Drawable(resource, 160) || Color(resource)))
-        return Resolve(ThemeValue{1, resource, 1, resource, 0, 0, {}}, nullptr, resolve, table);
+    if ((resource >> 24U) == 1) {
+        if (resolve) {
+            if (const auto color = Color(resource)) {
+                Supported(color->value);
+                return color->value;
+            }
+        }
+        if (projected_reference_ids_.contains(resource) || Drawable(resource, 160) || Color(resource))
+            return Resolve(ThemeValue{1, resource, 1, resource, 0, 0, {}}, nullptr, resolve, table);
+    }
     const auto* entry = Entry(resource, table);
     if ((resource >> 24U) == 1 || !entry || entry->is_complex)
         throw std::runtime_error("unknown or non-scalar resource");
@@ -578,6 +598,7 @@ std::vector<ThemeValue> ThemeResources::Styled(ThemeToken token, std::uint32_t d
             value.cookie = -1;
         }
         if (drawable_attributes_.contains(attr) && value.type != 0 &&
+            !projected_reference_ids_.contains(value.resource_id) &&
             !(value.type == 1 && projected_reference_ids_.contains(value.data)))
             throw std::runtime_error("requested drawable attribute is unsupported");
         cookie = value.cookie;

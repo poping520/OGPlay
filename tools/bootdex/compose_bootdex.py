@@ -20,6 +20,10 @@ import member_sources
 import theme_projection
 import policy_rom
 
+# Extend bounded clients here: the JNI payload generator remains hash-pinned.
+builder.FRAMEWORK_JAVA_NAMES = tuple(sorted((*builder.FRAMEWORK_JAVA_NAMES,
+    'android/content/ContentResolver.java')))
+
 
 CANDIDATE_RECIPE = Path(__file__).with_name('java-traversal.json')
 VIDEO_ENTRY = 'META-INF/ogplay/view-video-adapter.json'
@@ -262,6 +266,11 @@ def main():
         # The fixed ROM inflater has no Legacy nativeInflate declaration.
         expected = builder.zip_stream_native_signatures()
         expected['Landroid/view/LayoutInflater;'] = {}
+        expected['Landroid/content/ContentResolver;'] = {
+            'query(Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor;': 0x111,
+            'getType(Landroid/net/Uri;)Ljava/lang/String;': 0x111,
+            'hasHandler(Landroid/database/ContentObserver;)Z': 0x10a,
+        }
         parsed = builder.dex_survey_lib.parse_dex(dex)
         observed = {owner: {} for owner in expected}
         for cls in parsed.classes:

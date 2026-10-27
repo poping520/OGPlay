@@ -10,19 +10,21 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_nfc_NfcAdapter(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/nfc/NfcAdapter;");
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
-    builder.StaticMethod("nativeGetAdapter", "()Landroid/nfc/NfcAdapter;",
+    builder.StaticMethod(
+        "nativeGetAdapter", "()Landroid/nfc/NfcAdapter;",
         [](dx::IntrinsicContext&) -> dx::VmValue {
             // NfcManager's API19 constructor catches this absent-device result.
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "NFC hardware is not available"};
-        }, flags);
-    builder.StaticMethod("nativeUnsupported", "(Ljava/lang/String;)V",
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "NFC hardware is not available"};
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeUnsupported", "(Ljava/lang/String;)V",
         [](dx::IntrinsicContext& call) -> dx::VmValue {
-            if (auto* ledger = call.vm.Ledger())
-                ledger->RecordUnimplemented("dexvm.nfc_transport", 0);
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.nfc_transport", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "NFC transport is outside the compatibility scope"};
-        }, flags);
+        },
+        flags);
     return std::move(builder).Build();
 }
 
@@ -33,16 +35,15 @@ dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& 
     const auto type = vm.Linker().ResolveDescriptor("Landroid/nfc/NfcManager;");
     const auto require = [&](const dx::VmCallOutcome& outcome) {
         if (outcome.exception.IsValid())
-            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
-                                  outcome.exception_message, outcome.exception};
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
     };
     require(vm.EnsureClassInitialized(type));
     const auto instance = vm.NewIntrinsicInstance("Landroid/nfc/NfcManager;");
     const auto roots = vm.ProtectReferences(std::array{instance});
     const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
     if (!constructor)
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
-                             "NfcManager constructor is missing");
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "NfcManager constructor is missing");
     require(vm.Call(*constructor, std::array{dx::VmValue::Ref(instance), dx::VmValue::Ref(call.receiver)}));
     context->singletons.emplace("nfc", instance);
     return instance;
@@ -50,29 +51,20 @@ dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& 
 
 Decl Declare_android_location_LocationListener(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface(
-        "Landroid/location/LocationListener;");
-    builder.UnimplementedVirtual(
-        "onLocationChanged", "(Landroid/location/Location;)V",
-        dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual(
-        "onStatusChanged",
-        "(Ljava/lang/String;ILandroid/os/Bundle;)V",
-        dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual(
-        "onProviderEnabled", "(Ljava/lang/String;)V",
-        dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual(
-        "onProviderDisabled", "(Ljava/lang/String;)V",
-        dx::kAccPublic | dx::kAccAbstract);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/location/LocationListener;");
+    builder.UnimplementedVirtual("onLocationChanged", "(Landroid/location/Location;)V",
+                                 dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual("onStatusChanged", "(Ljava/lang/String;ILandroid/os/Bundle;)V",
+                                 dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual("onProviderEnabled", "(Ljava/lang/String;)V", dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual("onProviderDisabled", "(Ljava/lang/String;)V", dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
 Decl Declare_android_location_Criteria(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/location/Criteria;", "Ljava/lang/Object;",
-        {"Landroid/os/Parcelable;"});
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/location/Criteria;", "Ljava/lang/Object;",
+                                                    {"Landroid/os/Parcelable;"});
     builder.Constructor("()V", NeutralHandler('V'));
     const auto wu_mHorizontalAccuracy = builder.BoundInstanceField("mHorizontalAccuracy", "I", dx::kAccPrivate);
     const auto wu_mVerticalAccuracy = builder.BoundInstanceField("mVerticalAccuracy", "I", dx::kAccPrivate);
@@ -108,123 +100,124 @@ Decl Declare_android_location_Criteria(const Context& context) {
 
 Decl Declare_android_location_LocationManager(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/location/LocationManager;", "Ljava/lang/Object;");
-    const auto unsupported_updates = [](dx::IntrinsicContext& call)
-        -> dx::VmValue {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/location/LocationManager;", "Ljava/lang/Object;");
+    const auto unsupported_updates = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) {
             ledger->RecordUnimplemented("dexvm.location_updates", 0);
         }
-        throw dx::VmJavaThrow{
-            "Ljava/lang/UnsupportedOperationException;",
-            "location updates are outside the compatibility scope"};
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "location updates are outside the compatibility scope"};
     };
-    builder.VirtualMethod(
-        "getBestProvider",
-        "(Landroid/location/Criteria;Z)Ljava/lang/String;",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.VirtualMethod(
-        "getLastKnownLocation",
-        "(Ljava/lang/String;)Landroid/location/Location;",
-        [](dx::IntrinsicContext&) {
-            return dx::VmValue::Ref(dx::VmObjectRef{});
-        });
-    builder.VirtualMethod(
-        "requestLocationUpdates",
-        "(Ljava/lang/String;JFLandroid/location/LocationListener;"
-        "Landroid/os/Looper;)V", unsupported_updates);
-    builder.VirtualMethod(
-        "removeUpdates", "(Landroid/location/LocationListener;)V",
-        unsupported_updates);
+    builder.VirtualMethod("getBestProvider", "(Landroid/location/Criteria;Z)Ljava/lang/String;",
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+    builder.VirtualMethod("getLastKnownLocation", "(Ljava/lang/String;)Landroid/location/Location;",
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+    builder.VirtualMethod("requestLocationUpdates",
+                          "(Ljava/lang/String;JFLandroid/location/LocationListener;"
+                          "Landroid/os/Looper;)V",
+                          unsupported_updates);
+    builder.VirtualMethod("removeUpdates", "(Landroid/location/LocationListener;)V", unsupported_updates);
     return std::move(builder).Build();
 }
 
 Decl Declare_android_provider_Settings_NameValueCache(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/provider/Settings$NameValueCache;", "Ljava/lang/Object;");
-    const auto get_command = builder.BoundInstanceField(
-        "mCallGetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
-    const auto set_command = builder.BoundInstanceField(
-        "mCallSetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
-    const auto table_name = [](dx::IntrinsicContext& call,
-                               const dx::IntrinsicFieldHandle command) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/provider/Settings$NameValueCache;", "Ljava/lang/Object;");
+    const auto get_command =
+        builder.BoundInstanceField("mCallGetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
+    const auto set_command =
+        builder.BoundInstanceField("mCallSetCommand", "Ljava/lang/String;", dx::kAccPrivate | dx::kAccFinal);
+    const auto table_name = [](dx::IntrinsicContext& call, const dx::IntrinsicFieldHandle command) {
         const auto value = dx::IntrinsicCall(call).GetRef(command);
         if (!value.IsValid()) return std::string{};
         const auto text = call.vm.StringUtf8(value);
         const auto separator = text.find('_');
-        return separator == std::string::npos ? std::string{}
-                                              : text.substr(separator + 1U);
+        return separator == std::string::npos ? std::string{} : text.substr(separator + 1U);
     };
-    const auto require_argument = [](dx::IntrinsicContext& call,
-                                     const std::size_t index,
-                                     const std::string_view name) {
+    const auto require_argument = [](dx::IntrinsicContext& call, const std::size_t index, const std::string_view name) {
         if (!call.arguments[index].ref.IsValid()) {
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                  std::string(name) + " == null"};
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", std::string(name) + " == null"};
         }
     };
+    builder.FinalMethod("getStringForUser", "(Landroid/content/ContentResolver;Ljava/lang/String;I)Ljava/lang/String;",
+                        [context, get_command, table_name, require_argument](dx::IntrinsicContext& call) {
+                            require_argument(call, 0U, "resolver");
+                            require_argument(call, 1U, "name");
+                            const auto name = call.vm.StringUtf8(call.arguments[1].ref);
+                            const auto table = table_name(call, get_command);
+                            if (table == "secure") {
+                                const auto found = context->secure_settings.find(name);
+                                return found == context->secure_settings.end() ? dx::VmValue::Ref(dx::VmObjectRef{})
+                                                                               : MakeString(call, found->second);
+                            }
+                            const auto store = context->preferences.find("__android.settings." + table);
+                            if (store == context->preferences.end()) {
+                                return dx::VmValue::Ref(dx::VmObjectRef{});
+                            }
+                            const auto found = store->second.find(name);
+                            if (found == store->second.end()) {
+                                return dx::VmValue::Ref(dx::VmObjectRef{});
+                            }
+                            const auto value = std::visit(
+                                [](const auto& item) {
+                                    using T = std::decay_t<decltype(item)>;
+                                    if constexpr (std::is_same_v<T, std::string>)
+                                        return item;
+                                    else if constexpr (std::is_same_v<T, bool>) {
+                                        return std::string(item ? "1" : "0");
+                                    } else
+                                        return std::to_string(item);
+                                },
+                                found->second);
+                            return MakeString(call, value);
+                        });
     builder.FinalMethod(
-        "getStringForUser",
-        "(Landroid/content/ContentResolver;Ljava/lang/String;I)Ljava/lang/String;",
-        [context, get_command, table_name,
-         require_argument](dx::IntrinsicContext& call) {
-            require_argument(call, 0U, "resolver");
-            require_argument(call, 1U, "name");
-            const auto name = call.vm.StringUtf8(call.arguments[1].ref);
-            const auto table = table_name(call, get_command);
-            if (table == "secure") {
-                const auto found = context->secure_settings.find(name);
-                return found == context->secure_settings.end()
-                           ? dx::VmValue::Ref(dx::VmObjectRef{})
-                           : MakeString(call, found->second);
-            }
-            const auto store = context->preferences.find(
-                "__android.settings." + table);
-            if (store == context->preferences.end()) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto found = store->second.find(name);
-            if (found == store->second.end()) {
-                return dx::VmValue::Ref(dx::VmObjectRef{});
-            }
-            const auto value = std::visit(
-                [](const auto& item) {
-                    using T = std::decay_t<decltype(item)>;
-                    if constexpr (std::is_same_v<T, std::string>) return item;
-                    else if constexpr (std::is_same_v<T, bool>) {
-                        return std::string(item ? "1" : "0");
-                    } else return std::to_string(item);
-                }, found->second);
-            return MakeString(call, value);
-        });
-    builder.FinalMethod(
-        "putStringForUser",
-        "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;I)Z",
-        [context, set_command, table_name,
-         require_argument](dx::IntrinsicContext& call) {
+        "putStringForUser", "(Landroid/content/ContentResolver;Ljava/lang/String;Ljava/lang/String;I)Z",
+        [context, set_command, table_name, require_argument](dx::IntrinsicContext& call) {
             require_argument(call, 0U, "resolver");
             require_argument(call, 1U, "name");
             const auto table = table_name(call, set_command);
             if (table != "system") {
                 if (auto* ledger = call.vm.Ledger()) {
-                    ledger->RecordUnimplemented(
-                        "dexvm.settings_privileged_write", 0);
+                    ledger->RecordUnimplemented("dexvm.settings_privileged_write", 0);
                 }
                 return dx::VmValue::Int(0);
             }
             const auto name = call.vm.StringUtf8(call.arguments[1].ref);
             auto& store = context->preferences["__android.settings.system"];
-            if (!call.arguments[2].ref.IsValid()) store.erase(name);
-            else store[name] = call.vm.StringUtf8(call.arguments[2].ref);
+            const auto old = store.find(name);
+            const bool has_value = call.arguments[2].ref.IsValid();
+            const auto value = has_value ? call.vm.StringUtf8(call.arguments[2].ref) : std::string{};
+            if ((!has_value && old == store.end()) ||
+                (has_value && old != store.end() && std::get<std::string>(old->second) == value)) {
+                return dx::VmValue::Int(1);
+            }
+            if (!has_value)
+                store.erase(name);
+            else
+                store[name] = value;
+            const auto type = call.vm.Linker().ResolveDescriptor("Landroid/provider/Settings$System;");
+            const auto method =
+                call.vm.Linker().FindDirectMethod(type, "getUriFor", "(Ljava/lang/String;)Landroid/net/Uri;");
+            if (!method.has_value()) {
+                throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                                     "Settings.System.getUriFor is not linked");
+            }
+            const std::array args{call.arguments[1]};
+            const auto outcome = call.vm.Call(*method, args);
+            if (outcome.exception.IsValid()) {
+                call.vm.SetPendingException(outcome.exception);
+                return dx::VmValue::Int(0);
+            }
+            const auto roots = call.vm.ProtectReferences(std::array{outcome.value.ref});
+            static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "notifyChange",
+                                                "(Landroid/net/Uri;Landroid/database/ContentObserver;)V",
+                                                {outcome.value, dx::VmValue::Ref(dx::VmObjectRef{})}));
             return dx::VmValue::Int(1);
         });
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_telephony_PhoneStateListener.cpp ----
 #include "catalog.h"
@@ -240,7 +233,6 @@ Decl Declare_android_telephony_PhoneStateListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_telephony_SmsManager.cpp ----
 // SMS sending is a non-goal surface: getDefault answers the cached
 // singleton, sendTextMessage fails with accounting (UnsupportedNetwork).
@@ -251,21 +243,17 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_telephony_SmsManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/telephony/SmsManager;", "Ljava/lang/Object;");
-    builder.StaticMethod("getDefault", "()Landroid/telephony/SmsManager;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                Singleton(call, context, "sms",
-                          "Landroid/telephony/SmsManager;"));
-        });
+    builder.StaticMethod("getDefault", "()Landroid/telephony/SmsManager;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(Singleton(call, context, "sms", "Landroid/telephony/SmsManager;"));
+    });
     builder.FinalMethod("sendTextMessage",
-        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-        "Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
-        dx::IntrinsicHandler(UnsupportedNetwork));
+                        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
+                        "Landroid/app/PendingIntent;Landroid/app/PendingIntent;)V",
+                        dx::IntrinsicHandler(UnsupportedNetwork));
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_telephony_SmsMessage.cpp ----
 // SMS is a non-goal surface: every entry point fails with accounting
@@ -279,16 +267,13 @@ Decl Declare_android_telephony_SmsMessage(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/telephony/SmsMessage;", "Ljava/lang/Object;");
     builder.StaticMethod("createFromPdu", "([B)Landroid/telephony/SmsMessage;",
-        dx::IntrinsicHandler(UnsupportedNetwork));
-    builder.FinalMethod("getMessageBody", "()Ljava/lang/String;",
-        dx::IntrinsicHandler(UnsupportedNetwork));
-    builder.FinalMethod("getOriginatingAddress", "()Ljava/lang/String;",
-        dx::IntrinsicHandler(UnsupportedNetwork));
+                         dx::IntrinsicHandler(UnsupportedNetwork));
+    builder.FinalMethod("getMessageBody", "()Ljava/lang/String;", dx::IntrinsicHandler(UnsupportedNetwork));
+    builder.FinalMethod("getOriginatingAddress", "()Ljava/lang/String;", dx::IntrinsicHandler(UnsupportedNetwork));
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_telephony_TelephonyManager.cpp ----
 #include "catalog.h"
@@ -304,7 +289,7 @@ Decl Declare_android_telephony_TelephonyManager(const Context& context) {
     });
     // API19 returns null when subscriber information is unavailable.
     builder.VirtualMethod("getSubscriberId", "()Ljava/lang/String;",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
+                          [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); });
     builder.VirtualMethod("getLine1Number", "()Ljava/lang/String;",
                           [context](dx::IntrinsicContext& call) { return MakeString(call, context->line_number); });
     builder.VirtualMethod("getNetworkOperator", "()Ljava/lang/String;", [context](dx::IntrinsicContext& call) {

@@ -563,6 +563,7 @@ ROM 状态色的 TextView 消费：mTextColor/mHintTextColor/mLinkTextColor/mHig
 真实 Java 值；getTextColors 保持列表身份，hint/link/highlight getter 执行 ROM。
 getCurrentTextColor 与叶 RGBA 按真实 getDrawableState→ROM getColorForState 派生，
 drawableStateChanged 先执行 View 协议再刷新颜色；GC 通过 Java 字段保活列表。
+View 背景按 ROM isStateful 跳过非有状态背景；仅 ROM 皮肤可更新状态，其他有状态背景明确失败。
 颜色变化仅失效绘制，不改变测量几何。hint/link 的布局与 Editor 能力仍未开放。
 
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。

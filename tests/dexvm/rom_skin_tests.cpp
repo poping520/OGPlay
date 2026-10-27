@@ -302,3 +302,100 @@ TEST_CASE("DVM-327 JavaTraversal IME uses real bounded focus before rejecting co
         check(false);
     }
 }
+
+TEST_CASE("API19 View drawable state skips stateless backgrounds and rejects unsupported stateful ones") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto color = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff000000U))});
+        const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
+                                     "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))}).ref;
+        const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                     "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                     {VmValue::Int(1), VmValue::Int(1), VmValue::Ref(config)}).ref;
+        const auto image = f.New("Landroid/graphics/drawable/BitmapDrawable;", "(Landroid/graphics/Bitmap;)V",
+                                 {VmValue::Ref(bitmap)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, color, image});
+        const auto state_calls = [&] {
+            int count = 0;
+            for (const auto& event : f.vm.Trace("", 10000))
+                if (event.method_name == "setState") ++count;
+            return count;
+        };
+        // Populate the Java background field directly: BitmapDrawable.getOpacity
+        // is outside this state protocol regression's supported surface.
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mBackground",
+                                                      "Landroid/graphics/drawable/Drawable;");
+        REQUIRE(field);
+        const auto background = [&](VmObjectRef drawable) {
+            f.model.InstanceSlots(view)[f.linker.Field(*field).slot] = {drawable.Value(), SlotTag::ref};
+        };
+        for (const auto drawable : {color, image}) {
+            CHECK(f.On(drawable, "isStateful", "()Z").AsInt() == 0);
+            background(drawable);
+            const auto before = state_calls();
+            CHECK_FALSE(f.OnOutcome(view, "refreshDrawableState", "()V").exception.IsValid());
+            CHECK(state_calls() == before);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+
+        background(color);
+        // Substitute the virtual implementation to exercise true and throwing overrides
+        // without adding a BootDex class or changing the sealed fixture recipe.
+        const auto slot = f.linker.FindVtableIndex(f.model.ObjectClass(color), "isStateful", "()Z");
+        REQUIRE(slot);
+        auto& method = f.linker.MutableMethod(f.linker.Class(f.model.ObjectClass(color)).vtable[*slot]);
+        method.kind = MethodKind::intrinsic;
+        int queries = 0;
+        method.implementation = [&queries](IntrinsicContext&) {
+            ++queries;
+            return VmValue::Int(1);
+        };
+        const auto before = state_calls();
+        const auto rejected = f.OnOutcome(view, "refreshDrawableState", "()V");
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(rejected.exception_message == "Drawable state unsupported");
+        CHECK(queries == 1);
+        CHECK(state_calls() == before);
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.view_drawable_state");
+        CHECK(hits.front().count == 1);
+
+        const auto exception_root = f.vm.ProtectReferences(std::array{rejected.exception});
+        method.implementation = [exception = rejected.exception](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "sentinel", exception};
+        };
+        const auto propagated = f.OnOutcome(view, "refreshDrawableState", "()V");
+        CHECK(propagated.exception == rejected.exception);
+        CHECK(f.ledger.Unimplemented().front().count == 1);
+        CHECK(state_calls() == before);
+    }
+}
+
+TEST_CASE("API19 View drawable state retains ROM skin state selection") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto skin = f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                               {VmValue::Int(0x01080016)}).ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, skin});
+        f.On(view, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(skin)});
+        f.On(view, "refreshDrawableState", "()V");
+        const auto enabled = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
+        f.On(view, "setEnabled", "(Z)V", {VmValue::Int(0)});
+        f.On(view, "refreshDrawableState", "()V");
+        const auto disabled = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
+        CHECK(disabled != enabled);
+        CHECK(f.context->ui_drawables.at(disabled.Value()).resource_id == 0x01080673);
+        f.On(view, "setEnabled", "(Z)V", {VmValue::Int(1)});
+        f.On(view, "refreshDrawableState", "()V");
+        CHECK(f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == enabled);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

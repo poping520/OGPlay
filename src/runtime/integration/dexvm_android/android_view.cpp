@@ -16,8 +16,8 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {}  // namespace
 
 Decl Declare_android_view_ContextThemeWrapper(const Context&) {
-    return dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;",
-        "Landroid/content/ContextWrapper;").Build();
+    return dx::IntrinsicClassBuilder::Class("Landroid/view/ContextThemeWrapper;", "Landroid/content/ContextWrapper;")
+        .Build();
 }
 
 Decl Declare_android_view_LayoutInflater(const Context&) {
@@ -168,65 +168,47 @@ Decl Declare_android_view_LayoutInflater(const Context&) {
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-void WriteMetric(dx::IntrinsicContext& call, const dx::VmObjectRef metrics,
-                 const std::string& name, const std::uint32_t bits,
-                 const std::string& descriptor) {
-    const auto field = call.vm.Linker().FindFieldRecursive(
-        call.vm.Model().ObjectClass(metrics), name, descriptor);
+void WriteMetric(dx::IntrinsicContext& call, const dx::VmObjectRef metrics, const std::string& name,
+                 const std::uint32_t bits, const std::string& descriptor) {
+    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(metrics), name, descriptor);
     if (!field.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "DisplayMetrics field is missing: " + name);
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "DisplayMetrics field is missing: " + name);
     }
-    call.vm.Model().InstanceSlots(metrics)
-        [call.vm.Linker().Field(*field).slot] = {bits, dx::SlotTag::cat1};
+    call.vm.Model().InstanceSlots(metrics)[call.vm.Linker().Field(*field).slot] = {bits, dx::SlotTag::cat1};
 }
 
 [[nodiscard]] std::int32_t DeviceDensityDpi(const Context& context) {
     const double dpi = static_cast<double>(context->ui_density) * 160.0;
-    if (!std::isfinite(dpi) || dpi < 1.0 ||
-        dpi > std::numeric_limits<std::int32_t>::max())
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "display density is invalid");
+    if (!std::isfinite(dpi) || dpi < 1.0 || dpi > std::numeric_limits<std::int32_t>::max())
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "display density is invalid");
     return static_cast<std::int32_t>(std::lround(dpi));
 }
 
 }  // namespace
 
-void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context,
-                                    const dx::VmObjectRef metrics) {
-    if (!metrics.IsValid())
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "Display metrics output is null"};
+void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& context, const dx::VmObjectRef metrics) {
+    if (!metrics.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Display metrics output is null"};
     if (!std::isfinite(context->ui_scaled_density) || context->ui_scaled_density <= 0.0F)
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "display scaled density is invalid");
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "display scaled density is invalid");
     const auto density_dpi = DeviceDensityDpi(context);
     const auto density_bits = std::bit_cast<std::uint32_t>(context->ui_density);
-    const auto scaled_bits =
-        std::bit_cast<std::uint32_t>(context->ui_scaled_density);
-    const auto dpi_bits =
-        std::bit_cast<std::uint32_t>(static_cast<float>(density_dpi));
-    const auto write_int = [&](const std::string& name,
-                               const std::int32_t value) {
-        WriteMetric(call, metrics, name, static_cast<std::uint32_t>(value),
-                    "I");
+    const auto scaled_bits = std::bit_cast<std::uint32_t>(context->ui_scaled_density);
+    const auto dpi_bits = std::bit_cast<std::uint32_t>(static_cast<float>(density_dpi));
+    const auto write_int = [&](const std::string& name, const std::int32_t value) {
+        WriteMetric(call, metrics, name, static_cast<std::uint32_t>(value), "I");
     };
-    const auto write_float = [&](const std::string& name,
-                                 const std::uint32_t bits) {
+    const auto write_float = [&](const std::string& name, const std::uint32_t bits) {
         WriteMetric(call, metrics, name, bits, "F");
     };
     write_int("widthPixels", static_cast<std::int32_t>(context->surface_width));
-    write_int("heightPixels",
-              static_cast<std::int32_t>(context->surface_height));
+    write_int("heightPixels", static_cast<std::int32_t>(context->surface_height));
     write_float("density", density_bits);
     write_int("densityDpi", density_dpi);
     write_float("scaledDensity", scaled_bits);
     write_float("xdpi", dpi_bits);
     write_float("ydpi", dpi_bits);
-    write_int("noncompatWidthPixels",
-              static_cast<std::int32_t>(context->surface_width));
-    write_int("noncompatHeightPixels",
-              static_cast<std::int32_t>(context->surface_height));
+    write_int("noncompatWidthPixels", static_cast<std::int32_t>(context->surface_width));
+    write_int("noncompatHeightPixels", static_cast<std::int32_t>(context->surface_height));
     write_float("noncompatDensity", density_bits);
     write_int("noncompatDensityDpi", density_dpi);
     write_float("noncompatScaledDensity", scaled_bits);
@@ -236,10 +218,9 @@ void PopulateAndroidDisplayMetrics(dx::IntrinsicContext& call, const Context& co
 
 Decl Declare_android_util_DisplayMetrics(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/util/DisplayMetrics;");
-    builder.StaticMethod("getDeviceDensity", "()I",
-        [context](dx::IntrinsicContext&) {
-            return dx::VmValue::Int(DeviceDensityDpi(context));
-        }, dx::kAccPrivate);
+    builder.StaticMethod(
+        "getDeviceDensity", "()I",
+        [context](dx::IntrinsicContext&) { return dx::VmValue::Int(DeviceDensityDpi(context)); }, dx::kAccPrivate);
     return std::move(builder).Build();
 }
 
@@ -275,38 +256,28 @@ Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
 
 Decl Declare_android_view_Display(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Display;", "Ljava/lang/Object;");
-    builder.FinalMethod("getWidth", "()I",
-        [context](dx::IntrinsicContext&) {
-            return dx::VmValue::Int(
-                static_cast<std::int32_t>(context->surface_width));
-        });
-    builder.FinalMethod("getHeight", "()I",
-        [context](dx::IntrinsicContext&) {
-            return dx::VmValue::Int(
-                static_cast<std::int32_t>(context->surface_height));
-        });
+    builder.FinalMethod("getWidth", "()I", [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_width));
+    });
+    builder.FinalMethod("getHeight", "()I", [context](dx::IntrinsicContext&) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_height));
+    });
     // Managed surface coordinates are landscape-natural and never
     // rotate independently from the host window.
-    const auto get_rotation = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    const auto get_rotation = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
     builder.FinalMethod("getRotation", "()I", get_rotation);
     builder.FinalMethod("getOrientation", "()I", get_rotation);
-    builder.FinalMethod("getDisplayId", "()I",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
-    const auto get_metrics = dx::IntrinsicHandler(
-        [context](dx::IntrinsicContext& call) {
-            PopulateAndroidDisplayMetrics(call, context, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("getMetrics", "(Landroid/util/DisplayMetrics;)V",
-                        get_metrics);
-    builder.FinalMethod("getRealMetrics", "(Landroid/util/DisplayMetrics;)V",
-                        get_metrics);
+    builder.FinalMethod("getDisplayId", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    const auto get_metrics = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        PopulateAndroidDisplayMetrics(call, context, call.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("getMetrics", "(Landroid/util/DisplayMetrics;)V", get_metrics);
+    builder.FinalMethod("getRealMetrics", "(Landroid/util/DisplayMetrics;)V", get_metrics);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_inputmethod_InputMethodManager.cpp ----
 #include "catalog.h"
@@ -315,8 +286,7 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-void CheckInputFocusWithoutConnection(dx::IntrinsicContext& call,
-                                     const Context& context) {
+void CheckInputFocusWithoutConnection(dx::IntrinsicContext& call, const Context& context) {
     // API19 restart/show/hide first checkFocus(), which may itself start an
     // input connection before checking the caller View or window token.
     // No connection is published in this bounded phase. Derive eligibility
@@ -338,20 +308,19 @@ void CheckInputFocusWithoutConnection(dx::IntrinsicContext& call,
     if (auto* ledger = call.vm.Ledger()) {
         ledger->RecordUnimplemented("dexvm.input_method_sessions", 0);
     }
-    throw dx::VmJavaThrow{
-        "Ljava/lang/UnsupportedOperationException;",
-        "InputConnection creation for the focused View is unsupported"};
+    throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                          "InputConnection creation for the focused View is unsupported"};
 }
 
 }  // namespace
 
 Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/inputmethod/InputMethodManager;", "Ljava/lang/Object;");
-    builder.FinalMethod("restartInput", "(Landroid/view/View;)V",
-        [context](dx::IntrinsicContext& call) {
-            CheckInputFocusWithoutConnection(call, context);
-            return dx::VmValue::Void();
-        });
+    auto builder =
+        dx::IntrinsicClassBuilder::Class("Landroid/view/inputmethod/InputMethodManager;", "Ljava/lang/Object;");
+    builder.FinalMethod("restartInput", "(Landroid/view/View;)V", [context](dx::IntrinsicContext& call) {
+        CheckInputFocusWithoutConnection(call, context);
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("showSoftInput", "(Landroid/view/View;I)Z", [context](dx::IntrinsicContext& call) {
         CheckInputFocusWithoutConnection(call, context);
         return dx::VmValue::Int(0);
@@ -365,7 +334,6 @@ Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context)
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_KeyEvent.cpp ----
 #include "catalog.h"
 
@@ -373,34 +341,43 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-struct VirtualKey { std::int32_t code, label, number; };
-struct VirtualKeyBehavior { std::int32_t code, meta, character, fallback; };
+struct VirtualKey {
+    std::int32_t code, label, number;
+};
+
+struct VirtualKeyBehavior {
+    std::int32_t code, meta, character, fallback;
+};
+
 #include "virtual_keymap.inc"
 
 // API19 KeyCharacterMap.cpp::matchesMetaState. Native lookup keeps the
 // original modifier-pair matching; normalization remains BootDex Java.
 bool MatchesVirtualMeta(std::int32_t event, std::int32_t behavior) {
     if ((event & behavior) != behavior) return false;
-    constexpr std::array<std::array<std::int32_t, 3>, 3> pairs{{
-        {{0x1000, 0x2000, 0x4000}}, {{2, 0x10, 0x20}},
-        {{0x10000, 0x20000, 0x40000}}}};
+    constexpr std::array<std::array<std::int32_t, 3>, 3> pairs{
+        {{{0x1000, 0x2000, 0x4000}}, {{2, 0x10, 0x20}}, {{0x10000, 0x20000, 0x40000}}}};
     auto unmatched = event & ~behavior & 0x77032;
     for (const auto& pair : pairs) {
-        if ((behavior & pair[0]) != 0) unmatched &= ~(pair[1] | pair[2]);
-        else if ((behavior & (pair[1] | pair[2])) != 0) unmatched &= ~pair[0];
+        if ((behavior & pair[0]) != 0)
+            unmatched &= ~(pair[1] | pair[2]);
+        else if ((behavior & (pair[1] | pair[2])) != 0)
+            unmatched &= ~pair[0];
     }
     return unmatched == 0;
 }
 
 const VirtualKeyBehavior* VirtualBehavior(std::int32_t code, std::int32_t meta) {
-    const auto found = std::find_if(kVirtualKeyBehaviors.begin(), kVirtualKeyBehaviors.end(),
-        [=](const auto& row) { return row.code == code && MatchesVirtualMeta(meta, row.meta); });
+    const auto found = std::find_if(kVirtualKeyBehaviors.begin(), kVirtualKeyBehaviors.end(), [=](const auto& row) {
+        return row.code == code && MatchesVirtualMeta(meta, row.meta);
+    });
     return found == kVirtualKeyBehaviors.end() ? nullptr : &*found;
 }
 
 dx::VmValue RequireKeyMapOutcome(dx::Interpreter& vm, const dx::VmCallOutcome& result) {
-    if (result.exception.IsValid()) throw dx::VmJavaThrow{
-        vm.Linker().Class(result.exception_class).descriptor, result.exception_message, result.exception};
+    if (result.exception.IsValid())
+        throw dx::VmJavaThrow{vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                              result.exception};
     return result.value;
 }
 
@@ -409,8 +386,7 @@ dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard);
 std::int32_t UnicodeForKeyCode(dx::Interpreter& vm, std::int32_t code, std::int32_t meta) {
     const auto map = NewKeyCharacterMap(vm, true);
     const auto root = vm.ProtectReferences(std::array{map});
-    return CallAndroidMethod(vm, map, "get", "(II)I",
-        {dx::VmValue::Int(code), dx::VmValue::Int(meta)}).AsInt();
+    return CallAndroidMethod(vm, map, "get", "(II)I", {dx::VmValue::Int(code), dx::VmValue::Int(meta)}).AsInt();
 }
 
 // mPtr is an immutable map selector, never a guest or host memory pointer.
@@ -431,61 +407,50 @@ dx::VmObjectRef NewKeyCharacterMap(dx::Interpreter& vm, bool keyboard) {
 Decl Declare_android_view_KeyEvent(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/KeyEvent;", "Ljava/lang/Object;");
-    const auto action =
-        builder.BoundInstanceField("mAction", "I", dx::kAccPrivate);
-    const auto key_code =
-        builder.BoundInstanceField("mKeyCode", "I", dx::kAccPrivate);
-    const auto repeat_count =
-        builder.BoundInstanceField("mRepeatCount", "I", dx::kAccPrivate);
-    const auto meta_state =
-        builder.BoundInstanceField("mMetaState", "I", dx::kAccPrivate);
-    const auto scan_code =
-        builder.BoundInstanceField("mScanCode", "I", dx::kAccPrivate);
-    const auto device_id =
-        builder.BoundInstanceField("mDeviceId", "I", dx::kAccPrivate);
-    const auto unicode_char =
-        builder.BoundInstanceField("mOgplayUnicodeChar", "I", dx::kAccPrivate);
+    const auto action = builder.BoundInstanceField("mAction", "I", dx::kAccPrivate);
+    const auto key_code = builder.BoundInstanceField("mKeyCode", "I", dx::kAccPrivate);
+    const auto repeat_count = builder.BoundInstanceField("mRepeatCount", "I", dx::kAccPrivate);
+    const auto meta_state = builder.BoundInstanceField("mMetaState", "I", dx::kAccPrivate);
+    const auto scan_code = builder.BoundInstanceField("mScanCode", "I", dx::kAccPrivate);
+    const auto device_id = builder.BoundInstanceField("mDeviceId", "I", dx::kAccPrivate);
+    const auto unicode_char = builder.BoundInstanceField("mOgplayUnicodeChar", "I", dx::kAccPrivate);
     const auto down_time = builder.BoundInstanceField("mDownTime", "J", dx::kAccPrivate);
     const auto event_time = builder.BoundInstanceField("mEventTime", "J", dx::kAccPrivate);
     const auto flags = builder.BoundInstanceField("mFlags", "I", dx::kAccPrivate);
     const auto source = builder.BoundInstanceField("mSource", "I", dx::kAccPrivate);
-    builder.Constructor("(II)V",
-        [action, key_code, repeat_count, meta_state, scan_code, device_id,
-         unicode_char, down_time, event_time, flags, source](dx::IntrinsicContext& call) {
-            const auto value = call.arguments[0].AsInt();
-            dx::IntrinsicCall fields(call);
-            fields.SetLong(down_time, 0);
-            fields.SetLong(event_time, 0);
-            fields.SetInt(flags, 0);
-            fields.SetInt(source, kAndroidKeyboardSource);
-            fields.SetInt(action, value);
-            fields.SetInt(key_code, call.arguments[1].AsInt());
-            fields.SetInt(repeat_count, 0);
-            fields.SetInt(meta_state, 0);
-            fields.SetInt(scan_code, 0);
-            fields.SetInt(device_id, -1);
-            fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm,
-                call.arguments[1].AsInt(), 0));
-            return dx::VmValue::Void();
-        });
-    const auto timed_constructor =
-        [action, key_code, repeat_count, meta_state, scan_code, device_id,
-         unicode_char, down_time, event_time, flags, source](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            fields.SetLong(down_time, call.arguments[0].AsLong());
-            fields.SetLong(event_time, call.arguments[1].AsLong());
-            fields.SetInt(flags, call.arguments.size() > 8 ? call.arguments[8].AsInt() : 0);
-            fields.SetInt(source, call.arguments.size() > 9 ? call.arguments[9].AsInt() : kAndroidKeyboardSource);
-            fields.SetInt(action, call.arguments[2].AsInt());
-            fields.SetInt(key_code, call.arguments[3].AsInt());
-            fields.SetInt(repeat_count, call.arguments[4].AsInt());
-            fields.SetInt(meta_state, call.arguments[5].AsInt());
-            fields.SetInt(device_id, call.arguments[6].AsInt());
-            fields.SetInt(scan_code, call.arguments[7].AsInt());
-            fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm,
-                call.arguments[3].AsInt(), call.arguments[5].AsInt()));
-            return dx::VmValue::Void();
-        };
+    builder.Constructor("(II)V", [action, key_code, repeat_count, meta_state, scan_code, device_id, unicode_char,
+                                  down_time, event_time, flags, source](dx::IntrinsicContext& call) {
+        const auto value = call.arguments[0].AsInt();
+        dx::IntrinsicCall fields(call);
+        fields.SetLong(down_time, 0);
+        fields.SetLong(event_time, 0);
+        fields.SetInt(flags, 0);
+        fields.SetInt(source, kAndroidKeyboardSource);
+        fields.SetInt(action, value);
+        fields.SetInt(key_code, call.arguments[1].AsInt());
+        fields.SetInt(repeat_count, 0);
+        fields.SetInt(meta_state, 0);
+        fields.SetInt(scan_code, 0);
+        fields.SetInt(device_id, -1);
+        fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm, call.arguments[1].AsInt(), 0));
+        return dx::VmValue::Void();
+    });
+    const auto timed_constructor = [action, key_code, repeat_count, meta_state, scan_code, device_id, unicode_char,
+                                    down_time, event_time, flags, source](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        fields.SetLong(down_time, call.arguments[0].AsLong());
+        fields.SetLong(event_time, call.arguments[1].AsLong());
+        fields.SetInt(flags, call.arguments.size() > 8 ? call.arguments[8].AsInt() : 0);
+        fields.SetInt(source, call.arguments.size() > 9 ? call.arguments[9].AsInt() : kAndroidKeyboardSource);
+        fields.SetInt(action, call.arguments[2].AsInt());
+        fields.SetInt(key_code, call.arguments[3].AsInt());
+        fields.SetInt(repeat_count, call.arguments[4].AsInt());
+        fields.SetInt(meta_state, call.arguments[5].AsInt());
+        fields.SetInt(device_id, call.arguments[6].AsInt());
+        fields.SetInt(scan_code, call.arguments[7].AsInt());
+        fields.SetInt(unicode_char, UnicodeForKeyCode(call.vm, call.arguments[3].AsInt(), call.arguments[5].AsInt()));
+        return dx::VmValue::Void();
+    };
     builder.Constructor("(JJIIIIII)V", timed_constructor);
     builder.Constructor("(JJIIIIIIII)V", timed_constructor);
     builder.FinalMethod("getDownTime", "()J", [down_time](dx::IntrinsicContext& call) {
@@ -497,49 +462,35 @@ Decl Declare_android_view_KeyEvent(const Context& context) {
     builder.FinalMethod("getFlags", "()I", [flags](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(flags));
     });
-    builder.FinalMethod("getAction", "()I",
-        [action](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(action));
-        });
-    builder.FinalMethod("getKeyCode", "()I",
-        [key_code](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(call).GetInt(key_code));
-        });
-    builder.FinalMethod("getRepeatCount", "()I",
-        [repeat_count](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(call).GetInt(repeat_count));
-        });
-    builder.FinalMethod("getMetaState", "()I",
-        [meta_state](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(call).GetInt(meta_state));
-        });
-    builder.FinalMethod("getScanCode", "()I",
-        [scan_code](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(call).GetInt(scan_code));
-        });
-    builder.FinalMethod("getDeviceId", "()I",
-        [device_id](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(
-                dx::IntrinsicCall(call).GetInt(device_id));
-        });
+    builder.FinalMethod("getAction", "()I", [action](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(action));
+    });
+    builder.FinalMethod("getKeyCode", "()I", [key_code](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(key_code));
+    });
+    builder.FinalMethod("getRepeatCount", "()I", [repeat_count](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(repeat_count));
+    });
+    builder.FinalMethod("getMetaState", "()I", [meta_state](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(meta_state));
+    });
+    builder.FinalMethod("getScanCode", "()I", [scan_code](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(scan_code));
+    });
+    builder.FinalMethod("getDeviceId", "()I", [device_id](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(device_id));
+    });
     builder.FinalMethod("getSource", "()I", [source](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(dx::IntrinsicCall(call).GetInt(source));
     });
-    builder.FinalMethod("getUnicodeChar", "()I",
-        [unicode_char](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            return dx::VmValue::Int(fields.GetInt(unicode_char));
-        });
-    builder.FinalMethod("getUnicodeChar", "(I)I",
-        [key_code](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            return dx::VmValue::Int(UnicodeForKeyCode(call.vm,
-                fields.GetInt(key_code), call.arguments[0].AsInt()));
-        });
+    builder.FinalMethod("getUnicodeChar", "()I", [unicode_char](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        return dx::VmValue::Int(fields.GetInt(unicode_char));
+    });
+    builder.FinalMethod("getUnicodeChar", "(I)I", [key_code](dx::IntrinsicContext& call) {
+        dx::IntrinsicCall fields(call);
+        return dx::VmValue::Int(UnicodeForKeyCode(call.vm, fields.GetInt(key_code), call.arguments[0].AsInt()));
+    });
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "KeyEvent system-key policy is unsupported"};
@@ -554,81 +505,97 @@ Decl Declare_android_view_KeyCharacterMap(const Context& context) {
     builder.StaticMethod("load", "(I)Landroid/view/KeyCharacterMap;", [context](dx::IntrinsicContext& call) {
         const auto find = [&](std::int32_t id) {
             return std::find_if(context->input_devices.begin(), context->input_devices.end(),
-                [id](const auto& device) { return device.id == id; });
+                                [id](const auto& device) { return device.id == id; });
         };
         auto device = find(call.arguments[0].AsInt());
         if (device == context->input_devices.end()) device = find(kAndroidKeyboardDeviceId);
-        if (device == context->input_devices.end()) throw dx::VmJavaThrow{
-            "Landroid/view/KeyCharacterMap$UnavailableException;", "No virtual keyboard character map is installed"};
+        if (device == context->input_devices.end())
+            throw dx::VmJavaThrow{"Landroid/view/KeyCharacterMap$UnavailableException;",
+                                  "No virtual keyboard character map is installed"};
         const bool keyboard = (device->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource;
         return dx::VmValue::Ref(NewKeyCharacterMap(call.vm, keyboard));
     });
     const auto full_map = [](dx::IntrinsicContext& call) {
         const auto selector = call.arguments[0].AsInt();
-        if (selector != 1 && selector != 2) throw dx::VmJavaThrow{
-            "Ljava/lang/IllegalStateException;", "Invalid or disposed key character map"};
+        if (selector != 1 && selector != 2)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Invalid or disposed key character map"};
         return selector == 1;
     };
-    builder.StaticMethod("nativeGetCharacter", "(III)C", [full_map](dx::IntrinsicContext& call) {
-        const auto full = full_map(call);
-        const auto* row = full ? VirtualBehavior(call.arguments[1].AsInt(), call.arguments[2].AsInt()) : nullptr;
-        return dx::VmValue::Int(row ? row->character : 0);
-    }, dx::kAccPrivate);
+    builder.StaticMethod(
+        "nativeGetCharacter", "(III)C",
+        [full_map](dx::IntrinsicContext& call) {
+            const auto full = full_map(call);
+            const auto* row = full ? VirtualBehavior(call.arguments[1].AsInt(), call.arguments[2].AsInt()) : nullptr;
+            return dx::VmValue::Int(row ? row->character : 0);
+        },
+        dx::kAccPrivate);
     const auto key_property = [full_map](bool number) {
         return [full_map, number](dx::IntrinsicContext& call) {
             const bool full = full_map(call);
             const auto code = call.arguments[1].AsInt();
             const auto found = std::find_if(kVirtualKeys.begin(), kVirtualKeys.end(),
-                [code](const auto& row) { return row.code == code; });
+                                            [code](const auto& row) { return row.code == code; });
             return dx::VmValue::Int(!full || found == kVirtualKeys.end() ? 0 : number ? found->number : found->label);
         };
     };
     builder.StaticMethod("nativeGetNumber", "(II)C", key_property(true), dx::kAccPrivate);
     builder.StaticMethod("nativeGetDisplayLabel", "(II)C", key_property(false), dx::kAccPrivate);
-    builder.StaticMethod("nativeGetKeyboardType", "(I)I", [full_map](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(full_map(call) ? 4 : 5);
-    }, dx::kAccPrivate);
-    builder.StaticMethod("nativeGetMatch", "(II[CI)C", [full_map](dx::IntrinsicContext& call) {
-        const bool full = full_map(call);
-        const auto chars = call.arguments[2].ref;
-        if (!chars.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "characters must not be null"};
-        std::int32_t result = 0;
-        if (!full) return dx::VmValue::Int(result);
-        for (const auto& row : kVirtualKeyBehaviors) {
-            if (row.code != call.arguments[1].AsInt() || row.character == 0) continue;
-            for (JniSize i = 0; i < call.vm.Model().ArrayLength(chars); ++i) {
-                if (call.vm.Model().GetPrimitiveElement(chars, i) != static_cast<std::uint32_t>(row.character)) continue;
-                result = row.character;
-                if ((row.meta & call.arguments[3].AsInt()) == row.meta) return dx::VmValue::Int(result);
-                break;
+    builder.StaticMethod(
+        "nativeGetKeyboardType", "(I)I",
+        [full_map](dx::IntrinsicContext& call) { return dx::VmValue::Int(full_map(call) ? 4 : 5); }, dx::kAccPrivate);
+    builder.StaticMethod(
+        "nativeGetMatch", "(II[CI)C",
+        [full_map](dx::IntrinsicContext& call) {
+            const bool full = full_map(call);
+            const auto chars = call.arguments[2].ref;
+            if (!chars.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "characters must not be null"};
+            std::int32_t result = 0;
+            if (!full) return dx::VmValue::Int(result);
+            for (const auto& row : kVirtualKeyBehaviors) {
+                if (row.code != call.arguments[1].AsInt() || row.character == 0) continue;
+                for (JniSize i = 0; i < call.vm.Model().ArrayLength(chars); ++i) {
+                    if (call.vm.Model().GetPrimitiveElement(chars, i) != static_cast<std::uint32_t>(row.character))
+                        continue;
+                    result = row.character;
+                    if ((row.meta & call.arguments[3].AsInt()) == row.meta) return dx::VmValue::Int(result);
+                    break;
+                }
             }
-        }
-        return dx::VmValue::Int(result);
-    }, dx::kAccPrivate);
-    builder.StaticMethod("nativeGetFallbackAction", "(IIILandroid/view/KeyCharacterMap$FallbackAction;)Z",
+            return dx::VmValue::Int(result);
+        },
+        dx::kAccPrivate);
+    builder.StaticMethod(
+        "nativeGetFallbackAction", "(IIILandroid/view/KeyCharacterMap$FallbackAction;)Z",
         [full_map](dx::IntrinsicContext& call) {
             const bool full = full_map(call);
             const auto* row = full ? VirtualBehavior(call.arguments[1].AsInt(), call.arguments[2].AsInt()) : nullptr;
             const auto object = call.arguments[3].ref;
             if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "fallback action is null"};
-            for (const auto& [name, value] : std::array<std::pair<const char*, std::int32_t>, 2>{{
-                {"keyCode", row ? row->fallback : 0},
-                {"metaState", row && row->fallback ? call.arguments[2].AsInt() & ~row->meta : 0}}}) {
+            for (const auto& [name, value] : std::array<std::pair<const char*, std::int32_t>, 2>{
+                     {{"keyCode", row ? row->fallback : 0},
+                      {"metaState", row && row->fallback ? call.arguments[2].AsInt() & ~row->meta : 0}}}) {
                 const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), name, "I");
-                if (!field) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "FallbackAction field is missing"};
+                if (!field)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "FallbackAction field is missing"};
                 call.vm.Model().InstanceSlots(object)[call.vm.Linker().Field(*field).slot] = {
                     static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
             }
             return dx::VmValue::Int(row && row->fallback ? 1 : 0);
-        }, dx::kAccPrivate);
-    builder.StaticMethod("nativeDispose", "(I)V", [full_map](dx::IntrinsicContext& call) {
-        // Immutable selectors own no allocation; finalization only clears Java mPtr.
-        static_cast<void>(full_map(call));
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate);
+        },
+        dx::kAccPrivate);
+    builder.StaticMethod(
+        "nativeDispose", "(I)V",
+        [full_map](dx::IntrinsicContext& call) {
+            // Immutable selectors own no allocation; finalization only clears Java mPtr.
+            static_cast<void>(full_map(call));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate);
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "KeyCharacterMap service, Unicode category or normalization capability is unsupported"};
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                              "KeyCharacterMap service, Unicode category or normalization capability is unsupported"};
     };
     builder.StaticMethod("nativeReadFromParcel", "(Landroid/os/Parcel;)I", unsupported, dx::kAccPrivate);
     builder.StaticMethod("nativeWriteToParcel", "(ILandroid/os/Parcel;)V", unsupported, dx::kAccPrivate);
@@ -644,23 +611,18 @@ Decl Declare_android_view_KeyCharacterMap(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 namespace ogplay::runtime {
 
-void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm,
-                               const dexvm::VmObjectRef event,
+void SetAndroidKeyEventUnicode(dexvm::Interpreter& vm, const dexvm::VmObjectRef event,
                                const std::int32_t unicode_char) {
     auto& linker = vm.Linker();
     auto& model = vm.Model();
-    const auto field = linker.FindFieldRecursive(
-        model.ObjectClass(event), "mOgplayUnicodeChar", "I");
+    const auto field = linker.FindFieldRecursive(model.ObjectClass(event), "mOgplayUnicodeChar", "I");
     if (!field.has_value()) {
-        throw dexvm::DexVmError(
-            dexvm::DexVmErrorReason::internal_invariant,
-            "KeyEvent unicode field is missing");
+        throw dexvm::DexVmError(dexvm::DexVmErrorReason::internal_invariant, "KeyEvent unicode field is missing");
     }
-    model.InstanceSlots(event)[linker.Field(*field).slot] = {
-        static_cast<std::uint32_t>(unicode_char), dexvm::SlotTag::cat1};
+    model.InstanceSlots(event)[linker.Field(*field).slot] = {static_cast<std::uint32_t>(unicode_char),
+                                                             dexvm::SlotTag::cat1};
 }
 
 }  // namespace ogplay::runtime
@@ -677,24 +639,24 @@ namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_InputDevice(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/InputDevice;", "Ljava/lang/Object;");
     builder.StaticMethod("getDeviceIds", "()[I", [context](dx::IntrinsicContext& call) {
-        const auto ids = call.vm.Model().NewPrimitiveArray(
-            call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer,
-            static_cast<JniSize>(context->input_devices.size()));
+        const auto ids =
+            call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer,
+                                              static_cast<JniSize>(context->input_devices.size()));
         for (std::size_t i = 0; i < context->input_devices.size(); ++i)
             call.vm.Model().SetPrimitiveElement(ids, static_cast<JniSize>(i),
-                static_cast<std::uint32_t>(context->input_devices[i].id));
+                                                static_cast<std::uint32_t>(context->input_devices[i].id));
         return dx::VmValue::Ref(ids);
     });
     builder.StaticMethod("getDevice", "(I)Landroid/view/InputDevice;", [context](dx::IntrinsicContext& call) {
         const auto id = call.arguments[0].AsInt();
         const auto found = std::find_if(context->input_devices.begin(), context->input_devices.end(),
-            [id](const auto& device) { return device.id == id; });
+                                        [id](const auto& device) { return device.id == id; });
         if (found == context->input_devices.end()) return dx::VmValue::Ref(dx::VmObjectRef{});
         const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/InputDevice;");
         const auto check = [&](const dx::VmCallOutcome& outcome) {
-            if (outcome.exception.IsValid()) throw dx::VmJavaThrow{
-                call.vm.Linker().Class(outcome.exception_class).descriptor,
-                outcome.exception_message, outcome.exception};
+            if (outcome.exception.IsValid())
+                throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor,
+                                      outcome.exception_message, outcome.exception};
         };
         check(call.vm.EnsureClassInitialized(type));
         const auto object = call.vm.NewIntrinsicInstance("Landroid/view/InputDevice;");
@@ -703,32 +665,34 @@ Decl Declare_android_view_InputDevice(const Context& context) {
         const auto name_root = call.vm.ProtectReferences(std::array{name});
         const auto descriptor = call.vm.NewStringUtf8(found->descriptor);
         const auto descriptor_root = call.vm.ProtectReferences(std::array{descriptor});
-        const auto key_map = NewKeyCharacterMap(call.vm,
-            (found->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource);
+        const auto key_map =
+            NewKeyCharacterMap(call.vm, (found->sources & kAndroidKeyboardSource) == kAndroidKeyboardSource);
         const auto key_map_root = call.vm.ProtectReferences(std::array{key_map});
-        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>",
-            "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
+        const auto constructor = call.vm.Linker().FindDirectMethod(
+            type, "<init>", "(IIILjava/lang/String;IILjava/lang/String;ZIILandroid/view/KeyCharacterMap;ZZ)V");
         const auto add_range = call.vm.Linker().FindDirectMethod(type, "addMotionRange", "(IIFFFFF)V");
-        if (!constructor || !add_range) throw dx::VmJavaThrow{
-            "Ljava/lang/IllegalStateException;", "API19 InputDevice constructors are unavailable"};
+        if (!constructor || !add_range)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
+                                  "API19 InputDevice constructors are unavailable"};
         check(call.vm.Call(*constructor, std::vector<dx::VmValue>{
-            dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0), dx::VmValue::Int(0),
-            dx::VmValue::Ref(name), dx::VmValue::Int(0), dx::VmValue::Int(0),
-            dx::VmValue::Ref(descriptor), dx::VmValue::Int(0), dx::VmValue::Int(found->sources),
-            dx::VmValue::Int(found->keyboard_type), dx::VmValue::Ref(key_map),
-            dx::VmValue::Int(0), dx::VmValue::Int(0)}));
+                                             dx::VmValue::Ref(object), dx::VmValue::Int(id), dx::VmValue::Int(0),
+                                             dx::VmValue::Int(0), dx::VmValue::Ref(name), dx::VmValue::Int(0),
+                                             dx::VmValue::Int(0), dx::VmValue::Ref(descriptor), dx::VmValue::Int(0),
+                                             dx::VmValue::Int(found->sources), dx::VmValue::Int(found->keyboard_type),
+                                             dx::VmValue::Ref(key_map), dx::VmValue::Int(0), dx::VmValue::Int(0)}));
         for (const auto& range : found->ranges)
             check(call.vm.Call(*add_range, std::vector<dx::VmValue>{
-                dx::VmValue::Ref(object), dx::VmValue::Int(range.axis), dx::VmValue::Int(range.source),
-                dx::VmValue::Float(range.minimum), dx::VmValue::Float(range.maximum),
-                dx::VmValue::Float(range.flat), dx::VmValue::Float(range.fuzz), dx::VmValue::Float(range.resolution)}));
+                                               dx::VmValue::Ref(object), dx::VmValue::Int(range.axis),
+                                               dx::VmValue::Int(range.source), dx::VmValue::Float(range.minimum),
+                                               dx::VmValue::Float(range.maximum), dx::VmValue::Float(range.flat),
+                                               dx::VmValue::Float(range.fuzz), dx::VmValue::Float(range.resolution)}));
         return dx::VmValue::Ref(object);
     });
     // These service contracts are not implied by device enumeration.
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.input_device_services", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-            "InputDevice key capability, vibrator and parcel services are unsupported"};
+                              "InputDevice key capability, vibrator and parcel services are unsupported"};
     };
     builder.VirtualMethod("hasKeys", "([I)[Z", unsupported);
     builder.VirtualMethod("getVibrator", "()Landroid/os/Vibrator;", unsupported);
@@ -740,28 +704,39 @@ namespace {
 class MotionSnapshotReader final {
 public:
     using Layout = MotionSnapshotLayout;
+
     MotionSnapshotReader(dx::IntrinsicContext& call, dx::IntrinsicFieldHandle field)
         : call_(call), data_(dx::IntrinsicCall(call).GetRef(field)) {
-        if (!data_.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MotionEvent is recycled or uninitialized"};
+        if (!data_.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "MotionEvent is recycled or uninitialized"};
     }
+
     std::uint64_t Word(std::size_t index) const {
         return call_.vm.Model().GetPrimitiveElement(data_, static_cast<JniSize>(index));
     }
-    std::int32_t Int(std::size_t index) const { return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(Word(index))); }
+
+    std::int32_t Int(std::size_t index) const {
+        return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(Word(index)));
+    }
+
     float Float(std::size_t index) const { return std::bit_cast<float>(static_cast<std::uint32_t>(Word(index))); }
+
     std::size_t Pointer(std::int32_t index) const {
         if (index < 0 || static_cast<std::uint64_t>(index) >= Word(Layout::pointer_count))
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "MotionEvent pointer index out of range"};
         return static_cast<std::size_t>(index);
     }
+
     std::size_t History(std::int32_t index) const {
         if (index < 0 || static_cast<std::uint64_t>(index) >= Word(Layout::history_count))
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "MotionEvent history index out of range"};
         return static_cast<std::size_t>(index) + 1;
     }
+
     std::size_t Sample(std::size_t index) const {
         return Layout::Sample(static_cast<std::size_t>(Word(Layout::pointer_count)), index);
     }
+
     float Axis(std::int32_t axis, std::int32_t pointer, std::size_t sample = 0, bool raw = false) const {
         const auto index = Pointer(pointer);
         if (axis < 0 || axis >= 64) return 0;
@@ -770,6 +745,7 @@ public:
         if (!raw && axis == 1) value += Float(Layout::y_offset);
         return value;
     }
+
 private:
     dx::IntrinsicContext& call_;
     dx::VmObjectRef data_;
@@ -790,8 +766,7 @@ void ValidateMotionPointerCount(const std::int32_t count) {
         ThrowMotion("Ljava/lang/IllegalArgumentException;", "pointerCount exceeds the 16 pointer limit");
 }
 
-void ValidateMotionArray(dx::Interpreter& vm, const dx::VmObjectRef array, const std::int32_t count,
-                         const char* name) {
+void ValidateMotionArray(dx::Interpreter& vm, const dx::VmObjectRef array, const std::int32_t count, const char* name) {
     if (!array.IsValid())
         ThrowMotion("Ljava/lang/IllegalArgumentException;", std::string(name) + " array must not be null");
     if (vm.Model().ArrayLength(array) < count)
@@ -805,8 +780,9 @@ MotionAxes ReadPointerCoords(dx::Interpreter& vm, const dx::VmObjectRef array, c
     if (!coords.IsValid()) ThrowMotion("Ljava/lang/NullPointerException;", "pointerCoords");
     MotionAxes axes{};
     for (std::size_t axis = 0; axis < axes.size(); ++axis)
-        axes[axis] = CallAndroidMethod(vm, coords, "getAxisValue", "(I)F",
-            {dx::VmValue::Int(static_cast<std::int32_t>(axis))}).AsFloat();
+        axes[axis] =
+            CallAndroidMethod(vm, coords, "getAxisValue", "(I)F", {dx::VmValue::Int(static_cast<std::int32_t>(axis))})
+                .AsFloat();
     axes[0] -= x_offset;
     axes[1] -= y_offset;
     return axes;
@@ -814,8 +790,9 @@ MotionAxes ReadPointerCoords(dx::Interpreter& vm, const dx::VmObjectRef array, c
 
 std::int32_t ReadIntField(dx::Interpreter& vm, const dx::VmObjectRef object, const char* name) {
     const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, "I");
-    if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                                     std::string("PointerProperties field is missing: ") + name);
+    if (!field)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
+                             std::string("PointerProperties field is missing: ") + name);
     return static_cast<std::int32_t>(vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot].bits);
 }
 
@@ -841,8 +818,8 @@ dx::VmObjectRef NewMotionEvent(dx::Interpreter& vm, const MotionInit& init) {
         throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor, initialized.exception_message,
                               initialized.exception};
     const auto count = init.pointers.size();
-    const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
-        JniPrimitiveKind::long_integer, static_cast<JniSize>(Layout::Sample(count, 1)));
+    const auto data = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"), JniPrimitiveKind::long_integer,
+                                                   static_cast<JniSize>(Layout::Sample(count, 1)));
     const auto data_root = vm.ProtectReferences(std::array{data});
     const auto put = [&](std::size_t index, std::uint64_t bits) {
         vm.Model().SetPrimitiveElement(data, static_cast<JniSize>(index), bits);
@@ -913,8 +890,7 @@ dx::VmValue ObtainMotionEvent(dx::IntrinsicContext& call, const bool pointer_ids
     ValidateMotionArray(vm, coords, count, "pointerCoords");
     for (std::int32_t i = 0; i < count; ++i) {
         if (pointer_ids) {
-            init.pointers.emplace_back(
-                static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(properties, i)), 0);
+            init.pointers.emplace_back(static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(properties, i)), 0);
         } else {
             const auto props = vm.Model().GetObjectElement(properties, i);
             if (!props.IsValid()) ThrowMotion("Ljava/lang/NullPointerException;", "pointerProperties");
@@ -924,7 +900,7 @@ dx::VmValue ObtainMotionEvent(dx::IntrinsicContext& call, const bool pointer_ids
     }
     return dx::VmValue::Ref(NewMotionEvent(vm, init));
 }
-} // namespace
+}  // namespace
 
 Decl Declare_android_view_MotionEvent(const Context& context) {
     static_cast<void>(context);
@@ -947,79 +923,56 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         },
         dx::kAccPrivate);
     // API19 action constants must also be declared for JNI field lookup.
-    for (const auto& [name, value] : std::array{
-        std::pair{"ACTION_MASK", 0xff},
-        std::pair{"ACTION_DOWN", 0},
-        std::pair{"ACTION_UP", 1},
-        std::pair{"ACTION_MOVE", 2},
-        std::pair{"ACTION_CANCEL", 3},
-        std::pair{"ACTION_OUTSIDE", 4},
-        std::pair{"ACTION_POINTER_DOWN", 5},
-        std::pair{"ACTION_POINTER_UP", 6},
-        std::pair{"ACTION_HOVER_MOVE", 7},
-        std::pair{"ACTION_SCROLL", 8},
-        std::pair{"ACTION_HOVER_ENTER", 9},
-        std::pair{"ACTION_HOVER_EXIT", 10},
-        std::pair{"ACTION_POINTER_INDEX_MASK", 0xff00},
-        std::pair{"ACTION_POINTER_INDEX_SHIFT", 8},
-        std::pair{"ACTION_POINTER_1_DOWN", 5},
-        std::pair{"ACTION_POINTER_2_DOWN", 0x105},
-        std::pair{"ACTION_POINTER_3_DOWN", 0x205},
-        std::pair{"ACTION_POINTER_1_UP", 6},
-        std::pair{"ACTION_POINTER_2_UP", 0x106},
-        std::pair{"ACTION_POINTER_3_UP", 0x206},
-        std::pair{"ACTION_POINTER_ID_MASK", 0xff00},
-        std::pair{"ACTION_POINTER_ID_SHIFT", 8}})
+    for (const auto& [name, value] : std::array{std::pair{"ACTION_MASK", 0xff},
+                                                std::pair{"ACTION_DOWN", 0},
+                                                std::pair{"ACTION_UP", 1},
+                                                std::pair{"ACTION_MOVE", 2},
+                                                std::pair{"ACTION_CANCEL", 3},
+                                                std::pair{"ACTION_OUTSIDE", 4},
+                                                std::pair{"ACTION_POINTER_DOWN", 5},
+                                                std::pair{"ACTION_POINTER_UP", 6},
+                                                std::pair{"ACTION_HOVER_MOVE", 7},
+                                                std::pair{"ACTION_SCROLL", 8},
+                                                std::pair{"ACTION_HOVER_ENTER", 9},
+                                                std::pair{"ACTION_HOVER_EXIT", 10},
+                                                std::pair{"ACTION_POINTER_INDEX_MASK", 0xff00},
+                                                std::pair{"ACTION_POINTER_INDEX_SHIFT", 8},
+                                                std::pair{"ACTION_POINTER_1_DOWN", 5},
+                                                std::pair{"ACTION_POINTER_2_DOWN", 0x105},
+                                                std::pair{"ACTION_POINTER_3_DOWN", 0x205},
+                                                std::pair{"ACTION_POINTER_1_UP", 6},
+                                                std::pair{"ACTION_POINTER_2_UP", 0x106},
+                                                std::pair{"ACTION_POINTER_3_UP", 0x206},
+                                                std::pair{"ACTION_POINTER_ID_MASK", 0xff00},
+                                                std::pair{"ACTION_POINTER_ID_SHIFT", 8}})
         builder.ConstantInt(name, "I", value, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     // API19 symbolic names for the already-supported 64-axis snapshot ABI.
     for (const auto& [name, value] : std::array{
-        std::pair{"AXIS_X", 0},
-        std::pair{"AXIS_Y", 1},
-        std::pair{"AXIS_PRESSURE", 2},
-        std::pair{"AXIS_SIZE", 3},
-        std::pair{"AXIS_TOUCH_MAJOR", 4},
-        std::pair{"AXIS_TOUCH_MINOR", 5},
-        std::pair{"AXIS_TOOL_MAJOR", 6},
-        std::pair{"AXIS_TOOL_MINOR", 7},
-        std::pair{"AXIS_ORIENTATION", 8},
-        std::pair{"AXIS_VSCROLL", 9},
-        std::pair{"AXIS_HSCROLL", 10},
-        std::pair{"AXIS_Z", 11},
-        std::pair{"AXIS_RX", 12},
-        std::pair{"AXIS_RY", 13},
-        std::pair{"AXIS_RZ", 14},
-        std::pair{"AXIS_HAT_X", 15},
-        std::pair{"AXIS_HAT_Y", 16},
-        std::pair{"AXIS_LTRIGGER", 17},
-        std::pair{"AXIS_RTRIGGER", 18},
-        std::pair{"AXIS_THROTTLE", 19},
-        std::pair{"AXIS_RUDDER", 20},
-        std::pair{"AXIS_WHEEL", 21},
-        std::pair{"AXIS_GAS", 22},
-        std::pair{"AXIS_BRAKE", 23},
-        std::pair{"AXIS_DISTANCE", 24},
-        std::pair{"AXIS_TILT", 25},
-        std::pair{"AXIS_GENERIC_1", 32},
-        std::pair{"AXIS_GENERIC_2", 33},
-        std::pair{"AXIS_GENERIC_3", 34},
-        std::pair{"AXIS_GENERIC_4", 35},
-        std::pair{"AXIS_GENERIC_5", 36},
-        std::pair{"AXIS_GENERIC_6", 37},
-        std::pair{"AXIS_GENERIC_7", 38},
-        std::pair{"AXIS_GENERIC_8", 39},
-        std::pair{"AXIS_GENERIC_9", 40},
-        std::pair{"AXIS_GENERIC_10", 41},
-        std::pair{"AXIS_GENERIC_11", 42},
-        std::pair{"AXIS_GENERIC_12", 43},
-        std::pair{"AXIS_GENERIC_13", 44},
-        std::pair{"AXIS_GENERIC_14", 45},
-        std::pair{"AXIS_GENERIC_15", 46},
-        std::pair{"AXIS_GENERIC_16", 47}}) builder.ConstantInt(name, "I", value, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
+             std::pair{"AXIS_X", 0},           std::pair{"AXIS_Y", 1},           std::pair{"AXIS_PRESSURE", 2},
+             std::pair{"AXIS_SIZE", 3},        std::pair{"AXIS_TOUCH_MAJOR", 4}, std::pair{"AXIS_TOUCH_MINOR", 5},
+             std::pair{"AXIS_TOOL_MAJOR", 6},  std::pair{"AXIS_TOOL_MINOR", 7},  std::pair{"AXIS_ORIENTATION", 8},
+             std::pair{"AXIS_VSCROLL", 9},     std::pair{"AXIS_HSCROLL", 10},    std::pair{"AXIS_Z", 11},
+             std::pair{"AXIS_RX", 12},         std::pair{"AXIS_RY", 13},         std::pair{"AXIS_RZ", 14},
+             std::pair{"AXIS_HAT_X", 15},      std::pair{"AXIS_HAT_Y", 16},      std::pair{"AXIS_LTRIGGER", 17},
+             std::pair{"AXIS_RTRIGGER", 18},   std::pair{"AXIS_THROTTLE", 19},   std::pair{"AXIS_RUDDER", 20},
+             std::pair{"AXIS_WHEEL", 21},      std::pair{"AXIS_GAS", 22},        std::pair{"AXIS_BRAKE", 23},
+             std::pair{"AXIS_DISTANCE", 24},   std::pair{"AXIS_TILT", 25},       std::pair{"AXIS_GENERIC_1", 32},
+             std::pair{"AXIS_GENERIC_2", 33},  std::pair{"AXIS_GENERIC_3", 34},  std::pair{"AXIS_GENERIC_4", 35},
+             std::pair{"AXIS_GENERIC_5", 36},  std::pair{"AXIS_GENERIC_6", 37},  std::pair{"AXIS_GENERIC_7", 38},
+             std::pair{"AXIS_GENERIC_8", 39},  std::pair{"AXIS_GENERIC_9", 40},  std::pair{"AXIS_GENERIC_10", 41},
+             std::pair{"AXIS_GENERIC_11", 42}, std::pair{"AXIS_GENERIC_12", 43}, std::pair{"AXIS_GENERIC_13", 44},
+             std::pair{"AXIS_GENERIC_14", 45}, std::pair{"AXIS_GENERIC_15", 46}, std::pair{"AXIS_GENERIC_16", 47}})
+        builder.ConstantInt(name, "I", value, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     const auto data = builder.BoundInstanceField("mOgplaySnapshot", "[J", dx::kAccPrivate);
-    const std::pair<const char*, std::size_t> integers[]{
-        {"getAction", Layout::action}, {"getDeviceId", Layout::device}, {"getSource", Layout::source},
-        {"getFlags", Layout::flags}, {"getMetaState", Layout::meta}, {"getButtonState", Layout::buttons},
-        {"getEdgeFlags", Layout::edges}, {"getPointerCount", Layout::pointer_count}, {"getHistorySize", Layout::history_count}};
+    const std::pair<const char*, std::size_t> integers[]{{"getAction", Layout::action},
+                                                         {"getDeviceId", Layout::device},
+                                                         {"getSource", Layout::source},
+                                                         {"getFlags", Layout::flags},
+                                                         {"getMetaState", Layout::meta},
+                                                         {"getButtonState", Layout::buttons},
+                                                         {"getEdgeFlags", Layout::edges},
+                                                         {"getPointerCount", Layout::pointer_count},
+                                                         {"getHistorySize", Layout::history_count}};
     for (const auto [name, slot] : integers) {
         const auto handler = [data, slot](dx::IntrinsicContext& call) {
             return dx::VmValue::Int(MotionSnapshotReader(call, data).Int(slot));
@@ -1049,7 +1002,8 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
         return dx::VmValue::Int(-1);
     });
     builder.FinalMethod("getDownTime", "()J", [data](dx::IntrinsicContext& call) {
-        return dx::VmValue::Long(static_cast<std::int64_t>(MotionSnapshotReader(call, data).Word(Layout::down_time)) / 1000000);
+        return dx::VmValue::Long(static_cast<std::int64_t>(MotionSnapshotReader(call, data).Word(Layout::down_time)) /
+                                 1000000);
     });
     for (bool nano : {false, true}) {
         builder.FinalOverrideMethod(
@@ -1058,84 +1012,102 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
                 return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(0))) /
                                          (nano ? 1 : 1000000));
             });
-        builder.FinalMethod(nano ? "getHistoricalEventTimeNano" : "getHistoricalEventTime", "(I)J", [data, nano](dx::IntrinsicContext& call) {
-            MotionSnapshotReader reader(call, data);
-            const auto sample = reader.History(call.arguments[0].AsInt());
-            return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(sample))) / (nano ? 1 : 1000000));
-        });
+        builder.FinalMethod(nano ? "getHistoricalEventTimeNano" : "getHistoricalEventTime", "(I)J",
+                            [data, nano](dx::IntrinsicContext& call) {
+                                MotionSnapshotReader reader(call, data);
+                                const auto sample = reader.History(call.arguments[0].AsInt());
+                                return dx::VmValue::Long(static_cast<std::int64_t>(reader.Word(reader.Sample(sample))) /
+                                                         (nano ? 1 : 1000000));
+                            });
     }
-    const std::array names{"X", "Y", "Pressure", "Size", "TouchMajor", "TouchMinor", "ToolMajor", "ToolMinor", "Orientation"};
+    const std::array names{"X",          "Y",         "Pressure",  "Size",       "TouchMajor",
+                           "TouchMinor", "ToolMajor", "ToolMinor", "Orientation"};
     for (std::size_t axis = 0; axis < names.size(); ++axis) {
         const auto name = std::string("get") + names[axis];
         const auto history_name = std::string("getHistorical") + names[axis];
         for (bool indexed : {false, true}) {
             builder.FinalMethod(name, indexed ? "(I)F" : "()F", [data, axis, indexed](dx::IntrinsicContext& call) {
-                return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0));
+                return dx::VmValue::Float(
+                    MotionSnapshotReader(call, data)
+                        .Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0));
             });
-            builder.FinalMethod(history_name, indexed ? "(II)F" : "(I)F", [data, axis, indexed](dx::IntrinsicContext& call) {
-                MotionSnapshotReader reader(call, data);
-                const auto sample = reader.History(call.arguments[indexed ? 1 : 0].AsInt());
-                return dx::VmValue::Float(reader.Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0, sample));
-            });
+            builder.FinalMethod(
+                history_name, indexed ? "(II)F" : "(I)F", [data, axis, indexed](dx::IntrinsicContext& call) {
+                    MotionSnapshotReader reader(call, data);
+                    const auto sample = reader.History(call.arguments[indexed ? 1 : 0].AsInt());
+                    return dx::VmValue::Float(
+                        reader.Axis(static_cast<std::int32_t>(axis), indexed ? call.arguments[0].AsInt() : 0, sample));
+                });
         }
     }
     for (bool indexed : {false, true}) {
         builder.FinalMethod("getAxisValue", indexed ? "(II)F" : "(I)F", [data, indexed](dx::IntrinsicContext& call) {
-            return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(call.arguments[0].AsInt(), indexed ? call.arguments[1].AsInt() : 0));
+            return dx::VmValue::Float(MotionSnapshotReader(call, data)
+                                          .Axis(call.arguments[0].AsInt(), indexed ? call.arguments[1].AsInt() : 0));
         });
-        builder.FinalMethod("getHistoricalAxisValue", indexed ? "(III)F" : "(II)F", [data, indexed](dx::IntrinsicContext& call) {
-            MotionSnapshotReader reader(call, data);
-            const auto sample = reader.History(call.arguments[indexed ? 2 : 1].AsInt());
-            return dx::VmValue::Float(reader.Axis(call.arguments[0].AsInt(), indexed ? call.arguments[1].AsInt() : 0, sample));
-        });
+        builder.FinalMethod("getHistoricalAxisValue", indexed ? "(III)F" : "(II)F",
+                            [data, indexed](dx::IntrinsicContext& call) {
+                                MotionSnapshotReader reader(call, data);
+                                const auto sample = reader.History(call.arguments[indexed ? 2 : 1].AsInt());
+                                return dx::VmValue::Float(reader.Axis(call.arguments[0].AsInt(),
+                                                                      indexed ? call.arguments[1].AsInt() : 0, sample));
+                            });
     }
     for (std::int32_t axis = 0; axis < 2; ++axis) {
         builder.FinalMethod(axis == 0 ? "getRawX" : "getRawY", "()F", [data, axis](dx::IntrinsicContext& call) {
             return dx::VmValue::Float(MotionSnapshotReader(call, data).Axis(axis, 0, 0, true));
         });
-        builder.FinalMethod(axis == 0 ? "getXPrecision" : "getYPrecision", "()F", [data, axis](dx::IntrinsicContext& call) {
-            return dx::VmValue::Float(MotionSnapshotReader(call, data).Float(axis == 0 ? Layout::x_precision : Layout::y_precision));
-        });
+        builder.FinalMethod(
+            axis == 0 ? "getXPrecision" : "getYPrecision", "()F", [data, axis](dx::IntrinsicContext& call) {
+                return dx::VmValue::Float(
+                    MotionSnapshotReader(call, data).Float(axis == 0 ? Layout::x_precision : Layout::y_precision));
+            });
     }
     builder.StaticMethod("obtain", "(JJII[I[Landroid/view/MotionEvent$PointerCoords;IFFIIII)Landroid/view/MotionEvent;",
-        [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, true); });
-    builder.StaticMethod("obtain",
+                         [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, true); });
+    builder.StaticMethod(
+        "obtain",
         "(JJII[Landroid/view/MotionEvent$PointerProperties;[Landroid/view/MotionEvent$PointerCoords;IIFFIIII)"
         "Landroid/view/MotionEvent;",
         [](dx::IntrinsicContext& call) { return ObtainMotionEvent(call, false); });
     // nativeAddBatch: the current sample becomes the newest historical sample.
-    builder.FinalMethod("addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V", [data](dx::IntrinsicContext& call) {
-        auto& vm = call.vm;
-        MotionSnapshotReader reader(call, data);
-        const auto count = static_cast<std::int32_t>(reader.Word(Layout::pointer_count));
-        const auto pointers = static_cast<std::size_t>(count);
-        const auto history = static_cast<std::size_t>(reader.Word(Layout::history_count));
-        const auto array = call.arguments[1].ref;
-        ValidateMotionArray(vm, array, count, "pointerCoords");
-        std::vector<MotionAxes> axes;
-        for (std::int32_t i = 0; i < count; ++i)
-            axes.push_back(ReadPointerCoords(vm, array, i, reader.Float(Layout::x_offset), reader.Float(Layout::y_offset)));
-        const auto fresh = vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"),
-            JniPrimitiveKind::long_integer, static_cast<JniSize>(Layout::Sample(pointers, history + 2)));
-        const auto fresh_root = vm.ProtectReferences(std::array{fresh});
-        const auto put = [&](std::size_t index, std::uint64_t bits) {
-            vm.Model().SetPrimitiveElement(fresh, static_cast<JniSize>(index), bits);
-        };
-        // Everything keeps its position; the old current sample is appended as the newest history.
-        const auto old_end = Layout::Sample(pointers, history + 1);
-        for (std::size_t i = 0; i < old_end; ++i) put(i, reader.Word(i));
-        const auto stride = Layout::Sample(pointers, 1) - Layout::Sample(pointers, 0);
-        for (std::size_t i = 0; i < stride; ++i) put(old_end + i, reader.Word(Layout::Sample(pointers, 0) + i));
-        put(Layout::meta, static_cast<std::uint32_t>(reader.Int(Layout::meta) | call.arguments[2].AsInt()));
-        put(Layout::history_count, history + 1);
-        const auto base = Layout::Sample(pointers, 0);
-        put(base, static_cast<std::uint64_t>(MillisToNanos(call.arguments[0].AsLong())));
-        for (std::size_t i = 0; i < pointers; ++i)
-            for (std::size_t axis = 0; axis < Layout::axis_count; ++axis)
-                put(base + 1 + i * Layout::axis_count + axis, std::bit_cast<std::uint32_t>(axes[i][axis]));
-        dx::IntrinsicCall(call).SetRef(data, fresh);
-        return dx::VmValue::Void();
-    });
+    builder.FinalMethod(
+        "addBatch", "(J[Landroid/view/MotionEvent$PointerCoords;I)V", [data](dx::IntrinsicContext& call) {
+            auto& vm = call.vm;
+            MotionSnapshotReader reader(call, data);
+            const auto count = static_cast<std::int32_t>(reader.Word(Layout::pointer_count));
+            const auto pointers = static_cast<std::size_t>(count);
+            const auto history = static_cast<std::size_t>(reader.Word(Layout::history_count));
+            const auto array = call.arguments[1].ref;
+            ValidateMotionArray(vm, array, count, "pointerCoords");
+            std::vector<MotionAxes> axes;
+            for (std::int32_t i = 0; i < count; ++i)
+                axes.push_back(
+                    ReadPointerCoords(vm, array, i, reader.Float(Layout::x_offset), reader.Float(Layout::y_offset)));
+            const auto fresh =
+                vm.Model().NewPrimitiveArray(vm.Linker().ResolveDescriptor("[J"), JniPrimitiveKind::long_integer,
+                                             static_cast<JniSize>(Layout::Sample(pointers, history + 2)));
+            const auto fresh_root = vm.ProtectReferences(std::array{fresh});
+            const auto put = [&](std::size_t index, std::uint64_t bits) {
+                vm.Model().SetPrimitiveElement(fresh, static_cast<JniSize>(index), bits);
+            };
+            // Everything keeps its position; the old current sample is appended as the newest history.
+            const auto old_end = Layout::Sample(pointers, history + 1);
+            for (std::size_t i = 0; i < old_end; ++i)
+                put(i, reader.Word(i));
+            const auto stride = Layout::Sample(pointers, 1) - Layout::Sample(pointers, 0);
+            for (std::size_t i = 0; i < stride; ++i)
+                put(old_end + i, reader.Word(Layout::Sample(pointers, 0) + i));
+            put(Layout::meta, static_cast<std::uint32_t>(reader.Int(Layout::meta) | call.arguments[2].AsInt()));
+            put(Layout::history_count, history + 1);
+            const auto base = Layout::Sample(pointers, 0);
+            put(base, static_cast<std::uint64_t>(MillisToNanos(call.arguments[0].AsLong())));
+            for (std::size_t i = 0; i < pointers; ++i)
+                for (std::size_t axis = 0; axis < Layout::axis_count; ++axis)
+                    put(base + 1 + i * Layout::axis_count + axis, std::bit_cast<std::uint32_t>(axes[i][axis]));
+            dx::IntrinsicCall(call).SetRef(data, fresh);
+            return dx::VmValue::Void();
+        });
     builder.FinalOverrideMethod("recycle", "()V", [data](dx::IntrinsicContext& call) {
         static_cast<void>(MotionSnapshotReader(call, data));
         dx::IntrinsicCall(call).SetRef(data, dx::VmObjectRef{});
@@ -1145,7 +1117,6 @@ Decl Declare_android_view_MotionEvent(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_SurfaceHolder_Callback.cpp ----
 #include "catalog.h"
@@ -1160,19 +1131,15 @@ Decl Declare_android_view_SurfaceHolder_Callback(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_SurfaceHolder_Impl.cpp ----
 #include "catalog.h"
 #include <limits>
 
 namespace ogplay::runtime::android_intrinsics {
 
-dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm,
-                                    DexVmAndroidContext& context,
-                                    const dx::VmObjectRef holder) {
+dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef holder) {
     if (!context.surface_holder_frame_field.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "SurfaceHolder frame field is not bound");
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "SurfaceHolder frame field is not bound");
     }
     const auto holder_root = vm.ProtectReferences(std::array{holder});
     dx::IntrinsicContext call{vm, holder, {}};
@@ -1182,20 +1149,19 @@ dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm,
     const auto type = vm.Linker().ResolveDescriptor("Landroid/graphics/Rect;");
     const auto initialized = vm.EnsureClassInitialized(type);
     if (initialized.exception.IsValid()) {
-        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor,
-                              initialized.exception_message, initialized.exception};
+        throw dx::VmJavaThrow{vm.Linker().Class(initialized.exception_class).descriptor, initialized.exception_message,
+                              initialized.exception};
     }
     frame = vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
     const auto frame_root = vm.ProtectReferences(std::array{frame});
     const auto constructor = vm.Linker().FindDirectMethod(type, "<init>", "()V");
     if (!constructor) {
-        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference,
-                             "Rect constructor is not linked");
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "Rect constructor is not linked");
     }
     const auto outcome = vm.Call(*constructor, std::array{dx::VmValue::Ref(frame)});
     if (outcome.exception.IsValid()) {
-        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
-                              outcome.exception_message, outcome.exception};
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
     }
     fields.SetRef(*context.surface_holder_frame_field, frame);
     return frame;
@@ -1237,8 +1203,7 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
 }
 }  // namespace
 
-void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
-                               const dx::VmObjectRef holder) {
+void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef holder) {
     if (holder != context.window_surface_holder) {
         const auto view = ManagedHolderView(vm, context, holder);
         dx::IntrinsicContext call{vm, view, {}};
@@ -1254,19 +1219,16 @@ void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context
             }
         }
     }
-    constexpr auto max_extent =
-        static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
+    constexpr auto max_extent = static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
     if (context.surface_width > max_extent || context.surface_height > max_extent) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "Surface dimensions exceed Rect range"};
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Surface dimensions exceed Rect range"};
     }
     const auto holder_root = vm.ProtectReferences(std::array{holder});
     const auto frame = GetSurfaceHolderFrame(vm, context, holder);
-    static_cast<void>(CallAndroidMethod(
-        vm, frame, "set", "(IIII)V",
-        {dx::VmValue::Int(0), dx::VmValue::Int(0),
-         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
-         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height))}));
+    static_cast<void>(CallAndroidMethod(vm, frame, "set", "(IIII)V",
+                                        {dx::VmValue::Int(0), dx::VmValue::Int(0),
+                                         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
+                                         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height))}));
 }
 
 namespace {
@@ -1279,14 +1241,12 @@ dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
         }
         auto& state = context->canvases[canvas.Value()];
         if (state.locked) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                  "SurfaceHolder canvas is already locked"};
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder canvas is already locked"};
         }
         state.holder = call.receiver.Value();
         state.width = context->surface_width;
         state.height = context->surface_height;
-        state.argb.assign(
-            static_cast<std::size_t>(state.width) * state.height, 0xff000000U);
+        state.argb.assign(static_cast<std::size_t>(state.width) * state.height, 0xff000000U);
         state.locked = true;
         return dx::VmValue::Ref(canvas);
     };
@@ -1296,15 +1256,12 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
     return [context](dx::IntrinsicContext& call) {
         const auto canvas = call.arguments[0].ref;
         const auto found = context->canvases.find(canvas.Value());
-        if (!canvas.IsValid() || found == context->canvases.end() ||
-            !found->second.locked ||
+        if (!canvas.IsValid() || found == context->canvases.end() || !found->second.locked ||
             found->second.holder != call.receiver.Value()) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                  "Canvas is not locked by this SurfaceHolder"};
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Canvas is not locked by this SurfaceHolder"};
         }
         if (context->session == nullptr) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                  "SurfaceHolder has no guest session"};
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder has no guest session"};
         }
         auto& state = found->second;
         std::vector<std::uint8_t> rgba8;
@@ -1326,39 +1283,39 @@ dx::IntrinsicHandler HolderGetSurface(const Context& context) {
         auto& surface = context->holder_surfaces[call.receiver.Value()];
         if (!surface.IsValid()) {
             surface = call.vm.NewIntrinsicInstance("Landroid/view/Surface;");
-            try { InitializeManagedJavaSurface(call.vm, *context, surface, call.receiver.Value()); }
-            catch (...) { surface = dx::VmObjectRef{}; throw; }
+            try {
+                InitializeManagedJavaSurface(call.vm, *context, surface, call.receiver.Value());
+            } catch (...) {
+                surface = dx::VmObjectRef{};
+                throw;
+            }
         }
         return dx::VmValue::Ref(surface);
     };
 }
 
-void AddCanvasMethods(dx::IntrinsicClassBuilder& builder,
-                      const Context& context) {
+void AddCanvasMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
     builder.FinalMethod("setKeepScreenOn", "(Z)V", [](dx::IntrinsicContext& call) {
         if (call.arguments[0].AsInt() != 0) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_keep_screen_on", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "display wake inhibition is unavailable"};
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "display wake inhibition is unavailable"};
         }
         // No supported wake lease exists; clearing the request is truthful.
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;",
-                        LockCanvasHandler(context));
-    builder.FinalMethod("lockCanvas",
-                        "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
-                        LockCanvasHandler(context));
-    builder.FinalMethod("unlockCanvasAndPost",
-                        "(Landroid/graphics/Canvas;)V",
-                        UnlockCanvasAndPostHandler(context));
+    builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;", LockCanvasHandler(context));
+    builder.FinalMethod("lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", LockCanvasHandler(context));
+    builder.FinalMethod("unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", UnlockCanvasAndPostHandler(context));
 }
 
 }  // namespace
 
 Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder;"});
-    context->surface_holder_frame_field = builder.BoundInstanceField(
-        "mSurfaceFrame", "Landroid/graphics/Rect;", dx::kAccPrivate);
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceHolder$Impl;", "Ljava/lang/Object;",
+                                                    {"Landroid/view/SurfaceHolder;"});
+    context->surface_holder_frame_field =
+        builder.BoundInstanceField("mSurfaceFrame", "Landroid/graphics/Rect;", dx::kAccPrivate);
     {
         builder.FinalMethod("setFixedSize", "(II)V", [context](dx::IntrinsicContext& call) {
             SetManagedSurfaceRequest(call, *context, call.arguments[0].AsInt(), call.arguments[1].AsInt());
@@ -1369,13 +1326,13 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
             return dx::VmValue::Void();
         });
     }
-    builder.FinalMethod("getSurfaceFrame", "()Landroid/graphics/Rect;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(GetSurfaceHolderFrame(
-                call.vm, *context, call.receiver));
-        });
-    builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderAddCallbackHandler(context));
-    builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V", SurfaceHolderRemoveCallbackHandler(context));
+    builder.FinalMethod("getSurfaceFrame", "()Landroid/graphics/Rect;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(GetSurfaceHolderFrame(call.vm, *context, call.receiver));
+    });
+    builder.FinalMethod("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
+                        SurfaceHolderAddCallbackHandler(context));
+    builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
+                        SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
     builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
     builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
@@ -1384,7 +1341,6 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_SurfaceHolder.cpp ----
 #include "catalog.h"
@@ -1395,8 +1351,7 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/SurfaceHolder;");
     builder.UnimplementedVirtual("setKeepScreenOn", "(Z)V", dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual("getSurfaceFrame", "()Landroid/graphics/Rect;",
-                                 dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual("getSurfaceFrame", "()Landroid/graphics/Rect;", dx::kAccPublic | dx::kAccAbstract);
     builder.UnimplementedVirtual("getSurface", "()Landroid/view/Surface;", dx::kAccPublic | dx::kAccAbstract);
     builder.UnimplementedVirtual("addCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
                                  dx::kAccPublic | dx::kAccAbstract);
@@ -1415,7 +1370,6 @@ Decl Declare_android_view_SurfaceHolder(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_SurfaceView.cpp ----
 #include "catalog.h"
@@ -1482,29 +1436,26 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
     builder.VirtualMethod("getHolder", "()Landroid/view/SurfaceHolder;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(SurfaceHolderForView(call.vm, *context, call.receiver));
     });
-    builder.VirtualMethod("setZOrderOnTop", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = FindViewUiNode(*context, call.receiver.Value());
-            if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
-            context->ui_tree.Get(*node)->surface_layer = call.arguments[0].AsInt() != 0
-                ? ui::SurfaceLayer::on_top : ui::SurfaceLayer::media;
-            context->ui_tree.MarkDrawDirty(*node);
-            return dx::VmValue::Void();
-        });
-    builder.VirtualMethod("setZOrderMediaOverlay", "(Z)V",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = FindViewUiNode(*context, call.receiver.Value());
-            if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
-            context->ui_tree.Get(*node)->surface_layer = call.arguments[0].AsInt() != 0
-                ? ui::SurfaceLayer::media_overlay : ui::SurfaceLayer::media;
-            context->ui_tree.MarkDrawDirty(*node);
-            return dx::VmValue::Void();
-        });
+    builder.VirtualMethod("setZOrderOnTop", "(Z)V", [context](dx::IntrinsicContext& call) {
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
+        context->ui_tree.Get(*node)->surface_layer =
+            call.arguments[0].AsInt() != 0 ? ui::SurfaceLayer::on_top : ui::SurfaceLayer::media;
+        context->ui_tree.MarkDrawDirty(*node);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setZOrderMediaOverlay", "(Z)V", [context](dx::IntrinsicContext& call) {
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
+        context->ui_tree.Get(*node)->surface_layer =
+            call.arguments[0].AsInt() != 0 ? ui::SurfaceLayer::media_overlay : ui::SurfaceLayer::media;
+        context->ui_tree.MarkDrawDirty(*node);
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_View_OnClickListener.cpp ----
 #include "catalog.h"
@@ -1519,7 +1470,6 @@ Decl Declare_android_view_View_OnClickListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- android.view.View.OnFocusChangeListener (API 19) ----
 #include "catalog.h"
 
@@ -1532,11 +1482,8 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
     // set/getOnFocusChangeListener、逐 View listener 保存与 GC tracing、
     // focused/focusable 状态、requestFocus/clearFocus 状态转换，以及焦点变化时
     // 自动调用 onFocusChange(View, boolean)。在这些能力闭合前不得伪造回调。
-    auto builder = dx::IntrinsicClassBuilder::Interface(
-        "Landroid/view/View$OnFocusChangeListener;");
-    builder.UnimplementedVirtual(
-        "onFocusChange", "(Landroid/view/View;Z)V",
-        dx::kAccPublic | dx::kAccAbstract);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/View$OnFocusChangeListener;");
+    builder.UnimplementedVirtual("onFocusChange", "(Landroid/view/View;Z)V", dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
@@ -1544,8 +1491,7 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
-    return dvm89_android_view_View_OnFocusChangeListener::
-        Declare_android_view_View_OnFocusChangeListener(context);
+    return dvm89_android_view_View_OnFocusChangeListener::Declare_android_view_View_OnFocusChangeListener(context);
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -1554,24 +1500,18 @@ Decl Declare_android_view_View_OnFocusChangeListener(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics::dvm_system_ui_listener {
 
-Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
-    const Context& context) {
+Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Interface(
-        "Landroid/view/View$OnSystemUiVisibilityChangeListener;");
-    builder.UnimplementedVirtual(
-        "onSystemUiVisibilityChange", "(I)V",
-        dx::kAccPublic | dx::kAccAbstract);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/View$OnSystemUiVisibilityChangeListener;");
+    builder.UnimplementedVirtual("onSystemUiVisibilityChange", "(I)V", dx::kAccPublic | dx::kAccAbstract);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics::dvm_system_ui_listener
 
 namespace ogplay::runtime::android_intrinsics {
-Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
-    const Context& context) {
-    return dvm_system_ui_listener::
-        Declare_android_view_View_OnSystemUiVisibilityChangeListener(context);
+Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context& context) {
+    return dvm_system_ui_listener::Declare_android_view_View_OnSystemUiVisibilityChangeListener(context);
 }
 }  // namespace ogplay::runtime::android_intrinsics
 
@@ -1588,21 +1528,15 @@ Decl Declare_android_view_View_OnTouchListener(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- android.view.ViewParent (API 19 bounded type surface) ----
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_ViewParent(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Interface(
-        "Landroid/view/ViewParent;");
-    builder.UnimplementedVirtual(
-        "getParent", "()Landroid/view/ViewParent;",
-        dx::kAccPublic | dx::kAccAbstract);
-    builder.UnimplementedVirtual(
-        "bringChildToFront", "(Landroid/view/View;)V",
-        dx::kAccPublic | dx::kAccAbstract);
+    auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/view/ViewParent;");
+    builder.UnimplementedVirtual("getParent", "()Landroid/view/ViewParent;", dx::kAccPublic | dx::kAccAbstract);
+    builder.UnimplementedVirtual("bringChildToFront", "(Landroid/view/View;)V", dx::kAccPublic | dx::kAccAbstract);
     {
         // The CPU fixture does not materialize the full skeleton. Declare the
         // original abstract interface symbols; real receivers supply ROM bodies.
@@ -1621,15 +1555,13 @@ Decl Declare_android_view_ViewParent(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_View.cpp ----
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObjectRef object) {
-    if (!object.IsValid())
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "LayoutParams is null"};
+    if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "LayoutParams is null"};
     const auto root = vm.ProtectReferences(std::array{object});
     const auto type = vm.Model().ObjectClass(object);
     const auto is = [&](const char* descriptor) {
@@ -1658,16 +1590,15 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
     ui::LayoutParams result;
     result.width = dimension(integer("width"));
     result.height = dimension(integer("height"));
-    if (bits("layoutAnimationParameters", "Landroid/view/animation/LayoutAnimationController$AnimationParameters;") != 0)
+    if (bits("layoutAnimationParameters", "Landroid/view/animation/LayoutAnimationController$AnimationParameters;") !=
+        0)
         unsupported("layout animation parameters are unsupported");
     if (is("Landroid/view/ViewGroup$MarginLayoutParams;")) {
         // The current UI traversal is LTR. Resolve start/end using API 19 Java.
         static_cast<void>(CallAndroidMethod(vm, object, "resolveLayoutDirection", "(I)V", {dx::VmValue::Int(0)}));
-        result.margin = {integer("leftMargin"), integer("topMargin"),
-                         integer("rightMargin"), integer("bottomMargin")};
+        result.margin = {integer("leftMargin"), integer("topMargin"), integer("rightMargin"), integer("bottomMargin")};
     }
-    if (is("Landroid/widget/FrameLayout$LayoutParams;") ||
-        is("Landroid/widget/LinearLayout$LayoutParams;")) {
+    if (is("Landroid/widget/FrameLayout$LayoutParams;") || is("Landroid/widget/LinearLayout$LayoutParams;")) {
         const auto gravity = integer("gravity");
         if (gravity != -1) result.layout_gravity = static_cast<std::uint32_t>(gravity);
     }
@@ -1677,8 +1608,7 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid layout weight"};
     }
     if (is("Landroid/widget/RelativeLayout$LayoutParams;")) {
-        if (bits("alignWithParent", "Z") != 0)
-            unsupported("RelativeLayout alignWithParent is unsupported");
+        if (bits("alignWithParent", "Z") != 0) unsupported("RelativeLayout alignWithParent is unsupported");
         const auto rules = CallAndroidMethod(vm, object, "getRules", "(I)[I", {dx::VmValue::Int(0)}).ref;
         const auto rule = [&](int index) {
             return static_cast<std::int32_t>(vm.Model().GetPrimitiveElement(rules, index));
@@ -1693,14 +1623,21 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
             return id;
         };
         auto& r = result.relative;
-        r.left_of = sibling(0); r.right_of = sibling(1);
-        r.above = sibling(2); r.below = sibling(3);
-        r.align_left = sibling(5); r.align_top = sibling(6);
-        r.align_right = sibling(7); r.align_bottom = sibling(8);
-        r.align_parent_left = rule(9) != 0; r.align_parent_top = rule(10) != 0;
-        r.align_parent_right = rule(11) != 0; r.align_parent_bottom = rule(12) != 0;
+        r.left_of = sibling(0);
+        r.right_of = sibling(1);
+        r.above = sibling(2);
+        r.below = sibling(3);
+        r.align_left = sibling(5);
+        r.align_top = sibling(6);
+        r.align_right = sibling(7);
+        r.align_bottom = sibling(8);
+        r.align_parent_left = rule(9) != 0;
+        r.align_parent_top = rule(10) != 0;
+        r.align_parent_right = rule(11) != 0;
+        r.align_parent_bottom = rule(12) != 0;
         r.center_in_parent = rule(13) != 0;
-        r.center_horizontal = rule(14) != 0; r.center_vertical = rule(15) != 0;
+        r.center_horizontal = rule(14) != 0;
+        r.center_vertical = rule(15) != 0;
     }
     return result;
 }
@@ -1708,8 +1645,7 @@ ui::LayoutParams ReadAndroidLayoutParams(dx::Interpreter& vm, const dx::VmObject
 namespace {
 
 ui::UiNodeId ViewNode(dx::IntrinsicContext& call, const Context& context) {
-    return EnsureViewUiNode(
-        *context, call.receiver, UiClassForObject(call.vm, call.receiver));
+    return EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
 }
 
 }  // namespace
@@ -1729,26 +1665,16 @@ Decl Declare_android_view_View(const Context& context) {
             DispatchAndroidViewTouch(call.vm, *context, call.receiver, call.arguments[0].ref, false));
     });
     builder.ConstantInt("SYSTEM_UI_FLAG_VISIBLE", "I", 0, dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_HIDE_NAVIGATION", "I", 0x00000002,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_FULLSCREEN", "I", 0x00000004,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_STABLE", "I", 0x00000100,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION", "I",
-                     0x00000200, dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "I", 0x00000400,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE", "I", 0x00000800,
-                     dx::kAccPublic)
-        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE_STICKY", "I", 0x00001000,
-                     dx::kAccPublic);
-    const auto system_ui_visibility = builder.BoundInstanceField(
-        "mSystemUiVisibility", "I", dx::kAccNone);
-    const auto view_flags = builder.BoundInstanceField(
-        "mViewFlags", "I", dx::kAccNone);
+        .ConstantInt("SYSTEM_UI_FLAG_LOW_PROFILE", "I", 0x00000001, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_HIDE_NAVIGATION", "I", 0x00000002, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_FULLSCREEN", "I", 0x00000004, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_STABLE", "I", 0x00000100, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION", "I", 0x00000200, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "I", 0x00000400, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE", "I", 0x00000800, dx::kAccPublic)
+        .ConstantInt("SYSTEM_UI_FLAG_IMMERSIVE_STICKY", "I", 0x00001000, dx::kAccPublic);
+    const auto system_ui_visibility = builder.BoundInstanceField("mSystemUiVisibility", "I", dx::kAccNone);
+    const auto view_flags = builder.BoundInstanceField("mViewFlags", "I", dx::kAccNone);
     context->view_java_input_fields =
         std::array{builder.BoundInstanceField("mListenerInfo", "Landroid/view/View$ListenerInfo;", dx::kAccNone),
                    builder.BoundInstanceField("mBackground", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate)};
@@ -1797,14 +1723,15 @@ Decl Declare_android_view_View(const Context& context) {
          builder.BoundInstanceField("mAttachInfo", "Landroid/view/View$AttachInfo;", dx::kAccNone),
          builder.BoundInstanceField("mAccessibilityDelegate", "Landroid/view/View$AccessibilityDelegate;",
                                     dx::kAccNone)}};
-    builder.VirtualMethod("unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;)V",
-        [context](dx::IntrinsicContext& call) {
+    builder.VirtualMethod(
+        "unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;)V", [context](dx::IntrinsicContext& call) {
             // API19 has no queued callback to remove without a real AttachInfo.
             if (!call.arguments[0].ref.IsValid() ||
                 !dx::IntrinsicCall(call).GetRef(context->view_java_measure_fields->unsupported_state[4]).IsValid())
                 return dx::VmValue::Void();
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "attached Drawable scheduling unsupported"};
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "attached Drawable scheduling unsupported"};
         });
     builder.DirectMethod(
         "hasRtlSupport", "()Z",
@@ -1821,7 +1748,6 @@ Decl Declare_android_view_View(const Context& context) {
         if (object.IsValid() &&
             call.vm.Linker().IsAssignable(call.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;"),
                                           call.vm.Model().ObjectClass(object))) {
-
             return CallAndroidMethod(call.vm, object, "isLayoutModeOptical", "()Z");
         }
         return dx::VmValue::Int(0);
@@ -1850,8 +1776,8 @@ Decl Declare_android_view_View(const Context& context) {
             return dx::VmValue::Void();
         },
         dx::kAccNone);
-    context->view_context_field = builder.BoundInstanceField(
-        "mContext", "Landroid/content/Context;", dx::kAccProtected);
+    context->view_context_field =
+        builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccProtected);
     context->view_java_layout_fields = DexVmAndroidContext::ViewJavaLayoutFields{
         builder.BoundInstanceField("mResources", "Landroid/content/res/Resources;", dx::kAccPrivate | dx::kAccFinal),
         {builder.BoundInstanceField("mPaddingLeft", "I", dx::kAccProtected),
@@ -1890,16 +1816,12 @@ Decl Declare_android_view_View(const Context& context) {
         std::array{builder.BoundStaticField("sCompatibilityDone", "Z", dx::kAccPrivate),
                    builder.BoundStaticField("sUseBrokenMakeMeasureSpec", "Z", dx::kAccPrivate),
                    builder.BoundStaticField("sIgnoreMeasureCache", "Z", dx::kAccPrivate)};
-    builder.Constructor("(Landroid/content/Context;)V",
-                    ViewInitHandler(context));
-    builder.FinalMethod("getContext", "()Landroid/content/Context;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(
-                *context->view_context_field));
-        });
+    builder.Constructor("(Landroid/content/Context;)V", ViewInitHandler(context));
+    builder.FinalMethod("getContext", "()Landroid/content/Context;", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Ref(dx::IntrinsicCall(call).GetRef(*context->view_context_field));
+    });
 
     const auto managed_attached = [context](dx::IntrinsicContext& call) {
-
         dx::IntrinsicCall fields(call);
         auto view = call.receiver;
         for (std::size_t depth = 0; view.IsValid() && depth <= ui::UiTree::kMaxDepth; ++depth) {
@@ -1936,76 +1858,59 @@ Decl Declare_android_view_View(const Context& context) {
         return dx::VmValue::Int(node.has_value() && context->ui_tree.IsAttached(*node));
     });
 
-    builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z",
-        [context](dx::IntrinsicContext& call) {
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver,
-                UiClassForObject(call.vm, call.receiver));
-            return dx::VmValue::Int(
-                context->ui_tree.Get(node)->clickable ? 1 : 0);
-        });
-    const auto unhandled_key = dx::IntrinsicHandler(
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
+    builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
+        return dx::VmValue::Int(context->ui_tree.Get(node)->clickable ? 1 : 0);
+    });
+    const auto unhandled_key = dx::IntrinsicHandler([](dx::IntrinsicContext&) { return dx::VmValue::Int(0); });
 
-    const auto dispatch_focus =
-        [context](dx::IntrinsicContext& call, const dx::VmObjectRef view, const bool focused) {
-            if (!view.IsValid()) return;
-            const auto listener = context->view_adapter_references[view.Value()].focus_listener;
-            if (!listener.IsValid()) return;
-            static_cast<void>(CallAndroidMethod(
-                call.vm, listener, "onFocusChange",
-                "(Landroid/view/View;Z)V",
-                {dx::VmValue::Ref(view), dx::VmValue::Int(focused ? 1 : 0)}));
-        };
+    const auto dispatch_focus = [context](dx::IntrinsicContext& call, const dx::VmObjectRef view, const bool focused) {
+        if (!view.IsValid()) return;
+        const auto listener = context->view_adapter_references[view.Value()].focus_listener;
+        if (!listener.IsValid()) return;
+        static_cast<void>(CallAndroidMethod(call.vm, listener, "onFocusChange", "(Landroid/view/View;Z)V",
+                                            {dx::VmValue::Ref(view), dx::VmValue::Int(focused ? 1 : 0)}));
+    };
 
-    const auto request_focus = dx::IntrinsicHandler(
-        [context, dispatch_focus](dx::IntrinsicContext& call) {
-            const auto node = ViewNode(call, context);
-            const auto previous = context->ui_tree.Focused();
-            if (!context->ui_tree.RequestFocus(node, false)) {
-                return dx::VmValue::Int(0);
+    const auto request_focus = dx::IntrinsicHandler([context, dispatch_focus](dx::IntrinsicContext& call) {
+        const auto node = ViewNode(call, context);
+        const auto previous = context->ui_tree.Focused();
+        if (!context->ui_tree.RequestFocus(node, false)) {
+            return dx::VmValue::Int(0);
+        }
+        if (previous.has_value() && *previous != node) {
+            dispatch_focus(call, ViewObjectForUiNode(*context, *previous), false);
+        }
+        if (previous != node) dispatch_focus(call, call.receiver, true);
+        return dx::VmValue::Int(1);
+    });
+
+    const auto scroll_bar_enabled = [context](const bool horizontal) {
+        return dx::IntrinsicHandler([context, horizontal](dx::IntrinsicContext& call) {
+            auto* state = context->ui_tree.Get(ViewNode(call, context));
+            auto& enabled = horizontal ? state->horizontal_scroll_bar_enabled : state->vertical_scroll_bar_enabled;
+            if (!call.arguments.empty()) {
+                const auto current =
+                    CallAndroidMethod(call.vm, call.receiver,
+                                      horizontal ? "isHorizontalScrollBarEnabled" : "isVerticalScrollBarEnabled", "()Z")
+                        .AsInt() != 0;
+                if (current == (call.arguments[0].AsInt() != 0)) return dx::VmValue::Void();
+                auto* current_state = context->ui_tree.Get(ViewNode(call, context));
+                (horizontal ? current_state->horizontal_scroll_bar_enabled
+                            : current_state->vertical_scroll_bar_enabled) = call.arguments[0].AsInt() != 0;
+                return dx::VmValue::Void();
             }
-            if (previous.has_value() && *previous != node) {
-                dispatch_focus(call,
-                    ViewObjectForUiNode(*context, *previous), false);
-            }
-            if (previous != node) dispatch_focus(call, call.receiver, true);
-            return dx::VmValue::Int(1);
+            return dx::VmValue::Int(enabled ? 1 : 0);
         });
+    };
 
-    const auto scroll_bar_enabled =
-        [context](const bool horizontal) {
-            return dx::IntrinsicHandler(
-                [context, horizontal](dx::IntrinsicContext& call) {
-                    auto* state = context->ui_tree.Get(ViewNode(call, context));
-                    auto& enabled = horizontal
-                        ? state->horizontal_scroll_bar_enabled
-                        : state->vertical_scroll_bar_enabled;
-                    if (!call.arguments.empty()) {
-                        const auto current = CallAndroidMethod(call.vm, call.receiver,
-                                                               horizontal ? "isHorizontalScrollBarEnabled"
-                                                                          : "isVerticalScrollBarEnabled",
-                                                               "()Z")
-                                                 .AsInt() != 0;
-                        if (current == (call.arguments[0].AsInt() != 0)) return dx::VmValue::Void();
-                        auto* current_state = context->ui_tree.Get(ViewNode(call, context));
-                        (horizontal ? current_state->horizontal_scroll_bar_enabled
-                                    : current_state->vertical_scroll_bar_enabled) = call.arguments[0].AsInt() != 0;
-                        return dx::VmValue::Void();
-                    }
-                    return dx::VmValue::Int(enabled ? 1 : 0);
-                });
-        };
-
-    const auto invalidate = dx::IntrinsicHandler(
-        [context](dx::IntrinsicContext& call) {
-            const auto node = EnsureViewUiNode(
-                *context, call.receiver, ui::UiClass::View);
-            if (AndroidViewBelongsToRoot(call.vm, *context, call.receiver))
-                context->ui_window_schedules[AndroidUiTraversalRoot(call.vm, *context)].published.reset();
-            context->ui_tree.MarkDrawDirty(node);
-            return dx::VmValue::Void();
-        });
+    const auto invalidate = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
+        const auto node = EnsureViewUiNode(*context, call.receiver, ui::UiClass::View);
+        if (AndroidViewBelongsToRoot(call.vm, *context, call.receiver))
+            context->ui_window_schedules[AndroidUiTraversalRoot(call.vm, *context)].published.reset();
+        context->ui_tree.MarkDrawDirty(node);
+        return dx::VmValue::Void();
+    });
     const auto software_dirty = dx::IntrinsicHandler([context](dx::IntrinsicContext& call) {
         if (call.vm.CurrentContextToken() != 1U || context->ui_java_owner_thread != std::this_thread::get_id())
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View invalidation requires owner thread"};
@@ -2138,6 +2043,8 @@ Decl Declare_android_view_View(const Context& context) {
                 dx::IntrinsicCall fields(call);
                 const auto background = fields.GetRef((*context->view_java_input_fields)[1]);
                 if (background.IsValid()) {
+                    if (!CallAndroidMethod(call.vm, background, "isStateful", "()Z").AsInt())
+                        return dx::VmValue::Void();
                     const auto state = context->ui_drawables.find(background.Value());
                     if (state != context->ui_drawables.end() && state->second.rom_skin) {
                         const auto states = CallAndroidMethod(call.vm, call.receiver, "getDrawableState", "()[I").ref;
@@ -2241,13 +2148,12 @@ Decl Declare_android_view_View(const Context& context) {
         return dx::VmValue::Void();
     });
     const auto geometry = [context](const auto member) {
-        return dx::IntrinsicHandler(
-            [context, member](dx::IntrinsicContext& call) {
-                const auto node = ViewNode(call, context);
-                EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::GeometryRead,
-                                         AndroidUiTraversalPhase::ResolveOnly);
-                return dx::VmValue::Int(member(*context->ui_tree.Get(node)));
-            });
+        return dx::IntrinsicHandler([context, member](dx::IntrinsicContext& call) {
+            const auto node = ViewNode(call, context);
+            EnsureAndroidUiTraversal(call.vm, *context, AndroidUiTraversalReason::GeometryRead,
+                                     AndroidUiTraversalPhase::ResolveOnly);
+            return dx::VmValue::Int(member(*context->ui_tree.Get(node)));
+        });
     };
 
     const auto location = [context](dx::IntrinsicContext& call) {
@@ -2325,7 +2231,6 @@ Decl Declare_android_view_View(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_ViewGroup.cpp ----
 #include "catalog.h"
 
@@ -2333,8 +2238,6 @@ Decl Declare_android_view_View(const Context& context) {
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
-
-
 
 // Shared by removeViews/removeViewsInLayout/removeAllViewsInLayout.
 
@@ -2441,21 +2344,20 @@ Decl Declare_android_view_ViewGroup(const Context& context) {
         builder.DirectMethod("cancelTouchTarget", "(Landroid/view/View;)V", cancel_target(true), dx::kAccPrivate);
         builder.DirectMethod("cancelHoverTarget", "(Landroid/view/View;)V", cancel_target(false), dx::kAccPrivate);
     }
-    builder.OverrideMethod(
-        "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
-            const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
-            if (owner.IsValid())
-                return CallAndroidMethod(call.vm, owner, "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
-                                         {call.arguments[0]});
-            return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context,
-                call.receiver, call.arguments[0].ref, true));
-        });
+    builder.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+                           [context](dx::IntrinsicContext& call) {
+                               const auto owner = context->view_adapter_references[call.receiver.Value()].window_owner;
+                               if (owner.IsValid())
+                                   return CallAndroidMethod(call.vm, owner, "dispatchTouchEvent",
+                                                            "(Landroid/view/MotionEvent;)Z", {call.arguments[0]});
+                               return dx::VmValue::Int(DispatchAndroidViewTouch(call.vm, *context, call.receiver,
+                                                                                call.arguments[0].ref, true));
+                           });
 
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_ViewTreeObserver_OnGlobalLayoutListener.cpp ----
 #include "catalog.h"
@@ -2470,7 +2372,6 @@ Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context&
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_ViewTreeObserver.cpp ----
 #include "catalog.h"
 
@@ -2482,7 +2383,6 @@ Decl Declare_android_view_ViewTreeObserver(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_Window.cpp ----
 #include "catalog.h"
 
@@ -2490,27 +2390,49 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {
 
 // API19 WindowManager.LayoutParams fields (including copyFrom's hidden state).
-constexpr std::pair<const char*, const char*> kWindowFields[] = {
-    {"x", "I"}, {"y", "I"}, {"horizontalWeight", "F"}, {"verticalWeight", "F"},
-    {"type", "I"}, {"memoryType", "I"}, {"flags", "I"}, {"privateFlags", "I"},
-    {"softInputMode", "I"}, {"gravity", "I"}, {"horizontalMargin", "F"}, {"verticalMargin", "F"},
-    {"format", "I"}, {"windowAnimations", "I"}, {"alpha", "F"}, {"dimAmount", "F"},
-    {"screenBrightness", "F"}, {"buttonBrightness", "F"}, {"rotationAnimation", "I"},
-    {"token", "Landroid/os/IBinder;"}, {"packageName", "Ljava/lang/String;"},
-    {"screenOrientation", "I"}, {"systemUiVisibility", "I"}, {"subtreeSystemUiVisibility", "I"},
-    {"hasSystemUiListeners", "Z"}, {"inputFeatures", "I"}, {"userActivityTimeout", "J"},
-    {"mTitle", "Ljava/lang/CharSequence;"}
-};
+constexpr std::pair<const char*, const char*> kWindowFields[] = {{"x", "I"},
+                                                                 {"y", "I"},
+                                                                 {"horizontalWeight", "F"},
+                                                                 {"verticalWeight", "F"},
+                                                                 {"type", "I"},
+                                                                 {"memoryType", "I"},
+                                                                 {"flags", "I"},
+                                                                 {"privateFlags", "I"},
+                                                                 {"softInputMode", "I"},
+                                                                 {"gravity", "I"},
+                                                                 {"horizontalMargin", "F"},
+                                                                 {"verticalMargin", "F"},
+                                                                 {"format", "I"},
+                                                                 {"windowAnimations", "I"},
+                                                                 {"alpha", "F"},
+                                                                 {"dimAmount", "F"},
+                                                                 {"screenBrightness", "F"},
+                                                                 {"buttonBrightness", "F"},
+                                                                 {"rotationAnimation", "I"},
+                                                                 {"token", "Landroid/os/IBinder;"},
+                                                                 {"packageName", "Ljava/lang/String;"},
+                                                                 {"screenOrientation", "I"},
+                                                                 {"systemUiVisibility", "I"},
+                                                                 {"subtreeSystemUiVisibility", "I"},
+                                                                 {"hasSystemUiListeners", "Z"},
+                                                                 {"inputFeatures", "I"},
+                                                                 {"userActivityTimeout", "J"},
+                                                                 {"mTitle", "Ljava/lang/CharSequence;"}};
+
 auto& WindowSlot(dx::Interpreter& vm, dx::VmObjectRef object, const char* name, const char* type) {
     const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
     if (!field) throw std::logic_error(std::string("Window attribute field missing: ") + name);
     return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
 }
+
 void InitializeWindowAttributes(dx::Interpreter& vm, dx::VmObjectRef object) {
     const auto integer = [&](const char* name, int value) {
         WindowSlot(vm, object, name, "I") = {static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
     };
-    integer("width", -1); integer("height", -1); integer("type", 2); integer("format", -1);
+    integer("width", -1);
+    integer("height", -1);
+    integer("type", 2);
+    integer("format", -1);
     integer("screenOrientation", -1);
     for (const auto name : {"alpha", "dimAmount", "screenBrightness", "buttonBrightness"}) {
         const float value = (std::string_view(name) == "alpha" || std::string_view(name) == "dimAmount") ? 1.0F : -1.0F;
@@ -2525,11 +2447,10 @@ void InitializeWindowAttributes(dx::Interpreter& vm, dx::VmObjectRef object) {
     WindowSlot(vm, object, "mTitle", "Ljava/lang/CharSequence;") = {title.Value(), dx::SlotTag::ref};
 }
 
-[[nodiscard]] dx::VmObjectRef Attributes(dx::IntrinsicContext& call,
-                                         const Context& context) {
+[[nodiscard]] dx::VmObjectRef Attributes(dx::IntrinsicContext& call, const Context& context) {
     static_cast<void>(context);
-    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(call.receiver),
-        "mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;");
+    const auto field = call.vm.Linker().FindFieldRecursive(
+        call.vm.Model().ObjectClass(call.receiver), "mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;");
     if (!field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window attributes field is missing");
     const auto slot = call.vm.Linker().Field(*field).slot;
     auto value = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[slot].bits);
@@ -2542,31 +2463,25 @@ void InitializeWindowAttributes(dx::Interpreter& vm, dx::VmObjectRef object) {
     return value;
 }
 
-[[nodiscard]] const dx::LinkedField& IntField(dx::IntrinsicContext& call,
-                                              const dx::VmObjectRef object,
+[[nodiscard]] const dx::LinkedField& IntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
                                               const std::string& name) {
-    const auto field = call.vm.Linker().FindFieldRecursive(
-        call.vm.Model().ObjectClass(object), name, "I");
+    const auto field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(object), name, "I");
     if (!field.has_value()) {
-        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "Window LayoutParams field is missing: " + name);
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window LayoutParams field is missing: " + name);
     }
     return call.vm.Linker().Field(*field);
 }
 
-[[nodiscard]] std::int32_t ReadIntField(dx::IntrinsicContext& call,
-                                        const dx::VmObjectRef object,
+[[nodiscard]] std::int32_t ReadIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
                                         const std::string& name) {
     const auto& field = IntField(call, object, name);
-    return static_cast<std::int32_t>(
-        call.vm.Model().InstanceSlots(object)[field.slot].bits);
+    return static_cast<std::int32_t>(call.vm.Model().InstanceSlots(object)[field.slot].bits);
 }
 
-void WriteIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object,
-                   const std::string& name, const std::int32_t value) {
+void WriteIntField(dx::IntrinsicContext& call, const dx::VmObjectRef object, const std::string& name,
+                   const std::int32_t value) {
     const auto& field = IntField(call, object, name);
-    call.vm.Model().InstanceSlots(object)[field.slot] = {
-        static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
+    call.vm.Model().InstanceSlots(object)[field.slot] = {static_cast<std::uint32_t>(value), dx::SlotTag::cat1};
 }
 
 }  // namespace
@@ -2576,15 +2491,15 @@ Decl Declare_android_view_Window(const Context& context) {
     const auto wu_attributes =
         builder.BoundInstanceField("mWindowAttributes", "Landroid/view/WindowManager$LayoutParams;", dx::kAccPrivate);
     builder.VirtualMethod("takeSurface", "(Landroid/view/SurfaceHolder$Callback2;)V",
-        [context](dx::IntrinsicContext& call) {
-            SetWindowSurfaceCallback(call.vm, *context, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
+                          [context](dx::IntrinsicContext& call) {
+                              SetWindowSurfaceCallback(call.vm, *context, call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("takeInputQueue", "(Landroid/view/InputQueue$Callback;)V",
-        [context](dx::IntrinsicContext& call) {
-            SetWindowInputCallback(call.vm, *context, call.arguments[0].ref);
-            return dx::VmValue::Void();
-        });
+                          [context](dx::IntrinsicContext& call) {
+                              SetWindowInputCallback(call.vm, *context, call.arguments[0].ref);
+                              return dx::VmValue::Void();
+                          });
     builder.VirtualMethod("setFormat", "(I)V", [context](dx::IntrinsicContext& call) {
         context->window_format = call.arguments[0].AsInt();
         return dx::VmValue::Void();
@@ -2614,13 +2529,10 @@ Decl Declare_android_view_Window(const Context& context) {
         WriteIntField(call, Attributes(call, context), "type", call.arguments[0].AsInt());
         return dx::VmValue::Void();
     });
-    builder.FinalMethod("getAttributes",
-        "()Landroid/view/WindowManager$LayoutParams;",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(Attributes(call, context));
-        });
-    builder.VirtualMethod("setAttributes", "(Landroid/view/WindowManager$LayoutParams;)V",
-        [context](dx::IntrinsicContext& call) {
+    builder.FinalMethod("getAttributes", "()Landroid/view/WindowManager$LayoutParams;",
+                        [context](dx::IntrinsicContext& call) { return dx::VmValue::Ref(Attributes(call, context)); });
+    builder.VirtualMethod(
+        "setAttributes", "(Landroid/view/WindowManager$LayoutParams;)V", [context](dx::IntrinsicContext& call) {
             const auto source = call.arguments[0].ref;
             if (!source.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "attributes == null"};
             const auto target = Attributes(call, context);
@@ -2630,31 +2542,33 @@ Decl Declare_android_view_Window(const Context& context) {
                 if ((std::string_view(name) == "token" || std::string_view(name) == "packageName") && to.bits) return;
                 to = WindowSlot(call.vm, source, name, type);
                 if (std::string_view(type) == "J") {
-                    const auto source_field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(source), name, type);
-                    const auto target_field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(target), name, type);
+                    const auto source_field =
+                        call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(source), name, type);
+                    const auto target_field =
+                        call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(target), name, type);
                     call.vm.Model().InstanceSlots(target)[call.vm.Linker().Field(*target_field).slot + 1] =
                         call.vm.Model().InstanceSlots(source)[call.vm.Linker().Field(*source_field).slot + 1];
                 }
             };
-            copy("width", "I"); copy("height", "I");
+            copy("width", "I");
+            copy("height", "I");
             for (const auto& [name, type] : kWindowFields) {
                 if (std::string_view(name) != "memoryType") copy(name, type);
             }
             return dx::VmValue::Void();
         });
     const auto owner = builder.BoundInstanceField("mOgplayOwner", "Landroid/app/Activity;", dx::kAccPrivate);
-    builder.VirtualMethod("getLayoutInflater", "()Landroid/view/LayoutInflater;",
-        [owner](dx::IntrinsicContext& call) {
-            const auto activity = dx::IntrinsicCall(call).GetRef(owner);
-            if (!activity.IsValid())
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window has no Activity owner"};
-            const auto service = call.vm.NewStringUtf8("layout_inflater");
-            const auto roots = call.vm.ProtectReferences(std::array{activity, service});
-            return CallAndroidMethod(call.vm, activity, "getSystemService",
-                "(Ljava/lang/String;)Ljava/lang/Object;", {dx::VmValue::Ref(service)});
-        });
-    builder.VirtualMethod("superDispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
-        [context, owner](dx::IntrinsicContext& call) {
+    builder.VirtualMethod("getLayoutInflater", "()Landroid/view/LayoutInflater;", [owner](dx::IntrinsicContext& call) {
+        const auto activity = dx::IntrinsicCall(call).GetRef(owner);
+        if (!activity.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Window has no Activity owner"};
+        const auto service = call.vm.NewStringUtf8("layout_inflater");
+        const auto roots = call.vm.ProtectReferences(std::array{activity, service});
+        return CallAndroidMethod(call.vm, activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                 {dx::VmValue::Ref(service)});
+    });
+    builder.VirtualMethod(
+        "superDispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [context, owner](dx::IntrinsicContext& call) {
             if (dx::IntrinsicCall(call).GetRef(owner) != context->activity) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("runtime.ui_pointer_dispatch", 0);
                 throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Window touch dispatch"};
@@ -2662,23 +2576,24 @@ Decl Declare_android_view_Window(const Context& context) {
             return dx::VmValue::Int(DispatchContentTouchEvent(call.vm, *context, call.arguments[0].ref));
         });
     const auto decor = builder.BoundInstanceField("mDecor", "Landroid/view/View;", dx::kAccPrivate);
-    const auto content_parent = builder.BoundInstanceField(
-        "mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);
+    const auto content_parent =
+        builder.BoundInstanceField("mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);
     context->ui_java_window_content = content_parent;
-    const auto background = builder.BoundInstanceField(
-        "mBackgroundDrawable", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate);
+    const auto background =
+        builder.BoundInstanceField("mBackgroundDrawable", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate);
     builder.VirtualMethod("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V",
-        [background, content_parent](dx::IntrinsicContext& call) {
-            const dx::IntrinsicCall fields(call);
-            const auto drawable = call.arguments[0].ref;
-            if (fields.GetRef(background) == drawable) return dx::VmValue::Void();
-            fields.SetRef(background, drawable);
-            const auto parent = fields.GetRef(content_parent);
-            if (parent.IsValid())
-                return CallAndroidMethod(call.vm, parent, "setBackgroundDrawable",
-                    "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
-            return dx::VmValue::Void();
-        });
+                          [background, content_parent](dx::IntrinsicContext& call) {
+                              const dx::IntrinsicCall fields(call);
+                              const auto drawable = call.arguments[0].ref;
+                              if (fields.GetRef(background) == drawable) return dx::VmValue::Void();
+                              fields.SetRef(background, drawable);
+                              const auto parent = fields.GetRef(content_parent);
+                              if (parent.IsValid())
+                                  return CallAndroidMethod(call.vm, parent, "setBackgroundDrawable",
+                                                           "(Landroid/graphics/drawable/Drawable;)V",
+                                                           {dx::VmValue::Ref(drawable)});
+                              return dx::VmValue::Void();
+                          });
     const auto parent_for = [context, owner, content_parent, background](dx::IntrinsicContext& call) {
         const dx::IntrinsicCall fields(call);
         auto parent = fields.GetRef(content_parent);
@@ -2711,24 +2626,25 @@ Decl Declare_android_view_Window(const Context& context) {
             const auto drawable = fields.GetRef(background);
             if (drawable.IsValid())
                 static_cast<void>(CallAndroidMethod(call.vm, parent, "setBackgroundDrawable",
-                    "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)}));
+                                                    "(Landroid/graphics/drawable/Drawable;)V",
+                                                    {dx::VmValue::Ref(drawable)}));
             return parent;
         }
     };
-    builder.VirtualMethod("findViewById", "(I)Landroid/view/View;",
-        [parent_for](dx::IntrinsicContext& call) {
-            const auto id = call.arguments[0].AsInt();
-            if (id == -1) return dx::VmValue::Ref(dx::VmObjectRef{});
-            const auto parent = parent_for(call);
-            const auto roots = call.vm.ProtectReferences(std::array{parent});
-            return CallAndroidMethod(call.vm, parent, "findViewById", "(I)Landroid/view/View;", {dx::VmValue::Int(id)});
-        });
+    builder.VirtualMethod("findViewById", "(I)Landroid/view/View;", [parent_for](dx::IntrinsicContext& call) {
+        const auto id = call.arguments[0].AsInt();
+        if (id == -1) return dx::VmValue::Ref(dx::VmObjectRef{});
+        const auto parent = parent_for(call);
+        const auto roots = call.vm.ProtectReferences(std::array{parent});
+        return CallAndroidMethod(call.vm, parent, "findViewById", "(I)Landroid/view/View;", {dx::VmValue::Int(id)});
+    });
     const auto mutate = [context, owner, parent_for](const bool replace, const bool xml) {
         return dx::IntrinsicHandler([context, owner, parent_for, replace, xml](dx::IntrinsicContext& call) {
             const auto activity = dx::IntrinsicCall(call).GetRef(owner);
             if (!context->activity_stack.empty() && activity != context->activity) {
                 if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_result", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "background Activity cannot mutate foreground content"};
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "background Activity cannot mutate foreground content"};
             }
             if (!xml && !call.arguments[0].ref.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "content view is null"};
@@ -2764,7 +2680,7 @@ Decl Declare_android_view_Window(const Context& context) {
             } scope{*context};
             const auto current = [&] {
                 return context->ui_content_revision == revision && context->ui_tree.Get(node) &&
-                    (context->activity_stack.empty() || context->activity == activity);
+                       (context->activity_stack.empty() || context->activity == activity);
             };
             if (replace) {
                 const auto count =
@@ -2793,7 +2709,8 @@ Decl Declare_android_view_Window(const Context& context) {
                     params = NewAndroidLayoutParams(call.vm, "Landroid/widget/FrameLayout$LayoutParams;", -1, -1);
                 const auto params_root = call.vm.ProtectReferences(std::array{params});
                 static_cast<void>(CallAndroidMethod(call.vm, parent, "addView",
-                    "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)}));
+                                                    "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                                                    {call.arguments[0], dx::VmValue::Ref(params)}));
             }
             if (!current()) return dx::VmValue::Void();
             {
@@ -2807,13 +2724,16 @@ Decl Declare_android_view_Window(const Context& context) {
         });
     };
     builder.VirtualMethod("setContentView", "(I)V", mutate(true, true));
-    builder.VirtualMethod("setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", mutate(true, false));
-    builder.VirtualMethod("addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", mutate(false, false));
+    builder.VirtualMethod("setContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                          mutate(true, false));
+    builder.VirtualMethod("addContentView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                          mutate(false, false));
     builder.VirtualMethod("setContentView", "(Landroid/view/View;)V", [](dx::IntrinsicContext& call) {
         const auto params = NewAndroidLayoutParams(call.vm, "Landroid/view/ViewGroup$LayoutParams;", -1, -1);
         const auto roots = call.vm.ProtectReferences(std::array{params});
         return CallAndroidMethod(call.vm, call.receiver, "setContentView",
-            "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V", {call.arguments[0], dx::VmValue::Ref(params)});
+                                 "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                                 {call.arguments[0], dx::VmValue::Ref(params)});
     });
     builder.VirtualMethod("getDecorView", "()Landroid/view/View;",
                           [context, decor, owner, parent_for](dx::IntrinsicContext& call) {
@@ -2829,18 +2749,18 @@ Decl Declare_android_view_Window(const Context& context) {
                           });
     const auto wu_mContext =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
-    builder.VirtualMethod("setBackgroundDrawableResource", "(I)V",
-        [wu_mContext](dx::IntrinsicContext& call) {
-            const auto context_object = dx::IntrinsicCall(call).GetRef(wu_mContext);
-            const auto resources = CallAndroidMethod(call.vm, context_object, "getResources",
-                "()Landroid/content/res/Resources;").ref;
-            const auto resources_root = call.vm.ProtectReferences(std::array{resources});
-            const auto drawable = CallAndroidMethod(call.vm, resources, "getDrawable",
-                "(I)Landroid/graphics/drawable/Drawable;", {call.arguments[0]}).ref;
-            const auto drawable_root = call.vm.ProtectReferences(std::array{drawable});
-            return CallAndroidMethod(call.vm, call.receiver, "setBackgroundDrawable",
-                "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
-        });
+    builder.VirtualMethod("setBackgroundDrawableResource", "(I)V", [wu_mContext](dx::IntrinsicContext& call) {
+        const auto context_object = dx::IntrinsicCall(call).GetRef(wu_mContext);
+        const auto resources =
+            CallAndroidMethod(call.vm, context_object, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto resources_root = call.vm.ProtectReferences(std::array{resources});
+        const auto drawable = CallAndroidMethod(call.vm, resources, "getDrawable",
+                                                "(I)Landroid/graphics/drawable/Drawable;", {call.arguments[0]})
+                                  .ref;
+        const auto drawable_root = call.vm.ProtectReferences(std::array{drawable});
+        return CallAndroidMethod(call.vm, call.receiver, "setBackgroundDrawable",
+                                 "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
+    });
     const auto wu_mIsActive = builder.BoundInstanceField("mIsActive", "Z", dx::kAccPrivate);
     const auto wu_mHasChildren = builder.BoundInstanceField("mHasChildren", "Z", dx::kAccPrivate);
     const auto wu_mCloseOnTouchOutside = builder.BoundInstanceField("mCloseOnTouchOutside", "Z", dx::kAccPrivate);
@@ -2891,7 +2811,6 @@ Decl Declare_android_view_Window(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_WindowManager_LayoutParams.cpp ----
 #include "catalog.h"
 
@@ -2909,11 +2828,17 @@ Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
             InitializeWindowAttributes(call.vm, call.receiver);
             const auto count = call.arguments.size();
             const auto set = [&](const char* name, std::size_t argument) {
-                WindowSlot(call.vm, call.receiver, name, "I") = {
-                    static_cast<std::uint32_t>(call.arguments[argument].AsInt()), dx::SlotTag::cat1};
+                WindowSlot(call.vm, call.receiver, name,
+                           "I") = {static_cast<std::uint32_t>(call.arguments[argument].AsInt()), dx::SlotTag::cat1};
             };
-            if (count >= 5) { set("width", 0); set("height", 1); }
-            if (count == 7) { set("x", 2); set("y", 3); }
+            if (count >= 5) {
+                set("width", 0);
+                set("height", 1);
+            }
+            if (count == 7) {
+                set("x", 2);
+                set("y", 3);
+            }
             if (count) set("type", count >= 5 ? count - 3 : 0);
             if (count >= 2) set("flags", count >= 5 ? count - 2 : 1);
             if (count >= 3) set("format", count - 1);
@@ -2924,7 +2849,6 @@ Decl Declare_android_view_WindowManager_LayoutParams(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_view_WindowManager.cpp ----
 #include "catalog.h"
@@ -2939,15 +2863,16 @@ Decl Declare_android_view_WindowManager(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_view_WindowManagerImpl.cpp ----
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_WindowManagerImpl(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManagerImpl;", "Ljava/lang/Object;", {"Landroid/view/WindowManager;"});
-    builder.FinalMethod("getDefaultDisplay", "()Landroid/view/Display;", WindowmanagerGetDefaultDisplayHandler(context));
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/WindowManagerImpl;", "Ljava/lang/Object;",
+                                                    {"Landroid/view/WindowManager;"});
+    builder.FinalMethod("getDefaultDisplay", "()Landroid/view/Display;",
+                        WindowmanagerGetDefaultDisplayHandler(context));
     return std::move(builder).Build();
 }
 
@@ -2965,271 +2890,268 @@ Decl Declare_android_view_InputQueue(const Context&) {
     return std::move(builder).Build();
 }
 
-} // namespace ogplay::runtime::android_intrinsics
+}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime {
 bool EnsureAndroidUiTraversal(dexvm::Interpreter& vm, DexVmAndroidContext& context,
                               const AndroidUiTraversalReason reason, const AndroidUiTraversalPhase phase,
                               const std::optional<ui::Size> viewport) {
-        dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
-        const auto diagnostic = [&](const std::string& why) {
-            RecordAndroidTraversalDiagnostic(vm, context, AndroidUiTraversalRoot(vm, context), why);
-        };
-        if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()) {
-            RecordAndroidTraversalDiagnostic(vm, context, dexvm::VmObjectRef{}, "owner thread rejected");
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
+    dexvm::VmExecutionLockScope lock(vm.ExecutionLock());
+    const auto diagnostic = [&](const std::string& why) {
+        RecordAndroidTraversalDiagnostic(vm, context, AndroidUiTraversalRoot(vm, context), why);
+    };
+    if (vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id()) {
+        RecordAndroidTraversalDiagnostic(vm, context, dexvm::VmObjectRef{}, "owner thread rejected");
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "View traversal requires owner thread"};
+    }
+    if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
+         reason != AndroidUiTraversalReason::BeforePresent &&
+         reason != AndroidUiTraversalReason::BeforeSurfaceCallbacks &&
+         !(context.ui_layout_dispatching && reason == AndroidUiTraversalReason::GeometryRead)) ||
+        (phase != AndroidUiTraversalPhase::ResolveOnly && phase != AndroidUiTraversalPhase::ResolveAndNotifySizes)) {
+        diagnostic("unsupported traversal phase");
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_traversal_phase", 0);
+        throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Traversal safe point is not enabled"};
+    }
+    if (context.ui_layout_dispatching) {
+        if (reason == AndroidUiTraversalReason::GeometryRead) {
+            diagnostic("temporary callback geometry");
+            static_cast<void>(ReadAndroidUiGeometry(vm, context));
+            return false;
         }
-        if ((reason != AndroidUiTraversalReason::OwnerTick && reason != AndroidUiTraversalReason::BeforeInput &&
-             reason != AndroidUiTraversalReason::BeforePresent &&
-             reason != AndroidUiTraversalReason::BeforeSurfaceCallbacks &&
-             !(context.ui_layout_dispatching && reason == AndroidUiTraversalReason::GeometryRead)) ||
-            (phase != AndroidUiTraversalPhase::ResolveOnly &&
-             phase != AndroidUiTraversalPhase::ResolveAndNotifySizes)) {
-            diagnostic("unsupported traversal phase");
-            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_traversal_phase", 0);
+        if (reason == AndroidUiTraversalReason::BeforeInput) {
+            diagnostic("reentrant input rejected");
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_reentrant_input", 0);
             throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                     "Traversal safe point is not enabled"};
+                                     "Input during Java traversal unsupported"};
         }
-        if (context.ui_layout_dispatching) {
-            if (reason == AndroidUiTraversalReason::GeometryRead) {
-                diagnostic("temporary callback geometry");
-                static_cast<void>(ReadAndroidUiGeometry(vm, context));
-                return false;
-            }
-            if (reason == AndroidUiTraversalReason::BeforeInput) {
-                diagnostic("reentrant input rejected");
-                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_reentrant_input", 0);
-                throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                         "Input during Java traversal unsupported"};
-            }
-            diagnostic("layout callback barrier");
-            return false;
-        }
-        if (context.input_presentation || context.surface_event_dispatching) {
-            diagnostic(context.input_presentation ? "input lease barrier" : "surface callback barrier");
-            return false;
-        }
-        if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
-        // ViewRootImpl's scheduleTraversals boundary: only Java requests,
-        // first attachment, or changed window inputs enter performTraversals.
-        // Do not execute guest getters or compare a projection on a clean frame.
-        const auto scheduled_root = AndroidUiTraversalRoot(vm, context);
-        const auto found = context.ui_window_schedules.find(scheduled_root);
-        if (found != context.ui_window_schedules.end()) {
-            const auto& scheduled = found->second;
-            const auto requested_metrics = viewport.value_or(ui::Size{
-                static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
-            dexvm::IntrinsicContext call{vm, scheduled_root, {}};
-            const auto* host = context.ui_tree.Get(context.ui_tree.Root());
-            if (scheduled.published && scheduled.published == context.ui_tree.PublishedProjection() &&
-                scheduled.generation == context.ui_tree.Generation() &&
-                scheduled.content_revision == context.ui_content_revision && scheduled.metrics == requested_metrics &&
-                scheduled.density == context.ui_density && scheduled.requests.empty() &&
-                scheduled.deferred_until_tick == 0 && !host->layout_dirty && !host->draw_dirty &&
-                (dexvm::IntrinsicCall(call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) == 0) {
-                diagnostic("clean snapshot");
-                return false;
-            }
-        }
-        diagnostic("traversal entered");
-        // Materialize the Window's stable FrameLayout even for an empty Activity.
-        if (context.activity.IsValid()) {
-            const auto window =
-                android_intrinsics::CallAndroidMethod(vm, context.activity, "getWindow", "()Landroid/view/Window;").ref;
-            const auto window_root = vm.ProtectReferences(std::array{window});
-            static_cast<void>(android_intrinsics::CallAndroidMethod(
-                vm, window, "findViewById", "(I)Landroid/view/View;", {dexvm::VmValue::Int(0x01020002)}));
-        }
-        const auto metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
-                                                        static_cast<std::int32_t>(context.surface_height)});
-        if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff) {
-            diagnostic("invalid metrics");
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid traversal viewport"};
-        }
-        const auto root = AndroidUiTraversalRoot(vm, context);
-        const auto content = context.content_view;
-        const auto node = FindViewUiNode(context, root.Value());
-        const auto generation = context.ui_tree.Generation();
-        const auto revision = context.ui_content_revision;
-        const auto width = context.surface_width;
-        const auto height = context.surface_height;
-        const auto density = context.ui_density;
-        const auto roots = vm.ProtectReferences(std::array{root});
-        const auto current = [&] {
-            return root == AndroidUiTraversalRoot(vm, context) && content == context.content_view &&
-                   revision == context.ui_content_revision && generation == context.ui_tree.Generation() &&
-                   width == context.surface_width && height == context.surface_height &&
-                   density == context.ui_density && node && FindViewUiNode(context, root.Value()) == node;
-        };
-        if (!current()) {
-            diagnostic("unbound window root");
-            throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound window root"};
-        }
-        if (!metrics.width || !metrics.height) diagnostic("zero metrics");
-        auto& schedule = context.ui_window_schedules[root];
-        const bool same_identity = schedule.generation == generation && schedule.content_revision == revision;
-        if (schedule.generation != generation) {
-            const auto token = schedule.window_token;
-            schedule = {};
-            schedule.window_token = token;
-        }
-        if (schedule.deferred_until_tick > context.ui_owner_tick) {
-            diagnostic("deferred next tick");
-            return false;
-        }
-        dexvm::IntrinsicContext root_call{vm, root, {}};
-        const bool layout_requested =
-            (dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) != 0;
-        if (same_identity && schedule.published && schedule.published == context.ui_tree.PublishedProjection() &&
-            schedule.requests.empty() && !layout_requested && schedule.metrics == metrics &&
-            schedule.density == density && !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+        diagnostic("layout callback barrier");
+        return false;
+    }
+    if (context.input_presentation || context.surface_event_dispatching) {
+        diagnostic(context.input_presentation ? "input lease barrier" : "surface callback barrier");
+        return false;
+    }
+    if (reason == AndroidUiTraversalReason::OwnerTick) ++context.ui_owner_tick;
+    // ViewRootImpl's scheduleTraversals boundary: only Java requests,
+    // first attachment, or changed window inputs enter performTraversals.
+    // Do not execute guest getters or compare a projection on a clean frame.
+    const auto scheduled_root = AndroidUiTraversalRoot(vm, context);
+    const auto found = context.ui_window_schedules.find(scheduled_root);
+    if (found != context.ui_window_schedules.end()) {
+        const auto& scheduled = found->second;
+        const auto requested_metrics = viewport.value_or(ui::Size{static_cast<std::int32_t>(context.surface_width),
+                                                                  static_cast<std::int32_t>(context.surface_height)});
+        dexvm::IntrinsicContext call{vm, scheduled_root, {}};
+        const auto* host = context.ui_tree.Get(context.ui_tree.Root());
+        if (scheduled.published && scheduled.published == context.ui_tree.PublishedProjection() &&
+            scheduled.generation == context.ui_tree.Generation() &&
+            scheduled.content_revision == context.ui_content_revision && scheduled.metrics == requested_metrics &&
+            scheduled.density == context.ui_density && scheduled.requests.empty() &&
+            scheduled.deferred_until_tick == 0 && !host->layout_dirty && !host->draw_dirty &&
+            (dexvm::IntrinsicCall(call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) == 0) {
             diagnostic("clean snapshot");
-            if (context.ui_tree.Get(context.ui_tree.Root())->draw_dirty) {
-                const auto target = *context.ui_tree.ProjectionTarget();
-                CommitAndroidMeasuredRootProjection(vm, context, root, target, context.ui_measure_epoch + 1);
-                context.ui_tree.ClearDrawDirty();
-                schedule.published = context.ui_tree.PublishedProjection();
-            }
             return false;
         }
-        schedule.generation = generation;
-        try {
-            // First traversal attaches the surviving Java subtree, not onCreate/setContentView.
-            android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
-            // An interrupted attempt cannot certify the next barrier as clean, even
-            // when the Java layout epilogue already cleared FORCE_LAYOUT.
-            schedule.published.reset();
-            auto& requests = schedule.requests;
-            context.ui_layout_dispatching = true;
-            context.ui_java_active_metrics = metrics;
-
-            struct Reset {
-                DexVmAndroidContext& context;
-
-                ~Reset() {
-                    context.ui_layout_dispatching = false;
-                    context.ui_java_layout_pass = 0;
-                    context.ui_java_active_metrics.reset();
-                }
-            } reset{context};
-
-            const auto pending = std::move(requests);
-            requests.clear();
-            std::vector<dexvm::VmObjectRef> pending_refs;
-            for (const auto requester : pending)
-                if (AndroidViewBelongsToRoot(vm, context, requester, true)) pending_refs.push_back(requester);
-            const auto pending_roots = vm.ProtectReferences(pending_refs);
-            for (const auto requester : pending_refs) {
-                if (AndroidViewBelongsToRoot(vm, context, requester, true))
-                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
-                if (!current()) {
-                    diagnostic("callback changed identity or metrics");
-                    return false;
-                }
-            }
-            requests.clear();
-            dexvm::IntrinsicContext call{vm, root, {}};
-            dexvm::IntrinsicCall fields(call);
-            const auto& tokens = *context.view_java_measure_fields;
-            for (unsigned pass = 1; pass <= 2; ++pass) {
-                static_cast<void>(
-                    android_intrinsics::CallAndroidMethod(vm, root, "measure", "(II)V",
-                                                          {dexvm::VmValue::Int(metrics.width | 0x40000000),
-                                                           dexvm::VmValue::Int(metrics.height | 0x40000000)}));
-                if (!current()) {
-                    diagnostic("callback changed identity or metrics");
-                    return false;
-                }
-                context.ui_java_layout_pass = pass;
-                static_cast<void>(android_intrinsics::CallAndroidMethod(
-                    vm, root, "layout", "(IIII)V",
-                    {dexvm::VmValue::Int(0), dexvm::VmValue::Int(0),
-                     dexvm::VmValue::Int(fields.GetInt(tokens.measured[0]) & 0x00ffffff),
-                     dexvm::VmValue::Int(fields.GetInt(tokens.measured[1]) & 0x00ffffff)}));
-                context.ui_java_layout_pass = 0;
-                if (!current()) {
-                    diagnostic("callback changed identity or metrics");
-                    return false;
-                }
-                if (pass == 2) {
-                    std::erase_if(requests, [&](const auto requester) {
-                        return !AndroidViewBelongsToRoot(vm, context, requester, true);
-                    });
-                    break;
-                }
-                const auto requested = std::move(requests);
-                requests.clear();
-                std::vector<dexvm::VmObjectRef> valid;
-                for (const auto requester : requested) {
-                    const bool attached = AndroidViewBelongsToRoot(vm, context, requester);
-                    if (attached && AndroidViewBelongsToRoot(vm, context, requester, true) &&
-                        (fields.GetInt(tokens.flags[0], requester) & 0x1000) != 0)
-                        valid.push_back(requester);
-                }
-                // ViewRootImpl.getValidLayoutRequesters evaluates every requester
-                // before clearing flags, including GONE/detached requesters. Clearing
-                // an ancestor early must not hide a second valid requester.
-                for (const auto requester : requested) {
-                    if (!vm.Model().IsValidRef(requester)) continue;
-                    auto view = requester;
-                    while (view.IsValid() && (fields.GetInt(tokens.flags[0], view) & 0x1000) != 0) {
-                        fields.SetInt(tokens.flags[0], view, fields.GetInt(tokens.flags[0], view) & ~0x1000);
-                        view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
-                    }
-                }
-                if (valid.empty()) break;
-                const auto request_roots = vm.ProtectReferences(valid);
-                for (const auto requester : valid) {
-                    static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
-                    if (!current()) {
-                        diagnostic("callback changed identity or metrics");
-                        return false;
-                    }
-                }
-                requests.clear();
-            }
-            if (!requests.empty()) {
-                schedule.deferred_until_tick = context.ui_owner_tick + 1;
-                if (schedule.deferred_ticks == 0 || schedule.watchdog_tick != context.ui_owner_tick) {
-                    schedule.watchdog_tick = context.ui_owner_tick;
-                    ++schedule.deferred_ticks;
-                }
-                if (schedule.deferred_ticks > 8) {
-                    diagnostic("layout watchdog rejected");
-                    const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
-                                        " epoch=" + std::to_string(context.ui_measure_epoch + 1);
-                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
-                    android_intrinsics::GuestLog(call, core::LogLevel::error, detail);
-                    throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
-                }
-            } else {
-                schedule.deferred_ticks = 0;
-                schedule.deferred_until_tick = 0;
-            }
-            const auto epoch = context.ui_measure_epoch + 1;
-            const auto previous_target = context.ui_tree.ProjectionTarget();
-            const auto metrics_revision =
-                previous_target
-                    ? previous_target->metrics_revision + (previous_target->metrics.width != metrics.width ||
-                                                                   previous_target->metrics.height != metrics.height ||
-                                                                   context.ui_projection_density != density
-                                                               ? 1U
-                                                               : 0U)
-                    : 1U;
-            const ui::UiProjectionTarget target{
-                context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
-            context.ui_tree.SetProjectionTarget(target);
-            CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+    }
+    diagnostic("traversal entered");
+    // Materialize the Window's stable FrameLayout even for an empty Activity.
+    if (context.activity.IsValid()) {
+        const auto window =
+            android_intrinsics::CallAndroidMethod(vm, context.activity, "getWindow", "()Landroid/view/Window;").ref;
+        const auto window_root = vm.ProtectReferences(std::array{window});
+        static_cast<void>(android_intrinsics::CallAndroidMethod(vm, window, "findViewById", "(I)Landroid/view/View;",
+                                                                {dexvm::VmValue::Int(0x01020002)}));
+    }
+    const auto metrics = viewport.value_or(
+        ui::Size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)});
+    if (metrics.width < 0 || metrics.height < 0 || metrics.width > 0x3fffffff || metrics.height > 0x3fffffff) {
+        diagnostic("invalid metrics");
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Invalid traversal viewport"};
+    }
+    const auto root = AndroidUiTraversalRoot(vm, context);
+    const auto content = context.content_view;
+    const auto node = FindViewUiNode(context, root.Value());
+    const auto generation = context.ui_tree.Generation();
+    const auto revision = context.ui_content_revision;
+    const auto width = context.surface_width;
+    const auto height = context.surface_height;
+    const auto density = context.ui_density;
+    const auto roots = vm.ProtectReferences(std::array{root});
+    const auto current = [&] {
+        return root == AndroidUiTraversalRoot(vm, context) && content == context.content_view &&
+               revision == context.ui_content_revision && generation == context.ui_tree.Generation() &&
+               width == context.surface_width && height == context.surface_height && density == context.ui_density &&
+               node && FindViewUiNode(context, root.Value()) == node;
+    };
+    if (!current()) {
+        diagnostic("unbound window root");
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Traversal requires a bound window root"};
+    }
+    if (!metrics.width || !metrics.height) diagnostic("zero metrics");
+    auto& schedule = context.ui_window_schedules[root];
+    const bool same_identity = schedule.generation == generation && schedule.content_revision == revision;
+    if (schedule.generation != generation) {
+        const auto token = schedule.window_token;
+        schedule = {};
+        schedule.window_token = token;
+    }
+    if (schedule.deferred_until_tick > context.ui_owner_tick) {
+        diagnostic("deferred next tick");
+        return false;
+    }
+    dexvm::IntrinsicContext root_call{vm, root, {}};
+    const bool layout_requested =
+        (dexvm::IntrinsicCall(root_call).GetInt(context.view_java_measure_fields->flags[0]) & 0x1000) != 0;
+    if (same_identity && schedule.published && schedule.published == context.ui_tree.PublishedProjection() &&
+        schedule.requests.empty() && !layout_requested && schedule.metrics == metrics && schedule.density == density &&
+        !context.ui_tree.Get(context.ui_tree.Root())->layout_dirty) {
+        diagnostic("clean snapshot");
+        if (context.ui_tree.Get(context.ui_tree.Root())->draw_dirty) {
+            const auto target = *context.ui_tree.ProjectionTarget();
+            CommitAndroidMeasuredRootProjection(vm, context, root, target, context.ui_measure_epoch + 1);
             context.ui_tree.ClearDrawDirty();
             schedule.published = context.ui_tree.PublishedProjection();
-            schedule.content_revision = revision;
-            schedule.metrics = metrics;
-            schedule.density = density;
-            return true;
-        } catch (...) {
-            diagnostic("traversal exception");
-            throw;
         }
+        return false;
+    }
+    schedule.generation = generation;
+    try {
+        // First traversal attaches the surviving Java subtree, not onCreate/setContentView.
+        android_intrinsics::MergeManagedViewTreeObservers(vm, context, root);
+        // An interrupted attempt cannot certify the next barrier as clean, even
+        // when the Java layout epilogue already cleared FORCE_LAYOUT.
+        schedule.published.reset();
+        auto& requests = schedule.requests;
+        context.ui_layout_dispatching = true;
+        context.ui_java_active_metrics = metrics;
+
+        struct Reset {
+            DexVmAndroidContext& context;
+
+            ~Reset() {
+                context.ui_layout_dispatching = false;
+                context.ui_java_layout_pass = 0;
+                context.ui_java_active_metrics.reset();
+            }
+        } reset{context};
+
+        const auto pending = std::move(requests);
+        requests.clear();
+        std::vector<dexvm::VmObjectRef> pending_refs;
+        for (const auto requester : pending)
+            if (AndroidViewBelongsToRoot(vm, context, requester, true)) pending_refs.push_back(requester);
+        const auto pending_roots = vm.ProtectReferences(pending_refs);
+        for (const auto requester : pending_refs) {
+            if (AndroidViewBelongsToRoot(vm, context, requester, true))
+                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
+            if (!current()) {
+                diagnostic("callback changed identity or metrics");
+                return false;
+            }
+        }
+        requests.clear();
+        dexvm::IntrinsicContext call{vm, root, {}};
+        dexvm::IntrinsicCall fields(call);
+        const auto& tokens = *context.view_java_measure_fields;
+        for (unsigned pass = 1; pass <= 2; ++pass) {
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, root, "measure", "(II)V",
+                {dexvm::VmValue::Int(metrics.width | 0x40000000), dexvm::VmValue::Int(metrics.height | 0x40000000)}));
+            if (!current()) {
+                diagnostic("callback changed identity or metrics");
+                return false;
+            }
+            context.ui_java_layout_pass = pass;
+            static_cast<void>(android_intrinsics::CallAndroidMethod(
+                vm, root, "layout", "(IIII)V",
+                {dexvm::VmValue::Int(0), dexvm::VmValue::Int(0),
+                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[0]) & 0x00ffffff),
+                 dexvm::VmValue::Int(fields.GetInt(tokens.measured[1]) & 0x00ffffff)}));
+            context.ui_java_layout_pass = 0;
+            if (!current()) {
+                diagnostic("callback changed identity or metrics");
+                return false;
+            }
+            if (pass == 2) {
+                std::erase_if(requests, [&](const auto requester) {
+                    return !AndroidViewBelongsToRoot(vm, context, requester, true);
+                });
+                break;
+            }
+            const auto requested = std::move(requests);
+            requests.clear();
+            std::vector<dexvm::VmObjectRef> valid;
+            for (const auto requester : requested) {
+                const bool attached = AndroidViewBelongsToRoot(vm, context, requester);
+                if (attached && AndroidViewBelongsToRoot(vm, context, requester, true) &&
+                    (fields.GetInt(tokens.flags[0], requester) & 0x1000) != 0)
+                    valid.push_back(requester);
+            }
+            // ViewRootImpl.getValidLayoutRequesters evaluates every requester
+            // before clearing flags, including GONE/detached requesters. Clearing
+            // an ancestor early must not hide a second valid requester.
+            for (const auto requester : requested) {
+                if (!vm.Model().IsValidRef(requester)) continue;
+                auto view = requester;
+                while (view.IsValid() && (fields.GetInt(tokens.flags[0], view) & 0x1000) != 0) {
+                    fields.SetInt(tokens.flags[0], view, fields.GetInt(tokens.flags[0], view) & ~0x1000);
+                    view = fields.GetRef(context.view_java_hierarchy_fields->parent, view);
+                }
+            }
+            if (valid.empty()) break;
+            const auto request_roots = vm.ProtectReferences(valid);
+            for (const auto requester : valid) {
+                static_cast<void>(android_intrinsics::CallAndroidMethod(vm, requester, "requestLayout", "()V"));
+                if (!current()) {
+                    diagnostic("callback changed identity or metrics");
+                    return false;
+                }
+            }
+            requests.clear();
+        }
+        if (!requests.empty()) {
+            schedule.deferred_until_tick = context.ui_owner_tick + 1;
+            if (schedule.deferred_ticks == 0 || schedule.watchdog_tick != context.ui_owner_tick) {
+                schedule.watchdog_tick = context.ui_owner_tick;
+                ++schedule.deferred_ticks;
+            }
+            if (schedule.deferred_ticks > 8) {
+                diagnostic("layout watchdog rejected");
+                const auto detail = "View layout did not converge: requester=" + std::to_string(root.Value()) +
+                                    " epoch=" + std::to_string(context.ui_measure_epoch + 1);
+                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_layout_watchdog", 0);
+                android_intrinsics::GuestLog(call, core::LogLevel::error, detail);
+                throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", detail};
+            }
+        } else {
+            schedule.deferred_ticks = 0;
+            schedule.deferred_until_tick = 0;
+        }
+        const auto epoch = context.ui_measure_epoch + 1;
+        const auto previous_target = context.ui_tree.ProjectionTarget();
+        const auto metrics_revision =
+            previous_target
+                ? previous_target->metrics_revision + (previous_target->metrics.width != metrics.width ||
+                                                               previous_target->metrics.height != metrics.height ||
+                                                               context.ui_projection_density != density
+                                                           ? 1U
+                                                           : 0U)
+                : 1U;
+        const ui::UiProjectionTarget target{
+            context.ui_tree.Root(), generation, revision, metrics_revision, {metrics.width, metrics.height}};
+        context.ui_tree.SetProjectionTarget(target);
+        CommitAndroidMeasuredRootProjection(vm, context, root, target, epoch);
+        context.ui_tree.ClearDrawDirty();
+        schedule.published = context.ui_tree.PublishedProjection();
+        schedule.content_revision = revision;
+        schedule.metrics = metrics;
+        schedule.density = density;
+        return true;
+    } catch (...) {
+        diagnostic("traversal exception");
+        throw;
+    }
 }
 
 bool DispatchAndroidViewSizes(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
@@ -3249,7 +3171,7 @@ void DispatchAndroidGlobalLayout(dexvm::Interpreter& vm, DexVmAndroidContext& co
         return;
     }
 }
-}
+}  // namespace ogplay::runtime
 
 namespace ogplay::runtime::android_intrinsics {
 Decl Declare_test_AccessibilityManager(const Context& context) {

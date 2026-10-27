@@ -22,8 +22,7 @@ namespace {
 
 }  // namespace
 
-JniMonitorError::JniMonitorError(const JniMonitorErrorReason reason,
-                                 std::string message)
+JniMonitorError::JniMonitorError(const JniMonitorErrorReason reason, std::string message)
     : std::runtime_error(std::move(message)), reason_(reason) {}
 
 JniMonitorErrorReason JniMonitorError::Reason() const noexcept {
@@ -32,16 +31,14 @@ JniMonitorErrorReason JniMonitorError::Reason() const noexcept {
 
 class JniMonitorTable::Impl final {
 public:
-    void Enter(const JniObjectIdentity object,
-               const std::uint64_t thread_id) {
+    void Enter(const JniObjectIdentity object, const std::uint64_t thread_id) {
         Validate(object, thread_id);
         std::unique_lock lock(mutex_);
         if (shut_down_) ShutDown();
         auto& entry = monitors_[Key(object)];
         if (entry.owner_thread == thread_id) {
             if (entry.recursion == std::numeric_limits<std::size_t>::max()) {
-                Fail(JniMonitorErrorReason::recursion_overflow,
-                     "JNI monitor recursion count overflowed");
+                Fail(JniMonitorErrorReason::recursion_overflow, "JNI monitor recursion count overflowed");
             }
             ++entry.recursion;
             return;
@@ -50,8 +47,7 @@ public:
             const auto generation = interrupt_generation_;
             ++entry.waiting_threads;
             entry.changed.wait(lock, [this, &entry, generation] {
-                return shut_down_ || interrupt_generation_ != generation ||
-                       entry.owner_thread == 0U;
+                return shut_down_ || interrupt_generation_ != generation || entry.owner_thread == 0U;
             });
             --entry.waiting_threads;
             if (shut_down_) ShutDown();
@@ -61,15 +57,12 @@ public:
         entry.recursion = 1U;
     }
 
-    void Exit(const JniObjectIdentity object,
-              const std::uint64_t thread_id) {
+    void Exit(const JniObjectIdentity object, const std::uint64_t thread_id) {
         Validate(object, thread_id);
         std::scoped_lock lock(mutex_);
         const auto found = monitors_.find(Key(object));
-        if (found == monitors_.end() ||
-            found->second.owner_thread != thread_id) {
-            Fail(JniMonitorErrorReason::not_owner,
-                 "JNI monitor exit requires the owning guest thread");
+        if (found == monitors_.end() || found->second.owner_thread != thread_id) {
+            Fail(JniMonitorErrorReason::not_owner, "JNI monitor exit requires the owning guest thread");
         }
         if (--found->second.recursion == 0U) {
             found->second.owner_thread = 0U;
@@ -77,11 +70,9 @@ public:
         }
     }
 
-    [[nodiscard]] std::size_t ReleaseThread(
-        const std::uint64_t thread_id) {
+    [[nodiscard]] std::size_t ReleaseThread(const std::uint64_t thread_id) {
         if (thread_id == 0U) {
-            Fail(JniMonitorErrorReason::invalid_thread,
-                 "JNI monitor thread ID cannot be zero");
+            Fail(JniMonitorErrorReason::invalid_thread, "JNI monitor thread ID cannot be zero");
         }
         std::scoped_lock lock(mutex_);
         std::size_t released{};
@@ -109,21 +100,17 @@ public:
         return WakeAllLocked();
     }
 
-    [[nodiscard]] JniMonitorSnapshot Snapshot(
-        const JniObjectIdentity object) const {
+    [[nodiscard]] JniMonitorSnapshot Snapshot(const JniObjectIdentity object) const {
         if (object.value == 0U) {
-            Fail(JniMonitorErrorReason::invalid_object,
-                 "JNI monitor object identity cannot be zero");
+            Fail(JniMonitorErrorReason::invalid_object, "JNI monitor object identity cannot be zero");
         }
         std::scoped_lock lock(mutex_);
         const auto found = monitors_.find(Key(object));
         if (found == monitors_.end()) {
-            return {.interrupt_generation = interrupt_generation_,
-                    .shut_down = shut_down_};
+            return {.interrupt_generation = interrupt_generation_, .shut_down = shut_down_};
         }
-        return {found->second.owner_thread, found->second.recursion,
-                found->second.waiting_threads, interrupt_generation_,
-                shut_down_};
+        return {found->second.owner_thread, found->second.recursion, found->second.waiting_threads,
+                interrupt_generation_, shut_down_};
     }
 
 private:
@@ -146,34 +133,24 @@ private:
         return waiting;
     }
 
-    [[nodiscard]] static MonitorKey Key(const JniObjectIdentity object) {
-        return {object.domain, object.value};
-    }
+    [[nodiscard]] static MonitorKey Key(const JniObjectIdentity object) { return {object.domain, object.value}; }
 
-    static void Validate(const JniObjectIdentity object,
-                         const std::uint64_t thread_id) {
+    static void Validate(const JniObjectIdentity object, const std::uint64_t thread_id) {
         if (thread_id == 0U) {
-            Fail(JniMonitorErrorReason::invalid_thread,
-                 "JNI monitor thread ID cannot be zero");
+            Fail(JniMonitorErrorReason::invalid_thread, "JNI monitor thread ID cannot be zero");
         }
         if (object.value == 0U) {
-            Fail(JniMonitorErrorReason::invalid_object,
-                 "JNI monitor object identity cannot be zero");
+            Fail(JniMonitorErrorReason::invalid_object, "JNI monitor object identity cannot be zero");
         }
     }
 
     [[noreturn]] static void Interrupted() {
-        Fail(JniMonitorErrorReason::interrupted,
-             "JNI monitor wait was interrupted");
+        Fail(JniMonitorErrorReason::interrupted, "JNI monitor wait was interrupted");
     }
 
-    [[noreturn]] static void ShutDown() {
-        Fail(JniMonitorErrorReason::shut_down,
-             "JNI monitor table is shut down");
-    }
+    [[noreturn]] static void ShutDown() { Fail(JniMonitorErrorReason::shut_down, "JNI monitor table is shut down"); }
 
-    [[noreturn]] static void Fail(const JniMonitorErrorReason reason,
-                                  const char* message) {
+    [[noreturn]] static void Fail(const JniMonitorErrorReason reason, const char* message) {
         throw JniMonitorError(reason, message);
     }
 
@@ -184,34 +161,36 @@ private:
 };
 
 JniMonitorTable::JniMonitorTable() : impl_(std::make_unique<Impl>()) {}
+
 JniMonitorTable::~JniMonitorTable() = default;
 JniMonitorTable::JniMonitorTable(JniMonitorTable&&) noexcept = default;
-JniMonitorTable& JniMonitorTable::operator=(JniMonitorTable&&) noexcept =
-    default;
-void JniMonitorTable::Enter(const JniObjectIdentity object,
-                            const std::uint64_t thread_id) {
+JniMonitorTable& JniMonitorTable::operator=(JniMonitorTable&&) noexcept = default;
+
+void JniMonitorTable::Enter(const JniObjectIdentity object, const std::uint64_t thread_id) {
     impl_->Enter(object, thread_id);
 }
-void JniMonitorTable::Exit(const JniObjectIdentity object,
-                           const std::uint64_t thread_id) {
+
+void JniMonitorTable::Exit(const JniObjectIdentity object, const std::uint64_t thread_id) {
     impl_->Exit(object, thread_id);
 }
+
 std::size_t JniMonitorTable::ReleaseThread(const std::uint64_t thread_id) {
     return impl_->ReleaseThread(thread_id);
 }
+
 std::size_t JniMonitorTable::InterruptWaiters() {
     return impl_->InterruptWaiters();
 }
+
 std::size_t JniMonitorTable::Shutdown() {
     return impl_->Shutdown();
 }
-JniMonitorSnapshot JniMonitorTable::Snapshot(
-    const JniObjectIdentity object) const {
+
+JniMonitorSnapshot JniMonitorTable::Snapshot(const JniObjectIdentity object) const {
     return impl_->Snapshot(object);
 }
 
-JniEnvironment::JniEnvironment(const JniReferenceLimits limits)
-    : references_(limits) {}
+JniEnvironment::JniEnvironment(const JniReferenceLimits limits) : references_(limits) {}
 
 void JniEnvironment::AttachThread(const std::uint64_t thread_id, const std::size_t initial_local_capacity,
                                   const bool daemon, std::optional<std::string> name) {
@@ -239,8 +218,7 @@ void JniEnvironment::DetachThread(const std::uint64_t thread_id) {
         const std::scoped_lock lock(monitor_hooks_mutex_);
         release = monitor_hooks_.release_thread;
     }
-    static_cast<void>(release ? release(thread_id)
-                              : monitors_.ReleaseThread(thread_id));
+    static_cast<void>(release ? release(thread_id) : monitors_.ReleaseThread(thread_id));
     references_.DetachThread(thread_id);
     exceptions_.DetachThread(thread_id);
     const std::scoped_lock lock(attachment_mutex_);
@@ -275,8 +253,7 @@ JniInt JniEnvironment::GetObjectRefType(const std::uint64_t thread, const JniRef
 }
 
 bool JniEnvironment::IsThreadAttached(const std::uint64_t thread_id) const {
-    return references_.IsThreadAttached(thread_id) &&
-           exceptions_.IsThreadAttached(thread_id);
+    return references_.IsThreadAttached(thread_id) && exceptions_.IsThreadAttached(thread_id);
 }
 
 bool JniEnvironment::IsDaemonThread(const std::uint64_t thread_id) const {
@@ -287,8 +264,7 @@ std::size_t JniEnvironment::GlobalReferenceCount() const {
     return references_.GlobalCount();
 }
 
-void JniEnvironment::VisitReferenceRoots(
-    const JniReferenceTable::RootVisitor& visitor) const {
+void JniEnvironment::VisitReferenceRoots(const JniReferenceTable::RootVisitor& visitor) const {
     references_.VisitRoots(visitor);
     std::vector<JniObjectIdentity> describing;
     {
@@ -308,14 +284,12 @@ JniInt JniEnvironment::GetVersion(const std::uint64_t thread_id) const {
     return kJniVersion1_6;
 }
 
-void JniEnvironment::ConfigureLegacyLocalReferenceCompatibility(
-    const bool enabled, JniReferenceTable::LegacyReferenceWarning warning) {
-    references_.ConfigureLegacyLocalReferenceCompatibility(enabled,
-                                                            std::move(warning));
+void JniEnvironment::ConfigureLegacyLocalReferenceCompatibility(const bool enabled,
+                                                                JniReferenceTable::LegacyReferenceWarning warning) {
+    references_.ConfigureLegacyLocalReferenceCompatibility(enabled, std::move(warning));
 }
 
-void JniEnvironment::EnsureLocalCapacity(
-    const std::uint64_t thread_id, const std::size_t additional_capacity) {
+void JniEnvironment::EnsureLocalCapacity(const std::uint64_t thread_id, const std::size_t additional_capacity) {
     RequireAllowed(thread_id, "EnsureLocalCapacity");
     // Dalvik Jni.cpp:409-412 / Thread.h:74: request guarantee is bounded by 512.
     const auto used = references_.LocalCount(thread_id);
@@ -324,8 +298,7 @@ void JniEnvironment::EnsureLocalCapacity(
     references_.EnsureLocalCapacity(thread_id, additional_capacity);
 }
 
-void JniEnvironment::PushLocalFrame(const std::uint64_t thread_id,
-                                    const std::size_t capacity) {
+void JniEnvironment::PushLocalFrame(const std::uint64_t thread_id, const std::size_t capacity) {
     RequireAllowed(thread_id, "PushLocalFrame");
     // Dalvik Jni.cpp:409-412 / Thread.h:74: request guarantee is bounded by 512.
     const auto used = references_.LocalCount(thread_id);
@@ -334,80 +307,67 @@ void JniEnvironment::PushLocalFrame(const std::uint64_t thread_id,
     references_.PushLocalFrame(thread_id, capacity);
 }
 
-JniReference JniEnvironment::PopLocalFrame(const std::uint64_t thread_id,
-                                            const JniReference result) {
+JniReference JniEnvironment::PopLocalFrame(const std::uint64_t thread_id, const JniReference result) {
     RequireAllowed(thread_id, "PopLocalFrame");
     return references_.PopLocalFrame(thread_id, result);
 }
 
-JniReference JniEnvironment::NewLocalRef(const std::uint64_t thread_id,
-                                         const JniReference source) {
+JniReference JniEnvironment::NewLocalRef(const std::uint64_t thread_id, const JniReference source) {
     RequireAllowed(thread_id, "NewLocalRef");
     const auto object = references_.Resolve(thread_id, source);
-    return object.has_value() ? references_.NewLocal(thread_id, *object)
-                              : JniReference{};
+    return object.has_value() ? references_.NewLocal(thread_id, *object) : JniReference{};
 }
 
-JniReference JniEnvironment::PublishLocalObject(
-    const std::uint64_t thread_id, const JniObjectIdentity object) {
+JniReference JniEnvironment::PublishLocalObject(const std::uint64_t thread_id, const JniObjectIdentity object) {
     RequireAllowed(thread_id, "NewLocalRef");
     return references_.NewLocal(thread_id, object);
 }
 
-JniReference JniEnvironment::PublishGlobalObjectForHle(
-    const std::uint64_t thread_id, const JniObjectIdentity object) {
+JniReference JniEnvironment::PublishGlobalObjectForHle(const std::uint64_t thread_id, const JniObjectIdentity object) {
     RequireAllowed(thread_id, "NewGlobalRef");
     return references_.NewGlobal(object);
 }
 
-void JniEnvironment::DeleteLocalRef(const std::uint64_t thread_id,
-                                    const JniReference reference) {
+void JniEnvironment::DeleteLocalRef(const std::uint64_t thread_id, const JniReference reference) {
     RequireAllowed(thread_id, "DeleteLocalRef");
     references_.DeleteLocal(thread_id, reference);
 }
 
-JniReference JniEnvironment::NewGlobalRef(const std::uint64_t thread_id,
-                                          const JniReference source) {
+JniReference JniEnvironment::NewGlobalRef(const std::uint64_t thread_id, const JniReference source) {
     RequireAllowed(thread_id, "NewGlobalRef");
     const auto object = references_.Resolve(thread_id, source);
     return object.has_value() ? references_.NewGlobal(*object) : JniReference{};
 }
 
-void JniEnvironment::DeleteGlobalRef(const std::uint64_t thread_id,
-                                     const JniReference reference) {
+void JniEnvironment::DeleteGlobalRef(const std::uint64_t thread_id, const JniReference reference) {
     RequireAllowed(thread_id, "DeleteGlobalRef");
     references_.DeleteGlobal(reference);
 }
 
-JniReference JniEnvironment::NewWeakGlobalRef(const std::uint64_t thread_id,
-                                              const JniReference source) {
+JniReference JniEnvironment::NewWeakGlobalRef(const std::uint64_t thread_id, const JniReference source) {
     RequireAllowed(thread_id, "NewWeakGlobalRef");
     const auto object = references_.Resolve(thread_id, source);
-    return object.has_value() ? references_.NewWeakGlobal(*object)
-                              : JniReference{};
+    return object.has_value() ? references_.NewWeakGlobal(*object) : JniReference{};
 }
 
-void JniEnvironment::DeleteWeakGlobalRef(const std::uint64_t thread_id,
-                                         const JniReference reference) {
+void JniEnvironment::DeleteWeakGlobalRef(const std::uint64_t thread_id, const JniReference reference) {
     RequireAllowed(thread_id, "DeleteWeakGlobalRef");
     references_.DeleteWeakGlobal(reference);
 }
 
-bool JniEnvironment::IsSameObject(const std::uint64_t thread_id,
-                                  const JniReference left,
+bool JniEnvironment::IsSameObject(const std::uint64_t thread_id, const JniReference left,
                                   const JniReference right) const {
     RequireAllowed(thread_id, "IsSameObject");
     return references_.IsSameObject(thread_id, left, right);
 }
 
-std::optional<JniObjectIdentity> JniEnvironment::ResolveObjectForHle(
-    const std::uint64_t thread_id, const JniReference reference) const {
+std::optional<JniObjectIdentity> JniEnvironment::ResolveObjectForHle(const std::uint64_t thread_id,
+                                                                     const JniReference reference) const {
     RequireAllowed(thread_id, "GetObjectClass");
     return references_.Resolve(thread_id, reference);
 }
 
-void JniEnvironment::Throw(const std::uint64_t thread_id,
-                           const JniReference throwable) {
+void JniEnvironment::Throw(const std::uint64_t thread_id, const JniReference throwable) {
     RequireAllowed(thread_id, "Throw");
     const auto object = references_.Resolve(thread_id, throwable);
     exceptions_.Throw(thread_id, object.value_or(JniObjectIdentity{}));
@@ -418,27 +378,26 @@ void JniEnvironment::SetThrowableFactory(ThrowableFactory factory) {
     throwable_factory_ = std::move(factory);
 }
 
-void JniEnvironment::ThrowNew(
-    const std::uint64_t thread_id,
-    const JniObjectIdentity exception_class,
-    std::string modified_utf8_message) {
+void JniEnvironment::ThrowNew(const std::uint64_t thread_id, const JniObjectIdentity exception_class,
+                              std::string modified_utf8_message) {
     RequireAllowed(thread_id, "ThrowNew");
     if (exception_class.value == 0U) {
-        throw JniExceptionError(
-            JniExceptionErrorReason::invalid_throwable,
-            "JNI exception class identity cannot be zero");
+        throw JniExceptionError(JniExceptionErrorReason::invalid_throwable,
+                                "JNI exception class identity cannot be zero");
     }
     ThrowableFactory factory;
-    { std::scoped_lock lock(throwable_mutex_); factory = throwable_factory_; }
-    const auto throwable = factory
-        ? references_.Resolve(thread_id, factory(thread_id, exception_class, modified_utf8_message)).value_or(JniObjectIdentity{})
-        : AllocateJniHostObjectIdentity();
     {
         std::scoped_lock lock(throwable_mutex_);
-        throwables_.emplace(
-            throwable.value,
-            JniThrowableMetadata{throwable, exception_class,
-                                 std::move(modified_utf8_message)});
+        factory = throwable_factory_;
+    }
+    const auto throwable =
+        factory ? references_.Resolve(thread_id, factory(thread_id, exception_class, modified_utf8_message))
+                      .value_or(JniObjectIdentity{})
+                : AllocateJniHostObjectIdentity();
+    {
+        std::scoped_lock lock(throwable_mutex_);
+        throwables_.emplace(throwable.value,
+                            JniThrowableMetadata{throwable, exception_class, std::move(modified_utf8_message)});
     }
     try {
         exceptions_.Throw(thread_id, throwable);
@@ -452,8 +411,7 @@ void JniEnvironment::ThrowNew(
 JniReference JniEnvironment::ExceptionOccurred(const std::uint64_t thread_id) {
     RequireAllowed(thread_id, "ExceptionOccurred");
     const auto throwable = exceptions_.Occurred(thread_id);
-    return throwable.has_value() ? references_.NewLocal(thread_id, *throwable)
-                                 : JniReference{};
+    return throwable.has_value() ? references_.NewLocal(thread_id, *throwable) : JniReference{};
 }
 
 bool JniEnvironment::ExceptionCheck(const std::uint64_t thread_id) const {
@@ -484,14 +442,12 @@ void JniEnvironment::ExceptionDescribe(const std::uint64_t thread_id) {
         const auto found = throwables_.find(pending->value);
         if (found != throwables_.end()) metadata = found->second;
     }
-    exception_logger_.Write(
-        core::LogLevel::error, "runtime.jni.exception",
-        "pending JNI exception",
-        {.guest_thread = thread_id},
-        {{"throwable", metadata.throwable.value},
-         {"exception_class", metadata.exception_class.value},
-         {"message", metadata.modified_utf8_message}},
-        {.mode = core::RateLimitMode::none});
+    exception_logger_.Write(core::LogLevel::error, "runtime.jni.exception", "pending JNI exception",
+                            {.guest_thread = thread_id},
+                            {{"throwable", metadata.throwable.value},
+                             {"exception_class", metadata.exception_class.value},
+                             {"message", metadata.modified_utf8_message}},
+                            {.mode = core::RateLimitMode::none});
     ExceptionDescriber describe;
     {
         const std::scoped_lock lock(throwable_mutex_);
@@ -523,8 +479,7 @@ void JniEnvironment::ExceptionClear(const std::uint64_t thread_id) {
 }
 
 std::vector<core::LogRecord> JniEnvironment::ExceptionDiagnostics() const {
-    return exception_logger_.Snapshot(
-        std::nullopt, "runtime.jni.exception");
+    return exception_logger_.Snapshot(std::nullopt, "runtime.jni.exception");
 }
 
 void JniEnvironment::SetReflectionHooks(JniReflectionHooks hooks) {
@@ -535,6 +490,11 @@ void JniEnvironment::SetReflectionHooks(JniReflectionHooks hooks) {
 void JniEnvironment::SetObjectAllocationHook(ObjectAllocationHook hook) {
     const std::scoped_lock lock(object_allocation_mutex_);
     object_allocation_hook_ = std::move(hook);
+}
+
+bool JniEnvironment::HasObjectAllocationHook() const {
+    const std::scoped_lock lock(object_allocation_mutex_);
+    return static_cast<bool>(object_allocation_hook_);
 }
 
 JniReference JniEnvironment::AllocObject(std::uint64_t thread, JniReference java_class) {
@@ -563,7 +523,8 @@ JniMethodId JniEnvironment::FromReflectedMethod(std::uint64_t thread, JniReferen
     return hook(thread, object);
 }
 
-JniReference JniEnvironment::ToReflectedMethod(std::uint64_t thread, JniReference object, JniMethodId id, bool is_static) {
+JniReference JniEnvironment::ToReflectedMethod(std::uint64_t thread, JniReference object, JniMethodId id,
+                                               bool is_static) {
     RequireAllowed(thread, "ToReflectedMethod");
     if (!references_.Resolve(thread, object).has_value())
         throw std::invalid_argument("ToReflectedMethod: null reference");
@@ -589,7 +550,8 @@ JniFieldId JniEnvironment::FromReflectedField(std::uint64_t thread, JniReference
     return hook(thread, object);
 }
 
-JniReference JniEnvironment::ToReflectedField(std::uint64_t thread, JniReference object, JniFieldId id, bool is_static) {
+JniReference JniEnvironment::ToReflectedField(std::uint64_t thread, JniReference object, JniFieldId id,
+                                              bool is_static) {
     RequireAllowed(thread, "ToReflectedField");
     if (!references_.Resolve(thread, object).has_value())
         throw std::invalid_argument("ToReflectedField: null reference");
@@ -602,8 +564,7 @@ JniReference JniEnvironment::ToReflectedField(std::uint64_t thread, JniReference
     return hook(thread, object, id, is_static);
 }
 
-void JniEnvironment::MonitorEnter(const std::uint64_t thread_id,
-                                  const JniReference object) {
+void JniEnvironment::MonitorEnter(const std::uint64_t thread_id, const JniReference object) {
     RequireAllowed(thread_id, "MonitorEnter");
     const auto identity = references_.Resolve(thread_id, object);
     std::function<void(JniObjectIdentity, std::uint64_t)> enter;
@@ -612,12 +573,13 @@ void JniEnvironment::MonitorEnter(const std::uint64_t thread_id,
         enter = monitor_hooks_.enter;
     }
     const auto resolved = identity.value_or(JniObjectIdentity{});
-    if (enter) enter(resolved, thread_id);
-    else monitors_.Enter(resolved, thread_id);
+    if (enter)
+        enter(resolved, thread_id);
+    else
+        monitors_.Enter(resolved, thread_id);
 }
 
-void JniEnvironment::MonitorExit(const std::uint64_t thread_id,
-                                 const JniReference object) {
+void JniEnvironment::MonitorExit(const std::uint64_t thread_id, const JniReference object) {
     RequireAllowed(thread_id, "MonitorExit");
     const auto identity = references_.Resolve(thread_id, object);
     std::function<void(JniObjectIdentity, std::uint64_t)> exit;
@@ -626,8 +588,10 @@ void JniEnvironment::MonitorExit(const std::uint64_t thread_id,
         exit = monitor_hooks_.exit;
     }
     const auto resolved = identity.value_or(JniObjectIdentity{});
-    if (exit) exit(resolved, thread_id);
-    else monitors_.Exit(resolved, thread_id);
+    if (exit)
+        exit(resolved, thread_id);
+    else
+        monitors_.Exit(resolved, thread_id);
 }
 
 std::size_t JniEnvironment::InterruptMonitorWaiters() {
@@ -648,8 +612,7 @@ std::size_t JniEnvironment::ShutdownMonitors() {
     return shutdown ? shutdown() : monitors_.Shutdown();
 }
 
-JniMonitorSnapshot JniEnvironment::MonitorSnapshot(
-    const JniObjectIdentity object) const {
+JniMonitorSnapshot JniEnvironment::MonitorSnapshot(const JniObjectIdentity object) const {
     std::function<JniMonitorSnapshot(JniObjectIdentity)> snapshot;
     {
         const std::scoped_lock lock(monitor_hooks_mutex_);

@@ -25,21 +25,18 @@ public:
 
 class TestGpu final : public ogplay::core::GpuStateProvider {
 public:
-    ogplay::core::GpuStats Stats() const override {
-        return {12, 3, 2, 1, 4, {{7, 8, "GL_COLOR_ATTACHMENT0"}}};
-    }
+    ogplay::core::GpuStats Stats() const override { return {12, 3, 2, 1, 4, {{7, 8, "GL_COLOR_ATTACHMENT0"}}}; }
 
     std::vector<ogplay::core::GpuRenderTarget> RenderTargets() const override {
         return {{7, 640, 360, "RGBA8", {"color0", "depth"}, true}};
     }
 
     ogplay::core::GpuCapabilities Capabilities() const override {
-        return {{"GL_EXT_debug_marker", "GL_OES_rgb8_rgba8"},
-                {{"GL_MAX_TEXTURE_SIZE", 4096}}, "angle-d3d11-hardware"};
+        return {{"GL_EXT_debug_marker", "GL_OES_rgb8_rgba8"}, {{"GL_MAX_TEXTURE_SIZE", 4096}}, "angle-d3d11-hardware"};
     }
 
-    std::vector<ogplay::core::GpuTraceEntry> Trace(
-        const std::string_view filter, const std::size_t limit) const override {
+    std::vector<ogplay::core::GpuTraceEntry> Trace(const std::string_view filter,
+                                                   const std::size_t limit) const override {
         last_filter = filter;
         last_limit = limit;
         if (exceed_limit) {
@@ -62,8 +59,7 @@ TEST_CASE("control service exposes deterministic session state") {
     CHECK(ping.ok);
     CHECK(ping.json.find("ogplay-agent") != std::string::npos);
 
-    CHECK(fixture.service.Request("session.state").json.find("\"phase\":\"idle\"") !=
-          std::string::npos);
+    CHECK(fixture.service.Request("session.state").json.find("\"phase\":\"idle\"") != std::string::npos);
     CHECK(fixture.service.Request("session.open").ok);
     ogplay::agent::ControlParams step_params;
     step_params.frames = 6;
@@ -106,20 +102,19 @@ TEST_CASE("null calls and guest symbols are first-class queries") {
     CHECK(symbol.ok);
     CHECK(symbol.json.find("sample_entry") != std::string::npos);
 
-    const auto rpc_symbol = fixture.rpc.Handle(
-        R"({"jsonrpc":"2.0","id":7,"method":"sym.resolve","params":{"address":4096}})");
+    const auto rpc_symbol =
+        fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":7,"method":"sym.resolve","params":{"address":4096}})");
     CHECK(rpc_symbol.find("libsample.so") != std::string::npos);
 }
 
 TEST_CASE("JSON-RPC drives an empty session without sleep") {
     Fixture fixture;
-    const auto opened = fixture.rpc.Handle(
-        R"({"jsonrpc":"2.0","id":1,"method":"session.open"})");
+    const auto opened = fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"session.open"})");
     CHECK(opened.find("\"id\":1") != std::string::npos);
     CHECK(opened.find("\"phase\":\"running\"") != std::string::npos);
 
-    const auto stepped = fixture.rpc.Handle(
-        R"({"jsonrpc":"2.0","id":"step","method":"run.step","params":{"frames":5}})");
+    const auto stepped =
+        fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":"step","method":"run.step","params":{"frames":5}})");
     CHECK(stepped.find("\"id\":\"step\"") != std::string::npos);
     CHECK(stepped.find("\"frame\":5") != std::string::npos);
 
@@ -132,23 +127,31 @@ TEST_CASE("JSON-RPC drives an empty session without sleep") {
 TEST_CASE("JSON-RPC uses standard parse, request and method errors") {
     Fixture fixture;
     CHECK(fixture.rpc.Handle("not-json").find("\"code\":-32700") != std::string::npos);
-    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"1.0","id":1,"method":"system.ping"})")
-              .find("\"code\":-32600") != std::string::npos);
-    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"missing"})")
-              .find("\"code\":-32601") != std::string::npos);
-    CHECK(fixture.rpc.Handle(
-              R"({"jsonrpc":"2.0","id":1,"id":2,"method":"system.ping"})")
-              .find("\"code\":-32600") != std::string::npos);
-    CHECK(fixture.rpc.Handle(
-              R"({"jsonrpc":"2.0","id":1,"method":"system.ping","nested":{"method":"missing"}})")
+    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"1.0","id":1,"method":"system.ping"})").find("\"code\":-32600") !=
+          std::string::npos);
+    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"missing"})").find("\"code\":-32601") !=
+          std::string::npos);
+    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"id":2,"method":"system.ping"})").find("\"code\":-32600") !=
+          std::string::npos);
+    CHECK(fixture.rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"system.ping","nested":{"method":"missing"}})")
               .find("\"result\"") != std::string::npos);
+}
+
+TEST_CASE("JSON-RPC relays handler responses larger than the request parse limit") {
+    // Library listings embed base64 icons; a full library exceeds the 1 MiB request bound.
+    const std::string payload(ogplay::core::JsonDocument::kDefaultMaximumBytes + 1U, 'a');
+    ogplay::agent::JsonRpcAdapter rpc{[&](std::string_view, ogplay::core::JsonValue) {
+        return ogplay::agent::ControlResponse{true, R"({"result":")" + payload + R"("})"};
+    }};
+    const auto response = rpc.Handle(R"({"jsonrpc":"2.0","id":1,"method":"library.list"})");
+    CHECK(response.find("\"error\"") == std::string::npos);
+    CHECK(response.find(payload) != std::string::npos);
 }
 
 TEST_CASE("GPU agent queries serialize strong typed provider snapshots") {
     Fixture fixture;
     TestGpu gpu;
-    ogplay::agent::ControlService service{
-        fixture.ledger, fixture.logger, fixture.session, &gpu};
+    ogplay::agent::ControlService service{fixture.ledger, fixture.logger, fixture.session, &gpu};
 
     const auto stats = service.Request("gpu.stats");
     CHECK(stats.ok);
@@ -158,8 +161,7 @@ TEST_CASE("GPU agent queries serialize strong typed provider snapshots") {
 
     const auto targets = service.Request("gpu.render_targets");
     CHECK(targets.ok);
-    CHECK(targets.json.find("\"size\":{\"width\":640,\"height\":360}") !=
-          std::string::npos);
+    CHECK(targets.json.find("\"size\":{\"width\":640,\"height\":360}") != std::string::npos);
     CHECK(targets.json.find("\"created_by_guest\":true") != std::string::npos);
 
     const auto capabilities = service.Request("gpu.capabilities");
@@ -171,12 +173,11 @@ TEST_CASE("GPU agent queries serialize strong typed provider snapshots") {
 TEST_CASE("GPU trace forwards filter and bounded limit through JSON-RPC") {
     Fixture fixture;
     TestGpu gpu;
-    ogplay::agent::ControlService service{
-        fixture.ledger, fixture.logger, fixture.session, &gpu};
+    ogplay::agent::ControlService service{fixture.ledger, fixture.logger, fixture.session, &gpu};
     ogplay::agent::JsonRpcAdapter rpc{service};
 
-    const auto response = rpc.Handle(
-        R"({"jsonrpc":"2.0","id":"gpu","method":"gpu.trace","params":{"filter":"draw","limit":2}})");
+    const auto response =
+        rpc.Handle(R"({"jsonrpc":"2.0","id":"gpu","method":"gpu.trace","params":{"filter":"draw","limit":2}})");
     CHECK(response.find("\"id\":\"gpu\"") != std::string::npos);
     CHECK(response.find("glClear") != std::string::npos);
     CHECK(response.find("GL_TRIANGLES") != std::string::npos);
@@ -192,17 +193,13 @@ TEST_CASE("GPU queries fail explicitly without a valid bounded provider") {
     CHECK(unavailable.json.find("gpu_unavailable") != std::string::npos);
 
     TestGpu gpu;
-    ogplay::agent::ControlService service{
-        fixture.ledger, fixture.logger, fixture.session, &gpu};
+    ogplay::agent::ControlService service{fixture.ledger, fixture.logger, fixture.session, &gpu};
     ogplay::agent::ControlParams invalid;
     invalid.limit = 0;
-    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_params") !=
-          std::string::npos);
+    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_params") != std::string::npos);
     invalid.limit = 1001;
-    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_params") !=
-          std::string::npos);
+    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_params") != std::string::npos);
     invalid.limit = 1;
     gpu.exceed_limit = true;
-    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_state") !=
-          std::string::npos);
+    CHECK(service.Request("gpu.trace", invalid).json.find("invalid_state") != std::string::npos);
 }

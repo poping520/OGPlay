@@ -1320,6 +1320,12 @@ Decl Declare_android_content_res_Resources(const Context &context) {
       [context](dx::IntrinsicContext& call) {
           if (IsSystemResources(context, call.receiver))
               throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "system Drawable resources are not available"};
+          // Keep the paired ROM path for APK resources and already reviewed ROM skins.
+          const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+          const auto density = static_cast<std::uint32_t>(std::lround(context->ui_density * 160.0F));
+          if ((id >> 24U) != 1U || context->theme_resources.Drawable(id, density))
+              return CallAndroidMethod(call.vm, call.receiver, "getDrawable",
+                  "(IZ)Landroid/graphics/drawable/Drawable;", {call.arguments[0], dx::VmValue::Int(1)});
           try { return dx::VmValue::Ref(MakeResourceDrawable(call, context, static_cast<std::uint32_t>(call.arguments[0].AsInt()))); }
           catch (const dx::VmJavaThrow&) { throw; }
           catch (const std::runtime_error& error) {

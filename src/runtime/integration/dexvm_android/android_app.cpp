@@ -303,6 +303,11 @@ Decl Declare_android_app_Activity(const Context& context) {
                     "mOgplayOwner", "Landroid/app/Activity;");
                 if (!owner) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window owner field is missing");
                 call.vm.Model().InstanceSlots(value)[call.vm.Linker().Field(*owner).slot] = {call.receiver.Value(), dx::SlotTag::ref};
+                const auto context_field = call.vm.Linker().FindFieldRecursive(call.vm.Model().ObjectClass(value),
+                    "mContext", "Landroid/content/Context;");
+                if (!context_field) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "Window context field is missing");
+                call.vm.Model().InstanceSlots(value)[call.vm.Linker().Field(*context_field).slot] =
+                    {call.receiver.Value(), dx::SlotTag::ref};
                 fields.SetRef(window, value);
             }
             return dx::VmValue::Ref(value);

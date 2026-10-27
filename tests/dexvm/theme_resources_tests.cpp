@@ -1628,10 +1628,13 @@ TEST_CASE("DVM-292 leaf bitmap and scalar colors execute ROM getters on both bac
         CHECK(f.context->ui_drawables.at(jpeg_drawable.Value()).leaf_pixels->rgba8.size() == 8);
         for (const auto& hit : f.ledger.Unimplemented())
             CHECK_MESSAGE(hit.count == 0, hit.id);
+        const auto drawable_entry = f.linker.FindVtableIndex(f.model.ObjectClass(res), "getDrawable",
+                                                              "(I)Landroid/graphics/drawable/Drawable;");
+        REQUIRE(drawable_entry);
+        CHECK(f.linker.Method(f.linker.Class(f.model.ObjectClass(res)).vtable[*drawable_entry]).kind == MethodKind::intrinsic);
         for (const auto& [object, name, descriptor] : std::vector<std::tuple<VmObjectRef, const char*, const char*>>{
                  {typed, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;"},
                  {typed, "getColorStateList", "(I)Landroid/content/res/ColorStateList;"},
-                 {res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;"},
                  {res, "getColorStateList", "(I)Landroid/content/res/ColorStateList;"},
                  {chosen, "getIntrinsicWidth", "()I"}}) {
             const auto method = f.linker.FindVtableIndex(f.model.ObjectClass(object), name, descriptor);
@@ -2260,5 +2263,47 @@ TEST_CASE("DVM-316 RelativeLayout inflation reports reflection target and constr
         CHECK(failure->find("Caused by: Ljava/lang/UnsupportedOperationException;: " + message) != std::string::npos);
         CHECK(failure->find("Caused by:   at Landroid/content/res/Resources$Theme;.obtainStyledAttributes") !=
               std::string::npos);
+    }
+}
+
+TEST_CASE("API19 app drawable accepts only ROM scalar colors") {
+    using ogplay::test::container_traversal::ContainerVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = f.New("Landroid/content/Context;");
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, resources});
+        const auto drawable = f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                   {VmValue::Int(0x0106000c)}).ref;
+        const auto drawable_root = f.vm.ProtectReferences(std::array{drawable});
+        CHECK(f.linker.Class(f.model.ObjectClass(drawable)).descriptor == "Landroid/graphics/drawable/ColorDrawable;");
+        CHECK(static_cast<std::uint32_t>(f.On(drawable, "getColor", "()I").AsInt()) == 0xff000000U);
+        CHECK(f.context->ui_drawables.at(drawable.Value()).resource_id == 0x0106000cU);
+        CHECK(f.On(drawable, "getOpacity", "()I").AsInt() == -1);
+        f.On(drawable, "setColor", "(I)V", {VmValue::Int(0)});
+        CHECK(f.On(drawable, "getOpacity", "()I").AsInt() == -2);
+        f.On(drawable, "setColor", "(I)V", {VmValue::Int(0x12345678)});
+        CHECK(f.On(drawable, "getOpacity", "()I").AsInt() == -3);
+        const auto skin = f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                               {VmValue::Int(0x01080016)}).ref;
+        const auto skin_root = f.vm.ProtectReferences(std::array{skin});
+        CHECK(f.context->ui_drawables.at(skin.Value()).rom_skin);
+        REQUIRE_FALSE(f.context->theme_resources.Color(0x01060001)->xml.empty());
+        // Even an APK collision cannot supply an unknown system drawable.
+        f.context->arsc.entries.push_back({.resource_id = 0x0106ffff, .value_type = 28, .value_data = 0xff123456});
+        for (const auto id : {0x01060001, 0x0106ffff, 0x0108ffff}) {
+            const auto failed = f.OnOutcome(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                            {VmValue::Int(id)});
+            REQUIRE(failed.exception.IsValid());
+            CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        }
+        const auto system = f.Static("Landroid/content/res/Resources;", "getSystem", "()Landroid/content/res/Resources;").ref;
+        const auto system_root = f.vm.ProtectReferences(std::array{system});
+        const auto failed = f.OnOutcome(system, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                                        {VmValue::Int(0x0106000c)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        CHECK(failed.exception_message == "system Drawable resources are not available");
     }
 }

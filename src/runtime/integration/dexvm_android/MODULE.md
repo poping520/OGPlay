@@ -189,6 +189,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   DEX、build/check 校验；无 host/APK 回退/旧 ID 别名。缺失/重复/畸形映射 ISE，未知 ID/非整数
   getInteger NotFoundException，映射整数可转文本。Configuration 稳定对象用 VM Locale.getDefault/
   原 setLayoutDirection，TextUtils 仅 ROOT/en/zh 的 LTR，其他在 likely-subtags 接通前失败。
+- app getDrawable 将封存 ROM 系统标量颜色构造为 ColorDrawable；既有受审 ROM 皮肤保留，其余系统 drawable 仍失败，getSystem 路径保持拒绝。
 - getDrawable 返回真实 BitmapDrawable/ColorDrawable；缺/无效资源 NotFoundException，XML Drawable/
   资源 NinePatch 对象 UOE、自定义 Drawable 绘制拒绝。背景及 ImageView 保持 Drawable 身份与
   View→Drawable→Bitmap 强边，Button 默认非空背景、普通 View 可 null；setImageBitmap 每次新建
@@ -308,6 +309,7 @@ ui 不读取 Java 字段；guest measured/bounds 与遍历权威唯一归 Java�
 
 Window 在每实例 synthetic root 下持有稳定真实 FrameLayout，android.R.id.content/parent 保持身份且
 不跨窗口；Activity 委托 Window，setContentView 替换、addContentView 追加，null 参数用默认值。
+Window 背景由 Java 强引用保存并套用到唯一内容根；不模拟窗口格式变化或主题 windowBackground 默认背景。
 content_view 仅首个 View 投影、window root 是遍历边界；移除保留 View/参数/几何，实例退役才清理。
 onContentChanged 虚派、异常保持身份，重入换代中止旧操作，不回滚已执行回调；无主题 Decor/ActionBar。
 每 Window 独立 LayoutParams；API19 公开实例字段走 intrinsic 真实字段，setAttributes 按

@@ -65,8 +65,8 @@ note = "DVM-331：默认配对 ROM PhoneLayoutInflater 与 LayoutInflater；Fact
 
 [dexvm.window_content]
 status = "partial"
-test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
-note = "每Window稳定内容容器与布局参数、内容替换/追加、onContentChanged及焦点往返保持；DVM-326已附着View返回每窗口稳定的进程内window/application token，未附着null，退役失效。transact/IPC marshalling与IME明确失败；无Binder/WMS/完整Decor，GPU/跨平台未验收。"
+test = "tests/runtime/activity_window_lifecycle_tests.cpp#API19 Window background; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/owner_traversal_tests.cpp#DVM-307; tests/dexvm/widget_window_dialog_tests.cpp#LUI18; tests/runtime/jni_android_platform_tests.cpp#DVM-245; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-245; tests/runtime/activity_task_stack_tests.cpp#DVM-223; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235; tests/runtime/guest_native_values_tests.cpp#DVM-219; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-219"
+note = "API19 Window背景保存Java强边并套用唯一内容根，资源setter虚派加载；无窗口格式/主题默认背景。每Window稳定内容容器与布局参数、内容替换/追加、onContentChanged及焦点往返保持；DVM-326已附着View返回每窗口稳定的进程内window/application token，未附着null，退役失效。transact/IPC marshalling与IME明确失败；无Binder/WMS/完整Decor，GPU/跨平台未验收。"
 
 [runtime.ui_frame_layout]
 status = "complete"
@@ -125,8 +125,8 @@ note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引�
 
 [dexvm.drawable_resource]
 status = "partial"
-test = "tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "默认配对同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与选中像素在现有叶 bitmap 平面冻结；guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 明确失败。DVM-327 同 ROM ColorStateList 经原版 XML 路径构造，不回退 APK。"
+test = "tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "app Resources.getDrawable支持封存ROM系统标量颜色的ColorDrawable；系统颜色XML/未知/unsupported及getSystem drawable仍失败，既有受审ROM皮肤保留。默认配对同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与选中像素在现有叶 bitmap 平面冻结；guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 明确失败。DVM-327 同 ROM ColorStateList 经原版 XML 路径构造，不回退 APK。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"

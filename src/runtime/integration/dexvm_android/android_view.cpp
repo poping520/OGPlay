@@ -1797,6 +1797,15 @@ Decl Declare_android_view_View(const Context& context) {
          builder.BoundInstanceField("mAttachInfo", "Landroid/view/View$AttachInfo;", dx::kAccNone),
          builder.BoundInstanceField("mAccessibilityDelegate", "Landroid/view/View$AccessibilityDelegate;",
                                     dx::kAccNone)}};
+    builder.VirtualMethod("unscheduleDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+        [context](dx::IntrinsicContext& call) {
+            // API19 has no queued callback to remove without a real AttachInfo.
+            if (!call.arguments[0].ref.IsValid() ||
+                !dx::IntrinsicCall(call).GetRef(context->view_java_measure_fields->unsupported_state[4]).IsValid())
+                return dx::VmValue::Void();
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "attached Drawable scheduling unsupported"};
+        });
     builder.DirectMethod(
         "hasRtlSupport", "()Z",
         [context](dx::IntrinsicContext& call) {
@@ -2656,7 +2665,21 @@ Decl Declare_android_view_Window(const Context& context) {
     const auto content_parent = builder.BoundInstanceField(
         "mContentParent", "Landroid/widget/FrameLayout;", dx::kAccPrivate);
     context->ui_java_window_content = content_parent;
-    const auto parent_for = [context, owner, content_parent](dx::IntrinsicContext& call) {
+    const auto background = builder.BoundInstanceField(
+        "mBackgroundDrawable", "Landroid/graphics/drawable/Drawable;", dx::kAccPrivate);
+    builder.VirtualMethod("setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V",
+        [background, content_parent](dx::IntrinsicContext& call) {
+            const dx::IntrinsicCall fields(call);
+            const auto drawable = call.arguments[0].ref;
+            if (fields.GetRef(background) == drawable) return dx::VmValue::Void();
+            fields.SetRef(background, drawable);
+            const auto parent = fields.GetRef(content_parent);
+            if (parent.IsValid())
+                return CallAndroidMethod(call.vm, parent, "setBackgroundDrawable",
+                    "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
+            return dx::VmValue::Void();
+        });
+    const auto parent_for = [context, owner, content_parent, background](dx::IntrinsicContext& call) {
         const dx::IntrinsicCall fields(call);
         auto parent = fields.GetRef(content_parent);
         if (parent.IsValid()) return parent;
@@ -2685,6 +2708,10 @@ Decl Declare_android_view_Window(const Context& context) {
                 // JavaTraversal publishes the lifecycle fact with the batch;
                 // materializing a Window must not change its visibility.
             }
+            const auto drawable = fields.GetRef(background);
+            if (drawable.IsValid())
+                static_cast<void>(CallAndroidMethod(call.vm, parent, "setBackgroundDrawable",
+                    "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)}));
             return parent;
         }
     };
@@ -2802,6 +2829,18 @@ Decl Declare_android_view_Window(const Context& context) {
                           });
     const auto wu_mContext =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccPrivate | dx::kAccFinal);
+    builder.VirtualMethod("setBackgroundDrawableResource", "(I)V",
+        [wu_mContext](dx::IntrinsicContext& call) {
+            const auto context_object = dx::IntrinsicCall(call).GetRef(wu_mContext);
+            const auto resources = CallAndroidMethod(call.vm, context_object, "getResources",
+                "()Landroid/content/res/Resources;").ref;
+            const auto resources_root = call.vm.ProtectReferences(std::array{resources});
+            const auto drawable = CallAndroidMethod(call.vm, resources, "getDrawable",
+                "(I)Landroid/graphics/drawable/Drawable;", {call.arguments[0]}).ref;
+            const auto drawable_root = call.vm.ProtectReferences(std::array{drawable});
+            return CallAndroidMethod(call.vm, call.receiver, "setBackgroundDrawable",
+                "(Landroid/graphics/drawable/Drawable;)V", {dx::VmValue::Ref(drawable)});
+        });
     const auto wu_mIsActive = builder.BoundInstanceField("mIsActive", "Z", dx::kAccPrivate);
     const auto wu_mHasChildren = builder.BoundInstanceField("mHasChildren", "Z", dx::kAccPrivate);
     const auto wu_mCloseOnTouchOutside = builder.BoundInstanceField("mCloseOnTouchOutside", "Z", dx::kAccPrivate);

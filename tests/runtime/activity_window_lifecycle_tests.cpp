@@ -1,3 +1,4 @@
+#include "../dexvm/container_traversal_fixture.h"
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "runtime/boundary/core/boundary_symbols.h"
 #include "ogplay/runtime/dexvm/big_int_runtime.h"
@@ -1036,5 +1037,81 @@ TEST_CASE("DVM-197 renderer EGL policies establish current context before events
         CHECK_FALSE(c.renderer_surface.IsValid());
         CHECK_FALSE(c.egl.window_surface.IsValid());
       }
+    }
+}
+
+TEST_CASE("API19 Window background follows its unique lazy content root") {
+    using namespace ogplay::runtime::dexvm;
+    using ogplay::test::container_traversal::ContainerVm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        f.context->activity = owner;
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        const auto window = f.On(owner, "getWindow", "()Landroid/view/Window;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{owner, window});
+        const auto read_ref = [&](const char* name, const char* descriptor) {
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(window), name, descriptor);
+            REQUIRE(field);
+            return VmObjectRef{f.model.InstanceSlots(window)[f.linker.Field(*field).slot].bits};
+        };
+        const auto background = [&] { return read_ref("mBackgroundDrawable", "Landroid/graphics/drawable/Drawable;"); };
+        CHECK_FALSE(read_ref("mContentParent", "Landroid/widget/FrameLayout;").IsValid());
+        f.On(window, "setBackgroundDrawableResource", "(I)V", {VmValue::Int(0x0106000c)});
+        const auto black = background();
+        REQUIRE(black.IsValid());
+        CHECK_FALSE(read_ref("mContentParent", "Landroid/widget/FrameLayout;").IsValid());
+        // The saved Drawable must survive solely through its Java Window field.
+        static_cast<void>(f.vm.CollectGarbage("window-background-rooted"));
+        const auto root = f.On(window, "getDecorView", "()Landroid/view/View;").ref;
+        CHECK(f.On(root, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref == black);
+        const auto next = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(0x12345678)});
+        const auto next_root = f.vm.ProtectReferences(std::array{next});
+        const auto applications = [&] {
+            int count = 0;
+            for (const auto& event : f.vm.Trace("", 10000))
+                if (event.class_descriptor == "Landroid/view/View;" && event.method_name == "setBackgroundDrawable") ++count;
+            return count;
+        };
+        const auto initial_applications = applications();
+        const auto set = [&](VmObjectRef drawable) {
+            f.On(window, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(drawable)});
+        };
+        set(black);
+        CHECK(applications() - initial_applications == 0);
+        set(next);
+        CHECK(applications() - initial_applications == 1);
+        CHECK(background() == next);
+        CHECK(f.On(root, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref == next);
+        set(next);
+        CHECK(applications() - initial_applications == 1);
+        set(VmObjectRef{});
+        CHECK(applications() - initial_applications == 2);
+        CHECK_FALSE(background().IsValid());
+        CHECK_FALSE(f.On(root, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref.IsValid());
+        set(VmObjectRef{});
+        CHECK(applications() - initial_applications == 2);
+        const auto failed = f.OnOutcome(window, "setBackgroundDrawableResource", "(I)V", {VmValue::Int(0x0106ffff)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Landroid/content/res/Resources$NotFoundException;");
+        CHECK_FALSE(background().IsValid());
+        CHECK(applications() - initial_applications == 2);
+        CHECK(f.On(window, "getDecorView", "()Landroid/view/View;").ref == root);
+        // A virtual Resources override must preserve the original Throwable identity.
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto resources_slot = f.linker.FindVtableIndex(f.model.ObjectClass(resources), "getDrawable",
+                                                             "(I)Landroid/graphics/drawable/Drawable;");
+        REQUIRE(resources_slot);
+        auto& resource_method = f.linker.MutableMethod(f.linker.Class(f.model.ObjectClass(resources)).vtable[*resources_slot]);
+        const auto resource_original = resource_method.implementation;
+        const auto exception_root = f.vm.ProtectReferences(std::array{failed.exception});
+        resource_method.implementation = [exception = failed.exception](IntrinsicContext&) -> VmValue {
+            throw VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;", "sentinel", exception};
+        };
+        const auto propagated = f.OnOutcome(window, "setBackgroundDrawableResource", "(I)V", {VmValue::Int(0x0106000c)});
+        CHECK(propagated.exception == failed.exception);
+        CHECK_FALSE(background().IsValid());
+        resource_method.implementation = resource_original;
     }
 }

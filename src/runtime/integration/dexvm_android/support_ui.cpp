@@ -1196,14 +1196,25 @@ std::shared_ptr<const ui::UiBitmap> ResolveUiDrawable(
 namespace android_intrinsics {
 dx::VmObjectRef MakeResourceDrawable(dx::IntrinsicContext& call,
     const Context& context, const std::uint32_t resource_id) {
-    const auto& entry = ResolveUiResourceEntry(*context, resource_id);
+    loader::ArscEntry system_color;
+    const bool system = (resource_id >> 24U) == 0x01U;
+    if (system) {
+        const auto* color = context->theme_resources.Color(resource_id);
+        if (!color || color->value.type < kTypeFirstColor || color->value.type > kTypeLastColor ||
+            !color->xml.empty() || !color->value.unsupported.empty())
+            throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                  "system Drawable resource is not a supported scalar color"};
+        system_color.value_type = static_cast<std::uint8_t>(color->value.type);
+        system_color.value_data = color->value.data;
+    }
+    const auto& entry = system ? system_color : ResolveUiResourceEntry(*context, resource_id);
     if (entry.string_value && entry.string_value->ends_with(".xml")) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "XML Drawable objects are not implemented"};
     }
-    const auto decoded = ResolveUiDrawable(*context, resource_id);
+    const auto decoded = system ? std::shared_ptr<const ui::UiBitmap>{} : ResolveUiDrawable(*context, resource_id);
     const bool color = entry.value_type >= kTypeFirstColor && entry.value_type <= kTypeLastColor;
-    if (decoded->nine_patch) {
+    if (decoded && decoded->nine_patch) {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "resource NinePatch Drawable objects are not implemented"};
     }

@@ -1432,6 +1432,10 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
     builder.VirtualMethod("getColor", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(static_cast<std::int32_t>(*context->ui_drawables.at(call.receiver.Value()).color));
     });
+    builder.VirtualMethod("getOpacity", "()I", [context](dx::IntrinsicContext& call) {
+        const auto alpha = context->ui_drawables.at(call.receiver.Value()).color.value() >> 24U;
+        return dx::VmValue::Int(alpha == 255U ? -1 : alpha == 0U ? -2 : -3);
+    });
     return std::move(builder).Build();
 }
 

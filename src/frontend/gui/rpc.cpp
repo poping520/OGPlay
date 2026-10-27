@@ -9,6 +9,7 @@
 
 namespace ogplay::frontend {
 using namespace ogplay::app;
+
 namespace {
 
 std::string PathUtf8(const std::filesystem::path& path) {
@@ -18,7 +19,8 @@ std::string PathUtf8(const std::filesystem::path& path) {
 
 void CheckFields(app::JsonValue params, std::initializer_list<std::string_view> fields) {
     std::size_t found{};
-    for (const auto field : fields) if (params.Member(field)) ++found;
+    for (const auto field : fields)
+        if (params.Member(field)) ++found;
     if (params.Size() != found) throw std::invalid_argument("unknown parameter");
 }
 
@@ -42,8 +44,7 @@ app::ConsoleResponse Error(int code, std::string_view message, std::string_view 
 }
 
 std::string_view Status(LibraryTileStatus status) {
-    constexpr std::array names{"damaged", "profile_catalog_unavailable", "missing_external",
-                                "running", "ready"};
+    constexpr std::array names{"damaged", "profile_catalog_unavailable", "missing_external", "running", "ready"};
     return names.at(static_cast<std::size_t>(status));
 }
 
@@ -67,7 +68,8 @@ GuiRpcService::GuiRpcService(LibraryStore& store, std::filesystem::path game_exe
 std::string GuiRpcService::Handle(std::string_view request) {
     const auto response = adapter_.Handle(request);
     app::JsonParseError parse_error;
-    auto document = app::JsonDocument::ParseStrict(response, parse_error);
+    auto document =
+        app::JsonDocument::ParseStrict(response, parse_error, app::JsonRpcDispatcher::kMaximumResponseBytes);
     if (!document) throw std::runtime_error("GUI RPC produced invalid JSON");
     const auto error = document->Root().Member("error");
     if (!error || error->Member("next_step")) return response;
@@ -90,57 +92,78 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
             const auto id = RequiredString(params, "installation_id");
             if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
             const auto running = host_.dashboards();
-            const auto found = std::find_if(running.begin(), running.end(), [&](const auto& value) { return value.installation_id == id; });
+            const auto found = std::find_if(running.begin(), running.end(),
+                                            [&](const auto& value) { return value.installation_id == id; });
             if (found == running.end()) return Error(-32004, "游戏未运行", "先启动游戏，再打开按键设置。");
             if (found->editor_status != "ready") return Error(-32002, found->editor_detail, "等待游戏启动完成后重试。");
             if (!host_.open_key_editor) throw std::runtime_error("宿主不支持按键设置窗口。");
             host_.open_key_editor(id);
-            app::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            app::JsonWriter writer;
+            const auto root = writer.Object(), result = writer.Object();
             writer.AddBool(result, "opened", true);
-            writer.Add(root, "result", result); return {true, writer.Serialize(root)};
+            writer.Add(root, "result", result);
+            return {true, writer.Serialize(root)};
         }
         if (method == "dashboard.list" || method == "dashboard.open") {
-            if (method == "dashboard.list") CheckFields(params, {});
-            else CheckFields(params, {"installation_id"});
+            if (method == "dashboard.list")
+                CheckFields(params, {});
+            else
+                CheckFields(params, {"installation_id"});
             const auto id = method == "dashboard.open" ? RequiredString(params, "installation_id") : std::string{};
             if (!host_.dashboards) throw std::runtime_error("宿主未接入运行中游戏的查询。");
             const auto dashboards = host_.dashboards();
-            app::JsonWriter writer; const auto root = writer.Object(), result = writer.Object();
+            app::JsonWriter writer;
+            const auto root = writer.Object(), result = writer.Object();
             if (method == "dashboard.open") {
-                const auto found = std::find_if(dashboards.begin(), dashboards.end(), [&](const auto& value) { return value.installation_id == id; });
+                const auto found = std::find_if(dashboards.begin(), dashboards.end(),
+                                                [&](const auto& value) { return value.installation_id == id; });
                 if (found == dashboards.end()) return Error(-32004, "游戏未运行", "启动游戏后重试。");
-                if (found->status != "ready" || !found->port) return Error(-32002, found->detail, "检查 MCP 设置或等待服务启动。");
+                if (found->status != "ready" || !found->port)
+                    return Error(-32002, found->detail, "检查 MCP 设置或等待服务启动。");
                 if (!host_.open_dashboard) throw std::runtime_error("宿主不支持 Dashboard 窗口。");
-                host_.open_dashboard(id); writer.AddBool(result, "opened", true);
+                host_.open_dashboard(id);
+                writer.AddBool(result, "opened", true);
             } else {
                 const auto items = writer.Array();
                 for (const auto& value : dashboards) {
-                    const auto item = writer.Object(); writer.AddString(item, "installation_id", value.installation_id);
+                    const auto item = writer.Object();
+                    writer.AddString(item, "installation_id", value.installation_id);
                     writer.AddUnsignedInteger(item, "process_id", value.process_id);
-                    if (value.port) writer.AddUnsignedInteger(item, "port", *value.port); else writer.AddNull(item, "port");
-                    writer.AddString(item, "status", value.status); writer.AddString(item, "detail", value.detail);
+                    if (value.port)
+                        writer.AddUnsignedInteger(item, "port", *value.port);
+                    else
+                        writer.AddNull(item, "port");
+                    writer.AddString(item, "status", value.status);
+                    writer.AddString(item, "detail", value.detail);
                     writer.AddString(item, "key_editor_status", value.editor_status);
-                    writer.AddString(item, "key_editor_detail", value.editor_detail); writer.Append(items, item);
+                    writer.AddString(item, "key_editor_detail", value.editor_detail);
+                    writer.Append(items, item);
                 }
                 writer.Add(result, "items", items);
             }
-            writer.Add(root, "result", result); return {true, writer.Serialize(root)};
+            writer.Add(root, "result", result);
+            return {true, writer.Serialize(root)};
         }
-        if (method == "game_settings.get" || method == "game_settings.set")
-            return GameSettingsRequest(method, params);
+        if (method == "game_settings.get" || method == "game_settings.set") return GameSettingsRequest(method, params);
         if (method == "library.data_hint" || method == "library.data_mount.apply")
             return DataHintRequest(method, params);
         if (method == "settings.get" || method == "settings.set" || method == "settings.open_dir")
             return SettingsRequest(method, params);
-        if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" || method == "library.external.inspect" ||
-            method == "library.import" || method.starts_with("library.job.") || method.starts_with("library.upload."))
+        if (method == "dialog.pick" || method == "dialog.poll" || method == "library.analyze" ||
+            method == "library.external.inspect" || method == "library.import" || method.starts_with("library.job.") ||
+            method.starts_with("library.upload."))
             return ImportRequest(method, params);
-        if (method != "library.list" && method != "library.launch" && method != "library.open_dir" && method != "library.remove")
+        if (method != "library.list" && method != "library.launch" && method != "library.open_dir" &&
+            method != "library.remove")
             return Error(-32601, "unknown method", "使用当前版本支持的 GUI 方法。");
-        if (method == "library.list") CheckFields(params, {});
-        else if (method == "library.launch") CheckFields(params, {"installation_id", "mode"});
-        else if (method == "library.remove") CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
-        else CheckFields(params, {"installation_id", "kind"});
+        if (method == "library.list")
+            CheckFields(params, {});
+        else if (method == "library.launch")
+            CheckFields(params, {"installation_id", "mode"});
+        else if (method == "library.remove")
+            CheckFields(params, {"installation_id", "confirmed", "delete_saves"});
+        else
+            CheckFields(params, {"installation_id", "kind"});
 
         // Validate request shape before any library IO or host callback.
         const auto key = method == "library.list" ? std::string{} : RequiredString(params, "installation_id");
@@ -150,9 +173,12 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         LaunchMode mode = LaunchMode::normal;
         if (method == "library.launch" && params.Member("mode")) {
             const auto value = RequiredString(params, "mode");
-            if (value == "preflight") mode = LaunchMode::preflight;
-            else if (value == "diagnostic") mode = LaunchMode::diagnostic;
-            else if (value != "normal") throw std::invalid_argument("unknown launch mode");
+            if (value == "preflight")
+                mode = LaunchMode::preflight;
+            else if (value == "diagnostic")
+                mode = LaunchMode::diagnostic;
+            else if (value != "normal")
+                throw std::invalid_argument("unknown launch mode");
         }
         bool delete_saves{};
         if (method == "library.remove") {
@@ -167,10 +193,16 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (ImportBusy()) return Error(-32002, "正在入库", "入库完成后重试。");
         auto entries = store_.LoadEntries();
         for (auto& entry : entries) {
-            try { entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory)); }
+            try {
+                entry = EffectiveGameEntry(entry, LoadGameSettings(entry.directory));
+            }
             // Lock contention is a retryable library state, never entry damage.
-            catch (const LibraryError& error) { if (error.Code() == LibraryErrorCode::busy) throw; entry.damage_reason = error.what(); }
-            catch (const std::exception& error) { entry.damage_reason = error.what(); }
+            catch (const LibraryError& error) {
+                if (error.Code() == LibraryErrorCode::busy) throw;
+                entry.damage_reason = error.what();
+            } catch (const std::exception& error) {
+                entry.damage_reason = error.what();
+            }
         }
         const auto context = host_.context(entries);
         const auto tiles = BuildLibraryTiles(entries, context);
@@ -180,7 +212,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         if (method == "library.list") {
             const auto items = writer.Array();
             for (const auto& tile : tiles) {
-                const auto entry = std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == tile.key; });
+                const auto entry = std::find_if(entries.begin(), entries.end(),
+                                                [&](const auto& item) { return item.key == tile.key; });
                 const auto detail = BuildLibraryDetail(*entry, tile, context);
                 const auto item = writer.Object();
                 writer.AddString(item, "installation_id", tile.key);
@@ -202,25 +235,32 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
                 writer.AddString(item, "detail", tile.detail);
                 writer.AddBool(item, "running", tile.running);
                 writer.AddBool(item, "can_launch", tile.can_launch);
-                writer.AddString(item, "icon", tile.icon_png.empty() ? std::string{} :
-                                 "data:image/png;base64," + app::EncodeBase64(tile.icon_png));
-                if (detail.profile) writer.Add(item, "profile", Condition(writer, *detail.profile)); else writer.AddNull(item, "profile");
+                writer.AddString(item, "icon",
+                                 tile.icon_png.empty() ? std::string{}
+                                                       : "data:image/png;base64," + app::EncodeBase64(tile.icon_png));
+                if (detail.profile)
+                    writer.Add(item, "profile", Condition(writer, *detail.profile));
+                else
+                    writer.AddNull(item, "profile");
                 writer.Add(item, "external", Condition(writer, detail.external));
                 writer.Append(items, item);
             }
             writer.Add(result, "items", items);
             writer.AddString(result, "library_root", PathUtf8(store_.Root()));
         } else {
-            const auto entry = std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == key; });
+            const auto entry =
+                std::find_if(entries.begin(), entries.end(), [&](const auto& item) { return item.key == key; });
             if (entry == entries.end()) return Error(-32004, "installation not found", "刷新游戏库后重试。");
             if (method == "library.remove") {
-                const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                const auto tile =
+                    std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (tile->running) return Error(-32002, "游戏正在运行", "退出游戏后再删除。");
                 store_.Remove(key, delete_saves);
                 writer.AddString(result, "installation_id", key);
                 writer.AddBool(result, "removed", true);
             } else if (method == "library.launch") {
-                const auto tile = std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
+                const auto tile =
+                    std::find_if(tiles.begin(), tiles.end(), [&](const auto& item) { return item.key == key; });
                 if (!tile->can_launch) return Error(-32001, tile->detail, "检查运行状态、Profile 和数据包目录。");
                 const auto config = LoadLibraryConfig(store_.Root());
                 const auto minimize = std::get<bool>(Setting(config, "minimize_on_launch"));
@@ -245,7 +285,8 @@ app::ConsoleResponse GuiRpcService::Request(std::string_view method, app::JsonVa
         writer.Add(root, "result", result);
         return {true, writer.Serialize(root)};
     } catch (const LibraryError& error) {
-        return Error(error.Code() == LibraryErrorCode::busy || error.Code() == LibraryErrorCode::running ? -32002 : -32000,
+        return Error(error.Code() == LibraryErrorCode::busy || error.Code() == LibraryErrorCode::running ? -32002
+                                                                                                         : -32000,
                      error.what(), "关闭运行中的游戏或等待其他库操作完成后重试。");
     } catch (const std::invalid_argument& error) {
         return Error(-32602, error.what(), "检查请求参数后重试。");

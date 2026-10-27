@@ -23,8 +23,7 @@ ControlResponse Success(BuildResult&& build_result) {
     return {true, writer.Serialize(root)};
 }
 
-ControlResponse Error(const int code, const std::string_view reason,
-                      const std::string_view message) {
+ControlResponse Error(const int code, const std::string_view reason, const std::string_view message) {
     core::JsonWriter writer;
     const auto root = writer.Object();
     const auto error = writer.Object();
@@ -67,8 +66,7 @@ JsonValue GpuStatsValue(core::JsonWriter& writer, const core::GpuStats& stats) {
     return value;
 }
 
-JsonValue GpuRenderTargetsValue(core::JsonWriter& writer,
-                                const std::vector<core::GpuRenderTarget>& targets) {
+JsonValue GpuRenderTargetsValue(core::JsonWriter& writer, const std::vector<core::GpuRenderTarget>& targets) {
     const auto result = writer.Array();
     for (const auto& target : targets) {
         const auto item = writer.Object();
@@ -89,8 +87,7 @@ JsonValue GpuRenderTargetsValue(core::JsonWriter& writer,
     return result;
 }
 
-JsonValue GpuCapabilitiesValue(core::JsonWriter& writer,
-                               const core::GpuCapabilities& capabilities) {
+JsonValue GpuCapabilitiesValue(core::JsonWriter& writer, const core::GpuCapabilities& capabilities) {
     const auto result = writer.Object();
     const auto extensions = writer.Array();
     for (const auto& extension : capabilities.reported_extensions) {
@@ -106,8 +103,7 @@ JsonValue GpuCapabilitiesValue(core::JsonWriter& writer,
     return result;
 }
 
-JsonValue GpuTraceValue(core::JsonWriter& writer,
-                        const std::vector<core::GpuTraceEntry>& entries) {
+JsonValue GpuTraceValue(core::JsonWriter& writer, const std::vector<core::GpuTraceEntry>& entries) {
     const auto result = writer.Array();
     for (const auto& entry : entries) {
         const auto item = writer.Object();
@@ -117,15 +113,16 @@ JsonValue GpuTraceValue(core::JsonWriter& writer,
             writer.AddString(arguments, name, value);
         }
         writer.Add(item, "args", arguments);
-        if (entry.error.has_value()) writer.AddUnsignedInteger(item, "error", *entry.error);
-        else writer.AddNull(item, "error");
+        if (entry.error.has_value())
+            writer.AddUnsignedInteger(item, "error", *entry.error);
+        else
+            writer.AddNull(item, "error");
         writer.Append(result, item);
     }
     return result;
 }
 
-std::optional<std::uint64_t> UnsignedParam(const core::JsonValue params,
-                                           const std::string_view name) {
+std::optional<std::uint64_t> UnsignedParam(const core::JsonValue params, const std::string_view name) {
     const auto member = params.Member(name);
     if (!member.has_value()) return std::nullopt;
     const auto value = member->UnsignedInteger();
@@ -135,8 +132,7 @@ std::optional<std::uint64_t> UnsignedParam(const core::JsonValue params,
     return value;
 }
 
-std::optional<std::string> StringParam(const core::JsonValue params,
-                                       const std::string_view name) {
+std::optional<std::string> StringParam(const core::JsonValue params, const std::string_view name) {
     const auto member = params.Member(name);
     if (!member.has_value()) return std::nullopt;
     const auto value = member->String();
@@ -146,14 +142,14 @@ std::optional<std::string> StringParam(const core::JsonValue params,
     return std::string(*value);
 }
 
-void AddRpcId(core::JsonWriter& writer, const JsonValue envelope,
-              const std::optional<core::JsonValue> id) {
-    if (id.has_value()) writer.Add(envelope, "id", writer.Copy(*id));
-    else writer.AddNull(envelope, "id");
+void AddRpcId(core::JsonWriter& writer, const JsonValue envelope, const std::optional<core::JsonValue> id) {
+    if (id.has_value())
+        writer.Add(envelope, "id", writer.Copy(*id));
+    else
+        writer.AddNull(envelope, "id");
 }
 
-std::string RpcError(const std::optional<core::JsonValue> id, const int code,
-                     const std::string_view message) {
+std::string RpcError(const std::optional<core::JsonValue> id, const int code, const std::string_view message) {
     core::JsonWriter writer;
     const auto root = writer.Object();
     writer.AddString(root, "jsonrpc", "2.0");
@@ -167,21 +163,22 @@ std::string RpcError(const std::optional<core::JsonValue> id, const int code,
 
 }  // namespace
 
-ControlService::ControlService(core::CapabilityLedger& ledger, core::Logger& logger,
-                               session::Session& session,
+ControlService::ControlService(core::CapabilityLedger& ledger, core::Logger& logger, session::Session& session,
                                const core::GpuStateProvider* const gpu, std::shared_ptr<DashboardService> dashboard)
     : ledger_(ledger), logger_(logger), session_(session), gpu_(gpu), dashboard_(std::move(dashboard)) {
-    if (!dashboard_) dashboard_ = std::make_shared<DashboardService>(DashboardSources{.logger = &logger, .ledger = &ledger});
+    if (!dashboard_)
+        dashboard_ = std::make_shared<DashboardService>(DashboardSources{.logger = &logger, .ledger = &ledger});
 }
+
 ControlResponse ControlService::RequestDashboard(std::string_view method, core::JsonValue params) {
     return dashboard_->Request(method, params);
 }
 
-ControlResponse ControlService::Request(const std::string_view method,
-                                        const ControlParams& params) {
+ControlResponse ControlService::Request(const std::string_view method, const ControlParams& params) {
     try {
         if (method.starts_with("dash.")) {
-            if (params.frames != 1 || params.target_frame || params.max_frames || params.address || params.filter || params.limit != 100)
+            if (params.frames != 1 || params.target_frame || params.max_frames || params.address || params.filter ||
+                params.limit != 100)
                 return Error(-32602, "invalid_params", "Dashboard parameters require RequestDashboard");
             return dashboard_->Request(method);
         }
@@ -194,24 +191,16 @@ ControlResponse ControlService::Request(const std::string_view method,
             });
         }
         if (method == "session.open") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.OpenEmpty());
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.OpenEmpty()); });
         }
         if (method == "session.close") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.Close());
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.Close()); });
         }
         if (method == "session.state") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.State());
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.State()); });
         }
         if (method == "run.step") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.Step(params.frames));
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.Step(params.frames)); });
         }
         if (method == "run.until") {
             const auto until = session_.UntilFrame(params.target_frame, params.max_frames);
@@ -223,14 +212,10 @@ ControlResponse ControlService::Request(const std::string_view method,
             });
         }
         if (method == "run.pause") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.Pause());
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.Pause()); });
         }
         if (method == "run.resume") {
-            return Success([&](core::JsonWriter& writer) {
-                return StateValue(writer, session_.Resume());
-            });
+            return Success([&](core::JsonWriter& writer) { return StateValue(writer, session_.Resume()); });
         }
         if (method == "sym.resolve") {
             if (!params.address) {
@@ -238,8 +223,7 @@ ControlResponse ControlService::Request(const std::string_view method,
             }
             const auto symbol = logger_.ResolveGuestAddress(*params.address);
             if (!symbol) {
-                return Error(-32002, "symbol_not_found",
-                             "guest address is not mapped to a symbol");
+                return Error(-32002, "symbol_not_found", "guest address is not mapped to a symbol");
             }
             return Success([&](core::JsonWriter& writer) {
                 const auto result = writer.Object();
@@ -255,25 +239,21 @@ ControlResponse ControlService::Request(const std::string_view method,
             if (gpu_ == nullptr) {
                 return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
             }
-            return Success([&](core::JsonWriter& writer) {
-                return GpuStatsValue(writer, gpu_->Stats());
-            });
+            return Success([&](core::JsonWriter& writer) { return GpuStatsValue(writer, gpu_->Stats()); });
         }
         if (method == "gpu.render_targets") {
             if (gpu_ == nullptr) {
                 return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
             }
-            return Success([&](core::JsonWriter& writer) {
-                return GpuRenderTargetsValue(writer, gpu_->RenderTargets());
-            });
+            return Success(
+                [&](core::JsonWriter& writer) { return GpuRenderTargetsValue(writer, gpu_->RenderTargets()); });
         }
         if (method == "gpu.capabilities") {
             if (gpu_ == nullptr) {
                 return Error(-32004, "gpu_unavailable", "GPU state provider is not attached");
             }
-            return Success([&](core::JsonWriter& writer) {
-                return GpuCapabilitiesValue(writer, gpu_->Capabilities());
-            });
+            return Success(
+                [&](core::JsonWriter& writer) { return GpuCapabilitiesValue(writer, gpu_->Capabilities()); });
         }
         if (method == "gpu.trace") {
             if (gpu_ == nullptr) {
@@ -282,14 +262,11 @@ ControlResponse ControlService::Request(const std::string_view method,
             if (params.limit == 0 || params.limit > 1000) {
                 return Error(-32602, "invalid_params", "gpu.trace limit must be in 1..1000");
             }
-            const auto entries = gpu_->Trace(params.filter.value_or(""),
-                                             static_cast<std::size_t>(params.limit));
+            const auto entries = gpu_->Trace(params.filter.value_or(""), static_cast<std::size_t>(params.limit));
             if (entries.size() > params.limit) {
                 throw std::logic_error("GPU state provider exceeded the trace limit");
             }
-            return Success([&](core::JsonWriter& writer) {
-                return GpuTraceValue(writer, entries);
-            });
+            return Success([&](core::JsonWriter& writer) { return GpuTraceValue(writer, entries); });
         }
         if (method == "hle.capabilities") {
             return Success([&](core::JsonWriter& writer) {
@@ -336,8 +313,7 @@ ControlResponse ControlService::Request(const std::string_view method,
                 const auto result = writer.Array();
                 for (const auto& record : logger_.Snapshot(std::nullopt, {}, 100)) {
                     core::JsonParseError error;
-                    auto document = core::JsonDocument::ParseStrict(
-                        logger_.RenderJson(record), error);
+                    auto document = core::JsonDocument::ParseStrict(logger_.RenderJson(record), error);
                     if (!document.has_value()) {
                         throw std::logic_error("logger produced invalid JSON: " + error.message);
                     }
@@ -373,8 +349,7 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
     }
     auto id = root.Member("id");
     if (id.has_value() && !id->IsNull() && !id->IsString() && !id->IsInteger()) {
-        return RpcError(std::nullopt, -32600,
-                        "JSON-RPC id must be string, integer or null");
+        return RpcError(std::nullopt, -32600, "JSON-RPC id must be string, integer or null");
     }
     const auto version = root.Member("jsonrpc");
     if (!version.has_value() || version->String() != std::optional<std::string_view>{"2.0"}) {
@@ -390,8 +365,8 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
         return RpcError(id, -32602, "params must be an object");
     }
     const core::JsonValue params = params_value.value_or(core::JsonValue{});
-    if ((handler_ || method->starts_with("dash.")) && root.Size() != 2U + (id.has_value() ? 1U : 0U) +
-                                      (params_value.has_value() ? 1U : 0U)) {
+    if ((handler_ || method->starts_with("dash.")) &&
+        root.Size() != 2U + (id.has_value() ? 1U : 0U) + (params_value.has_value() ? 1U : 0U)) {
         return RpcError(id, -32600, "unknown JSON-RPC request field");
     }
 
@@ -413,17 +388,16 @@ std::string JsonRpcAdapter::Handle(const std::string_view request) {
             return RpcError(id, -32602, "run.until requires positive max_frames");
         }
 
-        const auto response = handler_ ? handler_(*method, params)
-                                       : method->starts_with("dash.") ? service_->RequestDashboard(*method, params)
-                                       : service_->Request(*method, control);
+        const auto response = handler_                       ? handler_(*method, params)
+                              : method->starts_with("dash.") ? service_->RequestDashboard(*method, params)
+                                                             : service_->Request(*method, control);
         core::JsonParseError response_error;
-        auto response_document = core::JsonDocument::ParseStrict(response.json, response_error);
+        auto response_document = core::JsonDocument::ParseStrict(response.json, response_error, kMaximumResponseBytes);
         if (!response_document.has_value() || !response_document->Root().IsObject()) {
             return RpcError(id, -32603, "control service produced invalid JSON");
         }
         const auto response_root = response_document->Root();
-        const auto payload = response.ok ? response_root.Member("result")
-                                         : response_root.Member("error");
+        const auto payload = response.ok ? response_root.Member("result") : response_root.Member("error");
         if (!payload.has_value()) {
             return RpcError(id, -32603, "control service response has no payload");
         }

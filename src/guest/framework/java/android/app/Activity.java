@@ -77,6 +77,12 @@ public class Activity extends ContextThemeWrapper {
         mFinished = true;
     }
 
+    // 原版：经 AMS 请求 WMS 用 enterAnim/exitAnim 替换紧随 startActivity/finish 的窗口切换动画；
+    // 仅调用方处于 RESUMED/PAUSING 且已有挂起切换时生效，否则忽略，且无返回值、不抛异常。
+    // 现在：OGPlay 无窗口切换动画，Activity 切换立即完成，等同原版无挂起切换分支，接受并忽略。
+    public void overridePendingTransition(int enterAnim, int exitAnim) {
+    }
+
     public boolean isFinishing() { return mFinished; }
     public boolean isDestroyed() { return mDestroyed; }
 

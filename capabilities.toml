@@ -941,7 +941,7 @@ note = "DVM-128/130：平台身份不再由 guest 会话 HLE 提供；Build/Syst
 [runtime.android_secure_settings]
 status = "complete"
 test = "tests/runtime/sandbox_store_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/bootdex_concurrency_tests.cpp; tests/dexvm/bootdex_library_tests.cpp; tests/dexvm/bootdex_datetime_tests.cpp; tests/dexvm/bootdex_security_tests.cpp; tests/dexvm/bootdex_collections_io_tests.cpp; tests/dexvm/bootdex_shutdown_tests.cpp; tests/runtime/android_guest_framework_platform_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp; architecture.dexvm_intrinsic_layout"
-note = "DVM-128 按 API 19 首次随机、跨沙盒生命周期稳定语义初始化 64 位小写十六进制 ANDROID_ID。DVM-161 将 Settings System/Secure/Global 公开 API、类型转换与 moved-key 路由迁入 AOSP BootDex，仅 overlay 私有 NameValueCache 有界存储；Secure 读取稳定身份，System 支持隔离进程内字符串读写，未知键返回 null，Secure/Global 特权写入记账并返回 false。不含 Binder、SettingsProvider、跨用户、观察者、宿主设置或完整设置表"
+note = "API19 Settings System/Secure/Global 公开转换与 moved-key 路由归原版 BootDex，仅 overlay NameValueCache：Secure 读沙盒稳定 ANDROID_ID；System 进程隔离字符串读写，未知键 null，有效值变更通知进程内观察者，重复写不通知；Secure/Global 特权写记账 false 且不通知。无 Binder、SettingsProvider、跨用户、宿主设置或完整设置表。"
 
 [runtime.jni_guest_library_load_plan]
 status = "complete"
@@ -1597,6 +1597,11 @@ note = "Context.getDir(String,int) 与 wrapper base 委托支持 MODE_PRIVATE：
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/session/profile_entry_scope_tests.cpp"
 note = "DVM-97/132：Intent 与 IntentFilter 的 action/type/data/scheme/authority/category 匹配，返回 API19 match/error 常量；Uri 与 UriCodec 来自 BootDex 原版 Java。StrictMode 文件 URI、external-storage canonical、ContentProvider MIME、path/SSP pattern、完整 manifest resolver 与系统广播明确失败。"
+
+[dexvm.content_observer_process_local]
+status = "complete"
+test = "tests/dexvm/android_context_services_tests.cpp#DVM-332"
+note = "DVM-332：API19 Java static URI 树强引用观察者，支持进程内注册、全部注销、显式通知及 System 有效写入通知；本节点/下级全收、上级按 descendants、自通知按 deliverSelfNotifications。锁内收集锁外 ROM dispatchChange，有 Handler 沿原版投递，无 Handler 改主 Looper。无 Transport/Binder、Provider 事件源、跨用户或 sync，syncToNetwork 接受无效果。"
 
 [dexvm.content_resolver_absent_provider]
 status = "complete"

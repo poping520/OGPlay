@@ -87,18 +87,18 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "540c8a73420f038bf19203e9c62867451851b4c97a22c0a9d297865041c8dca3",
+        "source_sha256": "e0ab44bb1c71e6e433e09e3bdd5fb6f8a0cba3805cb830c900803edb075d5fae",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 10288016,
-    "sha256": "9c24cd41c92ad655cdae3bc43db04710c0615ef45b4b2c7fa4342d5c8d3693e3",
+    "size": 10291066,
+    "sha256": "97938297ea9fb4e1e247f64f158684275860726cfa994db00ba225508b205520",
     "dex_entry": "classes.dex",
-    "dex_size": 6317284,
-    "dex_sha256": "44482bdde68598ad59b5c67d78cad5a990bf5e78607f80e416b6973baca4c923",
-    "class_count": 3889,
+    "dex_size": 6319912,
+    "dex_sha256": "27125e542462bc7c09db266c6f7744421bd1ce92478228b0386c49a3eb05ac45",
+    "class_count": 3893,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
@@ -110,15 +110,15 @@
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "67fe1fe9e2a032d745e8fb2f8409cdba1dfcab5ccfe64da203649421a4c9e16e",
+      "sha256": "f4bf2e39898f033dbd63c16ef01d5d08fd1ecb7ae83f3e529b425904a56d69e8",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "61b41827ea10fca4bdfe1e88f3cce29f4d57ea7ec3fa6c06d82a4af9e70b7bfb",
+      "manifest_sha256": "7def6ffbea5d2356fced9c20473f6adf24fe2aaaeb7bf6d48ddc1c3f23bd0be9",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "8ebb22d81ab7cb6960cbec910b148c142fc77231298b3dae79111fcbd1e1bec9"
+      "composer_sha256": "1fe99b2d50c26262b077d251487c6f1294277c9c650bd7b07e2e53a7e7d9bfd0"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",

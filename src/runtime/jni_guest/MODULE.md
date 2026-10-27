@@ -95,9 +95,12 @@ nonvirtual、monitor、JavaVM)与 root `JNI_OnLoad` 库生命周期。语义本�
   JNI guest class/object/instance family 解析 class 引用；AllocObject 只搬运强类型引用与调用线程，由 JniEnvironment owner 回调
   初始化类、创建零值 VM 对象并发布 local ref，不复用 NewObject 的构造调用。
   未配置分配后端不能返回假对象；Java 分配错误返回 null、保留 pending exception。
-  该 family 的
-  instance method descriptor;三种 NewObject 仅接受 void `<init>` 并在失败时回滚
-  ref/object 映射。会话级 `JniGuestObjectRegistry` 让 guest 构造对象和 framework HLE
+  DexVM 存在时 AllocObject/NewObject* 唯一经 VM 分配；
+  registry 分配仅用于无 VM 的 HLE 环境（NewObject*，AllocObject 无后端仍明确失败）。
+  三种 NewObject 仅接受 void `<init>`，分配/类初始化 Java 失败返回 null；构造器 Java
+  异常保留 pending 并返回已发布 local ref。仅内部 C++ 错误删除 local ref；VM 对象交普通
+  GC，不撤销 registry 映射，无 VM 的 HLE 分配仍回滚 ref/object 映射。
+  会话级 `JniGuestObjectRegistry` 让 guest 构造对象和 framework HLE
   预注册的 host object 共享精确 class identity；`FindClass` 返回的 `jclass` 同时是
   `java.lang.Class` 的合法 instance receiver。GetObjectClass/IsInstanceOf 与 30 个
   普通 instance Call/CallV/CallA 统一查询该 registry,并复用 invocation engine 的

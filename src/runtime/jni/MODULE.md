@@ -22,7 +22,8 @@ Bionic、syscall、execution 或 integration。
   元数据；无 VM 时保留独立 JNI 表示。factory 在锁外执行，真实新抛出的异常可按 Dalvik 替换原 pending。
 - 字段 owner 用 `JniFieldAccessPending` 表示已挂起 Java 异常；禁止据此回落零值侧表。
 
-- AllocObject 通过 owner 安装的分配回调进入共享对象模型；引用、线程作用域
+- DexVM 存在时 AllocObject/NewObject* 唯一经 owner 分配回调进入共享对象模型；
+  registry 分配仅用于无 VM 的 HLE 环境，AllocObject 无后端仍明确失败。引用、线程作用域
   在本层校验，pending 按 ADR-0153 放行并记诊断。回调在独立锁外执行、发布当前线程 local reference；无后端明确失败，
   owner 在调用静止后撤销。本层不复制类布局或执行构造器。
 - 233 个 JNIEnv 槽与 8 个 JavaVM 槽的索引稳定。

@@ -172,6 +172,7 @@ public:
     // VM-owned allocation publishes a local reference in the calling thread.
     using ObjectAllocationHook = std::function<JniReference(std::uint64_t, JniReference)>;
     void SetObjectAllocationHook(ObjectAllocationHook hook);
+    [[nodiscard]] bool HasObjectAllocationHook() const;
     [[nodiscard]] JniReference AllocObject(std::uint64_t thread, JniReference java_class);
     [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference object);
     [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference object);

@@ -21,8 +21,9 @@ import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
 import java.util.List;
+import java.util.ArrayList;
 
-/** API19 client for process-owned guest memory facts. */
+/** API19 client for process-owned guest facts. */
 public class ActivityManager {
     private final Context mContext;
     private final Handler mHandler;
@@ -41,10 +42,26 @@ public class ActivityManager {
     }
 
     public List getRunningAppProcesses() {
-        throw nativeUnsupported("getRunningAppProcesses");
+        String[] identity = new String[2];
+        int[] facts = new int[5];
+        nativeReadProcess(identity, facts);
+        RunningAppProcessInfo info = new RunningAppProcessInfo(
+            identity[0], facts[0], new String[] { identity[1] });
+        info.uid = facts[1];
+        info.flags = facts[2];
+        info.importance = facts[3];
+        info.lru = facts[4];
+        info.lastTrimLevel = 0;
+        info.importanceReasonCode = RunningAppProcessInfo.REASON_UNKNOWN;
+        info.importanceReasonPid = 0;
+        info.importanceReasonComponent = null;
+        ArrayList<RunningAppProcessInfo> processes = new ArrayList<RunningAppProcessInfo>();
+        processes.add(info);
+        return processes;
     }
 
-    private static native UnsupportedOperationException nativeUnsupported(String operation);
+    // Snapshot only; object ownership and result assembly remain in Java.
+    private static native void nativeReadProcess(String[] identity, int[] facts);
 
     public static class MemoryInfo implements Parcelable {
         /**

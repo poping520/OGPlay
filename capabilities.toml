@@ -2089,9 +2089,9 @@ test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; t
 note = "DVM-239/ADR-0118：原版 Debug.MemoryInfo；getMemoryInfo 校验后提交 KiB 快照，缺事实 UOE、非法数据 IAE、空参数 NPE；默认模型以 VM 堆计 dalvik、已映射私有 guest RAM 计 other。无 swap/共享内存、smaps 或宿主 RSS；GPU/媒体缓存、真实 residency 与其他 Debug API 未提供。"
 
 [dexvm.activity_process_query]
-status = "unimplemented"
+status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp#DVM228"
-note = "ActivityManager.getRunningAppProcesses明确记账并抛可捕获UnsupportedOperationException；未枚举宿主或伪造guest进程列表。不实现AMS/Binder/跨进程查询或任务管理。"
+note = "ActivityManager.getRunningAppProcesses 每次返回仅本进程的新列表和值对象，身份来自会话事实，importance 按 Activity 栈推导；仅本进程、不枚举宿主。不实现 AMS/Binder、其他进程查询或任务管理。"
 
 [dexvm.activity_result]
 status = "partial"

@@ -10,9 +10,12 @@ Window，其他现有 Activity 平台方法仍使用精确 integration overlay�
 
 来源：固定 AOSP Android 4.4.4 Activity.java，保留 Apache-2.0 头；这是有界客户端，
 不引入原版 ActivityThread/Instrumentation/ActivityManager/Binder/Fragment 运行时。
-ActivityManager 仅为内存查询的有界客户端，不接入原版 AMS。MemoryInfo 保留 API19
+ActivityManager 为内存与本进程查询的有界客户端，不接入原版 AMS。MemoryInfo 保留 API19
 字段/构造与普通 Parcel 值算法；nativeRead 获取进程快照，lowMemory 使用原版 HOME/
-CACHED 分级比较。manager 正常构造并保留 Context/Handler，进程枚举明确拒绝且记账。
+CACHED 分级比较。manager 正常构造并保留 Context/Handler；getRunningAppProcesses 每次新建列表及 ROM
+RunningAppProcessInfo，通过 private native 快照读取会话身份与 Activity 栈：栈顶未 stopped
+为 FOREGROUND，否则有 visible 为 VISIBLE，其余为 BACKGROUND（单一 cached 进程 lru=1）。
+仅返回本进程，不枚举宿主或合成其他进程；普通字段与组装归 Java，无进程影子状态。
 结果与窗口字段归各实例，启动/销毁命令和待交付结果通过 session roots 保活。
 同包 standard 单窗口及支持限制见 runtime/session 契约，特殊 options/flags 明确失败。
 

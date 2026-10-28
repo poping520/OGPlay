@@ -99,7 +99,7 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
     vm.CallOn(player, "start", "()V");
     const auto& source = vm.context->media_players.at(player.Value()).source;
     CHECK(source.kind == ogplay::audio::EncodedAudioSource::Kind::vfs_path);
-    CHECK(source.name == "/sdcard/joined.ogg");
+    CHECK(source.name == "/proc/self/fd/" + std::to_string(vm.CallOn(fd, "getInt$", "()I").AsInt()));
     CHECK(source.offset == ogg.size());
     CHECK(source.length == ogg.size());
     std::vector<std::int16_t> pcm(2048U * 2U);
@@ -115,8 +115,7 @@ TEST_CASE("MediaPlayer decodes the selected second Ogg descriptor range") {
               {VmValue::Ref(fd)});
     const auto& full_source = vm.context->media_players.at(player.Value()).source;
     CHECK(full_source.offset == 0U);
-    CHECK((full_source.length == UINT64_MAX ||
-           full_source.length == 0x7ffffffffffffffULL));
+    CHECK(full_source.length == joined.size());
     vm.CallOn(player, "prepare", "()V");
 }
 
@@ -241,4 +240,73 @@ TEST_CASE("MediaPlayer resolves a JNI-built FileDescriptor through its guest VFS
     const auto directory = vm.vfs.OpenDirectory("/sdcard");
     CHECK(exception_class(set_source(new_player(), jni_fd(directory), 0, 1)) == "Ljava/io/IOException;");
     vm.vfs.Close(directory);
+}
+
+TEST_CASE("DVM-338 ROM adoptFd AFD close retains the captured media lease") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool register_first : {false, true}) {
+            CAPTURE(backend);
+            CAPTURE(register_first);
+            FileVm vm(nullptr, true, {.backend = backend});
+            std::ifstream fixture(std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/audio/short-vorbis.ogg",
+                                  std::ios::binary);
+            REQUIRE(fixture.good());
+            const std::vector<char> chars{std::istreambuf_iterator<char>(fixture), {}};
+            std::vector<std::byte> pack(13, std::byte{0x5a});
+            for (const auto c : chars)
+                pack.push_back(static_cast<std::byte>(c));
+            pack.insert(pack.end(), 7, std::byte{0x5a});
+            vm.vfs.PutFile("/pack", pack, true);
+            const auto native = vm.vfs.Open("/pack", {.read = true});
+            CHECK(vm.vfs.Seek(native, 3, VfsSeekWhence::begin) == 3);
+            ogplay::audio::EncodedMusicMixer music;
+            vm.context->encoded_music = &music;
+            VmThreadRuntime threads(vm.interpreter);
+            vm.context->threads = &threads;
+            const auto type = vm.linker.ResolveDescriptor("Landroid/os/ParcelFileDescriptor;");
+            const auto adopt = vm.linker.FindDirectMethod(type, "adoptFd", "(I)Landroid/os/ParcelFileDescriptor;");
+            REQUIRE(adopt.has_value());
+            const auto adopted = vm.interpreter.Call(*adopt, std::array{VmValue::Int(native)});
+            REQUIRE_MESSAGE(!adopted.exception.IsValid(), adopted.exception_message);
+            const auto pfd = adopted.value.ref;
+            const auto pfd_root = vm.interpreter.ProtectReferences(std::array{pfd});
+            CHECK(vm.CallOn(pfd, "getFd", "()I").AsInt() == native);
+            const auto afd = vm.interpreter.NewIntrinsicInstance("Landroid/content/res/AssetFileDescriptor;");
+            const auto afd_root = vm.interpreter.ProtectReferences(std::array{afd});
+            vm.CallOn(afd, "<init>", "(Landroid/os/ParcelFileDescriptor;JJ)V",
+                      {VmValue::Ref(pfd), VmValue::Long(13), VmValue::Long(static_cast<std::int64_t>(chars.size()))});
+            const auto fd = vm.CallOn(afd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
+            if (register_first) {
+                const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+                vm.CallOn(posix, "fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;", {VmValue::Ref(fd)});
+            }
+            const auto player = vm.interpreter.NewIntrinsicInstance("Landroid/media/MediaPlayer;");
+            const auto player_root = vm.interpreter.ProtectReferences(std::array{player});
+            vm.CallOn(player, "<init>", "()V");
+            vm.CallOn(player, "setDataSource", "(Ljava/io/FileDescriptor;JJ)V",
+                      {VmValue::Ref(fd), VmValue::Long(13), VmValue::Long(static_cast<std::int64_t>(chars.size()))});
+            CHECK(vm.context->media_players.at(player.Value()).source.lease != 0);
+            CHECK(vm.vfs.Seek(native, 0, VfsSeekWhence::current) == 3);
+            vm.CallOn(afd, "close", "()V");
+            CHECK(vm.CallOn(fd, "getInt$", "()I").AsInt() == -1);
+            const auto assert_closed = [&] {
+                try {
+                    vm.vfs.Close(native);
+                    FAIL("guest fd remained open");
+                } catch (const VfsError& error) {
+                    CHECK(error.ErrorNumber() == 9);
+                }
+            };
+            assert_closed();
+            vm.CallOn(afd, "close", "()V");
+            assert_closed();
+            vm.CallOn(player, "prepare", "()V");
+            vm.CallOn(player, "start", "()V");
+            std::vector<std::int64_t> accumulator(1024);
+            music.MixIntoAccumulator(accumulator, 48000);
+            CHECK(std::ranges::any_of(accumulator, [](auto sample) { return sample != 0; }));
+            CHECK(vm.ledger.Unimplemented().empty());
+            vm.CallOn(player, "release", "()V");
+        }
+    }
 }

@@ -50,22 +50,6 @@ namespace ogplay::test::file_vfs {
 const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
                                               "/sdcard"};
 
-std::vector<std::uint8_t> DateBootDex() {
-    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) /
-        "data/android/19/framework/bootdex.jar";
-    std::ifstream stream(path, std::ios::binary);
-    REQUIRE_MESSAGE(stream.good(), path.string());
-    const std::vector<char> raw{std::istreambuf_iterator<char>(stream),
-                                std::istreambuf_iterator<char>()};
-    std::vector<std::byte> archive_bytes(raw.size());
-    std::memcpy(archive_bytes.data(), raw.data(), raw.size());
-    const auto archive = ogplay::loader::ParseApkArchive(archive_bytes);
-    const auto dex = ogplay::loader::ReadApkEntry(
-        archive_bytes, archive, "classes.dex");
-    std::vector<std::uint8_t> result(dex.size());
-    std::memcpy(result.data(), dex.data(), dex.size());
-    return result;
-}
 
 void Append16(std::vector<std::byte>& bytes, const std::uint16_t value) {
     bytes.push_back(static_cast<std::byte>(value & 0xffU));
@@ -130,18 +114,12 @@ TemporaryRoot::~TemporaryRoot() {
     std::filesystem::remove_all(path, error);
 }
 
-FileVm::FileVm(SandboxStore* sandbox,
-                const bool include_android_catalog,
-                const InterpreterConfig config,
-                const std::span<const IntrinsicClassDecl>
-                    extra_intrinsics,
-                const bool include_boot_dex)
-    : model(strings, arrays),
-      context(std::make_shared<DexVmAndroidContext>()),
-      io_file_system(vfs),
+FileVm::FileVm(SandboxStore* sandbox, const bool include_android_catalog, const InterpreterConfig config,
+               const std::span<const IntrinsicClassDecl> extra_intrinsics, const bool include_boot_dex,
+               const bool include_skeleton)
+    : model(strings, arrays), context(std::make_shared<DexVmAndroidContext>()), io_file_system(vfs),
       interpreter(
-          [this, include_android_catalog, include_boot_dex,
-           extra_intrinsics]() -> DexClassLinker& {
+          [this, include_android_catalog, include_boot_dex, include_skeleton, extra_intrinsics]() -> DexClassLinker& {
               CoreIntrinsicServices services;
               services.current_time_millis = [] { return INT64_C(1704067200000); };
               linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
@@ -151,9 +129,9 @@ FileVm::FileVm(SandboxStore* sandbox,
               }
               linker.RegisterIntrinsics(extra_intrinsics);
               if (include_boot_dex) {
-                  ogplay::test::BindBootDexPlatformNatives(linker);
-                  linker.RegisterBootDex(DateBootDex());
+                  ogplay::test::RegisterBootDex(linker);
               }
+              if (include_skeleton) ogplay::test::RegisterBootDexSkeleton(linker);
               linker.Link();
               return linker;
           }(),

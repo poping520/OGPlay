@@ -120,6 +120,24 @@ void Initialize(dx::IntrinsicContext& call, const dx::VmObjectRef descriptor, co
     SetWide(call, descriptor, 3, length);
 }
 
+dx::VmObjectRef NewParcelFileDescriptor(dx::IntrinsicContext& call, const dx::VmObjectRef fd) {
+    const auto fd_root = call.vm.ProtectReferences(std::array{fd});
+    const auto type = call.vm.Linker().ResolveDescriptor("Landroid/os/ParcelFileDescriptor;");
+    const auto initialized = call.vm.EnsureClassInitialized(type);
+    if (initialized.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(initialized.exception_class).descriptor,
+                              initialized.exception_message, initialized.exception};
+    const auto pfd = call.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
+    const auto root = call.vm.ProtectReferences(std::array{pfd});
+    const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "(Ljava/io/FileDescriptor;)V");
+    if (!constructor) throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "ROM PFD constructor missing");
+    const auto outcome = call.vm.Call(*constructor, std::array{dx::VmValue::Ref(pfd), dx::VmValue::Ref(fd)});
+    if (outcome.exception.IsValid())
+        throw dx::VmJavaThrow{call.vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
+    return pfd;
+}
+
 dx::VmObjectRef MakeStoredApkAssetFileDescriptor(dx::IntrinsicContext& call, const Context& context,
                                                  const std::string& path) {
     const loader::ApkEntry* entry = nullptr;
@@ -141,8 +159,10 @@ dx::VmObjectRef MakeStoredApkAssetFileDescriptor(dx::IntrinsicContext& call, con
     }
     const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
     call.vm.IO().SetDescriptor(fd, {dx::IoRuntime::DescriptorKind::apk_entry, path, data_offset, false, {}, {}, {}});
-    const auto pfd = call.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
-    call.vm.Model().InstanceSlots(pfd)[0] = {fd.Value(), dx::SlotTag::ref};
+    const auto fd_root = call.vm.ProtectReferences(std::array{fd});
+    static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+    const auto pfd = NewParcelFileDescriptor(call, fd);
+    const auto pfd_root = call.vm.ProtectReferences(std::array{pfd});
     const auto descriptor = call.vm.NewIntrinsicInstance("Landroid/content/res/AssetFileDescriptor;");
     Initialize(call, descriptor, pfd, static_cast<std::int64_t>(data_offset),
                static_cast<std::int64_t>(entry->uncompressed_size));
@@ -431,7 +451,7 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context&) {
     builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
         const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
         if (!pfd.IsValid()) return dx::VmValue::Ref(dx::VmObjectRef{});
-        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits));
+        return CallAndroidMethod(call.vm, pfd, "getFileDescriptor", "()Ljava/io/FileDescriptor;");
     });
     builder.VirtualMethod("getStartOffset", "()J", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Long(GetWide(call, call.receiver, 1));
@@ -441,16 +461,7 @@ Decl Declare_android_content_res_AssetFileDescriptor(const Context&) {
     });
     builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
         const auto pfd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-        if (pfd.IsValid()) {
-            const auto fd = dx::VmObjectRef(call.vm.Model().InstanceSlots(pfd)[0].bits);
-            if (fd.IsValid()) {
-                call.vm.IO().CloseDescriptor(fd);
-                // FileDescriptor.valid() is original Java and reads its descriptor
-                // field, independently of IoRuntime's logical close bookkeeping.
-                static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
-            }
-        }
-        return dx::VmValue::Void();
+        return CallAndroidMethod(call.vm, pfd, "close", "()V");
     });
     const auto wu_mExtras =
         builder.BoundInstanceField("mExtras", "Landroid/os/Bundle;", dx::kAccPrivate | dx::kAccFinal);
@@ -863,8 +874,10 @@ Decl Declare_android_content_res_AssetManager(const Context& context) {
             const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
             call.vm.IO().SetDescriptor(
                 fd, {dx::IoRuntime::DescriptorKind::apk_entry, path, data_offset, false, {}, {}, {}});
-            const auto pfd = call.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
-            call.vm.Model().InstanceSlots(pfd)[0] = {fd.Value(), dx::SlotTag::ref};
+            const auto fd_root = call.vm.ProtectReferences(std::array{fd});
+            static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+            const auto pfd = NewParcelFileDescriptor(call, fd);
+            const auto pfd_root = call.vm.ProtectReferences(std::array{pfd});
             const auto descriptor = call.vm.NewIntrinsicInstance("Landroid/content/res/AssetFileDescriptor;");
             const auto length = static_cast<std::uint64_t>(entry->uncompressed_size);
             Initialize(call, descriptor, pfd, static_cast<std::int64_t>(data_offset),

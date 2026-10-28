@@ -199,7 +199,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_os_Message(context),
         Declare_android_os_SystemClock(context),
         Declare_android_os_Parcel(context),
-        Declare_android_os_ParcelFileDescriptor(context),
         Declare_android_os_PowerManager(context),
         Declare_android_os_PowerManager_WakeLock(context),
         Declare_android_os_Vibrator(context),

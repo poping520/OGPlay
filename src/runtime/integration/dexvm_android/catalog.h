@@ -124,7 +124,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Message(const Context& context);
 [[nodiscard]] Decl Declare_android_os_SystemClock(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Parcel(const Context& context);
-[[nodiscard]] Decl Declare_android_os_ParcelFileDescriptor(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
 [[nodiscard]] Decl Declare_android_os_PowerManager_WakeLock(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Vibrator(const Context& context);

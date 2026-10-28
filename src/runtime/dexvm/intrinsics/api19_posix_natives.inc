@@ -8,7 +8,6 @@ posix.UnimplementedVirtual("accept", "(Ljava/io/FileDescriptor;Ljava/net/InetSoc
 posix.UnimplementedVirtual("bind", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
 posix.UnimplementedVirtual("chown", "(Ljava/lang/String;II)V");
 posix.UnimplementedVirtual("connect", "(Ljava/io/FileDescriptor;Ljava/net/InetAddress;I)V");
-posix.UnimplementedVirtual("dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("dup2", "(Ljava/io/FileDescriptor;I)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("environ", "()[Ljava/lang/String;");
 posix.UnimplementedVirtual("execv", "(Ljava/lang/String;[Ljava/lang/String;)V");
@@ -16,8 +15,6 @@ posix.UnimplementedVirtual("execve", "(Ljava/lang/String;[Ljava/lang/String;[Lja
 posix.UnimplementedVirtual("fchmod", "(Ljava/io/FileDescriptor;I)V");
 posix.UnimplementedVirtual("fchown", "(Ljava/io/FileDescriptor;II)V");
 posix.UnimplementedVirtual("fcntlFlock", "(Ljava/io/FileDescriptor;ILlibcore/io/StructFlock;)I");
-posix.UnimplementedVirtual("fcntlLong", "(Ljava/io/FileDescriptor;IJ)I");
-posix.UnimplementedVirtual("fcntlVoid", "(Ljava/io/FileDescriptor;I)I");
 posix.UnimplementedVirtual("fstatvfs", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStatVfs;");
 posix.UnimplementedVirtual("getegid", "()I");
 posix.UnimplementedVirtual("getenv", "(Ljava/lang/String;)Ljava/lang/String;");

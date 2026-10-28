@@ -159,7 +159,8 @@ TEST_CASE("AssetManager openFd publishes exact logical asset length") {
     const auto fd = vm.CallOn(descriptor, "getFileDescriptor",
                               "()Ljava/io/FileDescriptor;").ref;
     REQUIRE(fd.IsValid());
-    CHECK(vm.BoolOn(fd, "valid"));
+    CHECK_FALSE(vm.BoolOn(fd, "valid"));
+    CHECK(vm.CallOn(fd, "getInt$", "()I").AsInt() == -1);
     const auto* state = vm.interpreter.IO().FindDescriptor(fd);
     REQUIRE(state != nullptr);
     CHECK(state->kind == IoRuntime::DescriptorKind::apk_entry);
@@ -666,5 +667,96 @@ TEST_CASE("XML Pull original factory parses BOM APK assets through KXml on both 
         }
         CHECK(rejected);
         static_cast<void>(vm.CallOn(bad_input, "close", "()V"));
+    }
+}
+
+TEST_CASE("DVM-338 ROM PFD duplicates detaches opens and rejects unsupported transports") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        // Production skeleton fallback must account for unsupported ROM dependencies.
+        FileVm vm(nullptr, true, {.backend = backend}, {}, true, true);
+        const auto invoke = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args) {
+            const auto type = vm.linker.ResolveDescriptor(owner);
+            const auto method = vm.linker.FindDirectMethod(type, name, signature);
+            REQUIRE(method.has_value());
+            return vm.interpreter.Call(*method, args);
+        };
+        const auto pfd_call = [&](const char* name, const char* signature, std::vector<VmValue> args) {
+            const auto result = invoke("Landroid/os/ParcelFileDescriptor;", name, signature, std::move(args));
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return result.value.ref;
+        };
+        vm.vfs.PutFile("/original", std::array{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}}, true);
+        const auto original = vm.vfs.Open("/original", {.read = true});
+        const auto pfd = pfd_call("fromFd", "(I)Landroid/os/ParcelFileDescriptor;", {VmValue::Int(original)});
+        const auto root = vm.interpreter.ProtectReferences(std::array{pfd});
+        const auto copied = vm.CallOn(pfd, "getFd", "()I").AsInt();
+        CHECK(copied != original);
+        CHECK(vm.vfs.Seek(copied, 1, VfsSeekWhence::begin) == 1);
+        CHECK(vm.vfs.Seek(original, 0, VfsSeekWhence::current) == 1);
+        const auto dup = vm.CallOn(pfd, "dup", "()Landroid/os/ParcelFileDescriptor;").ref;
+        const auto dup_root = vm.interpreter.ProtectReferences(std::array{dup});
+        const auto third = vm.CallOn(dup, "getFd", "()I").AsInt();
+        CHECK(third != copied);
+        CHECK(third != original);
+        CHECK(vm.vfs.Seek(third, 1, VfsSeekWhence::current) == 2);
+        CHECK(vm.vfs.Seek(original, 0, VfsSeekWhence::current) == 2);
+        vm.CallOn(dup, "close", "()V");
+        CHECK_THROWS_AS(vm.vfs.Close(third), VfsError);
+        const auto fd = vm.CallOn(pfd, "getFileDescriptor", "()Ljava/io/FileDescriptor;").ref;
+        const auto parcel_dup = invoke("Landroid/os/Parcel;", "dupFileDescriptor",
+                                       "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", {VmValue::Ref(fd)});
+        REQUIRE_FALSE(parcel_dup.exception.IsValid());
+        const auto parcel_fd = parcel_dup.value.ref;
+        const auto parcel_root = vm.interpreter.ProtectReferences(std::array{parcel_fd});
+        const auto parcel_handle = vm.CallOn(parcel_fd, "getInt$", "()I").AsInt();
+        CHECK(parcel_handle != copied);
+        CHECK(vm.vfs.Seek(parcel_handle, 0, VfsSeekWhence::current) == 2);
+        REQUIRE_FALSE(invoke("Landroid/os/Parcel;", "closeFileDescriptor", "(Ljava/io/FileDescriptor;)V",
+                             {VmValue::Ref(parcel_fd)})
+                          .exception.IsValid());
+        CHECK_THROWS_AS(vm.vfs.Close(parcel_handle), VfsError);
+        CHECK(vm.CallOn(pfd, "detachFd", "()I").AsInt() == copied);
+        CHECK(vm.interpreter.IO().FindDescriptor(fd) == nullptr);
+        // API19 detach clears mFd; close, rather than detach, sets mClosed.
+        CHECK(vm.CallOn(pfd, "getFd", "()I").AsInt() == -1);
+        vm.CallOn(pfd, "close", "()V");
+        const auto closed = vm.CallOnOutcome(pfd, "getFd", "()I");
+        REQUIRE(closed.exception.IsValid());
+        CHECK(vm.linker.Class(closed.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        CHECK(vm.vfs.DescriptorInfo(copied).size == 3);
+        vm.vfs.Close(copied);
+        CHECK(vm.vfs.DescriptorInfo(original).size == 3);
+        vm.vfs.Close(original);
+        const auto file = vm.NewFile("/created");
+        const auto created = pfd_call("open", "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;",
+                                      {VmValue::Ref(file), VmValue::Int(0x38000000)});
+        const auto created_root = vm.interpreter.ProtectReferences(std::array{created});
+        const auto created_handle = vm.CallOn(created, "getFd", "()I").AsInt();
+        const auto status = vm.vfs.DescriptorStatus(created_handle);
+        CHECK(status.read);
+        CHECK(status.write);
+        CHECK(vm.vfs.Write(created_handle, std::array{std::byte{'x'}}) == 1);
+        vm.CallOn(created, "close", "()V");
+        CHECK(vm.vfs.Stat("/created").size == 1);
+        CHECK(vm.ledger.Unimplemented().empty());
+        const auto pipe =
+            invoke("Landroid/os/ParcelFileDescriptor;", "createPipe", "()[Landroid/os/ParcelFileDescriptor;", {});
+        CHECK(pipe.exception.IsValid());
+        REQUIRE_FALSE(vm.ledger.Unimplemented().empty());
+        const auto before = vm.ledger.Unimplemented();
+        const auto socket = vm.interpreter.NewIntrinsicInstance("Ljava/net/Socket;");
+        const auto socket_root = vm.interpreter.ProtectReferences(std::array{socket});
+        vm.CallOn(socket, "<init>", "()V");
+        const auto from_socket = invoke("Landroid/os/ParcelFileDescriptor;", "fromSocket",
+                                        "(Ljava/net/Socket;)Landroid/os/ParcelFileDescriptor;", {VmValue::Ref(socket)});
+        CAPTURE(from_socket.exception_message);
+        CHECK(from_socket.exception.IsValid());
+        CHECK(vm.ledger.Unimplemented().size() > before.size());
+        const auto written = invoke("Landroid/os/Parcel;", "nativeWriteFileDescriptor", "(ILjava/io/FileDescriptor;)V",
+                                    {VmValue::Int(0), VmValue::Ref(fd)});
+        CHECK(written.exception.IsValid());
+        const auto hits = vm.ledger.Unimplemented();
+        CHECK(std::ranges::any_of(hits, [](const auto& hit) { return hit.id == "dexvm.parcel.file_descriptors"; }));
     }
 }

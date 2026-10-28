@@ -30,6 +30,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
 | [DVM-336](DVM-336.md) | WU-3a ROM Choreographer 与宿主帧源 | 有界完成；首错仍为 WU-3b ofFloat |
+| [DVM-338](DVM-338.md) | 裸 guest fd 的 FileDescriptor 语义与 ROM ParcelFileDescriptor | 离线验收完成，原 APK 待外验 |
 | [DVM-337](DVM-337.md) | ROM 属性动画与 View alpha（WU-3b） | 有界完成；淡出/移除及前台焦点恢复已实测 |
 | [DVM-335](DVM-335.md) | WU-2 全屏应用附加窗口、输入与焦点 | 有界完成；首错 WU-3 属性动画 |
 | [DVM-334](DVM-334.md) | WU-1 受管 Activity Window.Callback 附着/分离 | 有界完成；资源查询新首错 |

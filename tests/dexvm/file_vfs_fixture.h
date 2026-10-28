@@ -82,12 +82,10 @@ struct FileVm final {
     DexVmIoVfsAdapter io_file_system;
     Interpreter interpreter;
 
-    explicit FileVm(SandboxStore* sandbox = nullptr,
-                    const bool include_android_catalog = true,
+    explicit FileVm(SandboxStore* sandbox = nullptr, const bool include_android_catalog = true,
                     const InterpreterConfig config = {},
-                    const std::span<const IntrinsicClassDecl>
-                        extra_intrinsics = {},
-                    const bool include_boot_dex = true);
+                    const std::span<const IntrinsicClassDecl> extra_intrinsics = {}, const bool include_boot_dex = true,
+                    const bool include_skeleton = false);
 
     [[nodiscard]] VmObjectRef NewFile(const std::string& path);
 

@@ -25,9 +25,10 @@ public:
   ReadFile(std::string_view path) const override;
   void WriteFile(std::string_view path,
                  std::span<const std::byte> bytes) override;
-  [[nodiscard]] std::int32_t OpenHandle(
-      std::string_view path, bool read, bool write, bool create,
-      bool truncate, bool exclusive = false) override;
+  [[nodiscard]] std::int32_t OpenHandle(std::string_view path, bool read, bool write, bool create, bool truncate,
+                                        bool exclusive = false, bool append = false) override;
+  [[nodiscard]] std::int32_t HandleFlags(std::int32_t handle) const override;
+  [[nodiscard]] std::int32_t DuplicateHandle(std::int32_t handle) override;
   [[nodiscard]] dexvm::IoFileInfo HandleInfo(
       std::int32_t handle) const override;
   [[nodiscard]] std::size_t ReadHandle(

@@ -194,7 +194,9 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
 - `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
   File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
-  VFS offset；FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
+  VFS offset；未登记的非负 guest fd 可按 HandleInfo/HandleFlags 惰性接管，不复制数据或移动 offset。
+  DuplicateHandle 共享 VFS offset，关闭互不影响；GC sweep 只移除登记，不关闭 fd。
+  FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
   RandomAccessFile 的定位、长度与截断同样走该 descriptor；IoFileSystem 错误携带真实 VFS errno。
   `Posix.mkdir/remove/rename` 不经 bool 降级，VFS 的 ENOENT/EEXIST/EACCES/ENOSPC 等原样构造
   `ErrnoException`，使原版 `File.mkdirs()` 能在 ENOENT 时递归创建父目录。

@@ -1380,18 +1380,80 @@ Decl Declare_android_os_Parcel(const Context& context) {
         native_flags);
     builder.StaticMethod(
         "nativeHasFileDescriptors", "(I)Z", [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, native_flags);
-    const auto fd_unsupported = [](dx::IntrinsicContext&) -> dx::VmValue {
+    const auto fd_unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.parcel.file_descriptors", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Parcel file descriptors are unsupported"};
     };
     builder.StaticMethod("nativeWriteFileDescriptor", "(ILjava/io/FileDescriptor;)V", fd_unsupported, native_flags);
     builder.StaticMethod("nativeReadFileDescriptor", "(I)Ljava/io/FileDescriptor;", fd_unsupported, native_flags);
     constexpr auto package_native = dx::kAccStatic | dx::kAccNative;
-    builder.StaticMethod("openFileDescriptor", "(Ljava/lang/String;I)Ljava/io/FileDescriptor;", fd_unsupported,
-                         package_native);
-    builder.StaticMethod("dupFileDescriptor", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", fd_unsupported,
-                         package_native);
-    builder.StaticMethod("closeFileDescriptor", "(Ljava/io/FileDescriptor;)V", fd_unsupported, package_native);
-    builder.StaticMethod("clearFileDescriptor", "(Ljava/io/FileDescriptor;)V", fd_unsupported, package_native);
+    builder.StaticMethod(
+        "openFileDescriptor", "(Ljava/lang/String;I)Ljava/io/FileDescriptor;",
+        [](dx::IntrinsicContext& call) {
+            const auto path_ref = dx::IntrinsicCall(call).NonNullRef(0, "path");
+            const auto path = call.vm.StringUtf8(path_ref);
+            const auto mode = call.arguments[1].AsInt();
+            const auto access = mode & 0x30000000;
+            try {
+                const auto file =
+                    call.vm.IO().OpenFile(path, access != 0x20000000, access == 0x20000000 || access == 0x30000000,
+                                          (mode & 0x02000000) != 0, (mode & 0x04000000) != 0, (mode & 0x08000000) != 0);
+                const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+                const auto root = call.vm.ProtectReferences(std::array{fd});
+                call.vm.IO().SetDescriptor(fd, {dx::IoRuntime::DescriptorKind::vfs_path, path, 0, false, {}, {}, file});
+                call.vm.IO().BindFileStream(fd, file, false);
+                static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(file->handle)}));
+                return dx::VmValue::Ref(fd);
+            } catch (const dx::IoRuntimeError& error) {
+                throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", error.what()};
+            }
+        },
+        package_native);
+    builder.StaticMethod(
+        "dupFileDescriptor", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;",
+        [](dx::IntrinsicContext& call) {
+            const auto original = dx::IntrinsicCall(call).NonNullRef(0, "fd");
+            const auto handle = CallAndroidMethod(call.vm, original, "getInt$", "()I").AsInt();
+            if (handle < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bad FileDescriptor"};
+            try {
+                static_cast<void>(call.vm.IO().ResolveDescriptor(original, handle));
+                const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+                const auto root = call.vm.ProtectReferences(std::array{fd});
+                call.vm.IO().DuplicateDescriptor(original, fd);
+                static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V",
+                                                    {dx::VmValue::Int(call.vm.IO().Descriptor(fd).file->handle)}));
+                return dx::VmValue::Ref(fd);
+            } catch (const dx::IoRuntimeError& error) {
+                throw dx::VmJavaThrow{"Ljava/io/IOException;", error.what()};
+            }
+        },
+        package_native);
+    builder.StaticMethod(
+        "closeFileDescriptor", "(Ljava/io/FileDescriptor;)V",
+        [](dx::IntrinsicContext& call) {
+            const auto fd = dx::IntrinsicCall(call).NonNullRef(0, "fd");
+            const auto handle = CallAndroidMethod(call.vm, fd, "getInt$", "()I").AsInt();
+            if (handle >= 0) {
+                static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+                // AOSP Parcel ignores close(2) errors, unlike Posix.close.
+                try {
+                    static_cast<void>(call.vm.IO().ResolveDescriptor(fd, handle));
+                    call.vm.IO().CloseDescriptor(fd);
+                } catch (const dx::IoRuntimeError&) {
+                }
+            }
+            return dx::VmValue::Void();
+        },
+        package_native);
+    builder.StaticMethod(
+        "clearFileDescriptor", "(Ljava/io/FileDescriptor;)V",
+        [](dx::IntrinsicContext& call) {
+            const auto fd = dx::IntrinsicCall(call).NonNullRef(0, "fd");
+            call.vm.IO().ForgetDescriptor(fd);
+            static_cast<void>(CallAndroidMethod(call.vm, fd, "setInt$", "(I)V", {dx::VmValue::Int(-1)}));
+            return dx::VmValue::Void();
+        },
+        package_native);
     builder.StaticMethod(
         "nativeMarshall", "(I)[B",
         [require](dx::IntrinsicContext& call) {
@@ -1533,38 +1595,6 @@ Decl Declare_android_os_PowerManager_WakeLock(const Context& context) {
             context->wake_locks[call.receiver.Value()].reference_counted = call.arguments[0].AsInt() != 0;
             return dx::VmValue::Void();
         });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_os_ParcelFileDescriptor(const Context&) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/os/ParcelFileDescriptor;", "Ljava/lang/Object;",
-                                                    {"Landroid/os/Parcelable;", "Ljava/io/Closeable;"});
-    builder.ConstantInt("MODE_READ_ONLY", "I", 0x10000000, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
-    builder.InstanceField("mFd", "Ljava/io/FileDescriptor;", dx::kAccPrivate | dx::kAccFinal);
-    builder.StaticMethod("open", "(Ljava/io/File;I)Landroid/os/ParcelFileDescriptor;", [](dx::IntrinsicContext& call) {
-        constexpr std::int32_t kModeReadOnly = 0x10000000;
-        if (call.arguments[1].AsInt() != kModeReadOnly) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "only MODE_READ_ONLY is supported"};
-        }
-        const auto path = FilePathOf(call, call.arguments[0].ref);
-        const auto info = call.vm.IO().Stat(path);
-        if (!info.has_value() || info->is_directory) {
-            throw dx::VmJavaThrow{"Ljava/io/FileNotFoundException;", "file not found: " + path};
-        }
-        const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
-        call.vm.IO().SetDescriptor(fd, {dx::IoRuntime::DescriptorKind::vfs_path, path, 0, false, {}, {}, {}});
-        const auto pfd = call.vm.NewIntrinsicInstance("Landroid/os/ParcelFileDescriptor;");
-        call.vm.Model().InstanceSlots(pfd)[0] = {fd.Value(), dx::SlotTag::ref};
-        return dx::VmValue::Ref(pfd);
-    });
-    builder.VirtualMethod("getFileDescriptor", "()Ljava/io/FileDescriptor;", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
-    });
-    builder.VirtualMethod("close", "()V", [](dx::IntrinsicContext& call) {
-        const auto fd = dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits);
-        if (fd.IsValid()) call.vm.IO().CloseDescriptor(fd);
-        return dx::VmValue::Void();
-    });
     return std::move(builder).Build();
 }
 

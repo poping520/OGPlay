@@ -17,7 +17,7 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {
 Decl ExperimentalImageView(const Context& context);
 }
-}
+}  // namespace ogplay::runtime::android_intrinsics
 
 namespace ogplay::runtime::android_intrinsics {
 
@@ -60,7 +60,6 @@ Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) 
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_AbsoluteLayout.cpp ----
 #include "catalog.h"
 
@@ -90,7 +89,6 @@ Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_Button.cpp ----
 #include "catalog.h"
 
@@ -101,7 +99,6 @@ Decl Declare_android_widget_Button(const Context&) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_EditText.cpp ----
 #include "catalog.h"
@@ -144,7 +141,6 @@ Decl Declare_android_widget_EditText(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_FrameLayout.cpp ----
 #include "catalog.h"
 
@@ -161,7 +157,6 @@ Decl Declare_android_widget_FrameLayout(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_ImageButton.cpp ----
 #include "catalog.h"
 
@@ -172,7 +167,6 @@ Decl Declare_android_widget_ImageButton(const Context&) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_ImageView_ScaleType.cpp ----
 #include "catalog.h"
@@ -185,7 +179,6 @@ Decl Declare_android_widget_ImageView_ScaleType(const Context&) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_ImageView.cpp ----
 #include "catalog.h"
 
@@ -196,7 +189,6 @@ Decl Declare_android_widget_ImageView(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_LinearLayout.cpp ----
 #include "catalog.h"
@@ -218,7 +210,6 @@ Decl Declare_android_widget_LinearLayout(const Context&) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_ProgressBar.cpp ----
 #include "catalog.h"
@@ -254,7 +245,6 @@ Decl Declare_android_widget_ProgressBar(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_RelativeLayout.cpp ----
 #include "catalog.h"
 
@@ -273,7 +263,6 @@ Decl Declare_android_widget_RelativeLayout(const Context&) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_ScrollView.cpp ----
 #include "catalog.h"
@@ -477,7 +466,6 @@ Decl Declare_android_widget_ScrollView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_TableLayout.cpp ----
 #include "catalog.h"
 
@@ -508,7 +496,6 @@ Decl Declare_android_widget_TableLayout(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_widget_TableRow.cpp ----
 #include "catalog.h"
@@ -541,28 +528,26 @@ Decl Declare_android_widget_TableRow(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_TextView.cpp ----
 #include "catalog.h"
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
 
-dx::VmValue TextStatic(dx::Interpreter& vm, const char* owner, const char* name,
-                        const char* signature, std::vector<dx::VmValue> arguments) {
+dx::VmValue TextStatic(dx::Interpreter& vm, const char* owner, const char* name, const char* signature,
+                       std::vector<dx::VmValue> arguments) {
     const auto type = vm.Linker().ResolveDescriptor(owner);
     const auto method = vm.Linker().FindDirectMethod(type, name, signature);
     if (!method) throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, name);
     const auto outcome = vm.Call(*method, arguments);
     if (outcome.exception.IsValid())
-        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor,
-                              outcome.exception_message, outcome.exception};
+        throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                              outcome.exception};
     return outcome.value;
 }
 
 ui::UiNodeId TextNode(dx::IntrinsicContext& call, const Context& context) {
-    return EnsureViewUiNode(
-        *context, call.receiver, UiClassForObject(call.vm, call.receiver));
+    return EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
 }
 
 std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
@@ -1336,6 +1321,31 @@ Decl ExperimentalTextView(const Context& context) {
     builder.VirtualMethod("getText", "()Ljava/lang/CharSequence;", [context](dx::IntrinsicContext& c) {
         return dx::VmValue::Ref(c.vm.Model().NewString(context->ui_tree.Get(TextNode(c, context))->text));
     });
+    builder.VirtualMethod("setShadowLayer", "(FFFI)V", [context](dx::IntrinsicContext& c) {
+        const auto radius = c.arguments[0].AsFloat();
+        const auto dx = c.arguments[1].AsFloat(), dy = c.arguments[2].AsFloat();
+        // API19 stores finite negative radii too; Paint.cpp disables radius <= 0.
+        // Non-finite geometry is outside this bounded raster service.
+        if (!std::isfinite(radius) || !std::isfinite(dx) || !std::isfinite(dy) || std::abs(dx) > 4096 ||
+            std::abs(dy) > 4096)
+            TextInputFailure(c.vm, "shadow requires finite radius and offsets within +/-4096 px");
+        auto& n = *context->ui_tree.Get(TextNode(c, context));
+        n.text_shadow = {radius, dx, dy, AndroidColorToRgba(static_cast<std::uint32_t>(c.arguments[3].AsInt()))};
+        return CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V");
+    });
+    builder.VirtualMethod("getShadowRadius", "()F", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_shadow.radius);
+    });
+    builder.VirtualMethod("getShadowDx", "()F", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_shadow.dx);
+    });
+    builder.VirtualMethod("getShadowDy", "()F", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_shadow.dy);
+    });
+    builder.VirtualMethod("getShadowColor", "()I", [context](dx::IntrinsicContext& c) {
+        const auto rgba = context->ui_tree.Get(TextNode(c, context))->text_shadow.rgba;
+        return dx::VmValue::Int(static_cast<std::int32_t>((rgba >> 8U) | (rgba << 24U)));
+    });
     builder.VirtualMethod("getTextSize", "()F", [context](dx::IntrinsicContext& c) {
         return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_size_px);
     });
@@ -1623,7 +1633,6 @@ Decl Declare_android_widget_TextView(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_widget_Toast.cpp ----
 // Toast has no on-screen surface here; show() lands in the guest log.
 
@@ -1635,12 +1644,11 @@ Decl Declare_android_widget_Toast(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/Toast;", "Ljava/lang/Object;");
     builder.StaticMethod("makeText",
-        "(Landroid/content/Context;Ljava/lang/CharSequence;I)"
-        "Landroid/widget/Toast;",
-        [](dx::IntrinsicContext& call) {
-            return dx::VmValue::Ref(
-                call.vm.NewIntrinsicInstance("Landroid/widget/Toast;"));
-        });
+                         "(Landroid/content/Context;Ljava/lang/CharSequence;I)"
+                         "Landroid/widget/Toast;",
+                         [](dx::IntrinsicContext& call) {
+                             return dx::VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/widget/Toast;"));
+                         });
     builder.VirtualMethod("show", "()V", [](dx::IntrinsicContext& call) {
         GuestLog(call, core::LogLevel::info, "Toast.show()");
         return dx::VmValue::Void();

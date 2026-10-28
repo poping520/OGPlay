@@ -87,6 +87,25 @@ using Glyph = std::array<std::uint8_t, 7>;
     case u'=': return {0, 31, 0, 31, 0, 0, 0};
     case u'(': return {2, 4, 8, 8, 8, 4, 2};
     case u')': return {8, 4, 2, 2, 2, 4, 8};
+    case u'\'': return {4, 4, 8, 0, 0, 0, 0};
+    case u'"': return {10, 10, 0, 0, 0, 0, 0};
+    case u'#': return {10, 31, 10, 10, 31, 10, 0};
+    case u'$': return {4, 15, 20, 14, 5, 30, 4};
+    case u'%': return {24, 25, 2, 4, 8, 19, 3};
+    case u'&': return {12, 18, 20, 8, 21, 18, 13};
+    case u'*': return {0, 21, 14, 31, 14, 21, 0};
+    case u'<': return {2, 4, 8, 16, 8, 4, 2};
+    case u'>': return {8, 4, 2, 1, 2, 4, 8};
+    case u'@': return {14, 17, 23, 21, 23, 16, 14};
+    case u'[': return {14, 8, 8, 8, 8, 8, 14};
+    case u'\\': return {16, 8, 8, 4, 2, 2, 1};
+    case u']': return {14, 2, 2, 2, 2, 2, 14};
+    case u'^': return {4, 10, 17, 0, 0, 0, 0};
+    case u'`': return {8, 4, 0, 0, 0, 0, 0};
+    case u'{': return {2, 4, 4, 8, 4, 4, 2};
+    case u'|': return {4, 4, 4, 4, 4, 4, 4};
+    case u'}': return {8, 4, 4, 2, 4, 4, 8};
+    case u'~': return {0, 0, 8, 21, 2, 0, 0};
     default: throw std::runtime_error("unsupported fixed-font glyph");
     }
 }

@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
+      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "b9326994375bd4796481ce695e5a6a36ff4c9c0a975615e36cc931ba59139841",
       "methods": [
@@ -1300,7 +1300,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
+      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
       "methods": [
@@ -2403,25 +2403,53 @@
           "signature": "getShadowColor()I",
           "flags": 1,
           "body_sha256": "b8152a4c9c36ce4f803a52993ceccc89771f09b56c0fe62f353a4c4de9194c25",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-340 bounded TextView shadow raster",
+            "inputs": "radius/dx/dy floats and ARGB color; finite geometry, offsets within +/-4096px",
+            "outputs": "stored original parameters; setter invalidates; styled text mask casts offset Gaussian shadow before foreground",
+            "state_owner": "UiNode TextShadow is authoritative; immutable projection and DrawText copy the same epoch",
+            "failure_boundary": "radius <=0 disables; raster radius capped at 32px; non-finite or out-of-range offsets fail and ledger atomically; XML shadow attributes, Editor and full Skia remain unsupported"
+          }
         },
         {
           "signature": "getShadowDx()F",
           "flags": 1,
           "body_sha256": "60f886e43bea24f0231f4c40ac148a3457c5e7778c160aa4746822bc4474ed5f",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-340 bounded TextView shadow raster",
+            "inputs": "radius/dx/dy floats and ARGB color; finite geometry, offsets within +/-4096px",
+            "outputs": "stored original parameters; setter invalidates; styled text mask casts offset Gaussian shadow before foreground",
+            "state_owner": "UiNode TextShadow is authoritative; immutable projection and DrawText copy the same epoch",
+            "failure_boundary": "radius <=0 disables; raster radius capped at 32px; non-finite or out-of-range offsets fail and ledger atomically; XML shadow attributes, Editor and full Skia remain unsupported"
+          }
         },
         {
           "signature": "getShadowDy()F",
           "flags": 1,
           "body_sha256": "83542516efdd54cc8da14345e35e943fb49fa592cb69e493c1de59992795c218",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-340 bounded TextView shadow raster",
+            "inputs": "radius/dx/dy floats and ARGB color; finite geometry, offsets within +/-4096px",
+            "outputs": "stored original parameters; setter invalidates; styled text mask casts offset Gaussian shadow before foreground",
+            "state_owner": "UiNode TextShadow is authoritative; immutable projection and DrawText copy the same epoch",
+            "failure_boundary": "radius <=0 disables; raster radius capped at 32px; non-finite or out-of-range offsets fail and ledger atomically; XML shadow attributes, Editor and full Skia remain unsupported"
+          }
         },
         {
           "signature": "getShadowRadius()F",
           "flags": 1,
           "body_sha256": "110047a8802848a433805131c7bc3b88ec7842bbfefd31ddbed88405480fa7c3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-340 bounded TextView shadow raster",
+            "inputs": "radius/dx/dy floats and ARGB color; finite geometry, offsets within +/-4096px",
+            "outputs": "stored original parameters; setter invalidates; styled text mask casts offset Gaussian shadow before foreground",
+            "state_owner": "UiNode TextShadow is authoritative; immutable projection and DrawText copy the same epoch",
+            "failure_boundary": "radius <=0 disables; raster radius capped at 32px; non-finite or out-of-range offsets fail and ledger atomically; XML shadow attributes, Editor and full Skia remain unsupported"
+          }
         },
         {
           "signature": "getShowSoftInputOnFocus()Z",
@@ -3551,7 +3579,14 @@
           "signature": "setShadowLayer(FFFI)V",
           "flags": 1,
           "body_sha256": "36e7401c538b6f0fb3e0b5a5765c369cd53ceb7531d07ed6ddec7ab763ca00d8",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-340 bounded TextView shadow raster",
+            "inputs": "radius/dx/dy floats and ARGB color; finite geometry, offsets within +/-4096px",
+            "outputs": "stored original parameters; setter invalidates; styled text mask casts offset Gaussian shadow before foreground",
+            "state_owner": "UiNode TextShadow is authoritative; immutable projection and DrawText copy the same epoch",
+            "failure_boundary": "radius <=0 disables; raster radius capped at 32px; non-finite or out-of-range offsets fail and ledger atomically; XML shadow attributes, Editor and full Skia remain unsupported"
+          }
         },
         {
           "signature": "setShowSoftInputOnFocus(Z)V",
@@ -4449,7 +4484,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
+      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4733,7 +4768,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
+      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

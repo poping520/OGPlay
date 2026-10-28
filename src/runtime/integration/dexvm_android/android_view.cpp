@@ -1310,6 +1310,10 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
             rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
         }
         state.locked = false;
+        {
+            std::scoped_lock lock(context->surface_pixels_mutex);
+            context->surface_buffer_queued[call.receiver.Value()] = true;
+        }
         if (call.receiver == context->window_surface_holder) {
             context->session->PublishSoftwareFrame(std::move(rgba8));
             return dx::VmValue::Void();

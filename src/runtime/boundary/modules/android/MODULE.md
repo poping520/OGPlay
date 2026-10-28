@@ -75,7 +75,8 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - 无效/已销毁 Surface 返回 null。新代使用新 token，不复用；解除 hooks 只在 guest 停止后
   回收 Java 窗口。registry width/height 是 holder buffer 尺寸，changed 同步后 NDK getter 立即可见。
 - Java EGL 的 holder token 使用同源几何别名；退役别名不回落到 standalone 窗口。
-  纯像素 publisher 与退役串行，经显式 hooks 投递到 integration，boundary 不获取 VM 锁。
+  纯像素 publisher、成功 swap 的 buffer-queued 身份通知与退役串行，经显式 hooks
+  投递到 integration，boundary 不获取 VM 锁；退役窗口不通知新一代 holder。
   ANativeWindow_setBuffersGeometry 仍只接受重置或当前尺寸/格式，不新增任意 NDK resize。
 
 ## AConfiguration 语言地区

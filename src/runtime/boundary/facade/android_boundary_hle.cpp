@@ -122,6 +122,9 @@ public:
                        +[](void* owner, memory::GuestAddress window) {
                            return static_cast<Impl*>(owner)->android_module_.NativeWindowGeometry(window);
                        },
+                       +[](void* owner, memory::GuestAddress window) {
+                           static_cast<Impl*>(owner)->android_module_.NotifySurfaceBufferQueued(window);
+                       },
                        +[](void* owner, memory::GuestAddress window, std::uint32_t width, std::uint32_t height,
                            std::vector<std::uint8_t> pixels) {
                            return static_cast<Impl*>(owner)->android_module_.PublishSurfacePixels(window, width, height,

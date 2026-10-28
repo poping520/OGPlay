@@ -18,6 +18,27 @@
 namespace ogplay::session {
 
 namespace {
+// API19: a Surface that has never queued a buffer contributes no layer. Its
+// SurfaceView opening shows the black base, and independent Dialog windows can
+// still compose. Once queued, only retained pixels permit owner-only changes:
+// an uncovered live producer keeps authority over the base frame.
+// Caller holds surface_pixels_mutex through the software-frame submission.
+bool CanPublishOwnerSoftwareBase(const runtime::DexVmAndroidContext& context,
+                                 const runtime::DexVmAndroidContext::PresentationSnapshot& snapshot,
+                                 const bool non_holder_producers_idle) {
+    if (context.active_surface_holders.empty()) return non_holder_producers_idle;
+    return std::ranges::all_of(context.active_surface_holders, [&](const auto holder) {
+        for (const auto& [view, candidate] : context.surface_holders) {
+            if (candidate.Value() != holder) continue;
+            const auto id = runtime::FindViewUiNode(context, view);
+            if (id && snapshot.scaled_surface_frames.contains(*id) && snapshot.video_frames.contains(*id)) return true;
+            break;
+        }
+        const auto queued = context.surface_buffer_queued.find(holder);
+        return queued != context.surface_buffer_queued.end() && !queued->second;
+    });
+}
+
 void ProjectRenderer(runtime::DexVmAndroidContext& context,
                      const runtime::DexVmAndroidContext::GlSurfaceRuntime& state) {
     if (context.gl_surface_renderer_view != state.view) return;
@@ -733,22 +754,11 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
         }
         if (!context.renderer.IsValid() && context.session) {
             const auto snapshot = runtime::AcquireAndroidPresentation(context);
-            const bool pure_view = context.active_surface_holders.empty() && !runtime::AnyVideoPlaying(context) &&
-                                   context.holder_canvases.empty();
-            // Managed producers may stop drawing while a modal is open. Their
-            // frozen buffers can supply the base for an owner-only UI change.
-            // Never replace a live producer whose pixels are not in this lease.
-            const bool retained_surfaces = snapshot && !context.active_surface_holders.empty() &&
-                                           std::ranges::all_of(context.active_surface_holders, [&](const auto holder) {
-                                               for (const auto& [view, candidate] : context.surface_holders) {
-                                                   if (candidate.Value() != holder) continue;
-                                                   const auto id = runtime::FindViewUiNode(context, view);
-                                                   return id && snapshot->scaled_surface_frames.contains(*id) &&
-                                                          snapshot->video_frames.contains(*id);
-                                               }
-                                               return false;
-                                           });
-            if ((pure_view || retained_surfaces) && snapshot &&
+            const bool non_holder_producers_idle =
+                !runtime::AnyVideoPlaying(context) && context.holder_canvases.empty();
+            // Serialize the decision and submission with producer notifications.
+            std::scoped_lock pixels_lock(context.surface_pixels_mutex);
+            if (snapshot && CanPublishOwnerSoftwareBase(context, *snapshot, non_holder_producers_idle) &&
                 snapshot->presentation_epoch != submitted_presentation_epoch_) {
                 const auto pixels = static_cast<std::size_t>(context.surface_width) * context.surface_height;
                 std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);

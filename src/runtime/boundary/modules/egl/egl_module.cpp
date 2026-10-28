@@ -865,9 +865,11 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         SurfaceKind kind{};
+        memory::GuestAddress queued_window;
         {
             std::scoped_lock lock(mutex_);
             kind = surfaces_.at(args[1]).kind;
+            queued_window = surfaces_.at(args[1]).native_window;
         }
         if (kind == SurfaceKind::window) {
             std::shared_ptr<gles::EglSurfaceResources> draw, read;
@@ -936,6 +938,8 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
                 return 0U;
             }
         }
+        if (kind == SurfaceKind::window && context_.surface_buffer_queued)
+            context_.surface_buffer_queued(context_.native_window_owner, queued_window);
         return 1U;
     }
     if constexpr (FunctionId == 9U) {

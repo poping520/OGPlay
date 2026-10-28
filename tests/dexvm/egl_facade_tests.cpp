@@ -2010,7 +2010,7 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
     const auto window = f.boundary.AcquireSurfaceWindow({holder, 2, 3});
 
     struct Capture {
-        unsigned width{}, height{};
+        unsigned width{}, height{}, queues{};
         std::vector<std::uint8_t> pixels;
     } capture;
 
@@ -2020,11 +2020,27 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
                                 +[](void* owner, ogplay::memory::GuestAddress identity, std::uint32_t width,
                                     std::uint32_t height, std::vector<std::uint8_t> pixels) {
                                     CHECK(identity == ogplay::memory::GuestAddress{0x1234});
-                                    *static_cast<Capture*>(owner) = {width, height, std::move(pixels)};
+                                    auto& captured = *static_cast<Capture*>(owner);
+                                    captured.width = width;
+                                    captured.height = height;
+                                    captured.pixels = std::move(pixels);
+                                },
+                                +[](void* owner, ogplay::memory::GuestAddress identity) {
+                                    CHECK(identity == ogplay::memory::GuestAddress{0x1234});
+                                    ++static_cast<Capture*>(owner)->queues;
                                 }});
     REQUIRE(f.Call("libEGL.so", "eglInitialize", {1}) == 1);
-    const auto surface = f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, window.Value(), 0});
+    auto producer = window.Value();
+    SUBCASE("ANativeWindow handle") {}
+    SUBCASE("Java EGL holder alias") {
+        f.boundary.UpdateSurfaceWindow({holder, 2, 3});
+        producer = holder.Value();
+    }
+    const auto surface = f.Call("libEGL.so", "eglCreateWindowSurface", {1, 2, producer, 0});
     REQUIRE(surface != 0);
+    CHECK(capture.queues == 0);                                       // creation is not a queue
+    CHECK(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 0);  // not current
+    CHECK(capture.queues == 0);
     const auto query = [&](unsigned attribute) {
         REQUIRE(f.Call("libEGL.so", "eglQuerySurface", {1, surface, attribute, f.output.Value()}) == 1);
         return f.bus.Read32(f.output);
@@ -2045,12 +2061,14 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
     f.boundary.UpdateSurfaceWindow({holder, 3, 2});
     CHECK(query(0x3057) == 2);  // old dequeued buffer is still current
     REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 1);
+    CHECK(capture.queues == 1);
     CHECK(capture.width == 2);
     CHECK(capture.height == 3);
     CHECK(query(0x3057) == 3);
     CHECK(query(0x3056) == 2);
     clear();
     REQUIRE(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 1);
+    CHECK(capture.queues == 2);
     CHECK(capture.width == 3);
     CHECK(capture.height == 2);
     REQUIRE(capture.pixels.size() == 24);
@@ -2062,6 +2080,7 @@ TEST_CASE("DVM-339 EGL buffer geometry changes on swap and publishes independent
     }
     f.boundary.RetireSurfaceWindow(holder);
     CHECK(f.Call("libEGL.so", "eglSwapBuffers", {1, surface}) == 0);
+    CHECK(capture.queues == 2);
     CHECK(f.Call("libEGL.so", "eglMakeCurrent", {1, 0, 0, 0}) == 1);
     CHECK(f.Call("libEGL.so", "eglTerminate", {1}) == 1);
 }

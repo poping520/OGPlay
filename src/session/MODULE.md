@@ -174,9 +174,10 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   session 持有有界 UI 平面缓存：完整投影/冻结 modal 身份、viewport 和 bitmap 输入未变时
   复用栅格结果；producer 单独更新不重绘 UI。新 producer 底图仍每帧按原顺序混合、上传，
   不缓存替代 guest 帧；缓存仅保留当前发布的平面，失败不替换完整缓存。
-  全部活跃 managed Surface 的像素已保留在共同快照时，owner 可在 UI/modal epoch 改变后
-  独立提交合成触发帧，不等待 producer 再次 post/swap；有未被快照覆盖的活跃 producer 时
-  保留其基帧权威，干净 epoch 不重复提交。
+  全部活跃 managed Surface 均未 queue 过 buffer 或像素已保留在共同快照时，owner 可在 UI/modal epoch 改变后
+  独立提交合成触发帧，不等待 producer 再次 post/swap；有已 queue 但未被快照覆盖的活跃 producer 时
+  保留其基帧权威，干净 epoch 不重复提交。API19 未 queue 的 Surface 不提供图层，
+  开孔后显黑色底，独立 Dialog 可正常叠加；created 复位、destroyed 清除此事实。
   新帧尺寸须与共同快照一致，失败保留发布序列。不保留 guest 刷新/宿主布局合成回落。
   modal 输入先由 integration 使用同一发布对象命中/捕获，再进入 Java Dialog 协议；
   每个输入事件从 modal、NativeActivity 队列、编辑/键、pointer/焦点/scroll 到 deep/Activity

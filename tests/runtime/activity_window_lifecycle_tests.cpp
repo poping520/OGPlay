@@ -1477,3 +1477,146 @@ TEST_CASE("DVM-339 modal dismissal presents retained Surface pixels without anot
         static_cast<void>(f.app->Stop());
     }
 }
+
+TEST_CASE("DVM-345 unbuffered Surface permits Dialog until its first queued buffer") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.ResultCaller", true, false, {}, {}, true, backend, "android.app.Application", {},
+                          {800, 480});
+        f.app->StartApplication();
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        auto& vm = f.app->DexVm().Vm();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto owner = f.context->activity;
+        const auto call = [&](VmObjectRef object, const char* name, const char* signature,
+                              std::vector<VmValue> args = {}) {
+            return runtime::android_intrinsics::CallAndroidMethod(vm, object, name, signature, std::move(args));
+        };
+        const auto make = [&](const char* type) {
+            const auto object = vm.NewIntrinsicInstance(type);
+            const auto root = vm.ProtectReferences(std::array{object});
+            const auto ctor =
+                vm.Linker().FindDirectMethod(vm.Model().ObjectClass(object), "<init>", "(Landroid/content/Context;)V");
+            REQUIRE(ctor);
+            const auto result = vm.Call(*ctor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
+            REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+            return object;
+        };
+        const auto view = make("Landroid/view/SurfaceView;");
+        const auto holder = call(view, "getHolder", "()Landroid/view/SurfaceHolder;").ref;
+        const auto roots = vm.ProtectReferences(std::array{view, holder});
+        call(holder, "setFixedSize", "(II)V", {VmValue::Int(2), VmValue::Int(3)});
+        call(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        static_cast<void>(lifecycle.StepFrame());
+        const auto post = [&] {
+            const auto canvas = call(holder, "lockCanvas", "()Landroid/graphics/Canvas;").ref;
+            const auto canvas_root = vm.ProtectReferences(std::array{canvas});
+            call(canvas, "drawColor", "(I)V", {VmValue::Int(std::bit_cast<std::int32_t>(0xff0000ffU))});
+            call(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+        };
+        CHECK_FALSE(f.context->surface_buffer_queued.at(holder.Value()));
+        // Consume the initial empty-Surface presentation before showing the Dialog.
+        static_cast<void>(f.app->NativeProcess().TakeLatestFrame());
+        const auto builder = make("Landroid/app/AlertDialog$Builder;");
+        const auto builder_root = vm.ProtectReferences(std::array{builder});
+        call(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
+             {VmValue::Ref(vm.NewStringUtf8("Warning"))});
+        call(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
+             {VmValue::Ref(vm.NewStringUtf8("A modal above an idle Surface"))});
+        const auto observer_type = vm.Linker().ResolveDescriptor("Lfixture/DialogClickObserver;");
+        REQUIRE_FALSE(vm.EnsureClassInitialized(observer_type).exception.IsValid());
+        const auto observer = vm.Model().NewInstance(observer_type, vm.Linker().Class(observer_type).instance_slots);
+        const auto observer_root = vm.ProtectReferences(std::array{observer});
+        const auto init = vm.Linker().FindDirectMethod(observer_type, "<init>", "()V");
+        REQUIRE(init);
+        REQUIRE_FALSE(vm.Call(*init, std::array{VmValue::Ref(observer)}).exception.IsValid());
+        call(
+            builder, "setPositiveButton",
+            "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
+            {VmValue::Ref(vm.NewStringUtf8("OK")), VmValue::Ref(observer)});
+        const auto dialog = call(builder, "create", "()Landroid/app/AlertDialog;").ref;
+        const auto dialog_root = vm.ProtectReferences(std::array{dialog});
+        call(dialog, "show", "()V");
+        // No producer, EGL creation or queued buffer exists yet.
+        static_cast<void>(lifecycle.StepFrame());
+        auto shown = f.app->NativeProcess().TakeLatestFrame();
+        REQUIRE(shown);
+        const auto shown_pixels = lifecycle.ComposePresentedFrame(std::move(*shown));
+        CHECK(shown_pixels.rgba8[0] == 0);
+        CHECK(shown_pixels.rgba8[1] == 0);
+        CHECK(shown_pixels.rgba8[2] == 0);
+        CHECK(shown_pixels.rgba8[3] == 255);
+        const auto snapshot = runtime::AcquireAndroidPresentation(*f.context);
+        REQUIRE(snapshot);
+        REQUIRE(snapshot->modal_stack.size() == 1);
+        const auto& modal = snapshot->modal_stack.back();
+        REQUIRE(modal.buttons[0]);
+        const auto button = modal.tree->Get(*modal.buttons[0])->screen_frame;
+        const auto button_offset =
+            (static_cast<std::size_t>(button.top + 2) * 800U + static_cast<std::size_t>(button.left + 2)) * 4U;
+        CHECK(shown_pixels.rgba8[button_offset] > 0);  // actual Dialog pixels above black
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());  // presentation_epoch dedup
+        const auto pointer = [&](bool down) {
+            lifecycle.QueueInput({.type = runtime::AndroidBoundaryInputType::pointer_button,
+                                  .x = static_cast<float>(button.left + 2),
+                                  .y = static_cast<float>(button.top + 2),
+                                  .pressed = down});
+            static_cast<void>(lifecycle.StepFrame());
+        };
+        pointer(true);
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE(f.context->dialog_pressed_button);
+        pointer(false);
+        CHECK(call(dialog, "isShowing", "()Z").AsInt() == 0);
+        CHECK(f.CallStaticInt("Lfixture/DialogClickObserver;", "getClicks") == 1);
+        CHECK(f.CallStaticInt("Lfixture/DialogClickObserver;", "getWhich") == -1);
+        REQUIRE(f.context->dialog_presentations.empty());
+        CHECK(runtime::AcquireAndroidPresentation(*f.context)->modal_stack.empty());
+        // No post/swap follows the click: the owner must still publish the new
+        // modal-free presentation for the frontend to consume.
+        auto dismissed = f.app->NativeProcess().TakeLatestFrame();
+        REQUIRE(dismissed);
+        const auto clean = lifecycle.ComposePresentedFrame(std::move(*dismissed));
+        CHECK(clean.rgba8[2] == 0);
+        const auto offset =
+            (static_cast<std::size_t>(button.top + 2) * 800U + static_cast<std::size_t>(button.left + 2)) * 4U;
+        CHECK(clean.rgba8[offset] == 0);
+        CHECK(clean.rgba8[offset + 1] == 0);
+        CHECK(clean.rgba8[offset + 2] == 0);
+        CHECK_FALSE(f.context->surface_pixels.contains(holder.Value()));
+        post();
+        CHECK(f.context->surface_buffer_queued.at(holder.Value()));
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE(f.app->NativeProcess().TakeLatestFrame());
+        // Model a live producer without retained pixels. A later modal epoch
+        // must not replace that producer's base with owner-generated black.
+        {
+            std::scoped_lock lock(f.context->surface_pixels_mutex);
+            f.context->surface_pixels.erase(holder.Value());
+        }
+        call(dialog, "show", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());
+        call(dialog, "dismiss", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());
+        // Real destroyed/created callbacks reuse the holder with a fresh buffer lifetime.
+        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::destroyed));
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK_FALSE(f.context->surface_buffer_queued.contains(holder.Value()));
+        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::created));
+        REQUIRE_FALSE(runtime::DispatchSurfaceHolderCallbacks(vm, *f.context, runtime::SurfaceHolderPhase::changed));
+        REQUIRE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK_FALSE(f.context->surface_buffer_queued.at(holder.Value()));
+        static_cast<void>(f.app->NativeProcess().TakeLatestFrame());
+        call(dialog, "show", "()V");
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE(f.app->NativeProcess().TakeLatestFrame());
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK_FALSE(f.app->NativeProcess().TakeLatestFrame());  // a clean epoch does not spin presentations
+        CHECK(f.ledger.Unimplemented().empty());
+        static_cast<void>(f.app->Stop());
+    }
+}

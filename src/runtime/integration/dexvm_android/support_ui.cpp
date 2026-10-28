@@ -814,6 +814,7 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 {
                     std::scoped_lock lock(context.surface_pixels_mutex);
                     context.surface_pixels.erase(key);
+                    context.surface_buffer_queued.erase(key);
                 }
                 context.surface_callback_sizes.erase(key);
                 context.surface_holders.erase(holder);

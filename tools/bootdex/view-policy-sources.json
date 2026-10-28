@@ -6,10 +6,10 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/android.policy.jar",
-      "rom_input_sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+      "rom_input_sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
       "smali_sha256": "827951740041f704891720b39197691e69a508c36525e0602d2fa85ec8d6f606",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "methods": [
         {
           "signature": "<clinit>()V",

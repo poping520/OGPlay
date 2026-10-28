@@ -29,6 +29,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-342](DVM-342.md) | AOSP ROM 基线统一与 Locale 原版 Java | 已实现；全量既有失败及门禁缺口见任务单 |
 | [DVM-336](DVM-336.md) | WU-3a ROM Choreographer 与宿主帧源 | 有界完成；首错仍为 WU-3b ofFloat |
 | [DVM-338](DVM-338.md) | 裸 guest fd 的 FileDescriptor 语义与 ROM ParcelFileDescriptor | 离线验收完成，原 APK 待外验 |
 | [DVM-340](DVM-340.md) | TextView 阴影与完整可打印 ASCII | 有界完成；原 APK 字幕与 CG 后菜单已外验 |

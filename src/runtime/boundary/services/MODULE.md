@@ -52,3 +52,6 @@ GraphicsBoundaryContext 承接创建前固定的强类型厂商格式策略与 L
 SharedGlState 的 texture object 元数据还保存成功定义的 level-zero 尺寸与
 OES_draw_texture crop；跨 share group 引用共用，删除时清理，Context 切换不丢失。
 GLES API19 无驱动回退共用显式 logger/ledger 服务，不拥有会话或图形状态。
+
+AndroidBoundaryServices 的 DeviceLocale provider 由上层显式注入，只向模块返回经严格校验的
+两字母语言/地区投影；服务不保存第二份设备配置，不反向依赖 integration。

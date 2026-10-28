@@ -105,7 +105,6 @@ set(required_core_descriptors
     "Ljava/net/URL;"
     "Ljava/nio/charset/Charset;"
     "Llibcore/icu/ICU;"
-    "Ljava/util/Locale;"
     "Ljava/util/Timer;"
     "Ljavax/xml/parsers/SAXParser;"
     "Lorg/xml/sax/XMLReader;")
@@ -136,6 +135,7 @@ endforeach()
 # DVM-102 keeps java.text/date/calendar behavior in BootDex. Core may expose
 # only the audited ICU/native and TimeZone platform boundaries.
 foreach(forbidden_descriptor IN ITEMS
+        "Ljava/util/Locale;"
         "Ljava/text/Format;"
         "Ljava/text/DateFormat;"
         "Ljava/text/SimpleDateFormat;"

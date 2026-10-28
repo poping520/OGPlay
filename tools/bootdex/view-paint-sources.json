@@ -4,11 +4,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/graphics/Paint;",
-      "smali_sha256": "b9326994375bd4796481ce695e5a6a36ff4c9c0a975615e36cc931ba59139841",
+      "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
         {
           "signature": "<clinit>()V",
@@ -49,10 +49,447 @@
           "source": "failure"
         },
         {
+          "signature": "ascent()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "breakText(Ljava/lang/CharSequence;IIZF[F)I",
+          "flags": 1,
+          "body_sha256": "4ee9b678b74bf8157feb2ee571123e4c6a53b18a2445b42e50adcad29c4abd47",
+          "source": "failure"
+        },
+        {
+          "signature": "breakText(Ljava/lang/String;ZF[F)I",
+          "flags": 1,
+          "body_sha256": "cd5ac3027c5f86f24df9b9774a0326de79d7cdefcf7055566d07dc8ef3064007",
+          "source": "failure"
+        },
+        {
+          "signature": "breakText([CIIF[F)I",
+          "flags": 1,
+          "body_sha256": "e2086108f111ad41f59ca5e425be122820a5ac6a82d031273a9fbbb56b88bff2",
+          "source": "failure"
+        },
+        {
+          "signature": "clearShadowLayer()V",
+          "flags": 1,
+          "body_sha256": "a4d417dd2d111aa8e434f14d6ba522bb1fd3eb920da45af011d2445aa6ab4120",
+          "source": "failure"
+        },
+        {
+          "signature": "descent()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "3fc1f9eea36d34cb9e8695bfcaf63c7a05291fbf42bab17e02900f4a9eb1d8dc",
+          "source": "overlay",
+          "review": {
+            "reason": "Release bounded instance measurement resources in the real ROM finalizer lifecycle",
+            "inputs": "finalized receiver, no native SkPaint pointer",
+            "outputs": "release per-instance host state and invoke Object.finalize exactly",
+            "state_owner": "same per-object PaintMeasureState; Java references remain normal GC fields",
+            "failure_boundary": "no native finalizer(I) or Skia lifecycle; cleanup is idempotent; Object.finalize exceptions propagate"
+          }
+        },
+        {
           "signature": "finalizer(I)V",
           "flags": 266,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getBidiFlags()I",
+          "flags": 1,
+          "body_sha256": "fe140cee916263400e93280b9c3ccc13ed393ad145d5aa23faad877096797f10",
+          "source": "failure"
+        },
+        {
+          "signature": "getColor()I",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getColorFilter()Landroid/graphics/ColorFilter;",
+          "flags": 1,
+          "body_sha256": "9e0c40c364283a0ad148f893172ccd3ce1a21530ff5bd58652c147ed3fff4696",
+          "source": "failure"
+        },
+        {
+          "signature": "getFillPath(Landroid/graphics/Path;Landroid/graphics/Path;)Z",
+          "flags": 1,
+          "body_sha256": "6dce46f4ff61e279386c75ff1cc2d0fcccf634fb58343f087cfce05cb01fae1e",
+          "source": "failure"
+        },
+        {
+          "signature": "getFlags()I",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          },
+          "platform_seam": true
+        },
+        {
+          "signature": "getFontMetrics()Landroid/graphics/Paint$FontMetrics;",
+          "flags": 1,
+          "body_sha256": "ecf9f36a9da4e029d7668eb0dd4a32611287af61fcbb9eac87ef5fd6c1e90d53",
+          "source": "failure"
+        },
+        {
+          "signature": "getFontMetrics(Landroid/graphics/Paint$FontMetrics;)F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getFontMetricsInt()Landroid/graphics/Paint$FontMetricsInt;",
+          "flags": 1,
+          "body_sha256": "6408f83fee880cf87c62b00651255d0747e9d25e5ed2ff2cd40fffe8c318817f",
+          "source": "failure"
+        },
+        {
+          "signature": "getFontMetricsInt(Landroid/graphics/Paint$FontMetricsInt;)I",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getFontSpacing()F",
+          "flags": 1,
+          "body_sha256": "a6e45ae2ac058bf8787def860483669049b24d317b78ef850026d11ced179583",
+          "source": "failure"
+        },
+        {
+          "signature": "getHinting()I",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getMaskFilter()Landroid/graphics/MaskFilter;",
+          "flags": 1,
+          "body_sha256": "d93a5ef7c673c734afd0fd7f384323131f5fe12fef601fd7a0e5c065bc22d9e8",
+          "source": "failure"
+        },
+        {
+          "signature": "getPathEffect()Landroid/graphics/PathEffect;",
+          "flags": 1,
+          "body_sha256": "178fbe39c2f22f10a9978d086aa0baf7f4f360151d150757c1fc89628252df6f",
+          "source": "failure"
+        },
+        {
+          "signature": "getRasterizer()Landroid/graphics/Rasterizer;",
+          "flags": 1,
+          "body_sha256": "5ff90bee5a21c31374978a0ed6a0183fdb9974f18b41cf461c67822e7543db29",
+          "source": "failure"
+        },
+        {
+          "signature": "getShader()Landroid/graphics/Shader;",
+          "flags": 1,
+          "body_sha256": "901131ec1ab70c61e10e418e2cba7608683fa1fc21d6df02341a21d8507289c4",
+          "source": "failure"
+        },
+        {
+          "signature": "getStrokeCap()Landroid/graphics/Paint$Cap;",
+          "flags": 1,
+          "body_sha256": "477537e2b9da7f7906829918f0e9621a9c590d12ec4adaa3ffa0777208624c16",
+          "source": "failure"
+        },
+        {
+          "signature": "getStrokeJoin()Landroid/graphics/Paint$Join;",
+          "flags": 1,
+          "body_sha256": "c9f360c9206d6eaebfade1a39dd408d5bffa8166203b29836cafdf94c7068ad6",
+          "source": "failure"
+        },
+        {
+          "signature": "getStrokeMiter()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getStrokeWidth()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getStyle()Landroid/graphics/Paint$Style;",
+          "flags": 1,
+          "body_sha256": "cc4a40f9c30db2b68b57e6e1095d933483afd8d8292e2706d7c14915e2b76156",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextAlign()Landroid/graphics/Paint$Align;",
+          "flags": 1,
+          "body_sha256": "2549b163a941cb93e351b241968d005cdd9b30931eafb4fd455274110071f14d",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextBounds(Ljava/lang/String;IILandroid/graphics/Rect;)V",
+          "flags": 1,
+          "body_sha256": "ccce8c94659722b99e0b71568a9010ce8e9abb45741f9a6cf4b8a3c96a64ed01",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextBounds([CIILandroid/graphics/Rect;)V",
+          "flags": 1,
+          "body_sha256": "651c24b5e4e6837d0a1f8495b0e16b43f52a28a202b9c5011ad396f9518d2f96",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextGlyphs(Ljava/lang/String;IIIII[C)I",
+          "flags": 1,
+          "body_sha256": "1f4e69f7f8f4da02b0f62ff1679859fe577843845d3acb7d088709ff80bfe280",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextLocale()Ljava/util/Locale;",
+          "flags": 1,
+          "body_sha256": "31051f165b14e741af5875cd78c39bb2239665c60abf28ff0bc7ebd2c3120e1b",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextPath(Ljava/lang/String;IIFFLandroid/graphics/Path;)V",
+          "flags": 1,
+          "body_sha256": "75fe1e4749dda8689ccf5ddba9ed5bd017b309d934e94d5f624d6b3ed1031073",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextPath([CIIFFLandroid/graphics/Path;)V",
+          "flags": 1,
+          "body_sha256": "a1ea39845bf82a64cfbae58c761b31b3370472107f9561a778c742504fedcbfa",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunAdvances(Ljava/lang/CharSequence;IIIII[FI)F",
+          "flags": 1,
+          "body_sha256": "22ac9c4c0c0af312621f3573c4f95ebddc0e930632f763a168ae0762bcc70de0",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunAdvances(Ljava/lang/String;IIIII[FI)F",
+          "flags": 1,
+          "body_sha256": "535a1b46c39b27e8288e420dca9026f227a1e2f0634d3ce9a896792c816744e8",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunAdvances([CIIIII[FI)F",
+          "flags": 1,
+          "body_sha256": "3856d3e200d99fd95ced98f8fc7c064b6e955c853c9854150caecb037fc80d79",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunCursor(Ljava/lang/CharSequence;IIIII)I",
+          "flags": 1,
+          "body_sha256": "0429099319e0f700c96287b438c763e3b1efb1e142945b2250b95d7c6560c354",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunCursor(Ljava/lang/String;IIIII)I",
+          "flags": 1,
+          "body_sha256": "bebea9fa172f9c57e7bd95bc4768b063952abb4e00496b9094ea14e8a22df5f1",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextRunCursor([CIIIII)I",
+          "flags": 1,
+          "body_sha256": "b811ab5e051e638a0f1abbd1465aac37f93da498d5f680a5f23c5d7aaa0a65e2",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextScaleX()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextSize()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          },
+          "platform_seam": true
+        },
+        {
+          "signature": "getTextSkewX()F",
+          "flags": 257,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextWidths(Ljava/lang/CharSequence;II[F)I",
+          "flags": 1,
+          "body_sha256": "a641ee8235684e6bff4eb7a7348f8b0e62b85cceaca864c5826f2618458574c4",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextWidths(Ljava/lang/String;II[F)I",
+          "flags": 1,
+          "body_sha256": "b25690ab62492ce8e98f3499b2cdc1fa5a0fe3588d14b88132bd86cd03265c3a",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextWidths(Ljava/lang/String;[F)I",
+          "flags": 1,
+          "body_sha256": "1f2229612b1971c832d2846aabcdf4552ecd1866143846a6879c2cd11a660bff",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextWidths([CII[F)I",
+          "flags": 1,
+          "body_sha256": "fe95033f6a51fa9715627ed85a888ec1c6dbae2d2b0d8244e4858903a240c4e7",
+          "source": "failure"
+        },
+        {
+          "signature": "getTypeface()Landroid/graphics/Typeface;",
+          "flags": 1,
+          "body_sha256": "9fd8ada39064780cbfb0ad90acf710c2cdc80de85e221bde1ba412aff26edbd8",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
+        },
+        {
+          "signature": "getXfermode()Landroid/graphics/Xfermode;",
+          "flags": 1,
+          "body_sha256": "8553e82f5012dbd04a513b639ae9d49735a18796f83f6147c33e438f53bb1a7a",
+          "source": "failure"
+        },
+        {
+          "signature": "isAntiAlias()Z",
+          "flags": 17,
+          "body_sha256": "3939dfffffa184f959f6ee84dcf36645d09f728c346fb66e25570f1a57f0ac58",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
+        },
+        {
+          "signature": "isDither()Z",
+          "flags": 17,
+          "body_sha256": "0dff31366620537513d64193be1227a5a1feb18faedfb115afadebac0d47d65e",
+          "source": "failure"
+        },
+        {
+          "signature": "isFakeBoldText()Z",
+          "flags": 17,
+          "body_sha256": "09553779da4b1d8e8dead45c7d3a647d0dac4f7c873c411c4d9f941b26449a7c",
+          "source": "failure"
+        },
+        {
+          "signature": "isFilterBitmap()Z",
+          "flags": 17,
+          "body_sha256": "e2dc54d01922da3a4133fe2e570414b2759d1c2becad772d07b395dba4db5ad0",
+          "source": "failure"
+        },
+        {
+          "signature": "isLinearText()Z",
+          "flags": 17,
+          "body_sha256": "cf3ddff6feadc6442c72fe5c0200b28bd6aa9b4f3c6a858a004277ed413730a5",
+          "source": "failure"
+        },
+        {
+          "signature": "isStrikeThruText()Z",
+          "flags": 17,
+          "body_sha256": "7cc137b4d17b1bcc2013bd794fcdad4a5078082dddbda5faae039192e20a436a",
+          "source": "failure"
+        },
+        {
+          "signature": "isSubpixelText()Z",
+          "flags": 17,
+          "body_sha256": "f2a73b47497c581ee49c8189df7b57ba1e2aadd8a468eb181d73062786db439b",
+          "source": "failure"
+        },
+        {
+          "signature": "isUnderlineText()Z",
+          "flags": 17,
+          "body_sha256": "29432c29efa9d8b383206a7ec947db60a7bcaa4f394dda4aea2484ebaf5fbca5",
+          "source": "failure"
+        },
+        {
+          "signature": "measureText(Ljava/lang/CharSequence;II)F",
+          "flags": 1,
+          "body_sha256": "ac8bdd81e5ed569b2ff1220586a060a96e8303d8a6332596de7f672f3d0e655d",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
+        },
+        {
+          "signature": "measureText(Ljava/lang/String;)F",
+          "flags": 1,
+          "body_sha256": "479b5f7cc5feb0f680f34aecbaedde267d467b9869d6f6130dcfea10e2526f92",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
+        },
+        {
+          "signature": "measureText(Ljava/lang/String;II)F",
+          "flags": 1,
+          "body_sha256": "5ac1ec291941402c769d5c1fbad01ee1f6bff7287fe837e3644b779ab4d9e9f3",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
+        },
+        {
+          "signature": "measureText([CII)F",
+          "flags": 1,
+          "body_sha256": "9cf1f65e48a58c8cd2b07fa9b24da11043548f9cf8987ee26cf63d20e3629d27",
+          "source": "overlay",
+          "review": {
+            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
+            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
+            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
+          }
         },
         {
           "signature": "nSetShadowLayer(FFFI)V",
@@ -283,449 +720,6 @@
           "source": "failure"
         },
         {
-          "signature": "setClassVariablesFrom(Landroid/graphics/Paint;)V",
-          "flags": 2,
-          "body_sha256": "070c3f49f732fb0902019b2dbb4077c679e04f808ce84e41dfb2a88901f77d67",
-          "source": "failure"
-        },
-        {
-          "signature": "ascent()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "breakText(Ljava/lang/CharSequence;IIZF[F)I",
-          "flags": 1,
-          "body_sha256": "4ee9b678b74bf8157feb2ee571123e4c6a53b18a2445b42e50adcad29c4abd47",
-          "source": "failure"
-        },
-        {
-          "signature": "breakText(Ljava/lang/String;ZF[F)I",
-          "flags": 1,
-          "body_sha256": "cd5ac3027c5f86f24df9b9774a0326de79d7cdefcf7055566d07dc8ef3064007",
-          "source": "failure"
-        },
-        {
-          "signature": "breakText([CIIF[F)I",
-          "flags": 1,
-          "body_sha256": "e2086108f111ad41f59ca5e425be122820a5ac6a82d031273a9fbbb56b88bff2",
-          "source": "failure"
-        },
-        {
-          "signature": "clearShadowLayer()V",
-          "flags": 1,
-          "body_sha256": "a4d417dd2d111aa8e434f14d6ba522bb1fd3eb920da45af011d2445aa6ab4120",
-          "source": "failure"
-        },
-        {
-          "signature": "descent()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "finalize()V",
-          "flags": 4,
-          "body_sha256": "3fc1f9eea36d34cb9e8695bfcaf63c7a05291fbf42bab17e02900f4a9eb1d8dc",
-          "source": "overlay",
-          "review": {
-            "reason": "Release bounded instance measurement resources in the real ROM finalizer lifecycle",
-            "inputs": "finalized receiver, no native SkPaint pointer",
-            "outputs": "release per-instance host state and invoke Object.finalize exactly",
-            "state_owner": "same per-object PaintMeasureState; Java references remain normal GC fields",
-            "failure_boundary": "no native finalizer(I) or Skia lifecycle; cleanup is idempotent; Object.finalize exceptions propagate"
-          }
-        },
-        {
-          "signature": "getAlpha()I",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getBidiFlags()I",
-          "flags": 1,
-          "body_sha256": "fe140cee916263400e93280b9c3ccc13ed393ad145d5aa23faad877096797f10",
-          "source": "failure"
-        },
-        {
-          "signature": "getColor()I",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getColorFilter()Landroid/graphics/ColorFilter;",
-          "flags": 1,
-          "body_sha256": "9e0c40c364283a0ad148f893172ccd3ce1a21530ff5bd58652c147ed3fff4696",
-          "source": "failure"
-        },
-        {
-          "signature": "getFillPath(Landroid/graphics/Path;Landroid/graphics/Path;)Z",
-          "flags": 1,
-          "body_sha256": "6dce46f4ff61e279386c75ff1cc2d0fcccf634fb58343f087cfce05cb01fae1e",
-          "source": "failure"
-        },
-        {
-          "signature": "getFlags()I",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          },
-          "platform_seam": true
-        },
-        {
-          "signature": "getFontMetrics(Landroid/graphics/Paint$FontMetrics;)F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getFontMetrics()Landroid/graphics/Paint$FontMetrics;",
-          "flags": 1,
-          "body_sha256": "ecf9f36a9da4e029d7668eb0dd4a32611287af61fcbb9eac87ef5fd6c1e90d53",
-          "source": "failure"
-        },
-        {
-          "signature": "getFontMetricsInt(Landroid/graphics/Paint$FontMetricsInt;)I",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getFontMetricsInt()Landroid/graphics/Paint$FontMetricsInt;",
-          "flags": 1,
-          "body_sha256": "6408f83fee880cf87c62b00651255d0747e9d25e5ed2ff2cd40fffe8c318817f",
-          "source": "failure"
-        },
-        {
-          "signature": "getFontSpacing()F",
-          "flags": 1,
-          "body_sha256": "a6e45ae2ac058bf8787def860483669049b24d317b78ef850026d11ced179583",
-          "source": "failure"
-        },
-        {
-          "signature": "getHinting()I",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getMaskFilter()Landroid/graphics/MaskFilter;",
-          "flags": 1,
-          "body_sha256": "d93a5ef7c673c734afd0fd7f384323131f5fe12fef601fd7a0e5c065bc22d9e8",
-          "source": "failure"
-        },
-        {
-          "signature": "getPathEffect()Landroid/graphics/PathEffect;",
-          "flags": 1,
-          "body_sha256": "178fbe39c2f22f10a9978d086aa0baf7f4f360151d150757c1fc89628252df6f",
-          "source": "failure"
-        },
-        {
-          "signature": "getRasterizer()Landroid/graphics/Rasterizer;",
-          "flags": 1,
-          "body_sha256": "5ff90bee5a21c31374978a0ed6a0183fdb9974f18b41cf461c67822e7543db29",
-          "source": "failure"
-        },
-        {
-          "signature": "getShader()Landroid/graphics/Shader;",
-          "flags": 1,
-          "body_sha256": "901131ec1ab70c61e10e418e2cba7608683fa1fc21d6df02341a21d8507289c4",
-          "source": "failure"
-        },
-        {
-          "signature": "getStrokeCap()Landroid/graphics/Paint$Cap;",
-          "flags": 1,
-          "body_sha256": "477537e2b9da7f7906829918f0e9621a9c590d12ec4adaa3ffa0777208624c16",
-          "source": "failure"
-        },
-        {
-          "signature": "getStrokeJoin()Landroid/graphics/Paint$Join;",
-          "flags": 1,
-          "body_sha256": "c9f360c9206d6eaebfade1a39dd408d5bffa8166203b29836cafdf94c7068ad6",
-          "source": "failure"
-        },
-        {
-          "signature": "getStrokeMiter()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getStrokeWidth()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getStyle()Landroid/graphics/Paint$Style;",
-          "flags": 1,
-          "body_sha256": "cc4a40f9c30db2b68b57e6e1095d933483afd8d8292e2706d7c14915e2b76156",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextAlign()Landroid/graphics/Paint$Align;",
-          "flags": 1,
-          "body_sha256": "2549b163a941cb93e351b241968d005cdd9b30931eafb4fd455274110071f14d",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextBounds(Ljava/lang/String;IILandroid/graphics/Rect;)V",
-          "flags": 1,
-          "body_sha256": "5231b7afabf4e5e8ac0a755a510a2d0bb33b159c761da6d1307781ce1d83f653",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextBounds([CIILandroid/graphics/Rect;)V",
-          "flags": 1,
-          "body_sha256": "f74a0645ca5838cd17bca7a0e11319d0988dab4b3c40a1c33c8981df07a2ffb1",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextGlyphs(Ljava/lang/String;IIIII[C)I",
-          "flags": 1,
-          "body_sha256": "1f4e69f7f8f4da02b0f62ff1679859fe577843845d3acb7d088709ff80bfe280",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextLocale()Ljava/util/Locale;",
-          "flags": 1,
-          "body_sha256": "31051f165b14e741af5875cd78c39bb2239665c60abf28ff0bc7ebd2c3120e1b",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextPath(Ljava/lang/String;IIFFLandroid/graphics/Path;)V",
-          "flags": 1,
-          "body_sha256": "75fe1e4749dda8689ccf5ddba9ed5bd017b309d934e94d5f624d6b3ed1031073",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextPath([CIIFFLandroid/graphics/Path;)V",
-          "flags": 1,
-          "body_sha256": "a1ea39845bf82a64cfbae58c761b31b3370472107f9561a778c742504fedcbfa",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunAdvances(Ljava/lang/CharSequence;IIIII[FI)F",
-          "flags": 1,
-          "body_sha256": "5938432695a510ee624be5054a153d72c87bd93c20d3c6ee8348974c9894d891",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunAdvances(Ljava/lang/String;IIIII[FI)F",
-          "flags": 1,
-          "body_sha256": "535a1b46c39b27e8288e420dca9026f227a1e2f0634d3ce9a896792c816744e8",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunAdvances([CIIIII[FI)F",
-          "flags": 1,
-          "body_sha256": "3856d3e200d99fd95ced98f8fc7c064b6e955c853c9854150caecb037fc80d79",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunCursor(Ljava/lang/CharSequence;IIIII)I",
-          "flags": 1,
-          "body_sha256": "e91a8007ce4643a3865f7058baba3cba9c2115b90f4228592519dd35066cf34f",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunCursor(Ljava/lang/String;IIIII)I",
-          "flags": 1,
-          "body_sha256": "bebea9fa172f9c57e7bd95bc4768b063952abb4e00496b9094ea14e8a22df5f1",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextRunCursor([CIIIII)I",
-          "flags": 1,
-          "body_sha256": "b811ab5e051e638a0f1abbd1465aac37f93da498d5f680a5f23c5d7aaa0a65e2",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextScaleX()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextSize()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          },
-          "platform_seam": true
-        },
-        {
-          "signature": "getTextSkewX()F",
-          "flags": 257,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextWidths(Ljava/lang/CharSequence;II[F)I",
-          "flags": 1,
-          "body_sha256": "533190f1a16554113119e81209b7673b4b0c8ecb73106af0b3b5e72208401d13",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextWidths(Ljava/lang/String;II[F)I",
-          "flags": 1,
-          "body_sha256": "b25690ab62492ce8e98f3499b2cdc1fa5a0fe3588d14b88132bd86cd03265c3a",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextWidths(Ljava/lang/String;[F)I",
-          "flags": 1,
-          "body_sha256": "1f2229612b1971c832d2846aabcdf4552ecd1866143846a6879c2cd11a660bff",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextWidths([CII[F)I",
-          "flags": 1,
-          "body_sha256": "fe95033f6a51fa9715627ed85a888ec1c6dbae2d2b0d8244e4858903a240c4e7",
-          "source": "failure"
-        },
-        {
-          "signature": "getTypeface()Landroid/graphics/Typeface;",
-          "flags": 1,
-          "body_sha256": "9fd8ada39064780cbfb0ad90acf710c2cdc80de85e221bde1ba412aff26edbd8",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
-          "signature": "getXfermode()Landroid/graphics/Xfermode;",
-          "flags": 1,
-          "body_sha256": "8553e82f5012dbd04a513b639ae9d49735a18796f83f6147c33e438f53bb1a7a",
-          "source": "failure"
-        },
-        {
-          "signature": "isAntiAlias()Z",
-          "flags": 17,
-          "body_sha256": "3939dfffffa184f959f6ee84dcf36645d09f728c346fb66e25570f1a57f0ac58",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
-          "signature": "isDither()Z",
-          "flags": 17,
-          "body_sha256": "0dff31366620537513d64193be1227a5a1feb18faedfb115afadebac0d47d65e",
-          "source": "failure"
-        },
-        {
-          "signature": "isFakeBoldText()Z",
-          "flags": 17,
-          "body_sha256": "09553779da4b1d8e8dead45c7d3a647d0dac4f7c873c411c4d9f941b26449a7c",
-          "source": "failure"
-        },
-        {
-          "signature": "isFilterBitmap()Z",
-          "flags": 17,
-          "body_sha256": "e2dc54d01922da3a4133fe2e570414b2759d1c2becad772d07b395dba4db5ad0",
-          "source": "failure"
-        },
-        {
-          "signature": "isLinearText()Z",
-          "flags": 17,
-          "body_sha256": "cf3ddff6feadc6442c72fe5c0200b28bd6aa9b4f3c6a858a004277ed413730a5",
-          "source": "failure"
-        },
-        {
-          "signature": "isStrikeThruText()Z",
-          "flags": 17,
-          "body_sha256": "7cc137b4d17b1bcc2013bd794fcdad4a5078082dddbda5faae039192e20a436a",
-          "source": "failure"
-        },
-        {
-          "signature": "isSubpixelText()Z",
-          "flags": 17,
-          "body_sha256": "f2a73b47497c581ee49c8189df7b57ba1e2aadd8a468eb181d73062786db439b",
-          "source": "failure"
-        },
-        {
-          "signature": "isUnderlineText()Z",
-          "flags": 17,
-          "body_sha256": "29432c29efa9d8b383206a7ec947db60a7bcaa4f394dda4aea2484ebaf5fbca5",
-          "source": "failure"
-        },
-        {
-          "signature": "measureText(Ljava/lang/CharSequence;II)F",
-          "flags": 1,
-          "body_sha256": "59337056adcedfe7ac3452700bfdd5ff7852664826b26c3059eeedbb6918d9e3",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
-          "signature": "measureText(Ljava/lang/String;)F",
-          "flags": 1,
-          "body_sha256": "479b5f7cc5feb0f680f34aecbaedde267d467b9869d6f6130dcfea10e2526f92",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
-          "signature": "measureText(Ljava/lang/String;II)F",
-          "flags": 1,
-          "body_sha256": "5ac1ec291941402c769d5c1fbad01ee1f6bff7287fe837e3644b779ab4d9e9f3",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
-          "signature": "measureText([CII)F",
-          "flags": 1,
-          "body_sha256": "9cf1f65e48a58c8cd2b07fa9b24da11043548f9cf8987ee26cf63d20e3629d27",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
-            "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
-            "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
-            "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
-          }
-        },
-        {
           "signature": "reset()V",
           "flags": 1,
           "body_sha256": "4fa71437c85d03ecd4f6a01a2f5994d882b14d118d83964cfed846660803a1ce",
@@ -767,6 +761,12 @@
           "signature": "setBidiFlags(I)V",
           "flags": 1,
           "body_sha256": "fccef630f43578e4c8816b7ba8c25a7d7783efa1f5885d67751f335a9cfb6432",
+          "source": "failure"
+        },
+        {
+          "signature": "setClassVariablesFrom(Landroid/graphics/Paint;)V",
+          "flags": 2,
+          "body_sha256": "070c3f49f732fb0902019b2dbb4077c679e04f808ce84e41dfb2a88901f77d67",
           "source": "failure"
         },
         {
@@ -1298,11 +1298,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/widget/TextView;",
-      "smali_sha256": "6fd6541a72ce6c1c038b225e86a6c559969421e2e0e7bfd6b8ef994aace8c918",
+      "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
         {
           "signature": "<clinit>()V",
@@ -1339,7 +1339,7 @@
         {
           "signature": "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
           "flags": 65537,
-          "body_sha256": "455a6450fe1187e9cbacf70436d96655fc7041854b9383a51a7ad6861930d6d7",
+          "body_sha256": "4511b490d2270d84ab2d42008c2f72253ffa1eefc3e25e2bc790859b57746091",
           "source": "overlay",
           "review": {
             "reason": "DVM-328 ADR-0160/0161 typed same-ROM references and ROM constructor identity reads",
@@ -1398,342 +1398,6 @@
           "source": "failure"
         },
         {
-          "signature": "applySingleLine(ZZZ)V",
-          "flags": 2,
-          "body_sha256": "5a8c78a8f2166c4b898e7ba8484dce8cec1f622ae04a7f3c89e5d10ac31eaf54",
-          "source": "failure"
-        },
-        {
-          "signature": "assumeLayout()V",
-          "flags": 2,
-          "body_sha256": "f024d8d6564e4cd711cc279b00c5c213360730c4bfc64b23a66f648ecc3214c0",
-          "source": "failure"
-        },
-        {
-          "signature": "bringTextIntoView()Z",
-          "flags": 2,
-          "body_sha256": "fdcc3df1467de1f6fc07f2bc5d03797367bf48ceb73d130721f31d90c56eda4e",
-          "source": "failure"
-        },
-        {
-          "signature": "canMarquee()Z",
-          "flags": 2,
-          "body_sha256": "9b7c9229a2fcc0983268e9ab269199cdb9352c6ca45154ca37912e02eb519618",
-          "source": "failure"
-        },
-        {
-          "signature": "canSelectText()Z",
-          "flags": 2,
-          "body_sha256": "5361ee62d001e045c092923cf87eea1a1f8fd7021824a1294b24b336e1fe3abf",
-          "source": "failure"
-        },
-        {
-          "signature": "checkForRelayout()V",
-          "flags": 2,
-          "body_sha256": "b15cf79dc689f82d7556b97b54883d9d11c8213e90676ec8171ab51d8eabb0f5",
-          "source": "failure"
-        },
-        {
-          "signature": "checkForResize()V",
-          "flags": 2,
-          "body_sha256": "66731fb952b67919a35d63501bbefa544593775c758aecfe61621e8fe0797905",
-          "source": "failure"
-        },
-        {
-          "signature": "compressText(F)Z",
-          "flags": 2,
-          "body_sha256": "444a716da24e6bd1354ea2b69e819a695622b359c9d6d2aebf783818736a352e",
-          "source": "failure"
-        },
-        {
-          "signature": "convertFromViewportToContentCoordinates(Landroid/graphics/Rect;)V",
-          "flags": 2,
-          "body_sha256": "d453b826b9bfa292d0fb15801beb9ef5e939a772ae26804814b6cb6710b02f21",
-          "source": "failure"
-        },
-        {
-          "signature": "createEditorIfNeeded()V",
-          "flags": 2,
-          "body_sha256": "0bcffc18550867627d2349e00aca8a38eddef4dc8192272e9d5e693bd00fb1fe",
-          "source": "failure"
-        },
-        {
-          "signature": "desired(Landroid/text/Layout;)I",
-          "flags": 10,
-          "body_sha256": "fe04af4436c8204a90af362dd77ae6db943affab1bce708042503b7fdc5a5ba7",
-          "source": "failure"
-        },
-        {
-          "signature": "doKeyDown(ILandroid/view/KeyEvent;Landroid/view/KeyEvent;)I",
-          "flags": 2,
-          "body_sha256": "34e6ca564922d348a2edc03786ba1d5298e5af14fb004a87404c49a564871f6e",
-          "source": "failure"
-        },
-        {
-          "signature": "fixFocusableAndClickableSettings()V",
-          "flags": 2,
-          "body_sha256": "f751beac4d5c7a66f38986ff50514e898086843850959112579594f59c5a7b83",
-          "source": "failure"
-        },
-        {
-          "signature": "getBottomVerticalOffset(Z)I",
-          "flags": 2,
-          "body_sha256": "d1ab0219f8d22e0f4c923eab784f87c59baf41a3ad17f0a2bfe6c2fa2eb1a9b2",
-          "source": "failure"
-        },
-        {
-          "signature": "getBoxHeight(Landroid/text/Layout;)I",
-          "flags": 2,
-          "body_sha256": "e6d41a59263cb4a3341f56b713a7f94e6159bbfde2f9755f77001ffe746ef6d3",
-          "source": "failure"
-        },
-        {
-          "signature": "getDesiredHeight()I",
-          "flags": 2,
-          "body_sha256": "30708b1f447634f8c91ec0bdb1f6c02982f933c98dc5ef35a5f61ac8c135d2df",
-          "source": "failure"
-        },
-        {
-          "signature": "getDesiredHeight(Landroid/text/Layout;Z)I",
-          "flags": 2,
-          "body_sha256": "30e4c709094ebba55334c8a9935bcfa1b3d2438cb8203aade14520a549994790",
-          "source": "failure"
-        },
-        {
-          "signature": "getInterestingRect(Landroid/graphics/Rect;I)V",
-          "flags": 2,
-          "body_sha256": "ac3d9b165c8b9954dd8fd5854ab76413380f42ad863178e6ded13f1c5a107134",
-          "source": "failure"
-        },
-        {
-          "signature": "getLayoutAlignment()Landroid/text/Layout$Alignment;",
-          "flags": 2,
-          "body_sha256": "510aaebc677f965cb049718314779d710c3843e2f3b00af11a47b3b45890d17d",
-          "source": "failure"
-        },
-        {
-          "signature": "getOffsetAtCoordinate(IF)I",
-          "flags": 2,
-          "body_sha256": "97d663e613b3facb00c31e33f24e9688b5fbde9b3159089013c35899eec8f1b2",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextColor(Landroid/content/Context;Landroid/content/res/TypedArray;I)I",
-          "flags": 9,
-          "body_sha256": "a03697c9eef8c974f23b78d6aa627cb8266b2478959f590bd8a63604b3f7c158",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextColors(Landroid/content/Context;Landroid/content/res/TypedArray;)Landroid/content/res/ColorStateList;",
-          "flags": 9,
-          "body_sha256": "92caa9451039b3cc13e1802fdca5411a5bbb7988191e2da3c2d248870647b94e",
-          "source": "failure"
-        },
-        {
-          "signature": "getTextServicesLocale(Z)Ljava/util/Locale;",
-          "flags": 2,
-          "body_sha256": "c36e207574d1e50ec073f8a07e45ad17d969936cb43093d222ac1848d5149093",
-          "source": "failure"
-        },
-        {
-          "signature": "getUpdatedHighlightPath()Landroid/graphics/Path;",
-          "flags": 2,
-          "body_sha256": "daca558bfca560460446a72baee6513038bd6e37766094abcbb1512b89a5683c",
-          "source": "failure"
-        },
-        {
-          "signature": "hasPasswordTransformationMethod()Z",
-          "flags": 2,
-          "body_sha256": "7f08aa8910967a63cf3a5ec8cbc3b0ceef69b9ee1c3fbb1932315be923039939",
-          "source": "failure"
-        },
-        {
-          "signature": "invalidateCursor(III)V",
-          "flags": 2,
-          "body_sha256": "f3e662ac01ab90270fa5ee751d36542eee7f680350e8a898ed1e266cab238911",
-          "source": "failure"
-        },
-        {
-          "signature": "isMultilineInputType(I)Z",
-          "flags": 10,
-          "body_sha256": "dbfe1dab04c17f9923bcf4129c242b9f774aee2daea23644a5b6498025dd3b36",
-          "source": "failure"
-        },
-        {
-          "signature": "isPasswordInputType(I)Z",
-          "flags": 10,
-          "body_sha256": "d2b9264bde3016ad2f4e55f15e85c727f16d0c2d2145527b24a4c3f477c47025",
-          "source": "failure"
-        },
-        {
-          "signature": "isShowingHint()Z",
-          "flags": 2,
-          "body_sha256": "83272ff3a36805cf8c8d8bada17034419223ad1a5a79c51a0c08d8ef1ca81be6",
-          "source": "failure"
-        },
-        {
-          "signature": "isVisiblePasswordInputType(I)Z",
-          "flags": 10,
-          "body_sha256": "d0a0ee475928475cd268e88028a2e68e741fc6155f2b75ffc1c477963f7fd239",
-          "source": "failure"
-        },
-        {
-          "signature": "makeSingleLayout(ILandroid/text/BoringLayout$Metrics;ILandroid/text/Layout$Alignment;ZLandroid/text/TextUtils$TruncateAt;Z)Landroid/text/Layout;",
-          "flags": 2,
-          "body_sha256": "dc156f302e1b9abc662557dcdb24ee215d08bc9ef94ab3ce44ee498a38102976",
-          "source": "failure"
-        },
-        {
-          "signature": "nullLayouts()V",
-          "flags": 2,
-          "body_sha256": "c28af718a799c5211cdc65018e6bbff28198b8e8b8c50f500ac904ae702d7d75",
-          "source": "failure"
-        },
-        {
-          "signature": "paste(II)V",
-          "flags": 2,
-          "body_sha256": "9aa83b54bb920865a1d5801f9e769914f91d26c3268671910825b5e96f019323",
-          "source": "failure"
-        },
-        {
-          "signature": "registerForPreDraw()V",
-          "flags": 2,
-          "body_sha256": "b9711d0ddf5c80eb295097a1170b2f97edccff6b4b0a494e5639a0a430cd1364",
-          "source": "failure"
-        },
-        {
-          "signature": "removeIntersectingNonAdjacentSpans(IILjava/lang/Class;)V",
-          "flags": 2,
-          "body_sha256": "c2f7acc01c0a4f4f628fc43f6dadaf9f35006fb305ec887ca8bfe3788b94b2f0",
-          "source": "failure"
-        },
-        {
-          "signature": "removeParcelableSpans(Landroid/text/Spannable;II)V",
-          "flags": 8,
-          "body_sha256": "d90c965c30d471c4d2451236914f346f51e246377b1eda9207c34eee8fde1ccb",
-          "source": "failure"
-        },
-        {
-          "signature": "restartMarqueeIfNeeded()V",
-          "flags": 2,
-          "body_sha256": "4a412387127c806e993736ca2e97e649a70c51c27ee5a0a7cdd474755d8f6bf1",
-          "source": "failure"
-        },
-        {
-          "signature": "sendBeforeTextChanged(Ljava/lang/CharSequence;III)V",
-          "flags": 2,
-          "body_sha256": "ed6a4bf7de8dfd2d26a569f40a6a7ef55c12d54b1532cdd472534b0b36272051",
-          "source": "failure"
-        },
-        {
-          "signature": "setFilters(Landroid/text/Editable;[Landroid/text/InputFilter;)V",
-          "flags": 2,
-          "body_sha256": "c9947522055ffb8fdb59cf512761f620860b35036f229606caa9a7f32d36ce5a",
-          "source": "failure"
-        },
-        {
-          "signature": "setInputType(IZ)V",
-          "flags": 2,
-          "body_sha256": "68485d61f68d5ebd697bef9ac43b0991812ebd44da152fdab342df478a6d924d",
-          "source": "failure"
-        },
-        {
-          "signature": "setInputTypeSingleLine(Z)V",
-          "flags": 2,
-          "body_sha256": "b34db4829e7ae17d625d13dc22d774b4037bbea6f6d63fb7016a2c5a31d11d11",
-          "source": "failure"
-        },
-        {
-          "signature": "setKeyListenerOnly(Landroid/text/method/KeyListener;)V",
-          "flags": 2,
-          "body_sha256": "a5e166e61d3a8e3b1b56da91d64d1530db349876eea6ea357e28f2486308ad7b",
-          "source": "failure"
-        },
-        {
-          "signature": "setPrimaryClip(Landroid/content/ClipData;)V",
-          "flags": 2,
-          "body_sha256": "3e0449c5dc50128179d97ca5f81279ddee47c1e9428bb51724fe254cfd21785e",
-          "source": "failure"
-        },
-        {
-          "signature": "setRawTextSize(F)V",
-          "flags": 2,
-          "body_sha256": "34a0251ca2fb0563615d6704b43c1011a8dc50a8b3b9d22611bc5960dee8bb85",
-          "source": "failure"
-        },
-        {
-          "signature": "setRelativeDrawablesIfNeeded(Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
-          "flags": 2,
-          "body_sha256": "66e2b0ad1cca93ca1693122eae450a4a6d7fdc09a44765fd6edc9d6e37af7c02",
-          "source": "failure"
-        },
-        {
-          "signature": "setText(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;ZI)V",
-          "flags": 2,
-          "body_sha256": "ed94e52adcf7bec1293443729dad88dc9cd61b24929ccf35d76266b3e0b5a57b",
-          "source": "failure"
-        },
-        {
-          "signature": "setTypefaceFromAttrs(Ljava/lang/String;II)V",
-          "flags": 2,
-          "body_sha256": "dc7f6f150cf1c887b0193dabe20fa12096d84dcee30eb7f4deb8337e6d060201",
-          "source": "failure"
-        },
-        {
-          "signature": "shouldAdvanceFocusOnEnter()Z",
-          "flags": 2,
-          "body_sha256": "24f2c6ac381eb8c234da66e0a3e018101ed2906e3fe0b344c66b552a4f963597",
-          "source": "failure"
-        },
-        {
-          "signature": "shouldAdvanceFocusOnTab()Z",
-          "flags": 2,
-          "body_sha256": "dee0a3fb72faff01f11deba134ac0875ab118f1b48466077ce2aa88058695f33",
-          "source": "failure"
-        },
-        {
-          "signature": "shouldSpeakPasswordsForAccessibility()Z",
-          "flags": 2,
-          "body_sha256": "417fcebebd932fced465a3bc1a12b661fe0624edd2eb6bf63255e4ec82ed79aa",
-          "source": "failure"
-        },
-        {
-          "signature": "startMarquee()V",
-          "flags": 2,
-          "body_sha256": "5aba20920abf102ae2abbafb2055b6f051cb250f44c19a9053953b3c8e201587",
-          "source": "failure"
-        },
-        {
-          "signature": "startStopMarquee(Z)V",
-          "flags": 2,
-          "body_sha256": "5134fdc98008fb292d7913153d84cfbbdf988a02f066b488af8df3541bb802c4",
-          "source": "failure"
-        },
-        {
-          "signature": "stopMarquee()V",
-          "flags": 2,
-          "body_sha256": "45a9e6f224ab96d6f2e5ff415e74642868aa286e169aa5c0f9ea74d842007a68",
-          "source": "failure"
-        },
-        {
-          "signature": "updateTextColors()V",
-          "flags": 2,
-          "body_sha256": "a11d47331feb0cb4abc8646f35d450b0fde5ff6fe886f197409af46c0bbe3556",
-          "source": "failure"
-        },
-        {
-          "signature": "updateTextServicesLocaleAsync()V",
-          "flags": 2,
-          "body_sha256": "cf4e128fcf1ea928e157f959185778e3aab2bb1fccc4c7ae6f0a2d8e5449ebc1",
-          "source": "failure"
-        },
-        {
-          "signature": "updateTextServicesLocaleLocked()V",
-          "flags": 2,
-          "body_sha256": "800fff1213003dc2d7b6fecdf71cf0362be7b25beeb268ed7634240aefbcd6f2",
-          "source": "failure"
-        },
-        {
           "signature": "addTextChangedListener(Landroid/text/TextWatcher;)V",
           "flags": 1,
           "body_sha256": "45f80e39633f5eb53a8833eef7cab16410dd1af48fdacc9aec6614e45dd79f12",
@@ -1759,6 +1423,18 @@
           "source": "failure"
         },
         {
+          "signature": "applySingleLine(ZZZ)V",
+          "flags": 2,
+          "body_sha256": "5a8c78a8f2166c4b898e7ba8484dce8cec1f622ae04a7f3c89e5d10ac31eaf54",
+          "source": "failure"
+        },
+        {
+          "signature": "assumeLayout()V",
+          "flags": 2,
+          "body_sha256": "f024d8d6564e4cd711cc279b00c5c213360730c4bfc64b23a66f648ecc3214c0",
+          "source": "failure"
+        },
+        {
           "signature": "beginBatchEdit()V",
           "flags": 1,
           "body_sha256": "60ab3b143def69450a4c44f2cd6eebeb79cb900513c3d9fbfc2bed1fa1332ccb",
@@ -1768,6 +1444,12 @@
           "signature": "bringPointIntoView(I)Z",
           "flags": 1,
           "body_sha256": "ac9ba7836947be3c948d8f215b67fde4e2d64dee3b6619a6ed5122580cd98896",
+          "source": "failure"
+        },
+        {
+          "signature": "bringTextIntoView()Z",
+          "flags": 2,
+          "body_sha256": "fdcc3df1467de1f6fc07f2bc5d03797367bf48ceb73d130721f31d90c56eda4e",
           "source": "failure"
         },
         {
@@ -1783,9 +1465,21 @@
           "source": "failure"
         },
         {
+          "signature": "canMarquee()Z",
+          "flags": 2,
+          "body_sha256": "9b7c9229a2fcc0983268e9ab269199cdb9352c6ca45154ca37912e02eb519618",
+          "source": "failure"
+        },
+        {
           "signature": "canPaste()Z",
           "flags": 0,
           "body_sha256": "3c2cf2ec0e628851216b70141365f0c7b4af2f57df4592425def50445a782531",
+          "source": "failure"
+        },
+        {
+          "signature": "canSelectText()Z",
+          "flags": 2,
+          "body_sha256": "5361ee62d001e045c092923cf87eea1a1f8fd7021824a1294b24b336e1fe3abf",
           "source": "failure"
         },
         {
@@ -1795,9 +1489,27 @@
           "source": "failure"
         },
         {
+          "signature": "checkForRelayout()V",
+          "flags": 2,
+          "body_sha256": "b15cf79dc689f82d7556b97b54883d9d11c8213e90676ec8171ab51d8eabb0f5",
+          "source": "failure"
+        },
+        {
+          "signature": "checkForResize()V",
+          "flags": 2,
+          "body_sha256": "66731fb952b67919a35d63501bbefa544593775c758aecfe61621e8fe0797905",
+          "source": "failure"
+        },
+        {
           "signature": "clearComposingText()V",
           "flags": 1,
           "body_sha256": "cd22ed4732cb743187bd31a255018969f6b2b1a21d33388ef682e7fce3293b64",
+          "source": "failure"
+        },
+        {
+          "signature": "compressText(F)Z",
+          "flags": 2,
+          "body_sha256": "444a716da24e6bd1354ea2b69e819a695622b359c9d6d2aebf783818736a352e",
           "source": "failure"
         },
         {
@@ -1825,9 +1537,21 @@
           "source": "failure"
         },
         {
+          "signature": "convertFromViewportToContentCoordinates(Landroid/graphics/Rect;)V",
+          "flags": 2,
+          "body_sha256": "d453b826b9bfa292d0fb15801beb9ef5e939a772ae26804814b6cb6710b02f21",
+          "source": "failure"
+        },
+        {
           "signature": "convertToLocalHorizontalCoordinate(F)F",
           "flags": 0,
           "body_sha256": "40c99c10922c0452076efda81258c6ec1e3b084fa1fbd18953407b3e22a94943",
+          "source": "failure"
+        },
+        {
+          "signature": "createEditorIfNeeded()V",
+          "flags": 2,
+          "body_sha256": "0bcffc18550867627d2349e00aca8a38eddef4dc8192272e9d5e693bd00fb1fe",
           "source": "failure"
         },
         {
@@ -1843,6 +1567,12 @@
           "source": "failure"
         },
         {
+          "signature": "desired(Landroid/text/Layout;)I",
+          "flags": 10,
+          "body_sha256": "fe04af4436c8204a90af362dd77ae6db943affab1bce708042503b7fdc5a5ba7",
+          "source": "failure"
+        },
+        {
           "signature": "didTouchFocusSelect()Z",
           "flags": 1,
           "body_sha256": "3f888348dd754453776d2aa0dd43800fd37277eea35c2e54990032e96ec6d15c",
@@ -1852,6 +1582,12 @@
           "signature": "dispatchFinishTemporaryDetach()V",
           "flags": 1,
           "body_sha256": "d1cc35c4650182eb93e9eab2212ed5f876d4a6e3649c31f98ca7edb6e6b38c16",
+          "source": "failure"
+        },
+        {
+          "signature": "doKeyDown(ILandroid/view/KeyEvent;Landroid/view/KeyEvent;)I",
+          "flags": 2,
+          "body_sha256": "34e6ca564922d348a2edc03786ba1d5298e5af14fb004a87404c49a564871f6e",
           "source": "failure"
         },
         {
@@ -1882,7 +1618,13 @@
         {
           "signature": "findViewsWithText(Ljava/util/ArrayList;Ljava/lang/CharSequence;I)V",
           "flags": 1,
-          "body_sha256": "b26fa23e769b903a84f692c2ababad26e887e764c8315088b360debff792519a",
+          "body_sha256": "112749583bd3a7b812ba6a322b7bfeb40cbbdf383773b213522d040d0e27c64f",
+          "source": "failure"
+        },
+        {
+          "signature": "fixFocusableAndClickableSettings()V",
+          "flags": 2,
+          "body_sha256": "f751beac4d5c7a66f38986ff50514e898086843850959112579594f59c5a7b83",
           "source": "failure"
         },
         {
@@ -1920,6 +1662,18 @@
           "signature": "getBottomPaddingOffset()I",
           "flags": 4,
           "body_sha256": "4c65fd638cb769ba9977555deb08975a1b3c472338bd1e88cd5863173c55e30e",
+          "source": "failure"
+        },
+        {
+          "signature": "getBottomVerticalOffset(Z)I",
+          "flags": 2,
+          "body_sha256": "d1ab0219f8d22e0f4c923eab784f87c59baf41a3ad17f0a2bfe6c2fa2eb1a9b2",
+          "source": "failure"
+        },
+        {
+          "signature": "getBoxHeight(Landroid/text/Layout;)I",
+          "flags": 2,
+          "body_sha256": "e6d41a59263cb4a3341f56b713a7f94e6159bbfde2f9755f77001ffe746ef6d3",
           "source": "failure"
         },
         {
@@ -2039,6 +1793,18 @@
           "signature": "getDefaultMovementMethod()Landroid/text/method/MovementMethod;",
           "flags": 4,
           "body_sha256": "58cc8b4b44e6bc7e50720507621aeffee02d623091755e96c10441be293fa0f1",
+          "source": "failure"
+        },
+        {
+          "signature": "getDesiredHeight()I",
+          "flags": 2,
+          "body_sha256": "30708b1f447634f8c91ec0bdb1f6c02982f933c98dc5ef35a5f61ac8c135d2df",
+          "source": "failure"
+        },
+        {
+          "signature": "getDesiredHeight(Landroid/text/Layout;Z)I",
+          "flags": 2,
+          "body_sha256": "30e4c709094ebba55334c8a9935bcfa1b3d2438cb8203aade14520a549994790",
           "source": "failure"
         },
         {
@@ -2187,6 +1953,12 @@
           "source": "failure"
         },
         {
+          "signature": "getInterestingRect(Landroid/graphics/Rect;I)V",
+          "flags": 2,
+          "body_sha256": "ac3d9b165c8b9954dd8fd5854ab76413380f42ad863178e6ded13f1c5a107134",
+          "source": "failure"
+        },
+        {
           "signature": "getIterableTextForAccessibility()Ljava/lang/CharSequence;",
           "flags": 1,
           "body_sha256": "cdce5f646bcff5e1df7889627393cb34a8cc4faeb96c8dd9e07ea2b71d3b488e",
@@ -2208,6 +1980,12 @@
           "signature": "getLayout()Landroid/text/Layout;",
           "flags": 17,
           "body_sha256": "398362c4cbd3691e933db53d329cdebe9f42731f425968f33274248e8cfee11c",
+          "source": "failure"
+        },
+        {
+          "signature": "getLayoutAlignment()Landroid/text/Layout$Alignment;",
+          "flags": 2,
+          "body_sha256": "510aaebc677f965cb049718314779d710c3843e2f3b00af11a47b3b45890d17d",
           "source": "failure"
         },
         {
@@ -2335,6 +2113,12 @@
           "signature": "getMovementMethod()Landroid/text/method/MovementMethod;",
           "flags": 17,
           "body_sha256": "11f893e2f6bbb485f9836f8a9f3e92975f23649931bf3e8c8426fa7d2f475b6c",
+          "source": "failure"
+        },
+        {
+          "signature": "getOffsetAtCoordinate(IF)I",
+          "flags": 2,
+          "body_sha256": "97d663e613b3facb00c31e33f24e9688b5fbde9b3159089013c35899eec8f1b2",
           "source": "failure"
         },
         {
@@ -2477,6 +2261,12 @@
           }
         },
         {
+          "signature": "getTextColor(Landroid/content/Context;Landroid/content/res/TypedArray;I)I",
+          "flags": 9,
+          "body_sha256": "a03697c9eef8c974f23b78d6aa627cb8266b2478959f590bd8a63604b3f7c158",
+          "source": "failure"
+        },
+        {
           "signature": "getTextColors()Landroid/content/res/ColorStateList;",
           "flags": 17,
           "body_sha256": "c967197b6f1f3411ed80048a6448050406693af009549e8a31b36106323e8687",
@@ -2488,6 +2278,12 @@
             "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
             "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
+        },
+        {
+          "signature": "getTextColors(Landroid/content/Context;Landroid/content/res/TypedArray;)Landroid/content/res/ColorStateList;",
+          "flags": 9,
+          "body_sha256": "92caa9451039b3cc13e1802fdca5411a5bbb7988191e2da3c2d248870647b94e",
+          "source": "failure"
         },
         {
           "signature": "getTextDirectionHeuristic()Landroid/text/TextDirectionHeuristic;",
@@ -2517,6 +2313,12 @@
           "signature": "getTextServicesLocale()Ljava/util/Locale;",
           "flags": 1,
           "body_sha256": "61403b6a32d1a5f6e001b56c3cb0b9cadd5dd1bdf7cc00761ba657b58070f39f",
+          "source": "failure"
+        },
+        {
+          "signature": "getTextServicesLocale(Z)Ljava/util/Locale;",
+          "flags": 2,
+          "body_sha256": "c36e207574d1e50ec073f8a07e45ad17d969936cb43093d222ac1848d5149093",
           "source": "failure"
         },
         {
@@ -2606,6 +2408,12 @@
           "source": "failure"
         },
         {
+          "signature": "getUpdatedHighlightPath()Landroid/graphics/Path;",
+          "flags": 2,
+          "body_sha256": "daca558bfca560460446a72baee6513038bd6e37766094abcbb1512b89a5683c",
+          "source": "failure"
+        },
+        {
           "signature": "getUrls()[Landroid/text/style/URLSpan;",
           "flags": 1,
           "body_sha256": "85620844a320cedaaf696946ed90778279ed27abad8292c8714c96e2ce59675f",
@@ -2636,6 +2444,12 @@
           "source": "failure"
         },
         {
+          "signature": "hasPasswordTransformationMethod()Z",
+          "flags": 2,
+          "body_sha256": "7f08aa8910967a63cf3a5ec8cbc3b0ceef69b9ee1c3fbb1932315be923039939",
+          "source": "failure"
+        },
+        {
           "signature": "hasSelection()Z",
           "flags": 1,
           "body_sha256": "7dad50deeff2085a2a2dad57915418f2a51bf5dafbd1888379bff70a06d654b6",
@@ -2651,6 +2465,12 @@
           "signature": "invalidateCursor()V",
           "flags": 0,
           "body_sha256": "31616272cb1ec42f2c511b51aa4fc32c90eca16fd8e7f87a73e1591f849b0736",
+          "source": "failure"
+        },
+        {
+          "signature": "invalidateCursor(III)V",
+          "flags": 2,
+          "body_sha256": "f3e662ac01ab90270fa5ee751d36542eee7f680350e8a898ed1e266cab238911",
           "source": "failure"
         },
         {
@@ -2696,9 +2516,27 @@
           "source": "failure"
         },
         {
+          "signature": "isMultilineInputType(I)Z",
+          "flags": 10,
+          "body_sha256": "dbfe1dab04c17f9923bcf4129c242b9f774aee2daea23644a5b6498025dd3b36",
+          "source": "failure"
+        },
+        {
           "signature": "isPaddingOffsetRequired()Z",
           "flags": 4,
           "body_sha256": "1502efa2a66d3753886d846cf3cc2d8816f02540ed65180a255d6169413bd828",
+          "source": "failure"
+        },
+        {
+          "signature": "isPasswordInputType(I)Z",
+          "flags": 10,
+          "body_sha256": "d2b9264bde3016ad2f4e55f15e85c727f16d0c2d2145527b24a4c3f477c47025",
+          "source": "failure"
+        },
+        {
+          "signature": "isShowingHint()Z",
+          "flags": 2,
+          "body_sha256": "83272ff3a36805cf8c8d8bada17034419223ad1a5a79c51a0c08d8ef1ca81be6",
           "source": "failure"
         },
         {
@@ -2726,6 +2564,12 @@
           "source": "failure"
         },
         {
+          "signature": "isVisiblePasswordInputType(I)Z",
+          "flags": 10,
+          "body_sha256": "d0a0ee475928475cd268e88028a2e68e741fc6155f2b75ffc1c477963f7fd239",
+          "source": "failure"
+        },
+        {
           "signature": "jumpDrawablesToCurrentState()V",
           "flags": 1,
           "body_sha256": "5f4ea8dd8a4cd337f628962a94d2ed0b4c6874d1990143fbcc6356f24c399bf8",
@@ -2744,9 +2588,21 @@
           "source": "failure"
         },
         {
+          "signature": "makeSingleLayout(ILandroid/text/BoringLayout$Metrics;ILandroid/text/Layout$Alignment;ZLandroid/text/TextUtils$TruncateAt;Z)Landroid/text/Layout;",
+          "flags": 2,
+          "body_sha256": "dc156f302e1b9abc662557dcdb24ee215d08bc9ef94ab3ce44ee498a38102976",
+          "source": "failure"
+        },
+        {
           "signature": "moveCursorToVisibleOffset()Z",
           "flags": 1,
           "body_sha256": "edb5d21a03e79d762708754c566f5cf34eea8748e601420ba15301983e7a23b6",
+          "source": "failure"
+        },
+        {
+          "signature": "nullLayouts()V",
+          "flags": 2,
+          "body_sha256": "c28af718a799c5211cdc65018e6bbff28198b8e8b8c50f500ac904ae702d7d75",
           "source": "failure"
         },
         {
@@ -2967,7 +2823,7 @@
         {
           "signature": "onRtlPropertiesChanged(I)V",
           "flags": 1,
-          "body_sha256": "629481f18aa0ec157f095e0d0dd953f5ac58d6721a6c899914a11f3e6857c476",
+          "body_sha256": "3291cba97282e0203611d39c5dddbd40f15383b944ab2622a424b8812392aa4a",
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
@@ -2980,7 +2836,7 @@
         {
           "signature": "onSaveInstanceState()Landroid/os/Parcelable;",
           "flags": 1,
-          "body_sha256": "e240b7e5d885ebc62faddff63f630dedfa9e0663c68754dd6bfcbeaf17fff7e3",
+          "body_sha256": "3e26529d478a64cb7b62beaa8f4923c2c64b40db3317ffea57fe754b5975f7d5",
           "source": "failure"
         },
         {
@@ -3051,6 +2907,12 @@
           }
         },
         {
+          "signature": "paste(II)V",
+          "flags": 2,
+          "body_sha256": "9aa83b54bb920865a1d5801f9e769914f91d26c3268671910825b5e96f019323",
+          "source": "failure"
+        },
+        {
           "signature": "performAccessibilityAction(ILandroid/os/Bundle;)Z",
           "flags": 1,
           "body_sha256": "4e577e02715be115f368b008efb9118a6aa41b2c0b981c5b5489164605a58b68",
@@ -3069,15 +2931,33 @@
           "source": "failure"
         },
         {
+          "signature": "registerForPreDraw()V",
+          "flags": 2,
+          "body_sha256": "b9711d0ddf5c80eb295097a1170b2f97edccff6b4b0a494e5639a0a430cd1364",
+          "source": "failure"
+        },
+        {
           "signature": "removeAdjacentSuggestionSpans(I)V",
           "flags": 0,
           "body_sha256": "9cf173ad18902548a04ac1d0c25f28ad94bbd40d516a96002d864cad9c042d34",
           "source": "failure"
         },
         {
+          "signature": "removeIntersectingNonAdjacentSpans(IILjava/lang/Class;)V",
+          "flags": 2,
+          "body_sha256": "c2f7acc01c0a4f4f628fc43f6dadaf9f35006fb305ec887ca8bfe3788b94b2f0",
+          "source": "failure"
+        },
+        {
           "signature": "removeMisspelledSpans(Landroid/text/Spannable;)V",
           "flags": 0,
           "body_sha256": "e36652a220422dc27d74383b61ec2462a9711ead8e034a2eaac02d81fb8f1e5a",
+          "source": "failure"
+        },
+        {
+          "signature": "removeParcelableSpans(Landroid/text/Spannable;II)V",
+          "flags": 8,
+          "body_sha256": "d90c965c30d471c4d2451236914f346f51e246377b1eda9207c34eee8fde1ccb",
           "source": "failure"
         },
         {
@@ -3125,6 +3005,12 @@
           }
         },
         {
+          "signature": "restartMarqueeIfNeeded()V",
+          "flags": 2,
+          "body_sha256": "4a412387127c806e993736ca2e97e649a70c51c27ee5a0a7cdd474755d8f6bf1",
+          "source": "failure"
+        },
+        {
           "signature": "selectAllText()Z",
           "flags": 0,
           "body_sha256": "a9d04d94aa3f8d82a7b0544ad1c13a709c1f2c5e6cd50db0cecca3b901dcc432",
@@ -3146,6 +3032,12 @@
           "signature": "sendAfterTextChanged(Landroid/text/Editable;)V",
           "flags": 0,
           "body_sha256": "2253268be8558d39ca5590a8884610372518b9600624433428a3cd0aafd8e7a3",
+          "source": "failure"
+        },
+        {
+          "signature": "sendBeforeTextChanged(Ljava/lang/CharSequence;III)V",
+          "flags": 2,
+          "body_sha256": "ed6a4bf7de8dfd2d26a569f40a6a7ef55c12d54b1532cdd472534b0b36272051",
           "source": "failure"
         },
         {
@@ -3273,7 +3165,7 @@
         {
           "signature": "setError(Ljava/lang/CharSequence;)V",
           "flags": 1,
-          "body_sha256": "a8492b55c38a494d8af55af96e992407c78f20fb97b09ac5f3d1b97fa46fc4f2",
+          "body_sha256": "c96efb1d45689a59e66fed6f6f2012a4e5251015665bbfb1e929141c10fe164e",
           "source": "failure"
         },
         {
@@ -3292,6 +3184,12 @@
           "signature": "setExtracting(Landroid/view/inputmethod/ExtractedTextRequest;)V",
           "flags": 1,
           "body_sha256": "41baa301e228318df581f2ad9a37e9c0d8a446f42101da8fbd2e8d765704a7ae",
+          "source": "failure"
+        },
+        {
+          "signature": "setFilters(Landroid/text/Editable;[Landroid/text/InputFilter;)V",
+          "flags": 2,
+          "body_sha256": "c9947522055ffb8fdb59cf512761f620860b35036f229606caa9a7f32d36ce5a",
           "source": "failure"
         },
         {
@@ -3405,9 +3303,27 @@
           "source": "failure"
         },
         {
+          "signature": "setInputType(IZ)V",
+          "flags": 2,
+          "body_sha256": "68485d61f68d5ebd697bef9ac43b0991812ebd44da152fdab342df478a6d924d",
+          "source": "failure"
+        },
+        {
+          "signature": "setInputTypeSingleLine(Z)V",
+          "flags": 2,
+          "body_sha256": "b34db4829e7ae17d625d13dc22d774b4037bbea6f6d63fb7016a2c5a31d11d11",
+          "source": "failure"
+        },
+        {
           "signature": "setKeyListener(Landroid/text/method/KeyListener;)V",
           "flags": 1,
           "body_sha256": "7ec39dbc046150d270c039bb5d86c79c3e06c3e5736e87138428e87f5bae3603",
+          "source": "failure"
+        },
+        {
+          "signature": "setKeyListenerOnly(Landroid/text/method/KeyListener;)V",
+          "flags": 2,
+          "body_sha256": "a5e166e61d3a8e3b1b56da91d64d1530db349876eea6ea357e28f2486308ad7b",
           "source": "failure"
         },
         {
@@ -3546,6 +3462,12 @@
           "source": "failure"
         },
         {
+          "signature": "setPrimaryClip(Landroid/content/ClipData;)V",
+          "flags": 2,
+          "body_sha256": "3e0449c5dc50128179d97ca5f81279ddee47c1e9428bb51724fe254cfd21785e",
+          "source": "failure"
+        },
+        {
           "signature": "setPrivateImeOptions(Ljava/lang/String;)V",
           "flags": 1,
           "body_sha256": "f42c91b4d9c6e232aaee9360408fc1b99031c0995fda3ddbcf2990c260efdc9f",
@@ -3555,6 +3477,18 @@
           "signature": "setRawInputType(I)V",
           "flags": 1,
           "body_sha256": "603809712cf9c197cd57d987bc1192919db5e7e76c546bd2791f08892fbf4b7b",
+          "source": "failure"
+        },
+        {
+          "signature": "setRawTextSize(F)V",
+          "flags": 2,
+          "body_sha256": "34a0251ca2fb0563615d6704b43c1011a8dc50a8b3b9d22611bc5960dee8bb85",
+          "source": "failure"
+        },
+        {
+          "signature": "setRelativeDrawablesIfNeeded(Landroid/graphics/drawable/Drawable;Landroid/graphics/drawable/Drawable;)V",
+          "flags": 2,
+          "body_sha256": "66e2b0ad1cca93ca1693122eae450a4a6d7fdc09a44765fd6edc9d6e37af7c02",
           "source": "failure"
         },
         {
@@ -3669,6 +3603,12 @@
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
           }
+        },
+        {
+          "signature": "setText(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;ZI)V",
+          "flags": 2,
+          "body_sha256": "ed94e52adcf7bec1293443729dad88dc9cd61b24929ccf35d76266b3e0b5a57b",
+          "source": "failure"
         },
         {
           "signature": "setText([CII)V",
@@ -3797,6 +3737,12 @@
           }
         },
         {
+          "signature": "setTypefaceFromAttrs(Ljava/lang/String;II)V",
+          "flags": 2,
+          "body_sha256": "dc7f6f150cf1c887b0193dabe20fa12096d84dcee30eb7f4deb8337e6d060201",
+          "source": "failure"
+        },
+        {
           "signature": "setUndoManager(Landroid/content/UndoManager;Ljava/lang/String;)V",
           "flags": 17,
           "body_sha256": "4184944989d77f6e8e324f37b8a737f7200c7ec9ff8f8da8702bdbc39f7c9622",
@@ -3809,9 +3755,45 @@
           "source": "failure"
         },
         {
+          "signature": "shouldAdvanceFocusOnEnter()Z",
+          "flags": 2,
+          "body_sha256": "24f2c6ac381eb8c234da66e0a3e018101ed2906e3fe0b344c66b552a4f963597",
+          "source": "failure"
+        },
+        {
+          "signature": "shouldAdvanceFocusOnTab()Z",
+          "flags": 2,
+          "body_sha256": "dee0a3fb72faff01f11deba134ac0875ab118f1b48466077ce2aa88058695f33",
+          "source": "failure"
+        },
+        {
+          "signature": "shouldSpeakPasswordsForAccessibility()Z",
+          "flags": 2,
+          "body_sha256": "417fcebebd932fced465a3bc1a12b661fe0624edd2eb6bf63255e4ec82ed79aa",
+          "source": "failure"
+        },
+        {
           "signature": "spanChange(Landroid/text/Spanned;Ljava/lang/Object;IIII)V",
           "flags": 0,
           "body_sha256": "3f19321846088f8094cb5dbf4307c1f7a1889ac4757f098bc80df6170f22ea79",
+          "source": "failure"
+        },
+        {
+          "signature": "startMarquee()V",
+          "flags": 2,
+          "body_sha256": "5aba20920abf102ae2abbafb2055b6f051cb250f44c19a9053953b3c8e201587",
+          "source": "failure"
+        },
+        {
+          "signature": "startStopMarquee(Z)V",
+          "flags": 2,
+          "body_sha256": "5134fdc98008fb292d7913153d84cfbbdf988a02f066b488af8df3541bb802c4",
+          "source": "failure"
+        },
+        {
+          "signature": "stopMarquee()V",
+          "flags": 2,
+          "body_sha256": "45a9e6f224ab96d6f2e5ff415e74642868aa286e169aa5c0f9ea74d842007a68",
           "source": "failure"
         },
         {
@@ -3830,6 +3812,24 @@
           "signature": "updateAfterEdit()V",
           "flags": 0,
           "body_sha256": "e96c247d7ed855e3187b0240e8d04a737354a000af5c1c3b79aeea09cd69934d",
+          "source": "failure"
+        },
+        {
+          "signature": "updateTextColors()V",
+          "flags": 2,
+          "body_sha256": "a11d47331feb0cb4abc8646f35d450b0fde5ff6fe886f197409af46c0bbe3556",
+          "source": "failure"
+        },
+        {
+          "signature": "updateTextServicesLocaleAsync()V",
+          "flags": 2,
+          "body_sha256": "cf4e128fcf1ea928e157f959185778e3aab2bb1fccc4c7ae6f0a2d8e5449ebc1",
+          "source": "failure"
+        },
+        {
+          "signature": "updateTextServicesLocaleLocked()V",
+          "flags": 2,
+          "body_sha256": "800fff1213003dc2d7b6fecdf71cf0362be7b25beeb268ed7634240aefbcd6f2",
           "source": "failure"
         },
         {
@@ -4482,9 +4482,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4516,12 +4516,6 @@
           "signature": "<init>(Landroid/graphics/RectF;)V",
           "flags": 65537,
           "body_sha256": "7555a7822f73cec6075939e99c281770cc2aeabbcc69d1467609f3c35ae4fa76",
-          "source": "failure"
-        },
-        {
-          "signature": "intersects(Landroid/graphics/RectF;Landroid/graphics/RectF;)Z",
-          "flags": 9,
-          "body_sha256": "80a6f80eb46e32d020a837538414eabeb21cc2230ded86657cc1a55efc7e0aa2",
           "source": "failure"
         },
         {
@@ -4600,6 +4594,12 @@
           "signature": "intersects(FFFF)Z",
           "flags": 1,
           "body_sha256": "e881b2371642339ed6baff5a394107bde27f8b6b80021895feff100068aade55",
+          "source": "failure"
+        },
+        {
+          "signature": "intersects(Landroid/graphics/RectF;Landroid/graphics/RectF;)Z",
+          "flags": 9,
+          "body_sha256": "80a6f80eb46e32d020a837538414eabeb21cc2230ded86657cc1a55efc7e0aa2",
           "source": "failure"
         },
         {
@@ -4766,9 +4766,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

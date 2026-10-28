@@ -4,11 +4,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/graphics/drawable/Drawable;",
-      "smali_sha256": "19a924b772dd354f6697ff3ff28e6d259ea0f430fa6318153ffeed930eb218da",
+      "smali_sha256": "512b74a8556542d52efbba789997105a2a1ed75a3125a5641923c2b41fd114ca",
       "methods": [
         {
           "signature": "<clinit>()V",
@@ -67,7 +67,7 @@
         {
           "signature": "createFromXml(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;)Landroid/graphics/drawable/Drawable;",
           "flags": 9,
-          "body_sha256": "f6b3de93d9b605a08b475c1ccac145cfc89f9a8012c1c23cbdd407af2524db42",
+          "body_sha256": "1f057e299ef336529a49200fc3818225a59e9d1a74e23d7b54e635cef1fe03f4",
           "source": "failure"
         },
         {
@@ -420,9 +420,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/graphics/drawable/BitmapDrawable;",
       "smali_sha256": "660a01d12ebeb584153e3c3567af510ef4c1343f4e67b400701978b3b73a1cae",
       "methods": [
@@ -790,9 +790,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "604725e9257b3994494011a7231f782962793b4183941e18aa940118dda73252",
+      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
       "owner": "Landroid/graphics/drawable/ColorDrawable;",
       "smali_sha256": "02bc11f751baccc3d315a606ff50186e588a0b02683a5d5b599de585bf42e0b6",
       "methods": [

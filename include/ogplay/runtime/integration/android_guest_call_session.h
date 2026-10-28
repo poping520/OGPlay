@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/boundary/device_locale.h"
 
 #include "ogplay/core/capability_ledger.h"
 #include "ogplay/runtime/common/guest_call_limits.h"
@@ -40,9 +41,14 @@ enum class GuestFinalizationPolicy : std::uint8_t {
     forbidden,
 };
 
-namespace debug { class DiagnosticState; }
+namespace debug {
+class DiagnosticState;
+}
 
-namespace dexvm { class NioRuntime; struct NioDirectMemoryAccess; }
+namespace dexvm {
+class NioRuntime;
+struct NioDirectMemoryAccess;
+}  // namespace dexvm
 
 class JniInvocationEngine;
 class JniNativeRegistry;
@@ -124,6 +130,7 @@ public:
     [[nodiscard]] float MasterVolume() const;
     [[nodiscard]] float MusicVolume(std::int32_t resource) const;
     [[nodiscard]] std::uint64_t CallbackCount(std::string_view method) const;
+
 private:
     mutable std::mutex mutex_;
     std::map<std::string, std::uint64_t, std::less<>> callback_counts_;
@@ -142,39 +149,26 @@ private:
     std::atomic<std::uint64_t> exit_request_count_{};
 };
 
-void BindAndroidGuestJavaAudioHandlers(
-    JniInvocationEngine& invocations,
-    audio::JavaSoundPoolState& sound_pool,
-    audio::JavaSoundPoolMixer* mixer = nullptr);
+void BindAndroidGuestJavaAudioHandlers(JniInvocationEngine& invocations, audio::JavaSoundPoolState& sound_pool,
+                                       audio::JavaSoundPoolMixer* mixer = nullptr);
 
-void BindAndroidGuestJavaMediaHandlers(
-    JniInvocationEngine& invocations, JniEnvironment& environment,
-    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-    AndroidGuestMovieState& movie_state,
-    AndroidGuestLegacyMediaState& media_state,
-    const audio::JavaSoundPoolMixer::EncodedResourceLoader& resource_loader);
+void BindAndroidGuestJavaMediaHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
+                                       JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+                                       AndroidGuestMovieState& movie_state, AndroidGuestLegacyMediaState& media_state,
+                                       const audio::JavaSoundPoolMixer::EncodedResourceLoader& resource_loader);
 
-void BindAndroidGuestJavaMovieHandlers(
-    JniInvocationEngine& invocations, JniEnvironment& environment,
-    JniStringStore& strings, AndroidGuestMovieState& movie_state);
+void BindAndroidGuestJavaMovieHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
+                                       JniStringStore& strings, AndroidGuestMovieState& movie_state);
 
-void BindAndroidGuestJavaDisplayHandlers(
-    JniInvocationEngine& invocations,
-    FrameworkScreenPolicyState& screen_policy);
+void BindAndroidGuestJavaDisplayHandlers(JniInvocationEngine& invocations, FrameworkScreenPolicyState& screen_policy);
 
-void BindAndroidGuestJavaProcessHandlers(
-    JniInvocationEngine& invocations,
-    AndroidGuestProcessState& process_state);
+void BindAndroidGuestJavaProcessHandlers(JniInvocationEngine& invocations, AndroidGuestProcessState& process_state);
 
-void BindAndroidGuestJavaLocaleHandlers(
-    JniInvocationEngine& invocations,
-    const FrameworkLocaleConfig& locale);
+void BindAndroidGuestJavaLocaleHandlers(JniInvocationEngine& invocations, const FrameworkLocaleConfig& locale);
 
-void BindAndroidGuestJavaPlatformHandlers(
-    JniInvocationEngine& invocations, JniEnvironment& environment,
-    JniStringStore& strings, JniPrimitiveArrayStore& arrays,
-    AndroidGuestPlatformState& state,
-    const AndroidGuestPlatformConfig& config);
+void BindAndroidGuestJavaPlatformHandlers(JniInvocationEngine& invocations, JniEnvironment& environment,
+                                          JniStringStore& strings, JniPrimitiveArrayStore& arrays,
+                                          AndroidGuestPlatformState& state, const AndroidGuestPlatformConfig& config);
 
 void InstallAndroidGuestFrameworkPlatform(JniClassRegistry& classes);
 
@@ -243,8 +237,7 @@ struct AndroidGuestApplicationLoad final {
 
 class AndroidGuestProcess final : public core::GpuStateProvider {
 public:
-    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> Start(
-        const AndroidGuestProcessRequest& request);
+    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> Start(const AndroidGuestProcessRequest& request);
     ~AndroidGuestProcess();
     AndroidGuestProcess(const AndroidGuestProcess&) = delete;
     AndroidGuestProcess& operator=(const AndroidGuestProcess&) = delete;
@@ -253,12 +246,11 @@ public:
     // Observe the first native worker failure without entering guest code.
     void RethrowAsyncFailure();
     [[nodiscard]] std::vector<core::CapabilityWarningHit> CapabilityWarnings() const;
-    [[nodiscard]] std::optional<A32GuestCallResult>
-    TryInvokeRegisteredNative(
-        JniObjectIdentity java_class, std::string_view name,
-        std::string_view descriptor, const A32GuestCallFrame& frame);
-    void PrepareDexVmThread(std::uint64_t thread_id,
-                            std::uint32_t allocation_slot);
+    [[nodiscard]] std::optional<A32GuestCallResult> TryInvokeRegisteredNative(JniObjectIdentity java_class,
+                                                                              std::string_view name,
+                                                                              std::string_view descriptor,
+                                                                              const A32GuestCallFrame& frame);
+    void PrepareDexVmThread(std::uint64_t thread_id, std::uint32_t allocation_slot);
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
     [[nodiscard]] dexvm::NioDirectMemoryAccess GuestMemoryAccess() const;
@@ -269,10 +261,10 @@ public:
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
     void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
+    void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);
     void UnregisterAssetManager(memory::GuestAddress manager);
-    [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index,
-                                                       std::string_view name) const;
+    [[nodiscard]] memory::GuestAddress FindModuleExport(std::size_t module_index, std::string_view name) const;
     // Query an already-loaded library by identity; does not load missing libraries.
     [[nodiscard]] std::optional<memory::GuestAddress> FindLibraryExport(std::string_view library,
                                                                         std::string_view symbol) const;
@@ -291,18 +283,14 @@ public:
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
-    void SetAuxiliaryAudioMix(
-        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
+    void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
-    [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(
-        std::string_view name) const;
-    [[nodiscard]] std::vector<GuestProcessEnvironmentEntry>
-    ProcessEnvironmentEntries() const;
-    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
-        std::string_view class_name, std::string_view method_name,
-        std::string_view descriptor) const;
+    [[nodiscard]] std::optional<std::string> ProcessEnvironmentValue(std::string_view name) const;
+    [[nodiscard]] std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries() const;
+    [[nodiscard]] std::optional<memory::GuestAddress>
+    FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const;
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
     void ReleaseManagedSurfaceFromCallingThread();
@@ -310,13 +298,11 @@ public:
     [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
     [[nodiscard]] std::string ManagedEglString(std::uint32_t parameter);
     void LatchManagedEglError(std::uint64_t thread_id, std::uint32_t error);
-    [[nodiscard]] std::uint32_t InvokeManagedGles(
-        gles::GlesApi api, std::string_view name,
-        std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
-    [[nodiscard]] std::uint32_t InvokeManagedEgl(
-        std::string_view name, std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedGles(gles::GlesApi api, std::string_view name,
+                                                  std::span<const std::uint32_t> arguments,
+                                                  std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedEgl(std::string_view name, std::span<const std::uint32_t> arguments,
+                                                 std::uint64_t thread_id = 0);
     gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call);
     void PresentManagedSurface();
     void CloseManagedSurface();
@@ -330,8 +316,7 @@ public:
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     void SetFrameReadbackFilter(FrameReadbackFilter covered);
-    [[nodiscard]] std::size_t RenderStereoAudio(
-        std::span<std::int16_t> output, std::uint32_t sample_rate);
+    [[nodiscard]] std::size_t RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
     // Idempotently enters process teardown: native waits are interrupted,
     // guest graphics are retired, and renewable JNI frames become cancellable.
@@ -356,16 +341,13 @@ public:
     [[nodiscard]] bool HasLoadedModule(std::string_view name) const;
     // Install once before application execution. The callback owns its source
     // snapshot and performs ELF loading only, without ClassLoader/JNI_OnLoad.
-    void SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
-        std::string_view, std::uint64_t)> handler);
-    [[nodiscard]] AndroidGuestApplicationLoad LoadApplicationModules(
-        std::string_view root_module,
-        std::span<const AndroidGuestApplicationModuleSource> modules,
-        std::uint64_t thread_id = 1U);
-    [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(
-        std::string_view root_module);
-    [[nodiscard]] std::optional<AndroidGuestMovieRequest>
-    LatestMovieRequest() const;
+    void
+    SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(std::string_view, std::uint64_t)> handler);
+    [[nodiscard]] AndroidGuestApplicationLoad
+    LoadApplicationModules(std::string_view root_module, std::span<const AndroidGuestApplicationModuleSource> modules,
+                           std::uint64_t thread_id = 1U);
+    [[nodiscard]] std::optional<std::uint32_t> InitializeExplicitJniLibrary(std::string_view root_module);
+    [[nodiscard]] std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const;
     [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
     [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
@@ -374,16 +356,14 @@ public:
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;
-    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
-        std::string_view filter, std::size_t limit) const override;
-    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>>
-    TryGlesTrace(std::size_t limit) const;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(std::string_view filter, std::size_t limit) const override;
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryGlesTrace(std::size_t limit) const;
 
 private:
     class Impl;
     explicit AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept;
-    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess> StartLegacy(
-        const AndroidGuestCallSessionRequest& request);
+    [[nodiscard]] static std::unique_ptr<AndroidGuestProcess>
+    StartLegacy(const AndroidGuestCallSessionRequest& request);
     void InitializeJniLibrary();
     std::unique_ptr<Impl> impl_;
     friend class AndroidGuestCallSession;
@@ -396,12 +376,11 @@ public:
 
 class AndroidGuestCallSession final : public core::GpuStateProvider {
 public:
-    [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession> Start(
-        const AndroidGuestCallSessionRequest& request);
+    [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession> Start(const AndroidGuestCallSessionRequest& request);
     // Compatibility facade for Java/DexVM services that still consume the
     // call-session interface while application startup owns a rootless shell.
-    [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession> AdoptProcess(
-        std::unique_ptr<AndroidGuestProcess> process);
+    [[nodiscard]] static std::unique_ptr<AndroidGuestCallSession>
+    AdoptProcess(std::unique_ptr<AndroidGuestProcess> process);
     ~AndroidGuestCallSession();
     AndroidGuestCallSession(const AndroidGuestCallSession&) = delete;
     AndroidGuestCallSession& operator=(const AndroidGuestCallSession&) = delete;
@@ -410,12 +389,11 @@ public:
     void RethrowAsyncFailure();
     // Empty means no RegisterNatives mapping. Once a target is resolved, any
     // execution failure is propagated and must not be treated as a miss.
-    [[nodiscard]] std::optional<A32GuestCallResult>
-    TryInvokeRegisteredNative(
-        JniObjectIdentity java_class, std::string_view name,
-        std::string_view descriptor, const A32GuestCallFrame& frame);
-    void PrepareDexVmThread(std::uint64_t thread_id,
-                            std::uint32_t allocation_slot);
+    [[nodiscard]] std::optional<A32GuestCallResult> TryInvokeRegisteredNative(JniObjectIdentity java_class,
+                                                                              std::string_view name,
+                                                                              std::string_view descriptor,
+                                                                              const A32GuestCallFrame& frame);
+    void PrepareDexVmThread(std::uint64_t thread_id, std::uint32_t allocation_slot);
     void ReleaseDexVmThread(std::uint64_t thread_id) noexcept;
     memory::GuestAddress PrepareThreadLooper(std::uint64_t thread_id);
     [[nodiscard]] memory::GuestAddress GuestEnvironment() const noexcept;
@@ -433,17 +411,15 @@ public:
     [[nodiscard]] audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept;
     [[nodiscard]] audio::EncodedMusicMixer& EncodedMusic() noexcept;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
-    void SetAuxiliaryAudioMix(
-        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
+    void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix);
     [[nodiscard]] VirtualFileSystem* Filesystem() noexcept;
     [[nodiscard]] const GuestCpuConfig& CpuConfig() const noexcept;
     [[nodiscard]] const GuestMemorySnapshot& MemorySnapshot() const noexcept;
     [[nodiscard]] AndroidGuestProcess& Process() noexcept;
     // Resolves a Java_ native export (short then long JNI name) across the
     // loaded guest namespace; empty when the method is not exported.
-    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
-        std::string_view class_name, std::string_view method_name,
-        std::string_view descriptor) const;
+    [[nodiscard]] std::optional<memory::GuestAddress>
+    FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const;
     void InitializeJniLibrary();
     void OpenManagedSurface();
     void BindManagedSurfaceOnCallingThread();
@@ -452,13 +428,11 @@ public:
     [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
     [[nodiscard]] std::string ManagedEglString(std::uint32_t parameter);
     void LatchManagedEglError(std::uint64_t thread_id, std::uint32_t error);
-    [[nodiscard]] std::uint32_t InvokeManagedGles(
-        gles::GlesApi api, std::string_view name,
-        std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
-    [[nodiscard]] std::uint32_t InvokeManagedEgl(
-        std::string_view name, std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedGles(gles::GlesApi api, std::string_view name,
+                                                  std::span<const std::uint32_t> arguments,
+                                                  std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedEgl(std::string_view name, std::span<const std::uint32_t> arguments,
+                                                 std::uint64_t thread_id = 0);
     void PresentManagedSurface();
     void CloseManagedSurface();
     void PushInput(const AndroidBoundaryInput& input);
@@ -466,8 +440,7 @@ public:
     void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8);
     void RecycleFrame(AndroidBoundaryFrame&& frame);
     void SetFrameReadbackFilter(FrameReadbackFilter covered);
-    [[nodiscard]] std::size_t RenderStereoAudio(
-        std::span<std::int16_t> output, std::uint32_t sample_rate);
+    [[nodiscard]] std::size_t RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate);
     [[nodiscard]] std::size_t InterruptBlockingWaits();
     void BeginTeardown() noexcept;
     // Synchronous owner-only root cleanup; nested calls share a finite budget.
@@ -480,19 +453,16 @@ public:
     void Stop(GuestFinalizationPolicy policy = GuestFinalizationPolicy::permitted);
     [[nodiscard]] bool Running() const noexcept;
     [[nodiscard]] bool ExitRequested() const noexcept;
-    [[nodiscard]] std::optional<AndroidGuestMovieRequest>
-    LatestMovieRequest() const;
+    [[nodiscard]] std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const;
     [[nodiscard]] std::shared_ptr<debug::DiagnosticState> Diagnostics() const;
 
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;
-    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
-        std::string_view filter, std::size_t limit) const override;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(std::string_view filter, std::size_t limit) const override;
 
 private:
-    explicit AndroidGuestCallSession(
-        std::unique_ptr<AndroidGuestProcess> process) noexcept;
+    explicit AndroidGuestCallSession(std::unique_ptr<AndroidGuestProcess> process) noexcept;
     std::unique_ptr<AndroidGuestProcess> process_;
 };
 

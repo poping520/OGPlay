@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "source": "android.policy.jar",
-  "sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+  "sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
   "classes": {
     "Lcom/android/internal/policy/impl/PhoneLayoutInflater;": {
       "superclass": "Landroid/view/LayoutInflater;",

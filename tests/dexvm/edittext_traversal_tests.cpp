@@ -405,7 +405,7 @@ TEST_CASE("DVM-326 EditText consumes actual default background padding and freez
         CHECK(f.On(edit, "getPaddingLeft", "()I").AsInt() == 11);
         CHECK(f.On(edit, "getPaddingTop", "()I").AsInt() == 7);
         CHECK(f.On(edit, "getPaddingRight", "()I").AsInt() == 11);
-        CHECK(f.On(edit, "getPaddingBottom", "()I").AsInt() == 13);
+        CHECK(f.On(edit, "getPaddingBottom", "()I").AsInt() == 12);
         f.On(edit, "measure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
         CHECK(f.On(edit, "getMeasuredWidth", "()I").AsInt() >= 22);
         CHECK(f.On(edit, "getMeasuredHeight", "()I").AsInt() >= 20);
@@ -525,11 +525,11 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
             const char* field;
         };
 
-        const std::array identities{Identity{0x010102c5, 0x01080666, "mTextSelectHandleLeftRes"},
-                                    Identity{0x010102c6, 0x01080668, "mTextSelectHandleRightRes"},
-                                    Identity{0x010102c7, 0x01080667, "mTextSelectHandleRes"},
+        const std::array identities{Identity{0x010102c5, 0x01080633, "mTextSelectHandleLeftRes"},
+                                    Identity{0x010102c6, 0x01080635, "mTextSelectHandleRightRes"},
+                                    Identity{0x010102c7, 0x01080634, "mTextSelectHandleRes"},
                                     Identity{0x01010362, 0x00000000, "mCursorDrawableRes"},
-                                    Identity{0x01010374, 0x010900b2, "mTextEditSuggestionItemLayout"}};
+                                    Identity{0x01010374, 0x010900af, "mTextEditSuggestionItemLayout"}};
         const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer,
                                                      static_cast<JniSize>(identities.size()));
         for (std::size_t i = 0; i < identities.size(); ++i)

@@ -59,19 +59,19 @@ TEST_CASE("DVM-326 ROM edit text selector scales true ninepatch padding and sele
             f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080016)}).ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, resources, skin});
         CHECK(f.linker.Class(f.model.ObjectClass(skin)).descriptor == "Landroid/graphics/drawable/StateListDrawable;");
-        CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 13});
+        CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
         CHECK(f.On(skin, "isStateful", "()Z").AsInt() == 1);
         const auto current = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
         REQUIRE(current.IsValid());
-        CHECK(f.context->ui_drawables.at(current.Value()).resource_id == 0x01080673);
+        CHECK(f.context->ui_drawables.at(current.Value()).resource_id == 0x01080640);
         const auto states = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 3);
         f.model.SetPrimitiveElement(states, 0, 0x0101009d);  // window focused
         f.model.SetPrimitiveElement(states, 1, 0x0101009c);  // focused
         f.model.SetPrimitiveElement(states, 2, 0x0101009e);  // enabled
         CHECK(f.On(skin, "setState", "([I)Z", {VmValue::Ref(states)}).AsInt() == 1);
         const auto selected = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
-        CHECK(f.context->ui_drawables.at(selected.Value()).resource_id == 0x0108069b);
-        CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 13});
+        CHECK(f.context->ui_drawables.at(selected.Value()).resource_id == 0x01080668);
+        CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
         REQUIRE(f.context->ui_drawables.at(selected.Value()).leaf_pixels);
         CHECK(f.ledger.Unimplemented().empty());
         const auto draw = f.OnOutcome(skin, "draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
@@ -189,7 +189,7 @@ TEST_CASE("DVM-326 ROM selector padding follows exact hdpi and xhdpi variants") 
                 f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080016)})
                     .ref;
             CHECK(Padding(f, skin) ==
-                  (density == 1.5F ? std::array<int, 4>{16, 11, 16, 19} : std::array<int, 4>{21, 13, 21, 23}));
+                  (density == 1.5F ? std::array<int, 4>{16, 10, 16, 17} : std::array<int, 4>{21, 13, 21, 23}));
             const auto current = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
             const auto insets = f.On(current, "getOpticalInsets", "()Landroid/graphics/Insets;").ref;
             REQUIRE(insets.IsValid());
@@ -222,7 +222,7 @@ TEST_CASE("DVM-326 selector traces its ninepatch children and releases decoded b
             CHECK_FALSE(pixels.expired());
             for (const auto child : children)
                 CHECK(f.context->ui_drawables.contains(child.Value()));
-            CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 13});
+            CHECK(Padding(f, skin) == std::array<int, 4>{11, 7, 11, 12});
         }
         static_cast<void>(f.vm.CollectGarbage("rom-skin-unrooted"));
         CHECK(pixels.expired());
@@ -308,15 +308,18 @@ TEST_CASE("API19 View drawable state skips stateless backgrounds and rejects uns
         ContainerVm f(backend);
         const auto owner = Owner(f);
         const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto color = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff000000U))});
+        const auto color = f.New("Landroid/graphics/drawable/ColorDrawable;", "(I)V",
+                                 {VmValue::Int(static_cast<std::int32_t>(0xff000000U))});
         const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
                                      "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
-                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))}).ref;
+                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))})
+                                .ref;
         const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
                                      "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
-                                     {VmValue::Int(1), VmValue::Int(1), VmValue::Ref(config)}).ref;
-        const auto image = f.New("Landroid/graphics/drawable/BitmapDrawable;", "(Landroid/graphics/Bitmap;)V",
-                                 {VmValue::Ref(bitmap)});
+                                     {VmValue::Int(1), VmValue::Int(1), VmValue::Ref(config)})
+                                .ref;
+        const auto image =
+            f.New("Landroid/graphics/drawable/BitmapDrawable;", "(Landroid/graphics/Bitmap;)V", {VmValue::Ref(bitmap)});
         const auto roots = f.vm.ProtectReferences(std::array{owner, view, color, image});
         const auto state_calls = [&] {
             int count = 0;
@@ -327,7 +330,7 @@ TEST_CASE("API19 View drawable state skips stateless backgrounds and rejects uns
         // Populate the Java background field directly: BitmapDrawable.getOpacity
         // is outside this state protocol regression's supported surface.
         const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mBackground",
-                                                      "Landroid/graphics/drawable/Drawable;");
+                                                       "Landroid/graphics/drawable/Drawable;");
         REQUIRE(field);
         const auto background = [&](VmObjectRef drawable) {
             f.model.InstanceSlots(view)[f.linker.Field(*field).slot] = {drawable.Value(), SlotTag::ref};
@@ -382,8 +385,8 @@ TEST_CASE("API19 View drawable state retains ROM skin state selection") {
         const auto owner = Owner(f);
         const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
         const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
-        const auto skin = f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;",
-                               {VmValue::Int(0x01080016)}).ref;
+        const auto skin =
+            f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0x01080016)}).ref;
         const auto roots = f.vm.ProtectReferences(std::array{owner, view, skin});
         f.On(view, "setBackgroundDrawable", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(skin)});
         f.On(view, "refreshDrawableState", "()V");
@@ -392,7 +395,7 @@ TEST_CASE("API19 View drawable state retains ROM skin state selection") {
         f.On(view, "refreshDrawableState", "()V");
         const auto disabled = f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref;
         CHECK(disabled != enabled);
-        CHECK(f.context->ui_drawables.at(disabled.Value()).resource_id == 0x01080673);
+        CHECK(f.context->ui_drawables.at(disabled.Value()).resource_id == 0x01080640);
         f.On(view, "setEnabled", "(Z)V", {VmValue::Int(1)});
         f.On(view, "refreshDrawableState", "()V");
         CHECK(f.On(skin, "getCurrent", "()Landroid/graphics/drawable/Drawable;").ref == enabled);

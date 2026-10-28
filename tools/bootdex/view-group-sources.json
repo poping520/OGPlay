@@ -2,11 +2,11 @@
   "shape_owner": "rom",
   "clinit_owner": "rom",
   "rom_input": ".local/aosp/framework.jar",
-  "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+  "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
   "surface": "tools/bootdex/view-default.surface.json.gz",
-  "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+  "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
   "owner": "Landroid/view/ViewGroup;",
-  "smali_sha256": "584d5f2dcdd5b89b8d125aeacd12a5781c765b7546d26d87e76ae245a6b9b065",
+  "smali_sha256": "0a3dc6e596e42cf79dab4e94ee8894dce65b448a7136f6004767ed7d13f5f22f",
   "fields": [
     {
       "signature": "ARRAY_CAPACITY_INCREMENT:I",
@@ -546,6 +546,12 @@
       "source": "failure"
     },
     {
+      "signature": "addChildrenForAccessibility(Ljava/util/ArrayList;)V",
+      "flags": 1,
+      "body_sha256": "ace3e22e6ecee7e803e81d5de11075ae0c54c882aa6773a86985f239e3536017",
+      "source": "failure"
+    },
+    {
       "signature": "addDisappearingView(Landroid/view/View;)V",
       "flags": 2,
       "body_sha256": "39e7df2b518f135c089257e52a39ea7a5742e1ad7d26408f1fcd848105ffdefa",
@@ -559,275 +565,27 @@
       }
     },
     {
-      "signature": "addInArray(Landroid/view/View;I)V",
-      "flags": 2,
-      "body_sha256": "0dbcd71f4cd74b4bd5c345f451e5489ee7279e363a079833c8e5afa03e04b6cd",
-      "source": "rom"
-    },
-    {
-      "signature": "addTouchTarget(Landroid/view/View;I)Landroid/view/ViewGroup$TouchTarget;",
-      "flags": 2,
-      "body_sha256": "f69f272fd51d7b9a07ff90c0fbd7a1847bab2a4e3882a007d6801f984a889624",
-      "source": "failure"
-    },
-    {
-      "signature": "addViewInner(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;Z)V",
-      "flags": 2,
-      "body_sha256": "1ab4b0e1e762a35e86ca4d7fe809cd66c188c1ca867a5cb24d17342ede21d7e4",
-      "source": "rom"
-    },
-    {
-      "signature": "bindLayoutAnimation(Landroid/view/View;)V",
-      "flags": 2,
-      "body_sha256": "f67a80804263087436f14e4ddd868494992eca36f43809c206db7472c72e88d8",
-      "source": "failure"
-    },
-    {
-      "signature": "canViewReceivePointerEvents(Landroid/view/View;)Z",
-      "flags": 10,
-      "body_sha256": "5f284d6faa5ebc96b746c676b537b1b23b5e412c29b198eaf1a4d35be82abe20",
-      "source": "failure"
-    },
-    {
-      "signature": "cancelAndClearTouchTargets(Landroid/view/MotionEvent;)V",
-      "flags": 2,
-      "body_sha256": "b03e6187602a2d2193d9b8bf2894c29adccb8bb01890030c4b17e80ad3230fc3",
-      "source": "failure"
-    },
-    {
-      "signature": "cancelHoverTarget(Landroid/view/View;)V",
-      "flags": 2,
-      "body_sha256": "c86e06f7d20d9b4819f19909cfde6b30e377a592597643aecf3651ab096bc0eb",
-      "source": "overlay",
-      "review": {
-        "reason": "Unattached test container input-service seam",
-        "inputs": "mFirstHoverTarget",
-        "outputs": "Original empty-target path only",
-        "state_owner": "Java fields only; no second hierarchy or geometry storage",
-        "failure_boundary": "Non-null target records and throws; input dispatch capability is not enabled"
-      }
-    },
-    {
-      "signature": "cancelTouchTarget(Landroid/view/View;)V",
-      "flags": 2,
-      "body_sha256": "88e58bf0346f04546e0d480f392b6ffb9657169886774ea57244e7a94006a31e",
-      "source": "overlay",
-      "review": {
-        "reason": "VD-06b original null Java target and process-local capture cancellation seam",
-        "inputs": "Actual Java mFirstTouchTarget and removed child identity; current process captured Java parent chain",
-        "outputs": "Clear integration capture for the removed subtree; no Java touch target or listener copy",
-        "state_owner": "Java hierarchy and listener state; integration capture identities only",
-        "failure_boundary": "Non-null original Java touch target records and throws; no split or full ROM dispatchTouchEvent"
-      }
-    },
-    {
-      "signature": "clearCachedLayoutMode()V",
-      "flags": 2,
-      "body_sha256": "064230db4e6cb2d6778f6a2a64e726ec1a32a35c47ff28b752fede61e2bc6cc3",
-      "source": "failure"
-    },
-    {
-      "signature": "clearTouchTargets()V",
-      "flags": 2,
-      "body_sha256": "ccc8f8351a18152cc692418c6ac73c1a230d46beb122d004d866d04102543a78",
-      "source": "failure"
-    },
-    {
-      "signature": "debugDraw()Z",
-      "flags": 2,
-      "body_sha256": "ead13a25d35b8a37ab9343123f1a85af0ac784573881c04e481a3427d9ac5352",
-      "source": "rom"
-    },
-    {
-      "signature": "dipsToPixels(I)I",
-      "flags": 2,
-      "body_sha256": "eec51bef2b3db633d6c016509a9c0d4d7409c403c187c794ac46e375adf4a326",
-      "source": "failure"
-    },
-    {
-      "signature": "dispatchTransformedGenericPointerEvent(Landroid/view/MotionEvent;Landroid/view/View;)Z",
-      "flags": 2,
-      "body_sha256": "6977deb954d05daa79c5e2170c8183f5cab001541b5975f987c154d96336bfe0",
-      "source": "failure"
-    },
-    {
-      "signature": "dispatchTransformedTouchEvent(Landroid/view/MotionEvent;ZLandroid/view/View;I)Z",
-      "flags": 2,
-      "body_sha256": "ec19b281084c60a6652f8b05b8d54e45dd0f1250e4cb8edd4079ccc2d3bc68ea",
-      "source": "failure"
-    },
-    {
-      "signature": "drawCorner(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIIII)V",
-      "flags": 10,
-      "body_sha256": "cc9649570a62bff0022fbf3213659134a759ac6cc5fb2df7711289a13a52446e",
-      "source": "failure"
-    },
-    {
-      "signature": "drawRect(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIII)V",
-      "flags": 10,
-      "body_sha256": "a7667d7198b8d7de744e10c6af5aaac95ea00d835eb44062773fe40c3da1926e",
-      "source": "failure"
-    },
-    {
-      "signature": "drawRectCorners(Landroid/graphics/Canvas;IIIILandroid/graphics/Paint;II)V",
-      "flags": 10,
-      "body_sha256": "124eb4f52dbf5df026d1033fca625c9c3c51989455b4a67ab239a408056d202d",
-      "source": "failure"
-    },
-    {
-      "signature": "exitHoverTargets()V",
-      "flags": 2,
-      "body_sha256": "71380aa04a24658630aad72a8c42b16cd728823da88f5d773ab8c47c2281d79f",
-      "source": "failure"
-    },
-    {
-      "signature": "fillDifference(Landroid/graphics/Canvas;IIIIIIIILandroid/graphics/Paint;)V",
-      "flags": 10,
-      "body_sha256": "8246d3361b8f4c403a60c5041cb24b564af5701174ef9d3b24cd4ffcf00ca601",
-      "source": "failure"
-    },
-    {
-      "signature": "fillRect(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIII)V",
-      "flags": 10,
-      "body_sha256": "d6e067f4024a79b9be4cb91d10e277a28197178657f908df1ea901758a621e49",
-      "source": "failure"
-    },
-    {
-      "signature": "getChildMeasureSpec(III)I",
-      "flags": 9,
-      "body_sha256": "2cca2273ec5be9de3969dc9c3d3f7dbcddcf19cba819f34b57b34dc34e40ab11",
-      "source": "rom"
-    },
-    {
-      "signature": "getDebugPaint()Landroid/graphics/Paint;",
-      "flags": 10,
-      "body_sha256": "9c4e690b6fcadd9692459fef1c78e35aafb63d410a1e27a46463d4d0b6c94e01",
-      "source": "failure"
-    },
-    {
-      "signature": "getLocalPoint()Landroid/graphics/PointF;",
-      "flags": 2,
-      "body_sha256": "8099e8881d998f3e17a79906b31fe194c8e9350f33337a2df8f03e16cd24118a",
-      "source": "failure"
-    },
-    {
-      "signature": "getTouchTarget(Landroid/view/View;)Landroid/view/ViewGroup$TouchTarget;",
-      "flags": 2,
-      "body_sha256": "eee3c11baf53f2eb075197a2649b7dfd6c65e710d2cd3748ada56f14909aa8fb",
-      "source": "failure"
-    },
-    {
-      "signature": "hasBooleanFlag(I)Z",
-      "flags": 2,
-      "body_sha256": "05fcaa24d8a0e23ae3c5d347edbed895fbaea2cc1143c4ee6c3f1d3002322312",
-      "source": "rom"
-    },
-    {
-      "signature": "initFromAttributes(Landroid/content/Context;Landroid/util/AttributeSet;)V",
-      "flags": 2,
-      "body_sha256": "271fc904861fa0ef6d1bf667cc55053e55e27e12289405f8312b56c69f3cf3d9",
-      "source": "rom"
-    },
-    {
-      "signature": "initViewGroup()V",
-      "flags": 2,
-      "body_sha256": "8bf5c8ef1fce068a3cd4e33c8fb6d75e6d0459b304a097b728b899e2745c9da1",
-      "source": "rom"
-    },
-    {
-      "signature": "notifyAnimationListener()V",
-      "flags": 2,
-      "body_sha256": "c7e6c1dec229a7dd0dafee068609ef89aa7d67f7e748b17fe26f5e3ae7585761",
-      "source": "failure"
-    },
-    {
-      "signature": "obtainMotionEventNoHistoryOrSelf(Landroid/view/MotionEvent;)Landroid/view/MotionEvent;",
-      "flags": 10,
-      "body_sha256": "30c55228c06d79dc30a1cb53e1330c0e656fdc50a15f2076bcf682bc5c434783",
-      "source": "failure"
-    },
-    {
-      "signature": "removeFromArray(I)V",
-      "flags": 2,
-      "body_sha256": "2b5991ebde97b5a567f2e6e9422dcf5118ba041d73fd951981617405dd26c426",
-      "source": "rom"
-    },
-    {
-      "signature": "removeFromArray(II)V",
-      "flags": 2,
-      "body_sha256": "bc120949cd38def84aa2499425ece8fd862ef2294243a92de5b00110034dc122",
-      "source": "rom"
-    },
-    {
-      "signature": "removePointersFromTouchTargets(I)V",
-      "flags": 2,
-      "body_sha256": "7d156ad70fa2349c3ecaa2820c2907601211d6f2cc2c77edf791a07038e4b119",
-      "source": "failure"
-    },
-    {
-      "signature": "removeViewInternal(ILandroid/view/View;)V",
-      "flags": 2,
-      "body_sha256": "f4df5585b423efb4a516a67cf3a135c66baa1394257b05744bf8a72664a4dc6d",
-      "source": "rom"
-    },
-    {
-      "signature": "removeViewInternal(Landroid/view/View;)V",
-      "flags": 2,
-      "body_sha256": "726798562c760750169153299c6b89530d93b37dfb7257ea234a134f25691dd5",
-      "source": "rom"
-    },
-    {
-      "signature": "removeViewsInternal(II)V",
-      "flags": 2,
-      "body_sha256": "2b13c4d8a92637fdd35a7dc1c7c3d7ae383e6f05c5ef74d56592839900ccfa1c",
-      "source": "failure"
-    },
-    {
-      "signature": "resetCancelNextUpFlag(Landroid/view/View;)Z",
-      "flags": 10,
-      "body_sha256": "c0651c1280099a8f9097379c7bcb58da4f46c4ee83dfd275befacef891b225de",
-      "source": "failure"
-    },
-    {
-      "signature": "resetTouchState()V",
-      "flags": 2,
-      "body_sha256": "76602bc81ecf0c4a9b6248d374d99c87d7578e3a74db833fe56a03d58ed299b5",
-      "source": "failure"
-    },
-    {
-      "signature": "setBooleanFlag(IZ)V",
-      "flags": 2,
-      "body_sha256": "a74f3d1fdc4776e4ce89e08478d8a872f4ac70ecfe6fec2a6b47ad483f2d10a2",
-      "source": "rom"
-    },
-    {
-      "signature": "setLayoutMode(IZ)V",
-      "flags": 2,
-      "body_sha256": "9ba65017f10fd548ff95c7108a6d627c000016ba7cfb528bd0e5a73d2e26e8f6",
-      "source": "rom"
-    },
-    {
-      "signature": "sign(I)I",
-      "flags": 10,
-      "body_sha256": "88e936456e58ae75e972a482b1b6fa82078685b45184fa7e59bcd7f11b9f6d4a",
-      "source": "failure"
-    },
-    {
-      "signature": "addChildrenForAccessibility(Ljava/util/ArrayList;)V",
-      "flags": 1,
-      "body_sha256": "ace3e22e6ecee7e803e81d5de11075ae0c54c882aa6773a86985f239e3536017",
-      "source": "failure"
-    },
-    {
       "signature": "addFocusables(Ljava/util/ArrayList;II)V",
       "flags": 1,
       "body_sha256": "045d5b957d4e9fe1d7fa969c9d87e39383cabbdfebcf344956807bf8deced638",
       "source": "failure"
     },
     {
+      "signature": "addInArray(Landroid/view/View;I)V",
+      "flags": 2,
+      "body_sha256": "0dbcd71f4cd74b4bd5c345f451e5489ee7279e363a079833c8e5afa03e04b6cd",
+      "source": "rom"
+    },
+    {
       "signature": "addStatesFromChildren()Z",
       "flags": 1,
       "body_sha256": "f0f0fa24f011248b6740fb0fe213b7aade8ad865a6a291ec310653e812366775",
+      "source": "failure"
+    },
+    {
+      "signature": "addTouchTarget(Landroid/view/View;I)Landroid/view/ViewGroup$TouchTarget;",
+      "flags": 2,
+      "body_sha256": "f69f272fd51d7b9a07ff90c0fbd7a1847bab2a4e3882a007d6801f984a889624",
       "source": "failure"
     },
     {
@@ -879,6 +637,12 @@
       "source": "failure"
     },
     {
+      "signature": "addViewInner(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;Z)V",
+      "flags": 2,
+      "body_sha256": "1ab4b0e1e762a35e86ca4d7fe809cd66c188c1ca867a5cb24d17342ede21d7e4",
+      "source": "rom"
+    },
+    {
       "signature": "attachLayoutAnimationParameters(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;II)V",
       "flags": 4,
       "body_sha256": "5068e0b4e18a040837c3cf2880bbfdcf2b3534d524530e4ea7fa69198fbb3a50",
@@ -888,6 +652,12 @@
       "signature": "attachViewToParent(Landroid/view/View;ILandroid/view/ViewGroup$LayoutParams;)V",
       "flags": 4,
       "body_sha256": "83829b99714264ab960548e46e6b8e415cae56a72e5f26a7e74d0f15135d743d",
+      "source": "failure"
+    },
+    {
+      "signature": "bindLayoutAnimation(Landroid/view/View;)V",
+      "flags": 2,
+      "body_sha256": "f67a80804263087436f14e4ddd868494992eca36f43809c206db7472c72e88d8",
       "source": "failure"
     },
     {
@@ -901,6 +671,44 @@
       "flags": 4,
       "body_sha256": "4907a02ba9ba88281ca23dd1b82c64c9e9ea98d9b5e3710e52d9c6db2cf1e6e7",
       "source": "failure"
+    },
+    {
+      "signature": "canViewReceivePointerEvents(Landroid/view/View;)Z",
+      "flags": 10,
+      "body_sha256": "5f284d6faa5ebc96b746c676b537b1b23b5e412c29b198eaf1a4d35be82abe20",
+      "source": "failure"
+    },
+    {
+      "signature": "cancelAndClearTouchTargets(Landroid/view/MotionEvent;)V",
+      "flags": 2,
+      "body_sha256": "b03e6187602a2d2193d9b8bf2894c29adccb8bb01890030c4b17e80ad3230fc3",
+      "source": "failure"
+    },
+    {
+      "signature": "cancelHoverTarget(Landroid/view/View;)V",
+      "flags": 2,
+      "body_sha256": "c86e06f7d20d9b4819f19909cfde6b30e377a592597643aecf3651ab096bc0eb",
+      "source": "overlay",
+      "review": {
+        "reason": "Unattached test container input-service seam",
+        "inputs": "mFirstHoverTarget",
+        "outputs": "Original empty-target path only",
+        "state_owner": "Java fields only; no second hierarchy or geometry storage",
+        "failure_boundary": "Non-null target records and throws; input dispatch capability is not enabled"
+      }
+    },
+    {
+      "signature": "cancelTouchTarget(Landroid/view/View;)V",
+      "flags": 2,
+      "body_sha256": "88e58bf0346f04546e0d480f392b6ffb9657169886774ea57244e7a94006a31e",
+      "source": "overlay",
+      "review": {
+        "reason": "VD-06b original null Java target and process-local capture cancellation seam",
+        "inputs": "Actual Java mFirstTouchTarget and removed child identity; current process captured Java parent chain",
+        "outputs": "Clear integration capture for the removed subtree; no Java touch target or listener copy",
+        "state_owner": "Java hierarchy and listener state; integration capture identities only",
+        "failure_boundary": "Non-null original Java touch target records and throws; no split or full ROM dispatchTouchEvent"
+      }
     },
     {
       "signature": "checkLayoutParams(Landroid/view/ViewGroup$LayoutParams;)Z",
@@ -927,6 +735,12 @@
       "source": "failure"
     },
     {
+      "signature": "clearCachedLayoutMode()V",
+      "flags": 2,
+      "body_sha256": "064230db4e6cb2d6778f6a2a64e726ec1a32a35c47ff28b752fede61e2bc6cc3",
+      "source": "failure"
+    },
+    {
       "signature": "clearChildFocus(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "5ad29cdd6957a38b60e1e3d34a88fca0adf241f8e5e00d82249d08c9c6d330f9",
@@ -945,6 +759,12 @@
       "source": "rom"
     },
     {
+      "signature": "clearTouchTargets()V",
+      "flags": 2,
+      "body_sha256": "ccc8f8351a18152cc692418c6ac73c1a230d46beb122d004d866d04102543a78",
+      "source": "failure"
+    },
+    {
       "signature": "computeOpticalInsets()Landroid/graphics/Insets;",
       "flags": 0,
       "body_sha256": "2e713cb3715773c4ab341dcce41cfe45e315a51a0abbe2efd44ee02dc5b89630",
@@ -961,6 +781,12 @@
       "flags": 4,
       "body_sha256": "ac5502d0e44076c5461e93da7f8ad76fe6adcff4104b65756e43c34281033e5e",
       "source": "failure"
+    },
+    {
+      "signature": "debugDraw()Z",
+      "flags": 2,
+      "body_sha256": "ead13a25d35b8a37ab9343123f1a85af0ac784573881c04e481a3427d9ac5352",
+      "source": "rom"
     },
     {
       "signature": "detachAllViewsFromParent()V",
@@ -984,6 +810,12 @@
       "signature": "detachViewsFromParent(II)V",
       "flags": 4,
       "body_sha256": "98c76ed330e9073aacccce176a836a31da339f02c5c1e7a7688e5aa62f31ea4a",
+      "source": "failure"
+    },
+    {
+      "signature": "dipsToPixels(I)I",
+      "flags": 2,
+      "body_sha256": "eec51bef2b3db633d6c016509a9c0d4d7409c403c187c794ac46e375adf4a326",
       "source": "failure"
     },
     {
@@ -1168,6 +1000,18 @@
       "source": "failure"
     },
     {
+      "signature": "dispatchTransformedGenericPointerEvent(Landroid/view/MotionEvent;Landroid/view/View;)Z",
+      "flags": 2,
+      "body_sha256": "6977deb954d05daa79c5e2170c8183f5cab001541b5975f987c154d96336bfe0",
+      "source": "failure"
+    },
+    {
+      "signature": "dispatchTransformedTouchEvent(Landroid/view/MotionEvent;ZLandroid/view/View;I)Z",
+      "flags": 2,
+      "body_sha256": "ec19b281084c60a6652f8b05b8d54e45dd0f1250e4cb8edd4079ccc2d3bc68ea",
+      "source": "failure"
+    },
+    {
       "signature": "dispatchUnhandledMove(Landroid/view/View;I)Z",
       "flags": 1,
       "body_sha256": "03e20584975c771854174c4f16a9f4bcd1b4a159907579d225b8d41b5495dd0d",
@@ -1204,6 +1048,24 @@
       "source": "failure"
     },
     {
+      "signature": "drawCorner(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIIII)V",
+      "flags": 10,
+      "body_sha256": "cc9649570a62bff0022fbf3213659134a759ac6cc5fb2df7711289a13a52446e",
+      "source": "failure"
+    },
+    {
+      "signature": "drawRect(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIII)V",
+      "flags": 10,
+      "body_sha256": "a7667d7198b8d7de744e10c6af5aaac95ea00d835eb44062773fe40c3da1926e",
+      "source": "failure"
+    },
+    {
+      "signature": "drawRectCorners(Landroid/graphics/Canvas;IIIILandroid/graphics/Paint;II)V",
+      "flags": 10,
+      "body_sha256": "124eb4f52dbf5df026d1033fca625c9c3c51989455b4a67ab239a408056d202d",
+      "source": "failure"
+    },
+    {
       "signature": "drawableStateChanged()V",
       "flags": 4,
       "body_sha256": "83c30a92d724a65e084aae1eac27724238eda6fcbeeb049e418dd89b5da6ba48",
@@ -1213,6 +1075,24 @@
       "signature": "endViewTransition(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "5e2b46edf222fb5f0195eb8e1f02f6b653e4a948f621095b6a71cfd924afbe89",
+      "source": "failure"
+    },
+    {
+      "signature": "exitHoverTargets()V",
+      "flags": 2,
+      "body_sha256": "71380aa04a24658630aad72a8c42b16cd728823da88f5d773ab8c47c2281d79f",
+      "source": "failure"
+    },
+    {
+      "signature": "fillDifference(Landroid/graphics/Canvas;IIIIIIIILandroid/graphics/Paint;)V",
+      "flags": 10,
+      "body_sha256": "8246d3361b8f4c403a60c5041cb24b564af5701174ef9d3b24cd4ffcf00ca601",
+      "source": "failure"
+    },
+    {
+      "signature": "fillRect(Landroid/graphics/Canvas;Landroid/graphics/Paint;IIII)V",
+      "flags": 10,
+      "body_sha256": "d6e067f4024a79b9be4cb91d10e277a28197178657f908df1ea901758a621e49",
       "source": "failure"
     },
     {
@@ -1324,6 +1204,12 @@
       "source": "failure"
     },
     {
+      "signature": "getChildMeasureSpec(III)I",
+      "flags": 9,
+      "body_sha256": "2cca2273ec5be9de3969dc9c3d3f7dbcddcf19cba819f34b57b34dc34e40ab11",
+      "source": "rom"
+    },
+    {
       "signature": "getChildStaticTransformation(Landroid/view/View;Landroid/view/animation/Transformation;)Z",
       "flags": 4,
       "body_sha256": "109e3a6000555a800a45d27dd0fe9a2b8353854049696fb9780b49a547fa64f9",
@@ -1345,6 +1231,12 @@
       "signature": "getClipChildren()Z",
       "flags": 1,
       "body_sha256": "943c413d62c330001372a876b441c7e3c6fff50047389b4ed9df57a4fe289fd9",
+      "source": "failure"
+    },
+    {
+      "signature": "getDebugPaint()Landroid/graphics/Paint;",
+      "flags": 10,
+      "body_sha256": "9c4e690b6fcadd9692459fef1c78e35aafb63d410a1e27a46463d4d0b6c94e01",
       "source": "failure"
     },
     {
@@ -1384,6 +1276,12 @@
       "source": "failure"
     },
     {
+      "signature": "getLocalPoint()Landroid/graphics/PointF;",
+      "flags": 2,
+      "body_sha256": "8099e8881d998f3e17a79906b31fe194c8e9350f33337a2df8f03e16cd24118a",
+      "source": "failure"
+    },
+    {
       "signature": "getOverlay()Landroid/view/ViewGroupOverlay;",
       "flags": 1,
       "body_sha256": "8827c9e676fbb4a1043c1980d92b38009df1e4c380b89d107b8f43cdcb488b7e",
@@ -1402,9 +1300,21 @@
       "source": "failure"
     },
     {
+      "signature": "getTouchTarget(Landroid/view/View;)Landroid/view/ViewGroup$TouchTarget;",
+      "flags": 2,
+      "body_sha256": "eee3c11baf53f2eb075197a2649b7dfd6c65e710d2cd3748ada56f14909aa8fb",
+      "source": "failure"
+    },
+    {
       "signature": "handleFocusGainInternal(ILandroid/graphics/Rect;)V",
       "flags": 0,
       "body_sha256": "6db70f6a236a14422a5ff576ee9b6c207d1afa4cf8f2df666d4e3b2639f0d9f9",
+      "source": "rom"
+    },
+    {
+      "signature": "hasBooleanFlag(I)Z",
+      "flags": 2,
+      "body_sha256": "05fcaa24d8a0e23ae3c5d347edbed895fbaea2cc1143c4ee6c3f1d3002322312",
       "source": "rom"
     },
     {
@@ -1435,6 +1345,18 @@
       "signature": "indexOfChild(Landroid/view/View;)I",
       "flags": 1,
       "body_sha256": "9807756230e3e004a1269a531d484e35f5d2df732bdcdeefc736cebe17957db5",
+      "source": "rom"
+    },
+    {
+      "signature": "initFromAttributes(Landroid/content/Context;Landroid/util/AttributeSet;)V",
+      "flags": 2,
+      "body_sha256": "271fc904861fa0ef6d1bf667cc55053e55e27e12289405f8312b56c69f3cf3d9",
+      "source": "rom"
+    },
+    {
+      "signature": "initViewGroup()V",
+      "flags": 2,
+      "body_sha256": "8bf5c8ef1fce068a3cd4e33c8fb6d75e6d0459b304a097b728b899e2745c9da1",
       "source": "rom"
     },
     {
@@ -1564,6 +1486,12 @@
       "source": "rom"
     },
     {
+      "signature": "notifyAnimationListener()V",
+      "flags": 2,
+      "body_sha256": "c7e6c1dec229a7dd0dafee068609ef89aa7d67f7e748b17fe26f5e3ae7585761",
+      "source": "failure"
+    },
+    {
       "signature": "notifyChildOfDrag(Landroid/view/View;)Z",
       "flags": 0,
       "body_sha256": "0c08a76e0353a1826d25bb6d905fc982d543f069af568f1ff2496c52f5074a70",
@@ -1573,6 +1501,12 @@
       "signature": "notifySubtreeAccessibilityStateChanged(Landroid/view/View;Landroid/view/View;I)V",
       "flags": 1,
       "body_sha256": "4070d8092adbc7e54c193e0cb63de68b4f4977c661d900c60902d6f8ed3dbd8a",
+      "source": "failure"
+    },
+    {
+      "signature": "obtainMotionEventNoHistoryOrSelf(Landroid/view/MotionEvent;)Landroid/view/MotionEvent;",
+      "flags": 10,
+      "body_sha256": "30c55228c06d79dc30a1cb53e1330c0e656fdc50a15f2076bcf682bc5c434783",
       "source": "failure"
     },
     {
@@ -1759,6 +1693,24 @@
       "source": "failure"
     },
     {
+      "signature": "removeFromArray(I)V",
+      "flags": 2,
+      "body_sha256": "2b5991ebde97b5a567f2e6e9422dcf5118ba041d73fd951981617405dd26c426",
+      "source": "rom"
+    },
+    {
+      "signature": "removeFromArray(II)V",
+      "flags": 2,
+      "body_sha256": "bc120949cd38def84aa2499425ece8fd862ef2294243a92de5b00110034dc122",
+      "source": "rom"
+    },
+    {
+      "signature": "removePointersFromTouchTargets(I)V",
+      "flags": 2,
+      "body_sha256": "7d156ad70fa2349c3ecaa2820c2907601211d6f2cc2c77edf791a07038e4b119",
+      "source": "failure"
+    },
+    {
       "signature": "removeView(Landroid/view/View;)V",
       "flags": 1,
       "body_sha256": "ee07e56651186a1bb09f4bea5e728b9dc1d322309e2e6d696d022e5108aef5a2",
@@ -1777,6 +1729,18 @@
       "source": "rom"
     },
     {
+      "signature": "removeViewInternal(ILandroid/view/View;)V",
+      "flags": 2,
+      "body_sha256": "f4df5585b423efb4a516a67cf3a135c66baa1394257b05744bf8a72664a4dc6d",
+      "source": "rom"
+    },
+    {
+      "signature": "removeViewInternal(Landroid/view/View;)V",
+      "flags": 2,
+      "body_sha256": "726798562c760750169153299c6b89530d93b37dfb7257ea234a134f25691dd5",
+      "source": "rom"
+    },
+    {
       "signature": "removeViews(II)V",
       "flags": 1,
       "body_sha256": "392f8e075ff06f30ba7c8005c3b60a893ccf472cd47ff15472cbf9a7e7032160",
@@ -1786,6 +1750,12 @@
       "signature": "removeViewsInLayout(II)V",
       "flags": 1,
       "body_sha256": "69a1038dfd297779299bc40cc6293457f5c546c3f41390b6e097473f6c4e3571",
+      "source": "failure"
+    },
+    {
+      "signature": "removeViewsInternal(II)V",
+      "flags": 2,
+      "body_sha256": "2b13c4d8a92637fdd35a7dc1c7c3d7ae383e6f05c5ef74d56592839900ccfa1c",
       "source": "failure"
     },
     {
@@ -1831,6 +1801,12 @@
       "source": "failure"
     },
     {
+      "signature": "resetCancelNextUpFlag(Landroid/view/View;)Z",
+      "flags": 10,
+      "body_sha256": "c0651c1280099a8f9097379c7bcb58da4f46c4ee83dfd275befacef891b225de",
+      "source": "failure"
+    },
+    {
       "signature": "resetResolvedDrawables()V",
       "flags": 4,
       "body_sha256": "44d42f2be17bf82f4bbb521fe04799370bdf104c80e34259cba163786e9e2828",
@@ -1864,6 +1840,12 @@
       "signature": "resetSubtreeAccessibilityStateChanged()V",
       "flags": 0,
       "body_sha256": "aff16f18bbb976383806baecce7424c01011ed110881de3be0afa23934e461c8",
+      "source": "failure"
+    },
+    {
+      "signature": "resetTouchState()V",
+      "flags": 2,
+      "body_sha256": "76602bc81ecf0c4a9b6248d374d99c87d7578e3a74db833fe56a03d58ed299b5",
       "source": "failure"
     },
     {
@@ -1933,6 +1915,12 @@
       "source": "rom"
     },
     {
+      "signature": "setBooleanFlag(IZ)V",
+      "flags": 2,
+      "body_sha256": "a74f3d1fdc4776e4ce89e08478d8a872f4ac70ecfe6fec2a6b47ad483f2d10a2",
+      "source": "rom"
+    },
+    {
       "signature": "setChildrenDrawingCacheEnabled(Z)V",
       "flags": 4,
       "body_sha256": "8b1b602e290d64b9e5de28e8c834c5af69a2af8277fcef57417fb8c5b715177d",
@@ -1965,7 +1953,7 @@
     {
       "signature": "setDescendantFocusability(I)V",
       "flags": 1,
-      "body_sha256": "08c1149f0d32c8e985bffba2ac82e1f1df724c7d2eaecb04dc63afef3e78266f",
+      "body_sha256": "22df5a90101eb494d9824d71a8441399cf7fe902196a8afbc940048015b52340",
       "source": "rom"
     },
     {
@@ -1985,6 +1973,12 @@
       "flags": 1,
       "body_sha256": "7c8030149e031ebf069aa35051dd813f294f5161c11dbce25150d18fb20c0b27",
       "source": "failure"
+    },
+    {
+      "signature": "setLayoutMode(IZ)V",
+      "flags": 2,
+      "body_sha256": "9ba65017f10fd548ff95c7108a6d627c000016ba7cfb528bd0e5a73d2e26e8f6",
+      "source": "rom"
     },
     {
       "signature": "setLayoutTransition(Landroid/animation/LayoutTransition;)V",
@@ -2026,6 +2020,12 @@
       "signature": "showContextMenuForChild(Landroid/view/View;)Z",
       "flags": 1,
       "body_sha256": "11d52f4bd78fd9e8aa21dc0e1dd12c0b2f9fdf41f9683d55a113d1aa45e5f308",
+      "source": "failure"
+    },
+    {
+      "signature": "sign(I)I",
+      "flags": 10,
+      "body_sha256": "88e936456e58ae75e972a482b1b6fa82078685b45184fa7e59bcd7f11b9f6d4a",
       "source": "failure"
     },
     {

@@ -1,6 +1,6 @@
 # 模块：BootDex guest ICU JNI
 
-本目录实现 `api19.json` 审计清单中 required_backend 的 ICU、NativeDecimalFormat、
+本目录实现 `api19.json` 审计清单中 required_backend 的 ICU（含 Locale 显示名、ISO3 与可用区域枚举）、NativeDecimalFormat、
 NativeNormalizer、Pattern/Matcher、字符集名称枚举与 TimeZoneNames native。源码只调用 ICU 51 C ABI；禁止包含 ICU C++ API、链接 NDK
 libc++，或跨越 API 19 STLport C++ ABI。
 

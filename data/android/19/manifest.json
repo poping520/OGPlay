@@ -41,43 +41,43 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "078c13c528bb55e5b8a5ec4df750aee065a67cb5a7db6091c1828fd02964cbb2",
+    "recipe_sha256": "00b41f811dcc95e8668c969750798c5230286a6edd37c3e9cdf5db2361a5afe9",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
       "entry": "META-INF/ogplay/system-resources.json",
-      "payload_sha256": "d818e8e8fabbc422c5794489a3850126ac96e435b057acda57000a9639678130"
+      "payload_sha256": "e920b02a5b6e776e7e69c43e300f72a4e8c5b802d7f021c93ebe9876344ba081"
     },
     "sources": [
       {
         "source_project": "platform/libcore",
         "source_jar": "core.jar",
-        "source_jar_sha256": "996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef"
+        "source_jar_sha256": "60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee"
       },
       {
         "source_project": "platform/libcore",
         "source_jar": "conscrypt.jar",
-        "source_jar_sha256": "43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e"
+        "source_jar_sha256": "c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004"
       },
       {
         "source_project": "platform/external/apache-http",
         "source_jar": "ext.jar",
-        "source_jar_sha256": "618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c"
+        "source_jar_sha256": "e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework.jar",
-        "source_jar_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48"
+        "source_jar_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "framework2.jar",
-        "source_jar_sha256": "b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea"
+        "source_jar_sha256": "5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973"
       },
       {
         "source_project": "platform/frameworks/base",
         "source_jar": "android.policy.jar",
-        "source_jar_sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae"
+        "source_jar_sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1"
       },
       {
         "source_project": "OGPlay",
@@ -93,37 +93,37 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 10381045,
-    "sha256": "dbdde16cc4607f9f9cd808b059a7dad84e836bcbed9e6dbc2c9dac233704391e",
+    "size": 11083140,
+    "sha256": "904e0f7897ec8e89aab7e8c1fb8b7b2f29945588e9afb2ce87ffe24925f32438",
     "dex_entry": "classes.dex",
-    "dex_size": 6364328,
-    "dex_sha256": "0acab3ef97f558db5586e287253e787c5e91f48fe3d6c79512de69186904b984",
-    "class_count": 3916,
+    "dex_size": 6202560,
+    "dex_sha256": "bf9fc859e4053703a6478c8b0d71480709a03a5dab7f12dc39d464e76d3ef9ad",
+    "class_count": 3865,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
     "candidate_recipe": {
       "path": "tools/bootdex/java-traversal.json",
-      "sha256": "d886141832241904f584c6520c5e4d26571c7eb31b16dfe0b6bfbe6bec8ed01f",
+      "sha256": "59e7d89113b36d79a1cab8031e149320682d660111f1e65ff88f6df6bef182f2",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "615b66b6beb5b7ad523060f9b638f6854cce216a04f9b70f9cb4a8f3aa9428d7"
+      "payload_sha256": "21ccd1dd208f473a21f3bfd1b5793facdd74a59e4d5651a879c6a13f6fbb75dc"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "b00b143e6346119d1d935d255aa59b9e80590415219af24af127058fedd6961b",
+      "sha256": "1c0fce01dfc597e27fdf29d9dbf50496d61b0abd3307de59e1933ba3e8394ea7",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "5e08cd84c735130dcdc7b896840f0c794c1627f0578ccd13d9920289833acd7b",
+      "manifest_sha256": "3f8d8e023fd294be10e803cd56b5d8af40e4fb46752e10f78b779e550628e94d",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "1fe99b2d50c26262b077d251487c6f1294277c9c650bd7b07e2e53a7e7d9bfd0"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",
       "schema_version": 1,
-      "sha256": "885d83a0161f8cc634ea1569c3caf180f6dd3bfd0b10f9f1688936102d2b4102"
+      "sha256": "a26b612df35715ef48bfb863b46bd0684d37929d805bc60273a8b240e60e7929"
     },
     "experimental_video_adapter": {
       "review": "tools/bootdex/view-video-adapter.json",
@@ -133,10 +133,10 @@
     },
     "experimental_inflater": {
       "source": "android.policy.jar",
-      "sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
+      "sha256": "660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1",
       "owner": "Lcom/android/internal/policy/impl/PhoneLayoutInflater;",
-      "reference_sha256": "c351a5c6e5a012f68810db5d87f9932dd40e3658c07a88f4ba6a72c9f43f629a",
-      "baseline_sha256": "551bb6bd9317f62ed618b55175831c3101b64b00bc12878742012bf1909051bc"
+      "reference_sha256": "4ad8d16d37b9218b9f6929649a07f684803c90e90c434b3960062e2579c0ad68",
+      "baseline_sha256": "03ae9e0c2f5caf958f821965190004c5ea248faaa4ea156cdab310266f09bb96"
     }
   },
   "icu": {
@@ -274,8 +274,8 @@
     {
       "path": "lib/libogplay_jni.so",
       "source_project": "ogplay",
-      "size": 148620,
-      "sha256": "c1c3b338ab6ac419ff76cc6e90c3eda6f67c4265851fa96bbab6a9ab3eea16f7",
+      "size": 151984,
+      "sha256": "fa621e891487c55e8197108492028eefe3621034447ac14e06b5235c6dc2edaf",
       "soname": "libogplay_jni.so",
       "needed": [
         "libssl.so",
@@ -306,7 +306,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "5b5898f108fa67384735e2857315f3dc392cd111ab34c3ea82a771141ad17ab7"
+            "sha256": "2d64f83220a5b378efd143cfaa4b0edc1415e34df35cf69d1f1b9c147511a3e7"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
@@ -326,7 +326,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "e95745513e9877f04cb585f16c7aa4db776479615fbf871c4a5bc6ac8ba2495f"
+            "sha256": "e0a5922da0a7193efcc27573ec3c63c71435d04206691dd682a67bcfbc0974b6"
           }
         ],
         "inputs": [

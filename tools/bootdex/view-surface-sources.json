@@ -4,9 +4,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView$1;",
       "smali_sha256": "a4bdc789458f1798e3336a6e3f707145f38f8976eb68c7611daf0ed79ea8b4a4",
       "methods": [
@@ -36,9 +36,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView$2;",
       "smali_sha256": "20eba04de5108afd055e169ae3692c3852772acc2e264a5303b36e86d9d6e0e7",
       "methods": [
@@ -68,9 +68,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView$3;",
       "smali_sha256": "d3711f06bde41131248f35620797e512a0839bdfeed20e1b21bc42202dd22db1",
       "methods": [
@@ -100,9 +100,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView$4;",
       "smali_sha256": "b69f4bfec6947c1d17be9e3de85efacc7424f9f52871cb034448b2041fb3eb16",
       "methods": [
@@ -110,12 +110,6 @@
           "signature": "<init>(Landroid/view/SurfaceView;)V",
           "flags": 65536,
           "body_sha256": "438edc8a8a567a14cf5d56a13215bbd595235288af789415cf2b847ecf3c66ba",
-          "source": "failure"
-        },
-        {
-          "signature": "internalLockCanvas(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
-          "flags": 18,
-          "body_sha256": "e629ddbaf4f04a74b5a1068f5e81ba2535e0818dcd5d2d3c7f31e8e4b739293d",
           "source": "failure"
         },
         {
@@ -134,6 +128,12 @@
           "signature": "getSurfaceFrame()Landroid/graphics/Rect;",
           "flags": 1,
           "body_sha256": "9210a55542c7636b32ac48fc615bb17141e4973d4c5e5df63803597294882bfb",
+          "source": "failure"
+        },
+        {
+          "signature": "internalLockCanvas(Landroid/graphics/Rect;)Landroid/graphics/Canvas;",
+          "flags": 18,
+          "body_sha256": "e629ddbaf4f04a74b5a1068f5e81ba2535e0818dcd5d2d3c7f31e8e4b739293d",
           "source": "failure"
         },
         {
@@ -216,9 +216,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView$MyWindow;",
       "smali_sha256": "82442481a3d2c4689922cfeab2deaa513f0a7f9889a08122585c4eb785e8fac5",
       "methods": [
@@ -284,9 +284,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/SurfaceView;",
       "smali_sha256": "9715827df06ed3569ca518ca9c08ba1baf552aa64deaa72a12c36b42e9b11a6e",
       "methods": [
@@ -336,24 +336,6 @@
           "source": "failure"
         },
         {
-          "signature": "getSurfaceCallbacks()[Landroid/view/SurfaceHolder$Callback;",
-          "flags": 2,
-          "body_sha256": "080dfa842bb6c948cf582e5196395f4c2db3ca6ec7124a67bc726fa687c327ee",
-          "source": "failure"
-        },
-        {
-          "signature": "init()V",
-          "flags": 2,
-          "body_sha256": "d53ad0fdad72d2c93551ec3e14d891503198e8502382f97da97d3e2bed8f01ee",
-          "source": "failure"
-        },
-        {
-          "signature": "updateWindow(ZZ)V",
-          "flags": 2,
-          "body_sha256": "68142002641ed26fcafe3a424b54c2014d7c4a46fdde159c4b6bfa0cb9d09c65",
-          "source": "failure"
-        },
-        {
           "signature": "dispatchDraw(Landroid/graphics/Canvas;)V",
           "flags": 4,
           "body_sha256": "e075469803fb91e8bc22d3d7d579ce4b7e88ba48fe1445c1d6091a200139517c",
@@ -385,9 +367,21 @@
           }
         },
         {
+          "signature": "getSurfaceCallbacks()[Landroid/view/SurfaceHolder$Callback;",
+          "flags": 2,
+          "body_sha256": "080dfa842bb6c948cf582e5196395f4c2db3ca6ec7124a67bc726fa687c327ee",
+          "source": "failure"
+        },
+        {
           "signature": "handleGetNewSurface()V",
           "flags": 0,
           "body_sha256": "792ca8ae4951e6ef9e97b9a2ce42ecbc73bd7b468f4024938bfc484061e96f9c",
+          "source": "failure"
+        },
+        {
+          "signature": "init()V",
+          "flags": 2,
+          "body_sha256": "d53ad0fdad72d2c93551ec3e14d891503198e8502382f97da97d3e2bed8f01ee",
           "source": "failure"
         },
         {
@@ -483,6 +477,12 @@
             "state_owner": "UiTree owns compositor layer only; no WMS mWindowType mirror",
             "failure_boundary": "missing UiNode fails; arbitrary WMS/layer rebuilding unsupported"
           }
+        },
+        {
+          "signature": "updateWindow(ZZ)V",
+          "flags": 2,
+          "body_sha256": "68142002641ed26fcafe3a424b54c2014d7c4a46fdde159c4b6bfa0cb9d09c65",
+          "source": "failure"
         }
       ],
       "fields": [

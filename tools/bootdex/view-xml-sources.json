@@ -4,9 +4,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/XmlBlock;",
       "smali_sha256": "5dbcf4b0b135484389d44d41bfa5c2edcf72533ac29a0bfbc80840ac7e4357a3",
       "fields": [
@@ -492,11 +492,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/XmlBlock$Parser;",
-      "smali_sha256": "4b07eab2c142215666a8dd74744d73b13ba7842e2ec9adf7407a1ae247290a9f",
+      "smali_sha256": "79d1b9f4f7c77a4dacb46372fb5aaa076b6c2477a48f11ee11e674d8f017d929",
       "fields": [
         {
           "signature": "mBlock:Landroid/content/res/XmlBlock;",
@@ -623,7 +623,7 @@
         {
           "signature": "getAttributeName(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "fd976aa07c349ed0392eff94c514fe344da39c802e0ed5185494d11aec675dba",
+          "body_sha256": "060d2f762311070da58baeda834c8bfee60bde99359f37f6c4e9617bc3202baa",
           "source": "rom"
         },
         {
@@ -635,7 +635,7 @@
         {
           "signature": "getAttributeNamespace(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "35b38feecd71efc0ddb5743dc9b49b3f48cce93995c46171dc347ba08edc2088",
+          "body_sha256": "3339ea41f5931dac89d513e06a45f9329a631eb59cd900e5deec15fcdfe8de6a",
           "source": "rom"
         },
         {
@@ -677,7 +677,7 @@
         {
           "signature": "getAttributeValue(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "05c3ad14ce82a2297dcbf406e0d045de6c49e21af90779bbaa32c72760c5877f",
+          "body_sha256": "83a2d29b6a586ba095e8f270a112122dc7e26a82e04cf64bbd4effe8181ac3fa",
           "source": "rom"
         },
         {
@@ -689,7 +689,7 @@
         {
           "signature": "getClassAttribute()Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "65fb00b997fb72c41e8b3177da0a122eb0e901f1f70f8820fa271ed56b33b280",
+          "body_sha256": "3c347fbcd6ae0f0638b104f7dcb7007ad38c3dd1ad33d85ed732f6af2f6f6d1c",
           "source": "rom"
         },
         {
@@ -719,7 +719,7 @@
         {
           "signature": "getIdAttribute()Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "69a92f5929b30951b79e1cdf499269c242547326b625859713a47dfc1aca8671",
+          "body_sha256": "cda95e0fa79944e868369927f48aa8fbe665485aa58e34ed2513dd0f07c7a3c9",
           "source": "rom"
         },
         {
@@ -743,13 +743,13 @@
         {
           "signature": "getName()Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "515335b519eaa44675a0b3f9d1acf2983c5468ec6f1538228714a8a4eef2bd8f",
+          "body_sha256": "daa68369053e3e1b01967c324480b4cf4ac7690638cfc1f7e00afc1dcd03e8ba",
           "source": "rom"
         },
         {
           "signature": "getNamespace()Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "1c682ea6dfdc7c130bc8f3ed04a5c1c69295a0eae43f377c82f9fe88452e40e9",
+          "body_sha256": "d9a84300df9c905f417f1da5f26a0cf0f2b588d6d73e5ff7bdc8da6cde6ab82d",
           "source": "rom"
         },
         {
@@ -809,7 +809,7 @@
         {
           "signature": "getText()Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "bb1be3179b844f2e8d211e546271799755ae269135b25f6e19d6307c76a29bcf",
+          "body_sha256": "eeb4850a4b4170a08e5bddb5ff1b62afa9a045f8fd95686e18b7a00e21b6f7e1",
           "source": "rom"
         },
         {
@@ -896,11 +896,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/StringBlock;",
-      "smali_sha256": "a55829d65e9ea0e1b6c44b26e09f0b7549e3ba9288208543ddffaebd041e37b6",
+      "smali_sha256": "1889ea80fc5dc1d2157cd58d123cc3cb94c27752129a36206e45fbd391f3c414",
       "fields": [
         {
           "signature": "TAG:Ljava/lang/String;",
@@ -979,7 +979,7 @@
         {
           "signature": "applyStyles(Ljava/lang/String;[ILandroid/content/res/StringBlock$StyleIDs;)Ljava/lang/CharSequence;",
           "flags": 2,
-          "body_sha256": "8f1221be36c6bd9113260616476f0cf87fefc5285c78ffcc884572b289dfb312",
+          "body_sha256": "067ba2faab9aa1b3c47c0b12d4732173602cc364cc8cdfbda1669f9e3e74f118",
           "source": "failure"
         },
         {
@@ -991,7 +991,7 @@
         {
           "signature": "get(I)Ljava/lang/CharSequence;",
           "flags": 1,
-          "body_sha256": "51f3e81963d561b948f68ee428144dde15d0e5ff08e314dd71288f35f9a3a9ec",
+          "body_sha256": "07b366bf5c689e44033a81df075e5803b2cc89d1523887acc14ae589c5439305",
           "source": "overlay",
           "review": {
             "reason": "DVM-287 bounded plain-string adapter preserves ROM cache identity; nativeGetStyle remains unapproved failure",
@@ -1081,9 +1081,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/StringBlock$StyleIDs;",
       "smali_sha256": "dc1094191ea81032b66166acba7a70f04433b264f365db5736685a1539e880e6",
       "fields": [

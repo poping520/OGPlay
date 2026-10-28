@@ -4,11 +4,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/AssetManager;",
-      "smali_sha256": "32a4dcc7ec5ca62be08c9f53bdaf20568c5f0dfbcfb78e195d37c7fbf5b05537",
+      "smali_sha256": "47689dc82057263e42334ad0ce079a2441ee3f70168258802eed7d3e924a1656",
       "fields": [
         {
           "signature": "ACCESS_BUFFER:I",
@@ -95,42 +95,6 @@
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
-          "signature": "mAppName:Ljava/lang/String;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mAssetDir:Ljava/lang/String;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mCommonResCookie:I",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mCommonResPackageName:Ljava/lang/String;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mIconPackCookie:I",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mIconPackageName:Ljava/lang/String;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
           "signature": "mNObject:I",
           "flags": 2,
           "source": "failure",
@@ -173,24 +137,6 @@
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
-          "signature": "mThemeCookies:Ljava/util/ArrayList;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mThemePackageName:Ljava/lang/String;",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mThemeSupport:Z",
-          "flags": 2,
-          "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
           "signature": "mValue:Landroid/util/TypedValue;",
           "flags": 18,
           "source": "rom",
@@ -213,13 +159,13 @@
         {
           "signature": "<clinit>()V",
           "flags": 65544,
-          "body_sha256": "63a4df0d4c22313dab9e60fdeec72bc74793c58ab84121c37cc9cdc9311f0224",
+          "body_sha256": "41cb844f1d3dea720a51ed93cd1d70acda55008f613debfabe96c9fc56922030",
           "source": "rom"
         },
         {
           "signature": "<init>()V",
           "flags": 65537,
-          "body_sha256": "532bfe57b4fb6811f3c800c188cd4b462a2e9759300403542dfe5c76779f6ff5",
+          "body_sha256": "b59520f0508ee7b8df77004b1d91483020275fc07a9d17deed551beb86243d75",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -232,55 +178,55 @@
         {
           "signature": "<init>(Z)V",
           "flags": 65538,
-          "body_sha256": "2f6c3b94b1a71f93958d372cfed3f48e1461cc86236c65e8cebc60b5f5b69c1a",
+          "body_sha256": "b4c8fd79e082cfcf27fe308385602231602fdbd0d64578e4c6b73aa9ef9cc50a",
           "source": "failure"
         },
         {
           "signature": "access$100(Landroid/content/res/AssetManager;I)J",
           "flags": 4104,
-          "body_sha256": "f31206eaf7a4dcd37dcab244638ecc2af50c63f54a2b6c5c97f0f04910958ee1",
+          "body_sha256": "c280b98efb656f3ce8d21090af70bf69d29441b9ffbb9e1726ba6f23b8786814",
           "source": "failure"
         },
         {
           "signature": "access$200(Landroid/content/res/AssetManager;I)I",
           "flags": 4104,
-          "body_sha256": "b5c575807e7eef8224e90943589aed72d8c36f2cb221323108542c5118c1056d",
+          "body_sha256": "524c5d686b528b4b2d6dccae17d146408f9544c6404633e8ebfa93a874e99382",
           "source": "failure"
         },
         {
           "signature": "access$300(Landroid/content/res/AssetManager;I)J",
           "flags": 4104,
-          "body_sha256": "5a2acaff8df99ca8322a4e60805ed4bc24559768fa9cfcfa440f82bf11d367bb",
+          "body_sha256": "6d6989b717bf942c822eb2ac22e4b699dc2bc9a29bc0363ef577014bbb24dc0f",
           "source": "failure"
         },
         {
           "signature": "access$400(Landroid/content/res/AssetManager;I)V",
           "flags": 4104,
-          "body_sha256": "d81d7171ef44d7732bcecc5358d201f62ad18a0de86da691d4b01bada294035f",
+          "body_sha256": "1047f648f1df3159733d67689e986be0c4207869e0fb838848d6cb0b6b6aae4b",
           "source": "failure"
         },
         {
           "signature": "access$500(Landroid/content/res/AssetManager;I)V",
           "flags": 4104,
-          "body_sha256": "d42dacbc0d1ebe9a697939e99ede6cc22126a5f263aa49e12b26d2ca438e97bb",
+          "body_sha256": "f048ffdeec4f85c4b7b53e2fb5dd66006747f45caf2f11cc5f1fb6deec87d28c",
           "source": "failure"
         },
         {
           "signature": "access$600(Landroid/content/res/AssetManager;IJI)J",
           "flags": 4104,
-          "body_sha256": "02f455ffb94c0a439f526c0ce0bfe408b0ee3ccb78eeebc3420939dbc5c37f8b",
+          "body_sha256": "65210ae4ec525ea93a84034809fd8d8dbb82335fb535141fb18d45a51d9ae40b",
           "source": "failure"
         },
         {
           "signature": "access$700(Landroid/content/res/AssetManager;I[BII)I",
           "flags": 4104,
-          "body_sha256": "214a08d2259b4742e57af1bc83c735b5f6e54550694e80253300fb7f9c653b97",
+          "body_sha256": "19963f94971ec7b07f1fd3c0fa48caccfd40fafccc71f5a3a1b6234fb4fa2bd7",
           "source": "failure"
         },
         {
           "signature": "addAssetPath(Ljava/lang/String;)I",
           "flags": 17,
-          "body_sha256": "390ff07ce8a03d40aac5bf8e23365729e1b2470dcea5b38d30c3b499ece54edb",
+          "body_sha256": "528275adfb9c2c4d1e0fcc4e321fe435f2121c7817dba9fda2f4194f37b723f9",
           "source": "failure"
         },
         {
@@ -292,31 +238,7 @@
         {
           "signature": "addAssetPaths([Ljava/lang/String;)[I",
           "flags": 17,
-          "body_sha256": "a198856777f40d63c30882bc5ef4a5f5bd50aa94b1022db4f21ba9791fd7f17b",
-          "source": "failure"
-        },
-        {
-          "signature": "addCommonOverlayPath(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "addIconPath(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "addOverlayPath(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "addThemeCookie(I)V",
-          "flags": 1,
-          "body_sha256": "729cf832250e9a0c9725605884995cae8746d85769366d5c4cf0965c7ddc08b4",
+          "body_sha256": "d648a8b2b2b3441c4ed2e4058b81e09df6d41edb50daabd4a857e3cb646a1560",
           "source": "failure"
         },
         {
@@ -348,15 +270,9 @@
           }
         },
         {
-          "signature": "attachThemePath(Ljava/lang/String;)I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
           "signature": "close()V",
           "flags": 1,
-          "body_sha256": "269ebb577e98510cadbd7d2d055937ababa81ce64b3788a2e793add80a8d35e9",
+          "body_sha256": "f886d2d9c8d317fd4f6606c417bfbd933da186a97c3a001c23d3edc85c1cc907",
           "source": "rom"
         },
         {
@@ -376,13 +292,13 @@
         {
           "signature": "createTheme()I",
           "flags": 16,
-          "body_sha256": "02b86598c5df8f98857e3038ad2b8ac3a87d2a8191773c3a38fdd92e6756feb4",
+          "body_sha256": "0f24072474422abe9552af7b7f71e6ea2555e6f7ba5d358bd126a96f01af4f78",
           "source": "rom"
         },
         {
           "signature": "decRefsLocked(I)V",
           "flags": 18,
-          "body_sha256": "758501e1dccd7f7e08517d36fe296f80eaf96dafb7f7a994910637258891fe55",
+          "body_sha256": "4181fbc10c22cb5edd280dbf04b0682b302aed5506202d7667c76ede024507de",
           "source": "rom"
         },
         {
@@ -420,12 +336,6 @@
           "source": "failure"
         },
         {
-          "signature": "detachThemePath(Ljava/lang/String;I)Z",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
           "signature": "dumpTheme(IILjava/lang/String;Ljava/lang/String;)V",
           "flags": 280,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -434,32 +344,20 @@
         {
           "signature": "ensureStringBlocks()V",
           "flags": 16,
-          "body_sha256": "896735831a6bba6054f7fe7481f332496f1f569787e3900f87f595c4b81a2aba",
+          "body_sha256": "ab431c49b72bb33d55737ecf5e9feb1b17e325677f23b2366f5f080969e8279b",
           "source": "rom"
         },
         {
           "signature": "ensureSystemAssets()V",
           "flags": 10,
-          "body_sha256": "e9794dfb5032a4b9582acf5a11b41dc18c6c5b7dd8ae844145f689a7046301b5",
+          "body_sha256": "4713b47bfbeacb6766fec2d49015e854e57f399f662739ea48ef06d75b8ff58c",
           "source": "failure"
         },
         {
           "signature": "finalize()V",
           "flags": 4,
-          "body_sha256": "4636878e67b9ddec6c4f6b8059150a70bc0deacdacca9b12a63ecd462436f78e",
+          "body_sha256": "0dbaf9f8c280c45f4b1f2b3fed0072de5df40a99a6e355a3f32d3c0152884602",
           "source": "rom"
-        },
-        {
-          "signature": "generateStyleRedirections(III)Z",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getAppName()Ljava/lang/String;",
-          "flags": 1,
-          "body_sha256": "204d8d59aafdd01f7838139595adbf0e6c849d131aaefb9830b32dd89da44ed4",
-          "source": "failure"
         },
         {
           "signature": "getArrayIntResource(I)[I",
@@ -504,42 +402,6 @@
           "source": "failure"
         },
         {
-          "signature": "getBasePackageCount()I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getBasePackageId(I)I",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getBasePackageName(I)Ljava/lang/String;",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getBaseResourcePackageName(I)Ljava/lang/String;",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getCommonResCookie()I",
-          "flags": 1,
-          "body_sha256": "956d3d39f4eb2f7a087665c56ea7ed2bd02f5842cd3a7b2e6bca47a8175f2cd6",
-          "source": "failure"
-        },
-        {
-          "signature": "getCommonResPackageName()Ljava/lang/String;",
-          "flags": 1,
-          "body_sha256": "74c812eec798a0df8364bd022444404b73a791fd36aa6d8a5bcbe4a772ee63a6",
-          "source": "failure"
-        },
-        {
           "signature": "getCookieName(I)Ljava/lang/String;",
           "flags": 273,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -555,18 +417,6 @@
           "signature": "getGlobalAssetManagerCount()I",
           "flags": 281,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "getIconPackCookie()I",
-          "flags": 1,
-          "body_sha256": "77a7ffa944fcaaa370325e9db80c6d1cffae983c9ce90897bb79007544b07ef1",
-          "source": "failure"
-        },
-        {
-          "signature": "getIconPackageName()Ljava/lang/String;",
-          "flags": 1,
-          "body_sha256": "032bd64dde4fe5ff15c3dc0592f81f8c51780b992a9a85917d254f49ea0afa56",
           "source": "failure"
         },
         {
@@ -592,13 +442,13 @@
         {
           "signature": "getPooledString(II)Ljava/lang/CharSequence;",
           "flags": 16,
-          "body_sha256": "04b5dea2b4b93e780828ecf028ff923bf12a28f673c230e3ed588e1d1d4c1725",
+          "body_sha256": "019b375a36d08b3d9ee7dc01325352ea5d6e8a125e7e9979f23d94d3e1577858",
           "source": "rom"
         },
         {
           "signature": "getResourceBagText(II)Ljava/lang/CharSequence;",
           "flags": 16,
-          "body_sha256": "97b31e147e5a70197371a371fbd95cdc8053f1f55822efc948badb864fc8247a",
+          "body_sha256": "bac5eb1388141d7e2cc7a68fc0c196066892bc430379a3f8ae2d13d5857e014f",
           "source": "rom"
         },
         {
@@ -628,19 +478,19 @@
         {
           "signature": "getResourceStringArray(I)[Ljava/lang/String;",
           "flags": 16,
-          "body_sha256": "db9cc13214b4f5054f05c70c09e48747d30bfc8710a30077dd7ad213d85c794b",
+          "body_sha256": "71b3667c0bce0725c3c3c8c018b303428b55eb28284fbd73600f66a8bf89f88f",
           "source": "failure"
         },
         {
           "signature": "getResourceText(I)Ljava/lang/CharSequence;",
           "flags": 16,
-          "body_sha256": "0f84f8dcb73ec2cf58cf2d0f5450b6551c28e07a9b4e81b10f044a63ce4a59a5",
+          "body_sha256": "8be63d5c6241e2c3352bc8f64d9b971263b30f0fe5503765d41ac122905727db",
           "source": "failure"
         },
         {
           "signature": "getResourceTextArray(I)[Ljava/lang/CharSequence;",
           "flags": 16,
-          "body_sha256": "1784ea96fdbc032b6b49223994028ff400c188b34f4807168ca8b965df9eeb34",
+          "body_sha256": "82a2f7dbfc53e42944619a8cc689b02649a78d77ed527c095b95aae76b68fe0f",
           "source": "failure"
         },
         {
@@ -652,7 +502,7 @@
         {
           "signature": "getResourceValue(IILandroid/util/TypedValue;Z)Z",
           "flags": 16,
-          "body_sha256": "9f8682415487d73944a61dc4e5e840a1a7fb1e72006d66aad5eeea99edcafd4d",
+          "body_sha256": "3937917c9b9f88bb106f18f6de972532b7e212ec54a925856ea636040b5e2a7e",
           "source": "rom"
         },
         {
@@ -672,41 +522,23 @@
         {
           "signature": "getSystem()Landroid/content/res/AssetManager;",
           "flags": 9,
-          "body_sha256": "e9222958445d35745bfbcc3a9d74169d09d89273558da76651403beb57f9adb6",
-          "source": "failure"
-        },
-        {
-          "signature": "getThemeCookies()Ljava/util/ArrayList;",
-          "flags": 1,
-          "body_sha256": "54fbd5f937cba78871df986de4eabfdcb6ef3f5d1562a5e3ca993cd712a02a16",
-          "source": "failure"
-        },
-        {
-          "signature": "getThemePackageName()Ljava/lang/String;",
-          "flags": 1,
-          "body_sha256": "6eacc3d9f52131be25d3c262ca321575c293af29c6256ee408bb9c7db4f1e4db",
+          "body_sha256": "05892f537ec278d172a53e54095127b3d85b727d62dd1eb081360fd4a1c64aa6",
           "source": "failure"
         },
         {
           "signature": "getThemeValue(IILandroid/util/TypedValue;Z)Z",
           "flags": 16,
-          "body_sha256": "3d2f76c70679a644320571dae5b377ea0e57dd5fdb3599d2288c8b75f0640bbd",
+          "body_sha256": "0998b077b987f9b848f44c59fb993d00e23e8432f06172c95b172f1e4d3ba23f",
           "source": "rom"
-        },
-        {
-          "signature": "hasThemeSupport()Z",
-          "flags": 17,
-          "body_sha256": "ee4782a6bd414477ec6e18ce6c9037e6b3b3f9590ad41f0cf8cc7412661ce4fa",
-          "source": "failure"
         },
         {
           "signature": "incRefsLocked(I)V",
           "flags": 18,
-          "body_sha256": "b0fed734d8fca045338508e81dba99e73134cdba4215a69814a319522f972874",
+          "body_sha256": "f96b6cae8f9d02ff0cf6ec2c53a0bf69ed833dbcac45c3a4319bca45d79836e2",
           "source": "rom"
         },
         {
-          "signature": "init(Z)V",
+          "signature": "init()V",
           "flags": 274,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
           "source": "overlay",
@@ -784,7 +616,7 @@
         {
           "signature": "makeStringBlocks(Z)V",
           "flags": 16,
-          "body_sha256": "0293c7269921a1a293fadda8ac26ce79c4dfc09756c9b69fa237364081d233a9",
+          "body_sha256": "ca24e91c7f87a322c24561a34eff199f1b59f5bc4b97d944145c40bdf3192f93",
           "source": "overlay",
           "review": {
             "reason": "DVM-326 ADR-0160 same-ROM typed values and distinct string pool",
@@ -811,7 +643,7 @@
         {
           "signature": "open(Ljava/lang/String;)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "0170e906331526698c34b26cbb3f68513e3cf93cf9f2015e4a1f7ae059ad9979",
+          "body_sha256": "884d5eab47bf2eb0cbd1a586e6a752b32a3cc968f969ff260e63cf3b0c66f372",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -824,7 +656,7 @@
         {
           "signature": "open(Ljava/lang/String;I)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "93013e5d354dbc8abc93f1c2b44ecb2bc5d0b9d8f3096ceb35478fa4dcce204f",
+          "body_sha256": "9673489ccd223b630feee154b315d9711c34a83577029f70adc70c72b595704e",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -849,7 +681,7 @@
         {
           "signature": "openFd(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
           "flags": 17,
-          "body_sha256": "721fdecb988aa5d09da95f7882ca4435615bf059f6dbdbf0cbf25dae745a4950",
+          "body_sha256": "32b05b5b00b28f203d0c43eb72b64f709dc06c01c977b43a84d0419968189f28",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -862,37 +694,37 @@
         {
           "signature": "openNonAsset(ILjava/lang/String;)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "5e2eba8f9739019f8d4df2f7d796eea8a97eee02159a4aadbf990d4a76f9e06f",
+          "body_sha256": "a01923eb78bda0e58f9428627397b0a61efe00b78af9c321beb73c6f4a6011a3",
           "source": "failure"
         },
         {
           "signature": "openNonAsset(ILjava/lang/String;I)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "999a6a38f1e0c9dae466c05628737ce181bc0c69137387381eae77a2bb43ef18",
+          "body_sha256": "5b2e8c07a7a798ac0e01c6d548f8cb8c9ba8c760cbaf0980096543db774716c0",
           "source": "failure"
         },
         {
           "signature": "openNonAsset(Ljava/lang/String;)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "aa14e289b15dbce3d015fc534ba19668232e8be2ed106775be8b6105352d836e",
+          "body_sha256": "34706d4027f6f2254df468d0b8da03b2dc77587714bee3a91384480afa376399",
           "source": "failure"
         },
         {
           "signature": "openNonAsset(Ljava/lang/String;I)Ljava/io/InputStream;",
           "flags": 17,
-          "body_sha256": "bdb73c55547ded46f64d6817b567fe9a08b5ddf61977d0d02767414d71fb7841",
+          "body_sha256": "403cc15be780343d49aaf19c7b1b7586cb680d21b01c3b7552e9ea6248d50139",
           "source": "failure"
         },
         {
           "signature": "openNonAssetFd(ILjava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
           "flags": 17,
-          "body_sha256": "dfd0769d249ac0d671a23326e8238c8c2ce8999ec0a11b2d123dc384b76ab53f",
+          "body_sha256": "32ab9dd6635b0b965616040182871449036221501df5a61bd9cb98435a444718",
           "source": "failure"
         },
         {
           "signature": "openNonAssetFd(Ljava/lang/String;)Landroid/content/res/AssetFileDescriptor;",
           "flags": 17,
-          "body_sha256": "cf1e3efc75a3252379c8059671533d0e4939275b471c51c4d8608d15cdcf8464",
+          "body_sha256": "ddb1a2bf45720da1614ca4d5afcca9fac8d45d93113b18f6aff2df4d0c631eb8",
           "source": "failure"
         },
         {
@@ -916,19 +748,19 @@
         {
           "signature": "openXmlBlockAsset(ILjava/lang/String;)Landroid/content/res/XmlBlock;",
           "flags": 16,
-          "body_sha256": "f31775c916a7ce865f801e797d0a4f2881c427c633de334d7eab08a721507ae0",
+          "body_sha256": "9b89289703188ebfef028b8cd04b54614eb747c22bf748f53df2a2c5cc1f4415",
           "source": "failure"
         },
         {
           "signature": "openXmlBlockAsset(Ljava/lang/String;)Landroid/content/res/XmlBlock;",
           "flags": 16,
-          "body_sha256": "3c65f74e4ac71978710f9877880ae0f626937aad805c0c04be968e8ad9c72f54",
+          "body_sha256": "b7b2f5a6c6ae7d60ef2a60434eb625d7023c084bcbd345a5b86d5e2625c34165",
           "source": "failure"
         },
         {
           "signature": "openXmlResourceParser(ILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
           "flags": 17,
-          "body_sha256": "e875e8a48188302e88edb988dbb6c1ddd59a2f38ad9f2c3577e4b165caf38768",
+          "body_sha256": "b751eceb0b4b225e4c7d9526aa54edd5f9ada9acc5250fa23062adaacfd920fe",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -941,7 +773,7 @@
         {
           "signature": "openXmlResourceParser(Ljava/lang/String;)Landroid/content/res/XmlResourceParser;",
           "flags": 17,
-          "body_sha256": "23e376f7669b14f4aa1ce1bbdf0e588666c4c9b3dd4d571f1ce8c52fa9cac794",
+          "body_sha256": "d3ce6a6b06e50d2f769adf00d5e1944ad98789f3fe4ab0ff41c1010e04be9e0f",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -964,22 +796,10 @@
           "source": "failure"
         },
         {
-          "signature": "recreateStringBlocks()V",
-          "flags": 16,
-          "body_sha256": "d5a2ff26285d450bcdc8bbca1b82d33842454c82f1012470ac4d10fe84ab7e09",
-          "source": "failure"
-        },
-        {
           "signature": "releaseTheme(I)V",
           "flags": 16,
-          "body_sha256": "03b3b38f86e80c4cc8c17578c41e4e471b59ee02e663faded86eda7a039da2b7",
+          "body_sha256": "ab9499407d6e36936649026f1e433c292a6acb59260b29ec856f0e8d91032203",
           "source": "rom"
-        },
-        {
-          "signature": "removeOverlayPath(Ljava/lang/String;I)Z",
-          "flags": 273,
-          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
         },
         {
           "signature": "retrieveArray(I[I)I",
@@ -1008,39 +828,9 @@
           "source": "failure"
         },
         {
-          "signature": "setAppName(Ljava/lang/String;)V",
-          "flags": 1,
-          "body_sha256": "a83643143283ab8100f6624e7704b89816cabc91ef022e642f95237c9eb3c8f8",
-          "source": "failure"
-        },
-        {
-          "signature": "setCommonResCookie(I)V",
-          "flags": 1,
-          "body_sha256": "04b04796d6be4483211774722ca359527824b4b95eb97544c257e8d2d5566455",
-          "source": "failure"
-        },
-        {
-          "signature": "setCommonResPackageName(Ljava/lang/String;)V",
-          "flags": 1,
-          "body_sha256": "29a5c4f33d68173bd27eadf46009e34e1021847e8614ae7edc8d2083455c5468",
-          "source": "failure"
-        },
-        {
           "signature": "setConfiguration(IILjava/lang/String;IIIIIIIIIIIIII)V",
           "flags": 273,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
-        },
-        {
-          "signature": "setIconPackCookie(I)V",
-          "flags": 1,
-          "body_sha256": "3fdba2754b975858a3dad8ed047fda0d3687dced31f4fdf207c30c154b7230aa",
-          "source": "failure"
-        },
-        {
-          "signature": "setIconPackageName(Ljava/lang/String;)V",
-          "flags": 1,
-          "body_sha256": "f25bffb0c184cdcb6b1e910b2591feedc2b32dd70480c9903c6472bc9151c381",
           "source": "failure"
         },
         {
@@ -1050,21 +840,9 @@
           "source": "failure"
         },
         {
-          "signature": "setThemePackageName(Ljava/lang/String;)V",
-          "flags": 1,
-          "body_sha256": "4d1541d1d438dc2d3a2efa1815a4e91203f94c1dbfb0519827e75fbc3853dcf4",
-          "source": "failure"
-        },
-        {
-          "signature": "setThemeSupport(Z)V",
-          "flags": 17,
-          "body_sha256": "fe4452b7ce04a01ac39abe21af7c7f8402cbd5f592023636d886716ef0cc1f6c",
-          "source": "failure"
-        },
-        {
           "signature": "xmlBlockGone(I)V",
           "flags": 0,
-          "body_sha256": "3d0a443fe51de433e2bb8905305dc34b4c2abe1b3692521e901567f670a0bfa4",
+          "body_sha256": "2028f1515f2afa90b2ca7d36f2fa4aac92c7fff7df06049c37c1b8b24c57237f",
           "source": "failure"
         }
       ]
@@ -1073,24 +851,12 @@
       "shape_owner": "rom",
       "clinit_owner": "rom",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "604725e9257b3994494011a7231f782962793b4183941e18aa940118dda73252",
+      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
       "owner": "Landroid/content/res/Resources;",
-      "smali_sha256": "b1efcad3806f9c44845bb8f780b1c37620e7e024e16641ced0a8af086ca10cf8",
+      "smali_sha256": "df8fd2e1ca7314114c6429e708ff633898f0e167fc5ac613d095d63460e23d41",
       "fields": [
-        {
-          "signature": "CONFIG_DENSITY:I",
-          "flags": 26,
-          "source": "rom",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "CONFIG_FONT_SCALE:I",
-          "flags": 26,
-          "source": "rom",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
         {
           "signature": "DEBUG_ATTRIBUTES_CACHE:Z",
           "flags": 26,
@@ -1122,40 +888,10 @@
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
-          "signature": "SPEC_PUBLIC:I",
-          "flags": 26,
-          "source": "rom",
-          "initialization": "rom-encoded:0x40000000"
-        },
-        {
           "signature": "TAG:Ljava/lang/String;",
           "flags": 24,
           "source": "rom",
           "initialization": "rom-encoded:\"Resources\""
-        },
-        {
-          "signature": "THEME_APP_PKG_ID:I",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:0x61"
-        },
-        {
-          "signature": "THEME_COMMON_PKG_ID:I",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:0x5f"
-        },
-        {
-          "signature": "THEME_FRAMEWORK_PKG_ID:I",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:0x60"
-        },
-        {
-          "signature": "THEME_ICON_PKG_ID:I",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:0x62"
         },
         {
           "signature": "TRACE_FOR_MISS_PRELOAD:Z",
@@ -1218,12 +954,6 @@
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
-          "signature": "mComposedIconInfo:Landroid/app/ComposedIconInfo;",
-          "flags": 2,
-          "source": "rom",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
           "signature": "mConfiguration:Landroid/content/res/Configuration;",
           "flags": 18,
           "source": "failure",
@@ -1233,12 +963,6 @@
           "signature": "mDrawableCache:Landroid/util/LongSparseArray;",
           "flags": 16,
           "source": "failure",
-          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
-        },
-        {
-          "signature": "mIcons:Landroid/util/SparseArray;",
-          "flags": 2,
-          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -1336,67 +1060,67 @@
         {
           "signature": "<clinit>()V",
           "flags": 65544,
-          "body_sha256": "6b3312239d3e3bd2a997e2fa8b307ec5c2283cb7adff8b5f2b2f5cc2f532e207",
+          "body_sha256": "8a052d01c0a506deeedd804bead5836cc6a5fb473235cbd3604de88dc455939d",
           "source": "rom"
         },
         {
           "signature": "<init>()V",
           "flags": 65538,
-          "body_sha256": "137a451dedbb9642aa406ff233121ca0e32bc5021c10eef9bff0cc22fbad5bee",
+          "body_sha256": "cdb1899ffefc1856866601bb9a5efa59085fe49fccec76e7a1ef05485f5ed5ef",
           "source": "failure"
         },
         {
           "signature": "<init>(Landroid/content/res/AssetManager;Landroid/util/DisplayMetrics;Landroid/content/res/Configuration;)V",
           "flags": 65537,
-          "body_sha256": "aee18d0dcb64a75adcdb30e37efc23eb39b839e54c3e67b2ca4185b973a97ba8",
+          "body_sha256": "945d40ed582bbde6d829fabead716d424bec11a42f3661bf147d47aac62d7538",
           "source": "failure"
         },
         {
           "signature": "<init>(Landroid/content/res/AssetManager;Landroid/util/DisplayMetrics;Landroid/content/res/Configuration;Landroid/content/res/CompatibilityInfo;Landroid/os/IBinder;)V",
           "flags": 65537,
-          "body_sha256": "532fa5caec41203891600a2120a82cbc3dd77c39d13b000ec138974f675b7370",
+          "body_sha256": "166105fe385c56d873b573f4471e4ad03d30ae8fad78241836eeecfb1b43d056",
           "source": "failure"
         },
         {
           "signature": "access$000(Landroid/content/res/Resources;I)Landroid/content/res/TypedArray;",
           "flags": 4104,
-          "body_sha256": "7218d06d2b97b4b4012680a9272f36abd78ea110782e6f2eed60c1c3cd79cd8a",
+          "body_sha256": "99c1458589632bc17e4a0c81dcb8acd0d9d377b33b14f358ad38309c4fbf9796",
           "source": "rom"
         },
         {
           "signature": "attrForQuantityCode(I)I",
           "flags": 10,
-          "body_sha256": "73a15f1ae4dbfda25d4cba94a26a777ccbdadf36f0609e61c9574044a374ba8f",
+          "body_sha256": "a12dda1dbad8ab6f4e60d37b2f5b955f6b726dacde14d8108c79d34ad2c33757",
           "source": "failure"
         },
         {
           "signature": "clearDrawableCacheLocked(Landroid/util/LongSparseArray;I)V",
           "flags": 2,
-          "body_sha256": "bbe668e8b7515b176c6099e4ca256e18a4f4719eb5039dd41e7fc7b4feecf7e8",
+          "body_sha256": "b41ff6f70d902f10f2ff625d9185ef2cb3ca8ec2d8dcd22103e9cd5de1fad53a",
           "source": "failure"
         },
         {
           "signature": "finishPreloading()V",
           "flags": 17,
-          "body_sha256": "7e832be4003adc907a2bb5093b44ecb3d8dcc328fdb927ba2a74ceb8ed932543",
+          "body_sha256": "d26b33093ae0456753d285bca05d2c63ad0c3e107511a486d60568068531baa8",
           "source": "failure"
         },
         {
           "signature": "flushLayoutCache()V",
           "flags": 17,
-          "body_sha256": "dd603481a80e24bbca5a22a09d317663d97a6385f3bf7743d70ae3c9971edca7",
+          "body_sha256": "34876532567d3428913ee5de177beff9cd7b5cd93eb730757c0c6a08c600df4f",
           "source": "failure"
         },
         {
           "signature": "getAnimation(I)Landroid/content/res/XmlResourceParser;",
           "flags": 1,
-          "body_sha256": "433d000ea7ca6a4ce83dbb5b4b0e28eb85e840602157a98ffdd9f441d3445324",
+          "body_sha256": "9321d0c3b8f2f405dc2d1dd1f392cfa4961e251fe84bcdfd0cea7aff4653c6bd",
           "source": "failure"
         },
         {
           "signature": "getAssets()Landroid/content/res/AssetManager;",
           "flags": 17,
-          "body_sha256": "39427db8d213e6fecc4b1e424c597383520d471d243bebb3c2da790eabd1de31",
+          "body_sha256": "52544bcf28f27dbbbc94f52c1b73c4665f01d706ece54f44715f3dd5b7297ff6",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1409,55 +1133,49 @@
         {
           "signature": "getBoolean(I)Z",
           "flags": 1,
-          "body_sha256": "4fc59930e3f28f612487fc34b5a94d6567ba62516869afacb8526883b0d353b0",
+          "body_sha256": "da1b9e7e6f3ee941f0653afb79824b5d67af1b2f2293a26f930dbf5294ef2e6c",
           "source": "failure"
         },
         {
           "signature": "getCachedColorStateList(J)Landroid/content/res/ColorStateList;",
           "flags": 2,
-          "body_sha256": "595a1ac07a866e5100ac1498d7691f114c9947ed46a83b12b1b4955752d18f24",
+          "body_sha256": "523694ed64e8634dfff212ba07ff2e588bb1666b01eb6be6e40644e1cd06f04e",
           "source": "failure"
         },
         {
           "signature": "getCachedDrawable(Landroid/util/LongSparseArray;J)Landroid/graphics/drawable/Drawable;",
           "flags": 2,
-          "body_sha256": "30975f59b21c79bc6cd9b787789a72bf5b5b5079bf1d05746133ee81c0a67891",
+          "body_sha256": "1c665ecfde88793053f262cb8332b659534fbb0dd7a6c6d8b650b10ff961f6c7",
           "source": "failure"
         },
         {
           "signature": "getCachedStyledAttributes(I)Landroid/content/res/TypedArray;",
           "flags": 2,
-          "body_sha256": "f52d2e64ebfc19b83b1fac816be23deb7325b9bfe43c9237cb519cb9a2734c9b",
+          "body_sha256": "543d6eb790876c1eed0aef17d43bfba374ba7fd2e25c488de0b0152edb41ec9d",
           "source": "rom"
         },
         {
           "signature": "getColor(I)I",
           "flags": 1,
-          "body_sha256": "ef6283049746e161b4331d5a5a38615a74379a4e9bb759350591de5ec7bcba02",
+          "body_sha256": "ef0998db2115d2d1ea4b18b5eafe5f657a2c40ea13012b1a7fb81f1c6137c0cb",
           "source": "rom"
         },
         {
           "signature": "getColorStateList(I)Landroid/content/res/ColorStateList;",
           "flags": 1,
-          "body_sha256": "118f5508637d14b53962a290cf3e9725d9772d6e6db3ccf84b9ff3241c3ec7b5",
+          "body_sha256": "cdd904ee14f9256d1a70fa367fed47867c775505ed745dd9d11070447edf56cc",
           "source": "rom"
         },
         {
           "signature": "getCompatibilityInfo()Landroid/content/res/CompatibilityInfo;",
           "flags": 1,
-          "body_sha256": "2e07ee0f4442cf86b7aca826d4fe76d9759325ca783543df200ce98c5663b68b",
-          "source": "failure"
-        },
-        {
-          "signature": "getComposedIconInfo()Landroid/app/ComposedIconInfo;",
-          "flags": 1,
-          "body_sha256": "3571408ae6be1d64e2472d75c2b37d3d84c0dc613d6ef8beb834323bc2e3f97e",
+          "body_sha256": "9e1334584636d8b9a1d6b9b95e30409da9c6ece0370536e3ac910702f32854b4",
           "source": "failure"
         },
         {
           "signature": "getConfiguration()Landroid/content/res/Configuration;",
           "flags": 1,
-          "body_sha256": "4569dd082c65e209c0a813b68977092671203ca9caca60fea38b5411f18c3e57",
+          "body_sha256": "2d33fec7751cfd44600acda611ddebc53141fc2ee0c6b6c0c365449872e797a9",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1470,25 +1188,25 @@
         {
           "signature": "getDimension(I)F",
           "flags": 1,
-          "body_sha256": "777cf50928dbef233b6bcdd9d5d0bea4a4310624c83ee32934e0b3e274e96d95",
+          "body_sha256": "1edf40b751dc7dbaf6dd80f04597599f0fbdff90e080eca11415a1f3374ffb84",
           "source": "failure"
         },
         {
           "signature": "getDimensionPixelOffset(I)I",
           "flags": 1,
-          "body_sha256": "02a0c48ce661d2b0ed2c4994c592dbd1ba998718498b950f5fe50ec19f4b29d8",
+          "body_sha256": "121d6a930f530d62c8ef4eefeb0be57e4237e2622f5f4287f13a3680a2ae3cae",
           "source": "failure"
         },
         {
           "signature": "getDimensionPixelSize(I)I",
           "flags": 1,
-          "body_sha256": "ab496bc245d3ddf576f6adf3816f19586140ff4be86548bbaa59565265091173",
+          "body_sha256": "947643b654748056e1e3b3d7701f4d99762f43009aba5a7806b03b365109db17",
           "source": "failure"
         },
         {
           "signature": "getDisplayMetrics()Landroid/util/DisplayMetrics;",
           "flags": 1,
-          "body_sha256": "beda1a9cdef13687c014584725a6d4ca869b0068f273e5170950dacc123bfc72",
+          "body_sha256": "ffa9e78f3390e9b9e52b28dbbf7b6268e540c9441e8b6205576dc4fa3dfb189b",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1501,7 +1219,7 @@
         {
           "signature": "getDrawable(I)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
-          "body_sha256": "f0706fc783a38f82efb73795a4b3dd6799b1655cfe2f5d8aad2d5346eac95803",
+          "body_sha256": "31038d929bf54e0d5d0f32b81712f3cf346df02d05c3fa2816ae81b26b7ea95e",
           "source": "overlay",
           "review": {
             "reason": "API19 bounded app scalar system colors and explicit system Resources rejection",
@@ -1512,33 +1230,21 @@
           }
         },
         {
-          "signature": "getDrawable(IZ)Landroid/graphics/drawable/Drawable;",
-          "flags": 1,
-          "body_sha256": "91c907866ebc04ff459d320f52d9b167e371014e615790a309fc14422f27ce54",
-          "source": "rom"
-        },
-        {
           "signature": "getDrawableForDensity(II)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
-          "body_sha256": "00ac43902e68e837662e5c87d2a566fbd810f5bb0fa470ef3e86003a78b54094",
-          "source": "failure"
-        },
-        {
-          "signature": "getDrawableForDensity(IIZ)Landroid/graphics/drawable/Drawable;",
-          "flags": 1,
-          "body_sha256": "17e549dfa28635b62e17cc04879b2ac3b81286ab84aaf40a7f9275fa4c95c5e2",
+          "body_sha256": "5ffec3d6f3e0f5d766c1cb5d5a51dd2e692b9e0263b35a558587a9e33d643832",
           "source": "failure"
         },
         {
           "signature": "getFraction(III)F",
           "flags": 1,
-          "body_sha256": "77c60ed46740d823da41afd715f83cfca5ae18c1208d545b11a0a154a2512e36",
+          "body_sha256": "4866ada3262c185b2e8a7d91f8c360e96cd0f21b0816dcf7d8c2bacc47c008b9",
           "source": "failure"
         },
         {
           "signature": "getIdentifier(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
           "flags": 1,
-          "body_sha256": "18e120ed50842fdfbc115caf1f4cba5d676f0f7f5e7745f6bbd6618cf6636edf",
+          "body_sha256": "2168becba502db1f5b4e0543053ee3087f6b34556ff83b4faa8cad3b6334df70",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1551,13 +1257,13 @@
         {
           "signature": "getIntArray(I)[I",
           "flags": 1,
-          "body_sha256": "b522072e05930c5311ae0ae3dba5636baca523b36e86631d0f05dc33e70c9cdf",
+          "body_sha256": "d7a05a3b9e27b67b49faf78db21e4dc2fde6d6bc5b159ffe8da4a018a0f80e27",
           "source": "failure"
         },
         {
           "signature": "getInteger(I)I",
           "flags": 1,
-          "body_sha256": "bb291d3248c657a9711341f1d171b2d2e69515dfb44fc343371fbd3a461a4e49",
+          "body_sha256": "b4baa5f7fad2e2eea05400e44afc57d156eeb545b445bb07f6be8fb608af715c",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1570,7 +1276,7 @@
         {
           "signature": "getLayout(I)Landroid/content/res/XmlResourceParser;",
           "flags": 1,
-          "body_sha256": "8992f3c0c4870e34d7ff0bb0a1eada6d8f6154acb741250abbdcf5600a784be9",
+          "body_sha256": "aaa026fbcf57a620c017497c9310e187b7c293c2248c9c1f23a314a92b2f11d5",
           "source": "overlay",
           "review": {
             "reason": "DVM-290 bounded layout resource seam",
@@ -1583,67 +1289,67 @@
         {
           "signature": "getMovie(I)Landroid/graphics/Movie;",
           "flags": 1,
-          "body_sha256": "66ed9170e746ab0d28db9d4f62ca31b9e664e7486309d27f4d465a9ae72ef12a",
+          "body_sha256": "702527b6e411beb929790072970d4d61d07e0be952c5d773016707079532d45b",
           "source": "failure"
         },
         {
           "signature": "getPluralRule()Llibcore/icu/NativePluralRules;",
           "flags": 2,
-          "body_sha256": "eec123a2642c2f9bdddec1260cbe59dcbc90d0392c5f0d0301b35596d6606f86",
+          "body_sha256": "7223e5ac653bde1e7b037bbd250ee17d4a4aae046c53b7fa02767fab29161277",
           "source": "failure"
         },
         {
           "signature": "getPreloadedDrawables()Landroid/util/LongSparseArray;",
           "flags": 1,
-          "body_sha256": "2d1ad9f2c6044282d5dd770b95798ede69b1c73b1eb8fb1fb7fbee496ba92eaa",
+          "body_sha256": "384c119754cdd0449c1a726ddc5caccdddee18d298352b2004dc7bf1086613e4",
           "source": "failure"
         },
         {
           "signature": "getQuantityString(II)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "3ea91762225d89253c1551e2543d8ecd91084df4c76b5c6e2ad66989a82f78a6",
+          "body_sha256": "89cdbaf2f73c6901485d6baaeb9a4f847e588b13e58652fef3132874fc4502a8",
           "source": "failure"
         },
         {
           "signature": "getQuantityString(II[Ljava/lang/Object;)Ljava/lang/String;",
           "flags": 129,
-          "body_sha256": "9832bf09c727b82a089a78ad2cb1e6b4198fbbf9c567b85e92c16b1a67f9344f",
+          "body_sha256": "706be74d0a522322ceb269404a72b3f01918f00b7d2cb12823cb601b9c7f08b8",
           "source": "failure"
         },
         {
           "signature": "getQuantityText(II)Ljava/lang/CharSequence;",
           "flags": 1,
-          "body_sha256": "19fa94e30c90498284cef9973a6c13038e9bf4f3399672971ee2626a03a524d8",
+          "body_sha256": "77d42aac853bdb0a2d47f7ce83aba757ffbd05d1406bf79b10160e92b3f6d3ab",
           "source": "failure"
         },
         {
           "signature": "getResourceEntryName(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "e46a0c6a15429dab286f15b1d3d1418ba46f7bf37a7fde5f849755d843f317c0",
+          "body_sha256": "0b6de5a691fcf2bcaf3c93a71f498a4cf16f36c8a1d0fe28793175e89d58067a",
           "source": "failure"
         },
         {
           "signature": "getResourceName(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "57a6ed5eea5063671f0a91f81f9ecddb24d16046f3ae2238a03da84e6d9b2f77",
+          "body_sha256": "026ef19a3be8021f16d15a3368e5374b398f2d88c79f8efba630b59957b06b72",
           "source": "failure"
         },
         {
           "signature": "getResourcePackageName(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "5254f889c7414f8fda0eebf62832f0a49f8a71d56dbbe4df8b67c2397cd02ae8",
+          "body_sha256": "931fd061d4488aeec5da4d82f54586216a2c1dde09b0d5fa30b964a6b718efce",
           "source": "failure"
         },
         {
           "signature": "getResourceTypeName(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "9e9a86e4e79903ef9d15757206e64faa246a28185c5ab264c7497d0b5c37f9f4",
+          "body_sha256": "f37d9a78956cdbfdb78d63177c3aa45b4a010dd0d8731bfe401c4317668a7336",
           "source": "failure"
         },
         {
           "signature": "getString(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "63032402d584ec032b7f10ef98686ba28e39b60bd068b5d1b4c5dd34a9df8f6c",
+          "body_sha256": "619d5012c3639833cd162f912f12face1110e6536eba06e0d64acb1a297a05f0",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1656,19 +1362,19 @@
         {
           "signature": "getString(I[Ljava/lang/Object;)Ljava/lang/String;",
           "flags": 129,
-          "body_sha256": "b64b39b93d4ccaab06b687470bfd893fea727813de14589f3e1887a79ff1541e",
+          "body_sha256": "404760bf4d71d270f05e78693487d63e1d5241fb1be55fdf3a5bf10c204a8b78",
           "source": "failure"
         },
         {
           "signature": "getStringArray(I)[Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "9afa2a88db8c6632539f37248b515ab4d7c122f668c3caf164773c7c6d2bceca",
+          "body_sha256": "8fb4bf9bdecd6640f5bab8a55f9bb70062a16e90aae27fc62f392a10e366a0a3",
           "source": "failure"
         },
         {
           "signature": "getSystem()Landroid/content/res/Resources;",
           "flags": 9,
-          "body_sha256": "ea2b71be5bab0bcfaaa5a660e38fb36526ee1ff2a91e40dd2419ac717058a901",
+          "body_sha256": "24595cc07ad6ce636bd8bebe3ee28cbbe4c51a32ed0218f2e3188d501bc48594",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1681,7 +1387,7 @@
         {
           "signature": "getText(I)Ljava/lang/CharSequence;",
           "flags": 1,
-          "body_sha256": "89e1fe6d8bcd2a0468ec5728a36975f15cbcb6960ae190712ccbcebba64ad5e8",
+          "body_sha256": "773acaf9fd5bf6dc777d2d21c89a16544ba9efd28273cc367af1ff3b027f877e",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1694,56 +1400,37 @@
         {
           "signature": "getText(ILjava/lang/CharSequence;)Ljava/lang/CharSequence;",
           "flags": 1,
-          "body_sha256": "c2779def587f0c2d099fa4f7af896af71b7c2090eb0c36cd4e8bd45ee86700bb",
+          "body_sha256": "e04edba1fd932af0b19831044a89c666cab5618909e48a0a25dc144a2948542c",
           "source": "failure"
         },
         {
           "signature": "getTextArray(I)[Ljava/lang/CharSequence;",
           "flags": 1,
-          "body_sha256": "28b514682184b3c825ed9bc37dbe7a4e6bb856d518e40a01c52dfc4e52601791",
+          "body_sha256": "f55518f7ec1bdb97de47771ffcd187e94e7dea2560353edb9c346156512c76d7",
           "source": "failure"
         },
         {
           "signature": "getValue(ILandroid/util/TypedValue;Z)V",
           "flags": 1,
-          "body_sha256": "9b11b26d34df2695fac4980fd4cc453101f5fb4cf917a02ac12ead91f4e34a03",
+          "body_sha256": "dbf4850acf63a48cc45f6bc147c3ef6c3a04f13d9c463503fb2019385bccb5df",
           "source": "rom"
-        },
-        {
-          "signature": "getValue(ILandroid/util/TypedValue;ZZ)V",
-          "flags": 1,
-          "body_sha256": "eb9b03d9f8d330879f3fee992992eff2e39faa1403bc8f14f8e737a24b428df2",
-          "source": "overlay",
-          "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "actual APK scalar/bitmap TypedValue or sealed same-ROM edit_text drawable ID with runtime density",
-            "outputs": "actual six-slot scalar or ROM-shaped Drawable backing; no composed-icon or drawing credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
-          }
         },
         {
           "signature": "getValue(Ljava/lang/String;Landroid/util/TypedValue;Z)V",
           "flags": 1,
-          "body_sha256": "a9609ae21f7dfd49208d0da334a85ce2784c5080bfe5db977c275b65f43dd645",
+          "body_sha256": "66a7b8b1c8b462bddda5937ffa3363b3ee8bfc988b458753a08580ce02a7297c",
           "source": "failure"
         },
         {
           "signature": "getValueForDensity(IILandroid/util/TypedValue;Z)V",
           "flags": 1,
-          "body_sha256": "9fc30877fd0bb7879079af8b4e4ef0b315898c399839c9bd1c19a6fbf61a0844",
-          "source": "failure"
-        },
-        {
-          "signature": "getValueForDensity(IILandroid/util/TypedValue;ZZ)V",
-          "flags": 1,
-          "body_sha256": "1cb108a70d90c1bd8dfeefbd2ead0d505ecfa8d4b439aadcf4d617718fb8df2b",
+          "body_sha256": "f5da4900c184927f209af244472a2d79cb502a9b2c08f7cc70000c7a7cbc5206",
           "source": "failure"
         },
         {
           "signature": "getXml(I)Landroid/content/res/XmlResourceParser;",
           "flags": 1,
-          "body_sha256": "3082ba83847ec572d1ed293777c2db9c801e4f574b29ce80a11525ee921b7115",
+          "body_sha256": "c3d776b2a9908caf54ca58f7cd22c7a84f13a0162c27e65fe64ea9925f9012e8",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1756,7 +1443,7 @@
         {
           "signature": "loadColorStateList(Landroid/util/TypedValue;I)Landroid/content/res/ColorStateList;",
           "flags": 0,
-          "body_sha256": "f03021b59a985971b3e6a1b6e988804b2aff5accc54fcf64d087c37deccf1c1c",
+          "body_sha256": "6fdba5028ebdbfa25e23a717d51aa810fc7b102fdb2ffe0e0d08a8863889d267",
           "source": "overlay",
           "review": {
             "reason": "DVM-327 ADR-0160/0161 same-ROM ColorStateList XML capability",
@@ -1769,7 +1456,7 @@
         {
           "signature": "loadDrawable(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
           "flags": 0,
-          "body_sha256": "62f021f6118af60676c17e5eb5897133cd2082e9f259d702b9226f42ba3c8e6e",
+          "body_sha256": "d7c438df90a6146bd6f24d0d6e0095f62709857727723cf9cde9406c902cfe18",
           "source": "overlay",
           "review": {
             "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
@@ -1782,37 +1469,37 @@
         {
           "signature": "loadXmlResourceParser(ILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
           "flags": 0,
-          "body_sha256": "37f22976f883650d55b47184a37cc95d8fb5a76cb334a9c2a5d2ff6845fd3c0c",
+          "body_sha256": "90b202682ca1a5de3e757996fb43e899ba63c74c7edebba5fa53ac35c86902f2",
           "source": "failure"
         },
         {
           "signature": "loadXmlResourceParser(Ljava/lang/String;IILjava/lang/String;)Landroid/content/res/XmlResourceParser;",
           "flags": 0,
-          "body_sha256": "673c54c3c61969ae8b8c704f775a4190ed861595dd91b0e31419fdf560868f29",
+          "body_sha256": "d583edd3ebd7df5e095a67cc00d82af02c92c8294358bed61087be90fc28c9f5",
           "source": "failure"
         },
         {
           "signature": "newTheme()Landroid/content/res/Resources$Theme;",
           "flags": 17,
-          "body_sha256": "0f917d28598128ba66e7157abd6b07931cea36f05891fb1d762950d8302db521",
+          "body_sha256": "def37f830461c77a33e040bf750c12fdcba8065892950511eb314208bedf030f",
           "source": "rom"
         },
         {
           "signature": "obtainAttributes(Landroid/util/AttributeSet;[I)Landroid/content/res/TypedArray;",
           "flags": 1,
-          "body_sha256": "8fc1958be856bacfc590544c8967649cb0da3876e9ca087f31146bb57f55c3a5",
+          "body_sha256": "80bd664a5dd5c0252e50c0b6c6653899c7e0ac268426f3e86af26277db29a47d",
           "source": "rom"
         },
         {
           "signature": "obtainTypedArray(I)Landroid/content/res/TypedArray;",
           "flags": 1,
-          "body_sha256": "4bdee678e603b38de97b92786efb167aed2ce744e39fef7fce6760cc8f943b35",
+          "body_sha256": "925089c366aad61d76049ceb40717e27589764eae304747ad53799bce1a25f97",
           "source": "failure"
         },
         {
           "signature": "openRawResource(I)Ljava/io/InputStream;",
           "flags": 1,
-          "body_sha256": "9a30fb38f684b45c431b74546bae5f6c8ab5149297811ad7f4055c7843cbd5a2",
+          "body_sha256": "11cb4e2eee9a00448f89660122a5be5ab30540a707e51e28fbcf44b6f6dbc99a",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1825,7 +1512,7 @@
         {
           "signature": "openRawResource(ILandroid/util/TypedValue;)Ljava/io/InputStream;",
           "flags": 1,
-          "body_sha256": "f9cc34f8a59b1a973064700a96bcd945080e97e17940b38786ae8308c7fb6c35",
+          "body_sha256": "7c6c4dd2c6b1af44e5c56a1702c2f32bb80a41dfca6e95bc9b0e00f2b21e9919",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1838,7 +1525,7 @@
         {
           "signature": "openRawResourceFd(I)Landroid/content/res/AssetFileDescriptor;",
           "flags": 1,
-          "body_sha256": "92099a4919ce05fc2c31bc3b7fc8642bc261fef9ccd40f742a1a05d7804aee01",
+          "body_sha256": "8b7317b887951b3d8197699b25d2625580bfd4d0be3f8fc6f2c6d1e1ec6c2e86",
           "source": "overlay",
           "review": {
             "reason": "DVM-288 ADR-0158/0160 exact resource/theme platform seam; retain existing resource adapters",
@@ -1851,91 +1538,73 @@
         {
           "signature": "parseBundleExtra(Ljava/lang/String;Landroid/util/AttributeSet;Landroid/os/Bundle;)V",
           "flags": 1,
-          "body_sha256": "220fae52f6972abdf38f720d75dc9dfe8930c6ead1cbc8a6e2d207b33512b6f8",
+          "body_sha256": "a155dcabae637c931fb336084bd0d0392aa2c19d7da8fb15afda2790e790827a",
           "source": "failure"
         },
         {
           "signature": "parseBundleExtras(Landroid/content/res/XmlResourceParser;Landroid/os/Bundle;)V",
           "flags": 1,
-          "body_sha256": "a9fbd1e10d8069ce2547dd0f0d76500907e6e14942a0c47de06c371d23c9d80c",
+          "body_sha256": "3d003e8951bea29cb4bf149bcfa2aa198f53784aecb45b3195c39238f28da058",
           "source": "failure"
         },
         {
           "signature": "resourceHasPackage(I)Z",
           "flags": 9,
-          "body_sha256": "6119fc751e365ca1f706d6f98dd9343341cf4c5eb82a69a807c212b4d7d15ce8",
+          "body_sha256": "8f6631bd44fefdd644c1492a927d0e570529cd74449c887a70b1a284fc428dad",
           "source": "failure"
         },
         {
           "signature": "selectDefaultTheme(II)I",
           "flags": 9,
-          "body_sha256": "36c069063dba35402fb7b809f73a6252399da30a2e0fc9750ce00be2f132133d",
+          "body_sha256": "6cd6aabecd84146227ba5e78056cd369f661791118a79adae221272f52bedde0",
           "source": "rom"
         },
         {
           "signature": "selectSystemTheme(IIIII)I",
           "flags": 9,
-          "body_sha256": "c0f2e8bf27c4b2152a007e9641b7353cc842c0a89e8a5299e9231b407b646f2d",
+          "body_sha256": "a655c2d7e227381cbb52297443e223d3f563a16fb8a6fbb26a00107f57acdf9b",
           "source": "rom"
         },
         {
           "signature": "setCompatibilityInfo(Landroid/content/res/CompatibilityInfo;)V",
           "flags": 1,
-          "body_sha256": "d155bef5175a6e981b8c9af33d8fd75af441f5350b5a562d6e54714a06b250da",
-          "source": "failure"
-        },
-        {
-          "signature": "setComposedIconInfo(Landroid/app/ComposedIconInfo;)V",
-          "flags": 1,
-          "body_sha256": "c33ee6b95937d42897219e84e6ebb98b8483efa6a5e46b156f18996026d7a25e",
-          "source": "failure"
-        },
-        {
-          "signature": "setIconResources(Landroid/util/SparseArray;)V",
-          "flags": 1,
-          "body_sha256": "a0a6cb4a00b91c442695604052878df5491a2627b216edbe4ae5b54c35bb79f4",
+          "body_sha256": "121a2e09a0574ec7055fdaf2a7471a4ea6aac3154857590a1fefd5aed741de4d",
           "source": "failure"
         },
         {
           "signature": "startPreloading()V",
           "flags": 17,
-          "body_sha256": "1a3681541467d0fc37d19f16ee48889e5181b0653ade572d5bdb00eb6e8d82ec",
+          "body_sha256": "ea47de88f20e7ba3f19ac054faf85bef3b188f8e600af5cbf8dc3416c36dc256",
           "source": "failure"
         },
         {
           "signature": "stringForQuantityCode(I)Ljava/lang/String;",
           "flags": 10,
-          "body_sha256": "0a6c9a0f54425aaceefb49f2e4a4db6baaf4ed14fe38f1710440dc1dc395ae3d",
+          "body_sha256": "ee47fa95fc054086ffd430354ea39daf9c05e58d7c3c1290cb3a8f797aa68980",
           "source": "failure"
         },
         {
           "signature": "updateConfiguration(Landroid/content/res/Configuration;Landroid/util/DisplayMetrics;)V",
           "flags": 1,
-          "body_sha256": "28129cfff665a18deefde7d3e19e950b439b8512fdc8ad9a8964c241cf182d04",
+          "body_sha256": "5763066be0424ffd6e6b87e1656c022ff6371011dc1dca018dd7c5c9eb74bb82",
           "source": "failure"
         },
         {
           "signature": "updateConfiguration(Landroid/content/res/Configuration;Landroid/util/DisplayMetrics;Landroid/content/res/CompatibilityInfo;)V",
           "flags": 1,
-          "body_sha256": "a98bbc79dfd417c1fd8c62e4631c8909e345807df2c96870f48a707bdd59aef8",
-          "source": "failure"
-        },
-        {
-          "signature": "updateStringCache()V",
-          "flags": 17,
-          "body_sha256": "ae9a2c64b5aa0a8d82cbd003e1c322e2d8ec3db169f2ede53233a08133698ee8",
+          "body_sha256": "42aaae624e75a241e1c2a656791c268659ed86507d3d755408c89d5dacb57bf0",
           "source": "failure"
         },
         {
           "signature": "updateSystemConfiguration(Landroid/content/res/Configuration;Landroid/util/DisplayMetrics;Landroid/content/res/CompatibilityInfo;)V",
           "flags": 9,
-          "body_sha256": "3e1f1db5ddd97bd9bc4a4c29f63b92804b813975e51160c64e25ffcdb1a02f56",
+          "body_sha256": "6957f013cacfb5d81d0a106ba36e2e63f1bac569dd007f06d4a34eeadc4ea576",
           "source": "failure"
         },
         {
           "signature": "verifyPreloadConfig(IIILjava/lang/String;)Z",
           "flags": 2,
-          "body_sha256": "df4e08a63071280748ea345f69e07766e118d5175b957621824eef184ffcfb33",
+          "body_sha256": "9bc22ff4a381eedc95a65365dbc9793db201d31e109790dc84505b8ec144ace9",
           "source": "failure"
         }
       ]
@@ -1944,11 +1613,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/Resources$Theme;",
-      "smali_sha256": "6f8e221e963c1b6369abc20770dcf6af98726fde9c02c8b6acfd8725db8b2dc2",
+      "smali_sha256": "7c34221999c9588e6dfc5f97efeb3136a6d8eba75f260d860bff6d09c8c6e2a8",
       "fields": [
         {
           "signature": "mAssets:Landroid/content/res/AssetManager;",
@@ -1973,55 +1642,55 @@
         {
           "signature": "<init>(Landroid/content/res/Resources;)V",
           "flags": 65536,
-          "body_sha256": "0b727d3fee426aa46d3cf51abc69e1aa01d0223b1ddc0228943a757547b7b46b",
+          "body_sha256": "ed1af482ee5685497de22fc5b362e00c0d3bd71ad9f919cda29c2d24c446a414",
           "source": "rom"
         },
         {
           "signature": "applyStyle(IZ)V",
           "flags": 1,
-          "body_sha256": "b5edf1ea0b2f4a007e9f56b9b7c4f00bb2269f59b3ce50951047760d90f5c166",
+          "body_sha256": "2fd59878658ba53cefb8d91a3981448f6229afa4d830cbce2ae7890cafb337a6",
           "source": "rom"
         },
         {
           "signature": "dump(ILjava/lang/String;Ljava/lang/String;)V",
           "flags": 1,
-          "body_sha256": "45d77fb391c53338da5e0defb5e9dc9b3550106e4c6639ddd3f6cf60b1149e37",
+          "body_sha256": "5931ac2b7e65e38dc9b170247aeb7da5949f0a4f93a2c1a46e983189763062b7",
           "source": "failure"
         },
         {
           "signature": "finalize()V",
           "flags": 4,
-          "body_sha256": "5ac193a6ecacad0f0746f0f434a5450fe4a1dd6379677259dacd0a80f2146d6c",
+          "body_sha256": "0dc5e387d37ffddf4511e4a6206afbe52a27db668d46a39834e440cd4c63d739",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes(I[I)Landroid/content/res/TypedArray;",
           "flags": 1,
-          "body_sha256": "e982ae0a4f48ec78d1734bb7a8d1ee9fd690d49a35059aab75780fc2dabd5037",
+          "body_sha256": "d8b4ee9eeeee5d975cf03c612c482a342b93729bd4452ef5e041940fd7abf028",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
           "flags": 1,
-          "body_sha256": "2d63dbc2e239ca8bf3ebc5a9c251a46d459bf30b34b752b840794c4d4f4bab3e",
+          "body_sha256": "7acd394981760b6eddddf69a00336694e0af871768c8043c219c93ddf665300d",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes([I)Landroid/content/res/TypedArray;",
           "flags": 1,
-          "body_sha256": "e06e28b94c1ab55cdb09b1e3d858cadc4a0f33e043d3ed3f51d96209ff2f28c4",
+          "body_sha256": "bba6d939c0dbb5f6b56d314fdb9cf2319683c2e85f1770975531fc0a2d9a9276",
           "source": "rom"
         },
         {
           "signature": "resolveAttribute(ILandroid/util/TypedValue;Z)Z",
           "flags": 1,
-          "body_sha256": "9535aff5ac156ce94e5c24d13905ca9805991d8d119ed174587f560a697248fe",
+          "body_sha256": "d9359d89831c7a8b4c17afb4ba4b9aec057b64372afa453d7645fc3913595429",
           "source": "rom"
         },
         {
           "signature": "setTo(Landroid/content/res/Resources$Theme;)V",
           "flags": 1,
-          "body_sha256": "9978757044770f325edd35e013a42c4b08f016effddd8bc23c0f5585f4896483",
+          "body_sha256": "8818e802a1a65a7f28f9b11b6d4fa603f9d9305614e59aab3e224be2c0a799a8",
           "source": "rom"
         }
       ]
@@ -2030,11 +1699,11 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/res/TypedArray;",
-      "smali_sha256": "90821d298348da385255064146bf630d39590c270344f167036d669a4997a665",
+      "smali_sha256": "930e00f14c4e6e495f2ca572c42774bad9f8fac34714510eb3ec1ea8d20b5af2",
       "fields": [
         {
           "signature": "mData:[I",
@@ -2131,7 +1800,7 @@
         {
           "signature": "getFloat(IF)F",
           "flags": 1,
-          "body_sha256": "2330f12632c5b9825a8b8fa6893346510420ee09bf19a43345b5a9a7dc7658e3",
+          "body_sha256": "3dfc2e93b9695a8814eb7e677b5f1a4261d175dfa52714124f89d34ebe92b261",
           "source": "rom"
         },
         {
@@ -2179,13 +1848,13 @@
         {
           "signature": "getNonConfigurationString(II)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "7ce2f9fbcd47063b5dd9496ff8dc1aadfc54c719528835bb7f53132310164a37",
+          "body_sha256": "89ed89c4d61f77eac3e5e2c79f2d0d0a9c381184c540827dd8d4b861b9461c42",
           "source": "rom"
         },
         {
           "signature": "getNonResourceString(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "4d2c6bec0ab5e2d1411946ea6a25cbd07c1f363d3d40b613ace036d20c4a2eed",
+          "body_sha256": "a50660aae713dc425d105fc84b2519d88f0df9d435236462b2753e824088989c",
           "source": "rom"
         },
         {
@@ -2209,7 +1878,7 @@
         {
           "signature": "getString(I)Ljava/lang/String;",
           "flags": 1,
-          "body_sha256": "a96feea89e346b2ae6e375554b5a42bfd4aa33547a49a30574b57b9ec498f51e",
+          "body_sha256": "2266d2470e51f709a75286f13cc1c2380cd4aabe348526987c62457e12f3c26c",
           "source": "rom"
         },
         {

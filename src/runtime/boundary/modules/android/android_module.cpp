@@ -342,7 +342,10 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 3U || FunctionId == 4U) {
         const auto output = call.Pointer<std::byte>(1);
         if (!output.IsNull()) {
-            const std::array bytes{std::byte{'e'}, std::byte{'n'}};
+            if (!services_.device_locale) throw std::runtime_error("AConfiguration requires a device locale provider");
+            const auto locale = services_.device_locale();
+            const auto code = FunctionId == 3U ? locale.language : locale.region;
+            const std::array bytes{static_cast<std::byte>(code[0]), static_cast<std::byte>(code[1])};
             services_.address_space.Write(output.Address(), bytes, tid);
         }
         return 0;

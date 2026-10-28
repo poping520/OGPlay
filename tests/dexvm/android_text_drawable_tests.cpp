@@ -67,8 +67,10 @@ TEST_CASE("DVM-120 Typeface Java cache and styles drive measured rendered text")
         CHECK(create(3) == cached);
         static_cast<void>(f.vm.CollectGarbage("dvm120-typeface-static-cache"));
         CHECK(create(3) == cached);
-        f.Static("Landroid/graphics/Typeface;", "recreateDefaults", "()V");
-        CHECK(create(3) != cached);
+        // Cache reset was a CM extension, absent from the AOSP API19 shape.
+        CHECK_FALSE(f.linker.FindDirectMethod(owner, "recreateDefaults", "()V").has_value());
+        CHECK_FALSE(f.linker.FindDirectMethod(owner, "nativeFreeCaches", "()V").has_value());
+        CHECK(create(3) == cached);
         CHECK(f.On(normal, "getStyle", "()I").AsInt() == 0);
         const auto activity = f.New("Landroid/app/Activity;");
         const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});

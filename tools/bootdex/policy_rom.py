@@ -13,7 +13,7 @@ import zipfile
 import build_bootdex as builder
 
 SOURCE = 'android.policy.jar'
-SHA256 = '23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae'
+SHA256 = '660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1'
 OWNER = 'Lcom/android/internal/policy/impl/PhoneLayoutInflater;'
 REFERENCE = Path(__file__).with_name('policy-reference.json')
 BASELINE = Path(__file__).with_name('policy-baseline.json')

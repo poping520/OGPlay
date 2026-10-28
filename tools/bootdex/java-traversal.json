@@ -27,9 +27,6 @@
   ],
   "class_additions": {
     "framework.jar": [
-      "Landroid/app/IconPackHelper$ColorFilterUtils$Builder;",
-      "Landroid/app/IconPackHelper$ColorFilterUtils;",
-      "Landroid/app/IconPackHelper;",
       "Landroid/content/Context;",
       "Landroid/content/res/AssetManager$AssetInputStream;",
       "Landroid/content/res/AssetManager;",

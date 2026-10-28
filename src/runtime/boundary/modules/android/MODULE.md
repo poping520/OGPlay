@@ -77,3 +77,9 @@ memory、core/hal；VFS 和线程存活事实通过 AndroidLooperHooks 注入，
 - Java EGL 的 holder token 使用同源几何别名；退役别名不回落到 standalone 窗口。
   纯像素 publisher 与退役串行，经显式 hooks 投递到 integration，boundary 不获取 VM 锁。
   ANativeWindow_setBuffersGeometry 仍只接受重置或当前尺寸/格式，不新增任意 NDK resize。
+
+## AConfiguration 语言地区
+
+getLanguage/getCountry 经 boundary service 的显式 DeviceLocale provider 读取同一会话事实，
+各写恰好两个字符、不附加终止符；语言与地区不混用。输入由两字母小写语言/大写地区规则校验，
+无 provider 明确失败；不读取宿主 locale。provider 在 guest 启动前安装、线程停止后解除。

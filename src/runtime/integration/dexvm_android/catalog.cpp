@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "ogplay/runtime/boundary/device_locale.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -13,12 +14,10 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     dexvm::CoreIntrinsicServices services;
     services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
+    static_cast<void>(DeviceLocale(context->locale_language, context->locale_region));
     services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
         android_intrinsics::InitializeAndroidSystemProperties(vm, context);
     };
-    services.language = context->language;
-    services.iso3_language = context->iso3_language;
-    services.iso3_country = context->iso3_country;
     services.find_classpath_resource =
         [context](const dexvm::CoreIntrinsicServices::ClasspathLoader role,
                   const std::string_view name) -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
@@ -188,7 +187,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_os_AsyncTask_Status(context),
         Declare_android_os_AsyncTask_Worker(context),
         Declare_android_os_SystemProperties(context),
-        Declare_android_os_FileUtils(context),
         Declare_android_os_Binder(context),
         Declare_android_os_StrictMode(context),
         Declare_android_os_Environment(context),

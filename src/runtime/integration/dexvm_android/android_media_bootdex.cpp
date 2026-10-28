@@ -1262,12 +1262,6 @@ Decl Declare_android_media_MediaPlayer(const Context& context) {
             return dx::VmValue::Void();
         }, kPrivNat);
     builder.DirectMethod(
-        "_suspend", "()Z",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPrivNat);
-    builder.DirectMethod(
-        "_resume", "()Z",
-        [](dx::IntrinsicContext&) { return dx::VmValue::Int(0); }, kPrivNat);
-    builder.DirectMethod(
         "native_getMetadata", "(ZZLandroid/os/Parcel;)Z",
         [](dx::IntrinsicContext& call) -> dx::VmValue {
             Unsupported(call, "MediaPlayer.native_getMetadata");

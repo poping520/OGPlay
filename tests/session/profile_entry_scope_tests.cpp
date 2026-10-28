@@ -138,7 +138,6 @@ TEST_CASE("android intrinsic catalog is unique and directly bound") {
       "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/InputStream;Ljava/lang/String;)V",
       "Landroid/content/res/XmlResourceParser$Impl;.setInput(Ljava/io/Reader;)V",
       "Landroid/content/res/XmlResourceParser$Impl;.setProperty(Ljava/lang/String;Ljava/lang/Object;)V",
-      "Landroid/os/FileUtils;.getVolumeUUID(Ljava/lang/String;)I",
   };
   std::unordered_set<std::string> unimplemented;
   std::unordered_set<std::string> descriptors;

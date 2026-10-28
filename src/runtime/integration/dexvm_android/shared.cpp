@@ -49,6 +49,8 @@ void RequireAndroidAlphaOnly(dx::Interpreter& vm, DexVmAndroidContext& context, 
 }
 
 void InitializeAndroidSystemProperties(dx::Interpreter& vm, const Context& context) {
+    static_cast<void>(vm.SetSystemProperty("user.language", context->locale_language));
+    static_cast<void>(vm.SetSystemProperty("user.region", context->locale_region));
     if (!context->session) return;
     auto& process = context->session->Process();
     const auto memory = process.GuestMemoryAccess();

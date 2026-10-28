@@ -3,7 +3,7 @@
     "<clinit>()V",
     "<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V",
     "<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
-    "access$2500()Z",
+    "access$2400()Z",
     "assignParent(Landroid/view/ViewParent;)V",
     "awakenScrollBars()Z",
     "bringToFront()V",
@@ -418,7 +418,6 @@
     "SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION:I",
     "SYSTEM_UI_FLAG_LAYOUT_STABLE:I",
     "SYSTEM_UI_FLAG_LOW_PROFILE:I",
-    "SYSTEM_UI_FLAG_SHOW_NAVIGATION_IN_EXPANDED_DESKTOP:I",
     "SYSTEM_UI_FLAG_VISIBLE:I",
     "SYSTEM_UI_LAYOUT_FLAGS:I",
     "TEXT_ALIGNMENT_CENTER:I",
@@ -795,5 +794,5 @@
     }
   },
   "surface": "tools/bootdex/window-background.surface.json.gz",
-  "surface_sha256": "604725e9257b3994494011a7231f782962793b4183941e18aa940118dda73252"
+  "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53"
 }

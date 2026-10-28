@@ -4,9 +4,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/ViewTreeObserver;",
       "smali_sha256": "13346141b4b2b1bed63c3bbf26cf507373fc8ae2c51ae69abf9f426ab32389d6",
       "fields": [
@@ -79,18 +79,6 @@
           "source": "rom"
         },
         {
-          "signature": "checkIsAlive()V",
-          "flags": 2,
-          "body_sha256": "596979833a2b0dbb5ef23807133c0f23a9b34f79fa4582ba7f4ca541e1e2049d",
-          "source": "rom"
-        },
-        {
-          "signature": "kill()V",
-          "flags": 2,
-          "body_sha256": "dfd8151e603465dff4dcab792c8854c38dae53cf3425319c9564704578d240e6",
-          "source": "rom"
-        },
-        {
           "signature": "addOnComputeInternalInsetsListener(Landroid/view/ViewTreeObserver$OnComputeInternalInsetsListener;)V",
           "flags": 1,
           "body_sha256": "ec8f151624d6d8bd2ea43a55e4195cfdcaadbec23d23d38b2c523ae36777f6b5",
@@ -143,6 +131,12 @@
           "flags": 1,
           "body_sha256": "8df193bd8be6fd5118842bf5f2f78b1e037e4c51b5077a80f49aae79eaa80308",
           "source": "failure"
+        },
+        {
+          "signature": "checkIsAlive()V",
+          "flags": 2,
+          "body_sha256": "596979833a2b0dbb5ef23807133c0f23a9b34f79fa4582ba7f4ca541e1e2049d",
+          "source": "rom"
         },
         {
           "signature": "dispatchOnComputeInternalInsets(Landroid/view/ViewTreeObserver$InternalInsetsInfo;)V",
@@ -214,6 +208,12 @@
           "signature": "isAlive()Z",
           "flags": 1,
           "body_sha256": "92e3af3e90edcdcfe770e93778e2d42f887254ea30ba727a31b9ab46ed54680b",
+          "source": "rom"
+        },
+        {
+          "signature": "kill()V",
+          "flags": 2,
+          "body_sha256": "dfd8151e603465dff4dcab792c8854c38dae53cf3425319c9564704578d240e6",
           "source": "rom"
         },
         {

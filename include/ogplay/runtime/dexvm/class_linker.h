@@ -19,7 +19,9 @@
 #include "ogplay/runtime/dexvm/dexvm_types.h"
 #include "ogplay/runtime/dexvm/fast_code.h"
 
-namespace ogplay::core { class Logger; }
+namespace ogplay::core {
+class Logger;
+}
 
 namespace ogplay::runtime::dexvm {
 
@@ -35,31 +37,23 @@ struct CoreIntrinsicServices final {
     std::function<void(Interpreter&)> initialize_system_properties;
     std::uint32_t cpu_cores{1};
     enum class ClasspathLoader : std::uint8_t { bootstrap, application };
+
     // Location names a sealed guest archive, never a host filesystem path.
     struct ClasspathResource final {
         std::string archive_path;
         std::string entry_name;
     };
-    std::function<std::optional<ClasspathResource>(
-        ClasspathLoader, std::string_view)>
-        find_classpath_resource;
+
+    std::function<std::optional<ClasspathResource>(ClasspathLoader, std::string_view)> find_classpath_resource;
     // Unknown origins fail explicitly; nullopt means a missing entry only.
-    std::function<std::optional<std::vector<std::byte>>(const ClasspathResource&)>
-        read_classpath_resource;
+    std::function<std::optional<std::vector<std::byte>>(const ClasspathResource&)> read_classpath_resource;
     std::function<void(std::span<std::byte>)> secure_random;
-    std::string language{"en"};
     std::string default_timezone{"GMT"};
-    std::string iso3_language{"eng"};
-    std::string iso3_country{"USA"};
-    std::function<VmObjectRef(Interpreter&, std::string_view,
-                              std::string_view)>
-        singleton;
+    std::function<VmObjectRef(Interpreter&, std::string_view, std::string_view)> singleton;
     std::function<std::int64_t()> current_time_millis;
     std::function<void(VmObjectRef, VmObjectRef)> set_sax_content_handler;
-    std::function<std::optional<std::string>(std::string_view)>
-        environment_value;
-    std::function<std::vector<std::pair<std::string, std::string>>()>
-        environment_entries;
+    std::function<std::optional<std::string>(std::string_view)> environment_value;
+    std::function<std::vector<std::pair<std::string, std::string>>()> environment_entries;
 };
 
 // Class linking: registration, hierarchy resolution, field layout, vtable
@@ -85,6 +79,7 @@ struct DexUnitId final {
     std::uint32_t value{};
 
     [[nodiscard]] bool IsValid() const noexcept { return value != 0U; }
+
     auto operator<=>(const DexUnitId&) const = default;
 };
 
@@ -303,8 +298,7 @@ struct LinkedClass final {
     std::optional<DexClassId> annotation_interface;
     std::optional<std::u16string> generic_signature;
     std::vector<LinkedAnnotation> runtime_annotations;
-    std::vector<std::pair<std::string, LinkedAnnotationValue>>
-        annotation_defaults;
+    std::vector<std::pair<std::string, LinkedAnnotationValue>> annotation_defaults;
     IntrinsicHandler clinit_implementation;
     HostStateDestructor host_state_destructor;
     std::vector<IntrinsicFieldDecl> intrinsic_constants;
@@ -348,7 +342,7 @@ struct GapSurveyHit final {
     std::array<std::uint32_t, kGapSurveyChannelCount> channel_hits{};
     std::uint64_t first_hit_index{};  // 1-based position in the whole hit stream
     std::uint64_t first_uptime_ms{};
-    bool first_caller_bootdex{};      // top guest frame was BootDex original code
+    bool first_caller_bootdex{};           // top guest frame was BootDex original code
     std::vector<std::string> first_stack;  // innermost first, <= 5 frames
 };
 
@@ -383,8 +377,7 @@ public:
     [[nodiscard]] std::string DumpSurfaceJson();
 
     [[nodiscard]] bool IsLinked() const noexcept;
-    [[nodiscard]] std::optional<DexClassId> FindClass(
-        std::string_view descriptor) const;
+    [[nodiscard]] std::optional<DexClassId> FindClass(std::string_view descriptor) const;
     // Completes deferred hierarchy linking when a registered class is first
     // used. Unavailable hierarchy nodes fail here (or become recorded survey
     // stubs in gap-survey mode), never during the whole-DEX startup scan.
@@ -395,64 +388,50 @@ public:
     // After Link(): synthesize a concrete class that implements an already
     // loaded annotation interface. Storage is appended to the stable deque;
     // existing class/method identities are not rewritten.
-    [[nodiscard]] DexClassId DefineRestrictedAnnotationClass(
-        DexClassId annotation_type,
-        std::span<const IntrinsicMethodDecl> methods);
+    [[nodiscard]] DexClassId DefineRestrictedAnnotationClass(DexClassId annotation_type,
+                                                             std::span<const IntrinsicMethodDecl> methods);
 
     [[nodiscard]] const LinkedClass& Class(DexClassId id) const;
     [[nodiscard]] LinkedClass& MutableClass(DexClassId id);
     [[nodiscard]] const LinkedMethod& Method(VmMethodId id) const;
     [[nodiscard]] LinkedMethod& MutableMethod(VmMethodId id);
     [[nodiscard]] const LinkedField& Field(VmFieldId id) const;
-    [[nodiscard]] VmFieldId ResolveIntrinsicFieldBinding(
-        std::uint64_t token) const;
+    [[nodiscard]] VmFieldId ResolveIntrinsicFieldBinding(std::uint64_t token) const;
 
     // Constant-pool resolution against the registered dex (cached).
     [[nodiscard]] DexClassId ResolveTypeIndex(std::uint32_t type_index);
-    [[nodiscard]] DexClassId ResolveTypeIndex(DexUnitId unit,
-                                              std::uint32_t type_index,
+    [[nodiscard]] DexClassId ResolveTypeIndex(DexUnitId unit, std::uint32_t type_index,
                                               std::optional<DexClassId> caller = std::nullopt);
-    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
-        std::uint32_t method_index, InvokeKind kind);
-    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(
-        DexUnitId unit, std::uint32_t method_index, InvokeKind kind,
-        std::optional<DexClassId> caller = std::nullopt);
-    [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
-        std::uint32_t field_index, bool is_static);
-    [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(
-        DexUnitId unit, std::uint32_t field_index, bool is_static,
-        std::optional<DexClassId> caller = std::nullopt);
+    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(std::uint32_t method_index, InvokeKind kind);
+    [[nodiscard]] ResolvedCallSite ResolveMethodIndex(DexUnitId unit, std::uint32_t method_index, InvokeKind kind,
+                                                      std::optional<DexClassId> caller = std::nullopt);
+    [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(std::uint32_t field_index, bool is_static);
+    [[nodiscard]] ResolvedFieldRef ResolveFieldIndex(DexUnitId unit, std::uint32_t field_index, bool is_static,
+                                                     std::optional<DexClassId> caller = std::nullopt);
 
     // Runtime dispatch helpers.
-    [[nodiscard]] std::optional<std::uint16_t> FindVtableIndex(
-        DexClassId owner, const std::string& name,
-        const std::string& descriptor) const;
-    [[nodiscard]] std::optional<VmMethodId> FindDirectMethod(
-        DexClassId owner, const std::string& name,
-        const std::string& descriptor) const;
-    [[nodiscard]] std::optional<VmFieldId> FindFieldRecursive(
-        DexClassId owner, const std::string& name,
-        const std::string& descriptor) const;
+    [[nodiscard]] std::optional<std::uint16_t> FindVtableIndex(DexClassId owner, const std::string& name,
+                                                               const std::string& descriptor) const;
+    [[nodiscard]] std::optional<VmMethodId> FindDirectMethod(DexClassId owner, const std::string& name,
+                                                             const std::string& descriptor) const;
+    [[nodiscard]] std::optional<VmFieldId> FindFieldRecursive(DexClassId owner, const std::string& name,
+                                                              const std::string& descriptor) const;
     [[nodiscard]] bool IsAssignable(DexClassId target, DexClassId source);
-    [[nodiscard]] bool IsInitiatedBy(DexClassId java_class,
-                                     VmClassLoaderId loader) const;
+    [[nodiscard]] bool IsInitiatedBy(DexClassId java_class, VmClassLoaderId loader) const;
     void MarkInitiatedBy(DexClassId java_class, VmClassLoaderId loader);
 
     [[nodiscard]] const loader::DexImage& Image() const;
     [[nodiscard]] const loader::DexImage& Image(DexUnitId unit) const;
     [[nodiscard]] std::span<const std::uint8_t> DexBytes() const;
     [[nodiscard]] std::span<const std::uint8_t> DexBytes(DexUnitId unit) const;
-    [[nodiscard]] std::vector<loader::DexEncodedValue> StaticValues(
-        const LinkedClass& linked) const;
+    [[nodiscard]] std::vector<loader::DexEncodedValue> StaticValues(const LinkedClass& linked) const;
     [[nodiscard]] std::size_t ClassCount() const noexcept;
     [[nodiscard]] std::size_t LinkedClassCount() const noexcept;
     // Own methods declared by the class (not inherited).
     [[nodiscard]] std::vector<VmMethodId> MethodsOf(DexClassId owner) const;
     [[nodiscard]] std::vector<DexClassId> AllClasses() const;
-    [[nodiscard]] ReflectionClassSystemMetadata ReflectionSystemMetadata(
-        DexClassId java_class);
-    [[nodiscard]] std::vector<DexClassId> ReflectionExceptionTypes(
-        VmMethodId method);
+    [[nodiscard]] ReflectionClassSystemMetadata ReflectionSystemMetadata(DexClassId java_class);
+    [[nodiscard]] std::vector<DexClassId> ReflectionExceptionTypes(VmMethodId method);
 
     // Structural precheck (lazy, cached per method). Throws DexVmError with
     // class/method diagnostics on malformed code.
@@ -479,13 +458,11 @@ public:
     [[nodiscard]] bool HasSkeletonClass(std::string_view descriptor) const;
     // member is "name(descriptor)ret" for methods, "name:descriptor" for
     // fields, or empty for a whole missing class.
-    void RecordGapSurveyHit(const std::string& owner_descriptor,
-                            const std::string& member,
+    void RecordGapSurveyHit(const std::string& owner_descriptor, const std::string& member,
                             const GapSurveyContext& context = {});
     // Synthesizes a neutral platform method on owner and records the hit.
-    [[nodiscard]] VmMethodId SynthesizeSurveyMethod(
-        DexClassId owner, const std::string& name,
-        const std::string& descriptor, InvokeKind kind);
+    [[nodiscard]] VmMethodId SynthesizeSurveyMethod(DexClassId owner, const std::string& name,
+                                                    const std::string& descriptor, InvokeKind kind);
     [[nodiscard]] std::vector<GapSurveyHit> GapSurveyHits() const;
 
 private:
@@ -499,7 +476,6 @@ private:
 // Built-in java.* core intrinsic declarations that the interpreter itself
 // depends on (Object, String, Throwable and the implicit exception
 // hierarchy). Platform providers merge additional classes at assembly.
-[[nodiscard]] std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(
-    CoreIntrinsicServices services = {});
+[[nodiscard]] std::vector<IntrinsicClassDecl> CoreIntrinsicCatalog(CoreIntrinsicServices services = {});
 
 }  // namespace ogplay::runtime::dexvm

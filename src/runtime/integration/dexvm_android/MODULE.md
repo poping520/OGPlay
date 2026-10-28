@@ -31,6 +31,13 @@ CountDownTimer 的状态和 tick/finish 算法归 BootDex，通过既有 Handler
 
 ## Context、组件与进程
 
+设备语言地区仅存 locale_language/locale_region，默认 en/US，严格校验小写两字母语言与大写
+两字母地区。System 初始化从该事实写 user.language/user.region；bridge 通过 boundary
+provider 发布同源的 DeviceLocale 投影，不向 core 注入 ISO3。Resources.getConfiguration 的
+locale 每次取当前 Locale.getDefault；setDefault 不修改设备事实。设置 UI、persist.sys.*、
+Bionic 属性区、旧 headless HLE 与资源 locale qualifier 不属于此边界。
+
+
 ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的 growth limit，
 getLargeMemoryClass/staticGetLargeMemoryClass 读取 maximum，单位 MiB；与 Runtime 内存查询
 共用 JavaObjectModel 配置，不读取宿主内存，不使用固定档位。
@@ -860,3 +867,6 @@ AnimatorInflater XML；硬件 display list、非主 Looper 动画帧与跨平台
 属性动画所需 Trace.isTagEnabled 仅接受 View tag=8 并返回已连接；asyncTraceBegin/End
 将名字和 cookie 写结构化 debug 日志，其他 tag 继续记账拒绝。软件 dirty 请求按稳定窗口根
 登记，主窗口发布不能吞掉附加窗口的绘制请求；重绘完成后清理，不因此请求重新测量。
+
+ROM 基线只保留 AOSP 4.4.4 声明；CM 的 Typeface 缓存重建/清理、MediaPlayer suspend/resume
+及 FileUtils 卷 UUID 扩展不提供，不登记额外成功入口；查询/调用遵循缺失成员的明确失败。

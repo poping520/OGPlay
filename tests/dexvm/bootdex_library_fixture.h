@@ -41,7 +41,6 @@ using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> Dvm102BootDex();
 
-
 struct Dvm87Vm final {
     ogplay::runtime::HostCopyJavaPayloadProvider strings_payload;
     JniStringStore strings{strings_payload};
@@ -50,39 +49,28 @@ struct Dvm87Vm final {
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
-    std::shared_ptr<DexVmAndroidContext> context{
-        std::make_shared<DexVmAndroidContext>()};
+    std::shared_ptr<DexVmAndroidContext> context{std::make_shared<DexVmAndroidContext>()};
     Interpreter vm;
     VmThreadRuntime threads;
     VirtualFileSystem vfs;
     DexVmIoVfsAdapter io_file_system{vfs};
 
-    explicit Dvm87Vm(
-        const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
-        const std::string& language = "zh",
-        const std::string& iso3_language = "zho",
-        const std::string& iso3_country = "CHN",
-        const std::string& default_timezone = "GMT",
-        const std::vector<IntrinsicClassDecl>& extras = {});
+    explicit Dvm87Vm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
+                     const std::string& language = "zh", const std::string& region = "CN",
+                     const std::string& default_timezone = "GMT", const std::vector<IntrinsicClassDecl>& extras = {});
 
     ~Dvm87Vm();
 
-    [[nodiscard]] VmCallOutcome Static(
-        const std::string_view owner, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {});
+    [[nodiscard]] VmCallOutcome Static(const std::string_view owner, const std::string_view name,
+                                       const std::string_view descriptor, std::vector<VmValue> arguments = {});
 
-    [[nodiscard]] VmCallOutcome Virtual(
-        const VmObjectRef receiver, const std::string_view name,
-        const std::string_view descriptor,
-        std::vector<VmValue> arguments = {});
+    [[nodiscard]] VmCallOutcome Virtual(const VmObjectRef receiver, const std::string_view name,
+                                        const std::string_view descriptor, std::vector<VmValue> arguments = {});
 
-    void Construct(const VmObjectRef object, const std::string_view owner,
-                   const std::string_view descriptor,
+    void Construct(const VmObjectRef object, const std::string_view owner, const std::string_view descriptor,
                    std::vector<VmValue> arguments = {});
 
     static void RequireOk(const VmCallOutcome& outcome);
 };
 
-
-} // namespace ogplay::test::bootdex_library
+}  // namespace ogplay::test::bootdex_library

@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "34d280aee529509e5f16aaa5144a001f2a6773af902c7fcfa6dd80f665784b48",
+    "recipe_sha256": "b0882a9d6bd19c4a3d79af4a652f626e25c947abf5665c7e2a8fbc82ab49020f",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -87,18 +87,18 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "e0ab44bb1c71e6e433e09e3bdd5fb6f8a0cba3805cb830c900803edb075d5fae",
+        "source_sha256": "20a7efa74661c765954b61201f6a555e0fd8f6fc0cc170863ad2f09cc978eb59",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 10290358,
-    "sha256": "6630a2390f05535affe2f0df7534e18c9d2f2a7216fdf22cefc1c809b6d19c3a",
+    "size": 10370426,
+    "sha256": "5045e5da3e0aafaf40f9bb7c18c73e47decb88f39f0948a3b7222e908e74873d",
     "dex_entry": "classes.dex",
-    "dex_size": 6319912,
-    "dex_sha256": "27125e542462bc7c09db266c6f7744421bd1ce92478228b0386c49a3eb05ac45",
-    "class_count": 3893,
+    "dex_size": 6356804,
+    "dex_sha256": "c591f7460d7dc9d6390209ad22a440c1354e52205fab73590f304823d1f22a15",
+    "class_count": 3912,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
@@ -106,17 +106,17 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "d886141832241904f584c6520c5e4d26571c7eb31b16dfe0b6bfbe6bec8ed01f",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "7555c5eef907246800a1080e7d76fdfc8f760c934ec0f3ca7f8ec36856ccfe3c"
+      "payload_sha256": "3cc2ad17eda72554066d8ee6134cde4389bd241cc3cea8a8521408f0f99fbb3c"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "5520ba538d0d8aa4722df8c4892b4bd71f79a44783bfe0477af96675d01c414b",
+      "sha256": "13868b9ff1d301e62d1c6dc3c51b5395e22c11d566db841ad6683ece3103607a",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "5b8a21b0c1d2dc775e9ce2af11cca0aea2f50490825da75a446862ff112a12d7",
+      "manifest_sha256": "3eb23708de4dc7a3931c2c20c40ec19179fe7c909b0b04c894b8a3f818eb8385",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "1fe99b2d50c26262b077d251487c6f1294277c9c650bd7b07e2e53a7e7d9bfd0"
     },
@@ -287,7 +287,7 @@
       ],
       "build": {
         "generator": "tools/bootdex/build_bootdex.py",
-        "generator_sha256": "c3d36ee033e7aba0884fa502ccdc01a3060b26b7b5a81a201bf23b336974a6ba",
+        "generator_sha256": "f2208fd3523c9286207b738a37f0a12173a9f66a0bd6c2af0f944f379ed4d140",
         "ndk_revision": "25.2.9519653",
         "target": "armv7a-linux-androideabi19",
         "language": "C11",

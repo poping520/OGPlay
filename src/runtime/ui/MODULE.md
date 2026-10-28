@@ -179,3 +179,8 @@ synthetic root，并清除本批子节点的历史窗口位；Java visibility �
 
 `CommitProjection` 的空节点窗口事实批次仅为 ExternalProjection 重发最后完整几何与新窗口事实，推进
 epoch、原子替换快照，保留构建属性、target 与待布局工作；不测量或收集未完成 Java 几何。
+
+外部 UiProjectedNode.alpha 可携上层已计算的祖先有效 alpha，CommitProjection 同 epoch
+冻结到 UiNode；本层只按绘制命令消费，不执行 Java 或重新测量。RasterizeUiOverlay 输出
+预乘 RGBA；调用方合成时须选择预乘 source-over，不能再次乘像素 alpha。当前按每个
+绘制相乘，没有离屏子树层，存在重叠子树的组不透明度差异。

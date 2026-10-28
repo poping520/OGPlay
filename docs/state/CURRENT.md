@@ -1,6 +1,6 @@
 # 当前状态
 
-更新：2026-10-27。
+更新：2026-10-28。
 
 本文件是项目当前状态的快照：只写“现在怎样”，不写过程。修改时覆盖对应行，不追加流水；
 修复过程、验证明细及证据写入任务单。能力见 [capabilities.toml](../../capabilities.toml)，
@@ -15,7 +15,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| Island Castaway 1.3 | macOS | JNI NewObject* 已统一 VM 分配，URL 槽表首错已越过；实跑至 f=475 | `ObjectAnimator.ofFloat` 未实现 | [DVM-333](../tasks/dexvm/DVM-333.md) |
+| Island Castaway 1.3 | macOS | ROM 属性动画闪屏约608ms淡出并移除；窗口回前台后Activity焦点恢复，尝试intro视频 | `ParcelFileDescriptor.adoptFd` 未实现（被捕获）；退出 `System.runFinalizersOnExit` | [DVM-337](../tasks/dexvm/DVM-337.md) |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |

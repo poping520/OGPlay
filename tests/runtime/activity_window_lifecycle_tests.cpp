@@ -1212,3 +1212,168 @@ TEST_CASE("API19 Window background follows its unique lazy content root") {
         resource_method.implementation = resource_original;
     }
 }
+
+using ogplay::runtime::android_intrinsics::CallAndroidMethod;
+
+namespace {
+void LaunchAttachmentChild(ogplay::runtime::dexvm::Interpreter& vm, ogplay::runtime::dexvm::VmObjectRef owner) {
+    using namespace ogplay::runtime::dexvm;
+    const auto intent = vm.NewIntrinsicInstance("Landroid/content/Intent;");
+    const auto roots = vm.ProtectReferences(std::array{intent});
+    const auto init = vm.Linker().FindDirectMethod(vm.Model().ObjectClass(intent), "<init>", "()V");
+    REQUIRE(init.has_value());
+    REQUIRE_FALSE(vm.Call(*init, std::array{VmValue::Ref(intent)}).exception.IsValid());
+    static_cast<void>(CallAndroidMethod(
+        vm, intent, "setClassName", "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+        {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))}));
+    static_cast<void>(
+        CallAndroidMethod(vm, owner, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)}));
+}
+}  // namespace
+
+TEST_CASE("DVM-334 Activity Window.Callback attachment follows managed window lifetime") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        OrchestratedApp f("fixture.WindowAttachmentActivity", true, false, {}, {}, true, backend);
+        f.app->StartApplication();
+        auto& vm = f.app->DexVm().Vm();
+        auto& lifecycle = f.app->ActivityLifecycle();
+        const auto trace = [&] { return f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getTrace"); };
+        const auto reset = [&] {
+            const auto type = vm.Linker().ResolveDescriptor("Lfixture/WindowAttachmentActivity;");
+            const auto method = vm.Linker().FindDirectMethod(type, "resetTrace", "()V");
+            REQUIRE(method.has_value());
+            REQUIRE_FALSE(vm.Call(*method, {}).exception.IsValid());
+        };
+        REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+        CHECK(trace() == 1234);
+        REQUIRE(f.context->activity_stack.back().window_attached);
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(trace() == 12345);
+        const auto owner = f.context->activity;
+        reset();
+        static_cast<void>(lifecycle.Suspend());
+        static_cast<void>(lifecycle.Resume());
+        CHECK(trace() == 35);
+        CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
+        LaunchAttachmentChild(vm, owner);
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE(f.context->activity != owner);
+        CHECK_FALSE(f.context->activity_stack.front().visible);
+        CHECK(f.context->activity_stack.front().window_attached);
+        reset();
+        static_cast<void>(CallAndroidMethod(vm, f.context->activity, "finish", "()V"));
+        static_cast<void>(lifecycle.StepFrame());
+        REQUIRE(f.context->activity == owner);
+        CHECK(trace() == 235);
+        CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
+        LaunchAttachmentChild(vm, owner);
+        static_cast<void>(lifecycle.StepFrame());
+        reset();
+        // Retire the background instance; last-instance finish requests process exit.
+        static_cast<void>(CallAndroidMethod(vm, owner, "finish", "()V"));
+        static_cast<void>(lifecycle.StepFrame());
+        CHECK(trace() == 67);
+        CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 1);
+        static_cast<void>(f.app->Stop());
+        CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 1);
+    }
+}
+
+TEST_CASE("DVM-334 finish before window attachment skips both callbacks") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto* callback : {"onCreate", "onResume"}) {
+            OrchestratedApp f("fixture.WindowAttachmentActivity", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            auto& vm = f.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto type = linker.ResolveDescriptor("Lfixture/WindowAttachmentActivity;");
+            const auto slot = linker.FindVtableIndex(
+                type, callback, std::string_view(callback) == "onCreate" ? "(Landroid/os/Bundle;)V" : "()V");
+            REQUIRE(slot.has_value());
+            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [&](IntrinsicContext& call) {
+                static_cast<void>(CallAndroidMethod(vm, call.receiver, "finish", "()V"));
+                LaunchAttachmentChild(vm, call.receiver);
+                return VmValue::Void();
+            };
+            static_cast<void>(f.app->StartLauncherActivity());
+            CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 0);
+            CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 0);
+            CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getTrace") % 10 == 6);
+            static_cast<void>(f.app->Stop());
+        }
+    }
+}
+
+TEST_CASE("DVM-334 process shutdown does not synthesize window detachment") {
+    using namespace ogplay;
+    OrchestratedApp f("fixture.WindowAttachmentActivity", true, false);
+    f.app->StartApplication();
+    REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    REQUIRE(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getAttaches") == 1);
+    static_cast<void>(f.app->Stop());
+    CHECK(f.CallStaticInt("Lfixture/WindowAttachmentActivity;", "getDetaches") == 0);
+}
+
+TEST_CASE("DVM-334 window callback Java exceptions use lifecycle failure protocol") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool detach : {false, true}) {
+            OrchestratedApp f("fixture.WindowAttachmentActivity", true, false, {}, {}, true, backend);
+            f.app->StartApplication();
+            auto& vm = f.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto type = linker.ResolveDescriptor("Lfixture/WindowAttachmentActivity;");
+            const auto slot =
+                linker.FindVtableIndex(type, detach ? "onDetachedFromWindow" : "onAttachedToWindow", "()V");
+            REQUIRE(slot.has_value());
+            auto& method = linker.MutableMethod(linker.Class(type).vtable[*slot]);
+            method.kind = MethodKind::intrinsic;
+            method.implementation = [](IntrinsicContext&) -> VmValue {
+                throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "window-callback-sentinel"};
+            };
+            const auto run = [&] {
+                static_cast<void>(f.app->StartLauncherActivity());
+                if (detach) {
+                    const auto owner = f.context->activity;
+                    LaunchAttachmentChild(vm, owner);
+                    static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+                    static_cast<void>(CallAndroidMethod(vm, owner, "finish", "()V"));
+                    static_cast<void>(f.app->ActivityLifecycle().StepFrame());
+                }
+            };
+            try {
+                run();
+                FAIL("window callback exception was swallowed");
+            } catch (const std::exception& error) {
+                CHECK(std::string(error.what()).find("window-callback-sentinel") != std::string::npos);
+                CHECK(std::string(error.what()).find("Ljava/lang/IllegalStateException;") != std::string::npos);
+            }
+            CHECK(f.app->ActivityLifecycle().State().state == session::LifecycleRunState::failed);
+            CHECK_NOTHROW(static_cast<void>(f.app->Stop()));
+        }
+    }
+}
+
+TEST_CASE("DVM-334 Activity default window callbacks execute BootDex empty methods") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    OrchestratedApp f("fixture.HandshakeActivity", true, false);
+    f.app->StartApplication();
+    REQUIRE(f.app->StartLauncherActivity().state == session::LifecycleRunState::running);
+    auto& vm = f.app->DexVm().Vm();
+    for (const auto* name : {"onAttachedToWindow", "onDetachedFromWindow"}) {
+        const auto type = vm.Linker().ResolveDescriptor("Landroid/app/Activity;");
+        const auto slot = vm.Linker().FindVtableIndex(type, name, "()V");
+        REQUIRE(slot.has_value());
+        CHECK(vm.Linker().Method(vm.Linker().Class(type).vtable[*slot]).kind != MethodKind::intrinsic);
+        CHECK_NOTHROW(static_cast<void>(CallAndroidMethod(vm, f.context->activity, name, "()V")));
+    }
+    static_cast<void>(f.app->Stop());
+}

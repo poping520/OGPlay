@@ -37,8 +37,7 @@ constexpr std::uint32_t kDexVmNativeContextSlots = 31;
 
 namespace dx = ogplay::runtime::dexvm;
 
-[[nodiscard]] std::string IndentDiagnostic(const std::string_view text,
-                                           const std::string_view indent) {
+[[nodiscard]] std::string IndentDiagnostic(const std::string_view text, const std::string_view indent) {
     std::string result{indent};
     for (const char character : text) {
         result += character;
@@ -52,11 +51,12 @@ struct DescriptorWalk final {
     std::size_t index{1};  // past '('
 
     [[nodiscard]] bool Done() const { return descriptor[index] == ')'; }
+
     [[nodiscard]] char Next() {
         const char shorty = descriptor[index];
         if (shorty == 'L' || shorty == '[') {
-      while (descriptor[index] == '[')
-        ++index;
+            while (descriptor[index] == '[')
+                ++index;
             if (descriptor[index] == 'L') {
                 index = descriptor.find(';', index) + 1;
             } else {
@@ -72,30 +72,27 @@ struct DescriptorWalk final {
 [[nodiscard]] char ReturnShorty(const std::string& descriptor) {
     const auto close = descriptor.find(')');
     const char first = descriptor[close + 1];
-    return (first == '[' ) ? 'L' : first;
+    return (first == '[') ? 'L' : first;
 }
 
-void BindPlatformCoreHandlers(
-    std::vector<dx::IntrinsicClassDecl>& catalog,
-    const std::shared_ptr<DexVmAndroidContext>& android_context) {
+void BindPlatformCoreHandlers(std::vector<dx::IntrinsicClassDecl>& catalog,
+                              const std::shared_ptr<DexVmAndroidContext>& android_context) {
     struct Binding final {
         std::string_view owner;
         std::string_view name;
         std::string_view descriptor;
         dx::IntrinsicHandler implementation;
     };
+
     const Binding bindings[] = {
         {"Ljava/lang/System;", "currentTimeMillis", "()J",
-         android_intrinsics::PlatformSystemCurrentTimeMillisHandler(
-             android_context)},
-        {"Ljava/lang/System;", "nanoTime", "()J",
-         android_intrinsics::PlatformSystemNanoTimeHandler(android_context)},
+         android_intrinsics::PlatformSystemCurrentTimeMillisHandler(android_context)},
+        {"Ljava/lang/System;", "nanoTime", "()J", android_intrinsics::PlatformSystemNanoTimeHandler(android_context)},
         {"Ljava/lang/System;", "load", "(Ljava/lang/String;)V",
          android_intrinsics::PlatformSystemLoadHandler(android_context)},
         {"Ljava/lang/System;", "loadLibrary", "(Ljava/lang/String;)V",
          android_intrinsics::PlatformSystemLoadLibraryHandler(android_context)},
-        {"Ldalvik/system/BaseDexClassLoader;", "findLibrary",
-         "(Ljava/lang/String;)Ljava/lang/String;",
+        {"Ldalvik/system/BaseDexClassLoader;", "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;",
          android_intrinsics::PlatformClassLoaderFindLibraryHandler(android_context)},
         {"Ljava/lang/Runtime;", "nativeExit", "(I)V",
          android_intrinsics::PlatformRuntimeNativeExitHandler(android_context)},
@@ -105,8 +102,7 @@ void BindPlatformCoreHandlers(
         for (auto& declaration : catalog) {
             if (declaration.descriptor != binding.owner) continue;
             for (auto& method : declaration.methods) {
-                if (method.name == binding.name &&
-                    method.descriptor == binding.descriptor) {
+                if (method.name == binding.name && method.descriptor == binding.descriptor) {
                     method.implementation = binding.implementation;
                     found = true;
                     break;
@@ -114,19 +110,16 @@ void BindPlatformCoreHandlers(
             }
         }
         if (!found) {
-            throw DexVmBridgeError(
-                "platform core handler target is not declared: " +
-                std::string(binding.owner) + "." +
-                std::string(binding.name) +
-                std::string(binding.descriptor));
+            throw DexVmBridgeError("platform core handler target is not declared: " + std::string(binding.owner) + "." +
+                                   std::string(binding.name) + std::string(binding.descriptor));
         }
     }
 }
 
 }  // namespace
 
-std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(
-    const std::shared_ptr<DexVmAndroidContext>& context, const std::uint32_t cpu_cores) {
+std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext>& context,
+                                                              const std::uint32_t cpu_cores) {
     auto services = AndroidCoreIntrinsicServices(context);
     services.cpu_cores = cpu_cores;
     auto catalog = dx::CoreIntrinsicCatalog(std::move(services));
@@ -134,8 +127,7 @@ std::vector<dx::IntrinsicClassDecl> BoundCoreIntrinsicCatalog(
     return catalog;
 }
 
-void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
-                              const dx::VmRootVisitor& visit) {
+void VisitAndroidSessionRoots(const DexVmAndroidContext& context, const dx::VmRootVisitor& visit) {
     const auto root = [&](const dx::VmObjectRef ref) {
         if (ref.IsValid()) visit(ref);
     };
@@ -146,36 +138,69 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     };
     root(context.activity);
     for (const auto& record : context.activity_stack) {
-        root(record.object); root(record.intent); root(record.content); root(record.caller);
-        for (const auto& result : record.results) root(result.data);
+        root(record.object);
+        root(record.intent);
+        root(record.content);
+        root(record.caller);
+        root(record.window_manager);
+        root(record.app_window_token);
+        for (const auto& result : record.results)
+            root(result.data);
     }
     for (const auto& command : context.activity_commands) {
-        root(command.owner); root(command.intent);
+        root(command.owner);
+        root(command.intent);
     }
+    for (const auto& window : context.application_windows) {
+        root(window.owner);
+        root(window.root);
+        root(window.params);
+    }
+    root(context.application_pointer_root);
+    root(context.focused_application_window);
     root(context.application);
     root(context.application_base_context);
     for (const auto& binding : context.local_service_bindings) {
-        root(binding.owner); root(binding.connection); root(binding.intent); root(binding.component);
+        root(binding.owner);
+        root(binding.connection);
+        root(binding.intent);
+        root(binding.component);
     }
     for (const auto& [_, service] : context.local_services) {
-        root(service.instance); root(service.binder); root(service.intent);
+        root(service.instance);
+        root(service.binder);
+        root(service.intent);
     }
-    for (const auto operation : context.alarm_operations) root(operation);
+    for (const auto operation : context.alarm_operations)
+        root(operation);
     root(context.renderer);
     for (const auto& [_, state] : context.gl_surface_runtimes) {
-        root(state->view); root(state->owner); root(state->renderer);
-        root(state->egl_context_factory); root(state->egl_config_chooser);
-        root(state->renderer_egl); root(state->renderer_display); root(state->renderer_config);
-        root(state->renderer_context); root(state->renderer_surface); root(state->renderer_gl);
-        for (const auto event : state->events) root(event);
+        root(state->view);
+        root(state->owner);
+        root(state->renderer);
+        root(state->egl_context_factory);
+        root(state->egl_config_chooser);
+        root(state->renderer_egl);
+        root(state->renderer_display);
+        root(state->renderer_config);
+        root(state->renderer_context);
+        root(state->renderer_surface);
+        root(state->renderer_gl);
+        for (const auto event : state->events)
+            root(event);
     }
     root(context.egl_context_factory);
     root(context.egl_config_chooser);
-    root(context.renderer_egl); root(context.renderer_display); root(context.renderer_config);
-    root(context.renderer_context); root(context.renderer_surface); root(context.renderer_gl);
+    root(context.renderer_egl);
+    root(context.renderer_display);
+    root(context.renderer_config);
+    root(context.renderer_context);
+    root(context.renderer_surface);
+    root(context.renderer_gl);
     root(context.content_view);
     for (const auto& presentation : context.dialog_presentations) {
-        root(presentation.dialog); root(presentation.owner);
+        root(presentation.dialog);
+        root(presentation.owner);
     }
     root(context.window_surface_callback);
     root(context.window_surface_holder);
@@ -188,11 +213,14 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
     root(context.window_input_callback);
     root(context.window_input_queue);
     for (const auto& [holder, surface] : context.holder_surfaces) {
-        root(dx::VmObjectRef(holder)); root(surface);
+        root(dx::VmObjectRef(holder));
+        root(surface);
     }
     root(context.current_intent);
-    for (const auto& [_, value] : context.singletons) root(value);
-    for (const auto& [_, value] : context.bitmap_lock_roots) root(value);
+    for (const auto& [_, value] : context.singletons)
+        root(value);
+    for (const auto& [_, value] : context.bitmap_lock_roots)
+        root(value);
     root(context.egl.display);
     root(context.egl.no_display);
     root(context.egl.no_context);
@@ -221,10 +249,12 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
         for (const auto& action : context.pending_view_actions) {
             root(action.runnable);
         }
-        for (const auto event : context.gl_surface_events) root(event);
+        for (const auto event : context.gl_surface_events)
+            root(event);
     }
     root(context.ui_touch_activity);
-    for (const auto& [_, ref] : context.ui_touch_targets) root(ref);
+    for (const auto& [_, ref] : context.ui_touch_targets)
+        root(ref);
     for (const auto& [_, identity] : context.surface_owner_identities) {
         root(identity.activity);
         root(identity.root);
@@ -241,149 +271,146 @@ void VisitAndroidSessionRoots(const DexVmAndroidContext& context,
             root(ref);
     }
 
-    for (const auto& [_, ref] : context.ui_view_backgrounds) root(ref);
+    for (const auto& [_, ref] : context.ui_view_backgrounds)
+        root(ref);
 }
 
-void RegisterAndroidOwnerAttachedStateTable(
-    dx::Interpreter& vm,
-    const std::shared_ptr<DexVmAndroidContext>& context) {
+void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
-    vm.RegisterIntrinsicStateTable({
-        "android.owner-attached",
-        [context](const dx::VmObjectRef owner,
-                  const dx::VmRootVisitor& visit) {
-            const auto visit_ref = [&visit](const dx::VmObjectRef ref) {
-                if (ref.IsValid()) visit(ref);
-            };
-            const auto key = owner.Value();
-            if (const auto found = context->editable_owner.find(key);
-                found != context->editable_owner.end()) {
-                visit_ref(dx::VmObjectRef(found->second));
-            }
-            if (const auto found = context->broadcast_receivers.find(key);
-                found != context->broadcast_receivers.end()) {
-                for (const auto receiver : found->second) {
-                    visit_ref(dx::VmObjectRef(receiver));
-                }
-            }
-            if (const auto found = context->surface_holders.find(key);
-                found != context->surface_holders.end()) visit_ref(found->second);
-            if (const auto found = context->surface_callbacks.find(key);
-                found != context->surface_callbacks.end()) {
-                for (const auto callback : found->second) visit_ref(callback);
-            }
-            if (const auto schedule = context->ui_window_schedules.find(owner);
-                schedule != context->ui_window_schedules.end())
-                visit_ref(schedule->second.window_token);
-            if (const auto found = context->view_tree_observers.find(key);
-                found != context->view_tree_observers.end()) visit_ref(found->second);
-            if (const auto found = context->global_layout_listeners.find(key);
-                found != context->global_layout_listeners.end()) visit_ref(found->second);
-            if (const auto found = context->sax_content_handlers.find(key);
-                found != context->sax_content_handlers.end()) visit_ref(found->second);
-            if (const auto found = context->holder_canvases.find(key);
-                found != context->holder_canvases.end()) visit_ref(found->second);
-            if (const auto found = context->view_adapter_references.find(key);
-                found != context->view_adapter_references.end()) {
-                visit_ref(found->second.window_owner);
-                visit_ref(found->second.focus_listener);
-                visit_ref(found->second.system_ui_listener);
-                visit_ref(found->second.text_typeface);
-                visit_ref(found->second.text_editable);
-                visit_ref(found->second.text_movement);
-                for (const auto ref : found->second.text_compounds)
-                    visit_ref(ref);
-            }
-            if (const auto found = context->ui_view_layout_params.find(key);
-                found != context->ui_view_layout_params.end()) visit_ref(found->second);
+    vm.RegisterIntrinsicStateTable(
+        {"android.owner-attached",
+         [context](const dx::VmObjectRef owner, const dx::VmRootVisitor& visit) {
+             const auto visit_ref = [&visit](const dx::VmObjectRef ref) {
+                 if (ref.IsValid()) visit(ref);
+             };
+             const auto key = owner.Value();
+             if (const auto found = context->editable_owner.find(key); found != context->editable_owner.end()) {
+                 visit_ref(dx::VmObjectRef(found->second));
+             }
+             if (const auto found = context->broadcast_receivers.find(key);
+                 found != context->broadcast_receivers.end()) {
+                 for (const auto receiver : found->second) {
+                     visit_ref(dx::VmObjectRef(receiver));
+                 }
+             }
+             if (const auto found = context->surface_holders.find(key); found != context->surface_holders.end())
+                 visit_ref(found->second);
+             if (const auto found = context->surface_callbacks.find(key); found != context->surface_callbacks.end()) {
+                 for (const auto callback : found->second)
+                     visit_ref(callback);
+             }
+             if (const auto schedule = context->ui_window_schedules.find(owner);
+                 schedule != context->ui_window_schedules.end())
+                 visit_ref(schedule->second.window_token);
+             if (const auto found = context->view_tree_observers.find(key); found != context->view_tree_observers.end())
+                 visit_ref(found->second);
+             if (const auto found = context->global_layout_listeners.find(key);
+                 found != context->global_layout_listeners.end())
+                 visit_ref(found->second);
+             if (const auto found = context->sax_content_handlers.find(key);
+                 found != context->sax_content_handlers.end())
+                 visit_ref(found->second);
+             if (const auto found = context->holder_canvases.find(key); found != context->holder_canvases.end())
+                 visit_ref(found->second);
+             if (const auto found = context->view_adapter_references.find(key);
+                 found != context->view_adapter_references.end()) {
+                 visit_ref(found->second.window_owner);
+                 visit_ref(found->second.focus_listener);
+                 visit_ref(found->second.system_ui_listener);
+                 visit_ref(found->second.text_typeface);
+                 visit_ref(found->second.text_editable);
+                 visit_ref(found->second.text_movement);
+                 for (const auto ref : found->second.text_compounds)
+                     visit_ref(ref);
+             }
+             if (const auto found = context->ui_view_layout_params.find(key);
+                 found != context->ui_view_layout_params.end())
+                 visit_ref(found->second);
 
-            if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
-                visit_ref(state->second.bitmap);
-                for (const auto child : state->second.skin_children)
-                    visit_ref(child);
-            }
-            if (const auto found = context->text_watchers.find(key);
-                found != context->text_watchers.end()) {
-                for (const auto watcher : found->second) visit_ref(watcher);
-            }
-        },
-        [context](const dx::VmObjectRef owner) {
-            const auto key = owner.Value();
-            context->preference_names.erase(key);
-            context->editable_owner.erase(key);
-            context->telephony_listeners.erase(key);
-            context->broadcast_receivers.erase(key);
-            context->requested_orientations.erase(key);
-            context->gl_surface_render_modes.erase(key);
-            context->gl_surface_render_requests.erase(key);
-            if (context->gl_surface_renderer_view.Value() == key) {
-                context->gl_surface_renderer_view = dexvm::VmObjectRef{};
-            }
-            context->gl_surface_client_versions.erase(key);
-            context->gl_surface_config_specs.erase(key);
-            context->surface_holders.erase(key);
-            context->surface_callbacks.erase(key);
-            if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
-            context->active_surface_holders.erase(key);
-            context->managed_window_tokens.erase(key);
-            context->view_tree_observers.erase(key);
-            context->global_layout_listeners.erase(key);
-            context->sax_content_handlers.erase(key);
-            context->bitmaps.erase(key);
-            context->identity_matrices.erase(key);
-            context->canvases.erase(key);
-            context->holder_canvases.erase(key);
-            const auto media = context->media_players.find(key);
-            if (media != context->media_players.end()) {
-                if (context->encoded_music != nullptr) {
-                    context->encoded_music->Destroy(media->second.music);
-                }
-                if (media->second.source.lease != 0U) {
-                    context->encoded_audio_leases.erase(
-                        media->second.source.lease);
-                }
-                context->media_players.erase(media);
-            }
-            const auto pool = context->sound_pools.find(key);
-            if (pool != context->sound_pools.end()) {
-                if (context->encoded_audio_playback != nullptr) {
-                    for (const auto& source :
-                         context->encoded_audio_playback->PoolSources(
-                             pool->second.pool)) {
-                        if (source.lease != 0U) {
-                            context->encoded_audio_leases.erase(source.lease);
-                        }
-                    }
-                    context->encoded_audio_playback->DestroyPool(
-                        pool->second.pool);
-                }
-                context->sound_pools.erase(pool);
-            }
-            context->view_adapter_references.erase(key);
-            context->ui_view_layout_params.erase(key);
-            context->ui_image_scale_types.erase(key);
-            context->text_watchers.erase(key);
-            if (const auto background = context->ui_view_backgrounds.find(key);
-                background != context->ui_view_backgrounds.end()) {
-                if (auto state = context->ui_drawables.find(
-                        background->second.Value());
-                    state != context->ui_drawables.end()) {
-                    state->second.callback_node.reset();
-                }
-                context->ui_view_backgrounds.erase(background);
-            }
-            context->ui_drawables.erase(key);
-            context->paint_measure_states.erase(key);
-            if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
-                if (const auto state = context->ui_drawables.find(image->second.Value()); state != context->ui_drawables.end()) state->second.callback_node.reset();
-                context->ui_view_images.erase(image);
-            }
-            {
-                std::scoped_lock video_lock(context->video_views_mutex);
-                context->video_views.erase(key);
-            }
-        },
-        {}});
+             if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
+                 visit_ref(state->second.bitmap);
+                 for (const auto child : state->second.skin_children)
+                     visit_ref(child);
+             }
+             if (const auto found = context->text_watchers.find(key); found != context->text_watchers.end()) {
+                 for (const auto watcher : found->second)
+                     visit_ref(watcher);
+             }
+         },
+         [context](const dx::VmObjectRef owner) {
+             const auto key = owner.Value();
+             context->preference_names.erase(key);
+             context->editable_owner.erase(key);
+             context->telephony_listeners.erase(key);
+             context->broadcast_receivers.erase(key);
+             context->requested_orientations.erase(key);
+             context->gl_surface_render_modes.erase(key);
+             context->gl_surface_render_requests.erase(key);
+             if (context->gl_surface_renderer_view.Value() == key) {
+                 context->gl_surface_renderer_view = dexvm::VmObjectRef{};
+             }
+             context->gl_surface_client_versions.erase(key);
+             context->gl_surface_config_specs.erase(key);
+             context->surface_holders.erase(key);
+             context->surface_callbacks.erase(key);
+             if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
+             context->active_surface_holders.erase(key);
+             context->managed_window_tokens.erase(key);
+             context->view_tree_observers.erase(key);
+             context->global_layout_listeners.erase(key);
+             context->sax_content_handlers.erase(key);
+             context->bitmaps.erase(key);
+             context->identity_matrices.erase(key);
+             context->canvases.erase(key);
+             context->holder_canvases.erase(key);
+             const auto media = context->media_players.find(key);
+             if (media != context->media_players.end()) {
+                 if (context->encoded_music != nullptr) {
+                     context->encoded_music->Destroy(media->second.music);
+                 }
+                 if (media->second.source.lease != 0U) {
+                     context->encoded_audio_leases.erase(media->second.source.lease);
+                 }
+                 context->media_players.erase(media);
+             }
+             const auto pool = context->sound_pools.find(key);
+             if (pool != context->sound_pools.end()) {
+                 if (context->encoded_audio_playback != nullptr) {
+                     for (const auto& source : context->encoded_audio_playback->PoolSources(pool->second.pool)) {
+                         if (source.lease != 0U) {
+                             context->encoded_audio_leases.erase(source.lease);
+                         }
+                     }
+                     context->encoded_audio_playback->DestroyPool(pool->second.pool);
+                 }
+                 context->sound_pools.erase(pool);
+             }
+             context->view_adapter_references.erase(key);
+             context->ui_view_layout_params.erase(key);
+             context->ui_image_scale_types.erase(key);
+             context->text_watchers.erase(key);
+             if (const auto background = context->ui_view_backgrounds.find(key);
+                 background != context->ui_view_backgrounds.end()) {
+                 if (auto state = context->ui_drawables.find(background->second.Value());
+                     state != context->ui_drawables.end()) {
+                     state->second.callback_node.reset();
+                 }
+                 context->ui_view_backgrounds.erase(background);
+             }
+             context->ui_drawables.erase(key);
+             context->paint_measure_states.erase(key);
+             if (const auto image = context->ui_view_images.find(key); image != context->ui_view_images.end()) {
+                 if (const auto state = context->ui_drawables.find(image->second.Value());
+                     state != context->ui_drawables.end())
+                     state->second.callback_node.reset();
+                 context->ui_view_images.erase(image);
+             }
+             {
+                 std::scoped_lock video_lock(context->video_views_mutex);
+                 context->video_views.erase(key);
+             }
+         },
+         {}});
 }
 
 class DexVmGuestBridge::Impl final {
@@ -410,10 +437,8 @@ public:
     std::unordered_set<std::uint32_t> registering_classes;
     mutable std::mutex thread_contexts_mutex;
     std::mutex native_preparation_mutex;
-    std::unordered_map<std::uint64_t, std::uint64_t> token_to_process_thread{
-        {1, kRootThreadId}};
-    std::unordered_map<std::uint64_t, std::uint64_t> process_thread_to_token{
-        {kRootThreadId, 1}};
+    std::unordered_map<std::uint64_t, std::uint64_t> token_to_process_thread{{1, kRootThreadId}};
+    std::unordered_map<std::uint64_t, std::uint64_t> process_thread_to_token{{kRootThreadId, 1}};
     std::unordered_map<std::uint64_t, std::uint32_t> process_thread_slots;
     std::unordered_set<std::uint64_t> java_thread_tokens;
     std::unordered_map<std::uint64_t, dx::InterpreterExecutionContext> native_attachments;
@@ -422,8 +447,7 @@ public:
     std::unordered_map<std::uint64_t, memory::GuestAddress> asset_managers;
 
     memory::GuestAddress AssetManagerObject(dx::VmObjectRef object) {
-        if (!object.IsValid())
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "assetManager is null"};
+        if (!object.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "assetManager is null"};
         if (linker.Class(model->ObjectClass(object)).descriptor != "Landroid/content/res/AssetManager;")
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "object is not an AssetManager"};
         if (!android_context || android_intrinsics::IsSystemAssets(android_context, object)) {
@@ -433,19 +457,27 @@ public:
         const auto identity = model->ToIdentity(object).value;
         if (const auto found = asset_managers.find(identity); found != asset_managers.end()) return found->second;
         const auto manager = session->Process().RegisterAssetManager(ApkAssets(android_context));
-        try { asset_managers.emplace(identity, manager); }
-        catch (...) { session->Process().UnregisterAssetManager(manager); throw; }
+        try {
+            asset_managers.emplace(identity, manager);
+        } catch (...) {
+            session->Process().UnregisterAssetManager(manager);
+            throw;
+        }
         return manager;
     }
-    memory::GuestAddress AssetManagerFromJava(std::uint64_t thread,
-        memory::GuestAddress env, AssetManagerJavaReference reference) {
+
+    memory::GuestAddress AssetManagerFromJava(std::uint64_t thread, memory::GuestAddress env,
+                                              AssetManagerJavaReference reference) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
-        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread)) return memory::GuestAddress{};
-        try { return AssetManagerObject(FromReference(JniReference{reference.token}, thread)); }
-        catch (const dx::VmJavaThrow& error) { static_cast<void>(NativeApiException(thread, error)); }
-        catch (const std::exception& error) {
-            static_cast<void>(NativeApiException(thread,
-                dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
+        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread))
+            return memory::GuestAddress{};
+        try {
+            return AssetManagerObject(FromReference(JniReference{reference.token}, thread));
+        } catch (const dx::VmJavaThrow& error) {
+            static_cast<void>(NativeApiException(thread, error));
+        } catch (const std::exception& error) {
+            static_cast<void>(
+                NativeApiException(thread, dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
         }
         return memory::GuestAddress{};
     }
@@ -453,31 +485,34 @@ public:
     memory::GuestAddress SurfaceFromJava(std::uint64_t thread, memory::GuestAddress env,
                                          SurfaceJavaReference reference) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
-        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread) ||
-            !android_context) return memory::GuestAddress{};
+        if (!NativeEnvironment(thread, env) || session->Environment().ExceptionCheck(thread) || !android_context)
+            return memory::GuestAddress{};
         try {
             const auto object = FromReference(JniReference{reference.token}, thread);
-            if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;") return memory::GuestAddress{};
+            if (!object.IsValid() || linker.Class(model->ObjectClass(object)).descriptor != "Landroid/view/Surface;")
+                return memory::GuestAddress{};
             if (!android_context->stream_surface_owners.contains(object.Value())) return memory::GuestAddress{};
             if (ResolveAndroidSurfaceStream(*vm, *android_context, object)) {
-                if (auto* vm_ledger = vm->Ledger()) vm_ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "stream ANativeWindow producer is not connected"};
+                if (auto* vm_ledger = vm->Ledger())
+                    vm_ledger->RecordUnimplemented("dexvm.surface_texture.native_window_producer", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "stream ANativeWindow producer is not connected"};
             }
             for (const auto& [holder, surface] : android_context->holder_surfaces) {
                 // Surface.isValid(): live holders, and holders still inside
                 // surfaceDestroyed, whose window retires after the callbacks.
                 const bool live = android_context->managed_host_surface_open &&
                                   android_context->active_surface_holders.contains(holder);
-                if (surface != object ||
-                    !(live || android_context->destroying_surface_holders.contains(holder))) continue;
+                if (surface != object || !(live || android_context->destroying_surface_holders.contains(holder)))
+                    continue;
                 return session->Process().AcquireSurfaceWindow(
                     {memory::GuestAddress{holder}, android_context->surface_width, android_context->surface_height});
             }
         } catch (const dx::VmJavaThrow& error) {
             static_cast<void>(NativeApiException(thread, error));
         } catch (const std::exception& error) {
-            static_cast<void>(NativeApiException(thread,
-                dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
+            static_cast<void>(
+                NativeApiException(thread, dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", error.what()}));
         }
         return memory::GuestAddress{};
     }
@@ -485,11 +520,13 @@ public:
     bool NativeEnvironment(std::uint64_t thread, memory::GuestAddress env) const {
         return env == session->GuestEnvironment() && session->Environment().IsThreadAttached(thread);
     }
-    std::pair<dx::VmObjectRef, DexVmAndroidContext::BitmapState*> BitmapObject(
-        std::uint64_t thread, BitmapJavaReference input, bool allow_recycled = false) {
+
+    std::pair<dx::VmObjectRef, DexVmAndroidContext::BitmapState*>
+    BitmapObject(std::uint64_t thread, BitmapJavaReference input, bool allow_recycled = false) {
         dx::VmObjectRef object;
-        try { object = FromReference(JniReference{input.token}, thread); }
-        catch (const DexVmBridgeError&) {
+        try {
+            object = FromReference(JniReference{input.token}, thread);
+        } catch (const DexVmBridgeError&) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid JNI bitmap reference"};
         }
         const auto found = android_context->bitmaps.find(object.Value());
@@ -499,6 +536,7 @@ public:
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is recycled"};
         return {object, &found->second};
     }
+
     std::int32_t NativeApiException(std::uint64_t thread, const dx::VmJavaThrow& error) {
         const auto execution = ContextForJniThread(thread);
         const auto type = linker.ResolveDescriptor(error.descriptor);
@@ -513,13 +551,15 @@ public:
         const auto message_root = vm->ProtectReferences(std::array{message});
         const auto constructor = linker.FindDirectMethod(type, "<init>", "(Ljava/lang/String;)V");
         if (!constructor) throw DexVmBridgeError("NDK exception constructor is missing");
-        const auto result = vm->Call(execution, *constructor,
-            std::array{dx::VmValue::Ref(exception), dx::VmValue::Ref(message)});
-        session->Environment().Throw(thread, PublishLocal(result.exception.IsValid() ? result.exception : exception, thread));
+        const auto result =
+            vm->Call(execution, *constructor, std::array{dx::VmValue::Ref(exception), dx::VmValue::Ref(message)});
+        session->Environment().Throw(thread,
+                                     PublishLocal(result.exception.IsValid() ? result.exception : exception, thread));
         return -2;
     }
-    std::int32_t BitmapInfo(std::uint64_t thread, memory::GuestAddress env,
-                            BitmapJavaReference input, AndroidBitmapInfo& info) {
+
+    std::int32_t BitmapInfo(std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference input,
+                            AndroidBitmapInfo& info) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
         if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
@@ -528,27 +568,34 @@ public:
             info = {static_cast<std::uint32_t>(state->width), static_cast<std::uint32_t>(state->height),
                     state->pixels->Stride(), state->pixels->Format(), 0};
             return 0;
-        } catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
+        } catch (const dx::VmJavaThrow& error) {
+            return NativeApiException(thread, error);
+        }
     }
-    std::int32_t BitmapLock(std::uint64_t thread, memory::GuestAddress env,
-                            BitmapJavaReference input, memory::GuestAddress& address) {
+
+    std::int32_t BitmapLock(std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference input,
+                            memory::GuestAddress& address) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
         if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
         try {
             const auto [object, state] = BitmapObject(thread, input);
             android_context->bitmap_lock_roots.emplace(object.Value(), object);
-            try { address = state->pixels->Lock(session->Process().GuestMemoryAccess()); }
-            catch (...) {
+            try {
+                address = state->pixels->Lock(session->Process().GuestMemoryAccess());
+            } catch (...) {
                 if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
                 throw;
             }
             return 0;
-        } catch (const std::bad_alloc&) { return -3; }
-          catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
+        } catch (const std::bad_alloc&) {
+            return -3;
+        } catch (const dx::VmJavaThrow& error) {
+            return NativeApiException(thread, error);
+        }
     }
-    std::int32_t BitmapUnlock(std::uint64_t thread, memory::GuestAddress env,
-                              BitmapJavaReference input) {
+
+    std::int32_t BitmapUnlock(std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference input) {
         const dx::VmExecutionLockScope guard(vm->ExecutionLock());
         if (!NativeEnvironment(thread, env)) return -1;
         if (session->Environment().ExceptionCheck(thread)) return -2;
@@ -559,12 +606,14 @@ public:
             state->pixels->Unlock();
             if (state->pixels->Locks() == 0) android_context->bitmap_lock_roots.erase(object.Value());
             return 0;
-        } catch (const std::bad_alloc&) { return -3; }
-          catch (const dx::VmJavaThrow& error) { return NativeApiException(thread, error); }
+        } catch (const std::bad_alloc&) {
+            return -3;
+        } catch (const dx::VmJavaThrow& error) {
+            return NativeApiException(thread, error);
+        }
     }
 
-    [[nodiscard]] JniObjectIdentity JniClassIdentity(
-        const dx::DexClassId java_class) {
+    [[nodiscard]] JniObjectIdentity JniClassIdentity(const dx::DexClassId java_class) {
         const auto& linked = linker.Class(java_class);
         if (linked.is_array) {
             return {JniObjectDomain::dex_vm, java_class.Value()};
@@ -572,26 +621,22 @@ public:
         // Value transport needs the stable class identity, not a fresh scan of
         // every method and field on each object-array store. JNI resolution
         // still publishes newly materialized members via RegisterClassForNative.
-        if (const auto found = class_identities.find(java_class.Value());
-            found != class_identities.end()) return found->second;
+        if (const auto found = class_identities.find(java_class.Value()); found != class_identities.end())
+            return found->second;
         return RegisterClassForNative(java_class);
     }
 
-    [[nodiscard]] dx::DexClassId DexClassIdentity(
-        const JniObjectIdentity identity) const {
+    [[nodiscard]] dx::DexClassId DexClassIdentity(const JniObjectIdentity identity) const {
         if (identity.domain == JniObjectDomain::dex_vm) {
-            const auto java_class = dx::DexClassId(
-                static_cast<std::uint32_t>(identity.value));
+            const auto java_class = dx::DexClassId(static_cast<std::uint32_t>(identity.value));
             static_cast<void>(linker.Class(java_class));
             return java_class;
         }
         if (const auto type = ClassForJniIdentity(identity)) return *type;
-        throw DexVmBridgeError(
-            "JNI class identity is not published in DexVM");
+        throw DexVmBridgeError("JNI class identity is not published in DexVM");
     }
 
-    [[nodiscard]] std::optional<dx::DexClassId> ClassForJniIdentity(
-        const JniObjectIdentity identity) const {
+    [[nodiscard]] std::optional<dx::DexClassId> ClassForJniIdentity(const JniObjectIdentity identity) const {
         if (identity.domain == JniObjectDomain::host) {
             const auto found = native_class_ids.find(identity.value);
             if (found != native_class_ids.end()) return found->second;
@@ -599,8 +644,7 @@ public:
         return std::nullopt;
     }
 
-    [[nodiscard]] dx::DexClassId ObjectClassIdentity(
-        const JniObjectIdentity identity) const {
+    [[nodiscard]] dx::DexClassId ObjectClassIdentity(const JniObjectIdentity identity) const {
         try {
             return DexClassIdentity(session->Objects().ClassOf(identity));
         } catch (const JniGuestBindingError&) {
@@ -611,13 +655,11 @@ public:
     [[nodiscard]] std::pair<dx::DexClassId, dx::DexClassId>
     ObjectArrayClassIdentity(const JniObjectIdentity element_identity) {
         const auto element_class = DexClassIdentity(element_identity);
-        const auto array_class = linker.ResolveDescriptor(
-            "[" + linker.Class(element_class).descriptor);
+        const auto array_class = linker.ResolveDescriptor("[" + linker.Class(element_class).descriptor);
         return {array_class, element_class};
     }
 
-    [[nodiscard]] dx::VmObjectRef MonitorObject(
-        const JniObjectIdentity identity) {
+    [[nodiscard]] dx::VmObjectRef MonitorObject(const JniObjectIdentity identity) {
         for (const auto& [raw_class, registered] : class_identities) {
             if (registered == identity) {
                 return model->ClassObject(dx::DexClassId(raw_class));
@@ -628,27 +670,24 @@ public:
 
     // ---- reference conversion ------------------------------------------
 
-    [[nodiscard]] JniReference PublishLocal(
-        const dx::VmObjectRef ref,
-        const std::uint64_t thread = kRootThreadId) {
-    if (!ref.IsValid())
-      return JniReference{};
-    const auto identity = model->Kind(ref) == dx::VmObjectKind::class_object
-        ? JniClassIdentity(model->ClassOfClassObject(ref))
-        : model->ToIdentity(ref);
-    const auto java_class = model->ObjectClass(ref);
-    if (java_class.IsValid()) {
-      const auto class_identity = JniClassIdentity(java_class);
-      session->Objects().EnsureRegistered(identity, class_identity);
-    }
-    return session->Environment().PublishLocalObject(thread, identity);
+    [[nodiscard]] JniReference PublishLocal(const dx::VmObjectRef ref, const std::uint64_t thread = kRootThreadId) {
+        if (!ref.IsValid()) return JniReference{};
+        const auto identity = model->Kind(ref) == dx::VmObjectKind::class_object
+                                  ? JniClassIdentity(model->ClassOfClassObject(ref))
+                                  : model->ToIdentity(ref);
+        const auto java_class = model->ObjectClass(ref);
+        if (java_class.IsValid()) {
+            const auto class_identity = JniClassIdentity(java_class);
+            session->Objects().EnsureRegistered(identity, class_identity);
+        }
+        return session->Environment().PublishLocalObject(thread, identity);
     }
 
     [[nodiscard]] std::uint64_t ProcessThreadForToken(const std::uint64_t token) {
         {
             const std::scoped_lock lock(thread_contexts_mutex);
-            if (const auto found = token_to_process_thread.find(token);
-                found != token_to_process_thread.end()) return found->second;
+            if (const auto found = token_to_process_thread.find(token); found != token_to_process_thread.end())
+                return found->second;
             if (!java_thread_tokens.contains(token))
                 throw DexVmBridgeError("DexVM execution context has no native thread context");
         }
@@ -662,8 +701,8 @@ public:
             std::optional<std::uint64_t> existing;
             {
                 const std::scoped_lock lock(thread_contexts_mutex);
-                if (const auto found = token_to_process_thread.find(token);
-                    found != token_to_process_thread.end()) existing = found->second;
+                if (const auto found = token_to_process_thread.find(token); found != token_to_process_thread.end())
+                    existing = found->second;
                 else if (!java_thread_tokens.contains(token))
                     throw DexVmBridgeError("DexVM execution context retired before native preparation");
             }
@@ -676,22 +715,17 @@ public:
             std::uint64_t process_thread{};
             {
                 const std::scoped_lock lock(thread_contexts_mutex);
-                for (std::uint32_t candidate = 0;
-                     candidate < kDexVmNativeContextSlots; ++candidate) {
-                    const auto used = std::find_if(
-                        process_thread_slots.begin(),
-                        process_thread_slots.end(),
-                        [candidate](const auto& entry) {
-                            return entry.second == candidate;
-                        });
+                for (std::uint32_t candidate = 0; candidate < kDexVmNativeContextSlots; ++candidate) {
+                    const auto used =
+                        std::find_if(process_thread_slots.begin(), process_thread_slots.end(),
+                                     [candidate](const auto& entry) { return entry.second == candidate; });
                     if (used == process_thread_slots.end()) {
                         slot = candidate;
                         break;
                     }
                 }
                 if (slot == kDexVmNativeContextSlots) {
-                    throw DexVmBridgeError(
-                        "DexVM native thread context pool is exhausted");
+                    throw DexVmBridgeError("DexVM native thread context pool is exhausted");
                 }
                 process_thread = kDexVmProcessThreadBase + slot;
                 process_thread_slots.emplace(process_thread, slot);
@@ -715,8 +749,7 @@ public:
         }
     }
 
-    [[nodiscard]] dx::InterpreterExecutionContext ContextForJniThread(
-        const std::uint64_t thread) {
+    [[nodiscard]] dx::InterpreterExecutionContext ContextForJniThread(const std::uint64_t thread) {
         std::uint64_t token{};
         {
             const std::scoped_lock lock(thread_contexts_mutex);
@@ -726,8 +759,7 @@ public:
         if (token == 0) {
             if (!session->Environment().IsThreadAttached(thread))
                 throw DexVmBridgeError("Java invocation requires an attached JNI thread");
-            if (native_attachments.size() >= 64)
-                throw DexVmBridgeError("native JNI execution context limit exceeded");
+            if (native_attachments.size() >= 64) throw DexVmBridgeError("native JNI execution context limit exceeded");
             const auto context = vm->CreateExecutionContext();
             token = context.Token();
             try {
@@ -745,17 +777,13 @@ public:
         return vm->ExecutionContext(token);
     }
 
-    [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference,
-                                                const std::uint64_t thread) {
-    if (reference.IsNull())
-      return dx::VmObjectRef{};
-        const auto identity =
-            session->Environment().ResolveObjectForHle(thread, reference);
+    [[nodiscard]] dx::VmObjectRef FromReference(const JniReference reference, const std::uint64_t thread) {
+        if (reference.IsNull()) return dx::VmObjectRef{};
+        const auto identity = session->Environment().ResolveObjectForHle(thread, reference);
         if (!identity.has_value()) {
-      throw DexVmBridgeError("dexvm bridge cannot resolve a JNI reference");
+            throw DexVmBridgeError("dexvm bridge cannot resolve a JNI reference");
         }
-        if (const auto represented = ClassForJniIdentity(*identity);
-            represented.has_value()) {
+        if (const auto represented = ClassForJniIdentity(*identity); represented.has_value()) {
             return model->ClassObject(*represented);
         }
         return model->FromIdentity(*identity);
@@ -763,30 +791,26 @@ public:
 
     // ---- inbound (native -> interpreter) --------------------------------
 
-  [[nodiscard]] std::optional<dx::VmFieldId> DexField(
-      const JniResolvedField& field) const {
-    const auto found = field_identities.find(field.id.Value());
-    return found == field_identities.end()
-               ? std::nullopt
-               : std::optional<dx::VmFieldId>{found->second};
-  }
+    [[nodiscard]] std::optional<dx::VmFieldId> DexField(const JniResolvedField& field) const {
+        const auto found = field_identities.find(field.id.Value());
+        return found == field_identities.end() ? std::nullopt : std::optional<dx::VmFieldId>{found->second};
+    }
 
-  [[nodiscard]] std::optional<bool> EnsureJniClassInitialized(
-      const JniObjectIdentity identity, const std::uint64_t thread) {
-    const auto java_class = ClassForJniIdentity(identity);
-    if (!java_class.has_value()) return std::nullopt;
-    const auto outcome = vm->EnsureClassInitialized(ContextForJniThread(thread), *java_class);
-    if (!outcome.exception.IsValid()) return true;
-    session->Environment().Throw(thread,
-                                 PublishLocal(outcome.exception, thread));
-    return false;
-  }
+    [[nodiscard]] std::optional<bool> EnsureJniClassInitialized(const JniObjectIdentity identity,
+                                                                const std::uint64_t thread) {
+        const auto java_class = ClassForJniIdentity(identity);
+        if (!java_class.has_value()) return std::nullopt;
+        const auto outcome = vm->EnsureClassInitialized(ContextForJniThread(thread), *java_class);
+        if (!outcome.exception.IsValid()) return true;
+        session->Environment().Throw(thread, PublishLocal(outcome.exception, thread));
+        return false;
+    }
 
     [[nodiscard]] JniReference AllocJniObject(std::uint64_t thread, JniReference class_ref) {
         const auto identity = session->Environment().ResolveObjectForHle(thread, class_ref);
         if (!identity) throw DexVmBridgeError("AllocObject requires a class reference");
-        const auto type = identity->domain == JniObjectDomain::dex_vm
-            ? std::optional{DexClassIdentity(*identity)} : ClassForJniIdentity(*identity);
+        const auto type = identity->domain == JniObjectDomain::dex_vm ? std::optional{DexClassIdentity(*identity)}
+                                                                      : ClassForJniIdentity(*identity);
         if (!type) throw DexVmBridgeError("AllocObject reference is not a VM class");
         JniReference reference;
         vm->RunInExecutionContext(ContextForJniThread(thread), [&] {
@@ -796,12 +820,14 @@ public:
                 session->Environment().Throw(thread, PublishLocal(outcome.exception, thread));
                 return;
             }
-            try { reference = PublishLocal(outcome.value.ref, thread); }
-            catch (...) {
+            try {
+                reference = PublishLocal(outcome.value.ref, thread);
+            } catch (...) {
                 // The zeroed object owns no native peers. Unpublished VM
                 // storage is left unrooted for the ordinary collector.
-                try { session->Objects().Forget(model->ToIdentity(outcome.value.ref)); }
-                catch (const JniGuestBindingError&) {
+                try {
+                    session->Objects().Forget(model->ToIdentity(outcome.value.ref));
+                } catch (const JniGuestBindingError&) {
                     // Registration itself may have failed before publication.
                 }
                 throw;
@@ -810,422 +836,388 @@ public:
         return reference;
     }
 
-  [[nodiscard]] JniValue ReadFieldSlots(
-      const dx::LinkedField& field, const std::span<const dx::Slot> slots,
-      const std::uint64_t thread) {
-    if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
-      throw DexVmBridgeError("DexVM JNI field slot is out of range: " +
-                             linker.Class(field.owner).descriptor + "." +
-                             field.name + field.descriptor + " slot=" +
-                             std::to_string(field.slot) + " slots=" +
-                             std::to_string(slots.size()));
-    }
-    if (field.is_ref) {
-      return JniValue{PublishLocal(dx::VmObjectRef(slots[field.slot].bits),
-                                  thread)};
-    }
-    if (field.is_wide) {
-      dx::VmValue value;
-      value.kind = dx::VmValue::Kind::wide;
-      value.wide = static_cast<std::uint64_t>(slots[field.slot].bits) |
-                   (static_cast<std::uint64_t>(slots[field.slot + 1U].bits)
-                    << 32U);
-      return FromVmValue(value, field.descriptor.front(), thread);
-    }
-    return FromVmValue(dx::VmValue::Int(static_cast<std::int32_t>(slots[field.slot].bits)),
-                       field.descriptor.front(), thread);
-  }
-
-  void WriteFieldSlots(const dx::LinkedField& field,
-                       const std::span<dx::Slot> slots,
-                       const JniValue& value, const std::uint64_t thread) {
-    if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
-      throw DexVmBridgeError("DexVM JNI field slot is out of range: " +
-                             linker.Class(field.owner).descriptor + "." +
-                             field.name + field.descriptor + " slot=" +
-                             std::to_string(field.slot) + " slots=" +
-                             std::to_string(slots.size()));
-    }
-    const auto decoded = ToVmValue(value, thread);
-    if (field.is_ref) {
-      slots[field.slot] = {decoded.ref.Value(), dx::SlotTag::ref};
-    } else if (field.is_wide) {
-      slots[field.slot] = {static_cast<std::uint32_t>(decoded.wide),
-                           dx::SlotTag::wide_lo};
-      slots[field.slot + 1U] = {
-          static_cast<std::uint32_t>(decoded.wide >> 32U),
-          dx::SlotTag::wide_hi};
-    } else {
-      slots[field.slot] = {decoded.cat1, dx::SlotTag::cat1};
-    }
-  }
-
-  void RequireJniField(const dx::VmFieldId field, const std::uint64_t thread) {
-    try { vm->RequireImplementedField(field, dx::GapSurveyChannel::jni); }
-    catch (const dx::VmJavaThrow& error) {
-      const auto error_class = linker.ResolveDescriptor(error.descriptor);
-      session->Environment().ThrowNew(thread, RegisterClassForNative(error_class), error.message);
-      throw JniFieldAccessPending{};
-    }
-  }
-
-  [[nodiscard]] std::optional<JniValue> GetJniInstanceField(
-      const JniObjectIdentity object, const JniResolvedField& resolved,
-      const std::uint64_t thread) {
-    const auto field_id = DexField(resolved);
-    if (!field_id.has_value()) return std::nullopt;
-    RequireJniField(*field_id, thread);
-    const auto& field = linker.Field(*field_id);
-    const auto instance = model->FromIdentity(object);
-    return ReadFieldSlots(field, model->InstanceSlots(instance), thread);
-  }
-
-  [[nodiscard]] bool SetJniInstanceField(
-      const JniObjectIdentity object, const JniResolvedField& resolved,
-      const JniValue& value, const std::uint64_t thread) {
-    const auto field_id = DexField(resolved);
-    if (!field_id.has_value()) return false;
-    RequireJniField(*field_id, thread);
-    const auto& field = linker.Field(*field_id);
-    const auto instance = model->FromIdentity(object);
-    WriteFieldSlots(field, model->InstanceSlots(instance), value, thread);
-    return true;
-  }
-
-  [[nodiscard]] std::optional<JniValue> GetJniStaticField(
-      const JniResolvedField& resolved, const std::uint64_t thread) {
-    const auto field_id = DexField(resolved);
-    if (!field_id.has_value()) return std::nullopt;
-    RequireJniField(*field_id, thread);
-    const auto& field = linker.Field(*field_id);
-    auto& storage = linker.MutableClass(field.owner).static_storage;
-    std::vector<dx::Slot> slots;
-    slots.reserve(storage.size());
-    for (const auto bits : storage) slots.push_back({bits, dx::SlotTag::cat1});
-    return ReadFieldSlots(field, slots, thread);
-  }
-
-  [[nodiscard]] bool SetJniStaticField(
-      const JniResolvedField& resolved, const JniValue& value,
-      const std::uint64_t thread) {
-    const auto field_id = DexField(resolved);
-    if (!field_id.has_value()) return false;
-    RequireJniField(*field_id, thread);
-    const auto& field = linker.Field(*field_id);
-    auto& storage = linker.MutableClass(field.owner).static_storage;
-    std::vector<dx::Slot> slots;
-    slots.reserve(storage.size());
-    for (const auto bits : storage) slots.push_back({bits, dx::SlotTag::cat1});
-    WriteFieldSlots(field, slots, value, thread);
-    for (std::size_t index = 0; index < slots.size(); ++index) {
-      storage[index] = slots[index].bits;
-    }
-    return true;
-  }
-
-  [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference reference) {
-    const auto object = FromReference(reference, thread);
-    if (linker.Class(model->ObjectClass(object)).descriptor != "Ljava/lang/reflect/Field;")
-      throw DexVmBridgeError("FromReflectedField requires java.lang.reflect.Field");
-    const auto field_id = vm->Reflection().FieldMetadata(object).field;
-    const auto field = linker.Field(field_id);
-    const auto declaring_identity = RegisterClassForNative(field.owner);
-    const auto id = session->Classes().GetFieldId(declaring_identity, field.name, field.descriptor, field.is_static);
-    if (!id) throw DexVmBridgeError("reflected field has no JNI ID");
-    return *id;
-  }
-
-  [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference reference) {
-    const auto object = FromReference(reference, thread);
-    const auto type = linker.Class(model->ObjectClass(object)).descriptor;
-    dx::VmMethodId method_id;
-    if (type == "Ljava/lang/reflect/Method;")
-      method_id = vm->Reflection().MethodMetadata(object).method;
-    else if (type == "Ljava/lang/reflect/Constructor;")
-      method_id = vm->Reflection().ConstructorMetadata(object).method;
-    else throw DexVmBridgeError("FromReflectedMethod requires Method or Constructor");
-    const auto method = linker.Method(method_id);
-    const auto declaring_identity = RegisterClassForNative(method.owner);
-    const auto id = session->Classes().GetMethodId(declaring_identity, method.name, method.descriptor, method.is_static);
-    if (!id) throw DexVmBridgeError("reflected method has no JNI ID");
-    return *id;
-  }
-
-  void CheckReflectedOwner(std::uint64_t thread, JniReference reference,
-                           dx::DexClassId declaring) {
-    const auto supplied = model->ClassOfClassObject(FromReference(reference, thread));
-    if (!linker.IsAssignable(declaring, supplied))
-      throw DexVmBridgeError("JNI reflected member does not belong to supplied class");
-  }
-
-  [[nodiscard]] JniReference ToReflectedField(std::uint64_t thread, JniReference declaring_identity,
-                                             JniFieldId id, bool is_static) {
-    const auto resolved = session->Classes().ResolveField(id);
-    const auto declaring = ClassForJniIdentity(resolved.declaring_class);
-    if (!declaring || resolved.declaration.is_static != is_static)
-      throw DexVmBridgeError("ToReflectedField class or static kind mismatch");
-    CheckReflectedOwner(thread, declaring_identity, *declaring);
-    static_cast<void>(RegisterClassForNative(*declaring));
-    const auto field = DexField(resolved);
-    if (!field) throw DexVmBridgeError("ToReflectedField has no VM field");
-    for (const auto& meta : vm->Reflection().DeclaredFields(*declaring)) {
-      if (meta.field == *field)
-        return PublishLocal(vm->Reflection().MaterializeField(meta), thread);
-    }
-    throw DexVmBridgeError("ToReflectedField metadata is missing");
-  }
-
-  [[nodiscard]] JniReference ToReflectedMethod(std::uint64_t thread, JniReference declaring_identity,
-                                               JniMethodId id, bool is_static) {
-    const auto resolved = session->Classes().ResolveMethod(id);
-    const auto declaring = ClassForJniIdentity(resolved.declaring_class);
-    if (!declaring || resolved.declaration.is_static != is_static)
-      throw DexVmBridgeError("ToReflectedMethod class or static kind mismatch");
-    CheckReflectedOwner(thread, declaring_identity, *declaring);
-    const auto matches = [&](dx::VmMethodId method_id) {
-      const auto& method = linker.Method(method_id);
-      return method.name == resolved.declaration.name && method.descriptor == resolved.declaration.descriptor;
-    };
-    if (resolved.declaration.name == "<init>") {
-      for (const auto& meta : vm->Reflection().DeclaredConstructors(*declaring))
-        if (matches(meta.method)) return PublishLocal(vm->Reflection().MaterializeConstructor(meta), thread);
-    } else {
-      const auto meta = vm->Reflection().FindDeclaredMethodByDescriptor(
-          *declaring, resolved.declaration.name, resolved.declaration.descriptor);
-      if (meta) return PublishLocal(vm->Reflection().MaterializeMethod(*meta), thread);
-    }
-    throw DexVmBridgeError("ToReflectedMethod metadata is missing");
-  }
-
-  void BindField(const JniObjectIdentity identity,
-                 const dx::VmFieldId field_id) {
-    const auto& field = linker.Field(field_id);
-    const auto jni_id = session->Classes().GetFieldId(
-        identity, field.name, field.descriptor, field.is_static);
-    if (!jni_id.has_value() ||
-        session->Classes().ResolveField(*jni_id).declaring_class != identity) {
-      throw DexVmBridgeError("cannot bind DexVM field to JNI registry");
-    }
-    field_identities.insert_or_assign(jni_id->Value(), field_id);
-  }
-
-  void PublishMissingFields(const dx::DexClassId class_id,
-                            const JniObjectIdentity identity) {
-    auto& classes = session->Classes();
-    const auto publish = [&](const dx::VmFieldId field_id) {
-      const auto& field = linker.Field(field_id);
-      const auto existing = classes.GetFieldId(
-          identity, field.name, field.descriptor, field.is_static);
-      if (!existing.has_value() ||
-          classes.ResolveField(*existing).declaring_class != identity) {
-        static_cast<void>(classes.RegisterField(
-            identity, {field.name, field.descriptor,
-                       "dexvm.f" + std::to_string(field_id.Value()),
-                       field.is_static}));
-      }
-      BindField(identity, field_id);
-    };
-    for (const auto field : linker.Class(class_id).own_instance_fields)
-      publish(field);
-    for (const auto field : linker.Class(class_id).own_static_fields)
-      publish(field);
-  }
-
-  void PublishMissingMethods(const dx::DexClassId class_id,
-                             const JniObjectIdentity identity) {
-    auto &classes = session->Classes();
-    auto &invocations = session->Invocations();
-    for (const auto method_id : linker.MethodsOf(class_id)) {
-      const auto &method = linker.Method(method_id);
-      if (method.name == "<clinit>")
-        continue;
-      const auto existing = classes.GetMethodId(
-          identity, method.name, method.descriptor, method.is_static);
-      if (existing.has_value() &&
-          classes.ResolveMethod(*existing).declaring_class == identity) {
-        continue;
-      }
-      const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
-      try {
-        static_cast<void>(classes.RegisterMethod(
-            identity, {method.name, method.descriptor, implementation,
-                       method.is_static}));
-      } catch (const JniClassRegistryError &error) {
-        throw DexVmBridgeError("cannot publish DexVM method to JNI: " +
-                               linker.Class(class_id).descriptor + "." +
-                               method.name + method.descriptor + ": " +
-                               error.what());
-      }
-      invocations.RegisterHandler(
-          implementation, [this, method_id](const JniInvocation &invocation) {
-            return InvokeInterpreted(method_id, invocation);
-          });
-    }
-  }
-
-  [[nodiscard]] JniObjectIdentity
-  RegisterClassForNative(const dx::DexClassId class_id) {
-    auto &classes = session->Classes();
-    auto &invocations = session->Invocations();
-    const auto &linked = linker.Class(class_id);
-    if (linked.is_array) {
-      throw DexVmBridgeError("dexvm bridge cannot register an array JNI class");
-    }
-    const auto name = linked.descriptor.substr(1, linked.descriptor.size() - 2);
-    if (const auto existing = classes.FindClass(name); existing.has_value()) {
-      class_identities.emplace(class_id.Value(), *existing);
-      native_class_ids.emplace(existing->value, class_id);
-      PublishMissingMethods(class_id, *existing);
-      PublishMissingFields(class_id, *existing);
-      return *existing;
-    }
-    if (!registering_classes.emplace(class_id.Value()).second) {
-      throw DexVmBridgeError("dexvm JNI class hierarchy contains a cycle");
-    }
-    const auto unregister = [this, class_id](void*) {
-      registering_classes.erase(class_id.Value());
-    };
-    const std::unique_ptr<void, decltype(unregister)> registration(this, unregister);
-    JniClassDeclaration declaration;
-    declaration.name = name;
-    if (linked.super.has_value()) {
-      const auto &super = linker.Class(*linked.super);
-      if (!super.is_array) {
-        static_cast<void>(RegisterClassForNative(*linked.super));
-        declaration.superclass =
-            super.descriptor.substr(1, super.descriptor.size() - 2);
-      }
-    }
-    declaration.is_interface = linked.is_interface;
-    declaration.interfaces.reserve(linked.direct_interfaces.size());
-    for (const auto interface_id : linked.direct_interfaces) {
-      const auto &interface_class = linker.Class(interface_id);
-      if (!interface_class.is_interface) {
-        throw dx::JavaLinkageError(dx::JavaLinkageKind::incompatible_class_change,
-                                  "implemented type is not an interface: " + interface_class.descriptor);
-      }
-      static_cast<void>(RegisterClassForNative(interface_id));
-      declaration.interfaces.push_back(interface_class.descriptor.substr(
-          1, interface_class.descriptor.size() - 2));
-    }
-    std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
-    const auto append_field = [&](const dx::VmFieldId field_id) {
-      const auto& field = linker.Field(field_id);
-      declaration.fields.push_back(
-          {field.name, field.descriptor,
-           "dexvm.f" + std::to_string(field_id.Value()), field.is_static});
-    };
-    for (const auto field : linked.own_instance_fields) append_field(field);
-    for (const auto field : linked.own_static_fields) append_field(field);
-    for (const auto method_id : linker.MethodsOf(class_id)) {
-      const auto &method = linker.Method(method_id);
-      if (method.name == "<clinit>")
-        continue;
-      const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
-      declaration.methods.push_back(
-          {method.name, method.descriptor, implementation, method.is_static});
-      handlers.emplace_back(implementation, method_id);
-    }
-    JniObjectIdentity identity;
-    try {
-      identity = classes.RegisterClass(declaration);
-    } catch (const JniClassRegistryError &error) {
-      throw DexVmBridgeError("cannot publish DexVM class to JNI: " + name +
-                             ": " + error.what());
-    }
-    registering_classes.erase(class_id.Value());
-    class_identities.emplace(class_id.Value(), identity);
-    native_class_ids.emplace(identity.value, class_id);
-    for (const auto field : linked.own_instance_fields) BindField(identity, field);
-    for (const auto field : linked.own_static_fields) BindField(identity, field);
-    for (const auto &[implementation, method_id] : handlers) {
-      invocations.RegisterHandler(
-          implementation, [this, method_id](const JniInvocation &invocation) {
-            return InvokeInterpreted(method_id, invocation);
-          });
-    }
-    return identity;
-  }
-
-  [[nodiscard]] JniReference
-  GlobalClassReference(const dx::DexClassId class_id, const std::uint64_t thread) {
-    if (const auto found = class_global_refs.find(class_id.Value());
-        found != class_global_refs.end()) {
-      return found->second;
-    }
-    auto identity = class_identities.find(class_id.Value());
-    if (identity == class_identities.end()) {
-      static_cast<void>(RegisterClassForNative(class_id));
-      identity = class_identities.find(class_id.Value());
-    }
-    if (identity == class_identities.end()) {
-      throw DexVmBridgeError("dexvm bridge cannot publish a class reference");
-    }
-    const auto reference = session->Environment().PublishGlobalObjectForHle(
-        thread, identity->second);
-    class_global_refs.emplace(class_id.Value(), reference);
-    return reference;
-  }
-
-  void RegisterDexClasses() {
-    // Native JNI sees the same code-defined intrinsic classes as the
-    // interpreter. Existing session platform classes retain ownership;
-    // missing classes are registered with handlers that route back into
-    // the linked VM method. This keeps FindClass/GetMethodID honest and
-    // avoids a second, title-specific platform registry. The recursive
-    // registration path is also the single owner of superclass publication:
-    // interpreted classes must retain intrinsic parents in JNI type checks.
-    for (const auto class_id : linker.AllClasses()) {
-      const auto &linked = linker.Class(class_id);
-      if (linked.is_array) continue;
-      try {
-        static_cast<void>(RegisterClassForNative(class_id));
-      } catch (const dx::JavaLinkageError&) {
-        // Eager JNI projection must not turn an unused, invalid Java class
-        // into an assembly error. Its first Java/JNI use reports the linkage
-        // error through the existing interpreter/resolver path.
-      }
-    }
-  }
-
-  // Read stored exception facts only: diagnostics must not execute guest getCause/toString.
-  [[nodiscard]] std::string ExceptionChain(dx::VmObjectRef throwable) {
-    std::string rendered;
-    std::unordered_set<std::uint32_t> seen;
-    try {
-      for (unsigned depth = 0; throwable.IsValid() && depth < 8; ++depth) {
-        if (!seen.insert(throwable.Value()).second) {
-          rendered += " | cause cycle";
-          return rendered;
+    [[nodiscard]] JniValue ReadFieldSlots(const dx::LinkedField& field, const std::span<const dx::Slot> slots,
+                                          const std::uint64_t thread) {
+        if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
+            throw DexVmBridgeError("DexVM JNI field slot is out of range: " + linker.Class(field.owner).descriptor +
+                                   "." + field.name + field.descriptor + " slot=" + std::to_string(field.slot) +
+                                   " slots=" + std::to_string(slots.size()));
         }
-        if (depth != 0) rendered += " | caused by ";
-        const auto type = model->ObjectClass(throwable);
-        rendered += linker.Class(type).descriptor;
-        const auto message = vm->ThrowableMessage(throwable);
-        if (message.IsValid()) rendered += ": " + vm->StringUtf8(message).substr(0, 512);
-        if (rendered.size() > 4096) {
-          rendered.resize(4096);
-          return rendered + " [truncated]";
+        if (field.is_ref) {
+            return JniValue{PublishLocal(dx::VmObjectRef(slots[field.slot].bits), thread)};
         }
-        // API19 ClassNotFoundException overrides getCause using its own 'ex' field.
-        const auto cnfe = linker.FindClass("Ljava/lang/ClassNotFoundException;");
-        if (cnfe && linker.IsAssignable(*cnfe, type)) {
-          const auto field = linker.FindFieldRecursive(*cnfe, "ex", "Ljava/lang/Throwable;");
-          if (!field) return rendered + " [cause unavailable]";
-          throwable = dx::VmObjectRef(model->InstanceSlots(throwable)[linker.Field(*field).slot].bits);
+        if (field.is_wide) {
+            dx::VmValue value;
+            value.kind = dx::VmValue::Kind::wide;
+            value.wide = static_cast<std::uint64_t>(slots[field.slot].bits) |
+                         (static_cast<std::uint64_t>(slots[field.slot + 1U].bits) << 32U);
+            return FromVmValue(value, field.descriptor.front(), thread);
+        }
+        return FromVmValue(dx::VmValue::Int(static_cast<std::int32_t>(slots[field.slot].bits)),
+                           field.descriptor.front(), thread);
+    }
+
+    void WriteFieldSlots(const dx::LinkedField& field, const std::span<dx::Slot> slots, const JniValue& value,
+                         const std::uint64_t thread) {
+        if (field.slot + (field.is_wide ? 2U : 1U) > slots.size()) {
+            throw DexVmBridgeError("DexVM JNI field slot is out of range: " + linker.Class(field.owner).descriptor +
+                                   "." + field.name + field.descriptor + " slot=" + std::to_string(field.slot) +
+                                   " slots=" + std::to_string(slots.size()));
+        }
+        const auto decoded = ToVmValue(value, thread);
+        if (field.is_ref) {
+            slots[field.slot] = {decoded.ref.Value(), dx::SlotTag::ref};
+        } else if (field.is_wide) {
+            slots[field.slot] = {static_cast<std::uint32_t>(decoded.wide), dx::SlotTag::wide_lo};
+            slots[field.slot + 1U] = {static_cast<std::uint32_t>(decoded.wide >> 32U), dx::SlotTag::wide_hi};
         } else {
-          throwable = vm->ThrowableCause(throwable);
+            slots[field.slot] = {decoded.cat1, dx::SlotTag::cat1};
         }
-      }
-      if (throwable.IsValid()) rendered += " | cause depth limit";
-    } catch (...) {
-      rendered += " [exception details unavailable]";
     }
-    return rendered;
-  }
 
-  [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id,
-                                           const JniInvocation &invocation) {
+    void RequireJniField(const dx::VmFieldId field, const std::uint64_t thread) {
+        try {
+            vm->RequireImplementedField(field, dx::GapSurveyChannel::jni);
+        } catch (const dx::VmJavaThrow& error) {
+            const auto error_class = linker.ResolveDescriptor(error.descriptor);
+            session->Environment().ThrowNew(thread, RegisterClassForNative(error_class), error.message);
+            throw JniFieldAccessPending{};
+        }
+    }
+
+    [[nodiscard]] std::optional<JniValue>
+    GetJniInstanceField(const JniObjectIdentity object, const JniResolvedField& resolved, const std::uint64_t thread) {
+        const auto field_id = DexField(resolved);
+        if (!field_id.has_value()) return std::nullopt;
+        RequireJniField(*field_id, thread);
+        const auto& field = linker.Field(*field_id);
+        const auto instance = model->FromIdentity(object);
+        return ReadFieldSlots(field, model->InstanceSlots(instance), thread);
+    }
+
+    [[nodiscard]] bool SetJniInstanceField(const JniObjectIdentity object, const JniResolvedField& resolved,
+                                           const JniValue& value, const std::uint64_t thread) {
+        const auto field_id = DexField(resolved);
+        if (!field_id.has_value()) return false;
+        RequireJniField(*field_id, thread);
+        const auto& field = linker.Field(*field_id);
+        const auto instance = model->FromIdentity(object);
+        WriteFieldSlots(field, model->InstanceSlots(instance), value, thread);
+        return true;
+    }
+
+    [[nodiscard]] std::optional<JniValue> GetJniStaticField(const JniResolvedField& resolved,
+                                                            const std::uint64_t thread) {
+        const auto field_id = DexField(resolved);
+        if (!field_id.has_value()) return std::nullopt;
+        RequireJniField(*field_id, thread);
+        const auto& field = linker.Field(*field_id);
+        auto& storage = linker.MutableClass(field.owner).static_storage;
+        std::vector<dx::Slot> slots;
+        slots.reserve(storage.size());
+        for (const auto bits : storage)
+            slots.push_back({bits, dx::SlotTag::cat1});
+        return ReadFieldSlots(field, slots, thread);
+    }
+
+    [[nodiscard]] bool SetJniStaticField(const JniResolvedField& resolved, const JniValue& value,
+                                         const std::uint64_t thread) {
+        const auto field_id = DexField(resolved);
+        if (!field_id.has_value()) return false;
+        RequireJniField(*field_id, thread);
+        const auto& field = linker.Field(*field_id);
+        auto& storage = linker.MutableClass(field.owner).static_storage;
+        std::vector<dx::Slot> slots;
+        slots.reserve(storage.size());
+        for (const auto bits : storage)
+            slots.push_back({bits, dx::SlotTag::cat1});
+        WriteFieldSlots(field, slots, value, thread);
+        for (std::size_t index = 0; index < slots.size(); ++index) {
+            storage[index] = slots[index].bits;
+        }
+        return true;
+    }
+
+    [[nodiscard]] JniFieldId FromReflectedField(std::uint64_t thread, JniReference reference) {
+        const auto object = FromReference(reference, thread);
+        if (linker.Class(model->ObjectClass(object)).descriptor != "Ljava/lang/reflect/Field;")
+            throw DexVmBridgeError("FromReflectedField requires java.lang.reflect.Field");
+        const auto field_id = vm->Reflection().FieldMetadata(object).field;
+        const auto field = linker.Field(field_id);
+        const auto declaring_identity = RegisterClassForNative(field.owner);
+        const auto id =
+            session->Classes().GetFieldId(declaring_identity, field.name, field.descriptor, field.is_static);
+        if (!id) throw DexVmBridgeError("reflected field has no JNI ID");
+        return *id;
+    }
+
+    [[nodiscard]] JniMethodId FromReflectedMethod(std::uint64_t thread, JniReference reference) {
+        const auto object = FromReference(reference, thread);
+        const auto type = linker.Class(model->ObjectClass(object)).descriptor;
+        dx::VmMethodId method_id;
+        if (type == "Ljava/lang/reflect/Method;")
+            method_id = vm->Reflection().MethodMetadata(object).method;
+        else if (type == "Ljava/lang/reflect/Constructor;")
+            method_id = vm->Reflection().ConstructorMetadata(object).method;
+        else
+            throw DexVmBridgeError("FromReflectedMethod requires Method or Constructor");
+        const auto method = linker.Method(method_id);
+        const auto declaring_identity = RegisterClassForNative(method.owner);
+        const auto id =
+            session->Classes().GetMethodId(declaring_identity, method.name, method.descriptor, method.is_static);
+        if (!id) throw DexVmBridgeError("reflected method has no JNI ID");
+        return *id;
+    }
+
+    void CheckReflectedOwner(std::uint64_t thread, JniReference reference, dx::DexClassId declaring) {
+        const auto supplied = model->ClassOfClassObject(FromReference(reference, thread));
+        if (!linker.IsAssignable(declaring, supplied))
+            throw DexVmBridgeError("JNI reflected member does not belong to supplied class");
+    }
+
+    [[nodiscard]] JniReference ToReflectedField(std::uint64_t thread, JniReference declaring_identity, JniFieldId id,
+                                                bool is_static) {
+        const auto resolved = session->Classes().ResolveField(id);
+        const auto declaring = ClassForJniIdentity(resolved.declaring_class);
+        if (!declaring || resolved.declaration.is_static != is_static)
+            throw DexVmBridgeError("ToReflectedField class or static kind mismatch");
+        CheckReflectedOwner(thread, declaring_identity, *declaring);
+        static_cast<void>(RegisterClassForNative(*declaring));
+        const auto field = DexField(resolved);
+        if (!field) throw DexVmBridgeError("ToReflectedField has no VM field");
+        for (const auto& meta : vm->Reflection().DeclaredFields(*declaring)) {
+            if (meta.field == *field) return PublishLocal(vm->Reflection().MaterializeField(meta), thread);
+        }
+        throw DexVmBridgeError("ToReflectedField metadata is missing");
+    }
+
+    [[nodiscard]] JniReference ToReflectedMethod(std::uint64_t thread, JniReference declaring_identity, JniMethodId id,
+                                                 bool is_static) {
+        const auto resolved = session->Classes().ResolveMethod(id);
+        const auto declaring = ClassForJniIdentity(resolved.declaring_class);
+        if (!declaring || resolved.declaration.is_static != is_static)
+            throw DexVmBridgeError("ToReflectedMethod class or static kind mismatch");
+        CheckReflectedOwner(thread, declaring_identity, *declaring);
+        const auto matches = [&](dx::VmMethodId method_id) {
+            const auto& method = linker.Method(method_id);
+            return method.name == resolved.declaration.name && method.descriptor == resolved.declaration.descriptor;
+        };
+        if (resolved.declaration.name == "<init>") {
+            for (const auto& meta : vm->Reflection().DeclaredConstructors(*declaring))
+                if (matches(meta.method)) return PublishLocal(vm->Reflection().MaterializeConstructor(meta), thread);
+        } else {
+            const auto meta = vm->Reflection().FindDeclaredMethodByDescriptor(*declaring, resolved.declaration.name,
+                                                                              resolved.declaration.descriptor);
+            if (meta) return PublishLocal(vm->Reflection().MaterializeMethod(*meta), thread);
+        }
+        throw DexVmBridgeError("ToReflectedMethod metadata is missing");
+    }
+
+    void BindField(const JniObjectIdentity identity, const dx::VmFieldId field_id) {
+        const auto& field = linker.Field(field_id);
+        const auto jni_id = session->Classes().GetFieldId(identity, field.name, field.descriptor, field.is_static);
+        if (!jni_id.has_value() || session->Classes().ResolveField(*jni_id).declaring_class != identity) {
+            throw DexVmBridgeError("cannot bind DexVM field to JNI registry");
+        }
+        field_identities.insert_or_assign(jni_id->Value(), field_id);
+    }
+
+    void PublishMissingFields(const dx::DexClassId class_id, const JniObjectIdentity identity) {
+        auto& classes = session->Classes();
+        const auto publish = [&](const dx::VmFieldId field_id) {
+            const auto& field = linker.Field(field_id);
+            const auto existing = classes.GetFieldId(identity, field.name, field.descriptor, field.is_static);
+            if (!existing.has_value() || classes.ResolveField(*existing).declaring_class != identity) {
+                static_cast<void>(
+                    classes.RegisterField(identity, {field.name, field.descriptor,
+                                                     "dexvm.f" + std::to_string(field_id.Value()), field.is_static}));
+            }
+            BindField(identity, field_id);
+        };
+        for (const auto field : linker.Class(class_id).own_instance_fields)
+            publish(field);
+        for (const auto field : linker.Class(class_id).own_static_fields)
+            publish(field);
+    }
+
+    void PublishMissingMethods(const dx::DexClassId class_id, const JniObjectIdentity identity) {
+        auto& classes = session->Classes();
+        auto& invocations = session->Invocations();
+        for (const auto method_id : linker.MethodsOf(class_id)) {
+            const auto& method = linker.Method(method_id);
+            if (method.name == "<clinit>") continue;
+            const auto existing = classes.GetMethodId(identity, method.name, method.descriptor, method.is_static);
+            if (existing.has_value() && classes.ResolveMethod(*existing).declaring_class == identity) {
+                continue;
+            }
+            const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
+            try {
+                static_cast<void>(classes.RegisterMethod(
+                    identity, {method.name, method.descriptor, implementation, method.is_static}));
+            } catch (const JniClassRegistryError& error) {
+                throw DexVmBridgeError("cannot publish DexVM method to JNI: " + linker.Class(class_id).descriptor +
+                                       "." + method.name + method.descriptor + ": " + error.what());
+            }
+            invocations.RegisterHandler(implementation, [this, method_id](const JniInvocation& invocation) {
+                return InvokeInterpreted(method_id, invocation);
+            });
+        }
+    }
+
+    [[nodiscard]] JniObjectIdentity RegisterClassForNative(const dx::DexClassId class_id) {
+        auto& classes = session->Classes();
+        auto& invocations = session->Invocations();
+        const auto& linked = linker.Class(class_id);
+        if (linked.is_array) {
+            throw DexVmBridgeError("dexvm bridge cannot register an array JNI class");
+        }
+        const auto name = linked.descriptor.substr(1, linked.descriptor.size() - 2);
+        if (const auto existing = classes.FindClass(name); existing.has_value()) {
+            class_identities.emplace(class_id.Value(), *existing);
+            native_class_ids.emplace(existing->value, class_id);
+            PublishMissingMethods(class_id, *existing);
+            PublishMissingFields(class_id, *existing);
+            return *existing;
+        }
+        if (!registering_classes.emplace(class_id.Value()).second) {
+            throw DexVmBridgeError("dexvm JNI class hierarchy contains a cycle");
+        }
+        const auto unregister = [this, class_id](void*) { registering_classes.erase(class_id.Value()); };
+        const std::unique_ptr<void, decltype(unregister)> registration(this, unregister);
+        JniClassDeclaration declaration;
+        declaration.name = name;
+        if (linked.super.has_value()) {
+            const auto& super = linker.Class(*linked.super);
+            if (!super.is_array) {
+                static_cast<void>(RegisterClassForNative(*linked.super));
+                declaration.superclass = super.descriptor.substr(1, super.descriptor.size() - 2);
+            }
+        }
+        declaration.is_interface = linked.is_interface;
+        declaration.interfaces.reserve(linked.direct_interfaces.size());
+        for (const auto interface_id : linked.direct_interfaces) {
+            const auto& interface_class = linker.Class(interface_id);
+            if (!interface_class.is_interface) {
+                throw dx::JavaLinkageError(dx::JavaLinkageKind::incompatible_class_change,
+                                           "implemented type is not an interface: " + interface_class.descriptor);
+            }
+            static_cast<void>(RegisterClassForNative(interface_id));
+            declaration.interfaces.push_back(
+                interface_class.descriptor.substr(1, interface_class.descriptor.size() - 2));
+        }
+        std::vector<std::pair<std::string, dx::VmMethodId>> handlers;
+        const auto append_field = [&](const dx::VmFieldId field_id) {
+            const auto& field = linker.Field(field_id);
+            declaration.fields.push_back(
+                {field.name, field.descriptor, "dexvm.f" + std::to_string(field_id.Value()), field.is_static});
+        };
+        for (const auto field : linked.own_instance_fields)
+            append_field(field);
+        for (const auto field : linked.own_static_fields)
+            append_field(field);
+        for (const auto method_id : linker.MethodsOf(class_id)) {
+            const auto& method = linker.Method(method_id);
+            if (method.name == "<clinit>") continue;
+            const auto implementation = "dexvm.m" + std::to_string(method_id.Value());
+            declaration.methods.push_back({method.name, method.descriptor, implementation, method.is_static});
+            handlers.emplace_back(implementation, method_id);
+        }
+        JniObjectIdentity identity;
+        try {
+            identity = classes.RegisterClass(declaration);
+        } catch (const JniClassRegistryError& error) {
+            throw DexVmBridgeError("cannot publish DexVM class to JNI: " + name + ": " + error.what());
+        }
+        registering_classes.erase(class_id.Value());
+        class_identities.emplace(class_id.Value(), identity);
+        native_class_ids.emplace(identity.value, class_id);
+        for (const auto field : linked.own_instance_fields)
+            BindField(identity, field);
+        for (const auto field : linked.own_static_fields)
+            BindField(identity, field);
+        for (const auto& [implementation, method_id] : handlers) {
+            invocations.RegisterHandler(implementation, [this, method_id](const JniInvocation& invocation) {
+                return InvokeInterpreted(method_id, invocation);
+            });
+        }
+        return identity;
+    }
+
+    [[nodiscard]] JniReference GlobalClassReference(const dx::DexClassId class_id, const std::uint64_t thread) {
+        if (const auto found = class_global_refs.find(class_id.Value()); found != class_global_refs.end()) {
+            return found->second;
+        }
+        auto identity = class_identities.find(class_id.Value());
+        if (identity == class_identities.end()) {
+            static_cast<void>(RegisterClassForNative(class_id));
+            identity = class_identities.find(class_id.Value());
+        }
+        if (identity == class_identities.end()) {
+            throw DexVmBridgeError("dexvm bridge cannot publish a class reference");
+        }
+        const auto reference = session->Environment().PublishGlobalObjectForHle(thread, identity->second);
+        class_global_refs.emplace(class_id.Value(), reference);
+        return reference;
+    }
+
+    void RegisterDexClasses() {
+        // Native JNI sees the same code-defined intrinsic classes as the
+        // interpreter. Existing session platform classes retain ownership;
+        // missing classes are registered with handlers that route back into
+        // the linked VM method. This keeps FindClass/GetMethodID honest and
+        // avoids a second, title-specific platform registry. The recursive
+        // registration path is also the single owner of superclass publication:
+        // interpreted classes must retain intrinsic parents in JNI type checks.
+        for (const auto class_id : linker.AllClasses()) {
+            const auto& linked = linker.Class(class_id);
+            if (linked.is_array) continue;
+            try {
+                static_cast<void>(RegisterClassForNative(class_id));
+            } catch (const dx::JavaLinkageError&) {
+                // Eager JNI projection must not turn an unused, invalid Java class
+                // into an assembly error. Its first Java/JNI use reports the linkage
+                // error through the existing interpreter/resolver path.
+            }
+        }
+    }
+
+    // Read stored exception facts only: diagnostics must not execute guest getCause/toString.
+    [[nodiscard]] std::string ExceptionChain(dx::VmObjectRef throwable) {
+        std::string rendered;
+        std::unordered_set<std::uint32_t> seen;
+        try {
+            for (unsigned depth = 0; throwable.IsValid() && depth < 8; ++depth) {
+                if (!seen.insert(throwable.Value()).second) {
+                    rendered += " | cause cycle";
+                    return rendered;
+                }
+                if (depth != 0) rendered += " | caused by ";
+                const auto type = model->ObjectClass(throwable);
+                rendered += linker.Class(type).descriptor;
+                const auto message = vm->ThrowableMessage(throwable);
+                if (message.IsValid()) rendered += ": " + vm->StringUtf8(message).substr(0, 512);
+                if (rendered.size() > 4096) {
+                    rendered.resize(4096);
+                    return rendered + " [truncated]";
+                }
+                // API19 ClassNotFoundException overrides getCause using its own 'ex' field.
+                const auto cnfe = linker.FindClass("Ljava/lang/ClassNotFoundException;");
+                if (cnfe && linker.IsAssignable(*cnfe, type)) {
+                    const auto field = linker.FindFieldRecursive(*cnfe, "ex", "Ljava/lang/Throwable;");
+                    if (!field) return rendered + " [cause unavailable]";
+                    throwable = dx::VmObjectRef(model->InstanceSlots(throwable)[linker.Field(*field).slot].bits);
+                } else {
+                    throwable = vm->ThrowableCause(throwable);
+                }
+            }
+            if (throwable.IsValid()) rendered += " | cause depth limit";
+        } catch (...) {
+            rendered += " [exception details unavailable]";
+        }
+        return rendered;
+    }
+
+    [[nodiscard]] JniValue InvokeInterpreted(const dx::VmMethodId method_id, const JniInvocation& invocation) {
         const auto& method = linker.Method(method_id);
         // A native method executes outside the interpreter lock. Every JNI
         // re-entry reacquires it so object-model and linker state still have
@@ -1235,8 +1227,7 @@ public:
         std::vector<dx::VmValue> arguments;
         arguments.reserve(invocation.arguments.size() + 1);
         if (!method.is_static) {
-      arguments.push_back(dx::VmValue::Ref(
-          FromReference(invocation.receiver, invocation.thread_id)));
+            arguments.push_back(dx::VmValue::Ref(FromReference(invocation.receiver, invocation.thread_id)));
         }
         for (const auto& value : invocation.arguments) {
             arguments.push_back(ToVmValue(value, invocation.thread_id));
@@ -1246,26 +1237,22 @@ public:
         if (outcome.exception.IsValid()) {
             // JNI semantics: leave the exception pending for the caller.
             if (logger != nullptr) {
-                std::string rendered =
-            linker.Class(method.owner).descriptor + "." + method.name +
-            " threw " + ExceptionChain(outcome.exception);
+                std::string rendered = linker.Class(method.owner).descriptor + "." + method.name + " threw " +
+                                       ExceptionChain(outcome.exception);
                 for (const auto& entry : outcome.exception_stack) {
-                    rendered += " | at " + entry.class_descriptor + "." +
-                      entry.method_name + " pc " + std::to_string(entry.pc);
+                    rendered +=
+                        " | at " + entry.class_descriptor + "." + entry.method_name + " pc " + std::to_string(entry.pc);
                 }
-        logger->Write(core::LogLevel::warn, "runtime.dexvm", rendered);
+                logger->Write(core::LogLevel::warn, "runtime.dexvm", rendered);
             }
-            const auto throwable = PublishLocal(outcome.exception,
-                                                invocation.thread_id);
+            const auto throwable = PublishLocal(outcome.exception, invocation.thread_id);
             session->Environment().Throw(invocation.thread_id, throwable);
             return DefaultReturn(method.return_shorty);
         }
-        return FromVmValue(outcome.value, method.return_shorty,
-                           invocation.thread_id);
+        return FromVmValue(outcome.value, method.return_shorty, invocation.thread_id);
     }
 
-    [[nodiscard]] dx::VmValue ToVmValue(const JniValue& value,
-                                        const std::uint64_t thread) {
+    [[nodiscard]] dx::VmValue ToVmValue(const JniValue& value, const std::uint64_t thread) {
         if (std::holds_alternative<JniBoolean>(value)) {
             return dx::VmValue::Int(std::get<JniBoolean>(value) != 0 ? 1 : 0);
         }
@@ -1291,89 +1278,67 @@ public:
             return dx::VmValue::Double(std::get<JniDouble>(value));
         }
         if (std::holds_alternative<JniReference>(value)) {
-            return dx::VmValue::Ref(
-                FromReference(std::get<JniReference>(value), thread));
+            return dx::VmValue::Ref(FromReference(std::get<JniReference>(value), thread));
         }
         throw DexVmBridgeError("dexvm bridge received a void argument");
     }
 
-    [[nodiscard]] JniValue FromVmValue(const dx::VmValue& value,
-                                       const char shorty,
-                                       const std::uint64_t thread) {
+    [[nodiscard]] JniValue FromVmValue(const dx::VmValue& value, const char shorty, const std::uint64_t thread) {
         switch (shorty) {
-            case 'V':
-                return JniValue{};
-            case 'Z':
-                return JniValue{static_cast<JniBoolean>(value.cat1 != 0)};
-            case 'B':
-                return JniValue{static_cast<JniByte>(value.cat1 & 0xffU)};
-            case 'C':
-                return JniValue{static_cast<JniChar>(value.cat1 & 0xffffU)};
-            case 'S':
-      return JniValue{static_cast<JniShort>(value.cat1 & 0xffffU)};
-            case 'I':
-                return JniValue{static_cast<JniInt>(value.cat1)};
-            case 'J':
-                return JniValue{static_cast<JniLong>(value.wide)};
-            case 'F': {
-                JniFloat as_float{};
-                const auto bits = value.cat1;
-                std::memcpy(&as_float, &bits, sizeof(as_float));
-                return JniValue{as_float};
-            }
-            case 'D': {
-                JniDouble as_double{};
-                const auto bits = value.wide;
-                std::memcpy(&as_double, &bits, sizeof(as_double));
-                return JniValue{as_double};
-            }
-            case 'L': {
-      if (!value.ref.IsValid())
-        return JniValue{JniReference{}};
-                return JniValue{PublishLocal(value.ref, thread)};
-            }
-            default:
-      throw DexVmBridgeError("dexvm bridge cannot convert return shorty");
+        case 'V': return JniValue{};
+        case 'Z': return JniValue{static_cast<JniBoolean>(value.cat1 != 0)};
+        case 'B': return JniValue{static_cast<JniByte>(value.cat1 & 0xffU)};
+        case 'C': return JniValue{static_cast<JniChar>(value.cat1 & 0xffffU)};
+        case 'S': return JniValue{static_cast<JniShort>(value.cat1 & 0xffffU)};
+        case 'I': return JniValue{static_cast<JniInt>(value.cat1)};
+        case 'J': return JniValue{static_cast<JniLong>(value.wide)};
+        case 'F': {
+            JniFloat as_float{};
+            const auto bits = value.cat1;
+            std::memcpy(&as_float, &bits, sizeof(as_float));
+            return JniValue{as_float};
+        }
+        case 'D': {
+            JniDouble as_double{};
+            const auto bits = value.wide;
+            std::memcpy(&as_double, &bits, sizeof(as_double));
+            return JniValue{as_double};
+        }
+        case 'L': {
+            if (!value.ref.IsValid()) return JniValue{JniReference{}};
+            return JniValue{PublishLocal(value.ref, thread)};
+        }
+        default: throw DexVmBridgeError("dexvm bridge cannot convert return shorty");
         }
     }
 
     [[nodiscard]] static JniValue DefaultReturn(const char shorty) {
         switch (shorty) {
-    case 'V':
-      return JniValue{};
-    case 'Z':
-      return JniValue{JniBoolean{}};
-    case 'B':
-      return JniValue{JniByte{}};
-    case 'C':
-      return JniValue{JniChar{}};
-    case 'S':
-      return JniValue{JniShort{}};
-    case 'I':
-      return JniValue{JniInt{}};
-    case 'J':
-      return JniValue{JniLong{}};
-    case 'F':
-      return JniValue{JniFloat{}};
-    case 'D':
-      return JniValue{JniDouble{}};
-    default:
-      return JniValue{JniReference{}};
+        case 'V': return JniValue{};
+        case 'Z': return JniValue{JniBoolean{}};
+        case 'B': return JniValue{JniByte{}};
+        case 'C': return JniValue{JniChar{}};
+        case 'S': return JniValue{JniShort{}};
+        case 'I': return JniValue{JniInt{}};
+        case 'J': return JniValue{JniLong{}};
+        case 'F': return JniValue{JniFloat{}};
+        case 'D': return JniValue{JniDouble{}};
+        default: return JniValue{JniReference{}};
         }
     }
 
     // ---- outbound (interpreter -> native) --------------------------------
 
-  [[nodiscard]] dx::VmValue
-  InvokeNative(const dx::LinkedMethod &method, const dx::VmObjectRef receiver,
-        const std::span<const dx::VmValue> arguments) {
-        const auto process_thread =
-            ProcessThreadForToken(vm->CurrentContextToken());
+    [[nodiscard]] dx::VmValue InvokeNative(const dx::LinkedMethod& method, const dx::VmObjectRef receiver,
+                                           const std::span<const dx::VmValue> arguments) {
+        const auto process_thread = ProcessThreadForToken(vm->CurrentContextToken());
         auto& environment = session->Environment();
         environment.PushLocalFrame(process_thread, arguments.size() + 8U);
+
         struct LocalFrameScope final {
             JniEnvironment* environment{};
             std::uint64_t thread{};
+
             ~LocalFrameScope() {
                 try {
                     static_cast<void>(environment->PopLocalFrame(thread));
@@ -1381,9 +1346,9 @@ public:
                 }
             }
         } local_frame{&environment, process_thread};
+
         const auto& owner_class = linker.Class(method.owner);
-        const auto class_name =
-        owner_class.descriptor.substr(1, owner_class.descriptor.size() - 2);
+        const auto class_name = owner_class.descriptor.substr(1, owner_class.descriptor.size() - 2);
 
         // AAPCS soft-float marshaling (04 §1 table): r0 = JNIEnv, r1 =
         // receiver or jclass, arguments from r2, 64-bit values on even
@@ -1408,15 +1373,13 @@ public:
         };
         const auto push_pair = [&](const std::uint64_t bits) {
             if (words.size() <= 2) {
-        if (words.size() % 2 != 0)
-          words.push_back(0); // align pair
+                if (words.size() % 2 != 0) words.push_back(0);  // align pair
                 words.push_back(static_cast<std::uint32_t>(bits));
                 words.push_back(static_cast<std::uint32_t>(bits >> 32U));
             } else {
-        if (stack.size() % 2 != 0)
-          stack.push_back(0);
-        while (words.size() < 4)
-          words.push_back(0);
+                if (stack.size() % 2 != 0) stack.push_back(0);
+                while (words.size() < 4)
+                    words.push_back(0);
                 stack.push_back(static_cast<std::uint32_t>(bits));
                 stack.push_back(static_cast<std::uint32_t>(bits >> 32U));
             }
@@ -1425,22 +1388,15 @@ public:
             const char shorty = walk.Next();
             const auto& value = arguments[argument_index++];
             switch (shorty) {
-                case 'J':
-                case 'D':
-                    push_pair(value.wide);
-                    break;
-                case 'L':
-                    push_word(PublishLocal(value.ref, process_thread).Value());
-                    break;
-                default:
-                    push_word(value.cat1);
-                    break;
+            case 'J':
+            case 'D': push_pair(value.wide); break;
+            case 'L': push_word(PublishLocal(value.ref, process_thread).Value()); break;
+            default: push_word(value.cat1); break;
             }
         }
 
         // The executor requires an 8-byte aligned stack tail.
-    if (stack.size() % 2 != 0)
-      stack.push_back(0);
+        if (stack.size() % 2 != 0) stack.push_back(0);
 
         A32GuestCallFrame frame;
         std::size_t register_count = words.size() < 4 ? words.size() : 4;
@@ -1455,15 +1411,15 @@ public:
         frame.renewable_native_frame = true;
 
         auto diagnostics = session->Diagnostics();
-        const auto diagnostic_call = diagnostics
-            ? diagnostics->BeginNativeCall(
-                  vm->CurrentContextToken(), process_thread,
-                  method.id.Value())
-            : 0U;
+        const auto diagnostic_call =
+            diagnostics ? diagnostics->BeginNativeCall(vm->CurrentContextToken(), process_thread, method.id.Value())
+                        : 0U;
+
         struct NativeDiagnosticScope final {
             std::shared_ptr<debug::DiagnosticState> state;
             std::uint64_t call{};
             bool threw{true};
+
             ~NativeDiagnosticScope() {
                 if (state && call != 0U) state->EndNativeCall(call, threw);
             }
@@ -1480,27 +1436,22 @@ public:
             const auto identity = class_identities.find(method.owner.Value());
             bool invoked = false;
             if (identity != class_identities.end()) {
-                const auto registered = session->TryInvokeRegisteredNative(
-                    identity->second, method.name, method.descriptor, frame);
+                const auto registered =
+                    session->TryInvokeRegisteredNative(identity->second, method.name, method.descriptor, frame);
                 if (registered.has_value()) {
                     result = *registered;
                     invoked = true;
                 }
             }
             if (!invoked) {
-                const auto target = session->FindNativeExport(
-                    class_name, method.name, method.descriptor);
+                const auto target = session->FindNativeExport(class_name, method.name, method.descriptor);
                 if (!target.has_value()) {
                     if (ledger != nullptr) {
-                        ledger->RecordUnimplemented(
-                            "dexvm.native." + class_name + "." + method.name,
-                            0);
+                        ledger->RecordUnimplemented("dexvm.native." + class_name + "." + method.name, 0);
                     }
-                    throw dx::VmJavaThrow{
-                        "Ljava/lang/UnsatisfiedLinkError;",
-                        "native method has no registered mapping or export: " +
-                            class_name + "." + method.name +
-                            method.descriptor};
+                    throw dx::VmJavaThrow{"Ljava/lang/UnsatisfiedLinkError;",
+                                          "native method has no registered mapping or export: " + class_name + "." +
+                                              method.name + method.descriptor};
                 }
                 frame.target = *target;
                 result = session->Invoke(frame);
@@ -1510,8 +1461,7 @@ public:
             // Native-attached JNI contexts must unwind all the way to the
             // clone runner. Java-owned contexts use the VM stop protocol.
             if (native_attachments.contains(process_thread)) throw;
-            throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped,
-                                 "guest native frame cancelled for teardown");
+            throw dx::DexVmError(dx::DexVmErrorReason::thread_stopped, "guest native frame cancelled for teardown");
         } catch (const A32GuestCallExit&) {
             execution_lock.ReacquireAfterBlocking(execution_depth);
             if (const auto code = session->NativeExitCode()) vm->Exit(*code);
@@ -1521,18 +1471,16 @@ public:
             std::string pending_details;
             if (const auto pending = environment.PendingExceptionMetadata(process_thread)) {
                 if (pending->throwable.domain == JniObjectDomain::dex_vm) {
-                    pending_details = "\n  pending_exception=" +
-                        ExceptionChain(model->FindIdentity(pending->throwable));
+                    pending_details =
+                        "\n  pending_exception=" + ExceptionChain(model->FindIdentity(pending->throwable));
                 }
             }
-            throw AndroidGuestProcessError(
-                "DexVM native invocation failed:\n"
-                "  class=" + class_name + "\n  method=" + method.name +
-                "\n  descriptor=" + method.descriptor +
-                "\n  guest_thread=" + std::to_string(process_thread) +
-                "\n  context_token=" +
-                std::to_string(frame.context_token) + pending_details +
-                "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
+            throw AndroidGuestProcessError("DexVM native invocation failed:\n"
+                                           "  class=" +
+                                           class_name + "\n  method=" + method.name + "\n  descriptor=" +
+                                           method.descriptor + "\n  guest_thread=" + std::to_string(process_thread) +
+                                           "\n  context_token=" + std::to_string(frame.context_token) +
+                                           pending_details + "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
         } catch (...) {
             execution_lock.ReacquireAfterBlocking(execution_depth);
             throw;
@@ -1550,54 +1498,48 @@ public:
             }
             if (pending->exception_class.value != 0) {
                 const auto type = DexClassIdentity(pending->exception_class);
-                const auto encoded = std::vector<std::uint8_t>(pending->modified_utf8_message.begin(), pending->modified_utf8_message.end());
-                throw dx::VmJavaThrow{linker.Class(type).descriptor,
+                const auto encoded = std::vector<std::uint8_t>(pending->modified_utf8_message.begin(),
+                                                               pending->modified_utf8_message.end());
+                throw dx::VmJavaThrow{
+                    linker.Class(type).descriptor,
                     core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value()};
             }
             const auto existing = model->FromIdentity(pending->throwable);
-            throw dx::VmJavaThrow{linker.Class(model->ObjectClass(existing)).descriptor,
-                {}, existing};
+            throw dx::VmJavaThrow{linker.Class(model->ObjectClass(existing)).descriptor, {}, existing};
         }
         native_diagnostic.threw = false;
 
         const char shorty = ReturnShorty(method.descriptor);
         switch (shorty) {
-            case 'V':
-                return dx::VmValue::Void();
-            case 'J':
-            case 'D': {
-                const auto bits = static_cast<std::uint64_t>(
-                                      result.return_value) |
-                                  (static_cast<std::uint64_t>(
-                                       result.return_value_high)
-                                   << 32U);
-                dx::VmValue value;
-                value.kind = dx::VmValue::Kind::wide;
-                value.wide = bits;
-                return value;
-            }
-            case 'L': {
-                const JniReference reference(result.return_value);
-      return dx::VmValue::Ref(FromReference(reference, process_thread));
-            }
-            default: {
-                dx::VmValue value;
-                value.kind = dx::VmValue::Kind::cat1;
-                value.cat1 = result.return_value;
-                return value;
-            }
+        case 'V': return dx::VmValue::Void();
+        case 'J':
+        case 'D': {
+            const auto bits = static_cast<std::uint64_t>(result.return_value) |
+                              (static_cast<std::uint64_t>(result.return_value_high) << 32U);
+            dx::VmValue value;
+            value.kind = dx::VmValue::Kind::wide;
+            value.wide = bits;
+            return value;
+        }
+        case 'L': {
+            const JniReference reference(result.return_value);
+            return dx::VmValue::Ref(FromReference(reference, process_thread));
+        }
+        default: {
+            dx::VmValue value;
+            value.kind = dx::VmValue::Kind::cat1;
+            value.cat1 = result.return_value;
+            return value;
+        }
         }
     }
 };
 
-DexVmGuestBridge::DexVmGuestBridge(
-    AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
-    const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
-    const std::shared_ptr<DexVmAndroidContext>& android_context,
-    core::CapabilityLedger& ledger, core::Logger* logger,
-    const DexVmBridgeConfig config,
-    std::vector<std::uint8_t> boot_dex_bytes,
-    std::vector<std::uint8_t> skeleton_bytes)
+DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector<std::uint8_t> dex_bytes,
+                                   const std::span<const dexvm::IntrinsicClassDecl> platform_catalog,
+                                   const std::shared_ptr<DexVmAndroidContext>& android_context,
+                                   core::CapabilityLedger& ledger, core::Logger* logger, const DexVmBridgeConfig config,
+                                   std::vector<std::uint8_t> boot_dex_bytes, std::vector<std::uint8_t> skeleton_bytes)
     : impl_(std::make_unique<Impl>()) {
     impl_->session = &session;
     impl_->ledger = &ledger;
@@ -1606,27 +1548,21 @@ DexVmGuestBridge::DexVmGuestBridge(
     impl_->android_context = android_context;
     impl_->owner = this;
 
-    const auto target_sdk = android_context != nullptr
-                                ? android_context->target_sdk_version
-                                : 0U;
-    const bool legacy_jni_references =
-        UsesLegacyJniAppBugCompatibility(target_sdk);
+    const auto target_sdk = android_context != nullptr ? android_context->target_sdk_version : 0U;
+    const bool legacy_jni_references = UsesLegacyJniAppBugCompatibility(target_sdk);
     session.Environment().ConfigureLegacyLocalReferenceCompatibility(
         legacy_jni_references,
-        [logger, target_sdk](const std::uint64_t thread,
-                             const JniReference reference,
-                             const JniObjectIdentity object) {
+        [logger, target_sdk](const std::uint64_t thread, const JniReference reference, const JniObjectIdentity object) {
             if (logger == nullptr) return;
-            logger->Write(
-                core::LogLevel::warn, "runtime.jni.legacy_reference",
-                "APK is using Android's targetSdk <= 13 legacy JNI direct-"
-                "reference compatibility; retaining a local reference past "
-                "its native call violates modern JNI rules",
-                {.guest_thread = thread},
-                {{"target_sdk", static_cast<std::uint64_t>(target_sdk)},
-                 {"reference", static_cast<std::uint64_t>(reference.Value())},
-                 {"object", object.value}},
-                {.mode = core::RateLimitMode::none});
+            logger->Write(core::LogLevel::warn, "runtime.jni.legacy_reference",
+                          "APK is using Android's targetSdk <= 13 legacy JNI direct-"
+                          "reference compatibility; retaining a local reference past "
+                          "its native call violates modern JNI rules",
+                          {.guest_thread = thread},
+                          {{"target_sdk", static_cast<std::uint64_t>(target_sdk)},
+                           {"reference", static_cast<std::uint64_t>(reference.Value())},
+                           {"object", object.value}},
+                          {.mode = core::RateLimitMode::none});
         });
 
     if (android_context) android_context->memory_snapshot = session.MemorySnapshot();
@@ -1650,20 +1586,13 @@ DexVmGuestBridge::DexVmGuestBridge(
         session.Strings(), session.Arrays(), config.heap,
         dx::JavaObjectInterop{
             &session.Objects().ObjectArrays(),
-            [bridge_state](const dx::DexClassId java_class) {
-                return bridge_state->JniClassIdentity(java_class);
-            },
-            [bridge_state](const JniObjectIdentity identity) {
-                return bridge_state->DexClassIdentity(identity);
-            },
-            [bridge_state](const JniObjectIdentity identity) {
-                return bridge_state->ObjectClassIdentity(identity);
-            },
+            [bridge_state](const dx::DexClassId java_class) { return bridge_state->JniClassIdentity(java_class); },
+            [bridge_state](const JniObjectIdentity identity) { return bridge_state->DexClassIdentity(identity); },
+            [bridge_state](const JniObjectIdentity identity) { return bridge_state->ObjectClassIdentity(identity); },
             [bridge_state](const JniObjectIdentity identity) {
                 return bridge_state->ObjectArrayClassIdentity(identity);
             },
-            [bridge_state](const dx::DexClassId java_class)
-                -> std::optional<std::uint16_t> {
+            [bridge_state](const dx::DexClassId java_class) -> std::optional<std::uint16_t> {
                 bridge_state->linker.EnsureClassLinked(java_class);
                 const auto& linked = bridge_state->linker.Class(java_class);
                 if (linked.is_intrinsic || linked.is_array) {
@@ -1674,22 +1603,21 @@ DexVmGuestBridge::DexVmGuestBridge(
             [bridge_state](const JniPrimitiveKind kind) {
                 const auto descriptor = [&]() -> const char* {
                     switch (kind) {
-                        case JniPrimitiveKind::boolean: return "[Z";
-                        case JniPrimitiveKind::byte: return "[B";
-                        case JniPrimitiveKind::character: return "[C";
-                        case JniPrimitiveKind::short_integer: return "[S";
-                        case JniPrimitiveKind::integer: return "[I";
-                        case JniPrimitiveKind::long_integer: return "[J";
-                        case JniPrimitiveKind::float_value: return "[F";
-                        case JniPrimitiveKind::double_value: return "[D";
+                    case JniPrimitiveKind::boolean: return "[Z";
+                    case JniPrimitiveKind::byte: return "[B";
+                    case JniPrimitiveKind::character: return "[C";
+                    case JniPrimitiveKind::short_integer: return "[S";
+                    case JniPrimitiveKind::integer: return "[I";
+                    case JniPrimitiveKind::long_integer: return "[J";
+                    case JniPrimitiveKind::float_value: return "[F";
+                    case JniPrimitiveKind::double_value: return "[D";
                     }
                     throw DexVmBridgeError("JNI primitive array kind is invalid");
                 }();
                 return bridge_state->linker.ResolveDescriptor(descriptor);
             }});
 
-    impl_->vm = std::make_unique<dx::Interpreter>(
-        impl_->linker, *impl_->model, this, ledger, config.interpreter);
+    impl_->vm = std::make_unique<dx::Interpreter>(impl_->linker, *impl_->model, this, ledger, config.interpreter);
     impl_->model->SetPrimitiveAllocationMutex(impl_->vm->ExecutionLock());
     impl_->vm->BindDefaultExecutionHost();
     impl_->vm->SetNioRuntime(&session.NIO());
@@ -1711,8 +1639,7 @@ DexVmGuestBridge::DexVmGuestBridge(
         return object;
     });
     if (android_context != nullptr) {
-        impl_->vm->Network().Configure(android_context->network_policy,
-                                       android_context->network_transport);
+        impl_->vm->Network().Configure(android_context->network_policy, android_context->network_transport);
     }
     RegisterAndroidAudioTrackStateTable(*impl_->vm, android_context);
     RegisterAndroidSurfaceStreamStateTable(*impl_->vm, android_context);
@@ -1731,21 +1658,18 @@ DexVmGuestBridge::DexVmGuestBridge(
     RegisterAndroidDatabaseStateTables(*impl_->vm, android_context);
     RegisterAndroidOwnerAttachedStateTable(*impl_->vm, android_context);
     if (android_context != nullptr && android_context->vfs != nullptr) {
-        impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(
-            *android_context->vfs);
+        impl_->io_file_system = std::make_unique<DexVmIoVfsAdapter>(*android_context->vfs);
         impl_->vm->IO().SetFileSystem(impl_->io_file_system.get());
         if (const auto working_directory = impl_->vm->IO().WorkingDirectory()) {
-            static_cast<void>(impl_->vm->SetSystemProperty(
-                "user.dir", *working_directory));
+            static_cast<void>(impl_->vm->SetSystemProperty("user.dir", *working_directory));
         }
     }
     impl_->vm->SetLogger(logger);
     session.Objects().SetRuntimeClassResolver(
-        [bridge_state](const JniObjectIdentity identity)
-            -> std::optional<JniObjectIdentity> {
+        [bridge_state](const JniObjectIdentity identity) -> std::optional<JniObjectIdentity> {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             bool known = bridge_state->session->Strings().Contains(identity) ||
-                bridge_state->session->Objects().ObjectArrays().Contains(identity);
+                         bridge_state->session->Objects().ObjectArrays().Contains(identity);
             if (!known) {
                 try {
                     static_cast<void>(bridge_state->session->Arrays().Kind(identity));
@@ -1759,8 +1683,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             if (!known) return std::nullopt;
             const auto ref = bridge_state->model->FromIdentity(identity);
             const auto java_class = bridge_state->model->ObjectClass(ref);
-            if (!java_class.IsValid())
-                throw DexVmBridgeError("JNI semantic object has no runtime class");
+            if (!java_class.IsValid()) throw DexVmBridgeError("JNI semantic object has no runtime class");
             const auto native_class = bridge_state->JniClassIdentity(java_class);
             // Registration and adoption share the execution lock with GC.
             bridge_state->session->Objects().EnsureRegistered(identity, native_class);
@@ -1771,93 +1694,73 @@ DexVmGuestBridge::DexVmGuestBridge(
         [bridge_state](JniObjectIdentity target, JniObjectIdentity source) -> std::optional<bool> {
             const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             const auto resolve = [bridge_state](JniObjectIdentity identity) -> std::optional<dx::DexClassId> {
-                return identity.domain == JniObjectDomain::dex_vm
-                    ? bridge_state->DexClassIdentity(identity)
-                    : bridge_state->ClassForJniIdentity(identity);
+                return identity.domain == JniObjectDomain::dex_vm ? bridge_state->DexClassIdentity(identity)
+                                                                  : bridge_state->ClassForJniIdentity(identity);
             };
             const auto target_class = resolve(target);
             const auto source_class = resolve(source);
             if (!target_class || !source_class) return std::nullopt;
             return bridge_state->linker.IsAssignable(*target_class, *source_class);
         });
-    session.Environment().SetReflectionHooks(JniReflectionHooks{
-        [bridge_state](std::uint64_t thread, JniReference object) {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->FromReflectedMethod(thread, object);
-        },
-        [bridge_state](std::uint64_t thread, JniReference object) {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->FromReflectedField(thread, object);
-        },
-        [bridge_state](std::uint64_t thread, JniReference owner, JniMethodId id, bool is_static) {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->ToReflectedMethod(thread, owner, id, is_static);
-        },
-        [bridge_state](std::uint64_t thread, JniReference owner, JniFieldId id, bool is_static) {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->ToReflectedField(thread, owner, id, is_static);
-        }});
+    session.Environment().SetReflectionHooks(
+        JniReflectionHooks{[bridge_state](std::uint64_t thread, JniReference object) {
+                               const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+                               return bridge_state->FromReflectedMethod(thread, object);
+                           },
+                           [bridge_state](std::uint64_t thread, JniReference object) {
+                               const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+                               return bridge_state->FromReflectedField(thread, object);
+                           },
+                           [bridge_state](std::uint64_t thread, JniReference owner, JniMethodId id, bool is_static) {
+                               const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+                               return bridge_state->ToReflectedMethod(thread, owner, id, is_static);
+                           },
+                           [bridge_state](std::uint64_t thread, JniReference owner, JniFieldId id, bool is_static) {
+                               const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+                               return bridge_state->ToReflectedField(thread, owner, id, is_static);
+                           }});
     session.Fields().SetAccessHooks(JniFieldAccessHooks{
-        [bridge_state](const JniObjectIdentity java_class,
-                       const std::uint64_t thread) {
-          const dx::VmExecutionLockScope guard(
-              bridge_state->vm->ExecutionLock());
-          return bridge_state->EnsureJniClassInitialized(java_class, thread);
+        [bridge_state](const JniObjectIdentity java_class, const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->EnsureJniClassInitialized(java_class, thread);
         },
-        [bridge_state](const JniObjectIdentity object,
-                       const JniObjectIdentity,
-                       const JniResolvedField& field,
+        [bridge_state](const JniObjectIdentity object, const JniObjectIdentity, const JniResolvedField& field,
                        const std::uint64_t thread) {
-          const dx::VmExecutionLockScope guard(
-              bridge_state->vm->ExecutionLock());
-          return bridge_state->GetJniInstanceField(object, field, thread);
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->GetJniInstanceField(object, field, thread);
         },
-        [bridge_state](const JniObjectIdentity object,
-                       const JniObjectIdentity,
-                       const JniResolvedField& field, const JniValue& value,
-                       const std::uint64_t thread) {
-          const dx::VmExecutionLockScope guard(
-              bridge_state->vm->ExecutionLock());
-          return bridge_state->SetJniInstanceField(object, field, value,
-                                                   thread);
+        [bridge_state](const JniObjectIdentity object, const JniObjectIdentity, const JniResolvedField& field,
+                       const JniValue& value, const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->SetJniInstanceField(object, field, value, thread);
         },
-        [bridge_state](const JniObjectIdentity,
-                       const JniResolvedField& field,
-                       const std::uint64_t thread) {
-          const dx::VmExecutionLockScope guard(
-              bridge_state->vm->ExecutionLock());
-          return bridge_state->GetJniStaticField(field, thread);
+        [bridge_state](const JniObjectIdentity, const JniResolvedField& field, const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->GetJniStaticField(field, thread);
         },
-        [bridge_state](const JniObjectIdentity,
-                       const JniResolvedField& field, const JniValue& value,
+        [bridge_state](const JniObjectIdentity, const JniResolvedField& field, const JniValue& value,
                        const std::uint64_t thread) {
-          const dx::VmExecutionLockScope guard(
-              bridge_state->vm->ExecutionLock());
-          return bridge_state->SetJniStaticField(field, value, thread);
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+            return bridge_state->SetJniStaticField(field, value, thread);
         }});
     if (android_context != nullptr) {
         android_context->threads = impl_->threads.get();
-        impl_->vm->Monitors().SetTimeSource([android_context] {
-            return android_context->uptime_millis.load();
-        });
+        impl_->vm->Monitors().SetTimeSource([android_context] { return android_context->uptime_millis.load(); });
         // Root-context Thread.sleep/Object.wait(timeout)/join(timeout) run
         // inside a lifecycle call on the host thread that pumps
         // uptime_millis between frames; parking on it would self-deadlock
         // (a title licence poll in onCreate freezes the whole session), so
         // timed root parks fast-forward the deterministic clock instead.
-        impl_->vm->Monitors().SetClockAdvance(
-            [android_context](const std::int64_t delta_millis) {
-                AdvanceAndroidClock(*android_context, delta_millis);
-            });
+        impl_->vm->Monitors().SetClockAdvance([android_context](const std::int64_t delta_millis) {
+            AdvanceAndroidClock(*android_context, delta_millis);
+        });
         impl_->vm->Monitors().SetClockDriverBlockedProbe([android_context, bounded_vm = impl_->vm.get()] {
             // Runtime.exit joins hooks on the lifecycle clock driver, also
             // in headless/pure Java sessions with no EGL pacer. Timed hooks
             // must use the same unified Clock fast-forward as timed root waits.
-            if (android_context->threads && android_context->threads->RootIsJoining())
-                return true;
+            if (android_context->threads && android_context->threads->RootIsJoining()) return true;
             const auto pacer = TryEglSwapPacerSnapshot(*android_context);
-            return pacer.has_value() && pacer->attached &&
-                   pacer->driver_blocked &&
+            return pacer.has_value() && pacer->attached && pacer->driver_blocked &&
                    (!pacer->shutdown || bounded_vm->HasExecutionDeadline(dx::kRootLifecycleToken)) &&
                    !pacer->surface_retired;
         });
@@ -1877,38 +1780,28 @@ DexVmGuestBridge::DexVmGuestBridge(
             throw DexVmBridgeError("detaching thread with interp frames");
     });
     session.Environment().SetMonitorHooks(JniMonitorHooks{
-        [bridge_state](const JniObjectIdentity identity,
-                       const std::uint64_t thread) {
-            const dx::VmExecutionLockScope guard(
-                bridge_state->vm->ExecutionLock());
+        [bridge_state](const JniObjectIdentity identity, const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) {
-                throw JniMonitorError(JniMonitorErrorReason::invalid_object,
-                                      "JNI monitor object is null");
+                throw JniMonitorError(JniMonitorErrorReason::invalid_object, "JNI monitor object is null");
             }
-            bridge_state->vm->Monitors().Enter(
-                bridge_state->MonitorObject(identity),
-                bridge_state->ContextForJniThread(thread).Token());
+            bridge_state->vm->Monitors().Enter(bridge_state->MonitorObject(identity),
+                                               bridge_state->ContextForJniThread(thread).Token());
         },
-        [bridge_state](const JniObjectIdentity identity,
-                       const std::uint64_t thread) {
-            const dx::VmExecutionLockScope guard(
-                bridge_state->vm->ExecutionLock());
+        [bridge_state](const JniObjectIdentity identity, const std::uint64_t thread) {
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) {
-                throw JniMonitorError(JniMonitorErrorReason::invalid_object,
-                                      "JNI monitor object is null");
+                throw JniMonitorError(JniMonitorErrorReason::invalid_object, "JNI monitor object is null");
             }
             try {
-                bridge_state->vm->Monitors().Exit(
-                    bridge_state->MonitorObject(identity),
-                    bridge_state->ContextForJniThread(thread).Token());
+                bridge_state->vm->Monitors().Exit(bridge_state->MonitorObject(identity),
+                                                  bridge_state->ContextForJniThread(thread).Token());
             } catch (const dx::VmJavaThrow&) {
-                throw JniMonitorError(JniMonitorErrorReason::not_owner,
-                                      "JNI monitor exit by non-owner");
+                throw JniMonitorError(JniMonitorErrorReason::not_owner, "JNI monitor exit by non-owner");
             }
         },
         [bridge_state](const std::uint64_t thread) {
-            const dx::VmExecutionLockScope guard(
-                bridge_state->vm->ExecutionLock());
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             std::uint64_t token{};
             {
                 const std::scoped_lock lock(bridge_state->thread_contexts_mutex);
@@ -1933,56 +1826,52 @@ DexVmGuestBridge::DexVmGuestBridge(
         },
         [] { return std::size_t{}; },
         [bridge_state] {
-            const dx::VmExecutionLockScope guard(
-                bridge_state->vm->ExecutionLock());
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             bridge_state->vm->Monitors().Shutdown();
             return std::size_t{};
         },
         [bridge_state](const JniObjectIdentity identity) {
-            const dx::VmExecutionLockScope guard(
-                bridge_state->vm->ExecutionLock());
+            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
             if (identity.value == 0U) return JniMonitorSnapshot{};
-            const auto snapshot = bridge_state->vm->Monitors().Snapshot(
-                bridge_state->MonitorObject(identity));
+            const auto snapshot = bridge_state->vm->Monitors().Snapshot(bridge_state->MonitorObject(identity));
             std::uint64_t owner_thread{};
             if (snapshot.owner != 0U) {
-                owner_thread = bridge_state->ProcessThreadForToken(
-                    snapshot.owner);
+                owner_thread = bridge_state->ProcessThreadForToken(snapshot.owner);
             }
-            return JniMonitorSnapshot{owner_thread, snapshot.recursion,
-                                      snapshot.waiting, 0,
-                                      snapshot.shutting_down};
+            return JniMonitorSnapshot{owner_thread, snapshot.recursion, snapshot.waiting, 0, snapshot.shutting_down};
         }});
-    impl_->vm->SetGcIntegration(dx::InterpreterGcIntegration{
-        [&session](const std::function<void(JniObjectIdentity)>& visit) {
-            session.Environment().VisitReferenceRoots(visit);
-            session.Strings().VisitAccessRoots(visit);
-            session.Arrays().VisitAccessRoots(visit);
-        },
-        [&session, bridge_state](const JniObjectIdentity identity) {
-            if (const auto found = bridge_state->asset_managers.find(identity.value);
-                found != bridge_state->asset_managers.end()) {
-                session.Process().UnregisterAssetManager(found->second);
-                bridge_state->asset_managers.erase(found);
-            }
-            session.Environment().ClearWeakReferencesTo(identity);
-            try {
-                session.Objects().Forget(identity);
-            } catch (const JniGuestBindingError&) {
-                // Untyped semantic objects may be swept before their first
-                // JNI class query and therefore have no registry entry yet.
-            }
-        },
-        [android_context](const dx::VmRootVisitor& visit) {
-            if (android_context) VisitAndroidSessionRoots(*android_context, visit);
-        }});
+    impl_->vm->SetGcIntegration(
+        dx::InterpreterGcIntegration{[&session](const std::function<void(JniObjectIdentity)>& visit) {
+                                         session.Environment().VisitReferenceRoots(visit);
+                                         session.Strings().VisitAccessRoots(visit);
+                                         session.Arrays().VisitAccessRoots(visit);
+                                     },
+                                     [&session, bridge_state](const JniObjectIdentity identity) {
+                                         if (const auto found = bridge_state->asset_managers.find(identity.value);
+                                             found != bridge_state->asset_managers.end()) {
+                                             session.Process().UnregisterAssetManager(found->second);
+                                             bridge_state->asset_managers.erase(found);
+                                         }
+                                         session.Environment().ClearWeakReferencesTo(identity);
+                                         try {
+                                             session.Objects().Forget(identity);
+                                         } catch (const JniGuestBindingError&) {
+                                             // Untyped semantic objects may be swept before their first
+                                             // JNI class query and therefore have no registry entry yet.
+                                         }
+                                     },
+                                     [android_context](const dx::VmRootVisitor& visit) {
+                                         if (android_context) VisitAndroidSessionRoots(*android_context, visit);
+                                     }});
 
     impl_->RegisterDexClasses();
 
     if (android_context != nullptr) {
         android_context->native_activity = std::make_shared<NativeActivityRuntime>(
             session, android_context,
-            [bridge_state](dx::VmObjectRef ref, std::uint64_t thread) { return bridge_state->PublishLocal(ref, thread); },
+            [bridge_state](dx::VmObjectRef ref, std::uint64_t thread) {
+                return bridge_state->PublishLocal(ref, thread);
+            },
             [bridge_state](JniReference ref, std::uint64_t thread) { return bridge_state->FromReference(ref, thread); },
             [bridge_state](std::uint64_t token) { return bridge_state->ProcessThreadForToken(token); },
             [bridge_state](dx::VmObjectRef object) { return bridge_state->AssetManagerObject(object); }, logger);
@@ -1995,54 +1884,57 @@ DexVmGuestBridge::DexVmGuestBridge(
                     throw DexVmBridgeError("activity.current requires a live DexVM");
                 }
                 const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-                return JniValue{bridge_state->PublishLocal(context->activity,
-                                                          invocation.thread_id)};
+                return JniValue{bridge_state->PublishLocal(context->activity, invocation.thread_id)};
             });
     }
 
     if (android_context) {
         session.Process().SetSensorDirectory(android_context->sensor_directory);
-        session.Process().SetSurfaceHooks({bridge_state,
-            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
-                return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
-            }});
-        android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width, std::uint32_t height) {
+        session.Process().SetSurfaceHooks(
+            {bridge_state, +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
+                 return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
+             }});
+        android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width,
+                                                                std::uint32_t height) {
             bridge_state->session->Process().UpdateSurfaceWindow({memory::GuestAddress{holder.Value()}, width, height});
         };
         android_context->retire_native_surface = [bridge_state](dx::VmObjectRef holder) {
             bridge_state->session->Process().RetireSurfaceWindow(memory::GuestAddress{holder.Value()});
         };
-        session.Process().SetAssetManagerHooks({bridge_state,
-            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
-                return static_cast<Impl*>(owner)->AssetManagerFromJava(thread, env, ref);
-            }});
-        session.Process().SetBitmapHooks({bridge_state,
-            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref, AndroidBitmapInfo& info) {
-                return static_cast<Impl*>(owner)->BitmapInfo(thread, env, ref, info);
-            },
-            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref, memory::GuestAddress& address) {
-                return static_cast<Impl*>(owner)->BitmapLock(thread, env, ref, address);
-            },
-            +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref) {
-                return static_cast<Impl*>(owner)->BitmapUnlock(thread, env, ref);
-            }});
+        session.Process().SetAssetManagerHooks(
+            {bridge_state,
+             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, AssetManagerJavaReference ref) {
+                 return static_cast<Impl*>(owner)->AssetManagerFromJava(thread, env, ref);
+             }});
+        session.Process().SetBitmapHooks(
+            {bridge_state,
+             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref,
+                 AndroidBitmapInfo& info) { return static_cast<Impl*>(owner)->BitmapInfo(thread, env, ref, info); },
+             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref,
+                 memory::GuestAddress& address) {
+                 return static_cast<Impl*>(owner)->BitmapLock(thread, env, ref, address);
+             },
+             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, BitmapJavaReference ref) {
+                 return static_cast<Impl*>(owner)->BitmapUnlock(thread, env, ref);
+             }});
     }
 
     if (android_context && !android_context->read_process_memory) {
         impl_->owns_process_memory_reader = true;
-        android_context->read_process_memory = [bridge_state, logged = false]() mutable
-            -> std::optional<GuestProcessMemorySnapshot> {
+        android_context->read_process_memory = [bridge_state,
+                                                logged = false]() mutable -> std::optional<GuestProcessMemorySnapshot> {
             const auto memory = bridge_state->session->Process().TryMemorySnapshot();
             if (!memory) return std::nullopt;
             std::uint64_t pages{};
-            for (auto count : memory->pages_by_protection) pages += count;
+            for (auto count : memory->pages_by_protection)
+                pages += count;
             const auto snapshot = MakeVirtualPrivateProcessMemorySnapshot(
                 bridge_state->model->AllocatedBytes(), pages * (UINT64_C(1) << memory::kGuestPageBits));
             if (!logged && bridge_state->logger) {
                 bridge_state->logger->Write(core::LogLevel::info, "runtime.process_memory",
-                    "using virtual-private-committed process memory model", {},
-                    {{"dalvik_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[0][0])},
-                     {"other_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[2][0])}});
+                                            "using virtual-private-committed process memory model", {},
+                                            {{"dalvik_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[0][0])},
+                                             {"other_pss_kib", static_cast<std::uint64_t>(snapshot.heaps[2][0])}});
                 logged = true;
             }
             return snapshot;
@@ -2066,8 +1958,8 @@ DexVmGuestBridge::DexVmGuestBridge(
             }
         });
     });
-    session.Environment().SetThrowableFactory([bridge_state](std::uint64_t thread,
-        JniObjectIdentity type, const std::string& message) {
+    session.Environment().SetThrowableFactory([bridge_state](std::uint64_t thread, JniObjectIdentity type,
+                                                             const std::string& message) {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
         const std::vector<std::uint8_t> encoded(message.begin(), message.end());
         const auto utf8 = core::Utf16ToUtf8(DecodeJniModifiedUtf8(encoded), core::InvalidUtf16Policy::replace).value();
@@ -2075,8 +1967,7 @@ DexVmGuestBridge::DexVmGuestBridge(
             bridge_state->linker.Class(bridge_state->DexClassIdentity(type)).descriptor, utf8);
         return bridge_state->PublishLocal(object, thread);
     });
-    session.Classes().SetClassResolver([bridge_state](const std::string& name)
-        -> std::optional<JniObjectIdentity> {
+    session.Classes().SetClassResolver([bridge_state](const std::string& name) -> std::optional<JniObjectIdentity> {
         const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
         if (!IsValidJniObjectClassName(name)) return std::nullopt;
         try {
@@ -2086,19 +1977,18 @@ DexVmGuestBridge::DexVmGuestBridge(
         } catch (const dx::JavaLinkageError& error) {
             const auto error_class = bridge_state->linker.ResolveDescriptor(error.Descriptor());
             const auto thread = bridge_state->ProcessThreadForToken(bridge_state->vm->CurrentContextToken());
-            bridge_state->session->Environment().ThrowNew(thread,
-                bridge_state->RegisterClassForNative(error_class), error.what());
+            bridge_state->session->Environment().ThrowNew(thread, bridge_state->RegisterClassForNative(error_class),
+                                                          error.what());
             return std::nullopt;
         } catch (const dx::DexVmError& error) {
             if (error.Reason() == dx::DexVmErrorReason::unknown_class) return std::nullopt;
             throw;
         }
     });
-    session.Environment().SetObjectAllocationHook(
-        [bridge_state](std::uint64_t thread, JniReference java_class) {
-            const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
-            return bridge_state->AllocJniObject(thread, java_class);
-        });
+    session.Environment().SetObjectAllocationHook([bridge_state](std::uint64_t thread, JniReference java_class) {
+        const dx::VmExecutionLockScope guard(bridge_state->vm->ExecutionLock());
+        return bridge_state->AllocJniObject(thread, java_class);
+    });
 }
 
 std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup() {
@@ -2109,6 +1999,7 @@ std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup()
               original_(environment.ExceptionOccurred(thread)) {
             environment_.ExceptionClear(thread_);
         }
+
         ~Scope() override {
             try {
                 // Any cleanup exception has already propagated to its caller;
@@ -2119,23 +2010,23 @@ std::unique_ptr<dx::NativeCleanupScope> DexVmGuestBridge::EnterResourceCleanup()
                     environment_.DeleteLocalRef(thread_, original_);
                 }
             } catch (const std::exception& error) {
-                if (logger_) logger_->Write(core::LogLevel::error,
-                    "runtime.dexvm.native_cleanup", error.what());
+                if (logger_) logger_->Write(core::LogLevel::error, "runtime.dexvm.native_cleanup", error.what());
             }
         }
+
     private:
         JniEnvironment& environment_;
         std::uint64_t thread_;
         core::Logger* logger_;
         JniReference original_;
     };
+
     return std::make_unique<Scope>(impl_->session->Environment(),
-        impl_->ProcessThreadForToken(impl_->vm->CurrentContextToken()), impl_->logger);
+                                   impl_->ProcessThreadForToken(impl_->vm->CurrentContextToken()), impl_->logger);
 }
 
 DexVmGuestBridge::~DexVmGuestBridge() {
-    if (impl_->android_context && impl_->owns_process_memory_reader)
-        impl_->android_context->read_process_memory = {};
+    if (impl_->android_context && impl_->owns_process_memory_reader) impl_->android_context->read_process_memory = {};
     if (impl_->android_context) {
         ShutdownAndroidScheduler(*impl_->android_context);
     }
@@ -2154,10 +2045,10 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) {
         for (const auto& [_, bitmap] : impl_->android_context->bitmaps) {
             if (!bitmap.pixels) continue;
-            try { bitmap.pixels->AbortLocks(); }
-            catch (const std::exception& error) {
-                if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
-                    "runtime.bitmap_ndk", error.what());
+            try {
+                bitmap.pixels->AbortLocks();
+            } catch (const std::exception& error) {
+                if (impl_->logger) impl_->logger->Write(core::LogLevel::error, "runtime.bitmap_ndk", error.what());
             }
         }
         impl_->android_context->bitmap_lock_roots.clear();
@@ -2172,14 +2063,15 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     if (impl_->android_context) ReleaseAndroidSurfaceStreams(*impl_->android_context);
     ReleaseAndroidDatabaseResources(impl_->android_context);
     if (impl_->vm && impl_->session->Running() && !impl_->session->NativeExitCode()) {
-        try { impl_->vm->ReleaseGuestNativeResources(true); }
-        catch (const dx::VmJavaThrow& error) {
-            if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
-                "runtime.dexvm.native_cleanup", error.descriptor + ": " + error.message);
-        }
-        catch (const std::exception& error) {
-            if (impl_->logger) impl_->logger->Write(core::LogLevel::error,
-                "runtime.dexvm.native_cleanup", error.what());
+        try {
+            impl_->vm->ReleaseGuestNativeResources(true);
+        } catch (const dx::VmJavaThrow& error) {
+            if (impl_->logger)
+                impl_->logger->Write(core::LogLevel::error, "runtime.dexvm.native_cleanup",
+                                     error.descriptor + ": " + error.message);
+        } catch (const std::exception& error) {
+            if (impl_->logger)
+                impl_->logger->Write(core::LogLevel::error, "runtime.dexvm.native_cleanup", error.what());
         }
     }
     if (impl_->android_context) {
@@ -2202,16 +2094,22 @@ DexVmGuestBridge::~DexVmGuestBridge() {
     }
 }
 
-dexvm::Interpreter& DexVmGuestBridge::Vm() noexcept { return *impl_->vm; }
+dexvm::Interpreter& DexVmGuestBridge::Vm() noexcept {
+    return *impl_->vm;
+}
+
 dexvm::VmThreadRuntime& DexVmGuestBridge::Threads() noexcept {
     return *impl_->threads;
 }
+
 dexvm::DexClassLinker& DexVmGuestBridge::Linker() noexcept {
     return impl_->linker;
 }
+
 dexvm::JavaObjectModel& DexVmGuestBridge::Model() noexcept {
     return *impl_->model;
 }
+
 AndroidGuestCallSession& DexVmGuestBridge::Session() noexcept {
     return *impl_->session;
 }
@@ -2220,28 +2118,22 @@ JniReference DexVmGuestBridge::PublishLocal(const dexvm::VmObjectRef ref) {
     return impl_->PublishLocal(ref);
 }
 
-dexvm::VmObjectRef
-DexVmGuestBridge::FromReference(const JniReference reference) {
+dexvm::VmObjectRef DexVmGuestBridge::FromReference(const JniReference reference) {
     return impl_->FromReference(reference, kRootThreadId);
 }
 
-std::optional<JniObjectIdentity> DexVmGuestBridge::RegisteredClassIdentity(
-    const dexvm::DexClassId java_class) const {
+std::optional<JniObjectIdentity> DexVmGuestBridge::RegisteredClassIdentity(const dexvm::DexClassId java_class) const {
     const auto found = impl_->class_identities.find(java_class.Value());
-  if (found == impl_->class_identities.end())
-    return std::nullopt;
+    if (found == impl_->class_identities.end()) return std::nullopt;
     return found->second;
 }
 
-dexvm::VmValue
-DexVmGuestBridge::Invoke(const dexvm::LinkedMethod &method,
-                         const dexvm::VmObjectRef receiver,
-    const std::span<const dexvm::VmValue> arguments) {
+dexvm::VmValue DexVmGuestBridge::Invoke(const dexvm::LinkedMethod& method, const dexvm::VmObjectRef receiver,
+                                        const std::span<const dexvm::VmValue> arguments) {
     return impl_->InvokeNative(method, receiver, arguments);
 }
 
-void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
-                                    const std::uint64_t execution_token) {
+void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id, const std::uint64_t execution_token) {
     if (guest_thread_id < 2U) {
         throw DexVmBridgeError("DexVM child thread id is invalid");
     }
@@ -2249,8 +2141,7 @@ void DexVmGuestBridge::AttachThread(const std::uint64_t guest_thread_id,
     impl_->java_thread_tokens.emplace(execution_token);
 }
 
-void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id,
-                                    const std::uint64_t execution_token) noexcept {
+void DexVmGuestBridge::DetachThread(const std::uint64_t guest_thread_id, const std::uint64_t execution_token) noexcept {
     static_cast<void>(guest_thread_id);
     // A monitor snapshot may prepare this context from another host. Finish
     // that preparation before retiring its token and native resources.

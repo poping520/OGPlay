@@ -4,12 +4,10 @@
 
 namespace ogplay::session {
 
-void ComposeUiOverlayInPlace(
-    const std::span<std::uint8_t> result,
-    const runtime::ui::UiOverlayFrame& overlay) {
+void ComposeUiOverlayInPlace(const std::span<std::uint8_t> result, const runtime::ui::UiOverlayFrame& overlay,
+                             const bool premultiplied) {
     if (result.size() != overlay.rgba8.size() ||
-        overlay.rgba8.size() != static_cast<std::size_t>(overlay.width) *
-                                    overlay.height * 4U) {
+        overlay.rgba8.size() != static_cast<std::size_t>(overlay.width) * overlay.height * 4U) {
         throw std::invalid_argument("UI composition frame layouts differ");
     }
     if (overlay.fully_transparent) return;
@@ -19,22 +17,17 @@ void ComposeUiOverlayInPlace(
         const auto inverse = 255U - alpha;
         for (std::size_t channel = 0; channel < 3U; ++channel) {
             result[offset + channel] = static_cast<std::uint8_t>(
-                (static_cast<std::uint32_t>(overlay.rgba8[offset + channel]) *
-                     alpha +
-                 static_cast<std::uint32_t>(result[offset + channel]) * inverse +
-                 127U) /
+                (static_cast<std::uint32_t>(overlay.rgba8[offset + channel]) * (premultiplied ? 255U : alpha) +
+                 static_cast<std::uint32_t>(result[offset + channel]) * inverse + 127U) /
                 255U);
         }
         result[offset + 3U] = static_cast<std::uint8_t>(
-            alpha + (static_cast<std::uint32_t>(result[offset + 3U]) * inverse +
-                     127U) /
-                        255U);
+            alpha + (static_cast<std::uint32_t>(result[offset + 3U]) * inverse + 127U) / 255U);
     }
 }
 
-std::vector<std::uint8_t> ComposeUiOverlay(
-    const std::span<const std::uint8_t> base_rgba8,
-    const runtime::ui::UiOverlayFrame& overlay) {
+std::vector<std::uint8_t> ComposeUiOverlay(const std::span<const std::uint8_t> base_rgba8,
+                                           const runtime::ui::UiOverlayFrame& overlay) {
     std::vector<std::uint8_t> result(base_rgba8.begin(), base_rgba8.end());
     ComposeUiOverlayInPlace(result, overlay);
     return result;

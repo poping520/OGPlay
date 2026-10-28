@@ -179,6 +179,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   清空状态；旧/跨 context token 明确失败并按 ADR-0147 记账。默认配对必须加载投影。
 
 - Resources/AssetManager 为稳定应用对象对，mAssets 为 GC 强边；getSystem 独立且不回退 APK。
+  getIdentifier：应用路径先按 Integer.parseInt，再解析 @/@*、pkg:type/name（最后 ':'/'/'），
+  缺省取 defPackage/defType，缺包/类型/名字返回 0；当前 ARSC 包精确查询，其他包返回 0，
+  android 仅保留 ThemeId style，其他系统类型及 ^ 内部名记账抛 UOE；系统 Resources 原拒绝边界不变。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，
   与 NDK 共用校验/逻辑 FD/区间，错误 IOException/NotFoundException。AssetFileDescriptor.close
   关 IO 并设 Java descriptor=-1。getText/getString 可覆盖，getString 虚派 getText→CharSequence.toString，
@@ -266,7 +269,8 @@ GLSurfaceView 在配对精确调用 SurfaceView 父构造，保留 requested=-1�
 Activity 栈的窗口根关联真实 Java 内容 FrameLayout；创建前仅查询空投影根，不附着第二棵宿主层级。
 来源表只开放所选 ROM 闭包与受审接缝。容器构造初始化真实 Java 数组/默认 flags，
 空 touch/hover target 允许原空路径，非空输入目标及 disappearing animation 记账拒绝；
-AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。字段接收者
+View 树 AttachInfo/dispatchAttachedToWindow、transition 与系统 accessibility 不伪造服务。
+Activity 的 Window.Callback 附着/分离由 session 单独编排，Dialog Callback 附着未支持。字段接收者
 failure 虚派按 ADR-0159 封存 a/b/unproven 信息，运行期仍明确失败；支持路径须动态零命中。
 JavaTraversal 的 Dialog 使用各自独立 HostLayout 树；ShowAndroidDialog 只在未发布宿主树上
 按 managed viewport 调用 LayoutUiTree，容纳检查成功才替换对应 presentation 并推进宿主 revision。
@@ -462,7 +466,7 @@ Handler/Looper/HandlerThread/AsyncTask 共用 scheduler，同 uptime deadline �
 Clock 默认确定性 60 秒 boot-age，无 suspend 时 uptime/elapsedRealtime 同源。
 prepare_native_looper 显式关联 Java/native 线程、主 Looper 仅首次关联，查询/消息泵不重 prepare；
 Java scheduler 持消息，quit 不清存活线程 native Looper。root Thread 稳定、空泵不重入 Java/VM 锁，
-myQueue 仅稳定队列身份；runOnUiThread 仅 root 同步虚派、worker 投主 Looper。worker join 后/root
+myQueue/getQueue 共享稳定队列身份；runOnUiThread 仅 root 同步虚派、worker 投主 Looper。worker join 后/root
 JNI detach 前释放 token；AsyncTask DexVmError 保留故障并终止，不转 null/继续 onPostExecute，Thread/JNI
 复用 core。ResultReceiver 本地协议归 Java，有 Handler 排队/无 Handler 同步，Parcel 保留本地 Binder identity。
 
@@ -696,8 +700,8 @@ Rect 身份稳定，销毁后 retire native surface；完整 WMS/updateWindow/�
 ## 窗口与呈现事实
 
 JavaTraversal每个Activity保留真实Window Java根与最后完整投影；后台几何不依赖当前构建树。
-共同发布仅在前台完整投影匹配身份/viewport后更新；首分区供输入，额外可见handoff分区
-按后到前合成。后台退役使用保留层级清绑定。View焦点由Java拥有，窗口焦点事实由lifecycle拥有，禁止外部投影RequestFocus。
+共同发布仅在前台完整投影匹配身份/viewport后更新；Activity 主窗口与额外可见 handoff、
+应用附加窗口按各自稳定根保存独立分区，后到前合成；输入按快照中的窗口 flags 选择。后台退役使用保留层级清绑定。View焦点由Java拥有，窗口焦点事实由lifecycle拥有，禁止外部投影RequestFocus。
 owner收集前刷新开孔/叶像素，发布冻结bitmap缓存版本及视频节点/像素；发布只允许owner，
 输入lease内延期。消费者显式共享同一PresentationSnapshot，禁止再读播放器、可变缓存或
 反查guest绑定；无效producer像素明确失败。未知窗口/metrics保留最后完整快照。
@@ -781,3 +785,59 @@ DVM-329：owner 屏障先检查窗口请求/Java 根 FORCE_LAYOUT、首次附着
 窗口焦点的 dispatchWindowFocusChanged 在 View/ViewGroup 执行固定ROM：View虚派
 onWindowFocusChanged，ViewGroup按真实mChildren/mChildrenCount递归虚派。生命周期仅从窗口
 Java根进入，window_has_focus/window_focus_activity仍是既有宿主窗口事实，不建立逐View状态。
+
+
+DVM-335：每个受管 Activity 拥有稳定 WindowManagerImpl，getWindowManager 与
+getSystemService("window") 同实例，getDefaultDisplay 仍共用进程 Display；普通 Context 的
+manager 没有 app token，应用窗口添加抛 BadTokenException。Activity app token 补入缺省
+LayoutParams.token，其他 owner/finishing/destroyed token 拒绝；缺省标题使用应用标签/包名。
+addView/updateViewLayout 支持 type 1..99、MATCH_PARENT、flags 8/16/32/128/256/1024，保存
+format；非默认尺寸/坐标/gravity、权重/边距、其他 type/flags 记账抛 UOE。先校验再虚派
+setLayoutParams；重复添加 ISE、未知移除/更新 IAE，remove/Immediate 在 owner 屏障退役。
+View 自身是稳定 Java 根，mParent=null，无额外包装 ViewGroup/ViewRootImpl；沿用 ROM
+measure/layout 和受审叶像素投影。与 Dialog 共用最多 8 个附加窗口名额。
+窗口按添加序处于 owner 主窗口上方，跟随 owner 可见性；快照冻结根、flags、代次、几何，
+viewport 不匹配保留上一完整快照。最上层可见且可触窗口接收整次触摸，全尺寸下
+NOT_TOUCH_MODAL 不穿透；NOT_TOUCHABLE 跳过。按键只到焦点子窗口根 dispatchKeyEvent，
+未消费不回落 Activity；窗口集合更新取消旧手势并吞尾。生命周期独占焦点写入，先失焦
+后获焦；View.hasWindowFocus 沿真实 Java 父链读取所属窗口事实。
+owner onDestroy/onDetachedFromWindow 后 closeAll 并结构化 warn；进程关闭只释放附加记录，
+不合成子树附着/分离回调。View AttachInfo/dispatchAttachedToWindow、Dialog Callback、
+窗口过渡仍不支持；属性动画边界见 DVM-337。
+
+
+DVM-336：Choreographer 与 DisplayEventReceiver 普通 Java 均取固定 API19 ROM；单例、
+callback 队列/延时/移除、doFrame 及 input→animation→traversal 回调排序归 Java。
+DisplayEventReceiver 仅 nativeInit(receiver,MessageQueue)I/nativeDispose(I)V/nativeScheduleVsync(I)V
+为平台接缝：登记弱 receiver 的不复用 int token、owner trace 队列/Looper；队列无效/已退出
+RuntimeException，非主 Looper 记账 UOE。重复 schedule 合并，一次请求只消费一帧；
+dispose 幂等，原 CloseGuard/finalize 与 GC sweep 同样退役，排队后失效不交付。
+实际 lifecycle StepFrame 入口在所有 guest owner traversal/projection 前消费到期消息、
+冻结挂起请求并向主 Looper 投递 dispatchVsync，再泵消息交付 ROM doFrame；后续布局/
+输入屏障、Start/Resume/只读呈现不产生脉冲，回调中再 post 只到下一帧。
+timestampNanos=统一 Clock uptime×1e6，与 System.nanoTime 同基，displayId=0，帧计数单调；
+停止即清登记/禁派发，无 hotplug、无 debug.choreographer 属性注入或 vsync=false 回退。
+Application 回调前已准备主 Looper。Message.obtain(Handler,Runnable) 保存原 callback，
+Handler 队首先入后出，普通同 deadline 先入先出；异步 flags 保存/复制但不改变排序，
+没有同步屏障。Handler.dispatchMessage 先 Runnable，再 Handler.Callback，最后虚派 handleMessage。
+DisplayManagerGlobal.getInstance/getDisplayInfo(0) 为注入显示事实的精确 overlay，
+refreshRate=display_refresh_rate_hz（逻辑显示默认 60，非法值 UOE），尺寸/density 与 context 同源；
+其他 display ID 返回 null，不接入 Binder/系统显示服务。属性动画通过 DVM-337 另行准入。
+
+DVM-337：ValueAnimator（AnimationHandler）/ObjectAnimator/PropertyValuesHolder 及原版数值
+Evaluator 沿 API19 ROM Java 算法执行；动画只消费上述主 Looper Choreographer CALLBACK_ANIMATION，
+不增加计时器，停止/owner 退役不额外合成动画 cancel/end。PVH 四个 native 精确绑定，按实例
+方法签名（含继承）生成进程内稳定非零 int ID，无宿主指针；缺方法 NoSuchMethodError 供 ROM
+反射回退，调用重验 ID/类型并虚派，原 Java 异常传播。无效 ID/类型 IAE。
+View setAlpha/getAlpha/ensureTransformationInfo/onSetAlpha/hasOverlappingRendering 取 ROM，
+mTransformationInfo.mAlpha 是唯一事实，PFLAG_ALPHA_SET 尊重子类自绘；mDisplayList 恒 null，
+软件 invalidate 仅 draw dirty，无 measure/layout。非 alpha 几何变换继续拒绝。投影节点保存自身
+与祖先有效 alpha 的乘积，绘制按命令相乘；未实现离屏层，存在“重叠子树的组不透明度差异”。
+软件光栅平面是预乘 RGBA，呈现合成不得二次乘 alpha；应用子窗口 TRANSLUCENT/TRANSPARENT
+按像素 alpha source-over，下层贡献保留；其他格式按不透明平面覆盖下层（未绘区域为黑）。
+不开放 LayoutTransition、ViewGroup transition、View.postOnAnimation、ViewPropertyAnimator 或
+AnimatorInflater XML；硬件 display list、非主 Looper 动画帧与跨平台行为未验。
+
+属性动画所需 Trace.isTagEnabled 仅接受 View tag=8 并返回已连接；asyncTraceBegin/End
+将名字和 cookie 写结构化 debug 日志，其他 tag 继续记账拒绝。软件 dirty 请求按稳定窗口根
+登记，主窗口发布不能吞掉附加窗口的绘制请求；重绘完成后清理，不因此请求重新测量。

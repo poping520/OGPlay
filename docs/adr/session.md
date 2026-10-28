@@ -5,6 +5,9 @@
 - [ADR-0020 · 安装实例沙盒、资源 lease 与外部数据](#adr-0020)
 - [ADR-0133 · 通用操控映射与游戏进程编辑器](#adr-0133)
 - [ADR-0142 · Profile 仅 identity/quirks，输入与显示归用户](#adr-0142)
+- [ADR-0163 · 受管 Activity 的窗口回调附着](#adr-0163)
+- [ADR-0164 · 有界应用附加窗口](#adr-0164)
+- [ADR-0165 · 宿主呈现帧与 Choreographer 时间基](#adr-0165)
 
 <a id="adr-0020"></a>
 
@@ -99,3 +102,87 @@ OBB 按原文件名只读挂 Android 标准目录，不展开到 Profile 自定�
 ### 后果
 
 无 Profile APK 仍可通用启动；旧配置须用户自行修改，发布 quirk 不等于发布操控或显示偏好。
+
+<a id="adr-0163"></a>
+
+## ADR-0163 · 受管 Activity 的窗口回调附着
+
+- 状态：Accepted
+- 日期：2026-10-27
+
+### 背景
+
+API19 主窗口在 resume 后首次 traversal 通知 Window.Callback 附着，销毁 Activity 后
+通知分离；缺少此回调会遗漏应用在其中初始化的状态。
+
+### 决定
+
+session 以每个 ActivityRecord 的窗口附着位为唯一事实，onResume 返回后仅向未 finishing、
+将可见的窗口虚派一次 onAttachedToWindow，先于首次窗口焦点。pause/stop/resume 或隐藏
+不重复派发。实例退役在 performDestroy 后、UI 子树退役前向已附着窗口虚派一次
+onDetachedFromWindow；进程关闭不合成分离。异常按既有生命周期失败协议传播。
+只实现受管 Activity 的 Window.Callback 层，不构造 AttachInfo/ViewRootImpl，不向
+View 树派发 dispatchAttachedToWindow；Dialog Callback 附着未支持。
+
+### 后果
+
+应用覆写可按主窗口生命周期初始化/释放状态；不因此扩大 View 附着、子窗口或动画支持范围。
+
+<a id="adr-0164"></a>
+
+## ADR-0164 · 有界应用附加窗口
+
+- 状态：Accepted
+- 日期：2026-10-27
+
+### 背景
+
+应用会用 Activity WindowManager 添加独立于内容树的全屏 View，需要独立投影、输入
+与焦点，不能把它附加到 Activity 内容容器或套用 Dialog 的纯宿主树。
+
+### 决定
+
+Activity 拥有稳定 manager/app token，getWindowManager 与 WINDOW_SERVICE 同实例。
+仅支持 type 1..99、MATCH_PARENT、flags NOT_FOCUSABLE/NOT_TOUCHABLE/NOT_TOUCH_MODAL/
+KEEP_SCREEN_ON/LAYOUT_IN_SCREEN/FULLSCREEN；format 保留，其他尺寸/位置/type/flags
+明确记账拒绝。与 Dialog 共用最多 8 个附加窗口名额。View 自身为稳定 Java 根，
+mParent 保持 null，不构造额外 ViewGroup/ViewRootImpl/AttachInfo，不派发 View 树附着。
+owner traversal 使用 ROM measure/layout，独立投影与主窗口一起发布到共同快照，按添加序
+叠于 owner 主窗口之上；可见性随 owner，viewport/代次不完整不发布。输入按快照选择
+最上层可触窗口，全屏阻断下层；按键只到焦点子窗口，未消费不回落。集合变化取消捕获并吞尾。
+生命周期独占焦点写入：最上层可见且可获焦窗口胜出，先失焦后获焦；主窗口通知 Activity
+及其根，附加窗口只通知根。销毁/Callback 分离后 closeAll 并 warn，进程关闭只退役资源。
+
+### 后果
+
+支持普通全屏应用附加窗口；系统/面板子窗口、透明 Activity、WMS/Binder 服务、Dialog
+Callback 附着、窗口动画及属性动画均未因此实现。WU-3 单独推进。
+
+<a id="adr-0165"></a>
+
+## ADR-0165 · 宿主呈现帧与 Choreographer 时间基
+
+- 状态：Accepted
+- 日期：2026-10-27
+
+### 背景
+
+原版 Choreographer 的动画回调需要一次性 vsync；OGPlay 已有统一 Clock 和确定性 owner
+遍历，不能引入宿主墙钟定时线程或依赖 Android 显示服务。
+
+### 决定
+
+保留 API19 ROM Choreographer/DisplayEventReceiver Java。三个 native 登记/请求/撤销
+逻辑 token，无宿主指针；receiver 弱关联、Java/queued work 保活，dispose/GC/停止撤销。
+每实际 StepFrame 在 guest owner traversal/projection 前向有请求的主 Looper receiver
+投递一次 dispatchVsync 并泵送；请求先冻结/清除，回调中新请求延至下一宿主帧。
+时间戳=统一 Clock uptime×1e6，与 System.nanoTime 同基；displayId=0、frame 单调。
+MCP/测试单步每步最多一次；Start/Resume/输入后布局与只读呈现查询不额外派发。
+不注入 debug.choreographer 属性、不使用 vsync=false 分支。非主 Looper 明确拒绝，
+无 hotplug/系统同步屏障；异步消息只保存标志，普通 FIFO 与显式队首 LIFO 独立。
+刷新率使用可注入逻辑显示事实（默认 60），无效明确失败；不读取宿主刷新率冒充 guest 时钟。
+
+### 后果
+
+可复用原版帧回调与动画调度协议，owner 遍历仍由 session 屏障负责；不因此实现属性动画、
+View.setAlpha、完整 DisplayManager/WMS 或显示热插拔。WU-3b 复用此帧源。

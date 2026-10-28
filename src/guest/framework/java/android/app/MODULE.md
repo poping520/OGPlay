@@ -1,6 +1,8 @@
 # 模块：有界 android.app Java 客户端
 
 保留 API19 结果常量、每实例结果字段、两个 setResult、两参数启动转发及默认结果回调。
+API19 public onAttachedToWindow/onDetachedFromWindow 默认空方法归 BootDex；
+受管 Activity 的 Window.Callback 时序由 session 编排，不表示 View 树附着。
 普通字段/monitor 在 BootDex；finish 在 Java monitor 下取结果快照，nativeFinish 正常返回才置 mFinished，isFinishing/isDestroyed 读取实例 Java 字段，performDestroy 先置 mDestroyed 再虚派 onDestroy；进程关闭不合成 finish/onDestroy。
 三参数启动进入 nativeStartActivityForResult，平台 resolver/命令队列与 session 栈编排
 不在 Java 重写。getLayoutInflater 在 Java 委托 getWindow；getWindow 的精确 overlay 惰性建立每实例

@@ -122,6 +122,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         if (input.clickable) node.clickable = *input.clickable;
         if (input.focusable) node.focusable = *input.focusable;
         if (input.focusable_in_touch_mode) node.focusable_in_touch_mode = *input.focusable_in_touch_mode;
+        if (input.alpha) node.alpha = *input.alpha;
         node.padding = input.padding;
         node.scroll_y = input.scroll_y;
         node.scroll_x = input.scroll_x;
@@ -188,14 +189,11 @@ std::optional<UiNodeId> UiTree::HitTestProjection(const std::int32_t x, const st
 }
 
 UiNodeId UiTree::CreateNode(const UiClass kind) {
-    if (nodes_.size() >= kMaxNodes ||
-        next_node_ == std::numeric_limits<std::uint32_t>::max()) {
+    if (nodes_.size() >= kMaxNodes || next_node_ == std::numeric_limits<std::uint32_t>::max()) {
         throw std::runtime_error("UI tree node limit exceeded");
     }
-    const UiNodeId id{(static_cast<std::uint64_t>(generation_) << 32U) |
-                      ++next_node_};
-    auto [created, inserted] =
-        nodes_.emplace(id, UiNode{.id = id, .kind = kind});
+    const UiNodeId id{(static_cast<std::uint64_t>(generation_) << 32U) | ++next_node_};
+    auto [created, inserted] = nodes_.emplace(id, UiNode{.id = id, .kind = kind});
     static_cast<void>(inserted);
     created->second.fallback_font = fallback_font_;
     if (kind == UiClass::Button) {
@@ -213,8 +211,7 @@ UiNodeId UiTree::CreateNode(const UiClass kind) {
     return id;
 }
 
-void UiTree::Attach(const UiNodeId parent, const UiNodeId child,
-                    const std::optional<std::size_t> index) {
+void UiTree::Attach(const UiNodeId parent, const UiNodeId child, const std::optional<std::size_t> index) {
     if (geometry_owner_ == UiGeometryOwner::ExternalProjection)
         throw std::runtime_error("External UI hierarchy requires a projection commit");
     auto& parent_node = Require(parent);
@@ -229,8 +226,7 @@ void UiTree::Attach(const UiNodeId parent, const UiNodeId child,
         throw std::runtime_error("UI tree child limit exceeded");
     }
     std::size_t depth = 1;
-    for (auto cursor = std::optional<UiNodeId>{parent}; cursor.has_value();
-         cursor = Require(*cursor).parent) {
+    for (auto cursor = std::optional<UiNodeId>{parent}; cursor.has_value(); cursor = Require(*cursor).parent) {
         if (*cursor == child || ++depth > kMaxDepth) {
             throw std::runtime_error("UI tree attachment would create a cycle");
         }
@@ -238,18 +234,18 @@ void UiTree::Attach(const UiNodeId parent, const UiNodeId child,
     // Detached subtrees can be built bottom-up; count their descendants too.
     std::vector<std::pair<UiNodeId, std::size_t>> subtree{{child, depth}};
     while (!subtree.empty()) {
-        const auto [node, level] = subtree.back(); subtree.pop_back();
+        const auto [node, level] = subtree.back();
+        subtree.pop_back();
         if (level > kMaxDepth) throw std::runtime_error("UI tree depth limit exceeded");
-        for (const auto descendant : Require(node).children) subtree.emplace_back(descendant, level + 1);
+        for (const auto descendant : Require(node).children)
+            subtree.emplace_back(descendant, level + 1);
     }
     const auto position = index.value_or(parent_node.children.size());
     if (position > parent_node.children.size()) {
         throw std::runtime_error("UI tree child index is out of range");
     }
     child_node.parent = parent;
-    parent_node.children.insert(parent_node.children.begin() +
-                                    static_cast<std::ptrdiff_t>(position),
-                                child);
+    parent_node.children.insert(parent_node.children.begin() + static_cast<std::ptrdiff_t>(position), child);
     if (IsAttached(parent)) RebuildIndex();
     MarkAncestors(parent, true, true);
 }
@@ -300,8 +296,7 @@ void UiTree::DestroySubtree(const UiNodeId node) {
         const auto current = pending.back();
         pending.pop_back();
         const auto found = nodes_.find(current);
-        pending.insert(pending.end(), found->second.children.begin(),
-                       found->second.children.end());
+        pending.insert(pending.end(), found->second.children.begin(), found->second.children.end());
         nodes_.erase(found);
     }
 }
@@ -345,16 +340,14 @@ const UiNode* UiTree::Get(const UiNodeId id) const {
     return found == nodes_.end() ? nullptr : &found->second;
 }
 
-std::optional<UiNodeId> UiTree::FindByAndroidId(
-    const std::int32_t android_id) const {
+std::optional<UiNodeId> UiTree::FindByAndroidId(const std::int32_t android_id) const {
     if (android_id < 0) return std::nullopt;
     const auto found = id_index_.find(android_id);
     if (found == id_index_.end() || found->second.empty()) return std::nullopt;
     return found->second.front();
 }
 
-void UiTree::SetAndroidId(const UiNodeId node,
-                          const std::int32_t android_id) {
+void UiTree::SetAndroidId(const UiNodeId node, const std::int32_t android_id) {
     auto& target = Require(node);
     if (target.android_id == android_id) return;
     const bool attached = IsAttached(node);
@@ -362,17 +355,14 @@ void UiTree::SetAndroidId(const UiNodeId node,
     if (attached) RebuildIndex();
 }
 
-void UiTree::SetVisibility(const UiNodeId node,
-                           const Visibility visibility) {
+void UiTree::SetVisibility(const UiNodeId node, const Visibility visibility) {
     if (geometry_owner_ == UiGeometryOwner::ExternalProjection)
         throw std::runtime_error("External UI visibility requires a projection commit");
     auto& target = Require(node);
     if (target.visibility == visibility) return;
-    const bool changes_layout = target.visibility == Visibility::Gone ||
-                                visibility == Visibility::Gone;
+    const bool changes_layout = target.visibility == Visibility::Gone || visibility == Visibility::Gone;
     target.visibility = visibility;
-    if (visibility != Visibility::Visible && focused_.has_value() &&
-        HasFocus(node)) {
+    if (visibility != Visibility::Visible && focused_.has_value() && HasFocus(node)) {
         focused_.reset();
     }
     MarkAncestors(node, changes_layout, true);
@@ -396,7 +386,8 @@ void UiTree::SetWindowVisible(const UiNodeId node, const bool visible) {
 
 void UiTree::SetFallbackFont(std::shared_ptr<const UiFallbackFont> font) {
     fallback_font_ = std::move(font);
-    for (auto& [_, node] : nodes_) node.fallback_font = fallback_font_;
+    for (auto& [_, node] : nodes_)
+        node.fallback_font = fallback_font_;
     MarkLayoutDirty(root_);
 }
 
@@ -418,8 +409,7 @@ bool UiTree::IsFocused(const UiNodeId node) const {
 
 bool UiTree::HasFocus(const UiNodeId node) const {
     static_cast<void>(Require(node));
-    for (auto cursor = focused_; cursor.has_value();
-         cursor = Require(*cursor).parent) {
+    for (auto cursor = focused_; cursor.has_value(); cursor = Require(*cursor).parent) {
         if (*cursor == node) return true;
     }
     return false;
@@ -432,8 +422,7 @@ bool UiTree::RequestFocus(const UiNodeId node, const bool touch_mode) {
     if (!target.focusable || (touch_mode && !target.focusable_in_touch_mode)) {
         return false;
     }
-    for (auto cursor = std::optional<UiNodeId>{node}; cursor.has_value();
-         cursor = Require(*cursor).parent) {
+    for (auto cursor = std::optional<UiNodeId>{node}; cursor.has_value(); cursor = Require(*cursor).parent) {
         const auto& ancestor = Require(*cursor);
         if (!ancestor.enabled || !ancestor.window_visible || ancestor.visibility != Visibility::Visible) {
             return false;
@@ -505,7 +494,8 @@ void UiTree::IndexSubtree(const UiNodeId node) {
             entries.push_back(node);
         }
     }
-    for (const auto child : target.children) IndexSubtree(child);
+    for (const auto child : target.children)
+        IndexSubtree(child);
 }
 
 void UiTree::RebuildIndex() {
@@ -513,8 +503,7 @@ void UiTree::RebuildIndex() {
     IndexSubtree(root_);
 }
 
-void UiTree::MarkAncestors(UiNodeId node, const bool layout,
-                           const bool draw) {
+void UiTree::MarkAncestors(UiNodeId node, const bool layout, const bool draw) {
     for (std::size_t depth = 0; depth < kMaxDepth; ++depth) {
         auto& target = Require(node);
         if (layout) target.layout_dirty = true;

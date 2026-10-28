@@ -46,6 +46,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   的实例不接收 onStart/onResume/onPause/onStop。内容按对象与 UiTree 节点身份在
   owner-thread traversal 初始化尺寸，再交付 Surface/布局与已到达的窗口焦点；
   首次启动、延迟安装和切换共用该路径，不要求 onCreate 安装内容。
+  受管 Activity 在 onResume 返回后、未 finishing 且窗口将可见时，首次虚派
+  Window.Callback.onAttachedToWindow，先于首次窗口焦点；每窗口只派发一次，
+  pause/stop/resume 与可见性切换不重发。实例退役在 performDestroy 后、
+  RetireViewUiSubtree 前向已附着窗口虚派 onDetachedFromWindow；进程关闭不合成分离。
+  此协议仅为 Activity 的 Window.Callback 层，不构造 AttachInfo/ViewRootImpl，
+  不向 View 树派发 dispatchAttachedToWindow；Dialog Callback 附着未支持。
+  回调异常复用生命周期失败协议。
   未捕获 Java 异常携带具体 class descriptor、消息和解释器栈失败。每帧同时泵 VideoView
   与 AudioTrack position notification；音频回调只在生命周期解释器单写者线程执行，guest 异常使 lifecycle
   失败。首次 Surface traversal 前按 ADR-0024 冻结 onStart/onResume 后已存在的 worker
@@ -121,7 +128,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   Activity 转换在 VM execution lock 下消费 FIFO 命令，以每实例返回栈保留调用方、
   Intent/普通内容树/焦点与待结果；旧内容 detach 后不参与 draw/input，结束时仅退役该子树。
   恢复原实例时 restart/start、结果虚派后 resume；栈/命令/结果由 session GC roots 保活。
-  同包/default affinity/单前台窗口，task 以连续分组按前台历史排序；末尾为前台栈顶。
+  同包/default affinity/单前台 Activity 及其有界应用附加窗口，task 以连续分组按前台历史排序；末尾为前台栈顶。
   standard 新建，singleTop 仅复用目的 task 顶部，singleTask 清除匹配实例的同 task 上方实例，
   singleInstance 独占 task，其启动的其他组件进入默认 affinity task。任务分组切换保留身份，
   onNewIntent 在 resume 前交付，getIntent 不自动改写；finishing 实例不复用。
@@ -298,8 +305,8 @@ Application 类初始化前从 Context.getCacheDir 取得缓存路径改写 java
 对齐 API19 ActivityThread 绑定时机；没有缓存目录时保留绑定前默认值。
 
 
-JavaTraversal窗口切换保留每窗口Java根及完整投影，前台输入分区与额外可见handoff分区
-同次发布；恢复焦点走Java软件adapter，不向 guest 投影调用 HostLayout RequestFocus。
+JavaTraversal窗口切换保留每窗口Java根及完整投影，Activity 主窗口、应用附加窗口与
+额外可见 handoff 分区同次发布；恢复焦点走Java软件adapter，不向 guest 投影调用 HostLayout RequestFocus。
 Compose的一次lease显式交给video上下层、UI与modal，bitmap版本/producer像素属于快照；
 呈现线程不读取当前播放器/绑定表或消费dirty，不为输出像素大小重测Java。
 
@@ -330,3 +337,26 @@ suspend、stop 与 handoff 隐藏；即使尚无 Java Window root 也记录事�
 DVM-329：producer 每次选择按 Java View 身份重新查询绑定，并检查该 NodeId 存在于
 本次读取的完整 projection 后才查询可见/祖先；未发布或退役的绑定本轮不激活，下次
 owner 发布后重新查询。不能将构建树中新节点当作旧投影节点，也不放宽 guest stale 失败。
+
+
+DVM-335：应用附加窗口的可见性继承 owner Activity，按添加序叠在其主窗口上方；
+owner 屏障测量独立 Java 根、原子发布共同快照。根 mParent=null，不伪造 ViewRootImpl。
+生命周期是主/附加窗口焦点事实唯一写者：选择最上层可见且无 NOT_FOCUSABLE 的窗口，
+先失焦后获焦。主窗口通知 Activity Callback 与真实根，附加窗口只通知根
+ dispatchWindowFocusChanged；hasWindowFocus 读取所属窗口事实。触摸选最上层可触全屏
+窗口，按键只给焦点子窗口、不回落 Activity；窗口集合变化取消捕获并吞尾。
+实例退役在 performDestroy 和 Window.Callback 分离后 closeAll，泄漏输出结构化 warn；
+进程关闭只清理附加窗口记录/投影，不合成 View 附着/分离。支持边界见 integration
+MODULE：type 1..99、全屏 MATCH_PARENT 与明确 flags，最多 8 个 Dialog/附加窗口；
+无系统/面板子窗口、AttachInfo/完整 WMS 或窗口动画；属性动画见 integration DVM-337。
+
+
+DVM-336：Application 回调前准备主 Looper；每次实际 StepFrame 在 guest owner 遍历/投影
+前经 integration DispatchAndroidDisplayFrame 投递并泵一次挂起 vsync，时间取统一 Clock，
+回调中的新请求留到下一帧。Start/Resume/输入与呈现查询的重复屏障不发脉冲。
+停止开始即撤销 DisplayEventReceiver 登记，不在退出回调中合成脉冲；不改变 owner 遍历
+为 Choreographer 调度，也不实现系统同步屏障。平台接缝及主 Looper 限制见 integration MODULE。
+
+DVM-337：呈现消费冻结的窗口 format；TRANSLUCENT/TRANSPARENT 保留光栅预乘像素 alpha，
+其余应用附加窗口的平面按不透明覆盖下层（未画区域黑）。所有软件光栅平面以预乘
+source-over 合成，避免 alpha 二次相乘；不改变帧源、时间、生命周期回调或焦点协议。

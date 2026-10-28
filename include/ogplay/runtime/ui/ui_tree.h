@@ -19,10 +19,13 @@ struct UiBitmap;
 class UiNodeId final {
 public:
     constexpr UiNodeId() = default;
+
     explicit constexpr UiNodeId(const std::uint64_t value) : value_(value) {}
 
     [[nodiscard]] constexpr std::uint64_t Value() const { return value_; }
+
     [[nodiscard]] explicit constexpr operator bool() const { return value_ != 0; }
+
     constexpr auto operator<=>(const UiNodeId&) const = default;
 
 private:
@@ -129,6 +132,7 @@ struct UiProjectedNode final {
     std::optional<bool> focusable{};
     std::optional<bool> focusable_in_touch_mode{};
     std::int32_t scroll_x{};
+    std::optional<float> alpha{};  // Effective opacity frozen from the Java ancestor chain.
 };
 
 struct UiGeometryProjection final {
@@ -186,7 +190,7 @@ struct UiNode final {
     std::shared_ptr<const UiFallbackFont> fallback_font;
     // Window visibility is independent of the guest View's visibility.
     bool window_visible{true};
-    bool modal_layer{}; // Direct content-root child rendered above Surface/video planes.
+    bool modal_layer{};  // Direct content-root child rendered above Surface/video planes.
     bool enabled{true};
     bool clickable{};
     bool focusable{};
@@ -213,7 +217,7 @@ struct UiNode final {
     std::shared_ptr<const TextLinePlan> text_line_plan;  // Frozen with Java projection geometry.
     std::uint32_t text_color{0xffffffffU};
     float text_size_px{8.0F};
-    std::uint32_t text_style{}; // Built-in font: BOLD=1, ITALIC=2.
+    std::uint32_t text_style{};  // Built-in font: BOLD=1, ITALIC=2.
     std::int32_t max_lines{0x7fffffff};
     std::int32_t max_length{0x7fffffff};
     bool numeric_input{};
@@ -239,7 +243,9 @@ struct UiNode final {
 class UiTree final {
 public:
     void SetFallbackFont(std::shared_ptr<const UiFallbackFont> font);
+
     [[nodiscard]] const std::shared_ptr<const UiFallbackFont>& FallbackFont() const { return fallback_font_; }
+
     static constexpr std::size_t kMaxNodes = 4096;
     static constexpr std::size_t kMaxChildren = 1024;
     static constexpr std::size_t kMaxDepth = 128;
@@ -268,14 +274,14 @@ public:
     [[nodiscard]] std::optional<UiNodeId> HitTestProjection(std::int32_t x, std::int32_t y) const;
 
     [[nodiscard]] UiNodeId Root() const { return root_; }
+
     [[nodiscard]] std::uint32_t Generation() const { return generation_; }
+
     [[nodiscard]] std::size_t Size() const { return nodes_.size(); }
 
     UiNodeId CreateNode(UiClass kind);
-    void Attach(UiNodeId parent, UiNodeId child,
-                std::optional<std::size_t> index = std::nullopt);
-    void Detach(UiNodeId child,
-                DetachLayoutPolicy layout = DetachLayoutPolicy::request_layout);
+    void Attach(UiNodeId parent, UiNodeId child, std::optional<std::size_t> index = std::nullopt);
+    void Detach(UiNodeId child, DetachLayoutPolicy layout = DetachLayoutPolicy::request_layout);
     // API19 ViewGroup.bringChildToFront array move: keeps attachment/focus,
     // returns false when child is not a direct child of parent. Only draw
     // dirty is marked; callers dispatch requestLayout/invalidate themselves.
@@ -287,13 +293,14 @@ public:
     [[nodiscard]] UiNode* Get(UiNodeId id);
     [[nodiscard]] const UiNode* Get(UiNodeId id) const;
     [[nodiscard]] bool IsAttached(UiNodeId id) const;
+
     [[nodiscard]] std::optional<UiNodeId> Focused() const { return focused_; }
+
     [[nodiscard]] bool IsFocused(UiNodeId node) const;
     [[nodiscard]] bool HasFocus(UiNodeId node) const;
     [[nodiscard]] bool RequestFocus(UiNodeId node, bool touch_mode);
     void ClearFocus(UiNodeId node);
-    [[nodiscard]] std::optional<UiNodeId> FindByAndroidId(
-        std::int32_t android_id) const;
+    [[nodiscard]] std::optional<UiNodeId> FindByAndroidId(std::int32_t android_id) const;
 
     void SetAndroidId(UiNodeId node, std::int32_t android_id);
     void SetVisibility(UiNodeId node, Visibility visibility);
@@ -307,8 +314,7 @@ public:
     void ClearDrawDirty();
 
 private:
-    using NodeMap =
-        std::unordered_map<UiNodeId, UiNode, UiNodeIdHash>;
+    using NodeMap = std::unordered_map<UiNodeId, UiNode, UiNodeIdHash>;
 
     [[nodiscard]] UiNode& Require(UiNodeId id);
     [[nodiscard]] const UiNode& Require(UiNodeId id) const;

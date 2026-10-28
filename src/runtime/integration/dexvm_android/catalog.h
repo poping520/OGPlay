@@ -4,6 +4,9 @@
 #include <vector>
 
 namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_animation_PropertyValuesHolder(const Context&);
+Decl Declare_android_view_DisplayEventReceiver(const Context&);
+Decl Declare_android_hardware_display_DisplayManagerGlobal(const Context&);
 Decl Declare_test_ListenerInfo(const Context& context);
 Decl Declare_test_AccessibilityManager(const Context& context);
 Decl Declare_android_view_LayoutInflater_BlinkLayout(const Context& context);
@@ -14,269 +17,200 @@ using DebugMemoryInfoFields = std::vector<dx::IntrinsicFieldHandle>;
 [[nodiscard]] Decl Declare_android_os_Debug_MemoryInfo(const Context&, DebugMemoryInfoFields&);
 [[nodiscard]] Decl Declare_android_os_Debug(const Context&, const DebugMemoryInfoFields&);
 
-[[nodiscard]] Decl Declare_android_app_NativeActivity(const Context &context);
+[[nodiscard]] Decl Declare_android_app_NativeActivity(const Context& context);
 [[nodiscard]] Decl Declare_android_view_LayoutInflater(const Context& context);
 [[nodiscard]] Decl Declare_android_view_Surface(const Context& context);
-Decl Declare_android_view_InputQueue(const Context &context);
-[[nodiscard]] Decl Declare_android_app_Activity(const Context &context);
+Decl Declare_android_view_InputQueue(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Activity(const Context& context);
 [[nodiscard]] Decl Declare_android_app_Notification(const Context& context);
 [[nodiscard]] Decl Declare_android_app_ActivityManager(const Context& context);
 [[nodiscard]] Decl Declare_android_app_ActivityManager_MemoryInfo(const Context& context);
 [[nodiscard]] dx::VmObjectRef ActivityManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_app_NotificationManager(const Context& context);
 [[nodiscard]] dx::VmObjectRef NotificationManagerForContext(dx::IntrinsicContext& call, const Context& context);
-[[nodiscard]] Decl Declare_android_app_KeyguardManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_app_backup_BackupManager(const Context &context);
-[[nodiscard]] Decl Declare_android_app_Application(const Context &context);
-[[nodiscard]] Decl
-Declare_android_app_AlertDialog_Builder(const Context &context);
-[[nodiscard]] Decl Declare_android_app_AlertDialog(const Context &context);
-[[nodiscard]] Decl Declare_android_app_Dialog(const Context &context);
-[[nodiscard]] Decl Declare_android_app_IntentService(const Context &context);
-[[nodiscard]] Decl Declare_android_app_Service(const Context &context);
-[[nodiscard]] Decl Declare_android_app_PendingIntent(const Context &context);
-[[nodiscard]] Decl Declare_android_app_AlarmManager(const Context &context);
-[[nodiscard]] Decl Declare_android_app_ProgressDialog(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_BroadcastReceiver(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_ContentResolver(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_CursorWindow(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteConnection(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteConnection_Operation(
-    const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteDebug(const Context &context);
-[[nodiscard]] Decl
-Declare_android_database_sqlite_SQLiteGlobal(const Context &context);
-[[nodiscard]] Decl Declare_android_content_Context(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_ContextWrapper(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_IntentFilter_MalformedMimeTypeException(
-    const Context &context);
-[[nodiscard]] Decl Declare_android_content_IntentSender(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_pm_PackageInfo(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_pm_PackageManager_NameNotFoundException(
-    const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_pm_PackageManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_SharedPreferencesEditorImpl(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_SharedPreferencesImpl(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_AssetManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_AssetFileDescriptor(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_Resources_NotFoundException(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_XmlResourceParser(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_XmlResourceParser_Impl(const Context &context);
-[[nodiscard]] Decl
-Declare_android_content_res_Resources(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_Bitmap_Config(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Bitmap(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_BitmapFactory(const Context &context, const std::vector<dx::IntrinsicFieldHandle>& fields);
-[[nodiscard]] Decl Declare_android_graphics_BitmapFactory_Options(const Context&, std::vector<dx::IntrinsicFieldHandle>& fields);
-[[nodiscard]] Decl Declare_android_graphics_Canvas(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Matrix(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Paint(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_RectF(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_PointF(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Path(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_Path_Direction(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Color(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_PorterDuff(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_PorterDuff_Mode(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Region_Op(const Context &context);
-[[nodiscard]] Decl Declare_android_graphics_Typeface(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_drawable_Drawable(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_drawable_PaintDrawable(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_drawable_BitmapDrawable(const Context &context);
-[[nodiscard]] Decl
-Declare_android_graphics_drawable_ColorDrawable(const Context &context);
-[[nodiscard]] Decl
-Declare_android_location_LocationListener(const Context &context);
-[[nodiscard]] Decl Declare_android_location_Criteria(const Context &context);
-[[nodiscard]] Decl
-Declare_android_location_LocationManager(const Context &context);
-[[nodiscard]] Decl Declare_android_media_AudioManager(const Context &context);
-[[nodiscard]] Decl Declare_android_media_AudioTrack(const Context &context);
-[[nodiscard]] Decl Declare_android_media_MediaPlayer(const Context &context);
-[[nodiscard]] Decl Declare_android_media_SoundPoolImpl(const Context &context);
-[[nodiscard]] Decl
-Declare_android_net_ConnectivityManager(const Context &context);
-[[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context &context);
-[[nodiscard]] Decl
-Declare_android_net_wifi_WifiManager_WifiLock(const Context &context);
-[[nodiscard]] Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context &context);
-[[nodiscard]] Decl Declare_android_net_wifi_WifiManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context &context);
-[[nodiscard]] Decl
-Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context &context);
-[[nodiscard]] Decl
-Declare_android_opengl_GLSurfaceView_Renderer(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES10(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES10Ext(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES11(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES11Ext(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES20(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLES30(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLUtils(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_GLU(const Context &context);
-[[nodiscard]] Decl Declare_android_os_AsyncTask(const Context &context);
-[[nodiscard]] Decl Declare_android_os_AsyncTask_Status(const Context &context);
-[[nodiscard]] Decl Declare_android_os_AsyncTask_Worker(const Context &context);
-[[nodiscard]] Decl Declare_android_os_SystemProperties(const Context &context);
-[[nodiscard]] Decl Declare_android_os_FileUtils(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Binder(const Context &context);
-[[nodiscard]] Decl Declare_android_os_StrictMode(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Environment(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Handler(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Handler_Callback(const Context &context);
-[[nodiscard]] Decl Declare_android_os_HandlerThread(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Looper(const Context &context);
-[[nodiscard]] Decl Declare_android_os_MessageQueue(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Message(const Context &context);
-[[nodiscard]] Decl Declare_android_os_SystemClock(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Parcel(const Context &context);
-[[nodiscard]] Decl
-Declare_android_os_ParcelFileDescriptor(const Context &context);
-[[nodiscard]] Decl Declare_android_os_PowerManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_os_PowerManager_WakeLock(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Vibrator(const Context &context);
-[[nodiscard]] Decl Declare_android_os_Process(const Context &context);
-[[nodiscard]] Decl
-Declare_android_provider_Settings_NameValueCache(const Context &context);
-[[nodiscard]] Decl
-Declare_android_telephony_PhoneStateListener(const Context &context);
-[[nodiscard]] Decl Declare_android_telephony_SmsManager(const Context &context);
-[[nodiscard]] Decl Declare_android_telephony_SmsMessage(const Context &context);
-[[nodiscard]] Decl
-Declare_android_telephony_TelephonyManager(const Context &context);
-[[nodiscard]] Decl Declare_android_text_Editable(const Context &context);
-[[nodiscard]] Decl Declare_android_text_EditableImpl(const Context &context);
-[[nodiscard]] Decl Declare_android_text_TextPaint(const Context &context);
-[[nodiscard]] Decl Declare_android_text_TextWatcher(const Context &context);
-[[nodiscard]] Decl Declare_android_text_TextUtils(const Context &context);
-[[nodiscard]] Decl Declare_android_util_Log(const Context &context);
-[[nodiscard]] Decl Declare_android_util_EventLog(const Context &context);
-[[nodiscard]] Decl Declare_android_util_AttributeSet(const Context &context);
-[[nodiscard]] Decl Declare_android_util_Base64(const Context &context);
-[[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context &context);
+[[nodiscard]] Decl Declare_android_app_KeyguardManager(const Context& context);
+[[nodiscard]] Decl Declare_android_app_backup_BackupManager(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Application(const Context& context);
+[[nodiscard]] Decl Declare_android_app_AlertDialog_Builder(const Context& context);
+[[nodiscard]] Decl Declare_android_app_AlertDialog(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Dialog(const Context& context);
+[[nodiscard]] Decl Declare_android_app_IntentService(const Context& context);
+[[nodiscard]] Decl Declare_android_app_Service(const Context& context);
+[[nodiscard]] Decl Declare_android_app_PendingIntent(const Context& context);
+[[nodiscard]] Decl Declare_android_app_AlarmManager(const Context& context);
+[[nodiscard]] Decl Declare_android_app_ProgressDialog(const Context& context);
+[[nodiscard]] Decl Declare_android_content_BroadcastReceiver(const Context& context);
+[[nodiscard]] Decl Declare_android_content_ContentResolver(const Context& context);
+[[nodiscard]] Decl Declare_android_database_CursorWindow(const Context& context);
+[[nodiscard]] Decl Declare_android_database_sqlite_SQLiteConnection(const Context& context);
+[[nodiscard]] Decl Declare_android_database_sqlite_SQLiteConnection_Operation(const Context& context);
+[[nodiscard]] Decl Declare_android_database_sqlite_SQLiteDebug(const Context& context);
+[[nodiscard]] Decl Declare_android_database_sqlite_SQLiteGlobal(const Context& context);
+[[nodiscard]] Decl Declare_android_content_Context(const Context& context);
+[[nodiscard]] Decl Declare_android_content_ContextWrapper(const Context& context);
+[[nodiscard]] Decl Declare_android_content_IntentFilter_MalformedMimeTypeException(const Context& context);
+[[nodiscard]] Decl Declare_android_content_IntentSender(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageInfo(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageManager_NameNotFoundException(const Context& context);
+[[nodiscard]] Decl Declare_android_content_pm_PackageManager(const Context& context);
+[[nodiscard]] Decl Declare_android_content_SharedPreferencesEditorImpl(const Context& context);
+[[nodiscard]] Decl Declare_android_content_SharedPreferencesImpl(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_AssetManager(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_AssetFileDescriptor(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_Resources_NotFoundException(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_XmlResourceParser_Impl(const Context& context);
+[[nodiscard]] Decl Declare_android_content_res_Resources(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Bitmap_Config(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Bitmap(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_BitmapFactory(const Context& context,
+                                                          const std::vector<dx::IntrinsicFieldHandle>& fields);
+[[nodiscard]] Decl Declare_android_graphics_BitmapFactory_Options(const Context&,
+                                                                  std::vector<dx::IntrinsicFieldHandle>& fields);
+[[nodiscard]] Decl Declare_android_graphics_Canvas(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Matrix(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Paint(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_RectF(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_PointF(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Path(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Path_Direction(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Color(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_PorterDuff(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_PorterDuff_Mode(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Region_Op(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_Typeface(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_drawable_Drawable(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context);
+[[nodiscard]] Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context);
+[[nodiscard]] Decl Declare_android_location_LocationListener(const Context& context);
+[[nodiscard]] Decl Declare_android_location_Criteria(const Context& context);
+[[nodiscard]] Decl Declare_android_location_LocationManager(const Context& context);
+[[nodiscard]] Decl Declare_android_media_AudioManager(const Context& context);
+[[nodiscard]] Decl Declare_android_media_AudioTrack(const Context& context);
+[[nodiscard]] Decl Declare_android_media_MediaPlayer(const Context& context);
+[[nodiscard]] Decl Declare_android_media_SoundPoolImpl(const Context& context);
+[[nodiscard]] Decl Declare_android_net_ConnectivityManager(const Context& context);
+[[nodiscard]] Decl Declare_android_net_wifi_WifiInfo(const Context& context);
+[[nodiscard]] Decl Declare_android_net_wifi_WifiManager_WifiLock(const Context& context);
+[[nodiscard]] Decl Declare_android_net_wifi_WifiManager_MulticastLock(const Context& context);
+[[nodiscard]] Decl Declare_android_net_wifi_WifiManager(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_EGLConfigChooser(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_EGLContextFactory(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_Renderer(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLSurfaceView_GLThread(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES10(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES10Ext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES11(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES11Ext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES20(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLES30(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLUtils(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_GLU(const Context& context);
+[[nodiscard]] Decl Declare_android_os_AsyncTask(const Context& context);
+[[nodiscard]] Decl Declare_android_os_AsyncTask_Status(const Context& context);
+[[nodiscard]] Decl Declare_android_os_AsyncTask_Worker(const Context& context);
+[[nodiscard]] Decl Declare_android_os_SystemProperties(const Context& context);
+[[nodiscard]] Decl Declare_android_os_FileUtils(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Binder(const Context& context);
+[[nodiscard]] Decl Declare_android_os_StrictMode(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Environment(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Handler(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Handler_Callback(const Context& context);
+[[nodiscard]] Decl Declare_android_os_HandlerThread(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Looper(const Context& context);
+[[nodiscard]] Decl Declare_android_os_MessageQueue(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Message(const Context& context);
+[[nodiscard]] Decl Declare_android_os_SystemClock(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Parcel(const Context& context);
+[[nodiscard]] Decl Declare_android_os_ParcelFileDescriptor(const Context& context);
+[[nodiscard]] Decl Declare_android_os_PowerManager(const Context& context);
+[[nodiscard]] Decl Declare_android_os_PowerManager_WakeLock(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Vibrator(const Context& context);
+[[nodiscard]] Decl Declare_android_os_Process(const Context& context);
+[[nodiscard]] Decl Declare_android_provider_Settings_NameValueCache(const Context& context);
+[[nodiscard]] Decl Declare_android_telephony_PhoneStateListener(const Context& context);
+[[nodiscard]] Decl Declare_android_telephony_SmsManager(const Context& context);
+[[nodiscard]] Decl Declare_android_telephony_SmsMessage(const Context& context);
+[[nodiscard]] Decl Declare_android_telephony_TelephonyManager(const Context& context);
+[[nodiscard]] Decl Declare_android_text_Editable(const Context& context);
+[[nodiscard]] Decl Declare_android_text_EditableImpl(const Context& context);
+[[nodiscard]] Decl Declare_android_text_TextPaint(const Context& context);
+[[nodiscard]] Decl Declare_android_text_TextWatcher(const Context& context);
+[[nodiscard]] Decl Declare_android_text_TextUtils(const Context& context);
+[[nodiscard]] Decl Declare_android_util_Log(const Context& context);
+[[nodiscard]] Decl Declare_android_util_EventLog(const Context& context);
+[[nodiscard]] Decl Declare_android_util_AttributeSet(const Context& context);
+[[nodiscard]] Decl Declare_android_util_Base64(const Context& context);
+[[nodiscard]] Decl Declare_android_util_DisplayMetrics(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_display_DisplayManager(const Context& context);
-[[nodiscard]] Decl Declare_android_view_Display(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_ContextThemeWrapper(const Context &context);
-[[nodiscard]] Decl Declare_android_view_KeyEvent(const Context &context);
-[[nodiscard]] Decl Declare_android_view_KeyCharacterMap(const Context &context);
-[[nodiscard]] Decl Declare_android_view_InputDevice(const Context &context);
-[[nodiscard]] Decl Declare_android_view_MotionEvent(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_SurfaceHolder_Callback(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_SurfaceHolder_Impl(const Context &context);
-[[nodiscard]] Decl Declare_android_view_SurfaceHolder(const Context &context);
-[[nodiscard]] Decl Declare_android_view_SurfaceView(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_View_OnClickListener(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_View_OnFocusChangeListener(const Context &context);
-[[nodiscard]] Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(
-    const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_View_OnTouchListener(const Context &context);
-[[nodiscard]] Decl Declare_android_view_ViewParent(const Context &context);
-[[nodiscard]] Decl Declare_android_view_View(const Context &context);
-[[nodiscard]] Decl Declare_android_view_ViewGroup(const Context &context);
-[[nodiscard]] Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(
-    const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_ViewTreeObserver(const Context &context);
-[[nodiscard]] Decl Declare_android_view_Window(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_WindowManager_LayoutParams(const Context &context);
-[[nodiscard]] Decl Declare_android_view_WindowManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_WindowManagerImpl(const Context &context);
-[[nodiscard]] Decl
-Declare_android_view_inputmethod_InputMethodManager(const Context &context);
-[[nodiscard]] Decl
-Declare_android_webkit_WebChromeClient(const Context &context);
-[[nodiscard]] Decl
-Declare_android_webkit_WebChromeClient_CustomViewCallback(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_ConsoleMessage(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_HttpAuthHandler(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_WebSettings(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_WebSettings_RenderPriority(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_WebView(const Context &context);
-[[nodiscard]] Decl
-Declare_android_webkit_WebView_DisabledLoadCallback(const Context &context);
-[[nodiscard]] Decl Declare_android_webkit_WebViewClient(const Context &context);
-[[nodiscard]] Decl
-Declare_android_widget_AbsoluteLayout_LayoutParams(const Context &context);
-[[nodiscard]] Decl
-Declare_android_widget_AbsoluteLayout(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_Button(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_EditText(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_FrameLayout(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_ImageButton(const Context &context);
-[[nodiscard]] Decl
-Declare_android_widget_ImageView_ScaleType(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_ImageView(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_LinearLayout(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_ProgressBar(const Context &context);
-[[nodiscard]] Decl
-Declare_android_widget_RelativeLayout(const Context &context);
+[[nodiscard]] Decl Declare_android_view_Display(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ContextThemeWrapper(const Context& context);
+[[nodiscard]] Decl Declare_android_view_KeyEvent(const Context& context);
+[[nodiscard]] Decl Declare_android_view_KeyCharacterMap(const Context& context);
+[[nodiscard]] Decl Declare_android_view_InputDevice(const Context& context);
+[[nodiscard]] Decl Declare_android_view_MotionEvent(const Context& context);
+[[nodiscard]] Decl Declare_android_view_SurfaceHolder_Callback(const Context& context);
+[[nodiscard]] Decl Declare_android_view_SurfaceHolder_Impl(const Context& context);
+[[nodiscard]] Decl Declare_android_view_SurfaceHolder(const Context& context);
+[[nodiscard]] Decl Declare_android_view_SurfaceView(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View_OnClickListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View_OnFocusChangeListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View_OnSystemUiVisibilityChangeListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View_OnTouchListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ViewParent(const Context& context);
+[[nodiscard]] Decl Declare_android_view_View(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ViewGroup(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(const Context& context);
+[[nodiscard]] Decl Declare_android_view_ViewTreeObserver(const Context& context);
+[[nodiscard]] Decl Declare_android_view_Window(const Context& context);
+[[nodiscard]] Decl Declare_android_view_WindowManager_BadTokenException(const Context& context);
+[[nodiscard]] Decl Declare_android_view_WindowManager_LayoutParams(const Context& context);
+[[nodiscard]] Decl Declare_android_view_WindowManager(const Context& context);
+[[nodiscard]] Decl Declare_android_view_WindowManagerImpl(const Context& context);
+[[nodiscard]] Decl Declare_android_view_inputmethod_InputMethodManager(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebChromeClient(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebChromeClient_CustomViewCallback(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_ConsoleMessage(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_HttpAuthHandler(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebSettings(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebSettings_RenderPriority(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebView(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebView_DisabledLoadCallback(const Context& context);
+[[nodiscard]] Decl Declare_android_webkit_WebViewClient(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_AbsoluteLayout(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_Button(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_EditText(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_FrameLayout(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_ImageButton(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_ImageView_ScaleType(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_ImageView(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_LinearLayout(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_ProgressBar(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_RelativeLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_EdgeEffect(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_HorizontalScrollView(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_ScrollView(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_TableLayout(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_TableRow(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_TextView(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_Toast(const Context &context);
-[[nodiscard]] Decl Declare_android_widget_VideoView(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_EGL14(const Context &context);
-[[nodiscard]] Decl
-Declare_android_opengl_EGLObjectHandle(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_EGLConfig(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_EGLContext(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_EGLDisplay(const Context &context);
-[[nodiscard]] Decl Declare_android_opengl_EGLSurface(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGLConfig(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGL(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGL10(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGLContext(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGLDisplay(const Context &context);
-[[nodiscard]] Decl
-Declare_javax_microedition_khronos_egl_EGLSurface(const Context &context);
+[[nodiscard]] Decl Declare_android_widget_ScrollView(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_TableLayout(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_TableRow(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_TextView(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_Toast(const Context& context);
+[[nodiscard]] Decl Declare_android_widget_VideoView(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGL14(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLObjectHandle(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLConfig(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLContext(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLDisplay(const Context& context);
+[[nodiscard]] Decl Declare_android_opengl_EGLSurface(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLConfig(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGL10_Impl(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLContext(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLDisplay(const Context& context);
+[[nodiscard]] Decl Declare_javax_microedition_khronos_egl_EGLSurface(const Context& context);
 [[nodiscard]] Decl Declare_com_google_android_gles_jni_GLImpl(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LocalSensorManager(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LegacySensorManager(const Context& context);
@@ -284,9 +218,11 @@ Declare_javax_microedition_khronos_egl_EGLSurface(const Context &context);
 [[nodiscard]] Decl Declare_android_nfc_NfcAdapter(const Context& context);
 [[nodiscard]] dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context);
 
-} // namespace ogplay::runtime::android_intrinsics
+}  // namespace ogplay::runtime::android_intrinsics
 
-namespace ogplay::runtime::android_intrinsics { Decl Declare_android_graphics_SurfaceTexture(const Context&); }
+namespace ogplay::runtime::android_intrinsics {
+Decl Declare_android_graphics_SurfaceTexture(const Context&);
+}
 
 namespace ogplay::runtime::android_intrinsics {
 void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view);

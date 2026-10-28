@@ -141,6 +141,9 @@ set(OGPLAY_TEST_SOURCES
     tests/runtime/jni_bridge_framework_tests.cpp
     tests/runtime/jni_bridge_objects_tests.cpp
     tests/runtime/jni_bridge_threads_tests.cpp
+    tests/runtime/property_animation_tests.cpp
+    tests/runtime/choreographer_frame_source_tests.cpp
+    tests/runtime/application_subwindow_tests.cpp
     tests/runtime/activity_window_lifecycle_tests.cpp
     tests/runtime/jni_android_platform_tests.cpp
     tests/runtime/guest_native_values_tests.cpp

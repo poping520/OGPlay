@@ -9,322 +9,306 @@
 
 namespace ogplay::runtime {
 
-dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(
-    const std::shared_ptr<DexVmAndroidContext> &context) {
-  dexvm::CoreIntrinsicServices services;
-  services.secure_random = hal::FillSecureRandom;
-  if (context == nullptr)
-    return services;
-  services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
-      android_intrinsics::InitializeAndroidSystemProperties(vm, context);
-  };
-  services.language = context->language;
-  services.iso3_language = context->iso3_language;
-  services.iso3_country = context->iso3_country;
-  services.find_classpath_resource =
-      [context](const dexvm::CoreIntrinsicServices::ClasspathLoader role,
-                const std::string_view name)
-      -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
-    const auto find = [name](const std::string_view path,
-                             const loader::ApkArchive &archive)
-        -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
-      const auto found = std::find_if(
-          archive.entries.begin(), archive.entries.end(),
-          [name](const loader::ApkEntry &entry) { return entry.name == name; });
-      if (found == archive.entries.end())
-        return std::nullopt;
-      return dexvm::CoreIntrinsicServices::ClasspathResource{
-          std::string(path), std::string(name)};
+dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<DexVmAndroidContext>& context) {
+    dexvm::CoreIntrinsicServices services;
+    services.secure_random = hal::FillSecureRandom;
+    if (context == nullptr) return services;
+    services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
+        android_intrinsics::InitializeAndroidSystemProperties(vm, context);
     };
-    if (const auto boot = find("/system/framework/bootdex.jar",
-                              context->boot_classpath_archive)) {
-      return boot;
-    }
-    if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap)
-      return std::nullopt;
-    return find(context->package_resource_path, context->archive);
-  };
-  services.read_classpath_resource =
-      [context](const dexvm::CoreIntrinsicServices::ClasspathResource &resource)
-      -> std::optional<std::vector<std::byte>> {
-    const auto boot = resource.archive_path == "/system/framework/bootdex.jar";
-    if (!boot && (context->package_resource_path.empty() ||
-                  resource.archive_path != context->package_resource_path)) {
-      throw std::invalid_argument("classpath archive is not registered: " +
-                               resource.archive_path);
-    }
-    const auto &archive = boot ? context->boot_classpath_archive : context->archive;
-    const auto found = std::find_if(
-        archive.entries.begin(), archive.entries.end(),
-        [&resource](const loader::ApkEntry &entry) {
-          return entry.name == resource.entry_name;
-        });
-    if (found == archive.entries.end()) return std::nullopt;
-    return loader::ReadApkEntry(
-        boot ? context->boot_classpath_bytes : context->apk_bytes,
-        archive, resource.entry_name);
-  };
-  services.singleton = [context](dexvm::Interpreter &vm,
-                                 const std::string_view key,
-                                 const std::string_view descriptor) {
-    const auto found = context->singletons.find(std::string(key));
-    if (found != context->singletons.end())
-      return found->second;
-    const auto instance = vm.NewIntrinsicInstance(std::string(descriptor));
-    context->singletons.emplace(std::string(key), instance);
-    return instance;
-  };
-  services.set_sax_content_handler =
-      [context](const dexvm::VmObjectRef reader,
-                const dexvm::VmObjectRef handler) {
+    services.language = context->language;
+    services.iso3_language = context->iso3_language;
+    services.iso3_country = context->iso3_country;
+    services.find_classpath_resource =
+        [context](const dexvm::CoreIntrinsicServices::ClasspathLoader role,
+                  const std::string_view name) -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
+        const auto find = [name](const std::string_view path, const loader::ApkArchive& archive)
+            -> std::optional<dexvm::CoreIntrinsicServices::ClasspathResource> {
+            const auto found = std::find_if(archive.entries.begin(), archive.entries.end(),
+                                            [name](const loader::ApkEntry& entry) { return entry.name == name; });
+            if (found == archive.entries.end()) return std::nullopt;
+            return dexvm::CoreIntrinsicServices::ClasspathResource{std::string(path), std::string(name)};
+        };
+        if (const auto boot = find("/system/framework/bootdex.jar", context->boot_classpath_archive)) {
+            return boot;
+        }
+        if (role == dexvm::CoreIntrinsicServices::ClasspathLoader::bootstrap) return std::nullopt;
+        return find(context->package_resource_path, context->archive);
+    };
+    services.read_classpath_resource =
+        [context](
+            const dexvm::CoreIntrinsicServices::ClasspathResource& resource) -> std::optional<std::vector<std::byte>> {
+        const auto boot = resource.archive_path == "/system/framework/bootdex.jar";
+        if (!boot &&
+            (context->package_resource_path.empty() || resource.archive_path != context->package_resource_path)) {
+            throw std::invalid_argument("classpath archive is not registered: " + resource.archive_path);
+        }
+        const auto& archive = boot ? context->boot_classpath_archive : context->archive;
+        const auto found =
+            std::find_if(archive.entries.begin(), archive.entries.end(),
+                         [&resource](const loader::ApkEntry& entry) { return entry.name == resource.entry_name; });
+        if (found == archive.entries.end()) return std::nullopt;
+        return loader::ReadApkEntry(boot ? context->boot_classpath_bytes : context->apk_bytes, archive,
+                                    resource.entry_name);
+    };
+    services.singleton = [context](dexvm::Interpreter& vm, const std::string_view key,
+                                   const std::string_view descriptor) {
+        const auto found = context->singletons.find(std::string(key));
+        if (found != context->singletons.end()) return found->second;
+        const auto instance = vm.NewIntrinsicInstance(std::string(descriptor));
+        context->singletons.emplace(std::string(key), instance);
+        return instance;
+    };
+    services.set_sax_content_handler = [context](const dexvm::VmObjectRef reader, const dexvm::VmObjectRef handler) {
         context->sax_content_handlers[reader.Value()] = handler;
-      };
-  services.current_time_millis = [context] {
-    return 1'400'000'000'000LL +
-           context->uptime_millis.load(std::memory_order_relaxed);
-  };
-  services.environment_value = [context](const std::string_view name) {
-    if (context->session == nullptr) {
-      throw std::runtime_error("guest process environment is not attached");
-    }
-    return context->session->Process().ProcessEnvironmentValue(name);
-  };
-  services.environment_entries = [context] {
-    if (context->session == nullptr) {
-      throw std::runtime_error("guest process environment is not attached");
-    }
-    std::vector<std::pair<std::string, std::string>> result;
-    for (const auto &entry :
-         context->session->Process().ProcessEnvironmentEntries()) {
-      result.emplace_back(entry.name, entry.value);
+    };
+    services.current_time_millis = [context] {
+        return 1'400'000'000'000LL + context->uptime_millis.load(std::memory_order_relaxed);
+    };
+    services.environment_value = [context](const std::string_view name) {
+        if (context->session == nullptr) {
+            throw std::runtime_error("guest process environment is not attached");
+        }
+        return context->session->Process().ProcessEnvironmentValue(name);
+    };
+    services.environment_entries = [context] {
+        if (context->session == nullptr) {
+            throw std::runtime_error("guest process environment is not attached");
+        }
+        std::vector<std::pair<std::string, std::string>> result;
+        for (const auto& entry : context->session->Process().ProcessEnvironmentEntries()) {
+            result.emplace_back(entry.name, entry.value);
+        }
+        return result;
+    };
+    return services;
+}
+
+std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext>& context) {
+    using namespace android_intrinsics;
+    DebugMemoryInfoFields memory_fields;
+    auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
+    auto debug = Declare_android_os_Debug(context, memory_fields);
+    std::vector<dx::IntrinsicFieldHandle> bitmap_options;
+    auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
+    std::vector<dexvm::IntrinsicClassDecl> result{
+        std::move(debug_memory_info),
+        std::move(debug),
+        Declare_android_app_NativeActivity(context),
+        Declare_android_view_InputQueue(context),
+        Declare_android_view_Surface(context),
+        Declare_android_graphics_SurfaceTexture(context),
+        Declare_android_app_Activity(context),
+        Declare_android_app_Notification(context),
+        Declare_android_app_ActivityManager(context),
+        Declare_android_app_ActivityManager_MemoryInfo(context),
+        Declare_android_app_NotificationManager(context),
+        Declare_android_app_KeyguardManager(context),
+        Declare_android_app_backup_BackupManager(context),
+        Declare_android_app_AlertDialog_Builder(context),
+        Declare_android_app_AlertDialog(context),
+        Declare_android_app_Dialog(context),
+        Declare_android_app_IntentService(context),
+        Declare_android_app_Service(context),
+        Declare_android_app_PendingIntent(context),
+        Declare_android_app_AlarmManager(context),
+        Declare_android_app_ProgressDialog(context),
+        Declare_android_content_BroadcastReceiver(context),
+        Declare_android_content_ContentResolver(context),
+        Declare_android_content_Context(context),
+        Declare_android_content_ContextWrapper(context),
+        Declare_android_content_IntentFilter_MalformedMimeTypeException(context),
+        Declare_android_content_IntentSender(context),
+        Declare_android_content_pm_PackageInfo(context),
+        Declare_android_content_pm_PackageManager_NameNotFoundException(context),
+        Declare_android_content_pm_PackageManager(context),
+        Declare_android_content_SharedPreferencesEditorImpl(context),
+        Declare_android_content_SharedPreferencesImpl(context),
+        Declare_android_content_res_AssetFileDescriptor(context),
+        Declare_android_content_res_AssetManager(context),
+        Declare_android_content_res_Resources_NotFoundException(context),
+        Declare_android_content_res_XmlResourceParser(context),
+        Declare_android_content_res_XmlResourceParser_Impl(context),
+        Declare_android_content_res_Resources(context),
+        Declare_android_database_CursorWindow(context),
+        Declare_android_database_sqlite_SQLiteConnection(context),
+        Declare_android_database_sqlite_SQLiteConnection_Operation(context),
+        Declare_android_database_sqlite_SQLiteDebug(context),
+        Declare_android_database_sqlite_SQLiteGlobal(context),
+        Declare_android_graphics_Bitmap_Config(context),
+        Declare_android_graphics_Bitmap(context),
+        std::move(options_decl),
+        Declare_android_graphics_BitmapFactory(context, bitmap_options),
+        Declare_android_graphics_Canvas(context),
+        Declare_android_graphics_Matrix(context),
+        Declare_android_graphics_Paint(context),
+        Declare_android_graphics_RectF(context),
+        Declare_android_graphics_PointF(context),
+        Declare_android_graphics_Path_Direction(context),
+        Declare_android_graphics_Path(context),
+        Declare_android_graphics_Color(context),
+        Declare_android_graphics_PorterDuff(context),
+        Declare_android_graphics_PorterDuff_Mode(context),
+        Declare_android_graphics_Region_Op(context),
+        Declare_android_graphics_Typeface(context),
+        Declare_android_graphics_drawable_Drawable(context),
+        Declare_android_graphics_drawable_PaintDrawable(context),
+        Declare_android_graphics_drawable_BitmapDrawable(context),
+        Declare_android_graphics_drawable_ColorDrawable(context),
+        Declare_android_hardware_LocalSensorManager(context),
+        Declare_android_hardware_LegacySensorManager(context),
+        Declare_android_nfc_NfcAdapter(context),
+        Declare_android_location_LocationListener(context),
+        Declare_android_location_Criteria(context),
+        Declare_android_location_LocationManager(context),
+        Declare_android_media_AudioManager(context),
+        Declare_android_media_AudioTrack(context),
+        Declare_android_media_MediaPlayer(context),
+        Declare_android_media_SoundPoolImpl(context),
+        Declare_android_net_ConnectivityManager(context),
+        Declare_android_net_wifi_WifiInfo(context),
+        Declare_android_net_wifi_WifiManager_WifiLock(context),
+        Declare_android_net_wifi_WifiManager_MulticastLock(context),
+        Declare_android_net_wifi_WifiManager(context),
+        Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
+        Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
+        Declare_android_opengl_GLSurfaceView_Renderer(context),
+        Declare_android_opengl_GLSurfaceView(context),
+        Declare_android_opengl_GLSurfaceView_GLThread(context),
+        Declare_android_opengl_GLES10(context),
+        Declare_android_opengl_GLES10Ext(context),
+        Declare_android_opengl_GLES11(context),
+        Declare_android_opengl_GLES11Ext(context),
+        Declare_android_opengl_GLES20(context),
+        Declare_android_opengl_GLES30(context),
+        Declare_android_opengl_GLUtils(context),
+        Declare_android_opengl_GLU(context),
+        Declare_android_os_AsyncTask(context),
+        Declare_android_os_AsyncTask_Status(context),
+        Declare_android_os_AsyncTask_Worker(context),
+        Declare_android_os_SystemProperties(context),
+        Declare_android_os_FileUtils(context),
+        Declare_android_os_Binder(context),
+        Declare_android_os_StrictMode(context),
+        Declare_android_os_Environment(context),
+        Declare_android_os_Handler(context),
+        Declare_android_os_Handler_Callback(context),
+        Declare_android_os_HandlerThread(context),
+        Declare_android_os_Looper(context),
+        Declare_android_os_MessageQueue(context),
+        Declare_android_os_Message(context),
+        Declare_android_os_SystemClock(context),
+        Declare_android_os_Parcel(context),
+        Declare_android_os_ParcelFileDescriptor(context),
+        Declare_android_os_PowerManager(context),
+        Declare_android_os_PowerManager_WakeLock(context),
+        Declare_android_os_Vibrator(context),
+        Declare_android_os_Process(context),
+        Declare_android_provider_Settings_NameValueCache(context),
+        Declare_android_telephony_PhoneStateListener(context),
+        Declare_android_telephony_SmsManager(context),
+        Declare_android_telephony_SmsMessage(context),
+        Declare_android_telephony_TelephonyManager(context),
+        Declare_android_text_Editable(context),
+        Declare_android_text_EditableImpl(context),
+        Declare_android_text_TextPaint(context),
+        Declare_android_text_TextWatcher(context),
+        Declare_android_text_TextUtils(context),
+        Declare_android_util_Log(context),
+        Declare_android_util_EventLog(context),
+        Declare_android_util_AttributeSet(context),
+        Declare_android_util_Base64(context),
+        Declare_android_util_DisplayMetrics(context),
+        Declare_android_view_Display(context),
+        Declare_android_animation_PropertyValuesHolder(context),
+        Declare_android_view_DisplayEventReceiver(context),
+        Declare_android_hardware_display_DisplayManagerGlobal(context),
+        Declare_android_hardware_display_DisplayManager(context),
+        Declare_android_view_ContextThemeWrapper(context),
+        Declare_android_view_LayoutInflater(context),
+        Declare_android_view_KeyEvent(context),
+        Declare_android_view_KeyCharacterMap(context),
+        Declare_android_view_MotionEvent(context),
+        Declare_android_view_InputDevice(context),
+        Declare_android_view_SurfaceHolder_Callback(context),
+        Declare_android_view_SurfaceHolder_Impl(context),
+        Declare_android_view_SurfaceHolder(context),
+        Declare_android_view_SurfaceView(context),
+        Declare_android_view_View_OnClickListener(context),
+        Declare_android_view_View_OnFocusChangeListener(context),
+        Declare_android_view_View_OnSystemUiVisibilityChangeListener(context),
+        Declare_android_view_View_OnTouchListener(context),
+        Declare_android_view_ViewParent(context),
+        Declare_android_view_View(context),
+        Declare_android_view_ViewGroup(context),
+        Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(context),
+        Declare_android_view_ViewTreeObserver(context),
+        Declare_android_view_Window(context),
+        Declare_android_view_WindowManager_BadTokenException(context),
+        Declare_android_view_WindowManager_LayoutParams(context),
+        Declare_android_view_WindowManager(context),
+        Declare_android_view_WindowManagerImpl(context),
+        Declare_android_view_inputmethod_InputMethodManager(context),
+        Declare_android_webkit_WebChromeClient(context),
+        Declare_android_webkit_WebChromeClient_CustomViewCallback(context),
+        Declare_android_webkit_ConsoleMessage(context),
+        Declare_android_webkit_HttpAuthHandler(context),
+        Declare_android_webkit_WebSettings(context),
+        Declare_android_webkit_WebSettings_RenderPriority(context),
+        Declare_android_webkit_WebView(context),
+        Declare_android_webkit_WebView_DisabledLoadCallback(context),
+        Declare_android_webkit_WebViewClient(context),
+        Declare_android_widget_AbsoluteLayout_LayoutParams(context),
+        Declare_android_widget_AbsoluteLayout(context),
+        Declare_android_widget_Button(context),
+        Declare_android_widget_EditText(context),
+        Declare_android_widget_FrameLayout(context),
+        Declare_android_widget_ImageButton(context),
+        Declare_android_widget_ImageView_ScaleType(context),
+        Declare_android_widget_ImageView(context),
+        Declare_android_widget_LinearLayout(context),
+        Declare_android_widget_ProgressBar(context),
+        Declare_android_widget_RelativeLayout(context),
+        Declare_android_widget_ScrollView(context),
+        Declare_android_widget_TableLayout(context),
+        Declare_android_widget_TableRow(context),
+        Declare_android_widget_TextView(context),
+        Declare_android_widget_Toast(context),
+        Declare_android_widget_VideoView(context),
+        Declare_android_opengl_EGL14(context),
+        Declare_android_opengl_EGLObjectHandle(context),
+        Declare_android_opengl_EGLConfig(context),
+        Declare_android_opengl_EGLContext(context),
+        Declare_android_opengl_EGLDisplay(context),
+        Declare_android_opengl_EGLSurface(context),
+        Declare_javax_microedition_khronos_egl_EGLConfig(context),
+        // Historical compatibility tail. DVM-61 decouples Java identity hash
+        // from linker ids and object handles, so future catalog insertion no
+        // longer changes Object.hashCode/default toString identity.
+        Declare_javax_microedition_khronos_egl_EGL(context),
+        Declare_javax_microedition_khronos_egl_EGL10(context),
+        Declare_javax_microedition_khronos_egl_EGL10_Impl(context),
+        Declare_javax_microedition_khronos_egl_EGLContext(context),
+        Declare_javax_microedition_khronos_egl_EGLDisplay(context),
+        Declare_javax_microedition_khronos_egl_EGLSurface(context),
+        Declare_com_google_android_gles_jni_GLImpl(context),
+        Declare_android_app_Application(context),
+    };
+    {
+        result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
+        result.push_back(Declare_android_graphics_drawable_DrawableContainer(context));
+        result.push_back(Declare_android_graphics_drawable_NinePatchDrawable(context));
+        result.push_back(Declare_managed_WindowToken(context));
+        result.push_back(Declare_android_widget_EdgeEffect(context));
+        result.push_back(Declare_android_widget_HorizontalScrollView(context));
+        result.push_back(Declare_android_view_LayoutInflater_BlinkLayout(context));
+        result.push_back(Declare_android_os_Trace(context));
+        result.push_back(Declare_android_content_res_XmlBlock(context));
+        result.push_back(Declare_android_content_res_StringBlock(context));
+        result.push_back(Declare_test_AccessibilityManager(context));
+        result.push_back(Declare_test_ListenerInfo(context));
     }
     return result;
-  };
-  return services;
 }
 
-std::vector<dexvm::IntrinsicClassDecl>
-AndroidIntrinsicCatalog(const std::shared_ptr<DexVmAndroidContext> &context) {
-  using namespace android_intrinsics;
-  DebugMemoryInfoFields memory_fields;
-  auto debug_memory_info = Declare_android_os_Debug_MemoryInfo(context, memory_fields);
-  auto debug = Declare_android_os_Debug(context, memory_fields);
-  std::vector<dx::IntrinsicFieldHandle> bitmap_options;
-  auto options_decl = Declare_android_graphics_BitmapFactory_Options(context, bitmap_options);
-  std::vector<dexvm::IntrinsicClassDecl> result{
-      std::move(debug_memory_info),
-      std::move(debug),
-      Declare_android_app_NativeActivity(context),
-      Declare_android_view_InputQueue(context),
-      Declare_android_view_Surface(context),
-      Declare_android_graphics_SurfaceTexture(context),
-      Declare_android_app_Activity(context),
-      Declare_android_app_Notification(context),
-      Declare_android_app_ActivityManager(context),
-      Declare_android_app_ActivityManager_MemoryInfo(context),
-      Declare_android_app_NotificationManager(context),
-      Declare_android_app_KeyguardManager(context),
-      Declare_android_app_backup_BackupManager(context),
-      Declare_android_app_AlertDialog_Builder(context),
-      Declare_android_app_AlertDialog(context),
-      Declare_android_app_Dialog(context),
-      Declare_android_app_IntentService(context),
-      Declare_android_app_Service(context),
-      Declare_android_app_PendingIntent(context),
-      Declare_android_app_AlarmManager(context),
-      Declare_android_app_ProgressDialog(context),
-      Declare_android_content_BroadcastReceiver(context),
-      Declare_android_content_ContentResolver(context),
-      Declare_android_content_Context(context),
-      Declare_android_content_ContextWrapper(context),
-      Declare_android_content_IntentFilter_MalformedMimeTypeException(context),
-      Declare_android_content_IntentSender(context),
-      Declare_android_content_pm_PackageInfo(context),
-      Declare_android_content_pm_PackageManager_NameNotFoundException(context),
-      Declare_android_content_pm_PackageManager(context),
-      Declare_android_content_SharedPreferencesEditorImpl(context),
-      Declare_android_content_SharedPreferencesImpl(context),
-      Declare_android_content_res_AssetFileDescriptor(context),
-      Declare_android_content_res_AssetManager(context),
-      Declare_android_content_res_Resources_NotFoundException(context),
-      Declare_android_content_res_XmlResourceParser(context),
-      Declare_android_content_res_XmlResourceParser_Impl(context),
-      Declare_android_content_res_Resources(context),
-      Declare_android_database_CursorWindow(context),
-      Declare_android_database_sqlite_SQLiteConnection(context),
-      Declare_android_database_sqlite_SQLiteConnection_Operation(context),
-      Declare_android_database_sqlite_SQLiteDebug(context),
-      Declare_android_database_sqlite_SQLiteGlobal(context),
-      Declare_android_graphics_Bitmap_Config(context),
-      Declare_android_graphics_Bitmap(context),
-      std::move(options_decl),
-      Declare_android_graphics_BitmapFactory(context, bitmap_options),
-      Declare_android_graphics_Canvas(context),
-      Declare_android_graphics_Matrix(context),
-      Declare_android_graphics_Paint(context),
-      Declare_android_graphics_RectF(context),
-      Declare_android_graphics_PointF(context),
-      Declare_android_graphics_Path_Direction(context),
-      Declare_android_graphics_Path(context),
-      Declare_android_graphics_Color(context),
-      Declare_android_graphics_PorterDuff(context),
-      Declare_android_graphics_PorterDuff_Mode(context),
-      Declare_android_graphics_Region_Op(context),
-      Declare_android_graphics_Typeface(context),
-      Declare_android_graphics_drawable_Drawable(context),
-      Declare_android_graphics_drawable_PaintDrawable(context),
-      Declare_android_graphics_drawable_BitmapDrawable(context),
-      Declare_android_graphics_drawable_ColorDrawable(context),
-      Declare_android_hardware_LocalSensorManager(context),
-      Declare_android_hardware_LegacySensorManager(context),
-      Declare_android_nfc_NfcAdapter(context),
-      Declare_android_location_LocationListener(context),
-      Declare_android_location_Criteria(context),
-      Declare_android_location_LocationManager(context),
-      Declare_android_media_AudioManager(context),
-      Declare_android_media_AudioTrack(context),
-      Declare_android_media_MediaPlayer(context),
-      Declare_android_media_SoundPoolImpl(context),
-      Declare_android_net_ConnectivityManager(context),
-      Declare_android_net_wifi_WifiInfo(context),
-      Declare_android_net_wifi_WifiManager_WifiLock(context),
-      Declare_android_net_wifi_WifiManager_MulticastLock(context),
-      Declare_android_net_wifi_WifiManager(context),
-      Declare_android_opengl_GLSurfaceView_EGLConfigChooser(context),
-      Declare_android_opengl_GLSurfaceView_EGLContextFactory(context),
-      Declare_android_opengl_GLSurfaceView_Renderer(context),
-      Declare_android_opengl_GLSurfaceView(context),
-      Declare_android_opengl_GLSurfaceView_GLThread(context),
-      Declare_android_opengl_GLES10(context),
-      Declare_android_opengl_GLES10Ext(context),
-      Declare_android_opengl_GLES11(context),
-      Declare_android_opengl_GLES11Ext(context),
-      Declare_android_opengl_GLES20(context),
-      Declare_android_opengl_GLES30(context),
-      Declare_android_opengl_GLUtils(context),
-      Declare_android_opengl_GLU(context),
-      Declare_android_os_AsyncTask(context),
-      Declare_android_os_AsyncTask_Status(context),
-      Declare_android_os_AsyncTask_Worker(context),
-      Declare_android_os_SystemProperties(context),
-      Declare_android_os_FileUtils(context),
-      Declare_android_os_Binder(context),
-      Declare_android_os_StrictMode(context),
-      Declare_android_os_Environment(context),
-      Declare_android_os_Handler(context),
-      Declare_android_os_Handler_Callback(context),
-      Declare_android_os_HandlerThread(context),
-      Declare_android_os_Looper(context),
-      Declare_android_os_MessageQueue(context),
-      Declare_android_os_Message(context),
-      Declare_android_os_SystemClock(context),
-      Declare_android_os_Parcel(context),
-      Declare_android_os_ParcelFileDescriptor(context),
-      Declare_android_os_PowerManager(context),
-      Declare_android_os_PowerManager_WakeLock(context),
-      Declare_android_os_Vibrator(context),
-      Declare_android_os_Process(context),
-      Declare_android_provider_Settings_NameValueCache(context),
-      Declare_android_telephony_PhoneStateListener(context),
-      Declare_android_telephony_SmsManager(context),
-      Declare_android_telephony_SmsMessage(context),
-      Declare_android_telephony_TelephonyManager(context),
-      Declare_android_text_Editable(context),
-      Declare_android_text_EditableImpl(context),
-      Declare_android_text_TextPaint(context),
-      Declare_android_text_TextWatcher(context),
-      Declare_android_text_TextUtils(context),
-      Declare_android_util_Log(context),
-      Declare_android_util_EventLog(context),
-      Declare_android_util_AttributeSet(context),
-      Declare_android_util_Base64(context),
-      Declare_android_util_DisplayMetrics(context),
-      Declare_android_view_Display(context),
-      Declare_android_hardware_display_DisplayManager(context),
-      Declare_android_view_ContextThemeWrapper(context),
-      Declare_android_view_LayoutInflater(context),
-      Declare_android_view_KeyEvent(context),
-      Declare_android_view_KeyCharacterMap(context),
-      Declare_android_view_MotionEvent(context),
-      Declare_android_view_InputDevice(context),
-      Declare_android_view_SurfaceHolder_Callback(context),
-      Declare_android_view_SurfaceHolder_Impl(context),
-      Declare_android_view_SurfaceHolder(context),
-      Declare_android_view_SurfaceView(context),
-      Declare_android_view_View_OnClickListener(context),
-      Declare_android_view_View_OnFocusChangeListener(context),
-      Declare_android_view_View_OnSystemUiVisibilityChangeListener(context),
-      Declare_android_view_View_OnTouchListener(context),
-      Declare_android_view_ViewParent(context),
-      Declare_android_view_View(context),
-      Declare_android_view_ViewGroup(context),
-      Declare_android_view_ViewTreeObserver_OnGlobalLayoutListener(context),
-      Declare_android_view_ViewTreeObserver(context),
-      Declare_android_view_Window(context),
-      Declare_android_view_WindowManager_LayoutParams(context),
-      Declare_android_view_WindowManager(context),
-      Declare_android_view_WindowManagerImpl(context),
-      Declare_android_view_inputmethod_InputMethodManager(context),
-      Declare_android_webkit_WebChromeClient(context),
-      Declare_android_webkit_WebChromeClient_CustomViewCallback(context),
-      Declare_android_webkit_ConsoleMessage(context),
-      Declare_android_webkit_HttpAuthHandler(context),
-      Declare_android_webkit_WebSettings(context),
-      Declare_android_webkit_WebSettings_RenderPriority(context),
-      Declare_android_webkit_WebView(context),
-      Declare_android_webkit_WebView_DisabledLoadCallback(context),
-      Declare_android_webkit_WebViewClient(context),
-      Declare_android_widget_AbsoluteLayout_LayoutParams(context),
-      Declare_android_widget_AbsoluteLayout(context),
-      Declare_android_widget_Button(context),
-      Declare_android_widget_EditText(context),
-      Declare_android_widget_FrameLayout(context),
-      Declare_android_widget_ImageButton(context),
-      Declare_android_widget_ImageView_ScaleType(context),
-      Declare_android_widget_ImageView(context),
-      Declare_android_widget_LinearLayout(context),
-      Declare_android_widget_ProgressBar(context),
-      Declare_android_widget_RelativeLayout(context),
-      Declare_android_widget_ScrollView(context),
-      Declare_android_widget_TableLayout(context),
-      Declare_android_widget_TableRow(context),
-      Declare_android_widget_TextView(context),
-      Declare_android_widget_Toast(context),
-      Declare_android_widget_VideoView(context),
-      Declare_android_opengl_EGL14(context),
-      Declare_android_opengl_EGLObjectHandle(context),
-      Declare_android_opengl_EGLConfig(context),
-      Declare_android_opengl_EGLContext(context),
-      Declare_android_opengl_EGLDisplay(context),
-      Declare_android_opengl_EGLSurface(context),
-      Declare_javax_microedition_khronos_egl_EGLConfig(context),
-      // Historical compatibility tail. DVM-61 decouples Java identity hash
-      // from linker ids and object handles, so future catalog insertion no
-      // longer changes Object.hashCode/default toString identity.
-      Declare_javax_microedition_khronos_egl_EGL(context),
-      Declare_javax_microedition_khronos_egl_EGL10(context),
-      Declare_javax_microedition_khronos_egl_EGL10_Impl(context),
-      Declare_javax_microedition_khronos_egl_EGLContext(context),
-      Declare_javax_microedition_khronos_egl_EGLDisplay(context),
-      Declare_javax_microedition_khronos_egl_EGLSurface(context),
-      Declare_com_google_android_gles_jni_GLImpl(context),
-      Declare_android_app_Application(context),
-  };
-  {
-      result.push_back(Declare_android_graphics_drawable_StateListDrawable(context));
-      result.push_back(Declare_android_graphics_drawable_DrawableContainer(context));
-      result.push_back(Declare_android_graphics_drawable_NinePatchDrawable(context));
-      result.push_back(Declare_managed_WindowToken(context));
-      result.push_back(Declare_android_widget_EdgeEffect(context));
-      result.push_back(Declare_android_widget_HorizontalScrollView(context));
-      result.push_back(Declare_android_view_LayoutInflater_BlinkLayout(context));
-      result.push_back(Declare_android_os_Trace(context));
-      result.push_back(Declare_android_content_res_XmlBlock(context));
-      result.push_back(Declare_android_content_res_StringBlock(context));
-      result.push_back(Declare_test_AccessibilityManager(context));
-      result.push_back(Declare_test_ListenerInfo(context));
-  }
-  return result;
-}
-
-} // namespace ogplay::runtime
+}  // namespace ogplay::runtime

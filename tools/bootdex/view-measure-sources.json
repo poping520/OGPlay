@@ -22,18 +22,21 @@
     "dispatchSetPressed(Z)V",
     "dispatchVisibilityChanged(Landroid/view/View;I)V",
     "dispatchWindowFocusChanged(Z)V",
+    "ensureTransformationInfo()V",
     "findFocus()Landroid/view/View;",
     "findViewById(I)Landroid/view/View;",
     "findViewTraversal(I)Landroid/view/View;",
     "generateViewId()I",
     "getAccessibilityLiveRegion()I",
     "getAccessibilityNodeProvider()Landroid/view/accessibility/AccessibilityNodeProvider;",
+    "getAlpha()F",
     "getAnimation()Landroid/view/animation/Animation;",
     "getBackground()Landroid/graphics/drawable/Drawable;",
     "getBaseline()I",
     "getBottom()I",
     "getDefaultSize(II)I",
     "getDrawableState()[I",
+    "getFinalAlpha()F",
     "getHeight()I",
     "getId()I",
     "getImportantForAccessibility()I",
@@ -75,12 +78,14 @@
     "hasFocus()Z",
     "hasListenersForAccessibility()Z",
     "hasOnClickListeners()Z",
+    "hasOverlappingRendering()Z",
     "hasTransientState()Z",
     "initialAwakenScrollBars()Z",
     "invalidate()V",
     "invalidateInheritedLayoutMode(I)V",
     "invalidateParentCaches()V",
     "invalidateParentIfNeeded()V",
+    "invalidateViewProperty(ZZ)V",
     "isAccessibilityFocused()Z",
     "isActionableForAccessibility()Z",
     "isClickable()Z",
@@ -115,6 +120,7 @@
     "onMeasure(II)V",
     "onResolveDrawables(I)V",
     "onRtlPropertiesChanged(I)V",
+    "onSetAlpha(I)Z",
     "onSizeChanged(IIII)V",
     "onVisibilityChanged(Landroid/view/View;I)V",
     "onWindowVisibilityChanged(I)V",
@@ -146,6 +152,7 @@
     "rootViewRequestFocus()Z",
     "scrollBy(II)V",
     "scrollTo(II)V",
+    "setAlpha(F)V",
     "setBackground(Landroid/graphics/drawable/Drawable;)V",
     "setBackgroundDrawable(Landroid/graphics/drawable/Drawable;)V",
     "setBottom(I)V",
@@ -598,32 +605,32 @@
       "failure_boundary": "reject scrollbar/inset flags; only experimental View/ViewGroup"
     },
     "invalidate(Z)V": {
-      "reason": "View.java:10905 software dirty seam; reject hardware/animation/transformation state",
+      "reason": "View.java:10905 software dirty seam; reject hardware/animation/geometric transformation (alpha-only state allowed) state",
       "inputs": "receiver, actual Java state and current process binding",
-      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes",
+      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes; register draw-only work on the actual managed window root, independent of main-window dirty consumption",
       "state_owner": "Java mPrivateFlags with reviewed masks 0x20/0x200000/0x8000/0x80000000; current process dirty service",
-      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, geometric transformation (alpha-only state allowed) or animation; unsupported state records and throws UOE"
     },
     "notifySubtreeAccessibilityStateChangedIfNeeded()V": {
       "reason": "View.java:7295 process-local test-root boundary; no accessibility subscribers or system service attached",
       "inputs": "receiver, actual Java state and current process binding",
-      "outputs": "Mark current process draw dirty; no geometry writes or guest callbacks",
+      "outputs": "Mark current process draw dirty; no geometry writes or guest callbacks; register draw-only work on the actual managed window root, independent of main-window dirty consumption",
       "state_owner": "Java geometry/flags; process UiTree dirty service only",
-      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, geometric transformation (alpha-only state allowed) or animation; unsupported state records and throws UOE"
     },
     "updateMatrix()V": {
       "reason": "View.java:9304 direct dependency of ROM setRight/setBottom used by ROM sizeChange; bounded untransformed root",
       "inputs": "actual mTransformationInfo",
-      "outputs": "Return only for the original null fast path; non-null records and throws UOE",
+      "outputs": "Return for null or verified alpha-only TransformationInfo with a constructed identity Matrix and neutral geometric properties; dimension-change mMatrixDirty is a ROM recompute hint, not a transform. Other state records and throws UOE.",
       "state_owner": "Java; no matrix, geometry or transform writes",
-      "failure_boundary": "Transformation/Camera/Matrix closure is unsupported; never fabricates identity for an existing object"
+      "failure_boundary": "No geometric transformation/Camera/Matrix mutation; never fabricate identity for an unconstructed or transformed object."
     },
     "invalidate(IIII)V": {
-      "reason": "View.java:10905 software dirty seam; reject hardware/animation/transformation state",
+      "reason": "View.java:10905 software dirty seam; reject hardware/animation/geometric transformation (alpha-only state allowed) state",
       "inputs": "receiver, actual Java state and current process binding",
-      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes",
+      "outputs": "Conservative software draw dirty; Java flags clear DRAWN, set DIRTY; full invalidation sets INVALIDATED and clears DRAWING_CACHE_VALID; no measured/bounds writes; register draw-only work on the actual managed window root, independent of main-window dirty consumption",
       "state_owner": "Java mPrivateFlags with reviewed masks 0x20/0x200000/0x8000/0x80000000; current process dirty service",
-      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, transformation or animation; unsupported state records and throws UOE"
+      "failure_boundary": "Only test Views/containers with no attached system service, hardware, overlay, geometric transformation (alpha-only state allowed) or animation; unsupported state records and throws UOE"
     },
     "hasRtlSupport()Z": {
       "reason": "Process ApplicationInfo seam retained as an explicit reviewed adapter",
@@ -635,9 +642,9 @@
     "needGlobalAttributesUpdate(Z)V": {
       "reason": "Bounded unattached test-container system/focus seam",
       "inputs": "actual Java system attachment/focus state",
-      "outputs": "Mark process software draw dirty only after rejecting non-null unsupported system/animation/transform fields",
+      "outputs": "Mark process software draw dirty only after rejecting non-null unsupported system/animation/transform fields; register draw-only work on the actual managed window root, independent of main-window dirty consumption",
       "state_owner": "Java; no extra hierarchy or focus state",
-      "failure_boundary": "Non-null system attachment, animation, hardware or transformation records and throws; software dirty only, no fabricated global service"
+      "failure_boundary": "Non-null system attachment, animation, hardware or geometric transformation (alpha-only state allowed) records and throws; software dirty only, no fabricated global service"
     },
     "isInLayout()Z": {
       "reason": "ViewRootImpl-free owner traversal service",
@@ -651,7 +658,7 @@
       "inputs": "Real receiver Java fields and current process binding",
       "outputs": "Process software dirty and actual listener callback or bounded input cancellation; no system service simulation",
       "state_owner": "Java flags, ListenerInfo, ViewGroup.mFocused only; host retains input capture identities",
-      "failure_boundary": "No AttachInfo, accessibility focus/delegate, background state, animation, transformation or hardware objects; unsupported state records and throws UOE"
+      "failure_boundary": "No AttachInfo, accessibility focus/delegate, background state, animation, geometric transformation (alpha-only state allowed) or hardware objects; unsupported state records and throws UOE"
     },
     "isInTouchMode()Z": {
       "reason": "VD-06b bounded test-container system seam",

@@ -83,6 +83,10 @@ public class Activity extends ContextThemeWrapper {
     public void overridePendingTransition(int enterAnim, int exitAnim) {
     }
 
+    // Window.Callback 时序由 session 编排；不代表 View 树附着。
+    public void onAttachedToWindow() {}
+    public void onDetachedFromWindow() {}
+
     public boolean isFinishing() { return mFinished; }
     public boolean isDestroyed() { return mDestroyed; }
 

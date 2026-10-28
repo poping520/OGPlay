@@ -24,26 +24,22 @@ enum class DexProcessStopReason : std::uint8_t {
 // Minimal API-19 Application startup. Repeated calls for the same descriptor
 // return the process root; a different descriptor or a failed startup is an
 // explicit error and never permits Activity startup to continue.
-[[nodiscard]] runtime::dexvm::VmObjectRef StartDexApplication(
-    runtime::DexVmGuestBridge& bridge,
-    const std::shared_ptr<runtime::DexVmAndroidContext>& context,
-    const std::string& application_descriptor);
+[[nodiscard]] runtime::dexvm::VmObjectRef
+StartDexApplication(runtime::DexVmGuestBridge& bridge, const std::shared_ptr<runtime::DexVmAndroidContext>& context,
+                    const std::string& application_descriptor);
 
 using runtime::DeepTouchDispatchResult;
 using runtime::DispatchDeepTouchEvent;
 
-[[nodiscard]] bool ShouldInterceptScrollGesture(
-    std::int32_t scroll_range, float down_y, float current_y,
-    float density) noexcept;
+[[nodiscard]] bool ShouldInterceptScrollGesture(std::int32_t scroll_range, float down_y, float current_y,
+                                                float density) noexcept;
 
 // Returns whether this frame should draw and consumes one WHEN_DIRTY request.
-[[nodiscard]] bool ConsumeGlSurfaceDrawRequest(
-    runtime::DexVmAndroidContext& context);
+[[nodiscard]] bool ConsumeGlSurfaceDrawRequest(runtime::DexVmAndroidContext& context);
 
 // Real-time video catch-up is bounded; guest time already advanced by a
 // blocking Java call counts towards the elapsed interval.
-[[nodiscard]] std::int64_t VideoClockAdvanceMillis(
-    std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept;
+[[nodiscard]] std::int64_t VideoClockAdvanceMillis(std::uint64_t elapsed_ms, std::int64_t advanced_ms) noexcept;
 
 // dex_activity lifecycle template (docs/design/dexvm/04-integration.md §2):
 // the real interpreted onCreate/onStart/onResume drive the title; the host
@@ -84,8 +80,7 @@ struct DexActivityLifecycleBindings final {
     // existing lifecycle hosts retain source compatibility.
     std::string application_descriptor{"Landroid/app/Application;"};
     std::shared_ptr<runtime::debug::DiagnosticState> diagnostics;
-    std::string
-        launcher_component_name; // Preserves manifest alias identity when present.
+    std::string launcher_component_name;  // Preserves manifest alias identity when present.
     // Owner-thread OS message pump only; must not reenter the guest lifecycle.
     std::function<void()> pump_host_events;
     core::Logger* logger{};
@@ -100,8 +95,7 @@ public:
 
 class DexActivityLifecycle final {
 public:
-    DexActivityLifecycle(DexActivityLifecycleBindings bindings,
-                         std::uint64_t ticks_per_frame = 1'000,
+    DexActivityLifecycle(DexActivityLifecycleBindings bindings, std::uint64_t ticks_per_frame = 1'000,
                          std::uint64_t ticks_per_second = 60'000);
     ~DexActivityLifecycle();
     DexActivityLifecycle(const DexActivityLifecycle&) = delete;
@@ -112,12 +106,10 @@ public:
     [[nodiscard]] LifecycleFrameState Resume();
     [[nodiscard]] LifecycleFrameState StepFrame();
     void SetRealtimeVideoClock(bool enabled) noexcept;
-    [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(
-        runtime::AndroidBoundaryFrame frame);
+    [[nodiscard]] runtime::AndroidBoundaryFrame ComposePresentedFrame(runtime::AndroidBoundaryFrame frame);
     void QueueInput(const runtime::AndroidBoundaryInput& input);
     void CancelInput();
-    [[nodiscard]] LifecycleFrameState Stop(
-        DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
+    [[nodiscard]] LifecycleFrameState Stop(DexProcessStopReason reason = DexProcessStopReason::host_shutdown);
     [[nodiscard]] LifecycleFrameState State() const;
     [[nodiscard]] std::uint64_t TicksPerSecond() const noexcept;
 
@@ -126,9 +118,8 @@ private:
     std::uint64_t submitted_presentation_epoch_{};
     void CallActivity(const std::string& name, const std::string& descriptor,
                       std::vector<runtime::dexvm::VmValue> arguments);
-    runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver,
-                    const std::string& name, const std::string& descriptor,
-                    std::vector<runtime::dexvm::VmValue> arguments);
+    runtime::dexvm::VmValue CallOnView(runtime::dexvm::VmObjectRef receiver, const std::string& name,
+                                       const std::string& descriptor, std::vector<runtime::dexvm::VmValue> arguments);
     void DispatchInput(bool publish_mutations = true);
     void MarkFailed() noexcept;
     // Managed surface lifecycle for guest-implemented SurfaceViews, which
@@ -154,6 +145,7 @@ private:
     void DeliverActivityResults();
     void RestoreActivity(runtime::dexvm::VmObjectRef new_intent = runtime::dexvm::VmObjectRef{});
     void CompleteWindowHandoffs();
+    void AttachActivityWindow();
     void SetActivityWindowVisible(runtime::dexvm::VmObjectRef activity, bool visible);
     void SynchronizeContentView();
     void ReevaluateContentRenderer();
@@ -201,10 +193,12 @@ private:
     // separately from cumulative OnTouchListener consumption.
     bool guest_finalized_{};
     bool stop_completed_{};
+
     struct WindowHandoff final {
         runtime::dexvm::VmObjectRef source{}, target{};
         bool source_started{};
     };
+
     std::vector<WindowHandoff> window_handoffs_;
     // Android delivers onStart/onResume only when the activity does not
     // finish inside onCreate; a never-started activity retires with just

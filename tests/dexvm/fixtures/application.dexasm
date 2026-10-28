@@ -1745,3 +1745,175 @@
     invoke-direct {v0}, Lfixture/TaskActivity;-><init>()V
     return-void
 .end method
+
+# Window.Callback fixture: real Java overrides, including invoke-super defaults.
+.class public Lfixture/WindowAttachmentActivity;
+.super Landroid/app/Activity;
+.field public static trace:I
+.field public static attaches:I
+.field public static detaches:I
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/app/Activity;-><init>()V
+    return-void
+.end method
+.method public static record(I)V
+.registers 2
+    sget v0, Lfixture/WindowAttachmentActivity;->trace:I
+    mul-int/lit8 v0, v0, 10
+    add-int/2addr v0, v1
+    sput v0, Lfixture/WindowAttachmentActivity;->trace:I
+    return-void
+.end method
+.method protected onCreate(Landroid/os/Bundle;)V
+.registers 3
+    const/4 v0, 1
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    return-void
+.end method
+.method protected onStart()V
+.registers 2
+    const/4 v0, 2
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    return-void
+.end method
+.method protected onResume()V
+.registers 2
+    const/4 v0, 3
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    return-void
+.end method
+.method public onAttachedToWindow()V
+.registers 2
+    const/4 v0, 4
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    invoke-super {v1}, Landroid/app/Activity;->onAttachedToWindow()V
+    sget v0, Lfixture/WindowAttachmentActivity;->attaches:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/WindowAttachmentActivity;->attaches:I
+    return-void
+.end method
+.method protected onDestroy()V
+.registers 2
+    const/4 v0, 6
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    return-void
+.end method
+.method public onDetachedFromWindow()V
+.registers 2
+    const/4 v0, 7
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+    invoke-super {v1}, Landroid/app/Activity;->onDetachedFromWindow()V
+    sget v0, Lfixture/WindowAttachmentActivity;->detaches:I
+    add-int/lit8 v0, v0, 1
+    sput v0, Lfixture/WindowAttachmentActivity;->detaches:I
+    return-void
+.end method
+.method public onWindowFocusChanged(Z)V
+.registers 3
+    if-eqz v2, :done
+    const/4 v0, 5
+    invoke-static {v0}, Lfixture/WindowAttachmentActivity;->record(I)V
+:done
+    return-void
+.end method
+.method public static getTrace()I
+.registers 1
+    sget v0, Lfixture/WindowAttachmentActivity;->trace:I
+    return v0
+.end method
+.method public static getAttaches()I
+.registers 1
+    sget v0, Lfixture/WindowAttachmentActivity;->attaches:I
+    return v0
+.end method
+.method public static getDetaches()I
+.registers 1
+    sget v0, Lfixture/WindowAttachmentActivity;->detaches:I
+    return v0
+.end method
+.method public static resetTrace()V
+.registers 1
+    const/4 v0, 0
+    sput v0, Lfixture/WindowAttachmentActivity;->trace:I
+    return-void
+.end method
+
+.class public Lfixture/FrameProbe;
+.super Ljava/lang/Object;
+.implements Landroid/view/Choreographer$FrameCallback;
+.implements Ljava/lang/Runnable;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Ljava/lang/Object;-><init>()V
+    return-void
+.end method
+.method public doFrame(J)V
+.registers 3
+    return-void
+.end method
+.method public run()V
+.registers 1
+    return-void
+.end method
+
+.class public Lfixture/DisplayProbe;
+.super Landroid/view/DisplayEventReceiver;
+.method public constructor <init>(Landroid/os/Looper;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/DisplayEventReceiver;-><init>(Landroid/os/Looper;)V
+    return-void
+.end method
+.method public onVsync(JII)V
+.registers 5
+    return-void
+.end method
+
+.class public Lfixture/AnimationProbe;
+.super Landroid/animation/AnimatorListenerAdapter;
+.implements Landroid/animation/ValueAnimator$AnimatorUpdateListener;
+.method public constructor <init>()V
+.registers 1
+    invoke-direct {v0}, Landroid/animation/AnimatorListenerAdapter;-><init>()V
+    return-void
+.end method
+.method public onAnimationStart(Landroid/animation/Animator;)V
+.registers 2
+    return-void
+.end method
+.method public onAnimationEnd(Landroid/animation/Animator;)V
+.registers 2
+    return-void
+.end method
+.method public onAnimationCancel(Landroid/animation/Animator;)V
+.registers 2
+    return-void
+.end method
+.method public onAnimationUpdate(Landroid/animation/ValueAnimator;)V
+.registers 2
+    return-void
+.end method
+.method public getValue()Ljava/lang/Float;
+.registers 2
+    const v0, 0x3f800000
+    invoke-static {v0}, Ljava/lang/Float;->valueOf(F)Ljava/lang/Float;
+    move-result-object v0
+    return-object v0
+.end method
+.method public setValue(Ljava/lang/Float;)V
+.registers 2
+    return-void
+.end method
+
+.class public Lfixture/AlphaProbe;
+.super Landroid/view/View;
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 2
+    invoke-direct {v0, v1}, Landroid/view/View;-><init>(Landroid/content/Context;)V
+    return-void
+.end method
+.method public setAlpha(F)V
+.registers 2
+    invoke-super {v0, v1}, Landroid/view/View;->setAlpha(F)V
+    return-void
+.end method

@@ -468,6 +468,10 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
               "getTotalOutImpl(J)J", "resetImpl(J)V", "setDictionaryImpl([BIIJ)V",
               "setInputImpl([BIIJ)V"}
     return {
+        "Landroid/view/DisplayEventReceiver;": {
+            "nativeInit(Landroid/view/DisplayEventReceiver;Landroid/os/MessageQueue;)I": 0x10a,
+            "nativeDispose(I)V": 0x10a,
+            "nativeScheduleVsync(I)V": 0x10a},
         "Landroid/app/Activity;": {
             "nativeStartActivityForResult(Landroid/content/Intent;ILandroid/os/Bundle;)V": 0x102,
             "nativeFinish(ILandroid/content/Intent;)V": 0x102},

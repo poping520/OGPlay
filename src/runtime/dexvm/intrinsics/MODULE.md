@@ -107,7 +107,10 @@
   Posix.chmod 未实现权限变化，记账并抛 ErrnoException(ENOSYS)，不得静默成功；
   原版 FileUtils 将该异常转换为 errno，原子文件普通算法仍由 BootDex 执行。
   FileDescriptor 是逻辑身份；FIS/FOS 通过共享 OpenFileDescription 直连 VFS descriptor，
-  同一 FD 的流共享 VFS offset，append 每次写前定位末尾，借用/拥有关闭语义一致，不保存宿主句柄。
+  同一 FD 的流共享 VFS offset，append 交 VFS 原子选择 EOF，借用/拥有关闭语义一致，不保存宿主句柄。
+  Posix 文件入口统一解析 descriptor：非负裸 guest fd 惰性接管，负值 EBADF；close 清为 -1，
+  dup 经 VFS Duplicate 返回独立 fd 并共享 offset。fcntl 仅 F_GETFL 查询与 F_SETFL 未变状态受检，
+  状态变化及其余选择子记账并以 ENOSYS 失败；不扩展 pipe/socket。
   FileChannel 当前受检的 size/position/transferTo/close 复用同一状态；transferTo 以有界缓冲
   复制并恢复源 offset，不用虚假 MappedByteBuffer 冒充文件 mmap。
   RandomAccessFile 的路径/模式、基础字节读写、seek/getFilePointer、length/setLength、FD/channel

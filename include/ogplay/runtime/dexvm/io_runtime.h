@@ -57,9 +57,11 @@ public:
   ReadFile(std::string_view path) const = 0;
   virtual void WriteFile(std::string_view path,
                          std::span<const std::byte> bytes) = 0;
-  [[nodiscard]] virtual std::int32_t OpenHandle(
-      std::string_view path, bool read, bool write, bool create,
-      bool truncate, bool exclusive = false) = 0;
+  [[nodiscard]] virtual std::int32_t OpenHandle(std::string_view path, bool read, bool write, bool create,
+                                                bool truncate, bool exclusive = false, bool append = false) = 0;
+  // API19/Linux open-description flags, obtained from the guest filesystem.
+  [[nodiscard]] virtual std::int32_t HandleFlags(std::int32_t handle) const = 0;
+  [[nodiscard]] virtual std::int32_t DuplicateHandle(std::int32_t handle) = 0;
   [[nodiscard]] virtual IoFileInfo HandleInfo(std::int32_t handle) const = 0;
   [[nodiscard]] virtual std::size_t ReadHandle(
       std::int32_t handle, std::span<std::byte> destination) = 0;
@@ -142,7 +144,13 @@ public:
   [[nodiscard]] const DescriptorState *FindDescriptor(
       VmObjectRef owner) const noexcept;
   void SyncDescriptor(VmObjectRef owner);
-  void CloseDescriptor(VmObjectRef owner) noexcept;
+  void CloseDescriptor(VmObjectRef owner);
+  // Adopt a guest handle without duplicating it or moving its shared offset.
+  DescriptorState& ResolveDescriptor(VmObjectRef owner, std::int32_t handle);
+  void DuplicateDescriptor(VmObjectRef source, VmObjectRef target);
+  void ForgetDescriptor(VmObjectRef owner) noexcept;
+  [[nodiscard]] std::int32_t DescriptorFlags(VmObjectRef owner) const;
+  [[nodiscard]] IoFileInfo DescriptorInfo(VmObjectRef owner) const;
 
   [[nodiscard]] std::shared_ptr<OpenFileDescription>
   OpenFile(std::string path, bool readable, bool writable, bool append,

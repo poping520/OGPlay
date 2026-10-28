@@ -69,8 +69,12 @@ namespace ogplay::runtime::dexvm::intrinsics {
         [[nodiscard]] IoRuntime::DescriptorState& PosixDescriptor(
             IntrinsicContext& call, const VmObjectRef descriptor,
             const std::string_view function) {
-            try { return call.vm.IO().Descriptor(descriptor); }
-            catch (const IoRuntimeError& error) {
+            if (!descriptor.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "fd == null"};
+            const auto& field = ObjectField(call.vm, descriptor, "descriptor", "I");
+            const auto handle = static_cast<std::int32_t>(call.vm.Model().InstanceSlots(descriptor)[field.slot].bits);
+            try {
+                return call.vm.IO().ResolveDescriptor(descriptor, handle);
+            } catch (const IoRuntimeError& error) {
                 ThrowErrno(call.vm, function, error.ErrorNumber(), error.what());
             }
         }
@@ -962,13 +966,63 @@ namespace ogplay::runtime::dexvm::intrinsics {
             posix.VirtualMethod("close", "(Ljava/io/FileDescriptor;)V",
                 [](IntrinsicContext& call) {
                     const auto fd = call.arguments[0].ref;
-                    static_cast<void>(PosixDescriptor(call, fd, "close"));
-                    call.vm.IO().CloseDescriptor(fd);
+                    try {
+                        static_cast<void>(PosixDescriptor(call, fd, "close"));
+                    } catch (const VmJavaThrow&) {
+                        if (fd.IsValid()) SetIntField(call.vm, fd, "descriptor", -1);
+                        throw;
+                    }
                     SetIntField(call.vm, fd, "descriptor", -1);
+                    try {
+                        call.vm.IO().CloseDescriptor(fd);
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "close", error.ErrorNumber(), error.what());
+                    }
                     return VmValue::Void();
                 }, kAccPublic | kAccNative);
+            posix.VirtualMethod(
+                "dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;",
+                [](IntrinsicContext& call) {
+                    const auto original = call.arguments[0].ref;
+                    static_cast<void>(PosixDescriptor(call, original, "dup"));
+                    const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+                    const auto root = call.vm.ProtectReferences(std::array{fd});
+                    try {
+                        call.vm.IO().DuplicateDescriptor(original, fd);
+                        SetIntField(call.vm, fd, "descriptor", call.vm.IO().Descriptor(fd).file->handle);
+                        return VmValue::Ref(fd);
+                    } catch (const IoRuntimeError& error) {
+                        ThrowErrno(call.vm, "dup", error.ErrorNumber(), error.what());
+                    }
+                },
+                kAccPublic | kAccNative);
+            // IoUtils.setBlocking uses F_GETFL/F_SETFL. VFS status is immutable:
+            // accepting an unchanged status is honest; changing it is unsupported.
+            for (const bool with_argument : {false, true}) {
+                posix.VirtualMethod(
+                    with_argument ? "fcntlLong" : "fcntlVoid",
+                    with_argument ? "(Ljava/io/FileDescriptor;IJ)I" : "(Ljava/io/FileDescriptor;I)I",
+                    [with_argument](IntrinsicContext& call) {
+                        const auto fd = call.arguments[0].ref;
+                        static_cast<void>(PosixDescriptor(call, fd, "fcntl"));
+                        const auto cmd = call.arguments[1].AsInt();
+                        try {
+                            const auto flags = call.vm.IO().DescriptorFlags(fd);
+                            if (!with_argument && cmd == 3) return VmValue::Int(flags);
+                            if (with_argument && cmd == 4 && call.arguments[2].AsLong() == flags)
+                                return VmValue::Int(0);
+                        } catch (const IoRuntimeError& error) {
+                            ThrowErrno(call.vm, "fcntl", error.ErrorNumber(), error.what());
+                        }
+                        if (auto* ledger = call.vm.Ledger())
+                            ledger->RecordUnimplemented("dexvm.posix.fcntl." + std::to_string(cmd), 0);
+                        ThrowErrno(call.vm, "fcntl", 38, "fcntl selector or status change is unsupported");
+                    },
+                    kAccPublic | kAccNative);
+            }
             const auto read_bytes = [](IntrinsicContext& call) {
                 const auto fd = call.arguments[0].ref;
+                static_cast<void>(PosixDescriptor(call, fd, "read"));
                 const auto buffer = call.arguments[1].ref;
                 const auto offset = call.arguments[2].AsInt();
                 const auto count = call.arguments[3].AsInt();
@@ -997,6 +1051,7 @@ namespace ogplay::runtime::dexvm::intrinsics {
                 "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I",
                 [](IntrinsicContext& call) {
                     const auto fd = call.arguments[0].ref;
+                    static_cast<void>(PosixDescriptor(call, fd, "write"));
                     const auto buffer = call.arguments[1].ref;
                     const auto offset = call.arguments[2].AsInt();
                     const auto count = call.arguments[3].AsInt();
@@ -1018,9 +1073,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
             posix.VirtualMethod("lseek", "(Ljava/io/FileDescriptor;JI)J",
                 [](IntrinsicContext& call) {
                     const auto fd = call.arguments[0].ref;
+                    static_cast<void>(PosixDescriptor(call, fd, "lseek"));
                     const auto offset = call.arguments[1].AsLong();
                     const auto whence = call.arguments[2].AsInt();
                     try {
+                        if (whence < 0 || whence > 2) throw IoRuntimeError("invalid seek whence", 22);
                         std::uint64_t target{};
                         if (whence == 0) {
                             if (offset < 0) throw IoRuntimeError("negative seek", 22);
@@ -1040,14 +1097,17 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         ThrowErrno(call.vm, "lseek", error.ErrorNumber(), error.what());
                     }
                 }, kAccPublic | kAccNative);
-            posix.VirtualMethod("fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;",
+            posix.VirtualMethod(
+                "fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;",
                 [](IntrinsicContext& call) {
-                    try { return VmValue::Ref(NewStructStat(
-                        call, {call.vm.IO().FileSize(call.arguments[0].ref), false, true})); }
-                    catch (const IoRuntimeError& error) {
+                    static_cast<void>(PosixDescriptor(call, call.arguments[0].ref, "fstat"));
+                    try {
+                        return VmValue::Ref(NewStructStat(call, call.vm.IO().DescriptorInfo(call.arguments[0].ref)));
+                    } catch (const IoRuntimeError& error) {
                         ThrowErrno(call.vm, "fstat", error.ErrorNumber(), error.what());
                     }
-                }, kAccPublic | kAccNative);
+                },
+                kAccPublic | kAccNative);
             posix.VirtualMethod("statvfs", "(Ljava/lang/String;)Llibcore/io/StructStatVfs;",
                 [](IntrinsicContext& call) {
                     const auto path_ref = IntrinsicCall(call).NonNullRef(0, "path");
@@ -1087,26 +1147,33 @@ namespace ogplay::runtime::dexvm::intrinsics {
                         return VmValue::Ref(NewStructStat(call, *info));
                     }, kAccPublic | kAccNative);
             }
-            posix.VirtualMethod("ftruncate", "(Ljava/io/FileDescriptor;J)V",
+            posix.VirtualMethod(
+                "ftruncate", "(Ljava/io/FileDescriptor;J)V",
                 [](IntrinsicContext& call) {
+                    static_cast<void>(PosixDescriptor(call, call.arguments[0].ref, "ftruncate"));
                     const auto size = call.arguments[1].AsLong();
                     if (size < 0) ThrowErrno(call.vm, "ftruncate", 22);
-                    try { call.vm.IO().SetFileSize(
-                        call.arguments[0].ref, static_cast<std::uint64_t>(size)); }
-                    catch (const IoRuntimeError& error) {
+                    try {
+                        call.vm.IO().SetFileSize(call.arguments[0].ref, static_cast<std::uint64_t>(size));
+                    } catch (const IoRuntimeError& error) {
                         ThrowErrno(call.vm, "ftruncate", error.ErrorNumber(), error.what());
                     }
                     return VmValue::Void();
-                }, kAccPublic | kAccNative);
+                },
+                kAccPublic | kAccNative);
             for (const auto* name : {"fsync", "fdatasync"}) {
-                posix.VirtualMethod(name, "(Ljava/io/FileDescriptor;)V",
+                posix.VirtualMethod(
+                    name, "(Ljava/io/FileDescriptor;)V",
                     [name](IntrinsicContext& call) {
-                        try { call.vm.IO().SyncDescriptor(call.arguments[0].ref); }
-                        catch (const IoRuntimeError& error) {
+                        static_cast<void>(PosixDescriptor(call, call.arguments[0].ref, name));
+                        try {
+                            call.vm.IO().SyncDescriptor(call.arguments[0].ref);
+                        } catch (const IoRuntimeError& error) {
                             ThrowErrno(call.vm, name, error.ErrorNumber(), error.what());
                         }
                         return VmValue::Void();
-                    }, kAccPublic | kAccNative);
+                    },
+                    kAccPublic | kAccNative);
             }
             // FileUtils expects a POSIX errno when chmod is unavailable. Do
             // not convert private VFS storage into host permission changes.

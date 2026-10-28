@@ -536,7 +536,7 @@ note = "ADR-0020/SBX-4..10：run-apk 默认按 package 打开持久沙盒，--sa
 [dexvm.file_io_vfs]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp"
-note = "SBX-5、DVM-79/154/217：java.io File 家族、RandomAccessFile、FileChannelImpl 执行 API19 字节码，与 native fopen 共用唯一 VFS、OpenFileDescription 与隔离 descriptor；FileChannel 支持 size/position/transferTo/close，VFS errno 原样透出；Zip 输入由 core ZipRuntime 管理；支持 AtomicFile 提交/回滚。mmap/lock、Posix socket、权限变化与 volume UUID 明确失败。"
+note = "DVM-338：API19 File/流/RAF/FileChannel 与 native 共用唯一 VFS；FileDescriptor.descriptor 为 guest fd，裸 fd 按真实访问模式惰性接管，dup 独立关闭且共享 offset，GC sweep 不关闭。ROM PFD 支持 open/adoptFd/fromFd/dup/detach；Posix close/fstat/lseek/read/write 及 F_GETFL/未变 F_SETFL 受检。pipe/socket、fcntl 状态变化、mmap/lock、权限变化和 volume UUID 明确失败。"
 
 [runtime.preferences_persistence]
 status = "complete"
@@ -1611,7 +1611,7 @@ note = "DVM-133 按 API 19 闭合 ContentResolver 五参 query 的无 provider �
 [dexvm.media_data_sources]
 status = "complete"
 test = "tests/dexvm/file_vfs_tests.cpp; tests/dexvm/file_streams_tests.cpp; tests/dexvm/file_application_storage_tests.cpp; tests/dexvm/file_assets_resources_tests.cpp; tests/dexvm/file_media_descriptors_tests.cpp; tests/dexvm/file_serialization_tests.cpp; tests/dexvm/videoview_tests.cpp; tests/audio/mp3_tests.cpp; tests/audio/java_sound_pool_mixer_tests.cpp; tests/audio/encoded_audio_tests.cpp; tests/audio/encoded_music_tests.cpp; tests/video/ffmpeg_video_player_tests.cpp"
-note = "DVM-91/189、VFS-02、WU-PERF-11：MediaPlayer 每实例数据源，音乐以 Size/ReadAt 拥有型源按不超过 64 KiB 块增量解码 OGG/MP3/WAV，SoundPool 短音效有界整读；VideoView 使用 VFS lease 或 APK STORED raw-resource 的不可变区间，FFmpeg custom AVIO 32 KiB ReadAt/seek，STORED 条目只校验一次 CRC。不提供任意 native fd 与网络 Uri；Windows/Linux 真实视频未验收。"
+note = "DVM-91/189/338、VFS-02：MediaPlayer 每实例增量解码 OGG/MP3/WAV；SoundPool 短音效有界整读。Java/裸 guest VFS fd 均捕获独立区间租约，PFD/AFD 关闭不影响已捕获源；无真实 handle 的平台 apk_entry 沿封存 APK 路径。VideoView/FFmpeg 复用 ReadAt/seek，STORED 条目只校验一次 CRC。host fd、pipe/socket、网络 Uri 不支持；Windows/Linux 真实视频未验收。"
 
 [dexvm.video_view_local]
 status = "partial"

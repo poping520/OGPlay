@@ -161,16 +161,38 @@ void DexVmIoVfsAdapter::WriteFile(const std::string_view path,
   }
 }
 
-std::int32_t DexVmIoVfsAdapter::OpenHandle(
-    const std::string_view path, const bool read, const bool write,
-    const bool create, const bool truncate, const bool exclusive) {
-  try {
-    return file_system_.Open(
-        path, {.read = read, .write = write, .create = create,
-               .truncate = truncate, .exclusive = exclusive});
-  } catch (const VfsError& error) {
-    throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
-  }
+std::int32_t DexVmIoVfsAdapter::OpenHandle(const std::string_view path, const bool read, const bool write,
+                                           const bool create, const bool truncate, const bool exclusive,
+                                           const bool append) {
+    try {
+        return file_system_.Open(path, {.read = read,
+                                        .write = write,
+                                        .create = create,
+                                        .truncate = truncate,
+                                        .append = append,
+                                        .exclusive = exclusive});
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
+std::int32_t DexVmIoVfsAdapter::HandleFlags(const std::int32_t handle) const {
+    try {
+        const auto status = file_system_.DescriptorStatus(handle);
+        return (status.read ? (status.write ? 2 : 0) : 1) | (status.append ? 1024 : 0) |
+               (status.non_blocking ? 2048 : 0) | (status.directory ? 65536 : 0) | (status.large_file ? 32768 : 0) |
+               (status.no_follow ? 131072 : 0);
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
+}
+
+std::int32_t DexVmIoVfsAdapter::DuplicateHandle(const std::int32_t handle) {
+    try {
+        return file_system_.Duplicate(handle);
+    } catch (const VfsError& error) {
+        throw dexvm::IoRuntimeError(error.what(), error.ErrorNumber());
+    }
 }
 
 dexvm::IoFileInfo DexVmIoVfsAdapter::HandleInfo(

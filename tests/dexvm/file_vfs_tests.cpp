@@ -764,3 +764,88 @@ TEST_CASE("File.list distinguishes an empty directory from an invalid path") {
     CHECK_FALSE(vm.CallOn(missing, "list", "()[Ljava/lang/String;")
                     .ref.IsValid());
 }
+
+TEST_CASE("DVM-338 Posix lazily adopts guest descriptors and preserves errno") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend);
+        FileVm vm(nullptr, true, {.backend = backend});
+        const std::array data{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
+        vm.vfs.PutFile("/raw", data, true);
+        const auto native = vm.vfs.Open("/raw", {.read = true, .write = true});
+        const auto fd = vm.interpreter.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+        vm.CallOn(fd, "<init>", "()V");
+        vm.CallOn(fd, "setInt$", "(I)V", {VmValue::Int(native)});
+        const auto posix = vm.interpreter.NewIntrinsicInstance("Llibcore/io/Posix;");
+        const auto buffer = vm.model.NewPrimitiveArray(vm.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 3);
+        const auto roots = vm.interpreter.ProtectReferences(std::array{fd, posix, buffer});
+        CHECK(vm.vfs.Seek(native, 1, VfsSeekWhence::begin) == 1);
+        const auto stat =
+            vm.CallOn(posix, "fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;", {VmValue::Ref(fd)}).ref;
+        REQUIRE(stat.IsValid());
+        const auto* state = vm.interpreter.IO().FindDescriptor(fd);
+        REQUIRE(state != nullptr);
+        REQUIRE(state->file != nullptr);
+        CHECK(state->file->path == "/proc/self/fd/" + std::to_string(native));
+        CHECK(state->file->readable);
+        CHECK(state->file->writable);
+        CHECK(vm.vfs.Seek(native, 0, VfsSeekWhence::current) == 1);
+        vm.interpreter.IO().Sweep(fd);
+        CHECK(vm.CallOn(posix, "readBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I",
+                        {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(1)})
+                  .AsInt() == 1);
+        CHECK(vm.model.ReadByteRegion(buffer, 0, 1)[0] == std::byte{'b'});
+        vm.interpreter.IO().Sweep(fd);
+        CHECK(vm.CallOn(posix, "lseek", "(Ljava/io/FileDescriptor;JI)J",
+                        {VmValue::Ref(fd), VmValue::Long(0), VmValue::Int(0)})
+                  .AsLong() == 0);
+        vm.interpreter.IO().Sweep(fd);
+        CHECK(vm.CallOn(posix, "writeBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I",
+                        {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(1)})
+                  .AsInt() == 1);
+        const auto flags =
+            vm.CallOn(posix, "fcntlVoid", "(Ljava/io/FileDescriptor;I)I", {VmValue::Ref(fd), VmValue::Int(3)}).AsInt();
+        CHECK((flags & 3) == 2);
+        CHECK(vm.CallOn(posix, "fcntlLong", "(Ljava/io/FileDescriptor;IJ)I",
+                        {VmValue::Ref(fd), VmValue::Int(4), VmValue::Long(flags)})
+                  .AsInt() == 0);
+        CHECK(vm.ledger.Unimplemented().empty());
+        const auto unsupported = vm.CallOnOutcome(posix, "fcntlLong", "(Ljava/io/FileDescriptor;IJ)I",
+                                                  {VmValue::Ref(fd), VmValue::Int(4), VmValue::Long(flags | 2048)});
+        REQUIRE(unsupported.exception.IsValid());
+        CHECK(vm.linker.Class(unsupported.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+        const auto flags_after =
+            vm.CallOn(posix, "fcntlVoid", "(Ljava/io/FileDescriptor;I)I", {VmValue::Ref(fd), VmValue::Int(3)}).AsInt();
+        CHECK(flags_after == flags);
+        REQUIRE_FALSE(vm.ledger.Unimplemented().empty());
+        const auto duplicate =
+            vm.CallOn(posix, "dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;", {VmValue::Ref(fd)}).ref;
+        const auto duplicate_root = vm.interpreter.ProtectReferences(std::array{duplicate});
+        const auto dup_handle = vm.CallOn(duplicate, "getInt$", "()I").AsInt();
+        CHECK(dup_handle != native);
+        CHECK(vm.vfs.Seek(dup_handle, 0, VfsSeekWhence::current) == 1);
+        CHECK(vm.vfs.Seek(dup_handle, 1, VfsSeekWhence::current) == 2);
+        CHECK(vm.vfs.Seek(native, 0, VfsSeekWhence::current) == 2);
+        vm.CallOn(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(duplicate)});
+        CHECK(vm.vfs.DescriptorInfo(native).size == data.size());
+        // Collecting the Java FD resource entry must not close its guest handle.
+        vm.interpreter.IO().Sweep(fd);
+        CHECK(vm.vfs.DescriptorInfo(native).size == data.size());
+        vm.CallOn(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+        CHECK(vm.CallOn(fd, "getInt$", "()I").AsInt() == -1);
+        CHECK_THROWS_AS(vm.vfs.Close(native), VfsError);
+        const auto check_bad = [&](const VmCallOutcome& result) {
+            REQUIRE(result.exception.IsValid());
+            CHECK(vm.linker.Class(result.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+            const auto field = vm.linker.FindFieldRecursive(vm.model.ObjectClass(result.exception), "errno", "I");
+            REQUIRE(field.has_value());
+            CHECK(vm.model.InstanceSlots(result.exception)[vm.linker.Field(*field).slot].bits == 9);
+        };
+        check_bad(vm.CallOnOutcome(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)}));
+        check_bad(
+            vm.CallOnOutcome(posix, "fstat", "(Ljava/io/FileDescriptor;)Llibcore/io/StructStat;", {VmValue::Ref(fd)}));
+        check_bad(vm.CallOnOutcome(posix, "lseek", "(Ljava/io/FileDescriptor;JI)J",
+                                   {VmValue::Ref(fd), VmValue::Long(0), VmValue::Int(0)}));
+        check_bad(vm.CallOnOutcome(posix, "readBytes", "(Ljava/io/FileDescriptor;Ljava/lang/Object;II)I",
+                                   {VmValue::Ref(fd), VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(1)}));
+    }
+}

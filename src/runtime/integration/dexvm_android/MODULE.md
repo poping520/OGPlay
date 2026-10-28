@@ -184,7 +184,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   android 仅保留 ThemeId style，其他系统类型及 ^ 内部名记账抛 UOE；系统 Resources 原拒绝边界不变。
   只读 APK/ARSC/AXML，open 返回 ByteArrayInputStream；openFd/raw-resource FD 仅 STORED 文件，
   与 NDK 共用校验/逻辑 FD/区间，错误 IOException/NotFoundException。AssetFileDescriptor.close
-  关 IO 并设 Java descriptor=-1。getText/getString 可覆盖，getString 虚派 getText→CharSequence.toString，
+  虚派原版 PFD.close，getFileDescriptor 同样虚派；PFD 的状态、adopt/fromFd/dup/detach/finalize 归 ROM。
+  平台 apk_entry 无真实 fd，descriptor 固定 -1；宿主构造 PFD 必须经 PFD(FileDescriptor) 构造器。
+  getText/getString 可覆盖，getString 虚派 getText→CharSequence.toString，
   Context 经 getResources 委托；配置/引用选择后字符串读原值，其他 simple value 用
   TypedValue.coerceToString，复杂/null/未知类型/无效引用 NotFoundException；无 spans/完整主题/locale qualifier。
 - 系统 getString/getInteger 每 context 从封存 BootDex 的 META-INF/ogplay/system-resources.json
@@ -216,6 +218,8 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
 - Parcel 协议归 Java，平台提供 VM 隔离 backing/游标/本地 Binder identity，记录为 GC 强边；长度
   先验、含对象拒绝 marshall、无 FD/远程 Binder。Binder 线程策略保存 mask/GATHER 但仅记录；
   StrictMode 只查询/清理无 violation 状态，无检测/violation 编解码，异常编码仍归 Java。
+- Parcel 的 open/dup/close/clearFileDescriptor 经 guest VFS；clear 只解除登记并置 -1，不关闭 fd。
+  nativeWrite/ReadFileDescriptor 仍记账失败；不提供 pipe/socket/跨进程 comm 通道。
 - Log Throwable/getStackTraceString 共用 guest printStackTrace(PrintWriter)，flush 后取字符串、保留
   虚派/异常；null 或 cause 链含 UnknownHostException 子类返回空串，不按消息判断。EventLog 保留
   API19 类型/截断/返回值，无服务时读取失败；均用结构化日志。
@@ -476,7 +480,8 @@ MediaPlayer/VideoView 仅受检资源/路径/逻辑 FD 区间，复用 decoder/m
 播放器；EncodedMusicMixer 按实例、JavaSoundPoolMixer 按池隔离。音乐增量读 window/lease，短音效
 才全量读取；来源原子捕获、关闭 FD 不影响区间、同路径替换不复用旧缓存。STORED 媒体完整 CRC
 校验一次后借 payload，APK 随 context 保活且不变；Deflate 沿逐窗口校验、损坏失败。
-MediaPlayer/SoundPool 的 FileDescriptor：平台登记者沿原来源；其余按 API19 jniGetFDFromFileDescriptor
+MediaPlayer/SoundPool 的 FileDescriptor：无真实 handle 的平台 apk_entry 沿原来源；已登记真实
+handle 与未登记 fd 均按 API19 jniGetFDFromFileDescriptor
 读 int descriptor 为 guest VFS fd（含 NDK AAsset_openFileDescriptor），dup 式租约截取区间，offset≥size/
 无效或非普通文件 IOException、length 截至文件尾。
 

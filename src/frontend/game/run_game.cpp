@@ -67,11 +67,9 @@ std::string PathUtf8(const std::filesystem::path& path) {
     return {reinterpret_cast<const char*>(text.data()), text.size()};
 }
 
-constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{
-    48000U, 2U, hal::AudioSampleFormat::signed_16_le};
+constexpr hal::AudioStreamConfig kDesktopAudioOutputSpec{48000U, 2U, hal::AudioSampleFormat::signed_16_le};
 
-constexpr core::RateLimitPolicy kUnrestrictedLog{
-    .mode = core::RateLimitMode::none};
+constexpr core::RateLimitPolicy kUnrestrictedLog{.mode = core::RateLimitMode::none};
 
 std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary | std::ios::ate);
@@ -79,7 +77,8 @@ std::vector<std::byte> ReadBytes(const std::filesystem::path& path) {
     const auto size = input.tellg();
     if (size <= 0) throw std::runtime_error("input file is empty: " + PathUtf8(path));
     std::vector<std::byte> result(static_cast<std::size_t>(size));
-    input.seekg(0); input.read(reinterpret_cast<char*>(result.data()), size);
+    input.seekg(0);
+    input.read(reinterpret_cast<char*>(result.data()), size);
     if (!input) throw std::runtime_error("input file was truncated: " + PathUtf8(path));
     return result;
 }
@@ -89,13 +88,11 @@ struct OwnedSystemLibrary final {
     std::vector<std::byte> image;
 };
 
-std::vector<OwnedSystemLibrary> ReadSystemLibraries(
-    const std::filesystem::path& directory,
-    const runtime::BionicProfile& profile) {
+std::vector<OwnedSystemLibrary> ReadSystemLibraries(const std::filesystem::path& directory,
+                                                    const runtime::BionicProfile& profile) {
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error) || error) {
-        throw std::runtime_error("bundled Android library directory is unavailable: " +
-                                 PathUtf8(directory));
+        throw std::runtime_error("bundled Android library directory is unavailable: " + PathUtf8(directory));
     }
     std::vector<OwnedSystemLibrary> result;
     for (const auto name : profile.guest_libraries) {
@@ -111,14 +108,11 @@ std::vector<OwnedSystemLibrary> ReadSystemLibraries(
 
 std::string FrameRateTitle(const std::string_view base, const double fps) {
     std::array<char, 32> text{};
-    const auto result = std::to_chars(
-        text.data(), text.data() + text.size(), fps,
-        std::chars_format::fixed, 1);
+    const auto result = std::to_chars(text.data(), text.data() + text.size(), fps, std::chars_format::fixed, 1);
     if (result.ec != std::errc{}) {
         throw std::runtime_error("cannot format window frame rate");
     }
-    return std::string{base} + " · FPS " +
-           std::string{text.data(), result.ptr};
+    return std::string{base} + " · FPS " + std::string{text.data(), result.ptr};
 }
 
 gles::AngleBackend NativeBackend() {
@@ -135,32 +129,24 @@ gles::AngleBackend NativeBackend() {
     throw std::logic_error("unknown configured ANGLE renderer");
 }
 
-[[nodiscard]] bool ProfileEnablesQuirk(
-    const session::TitleProfile& profile, const std::string_view id) {
+[[nodiscard]] bool ProfileEnablesQuirk(const session::TitleProfile& profile, const std::string_view id) {
     return profile.quirks.has_value() &&
-           std::ranges::find(profile.quirks->enabled, id) !=
-               profile.quirks->enabled.end();
+           std::ranges::find(profile.quirks->enabled, id) != profile.quirks->enabled.end();
 }
 
 std::string Utf16ToUtf8(const std::span<const runtime::JniChar> text) {
-    return *core::Utf16ToUtf8(
-        text, core::InvalidUtf16Policy::replace, 0xfffdU);
+    return *core::Utf16ToUtf8(text, core::InvalidUtf16Policy::replace, 0xfffdU);
 }
 
 template <typename Guest>
-void PublishPresentedFrame(agent::FrameSnapshotStore* frames,
-                           runtime::AndroidBoundaryFrame frame,
-                           Guest& guest) {
+void PublishPresentedFrame(agent::FrameSnapshotStore* frames, runtime::AndroidBoundaryFrame frame, Guest& guest) {
     if (frames == nullptr) {
         guest.RecycleFrame(std::move(frame));
         return;
     }
-    auto previous = frames->Publish(
-        {frame.width, frame.height, frame.sequence, std::move(frame.rgba8)});
+    auto previous = frames->Publish({frame.width, frame.height, frame.sequence, std::move(frame.rgba8)});
     if (previous.has_value()) {
-        guest.RecycleFrame(
-            {previous->width, previous->height, previous->sequence,
-             std::move(previous->rgba8)});
+        guest.RecycleFrame({previous->width, previous->height, previous->sequence, std::move(previous->rgba8)});
     }
 }
 
@@ -168,8 +154,7 @@ template <typename Guest>
 void ReleaseCapturedFrame(agent::FrameSnapshotStore* frames, Guest& guest) {
     if (frames == nullptr) return;
     if (auto frame = frames->Take(); frame.has_value()) {
-        guest.RecycleFrame(
-            {frame->width, frame->height, frame->sequence, std::move(frame->rgba8)});
+        guest.RecycleFrame({frame->width, frame->height, frame->sequence, std::move(frame->rgba8)});
     }
 }
 
@@ -181,66 +166,53 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         static_cast<void>(std::fwrite(text.data(), sizeof(char), text.size(), stream));
         static_cast<void>(std::fflush(stream));
     };
-    auto [apk_path, external_directory, external_guest_directory, obb_path,
-          profiles_directory, exit_after_frames, mcp_port, key_editor_port,
-          dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
+    auto [apk_path, external_directory, external_guest_directory, obb_path, profiles_directory, exit_after_frames,
+          mcp_port, key_editor_port, dexvm_interpreter, diagnostic_directory, diagnostic_teardown_timeout,
           diagnostics_enabled, supersample_factor, surface_width, surface_height, cpu_config, mcp_manual_step,
-          preflight, survey_gaps_output, sandbox_directory, installation_id,
-          ephemeral_sandbox, input_config_path, library_root, missing_data_report, window_title] = std::move(options);
+          preflight, survey_gaps_output, sandbox_directory, installation_id, ephemeral_sandbox, input_config_path,
+          library_root, missing_data_report, window_title] = std::move(options);
     const auto bundled_data = HostBundledDataPaths();
     logger.Write(core::LogLevel::info, "frontend.game", "runtime payload selected", {},
                  {{"data_root", PathUtf8(bundled_data.root)}});
-    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(
-        ReadBytes(apk_path));
+    const auto apk_bytes = std::make_shared<const std::vector<std::byte>>(ReadBytes(apk_path));
     const auto archive = loader::ParseApkArchive(*apk_bytes);
-    const auto quirks =
-        session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
+    const auto quirks = session::QuirkRegistry::LoadPackaged(bundled_data.quirk_registry);
     const auto profiles = session::TitleProfileCatalog::LoadDirectory(
         profiles_directory.value_or(bundled_data.profiles_directory), quirks);
     const auto manifest = loader::ReadAndroidManifest(*apk_bytes, archive);
     const auto libraries = loader::ReadApkArmNativeLibraries(*apk_bytes, archive);
     const loader::ApkNativeLibraryInventory native_inventory{libraries};
-    const auto compatibility =
-        session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
+    const auto compatibility = session::SelectApkCompatibilityProfile(manifest, libraries, profiles);
     session::TitleProfile generic_profile;
     generic_profile.schema = 4;
     generic_profile.identity.package = manifest.package;
     constexpr std::uint32_t api_level = 19;
     const auto* selected_profile = compatibility.profile;
-    const auto& profile = selected_profile != nullptr
-                              ? *selected_profile
-                              : generic_profile;
+    const auto& profile = selected_profile != nullptr ? *selected_profile : generic_profile;
     if (obb_path.has_value()) {
         const auto filename = PathUtf8(obb_path->filename());
         const auto suffix = "." + manifest.package + ".obb";
-        const auto prefix_length = filename.starts_with("main.") ? 5U :
-                                   filename.starts_with("patch.") ? 6U : 0U;
-        if (prefix_length == 0U || !filename.ends_with(suffix) ||
-            filename.size() <= prefix_length + suffix.size()) {
-            throw std::invalid_argument(
-                "--obb filename must be main.<version>.<package>.obb or "
-                "patch.<version>.<package>.obb for the APK package");
+        const auto prefix_length = filename.starts_with("main.") ? 5U : filename.starts_with("patch.") ? 6U : 0U;
+        if (prefix_length == 0U || !filename.ends_with(suffix) || filename.size() <= prefix_length + suffix.size()) {
+            throw std::invalid_argument("--obb filename must be main.<version>.<package>.obb or "
+                                        "patch.<version>.<package>.obb for the APK package");
         }
-        const auto version = std::string_view(filename).substr(
-            prefix_length, filename.size() - prefix_length - suffix.size());
-        if (version.empty() || !std::ranges::all_of(version, [](const char ch) {
-                return ch >= '0' && ch <= '9';
-            })) {
+        const auto version =
+            std::string_view(filename).substr(prefix_length, filename.size() - prefix_length - suffix.size());
+        if (version.empty() || !std::ranges::all_of(version, [](const char ch) { return ch >= '0' && ch <= '9'; })) {
             throw std::invalid_argument("--obb filename has an invalid version");
         }
     }
     // Declared before the filesystem so the overlay outlives every node
     // that flushes into it.
     const auto sandbox =
-        OpenSandbox({sandbox_directory, ephemeral_sandbox, installation_id}, manifest.package,
-                    manifest.version_code);
+        OpenSandbox({sandbox_directory, ephemeral_sandbox, installation_id}, manifest.package, manifest.version_code);
     // User key layout (ADR-0134): --input-config, else beside the persistent sandbox; an
     // ephemeral sandbox edits in memory only. A missing file is an empty layout.
     if (!input_config_path.has_value() && sandbox.store != nullptr)
         input_config_path = sandbox.root / (sandbox.installation_id + ".input.toml");
-    auto user_controls = input_config_path.has_value()
-                             ? session::LoadControlOverrideIfPresent(*input_config_path)
-                             : session::ControlLayer{};
+    auto user_controls = input_config_path.has_value() ? session::LoadControlOverrideIfPresent(*input_config_path)
+                                                       : session::ControlLayer{};
     // Input configuration errors (unknown fields, unplaced or oversized zones) stop the
     // launch before the guest starts.
     const auto control_config = session::BuildControlConfig(user_controls);
@@ -250,12 +222,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     }
     runtime::VirtualFileSystem filesystem;
     if (obb_path.has_value()) {
-        filesystem.MountHostFile(
-            runtime::VfsSource::obb,
-            "/sdcard/Android/obb/" + manifest.package, *obb_path);
+        filesystem.MountHostFile(runtime::VfsSource::obb, "/sdcard/Android/obb/" + manifest.package, *obb_path);
     }
-    MountExternalDirectory(external_directory, filesystem,
-                           external_guest_directory);
+    MountExternalDirectory(external_directory, filesystem, external_guest_directory);
     AttachSandbox(sandbox, manifest.package, filesystem, logger);
     filesystem.SetWorkingDirectory("/");
     std::optional<MissingDataRecorder> missing_data;
@@ -263,35 +232,29 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         missing_data.emplace(filesystem, logger, *missing_data_report, external_directory,
                              external_guest_directory.value_or("/sdcard"));
     const auto& bionic = runtime::SelectBionicProfile(api_level);
-    const auto system_directory =
-        bundled_data.root / bionic.data_directory / "lib";
+    const auto system_directory = bundled_data.root / bionic.data_directory / "lib";
     const auto owned_system = ReadSystemLibraries(system_directory, bionic);
     std::vector<runtime::BionicModuleSource> system_sources;
     system_sources.reserve(owned_system.size());
     for (const auto& source : owned_system) {
         system_sources.push_back({source.name, source.image});
     }
-    const auto process_abi = native_inventory.Empty()
-                                 ? std::optional<loader::AndroidArmAbi>{}
-                                 : std::optional{loader::ResolveApkProcessAbi(
-                                       native_inventory)};
-    logger.Write(
-        core::LogLevel::info, "frontend.run_apk", "APK startup facts selected", {},
-        {{"package", manifest.package},
-         {"profile", selected_profile != nullptr
-                         ? profile.identity.package
-                         : "none"},
-         {"api_level", static_cast<std::uint64_t>(api_level)},
-         {"lifecycle", std::string("dex_activity")},
-         {"surface_width", static_cast<std::uint64_t>(surface_width)},
-         {"surface_height", static_cast<std::uint64_t>(surface_height)},
-         {"native_libraries", static_cast<std::uint64_t>(
-                                  native_inventory.Libraries().size())}},
-        kUnrestrictedLog);
+    const auto process_abi = native_inventory.Empty() ? std::optional<loader::AndroidArmAbi>{}
+                                                      : std::optional{loader::ResolveApkProcessAbi(native_inventory)};
+    logger.Write(core::LogLevel::info, "frontend.run_apk", "APK startup facts selected", {},
+                 {{"package", manifest.package},
+                  {"profile", selected_profile != nullptr ? profile.identity.package : "none"},
+                  {"api_level", static_cast<std::uint64_t>(api_level)},
+                  {"lifecycle", std::string("dex_activity")},
+                  {"surface_width", static_cast<std::uint64_t>(surface_width)},
+                  {"surface_height", static_cast<std::uint64_t>(surface_height)},
+                  {"native_libraries", static_cast<std::uint64_t>(native_inventory.Libraries().size())}},
+                 kUnrestrictedLog);
     if (preflight) {
         runtime::AndroidImportAudit audit;
-        if (process_abi) audit = runtime::AuditAndroidNativeImports(
-            loader::ApkSelectedNativeLibraries(native_inventory, *process_abi), bionic, system_sources);
+        if (process_abi)
+            audit = runtime::AuditAndroidNativeImports(
+                loader::ApkSelectedNativeLibraries(native_inventory, *process_abi), bionic, system_sources);
         for (const auto& gap : audit.gaps) {
             Write("OGPlay: preflight import: library=" + gap.library +
                   " referenced=" + (gap.relocation_referenced ? "true" : "false") +
@@ -310,34 +273,27 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
               " weak_missing=" + std::to_string(audit.weak_missing) +
               " unused_strong_missing=" + std::to_string(audit.unused_strong_missing) +
               " unused_weak_missing=" + std::to_string(audit.unused_weak_missing) + "\n");
-        logger.Write(audit.strong_missing ? core::LogLevel::error : core::LogLevel::info,
-            "frontend.preflight", "native import audit completed", {},
-            {{"strong_missing", static_cast<std::uint64_t>(audit.strong_missing)},
-             {"weak_missing", static_cast<std::uint64_t>(audit.weak_missing)}}, kUnrestrictedLog);
+        logger.Write(audit.strong_missing ? core::LogLevel::error : core::LogLevel::info, "frontend.preflight",
+                     "native import audit completed", {},
+                     {{"strong_missing", static_cast<std::uint64_t>(audit.strong_missing)},
+                      {"weak_missing", static_cast<std::uint64_t>(audit.weak_missing)}},
+                     kUnrestrictedLog);
         if (audit.strong_missing) return 1;
-        Write("OGPlay: preflight ready: package=" + manifest.package +
-              " rootless=true abi=" +
-              (process_abi.has_value()
-                   ? std::string(loader::ToString(*process_abi))
-                   : std::string("none")) +
-              " api=" + std::to_string(api_level) +
-              " lifecycle=" + std::string("dex_activity") +
+        Write("OGPlay: preflight ready: package=" + manifest.package + " rootless=true abi=" +
+              (process_abi.has_value() ? std::string(loader::ToString(*process_abi)) : std::string("none")) +
+              " api=" + std::to_string(api_level) + " lifecycle=" + std::string("dex_activity") +
               " native=" + std::to_string(native_inventory.Libraries().size()) +
-              " surface=" +
-              std::to_string(surface_width) + "x" +
-              std::to_string(surface_height) + " profile=" +
-              (selected_profile != nullptr ? profile.identity.package
-                                           : "none") +
-              " sandbox=" +
-              sandbox.Describe() + "\n");
+              " surface=" + std::to_string(surface_width) + "x" + std::to_string(surface_height) +
+              " profile=" + (selected_profile != nullptr ? profile.identity.package : "none") +
+              " sandbox=" + sandbox.Describe() + "\n");
         return 0;
     }
     std::unique_ptr<agent::FrameSnapshotStore> mcp_frames;
     std::unique_ptr<agent::McpInputQueue> mcp_inputs;
     std::unique_ptr<agent::McpSessionControl> mcp_session;
     auto diagnostic_state = (diagnostics_enabled || mcp_port.has_value())
-        ? std::make_shared<runtime::debug::DiagnosticState>()
-        : std::shared_ptr<runtime::debug::DiagnosticState>{};
+                                ? std::make_shared<runtime::debug::DiagnosticState>()
+                                : std::shared_ptr<runtime::debug::DiagnosticState>{};
     // The key editor reads presented frames too (control.frame), so frame and input stores
     // exist in every windowed session; only MCP adds the session control.
     mcp_frames = std::make_unique<agent::FrameSnapshotStore>();
@@ -349,7 +305,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     window->Open({.title = base_title + " · FPS --",
                   .width = surface_width,
                   .height = surface_height,
-                  .hidden = mcp_manual_step, .resizable = true});
+                  .hidden = mcp_manual_step,
+                  .resizable = true});
     logger.Write(
         core::LogLevel::info, "frontend.run_apk", "SDL window opened", {},
         {{"hidden", mcp_manual_step},
@@ -364,13 +321,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
     std::uint32_t guest_width = surface_width;
     std::uint32_t guest_height = surface_height;
     hal::RealtimeClock frame_rate_clock;
-    hal::FrameRateSampler frame_rate{
-        frame_rate_clock.TicksPerSecond(),
-        frame_rate_clock.TicksPerSecond() / 2U};
+    hal::FrameRateSampler frame_rate{frame_rate_clock.TicksPerSecond(), frame_rate_clock.TicksPerSecond() / 2U};
     const auto update_frame_rate = [&] {
-        if (const auto fps = frame_rate.Observe(
-                presented, frame_rate_clock.Ticks());
-            fps.has_value()) {
+        if (const auto fps = frame_rate.Observe(presented, frame_rate_clock.Ticks()); fps.has_value()) {
             window->SetTitle(FrameRateTitle(base_title, *fps));
         }
     };
@@ -382,20 +335,17 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         {
             dex_context = runtime::AssembleAndroidContext(
                 ReadBytes(bundled_data.root / bionic.data_directory / "framework" / "bootdex.jar"), {true});
-            dex_context->native_output_sample_rate =
-                kDesktopAudioOutputSpec.sample_rate;
+            dex_context->native_output_sample_rate = kDesktopAudioOutputSpec.sample_rate;
             dex_context->apk_bytes = *apk_bytes;
             dex_context->archive = archive;
-            const auto arsc_bytes =
-                loader::ReadApkEntry(*apk_bytes, archive, "resources.arsc");
-            dex_context->arsc = loader::ParseArsc(std::span(
-                reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()),
-                arsc_bytes.size()));
+            const auto arsc_bytes = loader::ReadApkEntry(*apk_bytes, archive, "resources.arsc");
+            dex_context->arsc = loader::ParseArsc(
+                std::span(reinterpret_cast<const std::uint8_t*>(arsc_bytes.data()), arsc_bytes.size()));
             dex_context->package_name = manifest.package;
             dex_context->surface_width = surface_width;
             dex_context->surface_height = surface_height;
-            dex_context->api_level =
-                static_cast<std::int32_t>(api_level);
+            dex_context->host_display_sleep_inhibited = window->State().display_sleep_inhibited;
+            dex_context->api_level = static_cast<std::int32_t>(api_level);
             // Java File/streams resolve through the same guest VFS as
             // native fopen (external mounts, /apk assets).
             dex_context->vfs = &filesystem;
@@ -403,20 +353,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             // its self-check passed; otherwise opening a video records the gap
             // and the guest receives an explicit error (ADR-0136).
             if (video::FfmpegAvailable()) {
-                dex_context->video_source_player_factory =
-                    [realtime = !mcp_manual_step](auto source) {
-                        auto player = video::OpenFfmpegVideo(std::move(source));
-                        return realtime ? video::MakeBufferedVideoPlayer(std::move(player))
-                                        : std::move(player);
-                    };
+                dex_context->video_source_player_factory = [realtime = !mcp_manual_step](auto source) {
+                    auto player = video::OpenFfmpegVideo(std::move(source));
+                    return realtime ? video::MakeBufferedVideoPlayer(std::move(player)) : std::move(player);
+                };
             } else {
-                logger.Write(
-                    core::LogLevel::warn, "frontend.run_apk",
-                    "video decoding is unavailable: " +
-                        video::FfmpegUnavailableReason(),
-                    {}, {}, kUnrestrictedLog);
+                logger.Write(core::LogLevel::warn, "frontend.run_apk",
+                             "video decoding is unavailable: " + video::FfmpegUnavailableReason(), {}, {},
+                             kUnrestrictedLog);
             }
-
         }
         std::unique_ptr<hal::AudioOutput> audio_output;
         std::unique_ptr<session::AudioOutputPump> audio_pump;
@@ -429,12 +374,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         RunApkGuestCallProgress call_progress{logger};
         HostEventThreadGate event_thread_gate;
         constexpr std::uint64_t kGuestCallEventPumpHz = 250U;
-        HostEventPumpGate pump_gate{
-            frame_rate_clock.TicksPerSecond() / kGuestCallEventPumpHz};
+        HostEventPumpGate pump_gate{frame_rate_clock.TicksPerSecond() / kGuestCallEventPumpHz};
         const auto runtime_progress = [&logger](const std::string_view stage) {
-            logger.Write(
-                core::LogLevel::info, "runtime.guest_session", stage, {}, {},
-                kUnrestrictedLog);
+            logger.Write(core::LogLevel::info, "runtime.guest_session", stage, {}, {}, kUnrestrictedLog);
         };
         const auto pump_host_events = [&] {
             // DexVM Java threads reuse the native guest-call observer. SDL
@@ -460,14 +402,13 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             std::function<session::LifecycleFrameState()> step;
             std::function<session::LifecycleFrameState(session::DexProcessStopReason)> stop;
             std::function<session::LifecycleFrameState()> state;
-            std::function<void(const runtime::AndroidBoundaryInput&)>
-                queue_input;
+            std::function<void(const runtime::AndroidBoundaryInput&)> queue_input;
             std::function<void()> cancel_input;
         };
+
         LifecycleDriver driver;
         core::CapabilityLedger dexvm_ledger;
-        const auto dex_entry =
-            loader::ReadApkEntry(*apk_bytes, archive, "classes.dex");
+        const auto dex_entry = loader::ReadApkEntry(*apk_bytes, archive, "classes.dex");
         std::vector<std::uint8_t> dex_bytes(dex_entry.size());
         std::memcpy(dex_bytes.data(), dex_entry.data(), dex_entry.size());
         const auto boot_entry =
@@ -477,27 +418,23 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         runtime::DexVmBridgeConfig bridge_config;
         if (dexvm_interpreter.has_value()) {
             bridge_config.interpreter.backend = *dexvm_interpreter == app::InterpreterBackend::threaded
-                ? runtime::dexvm::InterpreterBackend::threaded : runtime::dexvm::InterpreterBackend::switch_dispatch;
+                                                    ? runtime::dexvm::InterpreterBackend::threaded
+                                                    : runtime::dexvm::InterpreterBackend::switch_dispatch;
         }
-        if (diagnostic_state &&
-            bridge_config.interpreter.diagnostics.trace_capacity == 0U) {
+        if (diagnostic_state && bridge_config.interpreter.diagnostics.trace_capacity == 0U) {
             bridge_config.interpreter.diagnostics.trace_capacity = 256U;
         }
-        const std::string backend_source = dexvm_interpreter.has_value()
-                                               ? "command_line"
-                                               : "default";
+        const std::string backend_source = dexvm_interpreter.has_value() ? "command_line" : "default";
         logger.Write(
-            core::LogLevel::info, "frontend.run_apk",
-            "DexVM interpreter selected", {},
-            {{"backend",
-              bridge_config.interpreter.backend ==
-                      runtime::dexvm::InterpreterBackend::threaded
-                  ? "threaded"
-                  : "switch"},
+            core::LogLevel::info, "frontend.run_apk", "DexVM interpreter selected", {},
+            {{"backend", bridge_config.interpreter.backend == runtime::dexvm::InterpreterBackend::threaded ? "threaded"
+                                                                                                           : "switch"},
              {"source", backend_source}},
             kUnrestrictedLog);
         session::AndroidAppProcessRequest app_request;
-        app_request.proc_facts.cpu = {cpu_config.cores, cpu_config.frequency_mhz,
+        app_request.proc_facts.cpu = {
+            cpu_config.cores,
+            cpu_config.frequency_mhz,
             {cpu_config.execution.limit_parallelism, cpu_config.execution.max_mticks_per_second}};
         app_request.manifest = manifest;
         app_request.native_libraries = libraries;
@@ -507,13 +444,11 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.skeleton_bytes.resize(skeleton.size());
         std::memcpy(app_request.skeleton_bytes.data(), skeleton.data(), skeleton.size());
         app_request.dex_bytes = std::move(dex_bytes);
-        app_request.icu_data = ReadBytes(
-            bundled_data.root / bionic.data_directory / "icu" /
-            "icudt51l.dat");
-        app_request.tzdata = ReadBytes(
-            bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
+        app_request.icu_data = ReadBytes(bundled_data.root / bionic.data_directory / "icu" / "icudt51l.dat");
+        app_request.tzdata = ReadBytes(bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
-        app_request.ui_fallback_font = ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
+        app_request.ui_fallback_font =
+            ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
         app_request.api_level = api_level;
         app_request.surface_width = surface_width;
         app_request.surface_height = surface_height;
@@ -521,41 +456,31 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.backend = NativeBackend();
         app_request.filesystem = &filesystem;
         app_request.progress = runtime_progress;
-        app_request.boundary_options = {
-            .allow_gles1_material_single_face = ProfileEnablesQuirk(
-                profile, "gles1_material_front_face"),
-            .async_present_readback = !mcp_manual_step};
+        app_request.boundary_options = {.allow_gles1_material_single_face =
+                                            ProfileEnablesQuirk(profile, "gles1_material_front_face"),
+                                        .async_present_readback = !mcp_manual_step};
         app_request.guest_call_slice_observer = guest_slice_observer;
         app_request.guest_call_slice_observer_thread = std::this_thread::get_id();
-        app_request.platform = {
-            .installation_id = sandbox.installation_id,
-            .android_id = sandbox.android_id,
-            .version_name = manifest.version_name.value_or("unknown")};
+        app_request.platform = {.installation_id = sandbox.installation_id,
+                                .android_id = sandbox.android_id,
+                                .version_name = manifest.version_name.value_or("unknown")};
         app_request.dexvm = bridge_config;
         app_request.ledger = &dexvm_ledger;
         app_request.logger = &logger;
         app_request.diagnostics = diagnostic_state;
-        app_request.configure_dex_vm =
-            [&, dex_context](runtime::dexvm::Interpreter& vm) {
-                vm.Monitors().SetTimeSource([dex_context] {
-                    return dex_context->uptime_millis.load();
-                });
-                if (survey_gaps_output.has_value()) {
-                    vm.Linker().EnableGapSurvey([dex_context] {
-                        return dex_context->uptime_millis.load();
-                    });
-                    Write("OGPlay: GAP SURVEY RUN — called unimplemented members and "
-                          "unresolved platform classes answer neutrally and are "
-                          "recorded (API19 skeleton stays active). This is a "
-                          "diagnostic work queue, not a compatibility result.\n");
-                    logger.Write(core::LogLevel::warn, "frontend.run_apk",
-                                 "gap survey enabled; run is diagnostic only",
-                                 {}, {}, kUnrestrictedLog);
-                }
-            };
-        app_request.host.flush_persistent_state = [&filesystem] {
-            filesystem.FlushAll();
+        app_request.configure_dex_vm = [&, dex_context](runtime::dexvm::Interpreter& vm) {
+            vm.Monitors().SetTimeSource([dex_context] { return dex_context->uptime_millis.load(); });
+            if (survey_gaps_output.has_value()) {
+                vm.Linker().EnableGapSurvey([dex_context] { return dex_context->uptime_millis.load(); });
+                Write("OGPlay: GAP SURVEY RUN — called unimplemented members and "
+                      "unresolved platform classes answer neutrally and are "
+                      "recorded (API19 skeleton stays active). This is a "
+                      "diagnostic work queue, not a compatibility result.\n");
+                logger.Write(core::LogLevel::warn, "frontend.run_apk", "gap survey enabled; run is diagnostic only", {},
+                             {}, kUnrestrictedLog);
+            }
         };
+        app_request.host.flush_persistent_state = [&filesystem] { filesystem.FlushAll(); };
         app_request.host.pump_host_events = pump_host_events;
         app_request.host.before_guest_shutdown = [&] {
             if (audio_pump) {
@@ -563,31 +488,22 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 audio_pump->RethrowWorkerFailure();
             }
         };
-        app_request.host.before_process_stop = [&] {
-            call_progress.Begin(active_frame, 0U);
-        };
-        auto app_process = session::AndroidAppProcess::Create(
-            std::move(app_request));
+        app_request.host.before_process_stop = [&] { call_progress.Begin(active_frame, 0U); };
+        auto app_process = session::AndroidAppProcess::Create(std::move(app_request));
         std::shared_ptr<runtime::debug::DiagCoordinator> diagnostic_coordinator;
         if (diagnostics_enabled && diagnostic_state) {
             diagnostic_coordinator = runtime::debug::DiagCoordinator::Start(
-                diagnostic_state,
-                {.output_directory = diagnostic_directory,
-                 .teardown_timeout = diagnostic_teardown_timeout,
-                 .logger = &logger});
-            Write("OGPlay: diagnostics ready; control=" +
-                  PathUtf8(diagnostic_coordinator->ControlFile()) + "\n");
+                diagnostic_state, {.output_directory = diagnostic_directory,
+                                   .teardown_timeout = diagnostic_teardown_timeout,
+                                   .logger = &logger});
+            Write("OGPlay: diagnostics ready; control=" + PathUtf8(diagnostic_coordinator->ControlFile()) + "\n");
             if (mcp_session) {
-                std::weak_ptr<runtime::debug::DiagCoordinator> weak =
-                    diagnostic_coordinator;
+                std::weak_ptr<runtime::debug::DiagCoordinator> weak = diagnostic_coordinator;
                 mcp_session->SetDiagnosticSnapshotHandler([weak] {
                     const auto coordinator = weak.lock();
                     if (!coordinator) return std::optional<std::string>{};
-                    const auto files = coordinator->RequestSnapshotAndWait(
-                        "mcp", std::chrono::seconds(5));
-                    return files
-                        ? std::optional<std::string>{PathUtf8(files->json)}
-                        : std::optional<std::string>{};
+                    const auto files = coordinator->RequestSnapshotAndWait("mcp", std::chrono::seconds(5));
+                    return files ? std::optional<std::string>{PathUtf8(files->json)} : std::optional<std::string>{};
                 });
             }
         }
@@ -621,40 +537,52 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         std::optional<std::string> editor_url;
         const auto announce_editor = [&] {
             editor_url = "http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/controls/";
-            if (!control_page) Write("OGPlay: key editor page missing (build webui); RPC at " + *editor_url + "rpc" +
-                                     (generated_token ? " token=" + control_token : std::string{}) + "\n");
-            else if (generated_token) Write("OGPlay: key editor at " + *editor_url + "#token=" + control_token + "\n");
-            else Write("OGPlay: key editor at " + *editor_url + " (token from launcher)\n");
+            if (!control_page)
+                Write("OGPlay: key editor page missing (build webui); RPC at " + *editor_url + "rpc" +
+                      (generated_token ? " token=" + control_token : std::string{}) + "\n");
+            else if (generated_token)
+                Write("OGPlay: key editor at " + *editor_url + "#token=" + control_token + "\n");
+            else
+                Write("OGPlay: key editor at " + *editor_url + " (token from launcher)\n");
         };
         if (mcp_port) {
             agent::DashboardSources sources;
-            sources.metadata = {{"package", manifest.package}, {"installation_id", sandbox.installation_id},
-                {"profile", selected_profile ? profile.identity.package : "generic"},
-                {"api_level", std::to_string(api_level)}, {"supersample", std::to_string(supersample_factor)},
-                {"mode", mcp_manual_step ? "manual-step" : "free-running"},
-                {"ffmpeg_available", video::FfmpegAvailable() ? "true" : "false"},
-                {"ffmpeg_reason", video::FfmpegUnavailableReason()}};
-            sources.diagnostics = diagnostic_state.get(); sources.session = mcp_session.get();
-            sources.logger = &logger; sources.ledger = &dexvm_ledger;
+            sources.metadata = {{"package", manifest.package},
+                                {"installation_id", sandbox.installation_id},
+                                {"profile", selected_profile ? profile.identity.package : "generic"},
+                                {"api_level", std::to_string(api_level)},
+                                {"supersample", std::to_string(supersample_factor)},
+                                {"mode", mcp_manual_step ? "manual-step" : "free-running"},
+                                {"ffmpeg_available", video::FfmpegAvailable() ? "true" : "false"},
+                                {"ffmpeg_reason", video::FfmpegUnavailableReason()}};
+            sources.diagnostics = diagnostic_state.get();
+            sources.session = mcp_session.get();
+            sources.logger = &logger;
+            sources.ledger = &dexvm_ledger;
             sources.dexvm = [&] { return app_process->DexVm().Vm().TrySnapshot(); };
             sources.jni = [&] { return app_process->NativeProcess().Environment().TrySnapshot(); };
             sources.memory = [&] { return app_process->NativeProcess().TryMemorySnapshot(); };
             sources.cpu = [&] { return app_process->NativeProcess().TryCpuSnapshot(); };
-            sources.gpu_errors_available = true; // Per-call boundary-reported GL errors.
+            sources.gpu_errors_available = true;  // Per-call boundary-reported GL errors.
             sources.gpu = [&] { return app_process->NativeProcess().TryStats(); };
             sources.filesystem = [&] { return filesystem.TrySnapshot(); };
-            sources.audio = [&] { return runtime::TrySnapshotAndroidAudioTracks(app_process->DexVm().Vm(), *app_process->Context()); };
-            sources.ui = [&] { return runtime::TrySnapshotAndroidUi(app_process->DexVm().Vm(), *app_process->Context()); };
+            sources.audio = [&] {
+                return runtime::TrySnapshotAndroidAudioTracks(app_process->DexVm().Vm(), *app_process->Context());
+            };
+            sources.ui = [&] {
+                return runtime::TrySnapshotAndroidUi(app_process->DexVm().Vm(), *app_process->Context());
+            };
             sources.video = [&] { return runtime::TrySnapshotAndroidVideo(*app_process->Context()); };
-            if (app_process->NativeLibraries()) sources.libraries = [&] { return app_process->NativeLibraries()->TrySnapshot(); };
-            DashboardHttpConfig dashboard{
-                std::make_shared<agent::DashboardService>(std::move(sources)),
-                bundled_data.root / "webui" / "dashboard"};
+            if (app_process->NativeLibraries())
+                sources.libraries = [&] { return app_process->NativeLibraries()->TrySnapshot(); };
+            DashboardHttpConfig dashboard{std::make_shared<agent::DashboardService>(std::move(sources)),
+                                          bundled_data.root / "webui" / "dashboard"};
             if (mcp_manual_step || diagnostics_enabled)
-                mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session, std::move(dashboard),
-                                                  control_http());
-            else mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard),
-                                                   control_http());
+                mcp_server = McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, *mcp_session,
+                                                  std::move(dashboard), control_http());
+            else
+                mcp_server =
+                    McpHttpServer::Start(*mcp_port, *mcp_frames, *mcp_inputs, std::move(dashboard), control_http());
             Write("OGPlay: MCP ready at " + mcp_server->Endpoint() + "\n");
             Write("OGPlay: Dashboard ready at http://127.0.0.1:" + std::to_string(mcp_server->Port()) + "/dash/\n");
             announce_editor();
@@ -667,9 +595,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             exit_state.java_exit_code = app_process->DexVm().Vm().ExitCode();
             exit_state.native_exit_code = guest->NativeExitCode();
             exit_state.termination_signal = guest->NativeTerminationSignal();
-            exit_state.guest_exit = guest->ExitRequested() ||
-                runtime::SessionExitRequested(*dex_context) || exit_state.java_exit_code.has_value() ||
-                exit_state.native_exit_code.has_value() || exit_state.termination_signal.has_value();
+            exit_state.guest_exit = guest->ExitRequested() || runtime::SessionExitRequested(*dex_context) ||
+                                    exit_state.java_exit_code.has_value() || exit_state.native_exit_code.has_value() ||
+                                    exit_state.termination_signal.has_value();
         };
         auto* dex_lifecycle = &app_process->ActivityLifecycle();
         dex_lifecycle->SetRealtimeVideoClock(!mcp_manual_step);
@@ -683,9 +611,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                       [&] { return dex_lifecycle->StepFrame(); },
                       [&](const session::DexProcessStopReason reason) { return app_process->Stop(reason); },
                       [&] { return dex_lifecycle->State(); },
-                      [&](const runtime::AndroidBoundaryInput& input) {
-                          dex_lifecycle->QueueInput(input);
-                      }, [&] { dex_lifecycle->CancelInput(); }};
+                      [&](const runtime::AndroidBoundaryInput& input) { dex_lifecycle->QueueInput(input); },
+                      [&] { dex_lifecycle->CancelInput(); }};
         }
         // Written before rethrowing: a survey run usually ends on the first
         // gap that no stub can paper over, and that harvest is exactly what
@@ -695,14 +622,11 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (!survey_gaps_output.has_value()) return;
             const auto hits = app_process->DexVm().Linker().GapSurveyHits();
             std::ofstream report(*survey_gaps_output, std::ios::binary);
-            report << runtime::dexvm::RenderGapSurveyJson(
-                hits, PathUtf8(apk_path.filename()));
-            Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) +
-                  " entries to " + survey_gaps_output->string() + "\n");
+            report << runtime::dexvm::RenderGapSurveyJson(hits, PathUtf8(apk_path.filename()));
+            Write("OGPlay: gap survey wrote " + std::to_string(hits.size()) + " entries to " +
+                  survey_gaps_output->string() + "\n");
         };
-        logger.Write(core::LogLevel::info, "frontend.run_apk",
-                     "starting Activity lifecycle", {}, {},
-                     kUnrestrictedLog);
+        logger.Write(core::LogLevel::info, "frontend.run_apk", "starting Activity lifecycle", {}, {}, kUnrestrictedLog);
         try {
             static_cast<void>(driver.start());
         } catch (...) {
@@ -712,24 +636,17 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         }
         if (audio_output) {
             audio_pump = std::make_unique<session::AudioOutputPump>(
-                [guest](const std::span<std::int16_t> output,
-                        const std::uint32_t rate) {
+                [guest](const std::span<std::int16_t> output, const std::uint32_t rate) {
                     return guest->RenderStereoAudio(output, rate);
                 },
-                audio_output.get(), kDesktopAudioOutputSpec.sample_rate,
-                kDesktopAudioOutputSpec.channels,
-                [guest] {
-                    static_cast<void>(
-                        guest->PcmPlayback().InterruptBlockingWaits());
-                });
+                audio_output.get(), kDesktopAudioOutputSpec.sample_rate, kDesktopAudioOutputSpec.channels,
+                [guest] { static_cast<void>(guest->PcmPlayback().InterruptBlockingWaits()); });
             if (mcp_manual_step) {
-                audio_pump->StartManual([guest] {
-                    return guest->PcmPlayback().BlockingWriterCount() != 0U;
-                });
-            } else audio_pump->StartRealtime();
+                audio_pump->StartManual([guest] { return guest->PcmPlayback().BlockingWriterCount() != 0U; });
+            } else
+                audio_pump->StartRealtime();
         }
-        agent::McpLifecycleState mcp_lifecycle{
-            agent::McpLifecycleState::running};
+        agent::McpLifecycleState mcp_lifecycle{agent::McpLifecycleState::running};
         std::optional<std::string> guest_fault;
         std::exception_ptr failure;
         std::uint64_t permitted_steps{};
@@ -749,17 +666,15 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 snapshot.presented_frame = frame->sequence;
             }
             if (const auto movie = guest->LatestMovieRequest(); movie) {
-                snapshot.movie_request = agent::McpMovieRequestSnapshot{
-                    movie->sequence, Utf16ToUtf8(movie->name)};
+                snapshot.movie_request = agent::McpMovieRequestSnapshot{movie->sequence, Utf16ToUtf8(movie->name)};
             }
             mcp_session->Publish(std::move(snapshot));
         };
         bool host_background = false;
         bool host_suspended_session = false;
         publish_session();
-        Write(mcp_manual_step
-                  ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
-                  : "OGPlay: APK guest execution started; close the window to stop.\n");
+        Write(mcp_manual_step ? "OGPlay: APK guest execution started in MCP manual-step mode.\n"
+                              : "OGPlay: APK guest execution started; close the window to stop.\n");
         // F1 hints are drawn on a host copy; the guest frame and MCP/editor snapshots stay clean.
         HostShortcutFilter host_keys;
         bool hints_visible{};
@@ -778,24 +693,24 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 const auto now = hal::Clock::SteadyTimestampNs();
                 if (launcher_seen_ns != 0 && now - launcher_seen_ns < kLauncherPollWindowNs) {
                     ++edit_requests;
-                    logger.Write(core::LogLevel::info, "frontend.run_apk.key_editor", "key editor requested from the launcher",
-                                 {}, {{"requests", edit_requests}}, kUnrestrictedLog);
+                    logger.Write(core::LogLevel::info, "frontend.run_apk.key_editor",
+                                 "key editor requested from the launcher", {}, {{"requests", edit_requests}},
+                                 kUnrestrictedLog);
                     return;
                 }
                 hal::OpenUrlInBrowser(*editor_url + "#token=" + control_token);
                 logger.Write(core::LogLevel::info, "frontend.run_apk.key_editor", "key editor opened in the browser",
                              {}, {}, kUnrestrictedLog);
             } catch (const std::exception& error) {
-                logger.Write(core::LogLevel::error, "frontend.run_apk.key_editor", "cannot open the key editor",
-                             {}, {{"reason", std::string(error.what())}}, kUnrestrictedLog);
+                logger.Write(core::LogLevel::error, "frontend.run_apk.key_editor", "cannot open the key editor", {},
+                             {{"reason", std::string(error.what())}}, kUnrestrictedLog);
                 Write(std::string("OGPlay: cannot open the key editor: ") + error.what() + "\n");
             }
         };
         const auto present_latest = [&] {
             bool did_present = false;
             if (auto frame = guest->TakeLatestFrame(); frame.has_value()) {
-                *frame = dex_lifecycle->ComposePresentedFrame(
-                    std::move(*frame));
+                *frame = dex_lifecycle->ComposePresentedFrame(std::move(*frame));
                 guest_width = frame->width;
                 guest_height = frame->height;
                 control_mapper.SetSurface(guest_width, guest_height);
@@ -811,8 +726,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 did_present = true;
                 update_frame_rate();
                 PublishPresentedFrame(mcp_frames.get(), std::move(*frame), *guest);
-                if (exit_after_frames.has_value() &&
-                    presented >= *exit_after_frames) {
+                if (exit_after_frames.has_value() && presented >= *exit_after_frames) {
                     quit = true;
                     exit_state.host_requested = true;
                 }
@@ -825,9 +739,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         std::uint64_t active_step_ns{}, active_present_ns{};
         std::size_t frame_sample_count{};
         std::uint64_t active_frame_ns{};
-        while (!quit && !guest->ExitRequested() &&
-               !(dex_context &&
-                 runtime::SessionExitRequested(*dex_context))) {
+        while (!quit && !guest->ExitRequested() && !(dex_context && runtime::SessionExitRequested(*dex_context))) {
             for (const auto& event : window->PollEvents()) {
                 using Type = hal::InputEventType;
                 if (event.type == Type::quit) {
@@ -860,8 +772,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 } else if (const auto decision = host_keys.Filter(event); decision.consumed) {
                     if (decision.shortcut == HostShortcut::toggle_hints) {
                         hints_visible = !hints_visible;
-                        logger.Write(core::LogLevel::info, "frontend.run_apk.key_hints", "key hints toggled",
-                                     {}, {{"visible", hints_visible}}, kUnrestrictedLog);
+                        logger.Write(core::LogLevel::info, "frontend.run_apk.key_hints", "key hints toggled", {},
+                                     {{"visible", hints_visible}}, kUnrestrictedLog);
                     } else if (decision.shortcut == HostShortcut::open_key_editor) {
                         open_key_editor();
                     }
@@ -872,28 +784,34 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 }
             }
             control_channel->ServePending([&](const std::string_view method, const core::JsonValue params) {
-                return HandleControlRequest(method, params, {
-                    .mapper = control_mapper,
-                    .frozen = control_frozen,
-                    .user = user_controls,
-                    .config_path = input_config_path,
-                    .frames = mcp_frames.get(),
-                    .surface_width = guest_width,
-                    .surface_height = guest_height,
-                    .freeze = [&] {
-                        control_mapper.Reset();
-                        mcp_pointer.Cancel(mcp_inputs.get());
-                        if (!failure) driver.cancel_input();
-                    },
-                    .deliver = [&](const std::vector<input::ControlOutput>& outputs) {
-                        for (const auto& output : outputs)
-                            if (const auto input = session::MapControlOutput(output)) driver.queue_input(*input);
-                    },
-                    .edit_requests = edit_requests,
-                    .seen = [&](const bool launcher) {
-                        (launcher ? launcher_seen_ns : editor_seen_ns) = hal::Clock::SteadyTimestampNs();
-                    },
-                });
+                return HandleControlRequest(method, params,
+                                            {
+                                                .mapper = control_mapper,
+                                                .frozen = control_frozen,
+                                                .user = user_controls,
+                                                .config_path = input_config_path,
+                                                .frames = mcp_frames.get(),
+                                                .surface_width = guest_width,
+                                                .surface_height = guest_height,
+                                                .freeze =
+                                                    [&] {
+                                                        control_mapper.Reset();
+                                                        mcp_pointer.Cancel(mcp_inputs.get());
+                                                        if (!failure) driver.cancel_input();
+                                                    },
+                                                .deliver =
+                                                    [&](const std::vector<input::ControlOutput>& outputs) {
+                                                        for (const auto& output : outputs)
+                                                            if (const auto input = session::MapControlOutput(output))
+                                                                driver.queue_input(*input);
+                                                    },
+                                                .edit_requests = edit_requests,
+                                                .seen =
+                                                    [&](const bool launcher) {
+                                                        (launcher ? launcher_seen_ns : editor_seen_ns) =
+                                                            hal::Clock::SteadyTimestampNs();
+                                                    },
+                                            });
             });
             // An editor page polls control.status while open; a window closed without
             // control.resume (crash, killed browser) must not leave the game frozen.
@@ -916,14 +834,14 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                         } else if (!failure && command->type == Command::Type::suspend) {
                             control_mapper.Reset();
                             mcp_pointer.Cancel(mcp_inputs.get());
-                            if (mcp_lifecycle == agent::McpLifecycleState::running)
-                                static_cast<void>(driver.suspend());
+                            if (mcp_lifecycle == agent::McpLifecycleState::running) static_cast<void>(driver.suspend());
                             host_suspended_session = false;
                             if (audio_pump) audio_pump->SetSuspended(true);
                             mcp_lifecycle = agent::McpLifecycleState::suspended;
                             publish_session();
                         } else if (!failure && command->type == Command::Type::resume) {
-                            if (host_background) host_suspended_session = true;
+                            if (host_background)
+                                host_suspended_session = true;
                             else {
                                 if (mcp_lifecycle == agent::McpLifecycleState::suspended)
                                     static_cast<void>(driver.resume());
@@ -935,8 +853,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     }
                 }
                 const bool advance = !failure && !control_frozen &&
-                    mcp_lifecycle == agent::McpLifecycleState::running &&
-                    (!mcp_manual_step || permitted_steps != 0U);
+                                     mcp_lifecycle == agent::McpLifecycleState::running &&
+                                     (!mcp_manual_step || permitted_steps != 0U);
                 if (!advance || quit) {
                     if (!quit && !failure && !mcp_manual_step) {
                         static_cast<void>(present_latest());
@@ -953,8 +871,9 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 exit_state.frame = active_frame;
                 if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(true);
                 const auto frame_started_ns = measure_frames ? hal::Clock::SteadyTimestampNs() : 0;
-                try { static_cast<void>(driver.step()); }
-                catch (...) {
+                try {
+                    static_cast<void>(driver.step());
+                } catch (...) {
                     if (mcp_manual_step && audio_pump) audio_pump->SetManualStepActive(false);
                     throw;
                 }
@@ -963,29 +882,26 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                 const auto stepped = driver.state();
                 if (mcp_manual_step && audio_pump) {
                     const auto tick_delta = stepped.clock_ticks - last_audio_ticks;
-                    auto frames = audio_pump->FramesForTicks(
-                        tick_delta, dex_lifecycle->TicksPerSecond());
+                    auto frames = audio_pump->FramesForTicks(tick_delta, dex_lifecycle->TicksPerSecond());
                     std::vector<std::int16_t> offline_audio;
                     while (frames != 0U) {
                         const auto chunk = std::min<std::uint64_t>(frames, 1024U);
-                        offline_audio.assign(static_cast<std::size_t>(chunk) * 2U,
-                                             0);
+                        offline_audio.assign(static_cast<std::size_t>(chunk) * 2U, 0);
                         static_cast<void>(audio_pump->MixOffline(offline_audio));
                         frames -= chunk;
                     }
                     last_audio_ticks = stepped.clock_ticks;
                 }
                 if (mcp_manual_step) --permitted_steps;
-                if (!mcp_manual_step && dex_context &&
-                    runtime::AnyVideoPlaying(*dex_context)) {
+                if (!mcp_manual_step && dex_context && runtime::AnyVideoPlaying(*dex_context)) {
                     constexpr std::uint64_t kVideoFramePeriodNs = 16'000'000U;
                     const auto now = hal::Clock::SteadyTimestampNs();
                     if (video_pace_deadline_ns + kVideoFramePeriodNs < now) {
                         video_pace_deadline_ns = now;
                     }
                     video_pace_deadline_ns += kVideoFramePeriodNs;
-                    if (video_pace_deadline_ns > now) std::this_thread::sleep_for(
-                        std::chrono::nanoseconds(video_pace_deadline_ns - now));
+                    if (video_pace_deadline_ns > now)
+                        std::this_thread::sleep_for(std::chrono::nanoseconds(video_pace_deadline_ns - now));
                 } else {
                     video_pace_deadline_ns = 0;
                 }
@@ -1004,18 +920,18 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
                     }
                 }
                 const auto stats = guest->Stats();
-                LogProfileFrameProgress(
-                    logger, stepped.frame, stepped.clock_ticks,
-                    presented, stats.draws, stats.clears);
+                LogProfileFrameProgress(logger, stepped.frame, stepped.clock_ticks, presented, stats.draws,
+                                        stats.clears);
                 publish_session();
             } catch (const std::exception& error) {
                 if (!failure) {
                     capture_exit();
                     failure = std::current_exception();
                     try {
-                        logger.Write(core::LogLevel::error, "frontend.run_apk.fault",
-                                     error.what(), {.frame = driver.state().frame}, {}, kUnrestrictedLog);
-                    } catch (...) { /* logging must not replace the original fault */ }
+                        logger.Write(core::LogLevel::error, "frontend.run_apk.fault", error.what(),
+                                     {.frame = driver.state().frame}, {}, kUnrestrictedLog);
+                    } catch (...) { /* logging must not replace the original fault */
+                    }
                 }
                 guest_fault = error.what();
                 mcp_lifecycle = agent::McpLifecycleState::failed;
@@ -1052,24 +968,25 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
             if (mcp_manual_step) audio_pump->StartRealtime();
         }
         write_survey();
-        logger.Write(core::LogLevel::info, "frontend.run_apk",
-                     "stopping Activity lifecycle",
+        logger.Write(core::LogLevel::info, "frontend.run_apk", "stopping Activity lifecycle",
                      {.frame = driver.state().frame}, {}, kUnrestrictedLog);
         try {
             static_cast<void>(driver.stop(failure ? session::DexProcessStopReason::runtime_failure
-                                                 : session::DexProcessStopReason::host_shutdown));
+                                                  : session::DexProcessStopReason::host_shutdown));
             if (!failure) mcp_lifecycle = agent::McpLifecycleState::stopped;
         } catch (const std::exception& error) {
-            logger.Write(core::LogLevel::error, "frontend.run_apk.teardown",
-                         error.what(), {}, {}, kUnrestrictedLog);
+            logger.Write(core::LogLevel::error, "frontend.run_apk.teardown", error.what(), {}, {}, kUnrestrictedLog);
             if (!failure) failure = std::current_exception();
             if (!guest_fault) guest_fault = error.what();
             mcp_lifecycle = agent::McpLifecycleState::failed;
         }
         if (audio_pump) {
             audio_pump->Stop();
-            try { audio_pump->RethrowWorkerFailure(); }
-            catch (...) { if (!failure) failure = std::current_exception(); }
+            try {
+                audio_pump->RethrowWorkerFailure();
+            } catch (...) {
+                if (!failure) failure = std::current_exception();
+            }
         }
         if (audio_output) audio_output->Stop();
         publish_session();
@@ -1078,8 +995,7 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         if (failure) std::rethrow_exception(failure);
     }
     window->Close();
-    logger.Write(core::LogLevel::info, "frontend.run_apk",
-                 "APK session stopped", {}, {{"presented", presented}},
+    logger.Write(core::LogLevel::info, "frontend.run_apk", "APK session stopped", {}, {{"presented", presented}},
                  kUnrestrictedLog);
     Write("OGPlay: stopped after " + std::to_string(presented) + " presented frames.\n");
     return ReportRunApkExit(logger, exit_state);

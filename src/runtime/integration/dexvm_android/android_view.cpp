@@ -1342,13 +1342,15 @@ dx::IntrinsicHandler HolderGetSurface(const Context& context) {
 }
 
 void AddCanvasMethods(dx::IntrinsicClassBuilder& builder, const Context& context) {
-    builder.FinalMethod("setKeepScreenOn", "(Z)V", [](dx::IntrinsicContext& call) {
-        if (call.arguments[0].AsInt() != 0) {
+    builder.FinalMethod("setKeepScreenOn", "(Z)V", [context](dx::IntrinsicContext& call) {
+        // ROM posts KEEP_SCREEN_ON_MSG so the window keeps the display awake.
+        // The host window already holds that for the whole session, so true is
+        // satisfied only when the host reports it; false needs no host action.
+        if (call.arguments[0].AsInt() != 0 && !context->host_display_sleep_inhibited) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_keep_screen_on", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "display wake inhibition is unavailable"};
         }
-        // No supported wake lease exists; clearing the request is truthful.
         return dx::VmValue::Void();
     });
     builder.FinalMethod("lockCanvas", "()Landroid/graphics/Canvas;", LockCanvasHandler(context));

@@ -1187,6 +1187,14 @@ TEST_CASE("DVM-249 Surface binding rejects stale competing and wake requests") {
     const auto gaps = vm.ledger.Unimplemented();
     CHECK(std::any_of(gaps.begin(), gaps.end(),
                       [](const auto& gap) { return gap.id == "dexvm.surface_keep_screen_on"; }));
+    // A host window that already inhibits display sleep satisfies the request,
+    // including MediaPlayer.setScreenOnWhilePlaying during start.
+    vm.context->host_display_sleep_inhibited = true;
+    CHECK_FALSE(outcome(holder, "setKeepScreenOn", "(Z)V", VmValue::Int(1)).exception.IsValid());
+    vm.CallOn(player, "pause", "()V");
+    vm.CallOn(player, "setScreenOnWhilePlaying", "(Z)V", {VmValue::Int(1)});
+    vm.CallOn(player, "start", "()V");
+    CHECK(vm.ledger.Unimplemented().size() == gaps.size());
     vm.CallOn(player, "pause", "()V");
     vm.CallOn(player, "setSurface", "(Landroid/view/Surface;)V", {VmValue::Ref(VmObjectRef{})});
     CHECK_FALSE(vm.context->video_views.at(player.Value()).latest_frame);

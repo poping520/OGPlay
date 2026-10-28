@@ -1895,6 +1895,9 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     }
 
     if (android_context) {
+        session.Process().SetDeviceLocaleProvider([android_context] {
+            return DeviceLocale(android_context->locale_language, android_context->locale_region);
+        });
         session.Process().SetSensorDirectory(android_context->sensor_directory);
         session.Process().SetSurfaceHooks(
             {bridge_state,
@@ -2060,6 +2063,7 @@ DexVmGuestBridge::~DexVmGuestBridge() {
         impl_->android_context->retire_native_surface = {};
         impl_->android_context->update_native_surface = {};
     }
+    impl_->session->Process().SetDeviceLocaleProvider({});
     impl_->session->Process().SetSurfaceHooks({});
     impl_->session->Process().SetAssetManagerHooks({});
     for (const auto& [_, manager] : impl_->asset_managers)

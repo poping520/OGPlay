@@ -621,9 +621,7 @@ void AddThemeAssetMethods(dx::IntrinsicClassBuilder& builder, const Context& con
         else
             builder.DirectMethod(name, desc, handler, flags);
     };
-    method("init", "(Z)V", false, [context](dx::IntrinsicContext& c) {
-        if (static_cast<std::uint32_t>(c.arguments[0].AsInt()))
-            throw std::runtime_error("system AssetManager init unsupported");
+    method("init", "()V", false, [context](dx::IntrinsicContext& c) {
         if (!context->theme_asset_owners.emplace(c.receiver).second)
             throw std::runtime_error("AssetManager already initialized");
         return dx::VmValue::Void();
@@ -1232,10 +1230,16 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             // Keep the paired ROM path for APK resources and already reviewed ROM skins.
             const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
             const auto density = static_cast<std::uint32_t>(std::lround(context->ui_density * 160.0F));
-            if ((id >> 24U) != 1U || context->theme_resources.Drawable(id, density))
-                return CallAndroidMethod(call.vm, call.receiver, "getDrawable",
-                                         "(IZ)Landroid/graphics/drawable/Drawable;",
-                                         {call.arguments[0], dx::VmValue::Int(1)});
+            if ((id >> 24U) != 1U || context->theme_resources.Drawable(id, density)) {
+                const auto value = call.vm.NewIntrinsicInstance("Landroid/util/TypedValue;");
+                const auto root = call.vm.ProtectReferences(std::array{value});
+                static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "getValue",
+                                                    "(ILandroid/util/TypedValue;Z)V",
+                                                    {call.arguments[0], dx::VmValue::Ref(value), dx::VmValue::Int(1)}));
+                return CallAndroidMethod(call.vm, call.receiver, "loadDrawable",
+                                         "(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
+                                         {dx::VmValue::Ref(value), call.arguments[0]});
+            }
             try {
                 return dx::VmValue::Ref(
                     MakeResourceDrawable(call, context, static_cast<std::uint32_t>(call.arguments[0].AsInt())));
@@ -1246,20 +1250,6 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             }
         });
     {
-        builder.VirtualMethod("getValue", "(ILandroid/util/TypedValue;ZZ)V", [context](dx::IntrinsicContext& call) {
-            return ThemeChecked(call, context, [&] {
-                if (XmlField(call.vm, call.receiver, "mIcons", "Landroid/util/SparseArray;") ||
-                    XmlField(call.vm, call.receiver, "mComposedIconInfo", "Landroid/app/ComposedIconInfo;"))
-                    throw std::runtime_error("system composed icons are unsupported");
-                const auto assets =
-                    CallAndroidMethod(call.vm, call.receiver, "getAssets", "()Landroid/content/res/AssetManager;").ref;
-                const auto found =
-                    CallAndroidMethod(call.vm, assets, "getResourceValue", "(IILandroid/util/TypedValue;Z)Z",
-                                      {call.arguments[0], XmlInt(0), call.arguments[1], call.arguments[2]});
-                if (!found.AsInt()) throw std::runtime_error("unknown scalar resource");
-                return dx::VmValue::Void();
-            });
-        });
         builder.VirtualMethod(
             "loadColorStateList", "(Landroid/util/TypedValue;I)Landroid/content/res/ColorStateList;",
             [context](dx::IntrinsicContext& call) {
@@ -1466,8 +1456,8 @@ Decl Declare_android_content_res_Resources(const Context& context) {
             SetIntField(call, instance, "smallestScreenWidthDp", std::min(display.width_dp, display.height_dp));
             SetIntField(call, instance, "densityDpi", display.density_dpi);
             SetIntField(call, instance, "screenLayout", display.screen_layout);
-            auto locale = GetRefField(call, instance, "locale", "Ljava/util/Locale;");
-            if (!locale.IsValid()) {
+            dx::VmObjectRef locale;
+            {
                 const auto locale_class = call.vm.Linker().ResolveDescriptor("Ljava/util/Locale;");
                 const auto initialized = call.vm.EnsureClassInitialized(locale_class);
                 if (initialized.exception.IsValid()) {

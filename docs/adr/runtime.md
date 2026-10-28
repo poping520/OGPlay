@@ -50,6 +50,18 @@ Play 服务或现代支付/社交/反作弊。进程内 Java 对象协议不等�
 libdl 的 linker service 接入唯一进程 ELF namespace，不调用宿主动态链接器加载 guest 库。
 发行库须来自可追溯 AOSP 构建并校验来源、哈希与许可证；设备提取物只作本地行为 oracle。
 
+ROM jar 与 framework-res.apk 基线统一为 AOSP `android-4.4.4_r2.0.1` 原版；禁止混入 CM 衍生声明。
+固定 SHA-256（生成制品还须通过各自来源/成员审计）：
+
+- `core.jar`：`60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee`
+- `framework.jar`：`422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b`
+- `framework2.jar`：`5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973`
+- `ext.jar`：`e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2`
+- `android.policy.jar`：`660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1`
+- `conscrypt.jar`：`c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004`
+- `framework-res.apk`：`5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3`
+
+
 ### 后果
 
 多个 Bionic profile 共用 syscall、TLS、futex 与宿主线程底座；支持 profile 不等于相应平台已验收。

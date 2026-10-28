@@ -199,6 +199,10 @@ public:
 
     void SetBitmapHooks(AndroidBitmapHooks hooks) { bitmap_module_.SetHooks(hooks); }
 
+    void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
+        android_services_.device_locale = std::move(provider);
+    }
+
     void SetSurfaceHooks(AndroidSurfaceHooks hooks) { android_module_.SetSurfaceHooks(hooks); }
 
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {
@@ -1210,6 +1214,10 @@ void AndroidBoundaryHle::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface
 
 void AndroidBoundaryHle::RetireSurfaceWindow(memory::GuestAddress identity) {
     impl_->RetireSurfaceWindow(identity);
+}
+
+void AndroidBoundaryHle::SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
+    impl_->SetDeviceLocaleProvider(std::move(provider));
 }
 
 void AndroidBoundaryHle::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {

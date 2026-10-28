@@ -59,8 +59,7 @@ namespace {
 constexpr std::uint64_t kRootThreadId = 1;
 constexpr std::uint32_t kDexVmThreadMaximum = 32;
 constexpr std::uint64_t kOpenSlesCallbackThreadId = UINT64_C(0x4f50);
-constexpr std::uint32_t kOpenSlesCallbackAllocationSlot =
-    kDexVmThreadMaximum - 1U;
+constexpr std::uint32_t kOpenSlesCallbackAllocationSlot = kDexVmThreadMaximum - 1U;
 constexpr std::uint32_t kDexVmTlsBase = 0x6a100000U;
 constexpr std::uint32_t kDexVmStackBase = 0x6c000000U;
 constexpr std::uint32_t kDexVmStackSize = 1024U * 1024U;
@@ -70,8 +69,7 @@ constexpr std::uint32_t kOpenSlesCallbackStack = 0x71b00000U;
 constexpr std::uint32_t kNioDirectArenaBegin = 0x74000000U;
 constexpr std::uint32_t kNioDirectArenaEnd = 0x78000000U;
 
-[[nodiscard]] std::string IndentDiagnostic(const std::string_view text,
-                                           const std::string_view indent) {
+[[nodiscard]] std::string IndentDiagnostic(const std::string_view text, const std::string_view indent) {
     std::string result{indent};
     for (const char character : text) {
         result += character;
@@ -114,8 +112,7 @@ std::vector<std::byte> BuildGuestProcMaps(const memory::AddressSpace& space) {
     return {bytes.begin(), bytes.end()};
 }
 
-void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
-                           const GuestMemorySnapshot& facts) {
+void InstallApi19ProcFiles(VirtualFileSystem& filesystem, const GuestMemorySnapshot& facts) {
     const auto meminfo = facts.ProcText();
     std::optional<VfsFileInfo> existing;
     try {
@@ -125,25 +122,26 @@ void InstallApi19ProcFiles(VirtualFileSystem& filesystem,
     }
     if (existing) {
         if (existing->writable) {
-            throw AndroidGuestProcessError(
-                "API 19 /proc/meminfo must be read only");
+            throw AndroidGuestProcessError("API 19 /proc/meminfo must be read only");
         }
         if (existing->size != meminfo.size())
             throw AndroidGuestProcessError("guest proc memory snapshot conflicts with configured facts");
         const auto fd = filesystem.Open("/proc/meminfo", {.read = true});
         std::vector<std::byte> bytes(meminfo.size());
         std::size_t count{};
-        try { count = filesystem.Read(fd, bytes); }
-        catch (...) { filesystem.Close(fd); throw; }
+        try {
+            count = filesystem.Read(fd, bytes);
+        } catch (...) {
+            filesystem.Close(fd);
+            throw;
+        }
         filesystem.Close(fd);
-        if (count != bytes.size() || !std::equal(bytes.begin(), bytes.end(),
-                std::as_bytes(std::span{meminfo.data(), meminfo.size()}).begin()))
+        if (count != bytes.size() ||
+            !std::equal(bytes.begin(), bytes.end(), std::as_bytes(std::span{meminfo.data(), meminfo.size()}).begin()))
             throw AndroidGuestProcessError("guest proc memory snapshot conflicts with configured facts");
         return;
     }
-    filesystem.PutFile(
-        "/proc/meminfo",
-        std::as_bytes(std::span{meminfo.data(), meminfo.size()}), false);
+    filesystem.PutFile("/proc/meminfo", std::as_bytes(std::span{meminfo.data(), meminfo.size()}), false);
 }
 
 struct ActiveGuestCall final {
@@ -151,25 +149,21 @@ struct ActiveGuestCall final {
     std::size_t depth{};
 };
 
-thread_local std::unordered_map<const void*, ActiveGuestCall>
-    active_guest_calls;
+thread_local std::unordered_map<const void*, ActiveGuestCall> active_guest_calls;
 
-[[nodiscard]] std::vector<GuestLifecycleModule> LifecycleModules(
-    const loader::Elf32LoadedNamespace& loaded,
-    const std::span<const loader::Elf32ModuleInput> inputs) {
+[[nodiscard]] std::vector<GuestLifecycleModule>
+LifecycleModules(const loader::Elf32LoadedNamespace& loaded, const std::span<const loader::Elf32ModuleInput> inputs) {
     std::vector<GuestLifecycleModule> result;
     result.reserve(loaded.modules.size());
     for (std::size_t index = 0; index < loaded.modules.size(); ++index) {
-        result.push_back({index, inputs[index].load_bias,
-                          loaded.modules[index].lifecycle});
+        result.push_back({index, inputs[index].load_bias, loaded.modules[index].lifecycle});
     }
     return result;
 }
 
 class JavaSoundPoolControls final {
 public:
-    JavaSoundPoolControls(audio::JavaSoundPoolState& state,
-                          audio::JavaSoundPoolMixer* mixer)
+    JavaSoundPoolControls(audio::JavaSoundPoolState& state, audio::JavaSoundPoolMixer* mixer)
         : state_(state), mixer_(mixer) {}
 
     void Destroy() {
@@ -177,102 +171,105 @@ public:
         state_.Destroy();
         if (mixer_ != nullptr) mixer_->Destroy();
     }
-    void Initialize() { std::scoped_lock lock(mutex_); state_.Initialize(); }
+
+    void Initialize() {
+        std::scoped_lock lock(mutex_);
+        state_.Initialize();
+    }
+
     void StopAllSounds() {
         std::scoped_lock lock(mutex_);
         static_cast<void>(state_.StopAllSounds());
         if (mixer_ != nullptr) mixer_->StopAllSounds();
     }
-    void StopAll(const audio::JavaSoundPoolKind kind,
-                 const std::int32_t except_resource) {
+
+    void StopAll(const audio::JavaSoundPoolKind kind, const std::int32_t except_resource) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(state_.StopAll(kind, except_resource));
         if (mixer_ != nullptr) mixer_->StopAll(kind, except_resource);
     }
+
     void PauseAll(const audio::JavaSoundPoolKind kind) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(state_.PauseAll(kind));
         if (mixer_ != nullptr) mixer_->PauseAll(kind);
     }
+
     void ResumeAll(const audio::JavaSoundPoolKind kind) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(state_.ResumeAll(kind));
         if (mixer_ != nullptr) mixer_->ResumeAll(kind);
     }
-    [[nodiscard]] bool IsLoaded(
-        const audio::JavaSoundPoolKind kind, const std::int32_t resource) const {
+
+    [[nodiscard]] bool IsLoaded(const audio::JavaSoundPoolKind kind, const std::int32_t resource) const {
         std::scoped_lock lock(mutex_);
         return state_.IsLoaded(kind, resource);
     }
-    void Unload(const audio::JavaSoundPoolKind kind,
-                const std::int32_t resource) {
+
+    void Unload(const audio::JavaSoundPoolKind kind, const std::int32_t resource) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(state_.Unload(kind, resource));
-        if (mixer_ != nullptr &&
-            !state_.IsLoaded(audio::JavaSoundPoolKind::pool, resource) &&
+        if (mixer_ != nullptr && !state_.IsLoaded(audio::JavaSoundPoolKind::pool, resource) &&
             !state_.IsLoaded(audio::JavaSoundPoolKind::big, resource)) {
             mixer_->Unload(resource);
         }
     }
-    void Load(const audio::JavaSoundPoolKind kind,
-              const std::int32_t resource) {
+
+    void Load(const audio::JavaSoundPoolKind kind, const std::int32_t resource) {
         std::scoped_lock lock(mutex_);
         static_cast<void>(LoadLocked(kind, resource));
     }
-    void Play(const audio::JavaSoundPoolKind kind,
-              const std::int32_t resource, const std::int32_t instance,
+
+    void Play(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance,
               const float volume, const bool looping = false) {
         std::scoped_lock lock(mutex_);
         if (!state_.IsLoaded(kind, resource)) {
             static_cast<void>(LoadLocked(kind, resource));
         }
         if (!state_.Play(kind, resource, instance, volume, looping)) return;
-        if (mixer_ != nullptr &&
-            !mixer_->Play(kind, resource, instance, volume, looping)) {
+        if (mixer_ != nullptr && !mixer_->Play(kind, resource, instance, volume, looping)) {
             static_cast<void>(state_.Stop(kind, resource, instance));
         }
     }
-    void Pause(const audio::JavaSoundPoolKind kind,
-               const std::int32_t resource, const std::int32_t instance) {
+
+    void Pause(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance) {
         std::scoped_lock lock(mutex_);
         if (state_.Pause(kind, resource, instance) && mixer_ != nullptr) {
             mixer_->Pause(kind, resource, instance);
         }
     }
-    void Resume(const audio::JavaSoundPoolKind kind,
-                const std::int32_t resource, const std::int32_t instance) {
+
+    void Resume(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance) {
         std::scoped_lock lock(mutex_);
         if (state_.Resume(kind, resource, instance) && mixer_ != nullptr) {
             mixer_->Resume(kind, resource, instance);
         }
     }
-    void Stop(const audio::JavaSoundPoolKind kind,
-              const std::int32_t resource, const std::int32_t instance) {
+
+    void Stop(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance) {
         std::scoped_lock lock(mutex_);
         if (state_.Stop(kind, resource, instance) && mixer_ != nullptr) {
             mixer_->Stop(kind, resource, instance);
         }
     }
-    void SetVolume(const audio::JavaSoundPoolKind kind,
-                   const std::int32_t resource, const std::int32_t instance,
+
+    void SetVolume(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance,
                    const float volume) {
         std::scoped_lock lock(mutex_);
-        if (state_.SetVolume(kind, resource, instance, volume) &&
-            mixer_ != nullptr) {
+        if (state_.SetVolume(kind, resource, instance, volume) && mixer_ != nullptr) {
             mixer_->SetVolume(kind, resource, instance, volume);
         }
     }
-    void SetPitch(const audio::JavaSoundPoolKind kind,
-                  const std::int32_t resource, const std::int32_t instance,
+
+    void SetPitch(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance,
                   const float pitch) {
         std::scoped_lock lock(mutex_);
-        if (state_.SetPitch(kind, resource, instance, pitch) &&
-            mixer_ != nullptr) {
+        if (state_.SetPitch(kind, resource, instance, pitch) && mixer_ != nullptr) {
             mixer_->SetPitch(kind, resource, instance, pitch);
         }
     }
-    void Reset(const audio::JavaSoundPoolKind kind,
-               const std::int32_t resource, const std::int32_t instance) {
+
+    void Reset(const audio::JavaSoundPoolKind kind, const std::int32_t resource, const std::int32_t instance) {
         std::scoped_lock lock(mutex_);
         if (state_.Reset(kind, resource, instance) && mixer_ != nullptr) {
             mixer_->Reset(kind, resource, instance);
@@ -280,8 +277,7 @@ public:
     }
 
 private:
-    [[nodiscard]] bool LoadLocked(const audio::JavaSoundPoolKind kind,
-                                  const std::int32_t resource) {
+    [[nodiscard]] bool LoadLocked(const audio::JavaSoundPoolKind kind, const std::int32_t resource) {
         if (!state_.RequestLoad(kind, resource)) return false;
         if (state_.IsLoaded(kind, resource)) return true;
         if (mixer_ == nullptr || !mixer_->Load(resource)) return false;
@@ -295,219 +291,142 @@ private:
 
 }  // namespace
 
-void BindAndroidGuestJavaAudioHandlers(
-    JniInvocationEngine& invocations,
-    audio::JavaSoundPoolState& sound_pool,
-    audio::JavaSoundPoolMixer* mixer) {
-    const auto controls =
-        std::make_shared<JavaSoundPoolControls>(sound_pool, mixer);
-    invocations.RegisterHandler(
-        "audio.destroy_sound_pool",
-        [controls](const JniInvocation&) {
-            controls->Destroy();
+void BindAndroidGuestJavaAudioHandlers(JniInvocationEngine& invocations, audio::JavaSoundPoolState& sound_pool,
+                                       audio::JavaSoundPoolMixer* mixer) {
+    const auto controls = std::make_shared<JavaSoundPoolControls>(sound_pool, mixer);
+    invocations.RegisterHandler("audio.destroy_sound_pool", [controls](const JniInvocation&) {
+        controls->Destroy();
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.init_sound_pool_array", [controls](const JniInvocation&) {
+        controls->Initialize();
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.stop_all_sounds", [controls](const JniInvocation&) {
+        controls->StopAllSounds();
+        return JniValue{std::monostate{}};
+    });
+    const auto stop_kind = [&invocations, controls](const char* implementation, const audio::JavaSoundPoolKind kind) {
+        invocations.RegisterHandler(implementation, [controls, kind](const JniInvocation& invocation) {
+            const auto except_resource = std::get<JniInt>(invocation.arguments[0]);
+            controls->StopAll(kind, except_resource);
             return JniValue{std::monostate{}};
         });
-    invocations.RegisterHandler(
-        "audio.init_sound_pool_array",
-        [controls](const JniInvocation&) {
-            controls->Initialize();
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.stop_all_sounds",
-        [controls](const JniInvocation&) {
-            controls->StopAllSounds();
-            return JniValue{std::monostate{}};
-        });
-    const auto stop_kind = [&invocations, controls](
-                               const char* implementation,
-                               const audio::JavaSoundPoolKind kind) {
-        invocations.RegisterHandler(
-            implementation,
-            [controls, kind](const JniInvocation& invocation) {
-                const auto except_resource =
-                    std::get<JniInt>(invocation.arguments[0]);
-                controls->StopAll(kind, except_resource);
-                return JniValue{std::monostate{}};
-            });
     };
     stop_kind("audio.stop_all_pool", audio::JavaSoundPoolKind::pool);
     stop_kind("audio.stop_all_big", audio::JavaSoundPoolKind::big);
-    invocations.RegisterHandler(
-        "audio.pause_all_big",
-        [controls](const JniInvocation&) {
-            controls->PauseAll(audio::JavaSoundPoolKind::big);
+    invocations.RegisterHandler("audio.pause_all_big", [controls](const JniInvocation&) {
+        controls->PauseAll(audio::JavaSoundPoolKind::big);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.resume_all_big", [controls](const JniInvocation&) {
+        controls->ResumeAll(audio::JavaSoundPoolKind::big);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.is_sound_loaded", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto loaded = controls->IsLoaded(audio::JavaSoundPoolKind::pool, resource);
+        return JniValue{JniInt{loaded ? 0 : -1}};
+    });
+    invocations.RegisterHandler("audio.is_sound_loaded_big", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto loaded = controls->IsLoaded(audio::JavaSoundPoolKind::big, resource);
+        return JniValue{JniInt{loaded ? 0 : -1}};
+    });
+    invocations.RegisterHandler("audio.unload_sound", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        controls->Unload(audio::JavaSoundPoolKind::pool, resource);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.unload_sound_big", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        controls->Unload(audio::JavaSoundPoolKind::big, resource);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.play_sound", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto instance = std::get<JniInt>(invocation.arguments[1]);
+        const auto volume = std::get<JniFloat>(invocation.arguments[2]);
+        controls->Play(audio::JavaSoundPoolKind::pool, resource, instance, volume);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.play_sound_big", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto volume = std::get<JniFloat>(invocation.arguments[1]);
+        controls->Play(audio::JavaSoundPoolKind::big, resource, 0, volume);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.play_sound_big_looping", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto volume = std::get<JniFloat>(invocation.arguments[1]);
+        const auto looping = std::get<JniBoolean>(invocation.arguments[2]) != 0U;
+        controls->Play(audio::JavaSoundPoolKind::big, resource, 0, volume, looping);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.load_sound", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        controls->Load(audio::JavaSoundPoolKind::pool, resource);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.load_sound_big", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        controls->Load(audio::JavaSoundPoolKind::big, resource);
+        return JniValue{std::monostate{}};
+    });
+    const auto bind_voice_pair = [&invocations, controls](const char* pool_implementation,
+                                                          const char* big_implementation, const auto operation) {
+        invocations.RegisterHandler(pool_implementation, [controls, operation](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            const auto instance = std::get<JniInt>(invocation.arguments[1]);
+            (controls.get()->*operation)(audio::JavaSoundPoolKind::pool, resource, instance);
             return JniValue{std::monostate{}};
         });
-    invocations.RegisterHandler(
-        "audio.resume_all_big",
-        [controls](const JniInvocation&) {
-            controls->ResumeAll(audio::JavaSoundPoolKind::big);
+        invocations.RegisterHandler(big_implementation, [controls, operation](const JniInvocation& invocation) {
+            const auto resource = std::get<JniInt>(invocation.arguments[0]);
+            (controls.get()->*operation)(audio::JavaSoundPoolKind::big, resource, 0);
             return JniValue{std::monostate{}};
         });
-    invocations.RegisterHandler(
-        "audio.is_sound_loaded",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto loaded = controls->IsLoaded(
-                audio::JavaSoundPoolKind::pool, resource);
-            return JniValue{JniInt{loaded ? 0 : -1}};
-        });
-    invocations.RegisterHandler(
-        "audio.is_sound_loaded_big",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto loaded = controls->IsLoaded(
-                audio::JavaSoundPoolKind::big, resource);
-            return JniValue{JniInt{loaded ? 0 : -1}};
-        });
-    invocations.RegisterHandler(
-        "audio.unload_sound",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            controls->Unload(audio::JavaSoundPoolKind::pool, resource);
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.unload_sound_big",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            controls->Unload(audio::JavaSoundPoolKind::big, resource);
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.play_sound",
-        [controls](const JniInvocation& invocation) {
+    };
+    bind_voice_pair("audio.pause_sound", "audio.pause_sound_big", &JavaSoundPoolControls::Pause);
+    bind_voice_pair("audio.resume_sound", "audio.resume_sound_big", &JavaSoundPoolControls::Resume);
+    bind_voice_pair("audio.stop_sound", "audio.stop_sound_big", &JavaSoundPoolControls::Stop);
+    const auto bind_volume_pair = [&invocations, controls](const char* pool_implementation,
+                                                           const char* big_implementation) {
+        invocations.RegisterHandler(pool_implementation, [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto instance = std::get<JniInt>(invocation.arguments[1]);
             const auto volume = std::get<JniFloat>(invocation.arguments[2]);
-            controls->Play(audio::JavaSoundPoolKind::pool, resource,
-                           instance, volume);
+            controls->SetVolume(audio::JavaSoundPoolKind::pool, resource, instance, volume);
             return JniValue{std::monostate{}};
         });
-    invocations.RegisterHandler(
-        "audio.play_sound_big",
-        [controls](const JniInvocation& invocation) {
+        invocations.RegisterHandler(big_implementation, [controls](const JniInvocation& invocation) {
             const auto resource = std::get<JniInt>(invocation.arguments[0]);
             const auto volume = std::get<JniFloat>(invocation.arguments[1]);
-            controls->Play(audio::JavaSoundPoolKind::big, resource, 0,
-                           volume);
+            controls->SetVolume(audio::JavaSoundPoolKind::big, resource, 0, volume);
             return JniValue{std::monostate{}};
         });
-    invocations.RegisterHandler(
-        "audio.play_sound_big_looping",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto volume = std::get<JniFloat>(invocation.arguments[1]);
-            const auto looping =
-                std::get<JniBoolean>(invocation.arguments[2]) != 0U;
-            controls->Play(audio::JavaSoundPoolKind::big, resource, 0,
-                           volume, looping);
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.load_sound",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            controls->Load(audio::JavaSoundPoolKind::pool, resource);
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.load_sound_big",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            controls->Load(audio::JavaSoundPoolKind::big, resource);
-            return JniValue{std::monostate{}};
-        });
-    const auto bind_voice_pair = [&invocations, controls](
-                                     const char* pool_implementation,
-                                     const char* big_implementation,
-                                     const auto operation) {
-        invocations.RegisterHandler(
-            pool_implementation,
-            [controls, operation](const JniInvocation& invocation) {
-                const auto resource =
-                    std::get<JniInt>(invocation.arguments[0]);
-                const auto instance =
-                    std::get<JniInt>(invocation.arguments[1]);
-                (controls.get()->*operation)(
-                    audio::JavaSoundPoolKind::pool, resource, instance);
-                return JniValue{std::monostate{}};
-            });
-        invocations.RegisterHandler(
-            big_implementation,
-            [controls, operation](const JniInvocation& invocation) {
-                const auto resource =
-                    std::get<JniInt>(invocation.arguments[0]);
-                (controls.get()->*operation)(
-                    audio::JavaSoundPoolKind::big, resource, 0);
-                return JniValue{std::monostate{}};
-            });
-    };
-    bind_voice_pair("audio.pause_sound", "audio.pause_sound_big",
-                    &JavaSoundPoolControls::Pause);
-    bind_voice_pair("audio.resume_sound", "audio.resume_sound_big",
-                    &JavaSoundPoolControls::Resume);
-    bind_voice_pair("audio.stop_sound", "audio.stop_sound_big",
-                    &JavaSoundPoolControls::Stop);
-    const auto bind_volume_pair = [&invocations, controls](
-                                      const char* pool_implementation,
-                                      const char* big_implementation) {
-        invocations.RegisterHandler(
-            pool_implementation,
-            [controls](const JniInvocation& invocation) {
-                const auto resource =
-                    std::get<JniInt>(invocation.arguments[0]);
-                const auto instance =
-                    std::get<JniInt>(invocation.arguments[1]);
-                const auto volume =
-                    std::get<JniFloat>(invocation.arguments[2]);
-                controls->SetVolume(audio::JavaSoundPoolKind::pool, resource,
-                                    instance, volume);
-                return JniValue{std::monostate{}};
-            });
-        invocations.RegisterHandler(
-            big_implementation,
-            [controls](const JniInvocation& invocation) {
-                const auto resource =
-                    std::get<JniInt>(invocation.arguments[0]);
-                const auto volume =
-                    std::get<JniFloat>(invocation.arguments[1]);
-                controls->SetVolume(audio::JavaSoundPoolKind::big, resource,
-                                    0, volume);
-                return JniValue{std::monostate{}};
-            });
     };
     bind_volume_pair("audio.set_volume", "audio.set_volume_big");
-    invocations.RegisterHandler(
-        "audio.set_pitch",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            const auto instance = std::get<JniInt>(invocation.arguments[1]);
-            const auto pitch = std::get<JniFloat>(invocation.arguments[2]);
-            controls->SetPitch(audio::JavaSoundPoolKind::pool, resource,
-                               instance, pitch);
-            return JniValue{std::monostate{}};
-        });
-    invocations.RegisterHandler(
-        "audio.reset_sound",
-        [controls](const JniInvocation& invocation) {
-            const auto resource = std::get<JniInt>(invocation.arguments[0]);
-            controls->Reset(audio::JavaSoundPoolKind::big, resource, 0);
-            return JniValue{std::monostate{}};
-        });
+    invocations.RegisterHandler("audio.set_pitch", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        const auto instance = std::get<JniInt>(invocation.arguments[1]);
+        const auto pitch = std::get<JniFloat>(invocation.arguments[2]);
+        controls->SetPitch(audio::JavaSoundPoolKind::pool, resource, instance, pitch);
+        return JniValue{std::monostate{}};
+    });
+    invocations.RegisterHandler("audio.reset_sound", [controls](const JniInvocation& invocation) {
+        const auto resource = std::get<JniInt>(invocation.arguments[0]);
+        controls->Reset(audio::JavaSoundPoolKind::big, resource, 0);
+        return JniValue{std::monostate{}};
+    });
 }
 
-void BindAndroidGuestJavaDisplayHandlers(
-    JniInvocationEngine& invocations,
-    FrameworkScreenPolicyState& screen_policy) {
-    invocations.RegisterHandler(
-        "display.change_mode",
-        [&screen_policy](const JniInvocation& invocation) {
-            const auto mode = std::get<JniInt>(invocation.arguments[0]);
-            screen_policy.SetSleepAllowed(mode == 1);
-            return JniValue{std::monostate{}};
-        });
+void BindAndroidGuestJavaDisplayHandlers(JniInvocationEngine& invocations, FrameworkScreenPolicyState& screen_policy) {
+    invocations.RegisterHandler("display.change_mode", [&screen_policy](const JniInvocation& invocation) {
+        const auto mode = std::get<JniInt>(invocation.arguments[0]);
+        screen_policy.SetSleepAllowed(mode == 1);
+        return JniValue{std::monostate{}};
+    });
 }
 
 void AndroidGuestProcessState::RequestExit() noexcept {
@@ -516,36 +435,29 @@ void AndroidGuestProcessState::RequestExit() noexcept {
 }
 
 bool AndroidGuestProcessState::ExitRequested() const noexcept {
-    return exit_requested_.load(std::memory_order_acquire); }
-std::uint64_t AndroidGuestProcessState::ExitRequestCount() const noexcept {
-    return exit_request_count_.load(std::memory_order_relaxed); }
-
-void BindAndroidGuestJavaProcessHandlers(
-    JniInvocationEngine& invocations,
-    AndroidGuestProcessState& process_state) {
-    invocations.RegisterHandler(
-        "process.exit",
-        [&process_state](const JniInvocation&) {
-            process_state.RequestExit();
-            return JniValue{std::monostate{}};
-        });
+    return exit_requested_.load(std::memory_order_acquire);
 }
 
-void BindAndroidGuestJavaLocaleHandlers(
-    JniInvocationEngine& invocations,
-    const FrameworkLocaleConfig& locale) {
+std::uint64_t AndroidGuestProcessState::ExitRequestCount() const noexcept {
+    return exit_request_count_.load(std::memory_order_relaxed);
+}
+
+void BindAndroidGuestJavaProcessHandlers(JniInvocationEngine& invocations, AndroidGuestProcessState& process_state) {
+    invocations.RegisterHandler("process.exit", [&process_state](const JniInvocation&) {
+        process_state.RequestExit();
+        return JniValue{std::monostate{}};
+    });
+}
+
+void BindAndroidGuestJavaLocaleHandlers(JniInvocationEngine& invocations, const FrameworkLocaleConfig& locale) {
     const auto language = LegacyPhoneLanguageIndex(locale);
-    invocations.RegisterHandler(
-        "locale.detect_phone_language",
-        [language](const JniInvocation&) {
-            return JniValue{JniInt{language}};
-        });
+    invocations.RegisterHandler("locale.detect_phone_language",
+                                [language](const JniInvocation&) { return JniValue{JniInt{language}}; });
 }
 
 namespace {
 
-bool ReadBoundaryGuestFile(void* const owner, const std::string_view path,
-                           std::vector<std::byte>& output) {
+bool ReadBoundaryGuestFile(void* const owner, const std::string_view path, std::vector<std::byte>& output) {
     if (owner == nullptr) return false;
     auto& filesystem = *static_cast<VirtualFileSystem*>(owner);
     try {
@@ -556,8 +468,7 @@ bool ReadBoundaryGuestFile(void* const owner, const std::string_view path,
             output.resize(static_cast<std::size_t>(info.size));
             std::size_t offset{};
             while (offset < output.size()) {
-                const auto consumed = filesystem.Read(
-                    descriptor, std::span(output).subspan(offset));
+                const auto consumed = filesystem.Read(descriptor, std::span(output).subspan(offset));
                 if (consumed == 0U) break;
                 offset += consumed;
             }
@@ -597,8 +508,7 @@ struct AndroidGuestProcessStartup final {
     std::optional<std::thread::id> guest_call_slice_observer_thread;
 };
 
-[[nodiscard]] AndroidGuestProcessStartup RootlessStartup(
-    const AndroidGuestProcessRequest& request) {
+[[nodiscard]] AndroidGuestProcessStartup RootlessStartup(const AndroidGuestProcessRequest& request) {
     auto boundary_options = request.boundary_options;
     boundary_options.guest_file_owner = request.filesystem;
     boundary_options.read_guest_file = &ReadBoundaryGuestFile;
@@ -624,8 +534,7 @@ struct AndroidGuestProcessStartup final {
             request.guest_call_slice_observer_thread};
 }
 
-[[nodiscard]] AndroidGuestProcessStartup LegacyStartup(
-    const AndroidGuestCallSessionRequest& request) {
+[[nodiscard]] AndroidGuestProcessStartup LegacyStartup(const AndroidGuestCallSessionRequest& request) {
     auto boundary_options = request.boundary_options;
     boundary_options.guest_file_owner = request.filesystem;
     boundary_options.read_guest_file = &ReadBoundaryGuestFile;
@@ -647,7 +556,8 @@ struct AndroidGuestProcessStartup final {
             1,
             request.proc_facts,
             request.diagnostics,
-            {}, request.guest_call_slice_observer_thread};
+            {},
+            request.guest_call_slice_observer_thread};
 }
 
 }  // namespace
@@ -655,10 +565,10 @@ struct AndroidGuestProcessStartup final {
 class AndroidGuestProcess::Impl final {
 public:
     struct DexVmThreadContext final {
-        DexVmThreadContext(const std::uint64_t id,
-                           const memory::GuestRange info,
+        DexVmThreadContext(const std::uint64_t id, const memory::GuestRange info,
                            const memory::GuestRange stack_mapping)
             : thread_id(id), thread_info(info), stack(stack_mapping) {}
+
         std::uint64_t thread_id{};
         std::optional<BionicTlsBlock> tls;
         memory::GuestRange thread_info;
@@ -671,50 +581,32 @@ public:
 
     explicit Impl(const AndroidGuestProcessStartup& request)
         : cpu_environment_(request.proc_facts.cpu),
-          boundary_(address_space_, request.backend, request.width,
-                    request.height, request.supersample_factor,
+          boundary_(address_space_, request.backend, request.width, request.height, request.supersample_factor,
                     BindProcessCallbacks(request.boundary_options, this)),
-          guest_jni_(address_space_),
-          dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)),
-          jni_dispatcher_(ledger_), invocations_(classes_), fields_(classes_),
-          objects_(classes_),
-          sound_pool_mixer_(request.sound_resource_loader),
-          java_vm_(environment_),
-          threads_([this] {
-              auto result = std::make_unique<cpu::DynarmicCpu>(
-                  memory_bus_, execution_context_);
+          guest_jni_(address_space_), dispatcher_(CreateAndroidArmSyscallDispatcher(ledger_)), jni_dispatcher_(ledger_),
+          invocations_(classes_), fields_(classes_), objects_(classes_),
+          sound_pool_mixer_(request.sound_resource_loader), java_vm_(environment_), threads_([this] {
+              auto result = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
               ConfigureFastHostCalls(*result);
               return result;
           }),
-          nested_guest_cpus_(
-              memory_bus_, execution_context_,
-              [this](cpu::DynarmicCpu& cpu) { ConfigureFastHostCalls(cpu); }),
-          filesystem_(request.filesystem),
-          logger_(request.boundary_options.logger),
-          initial_environment_(
-              request.initial_environment
-                  ? request.initial_environment
-                  : std::make_shared<const GuestProcessEnvironment>(
-                        GuestProcessEnvironment::Api19())),
-          root_module_(request.root_module),
-          maximum_ticks_(request.maximum_ticks_per_call),
-          progress_(request.progress),
-          slice_observer_(request.guest_call_slice_observer),
-          slice_observer_thread_(request.guest_call_slice_observer_thread),
-          diagnostics_(request.diagnostics),
-          api_(request.api),
-          application_module_count_(request.application_module_count) {
+          nested_guest_cpus_(memory_bus_, execution_context_,
+                             [this](cpu::DynarmicCpu& cpu) { ConfigureFastHostCalls(cpu); }),
+          filesystem_(request.filesystem), logger_(request.boundary_options.logger),
+          initial_environment_(request.initial_environment
+                                   ? request.initial_environment
+                                   : std::make_shared<const GuestProcessEnvironment>(GuestProcessEnvironment::Api19())),
+          root_module_(request.root_module), maximum_ticks_(request.maximum_ticks_per_call),
+          progress_(request.progress), slice_observer_(request.guest_call_slice_observer),
+          slice_observer_thread_(request.guest_call_slice_observer_thread), diagnostics_(request.diagnostics),
+          api_(request.api), application_module_count_(request.application_module_count) {
 #if !OGPLAY_HAS_DYNARMIC
         static_cast<void>(request);
-        throw AndroidGuestProcessError(
-            "Android guest call session requires Dynarmic");
+        throw AndroidGuestProcessError("Android guest call session requires Dynarmic");
 #else
-        if (request.api != 19 || request.root_module.empty() ||
-            request.modules.empty() || request.width == 0 ||
-            request.height == 0 || request.maximum_ticks_per_call == 0 ||
-            filesystem_ == nullptr) {
-            throw AndroidGuestProcessError(
-                "Android guest call session request is incomplete");
+        if (request.api != 19 || request.root_module.empty() || request.modules.empty() || request.width == 0 ||
+            request.height == 0 || request.maximum_ticks_per_call == 0 || filesystem_ == nullptr) {
+            throw AndroidGuestProcessError("Android guest call session request is incomplete");
         }
         memory_snapshot_ = MakeGuestMemorySnapshot(request.proc_facts);
         InstallApi19ProcFiles(*filesystem_, memory_snapshot_);
@@ -726,23 +618,19 @@ public:
         random_ = filesystem_->RegisterReadOnlyCharacterDevice("/dev/random", 0x108U, random_reader);
         cpu_environment_.Publish(*filesystem_);
         proc_maps_ = filesystem_->RegisterGeneratedReadOnly(
-            "/proc/self/maps", 1024U * 1024U,
-            [space = &address_space_] { return BuildGuestProcMaps(*space); });
-        BindAndroidGuestJavaAudioHandlers(
-            invocations_, sound_pool_,
-            sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
-        BindAndroidGuestJavaMediaHandlers(
-            invocations_, environment_, strings_, arrays_, movie_state_,
-            media_state_, request.sound_resource_loader);
+            "/proc/self/maps", 1024U * 1024U, [space = &address_space_] { return BuildGuestProcMaps(*space); });
+        BindAndroidGuestJavaAudioHandlers(invocations_, sound_pool_,
+                                          sound_pool_mixer_.Enabled() ? &sound_pool_mixer_ : nullptr);
+        BindAndroidGuestJavaMediaHandlers(invocations_, environment_, strings_, arrays_, movie_state_, media_state_,
+                                          request.sound_resource_loader);
         BindAndroidGuestJavaDisplayHandlers(invocations_, screen_policy_);
         BindAndroidGuestJavaProcessHandlers(invocations_, process_state_);
         BindAndroidGuestJavaLocaleHandlers(invocations_, {});
-        BindAndroidGuestJavaPlatformHandlers(
-            invocations_, environment_, strings_, arrays_, platform_state_,
-            request.platform);
+        BindAndroidGuestJavaPlatformHandlers(invocations_, environment_, strings_, arrays_, platform_state_,
+                                             request.platform);
         if (request.direct_assets.has_value()) {
-            direct_assets_ = std::make_unique<FrameworkDirectAssetHle>(
-                invocations_, environment_, strings_, arrays_, *filesystem_);
+            direct_assets_ =
+                std::make_unique<FrameworkDirectAssetHle>(invocations_, environment_, strings_, arrays_, *filesystem_);
             direct_assets_->Install(*request.direct_assets);
         }
         const auto& profile = SelectBionicProfile(request.api);
@@ -752,19 +640,15 @@ public:
         ReserveOpenSlesCallbackMemory();
         loaded_ = loader::LoadElf32ModuleNamespace(
             request.root_module, request.modules, address_space_,
-            [&profile, this](
-                const std::string_view root,
-                const std::span<const loader::Elf32LinkModule> guest) {
-                auto symbols = BuildBionicLinkNamespace(
-                    profile, root, guest, boundary_.Symbols());
+            [&profile, this](const std::string_view root, const std::span<const loader::Elf32LinkModule> guest) {
+                auto symbols = BuildBionicLinkNamespace(profile, root, guest, boundary_.Symbols());
                 cpu_environment_.BindSysconf(symbols, address_space_);
                 return symbols;
             });
         Progress("modules-loaded");
 
-        process_memory_ = InitializeApi19GuestProcess(
-            address_space_, memory_bus_, loaded_.link_namespace,
-            {kRootThreadId, "ogplay-profile", initial_environment_.get()});
+        process_memory_ = InitializeApi19GuestProcess(address_space_, memory_bus_, loaded_.link_namespace,
+                                                      {kRootThreadId, "ogplay-profile", initial_environment_.get()});
         lifecycle_.Register(kRootThreadId, process_memory_.thread_pointer);
         direct_memory_access_ = {
             [this](const std::uint32_t size) {
@@ -773,9 +657,7 @@ public:
                 const auto mapped = (static_cast<std::uint64_t>(size) + page - 1U) & ~(page - 1U);
                 std::scoped_lock lock(nio_direct_mutex_);
                 const auto reusable = std::ranges::find_if(
-                    nio_direct_free_, [mapped](const memory::GuestRange& range) {
-                        return range.Size() >= mapped;
-                    });
+                    nio_direct_free_, [mapped](const memory::GuestRange& range) { return range.Size() >= mapped; });
                 if (reusable != nio_direct_free_.end()) {
                     const auto address = reusable->Start();
                     const auto remaining = reusable->Size() - mapped;
@@ -783,15 +665,12 @@ public:
                     if (remaining != 0U) {
                         nio_direct_free_.emplace_back(address.Add(mapped), remaining);
                     }
-                    address_space_.Map({address, mapped}, memory::PageProtection::read |
-                                                         memory::PageProtection::write);
+                    address_space_.Map({address, mapped}, memory::PageProtection::read | memory::PageProtection::write);
                     return address;
                 }
-                if (nio_direct_cursor_ + mapped > kNioDirectArenaEnd)
-                    throw std::bad_alloc{};
+                if (nio_direct_cursor_ + mapped > kNioDirectArenaEnd) throw std::bad_alloc{};
                 const auto address = memory::GuestAddress(nio_direct_cursor_);
-                address_space_.Map({address, mapped}, memory::PageProtection::read |
-                                                     memory::PageProtection::write);
+                address_space_.Map({address, mapped}, memory::PageProtection::read | memory::PageProtection::write);
                 nio_direct_cursor_ += static_cast<std::uint32_t>(mapped);
                 return address;
             },
@@ -803,13 +682,10 @@ public:
                 address_space_.Unmap({address, mapped});
                 nio_direct_free_.emplace_back(address, mapped);
                 std::ranges::sort(nio_direct_free_, {},
-                                  [](const memory::GuestRange& range) {
-                                      return range.Start().Value();
-                                  });
+                                  [](const memory::GuestRange& range) { return range.Start().Value(); });
                 std::vector<memory::GuestRange> merged;
                 for (const auto& range : nio_direct_free_) {
-                    if (!merged.empty() && merged.back().EndExclusive() ==
-                                               range.Start().Value()) {
+                    if (!merged.empty() && merged.back().EndExclusive() == range.Start().Value()) {
                         const auto start = merged.back().Start();
                         const auto combined = merged.back().Size() + range.Size();
                         merged.pop_back();
@@ -827,7 +703,9 @@ public:
                     address_space_.Validate(range, memory::AccessType::read);
                     address_space_.Validate(range, memory::AccessType::write);
                     return true;
-                } catch (const std::exception&) { return false; }
+                } catch (const std::exception&) {
+                    return false;
+                }
             },
             [this](const memory::GuestAddress address, const std::span<std::byte> out) {
                 address_space_.Read(address, out);
@@ -838,44 +716,35 @@ public:
         nio_.SetDirectMemoryAccess(direct_memory_access_);
         BindSyscalls();
         if (diagnostics_) {
-            diagnostics_->SetFutexProvider([this] {
-                return futex_table_.TrySnapshot();
-            });
+            diagnostics_->SetFutexProvider([this] { return futex_table_.TrySnapshot(); });
         }
-        JniGuestBindingContext jni_bindings{
-            environment_, classes_, invocations_, fields_, strings_, arrays_,
-            java_vm_, objects_, address_space_, &natives_, &nio_};
-        jni_bindings.string_observer = [this](const JniGuestCallFrame& frame,
-            const std::size_t bytes, const std::size_t units) {
+        JniGuestBindingContext jni_bindings{environment_, classes_, invocations_,   fields_,   strings_, arrays_,
+                                            java_vm_,     objects_, address_space_, &natives_, &nio_};
+        jni_bindings.string_observer = [this](const JniGuestCallFrame& frame, const std::size_t bytes,
+                                              const std::size_t units) {
             if (!logger_ || bytes < 1024U) return;
-            logger_->Write(core::LogLevel::info, "guest.jni_string",
-                "long modified UTF-8 input accepted", {.guest_thread = frame.thread_id},
-                {{"pointer", core::GuestAddress{frame.registers[1]}},
-                 {"encoded_bytes", static_cast<std::uint64_t>(bytes)},
-                 {"utf16_units", static_cast<std::uint64_t>(units)},
-                 {"lr", core::GuestAddress{frame.link_register}}});
+            logger_->Write(core::LogLevel::info, "guest.jni_string", "long modified UTF-8 input accepted",
+                           {.guest_thread = frame.thread_id},
+                           {{"pointer", core::GuestAddress{frame.registers[1]}},
+                            {"encoded_bytes", static_cast<std::uint64_t>(bytes)},
+                            {"utf16_units", static_cast<std::uint64_t>(units)},
+                            {"lr", core::GuestAddress{frame.link_register}}});
         };
         jni_bindings.logger = logger_;
         BindJniGuestSlots(jni_dispatcher_, jni_bindings);
         jni_dispatcher_.Seal();
-        const auto attached = java_vm_.AttachCurrentThread(
-            kRootThreadId, kJniVersion1_6);
+        const auto attached = java_vm_.AttachCurrentThread(kRootThreadId, kJniVersion1_6);
         if (attached.status != JniStatus::ok) {
-            throw AndroidGuestProcessError(
-                "Android guest root JNI thread attachment failed");
+            throw AndroidGuestProcessError("Android guest root JNI thread attachment failed");
         }
         InstallAndroidGuestFrameworkPlatform(classes_);
         Progress("process-memory-ready");
 
         clone_runtime_ = std::make_unique<GuestCloneThreadRuntime>(
-            threads_, dispatcher_, lifecycle_, address_space_, memory_bus_,
-            futex_table_, 2, 100000,
-            [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-                return HandleBoundary(cpu, stopped);
-            }, diagnostics_, [this] { BeginTeardown(); },
-            [this] { return !cleanup_requested_.load(std::memory_order_acquire); });
-        root_cpu_ = std::make_unique<cpu::DynarmicCpu>(
-            memory_bus_, execution_context_);
+            threads_, dispatcher_, lifecycle_, address_space_, memory_bus_, futex_table_, 2, 100000,
+            [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); }, diagnostics_,
+            [this] { BeginTeardown(); }, [this] { return !cleanup_requested_.load(std::memory_order_acquire); });
+        root_cpu_ = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
         ConfigureFastHostCalls(*root_cpu_);
         cpu::A32State root_state;
         root_state.SetThreadId(kRootThreadId);
@@ -888,13 +757,10 @@ public:
                 guest_load_order_.push_back(module_index);
             }
         }
-        const auto initialization = BuildGuestInitializationPlan(
-            lifecycle_modules_, guest_load_order_);
-        ExecuteGuestLifecycle(
-            initialization, [this](const GuestLifecycleCall& call) {
-                static_cast<void>(Invoke(
-                    {call.address, {}, {}}));
-            });
+        const auto initialization = BuildGuestInitializationPlan(lifecycle_modules_, guest_load_order_);
+        ExecuteGuestLifecycle(initialization, [this](const GuestLifecycleCall& call) {
+            static_cast<void>(Invoke({call.address, {}, {}}));
+        });
         constructors_started_.insert(guest_load_order_.begin(), guest_load_order_.end());
         running_ = true;
         Progress("guest-initializers-complete");
@@ -923,23 +789,19 @@ public:
         RethrowAsyncFailure();
         if (native_state_faulted_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("guest native state is unsafe after a CPU fault");
-        const bool cleanup = std::this_thread::get_id() == owner_thread_ &&
-                             cleanup_depth_ != 0U;
+        const bool cleanup = std::this_thread::get_id() == owner_thread_ && cleanup_depth_ != 0U;
         auto admitted_frame = frame;
         if (cleanup) {
             CheckCleanupDeadline();
             if (frame.thread_id != kRootThreadId || NativeExitCode())
                 throw AndroidGuestProcessError("teardown cleanup requires a live root thread");
             admitted_frame.renewable_native_frame = false;
-            if (cleanup_ticks_remaining_ == 0U)
-                throw A32GuestCallError("teardown cleanup tick budget exhausted");
-        } else if (frame.renewable_native_frame &&
-                   teardown_requested_.load(std::memory_order_acquire)) {
+            if (cleanup_ticks_remaining_ == 0U) throw A32GuestCallError("teardown cleanup tick budget exhausted");
+        } else if (frame.renewable_native_frame && teardown_requested_.load(std::memory_order_acquire)) {
             throw A32GuestCallCancelled(frame.thread_id);
         }
         if (!root_cpu_) {
-            throw AndroidGuestProcessError(
-                "Android guest call session has no root CPU");
+            throw AndroidGuestProcessError("Android guest call session has no root CPU");
         }
         cpu::Cpu* target{};
         memory::GuestAddress stack_top;
@@ -948,21 +810,17 @@ public:
         const auto active = active_guest_calls.find(this);
         if (active != active_guest_calls.end()) {
             const auto caller = active->second.cpu->GetState();
-            const auto caller_sp =
-                caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
+            const auto caller_sp = caller.Register(cpu::CoreRegister::sp) & ~UINT32_C(7);
             if (caller_sp == 0U) {
-                throw AndroidGuestProcessError(
-                    "nested Android guest call has no aligned caller stack");
+                throw AndroidGuestProcessError("nested Android guest call has no aligned caller stack");
             }
             stack_top = memory::GuestAddress{caller_sp};
             cpu::A32State nested_state;
             nested_state.SetThreadId(caller.ThreadId());
             nested_state.SetThreadPointer(caller.ThreadPointer());
-            target = &nested_guest_cpus_.Acquire(
-                caller.ThreadId(), active->second.depth, nested_state);
+            target = &nested_guest_cpus_.Acquire(caller.ThreadId(), active->second.depth, nested_state);
         } else if (frame.thread_id == kRootThreadId) {
-            call_lock = std::unique_lock<std::recursive_mutex>(
-                guest_call_mutex_);
+            call_lock = std::unique_lock<std::recursive_mutex>(guest_call_mutex_);
             target = root_cpu_.get();
             stack_top = process_memory_.stack_top;
         } else {
@@ -970,39 +828,34 @@ public:
                 const std::scoped_lock lock(dexvm_threads_mutex_);
                 const auto found = dexvm_threads_.find(frame.thread_id);
                 if (found == dexvm_threads_.end()) {
-                    throw AndroidGuestProcessError(
-                        "Android guest call thread context is not prepared");
+                    throw AndroidGuestProcessError("Android guest call thread context is not prepared");
                 }
                 dexvm_context = found->second;
             }
-            call_lock = std::unique_lock<std::recursive_mutex>(
-                dexvm_context->call_mutex);
+            call_lock = std::unique_lock<std::recursive_mutex>(dexvm_context->call_mutex);
             target = dexvm_context->cpu.get();
             stack_top = dexvm_context->stack_top;
         }
-        const auto previous = active == active_guest_calls.end()
-                                  ? ActiveGuestCall{}
-                                  : active->second;
+        const auto previous = active == active_guest_calls.end() ? ActiveGuestCall{} : active->second;
         // Renewable frames must observe each HLE result in the slow consumer;
         // a fast host call continues inside Cpu::Run and cannot report its
         // progress category to the watchdog loop.
         if (frame.renewable_native_frame || cleanup) target->SetHostCallHook({});
-        active_guest_calls[this] = {
-            target, active == active_guest_calls.end()
-                        ? 0U
-                        : active->second.depth + 1U};
-        const auto execution = diagnostics_
-            ? diagnostics_->EnterExecution(
-                  target->GetState().ThreadId(), frame.context_token,
-                  "guest_call", "InvokeA32GuestCall", frame.target.Value())
-            : 0U;
+        active_guest_calls[this] = {target, active == active_guest_calls.end() ? 0U : active->second.depth + 1U};
+        const auto execution =
+            diagnostics_ ? diagnostics_->EnterExecution(target->GetState().ThreadId(), frame.context_token,
+                                                        "guest_call", "InvokeA32GuestCall", frame.target.Value())
+                         : 0U;
+
         struct DiagnosticScope final {
             std::shared_ptr<debug::DiagnosticState> state;
             std::uint64_t id{};
+
             ~DiagnosticScope() {
                 if (state && id != 0U) state->LeaveExecution(id);
             }
         } diagnostic_scope{diagnostics_, execution};
+
         try {
             std::uint64_t charged{};
             const auto charge = [this, cleanup, &charged](const std::uint64_t consumed) {
@@ -1016,24 +869,18 @@ public:
                 }
                 cleanup_ticks_remaining_ -= delta;
             };
-            A32GuestCallSliceObserver observer =
-                [this, target, execution, &charge](const std::uint64_t consumed) {
-                    if (diagnostics_ && execution != 0U) {
-                        diagnostics_->UpdateExecution(
-                            execution, target->GetState().Register(
-                                cpu::CoreRegister::pc));
-                    }
-                    charge(consumed);
-                    if (clone_runtime_) clone_runtime_->RethrowFailure();
-                    if (ObservesCurrentThread()) slice_observer_(consumed);
-                };
+            A32GuestCallSliceObserver observer = [this, target, execution, &charge](const std::uint64_t consumed) {
+                if (diagnostics_ && execution != 0U) {
+                    diagnostics_->UpdateExecution(execution, target->GetState().Register(cpu::CoreRegister::pc));
+                }
+                charge(consumed);
+                if (clone_runtime_) clone_runtime_->RethrowFailure();
+                if (ObservesCurrentThread()) slice_observer_(consumed);
+            };
             if (admitted_frame.renewable_native_frame) {
-                observer = [this, target, execution, &frame](
-                               const std::uint64_t consumed) {
+                observer = [this, target, execution, &frame](const std::uint64_t consumed) {
                     if (diagnostics_ && execution != 0U) {
-                        diagnostics_->UpdateExecution(
-                            execution, target->GetState().Register(
-                                cpu::CoreRegister::pc));
+                        diagnostics_->UpdateExecution(execution, target->GetState().Register(cpu::CoreRegister::pc));
                     }
                     if (teardown_requested_.load(std::memory_order_acquire)) {
                         throw A32GuestCallCancelled(frame.thread_id);
@@ -1043,110 +890,94 @@ public:
                 };
             }
             auto result = InvokeA32GuestCall(
-                *target, dispatcher_, lifecycle_, address_space_, admitted_frame,
-                stack_top, process_memory_.return_trap,
-                cleanup ? cleanup_ticks_remaining_ : maximum_ticks_,
-                [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) {
-                    return HandleBoundary(cpu, stopped);
-                }, observer);
+                *target, dispatcher_, lifecycle_, address_space_, admitted_frame, stack_top,
+                process_memory_.return_trap, cleanup ? cleanup_ticks_remaining_ : maximum_ticks_,
+                [this](cpu::Cpu& cpu, const cpu::RunResult& stopped) { return HandleBoundary(cpu, stopped); },
+                observer);
             charge(result.ticks_consumed);
             if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
-            if (previous.cpu != nullptr) active_guest_calls[this] = previous;
-            else active_guest_calls.erase(this);
+            if (previous.cpu != nullptr)
+                active_guest_calls[this] = previous;
+            else
+                active_guest_calls.erase(this);
             return result;
         } catch (...) {
-            try { throw; }
-            catch (const A32GuestCallFault&) {
+            try {
+                throw;
+            } catch (const A32GuestCallFault&) {
                 native_state_faulted_.store(true, std::memory_order_release);
-            } catch (...) {}
+            } catch (...) {
+            }
             if (frame.renewable_native_frame || cleanup) ConfigureFastHostCalls(*target);
-            if (previous.cpu != nullptr) active_guest_calls[this] = previous;
-            else active_guest_calls.erase(this);
+            if (previous.cpu != nullptr)
+                active_guest_calls[this] = previous;
+            else
+                active_guest_calls.erase(this);
             if (NativeExitCode()) process_state_.RequestExit();
             if (clone_runtime_) clone_runtime_->RethrowFailure();
             throw;
         }
     }
 
-    void PrepareDexVmThread(const std::uint64_t thread_id,
-                            const std::uint32_t allocation_slot,
+    void PrepareDexVmThread(const std::uint64_t thread_id, const std::uint32_t allocation_slot,
                             const bool attach_jni = true) {
         if (cleanup_requested_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("new guest thread rejected during teardown");
         constexpr std::uint64_t kBionicPthreadMutexMaximumTid = 0xffffU;
-        if (thread_id == 0U || thread_id == kRootThreadId ||
-            thread_id > kBionicPthreadMutexMaximumTid ||
+        if (thread_id == 0U || thread_id == kRootThreadId || thread_id > kBionicPthreadMutexMaximumTid ||
             allocation_slot >= kDexVmThreadMaximum) {
-            throw AndroidGuestProcessError(
-                "DexVM guest thread context request is outside its pool");
+            throw AndroidGuestProcessError("DexVM guest thread context request is outside its pool");
         }
-        if (allocation_slot == kOpenSlesCallbackAllocationSlot &&
-            thread_id != kOpenSlesCallbackThreadId) {
-            throw AndroidGuestProcessError(
-                "DexVM guest thread requested the reserved OpenSL callback slot");
+        if (allocation_slot == kOpenSlesCallbackAllocationSlot && thread_id != kOpenSlesCallbackThreadId) {
+            throw AndroidGuestProcessError("DexVM guest thread requested the reserved OpenSL callback slot");
         }
         const std::scoped_lock contexts_lock(dexvm_threads_mutex_);
         if (dexvm_threads_.contains(thread_id)) return;
 
         const auto page_size = address_space_.PageSize();
-        const auto open_sles_callback =
-            thread_id == kOpenSlesCallbackThreadId;
+        const auto open_sles_callback = thread_id == kOpenSlesCallbackThreadId;
         const memory::GuestAddress tls_address{
-            open_sles_callback
-                ? kOpenSlesCallbackTls
-                : kDexVmTlsBase + allocation_slot *
-                      static_cast<std::uint32_t>(2U * page_size)};
-        const memory::GuestAddress thread_info_address{
-            open_sles_callback
-                ? kOpenSlesCallbackThreadInfo
-                : tls_address.Value() + static_cast<std::uint32_t>(page_size)};
+            open_sles_callback ? kOpenSlesCallbackTls
+                               : kDexVmTlsBase + allocation_slot * static_cast<std::uint32_t>(2U * page_size)};
+        const memory::GuestAddress thread_info_address{open_sles_callback ? kOpenSlesCallbackThreadInfo
+                                                                          : tls_address.Value() +
+                                                                                static_cast<std::uint32_t>(page_size)};
         const memory::GuestAddress stack_address{
-            open_sles_callback
-                ? kOpenSlesCallbackStack
-                : kDexVmStackBase + allocation_slot * kDexVmStackSize};
-        auto context = std::make_shared<DexVmThreadContext>(
-            thread_id, memory::GuestRange{thread_info_address, page_size},
-            memory::GuestRange{stack_address, kDexVmStackSize});
+            open_sles_callback ? kOpenSlesCallbackStack : kDexVmStackBase + allocation_slot * kDexVmStackSize};
+        auto context =
+            std::make_shared<DexVmThreadContext>(thread_id, memory::GuestRange{thread_info_address, page_size},
+                                                 memory::GuestRange{stack_address, kDexVmStackSize});
         bool info_mapped{};
         bool stack_mapped{};
         bool lifecycle_registered{};
         bool jni_attached{};
         try {
-            const auto rw = memory::PageProtection::read |
-                            memory::PageProtection::write;
+            const auto rw = memory::PageProtection::read | memory::PageProtection::write;
             address_space_.Map(context->thread_info, rw);
             info_mapped = true;
-            context->tls = CreateBionicTlsBlock(
-                address_space_, tls_address, thread_info_address,
-                kApi19GuestPreinitAddress);
+            context->tls =
+                CreateBionicTlsBlock(address_space_, tls_address, thread_info_address, kApi19GuestPreinitAddress);
             address_space_.Map(context->stack, rw);
             stack_mapped = true;
             context->stack_top = stack_address.Add(kDexVmStackSize - 64U);
 
             const auto tid32 = static_cast<std::uint32_t>(thread_id);
-            memory_bus_.Write32(thread_info_address.Add(12),
-                                stack_address.Value(), thread_id);
-            memory_bus_.Write32(thread_info_address.Add(16),
-                                kDexVmStackSize, thread_id);
-            memory_bus_.Write32(thread_info_address.Add(20),
-                                static_cast<std::uint32_t>(page_size), thread_id);
+            memory_bus_.Write32(thread_info_address.Add(12), stack_address.Value(), thread_id);
+            memory_bus_.Write32(thread_info_address.Add(16), kDexVmStackSize, thread_id);
+            memory_bus_.Write32(thread_info_address.Add(20), static_cast<std::uint32_t>(page_size), thread_id);
             memory_bus_.Write32(thread_info_address.Add(32), tid32, thread_id);
-            memory_bus_.Write32(thread_info_address.Add(60),
-                                tls_address.Value(), thread_id);
+            memory_bus_.Write32(thread_info_address.Add(60), tls_address.Value(), thread_id);
             lifecycle_.Register(thread_id, context->tls->thread_pointer);
             lifecycle_registered = true;
             if (attach_jni) {
-                const auto attached = java_vm_.AttachCurrentThread(
-                    thread_id, kJniVersion1_6);
+                const auto attached = java_vm_.AttachCurrentThread(thread_id, kJniVersion1_6);
                 if (attached.status != JniStatus::ok) {
-                    throw AndroidGuestProcessError(
-                        "DexVM guest thread JNI attachment failed");
+                    throw AndroidGuestProcessError("DexVM guest thread JNI attachment failed");
                 }
                 jni_attached = true;
                 context->jni_attached = true;
             }
-            context->cpu = std::make_unique<cpu::DynarmicCpu>(
-                memory_bus_, execution_context_);
+            context->cpu = std::make_unique<cpu::DynarmicCpu>(memory_bus_, execution_context_);
             ConfigureFastHostCalls(*context->cpu);
             cpu::A32State state;
             state.SetThreadId(thread_id);
@@ -1173,6 +1004,7 @@ public:
     }
 
     memory::GuestAddress PrepareThreadLooper(std::uint64_t tid) { return boundary_.PrepareThreadLooper(tid); }
+
     void ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
         boundary_.RetireThreadLooper(thread_id);
         std::shared_ptr<DexVmThreadContext> context;
@@ -1200,35 +1032,39 @@ public:
         }
     }
 
-    [[nodiscard]] std::optional<A32GuestCallResult>
-    TryInvokeRegisteredNative(
-        const JniObjectIdentity java_class, const std::string_view name,
-        const std::string_view descriptor, const A32GuestCallFrame& frame) {
-        const auto target = natives_.Resolve(
-            java_class, std::string(name), std::string(descriptor));
+    [[nodiscard]] std::optional<A32GuestCallResult> TryInvokeRegisteredNative(const JniObjectIdentity java_class,
+                                                                              const std::string_view name,
+                                                                              const std::string_view descriptor,
+                                                                              const A32GuestCallFrame& frame) {
+        const auto target = natives_.Resolve(java_class, std::string(name), std::string(descriptor));
         if (!target.has_value()) return std::nullopt;
         auto resolved = frame;
         resolved.target = *target;
         return Invoke(resolved);
     }
 
-    SupervisorCallProgress HandleBoundary(
-        cpu::Cpu& cpu, const cpu::RunResult& stopped) {
+    SupervisorCallProgress HandleBoundary(cpu::Cpu& cpu, const cpu::RunResult& stopped) {
         if ((stopped.reason != cpu::RunStopReason::supervisor_call &&
-             stopped.reason != cpu::RunStopReason::host_call_fault) || stopped.immediate != 3U)
+             stopped.reason != cpu::RunStopReason::host_call_fault) ||
+            stopped.immediate != 3U)
             return boundary_.HandleWithProgress(cpu, stopped);
         // JNI on a native clone borrows that thread's CPU for nested calls.
         // Java/root calls already publish the current CPU and nesting depth.
         const auto found = active_guest_calls.find(this);
         const auto previous = found == active_guest_calls.end() ? ActiveGuestCall{} : found->second;
+
         struct RestoreCall final {
             const Impl* owner;
             ActiveGuestCall previous;
+
             ~RestoreCall() {
-                if (previous.cpu) active_guest_calls[owner] = previous;
-                else active_guest_calls.erase(owner);
+                if (previous.cpu)
+                    active_guest_calls[owner] = previous;
+                else
+                    active_guest_calls.erase(owner);
             }
         } restore{this, previous};
+
         if (!previous.cpu) active_guest_calls[this] = {&cpu, 0U};
         if (jni_dispatcher_.Handle(cpu, stopped)) {
             return ClassifyJniReentry(true);
@@ -1237,9 +1073,7 @@ public:
     }
 
     [[nodiscard]] bool ObservesCurrentThread() const noexcept {
-        return slice_observer_ &&
-               (!slice_observer_thread_ ||
-                *slice_observer_thread_ == std::this_thread::get_id());
+        return slice_observer_ && (!slice_observer_thread_ || *slice_observer_thread_ == std::this_thread::get_id());
     }
 
     void ConfigureFastHostCalls(cpu::Cpu& cpu) {
@@ -1248,9 +1082,8 @@ public:
         }
     }
 
-    static cpu::HostCallResult DispatchFastHostCall(
-        void* userdata, const std::uint32_t svc,
-        cpu::A32HostCallContext& call) noexcept {
+    static cpu::HostCallResult DispatchFastHostCall(void* userdata, const std::uint32_t svc,
+                                                    cpu::A32HostCallContext& call) noexcept {
         if (userdata == nullptr) return cpu::HostCallResult::unhandled;
         auto& self = *static_cast<Impl*>(userdata);
         if (self.ObservesCurrentThread()) return cpu::HostCallResult::unhandled;
@@ -1262,29 +1095,21 @@ public:
         return boundary.invoke(boundary.userdata, svc, call);
     }
 
-    static AndroidBoundaryOptions BindProcessCallbacks(
-        AndroidBoundaryOptions options, Impl* owner) {
+    static AndroidBoundaryOptions BindProcessCallbacks(AndroidBoundaryOptions options, Impl* owner) {
         options.dynamic_link = {
             owner,
-            +[](void* userdata, const std::string_view name,
-                const std::uint32_t flags, const std::uint64_t thread_id) {
-                return static_cast<Impl*>(userdata)->DynamicOpen(
-                    name, flags, thread_id);
+            +[](void* userdata, const std::string_view name, const std::uint32_t flags, const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicOpen(name, flags, thread_id);
             },
-            +[](void* userdata, const std::uint32_t handle,
-                const std::string_view name, const std::uint64_t thread_id) {
-                return static_cast<Impl*>(userdata)->DynamicSymbol(
-                    handle, name, thread_id);
-            },
-            +[](void* userdata, const std::uint32_t handle,
+            +[](void* userdata, const std::uint32_t handle, const std::string_view name,
                 const std::uint64_t thread_id) {
-                return static_cast<Impl*>(userdata)->DynamicClose(
-                    handle, thread_id);
+                return static_cast<Impl*>(userdata)->DynamicSymbol(handle, name, thread_id);
             },
-            +[](void* userdata, const std::uint32_t pc,
-                const std::uint64_t thread_id) {
-                return static_cast<Impl*>(userdata)->DynamicFindExidx(
-                    pc, thread_id);
+            +[](void* userdata, const std::uint32_t handle, const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicClose(handle, thread_id);
+            },
+            +[](void* userdata, const std::uint32_t pc, const std::uint64_t thread_id) {
+                return static_cast<Impl*>(userdata)->DynamicFindExidx(pc, thread_id);
             }};
         options.ledger = &owner->ledger_;
         options.loopers.create_pipe = [owner] {
@@ -1292,26 +1117,23 @@ public:
             return std::array{pipe.read_descriptor, pipe.write_descriptor};
         };
         options.loopers.close_fd = [owner](std::int32_t fd) { owner->filesystem_->Close(fd); };
-        options.loopers.poll_events = [owner](std::int32_t fd) {
-            return owner->filesystem_->PipePollEvents(fd);
-        };
+        options.loopers.poll_events = [owner](std::int32_t fd) { return owner->filesystem_->PipePollEvents(fd); };
         options.loopers.thread_running = [owner](std::uint64_t tid) {
-            try { return owner->lifecycle_.State(tid).status == GuestThreadStatus::running; }
-            catch (const GuestThreadLifecycleError&) { return false; }
+            try {
+                return owner->lifecycle_.State(tid).status == GuestThreadStatus::running;
+            } catch (const GuestThreadLifecycleError&) {
+                return false;
+            }
         };
-        options.open_sles_callbacks = {
-            owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
-                static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
-            }};
+        options.open_sles_callbacks = {owner, +[](void* userdata, const OpenSlesGuestCallback& callback) {
+                                           static_cast<Impl*>(userdata)->EnqueueOpenSlesCallback(callback);
+                                       }};
         return options;
     }
 
-    [[nodiscard]] static std::string DynamicLibraryName(
-        const std::string_view path) {
+    [[nodiscard]] static std::string DynamicLibraryName(const std::string_view path) {
         const auto separator = path.find_last_of("/\\");
-        const auto name = separator == std::string_view::npos
-                              ? path
-                              : path.substr(separator + 1U);
+        const auto name = separator == std::string_view::npos ? path : path.substr(separator + 1U);
         if (name.empty() || name == "." || name == "..") {
             throw loader::LinkError("dlopen requires a library name");
         }
@@ -1322,15 +1144,12 @@ public:
     // library name (libhgl.so) and dlsym every GL entry point through that
     // handle. The wrapper ships no ELF here, so it opens the sealed HLE
     // GLES2 boundary instead and keeps such engines on the GL surface.
-    [[nodiscard]] static std::string CanonicalDynamicLibrary(
-        std::string name) {
+    [[nodiscard]] static std::string CanonicalDynamicLibrary(std::string name) {
         if (name == "libhgl.so") return "libGLESv2.so";
         return name;
     }
 
-    std::uint32_t DynamicOpen(const std::string_view path,
-                              const std::uint32_t flags,
-                              const std::uint64_t thread_id) {
+    std::uint32_t DynamicOpen(const std::string_view path, const std::uint32_t flags, const std::uint64_t thread_id) {
         std::scoped_lock load_lock(native_load_mutex_);
         constexpr std::uint32_t kSupportedFlags = 0x3U;
         if ((flags & ~kSupportedFlags) != 0U) {
@@ -1339,15 +1158,13 @@ public:
         // dlopen(nullptr) is the process-wide handle in bionic, not an open
         // of the root module.
         if (path.empty()) return kRtldDefault;
-        auto library =
-            CanonicalDynamicLibrary(DynamicLibraryName(path));
+        auto library = CanonicalDynamicLibrary(DynamicLibraryName(path));
         // Source callbacks and guest constructors can recursively enter dlopen.
         // The operation gate is recursive; the metadata lock never spans them.
         bool needs_load{};
         {
             std::scoped_lock lock(dynamic_link_mutex_);
-            needs_load = !HasLoadedModuleLocked(library) &&
-                         boundary_.Symbols().Exports(library).empty();
+            needs_load = !HasLoadedModuleLocked(library) && boundary_.Symbols().Exports(library).empty();
         }
         if (needs_load && native_library_load_) {
             const auto loaded = native_library_load_(path, thread_id);
@@ -1361,24 +1178,25 @@ public:
             std::scoped_lock lock(dynamic_link_mutex_);
             for (std::size_t index = 0; index < loaded_.link_namespace.modules.size(); ++index) {
                 const auto& item = loaded_.link_namespace.modules[index];
-                if (item.name == library || item.dynamic.soname == library) { root_index = index; break; }
+                if (item.name == library || item.dynamic.soname == library) {
+                    root_index = index;
+                    break;
+                }
             }
         }
         if (root_index) InitializeDynamicModule(*root_index, thread_id, initialized);
         std::scoped_lock lock(dynamic_link_mutex_);
-        const auto module = std::ranges::find_if(loaded_.link_namespace.modules,
-            [&](const loader::Elf32LinkModule& item) {
+        const auto module =
+            std::ranges::find_if(loaded_.link_namespace.modules, [&](const loader::Elf32LinkModule& item) {
                 return item.name == library || item.dynamic.soname == library;
             });
         const bool real_elf = module != loaded_.link_namespace.modules.end() && !module->load_ranges.empty();
         if (real_elf) library = module->dynamic.soname.value_or(module->name);
-        const auto open = std::ranges::find_if(
-            dynamic_link_handles_, [&](const DynamicLinkHandle& state) {
-                return state.open && state.library == library;
-            });
+        const auto open = std::ranges::find_if(dynamic_link_handles_, [&](const DynamicLinkHandle& state) {
+            return state.open && state.library == library;
+        });
         if (open != dynamic_link_handles_.end()) {
-            if (open->references ==
-                (std::numeric_limits<std::uint32_t>::max)()) {
+            if (open->references == (std::numeric_limits<std::uint32_t>::max)()) {
                 throw loader::LinkError("dlopen reference count overflow");
             }
             detail::SetApi19LinkerReferences(address_space_, *open->view, open->references + 1U);
@@ -1396,17 +1214,14 @@ public:
         memory::GuestAddress base, bias;
         std::uint32_t image_size{};
         if (!state.boundary) {
-            state.scope = loader::ExtendElf32LinkNamespace(
-                              loaded_.link_namespace, library, {})
-                              .scope;
+            state.scope = loader::ExtendElf32LinkNamespace(loaded_.link_namespace, library, {}).scope;
             const auto& root = loaded_.link_namespace.modules[state.scope->root_module];
             if (root.load_ranges.empty()) throw loader::LinkError("dlopen ELF is not mapped: " + library);
             bias = root.load_bias;
-            base = std::ranges::min(root.load_ranges, {}, [](const auto& range) {
-                return range.Start();
-            }).Start();
+            base = std::ranges::min(root.load_ranges, {}, [](const auto& range) { return range.Start(); }).Start();
             std::uint64_t end{};
-            for (const auto& range : root.load_ranges) end = std::max(end, range.EndExclusive());
+            for (const auto& range : root.load_ranges)
+                end = std::max(end, range.EndExclusive());
             image_size = static_cast<std::uint32_t>(end - base.Value());
             const loader::Elf32LinkScope own{state.scope->root_module, {}, {state.scope->root_module}};
             std::set<std::string> names;
@@ -1415,7 +1230,8 @@ public:
                 if (root.versions) {
                     const auto& version = root.versions->symbols[index];
                     if (version.kind != loader::Elf32SymbolVersionKind::global &&
-                        (version.kind != loader::Elf32SymbolVersionKind::definition || version.hidden)) continue;
+                        (version.kind != loader::Elf32SymbolVersionKind::definition || version.hidden))
+                        continue;
                 }
                 if (!symbol.IsExported() || !names.insert(symbol.name).second) continue;
                 // Project the same unversioned address as the authoritative
@@ -1427,29 +1243,30 @@ public:
         } else {
             for (const auto& symbol : exports) {
                 symbols.push_back({symbol.symbol, symbol.address, symbol.size, 1,
-                    static_cast<std::uint8_t>(symbol.kind == BoundarySymbolKind::function ? 2U : 1U)});
+                                   static_cast<std::uint8_t>(symbol.kind == BoundarySymbolKind::function ? 2U : 1U)});
             }
         }
         dynamic_link_handles_.reserve(dynamic_link_handles_.size() + 1U);
         constexpr std::uint64_t kViewArenaEnd = 0x7a000000U;
-        if (next_dynamic_link_view_.Value() >= kViewArenaEnd) throw loader::LinkError("API19 linker view arena exhausted");
-        state.view = detail::CreateApi19LinkerView(address_space_,
-            {next_dynamic_link_view_, kViewArenaEnd - next_dynamic_link_view_.Value()},
-            library, base, bias, image_size, symbols);
+        if (next_dynamic_link_view_.Value() >= kViewArenaEnd)
+            throw loader::LinkError("API19 linker view arena exhausted");
+        state.view = detail::CreateApi19LinkerView(
+            address_space_, {next_dynamic_link_view_, kViewArenaEnd - next_dynamic_link_view_.Value()}, library, base,
+            bias, image_size, symbols);
         state.handle = state.view->Handle();
         next_dynamic_link_view_ = memory::GuestAddress{static_cast<std::uint32_t>(state.view->backing.EndExclusive())};
         dynamic_link_handles_.push_back(std::move(state));
         const auto handle = dynamic_link_handles_.back().handle;
         if (logger_ && diagnostics_) {
             logger_->Write(core::LogLevel::info, "guest.dlopen", "linker metadata view opened",
-                {.guest_thread = thread_id}, {{"library", library}, {"handle", core::GuestAddress{handle.Value()}}},
-                {.mode = core::RateLimitMode::none});
+                           {.guest_thread = thread_id},
+                           {{"library", library}, {"handle", core::GuestAddress{handle.Value()}}},
+                           {.mode = core::RateLimitMode::none});
         }
         return handle.Value();
     }
 
-    std::uint32_t DynamicSymbol(const std::uint32_t handle,
-                                const std::string_view name,
+    std::uint32_t DynamicSymbol(const std::uint32_t handle, const std::string_view name,
                                 const std::uint64_t thread_id) {
         static_cast<void>(thread_id);
         if (name.empty()) throw loader::LinkError("dlsym requires a symbol name");
@@ -1460,13 +1277,11 @@ public:
             // ELF namespace fallback runs.
             const auto hle = boundary_.Symbols().LookupAny(name);
             if (hle.has_value()) return hle->Value();
-            return loader::LookupElf32Symbol(loaded_.link_namespace, name)
-                .address.Value();
+            return loader::LookupElf32Symbol(loaded_.link_namespace, name).address.Value();
         }
-        const auto state = std::ranges::find_if(
-            dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
-                return item.open && item.handle.Value() == handle;
-            });
+        const auto state = std::ranges::find_if(dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
+            return item.open && item.handle.Value() == handle;
+        });
         if (state == dynamic_link_handles_.end()) {
             throw loader::LinkError("dlsym handle is invalid or closed");
         }
@@ -1480,25 +1295,20 @@ public:
             // the explicit failure.
             const auto anywhere = boundary_.Symbols().LookupAny(name);
             if (anywhere.has_value()) return anywhere->Value();
-            throw loader::LinkError("dlsym could not find " +
-                                    std::string(name) + " in " +
-                                    state->library + " or the sealed boundary");
+            throw loader::LinkError("dlsym could not find " + std::string(name) + " in " + state->library +
+                                    " or the sealed boundary");
         }
-        return loader::LookupElf32Symbol(
-                   loaded_.link_namespace, *state->scope, name)
-            .address.Value();
+        return loader::LookupElf32Symbol(loaded_.link_namespace, *state->scope, name).address.Value();
     }
 
-    std::int32_t DynamicClose(const std::uint32_t handle,
-                              const std::uint64_t thread_id) {
+    std::int32_t DynamicClose(const std::uint32_t handle, const std::uint64_t thread_id) {
         static_cast<void>(thread_id);
         // The process-wide handle is not a reference-counted library.
         if (handle == kRtldDefault) return 0;
         std::scoped_lock lock(dynamic_link_mutex_);
-        const auto state = std::ranges::find_if(
-            dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
-                return item.open && item.handle.Value() == handle;
-            });
+        const auto state = std::ranges::find_if(dynamic_link_handles_, [handle](const DynamicLinkHandle& item) {
+            return item.open && item.handle.Value() == handle;
+        });
         if (state == dynamic_link_handles_.end()) {
             throw loader::LinkError("dlclose handle is invalid or closed");
         }
@@ -1515,35 +1325,26 @@ public:
         return 0;
     }
 
-    BionicDynamicLinkHooks::ArmExidx DynamicFindExidx(
-        const std::uint32_t pc, const std::uint64_t thread_id) const {
+    BionicDynamicLinkHooks::ArmExidx DynamicFindExidx(const std::uint32_t pc, const std::uint64_t thread_id) const {
         static_cast<void>(thread_id);
         std::scoped_lock lock(dynamic_link_mutex_);
         const auto address = memory::GuestAddress{pc};
-        for (std::size_t index = 0;
-             index < loaded_.link_namespace.modules.size(); ++index) {
+        for (std::size_t index = 0; index < loaded_.link_namespace.modules.size(); ++index) {
             const auto& module = loaded_.link_namespace.modules[index];
-            if (!std::ranges::any_of(
-                    module.load_ranges, [address](const auto& range) {
-                        return range.Contains(address);
-                    })) {
+            if (!std::ranges::any_of(module.load_ranges,
+                                     [address](const auto& range) { return range.Contains(address); })) {
                 continue;
             }
-            const auto lifecycle = std::ranges::find(
-                lifecycle_modules_, index,
-                &GuestLifecycleModule::module_index);
-            if (lifecycle == lifecycle_modules_.end() ||
-                !lifecycle->lifecycle.arm_exidx.has_value()) {
+            const auto lifecycle = std::ranges::find(lifecycle_modules_, index, &GuestLifecycleModule::module_index);
+            if (lifecycle == lifecycle_modules_.end() || !lifecycle->lifecycle.arm_exidx.has_value()) {
                 return {};
             }
             const auto& exidx = *lifecycle->lifecycle.arm_exidx;
-            const auto relocated = static_cast<std::uint64_t>(
-                lifecycle->load_bias.Value()) + exidx.address.Value();
+            const auto relocated = static_cast<std::uint64_t>(lifecycle->load_bias.Value()) + exidx.address.Value();
             if (relocated > UINT32_MAX) {
                 throw loader::LinkError("ARM exidx address wraps");
             }
-            return {static_cast<std::uint32_t>(relocated),
-                    exidx.entry_count};
+            return {static_cast<std::uint32_t>(relocated), exidx.entry_count};
         }
         return {};
     }
@@ -1564,62 +1365,46 @@ public:
 
     void StartOpenSlesCallbackThread() {
         if (open_sles_callback_memory_reserved_) {
-            address_space_.Unmap(
-                {memory::GuestAddress{kOpenSlesCallbackTls},
-                 address_space_.PageSize()});
-            address_space_.Unmap(
-                {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
-                 address_space_.PageSize()});
-            address_space_.Unmap(
-                {memory::GuestAddress{kOpenSlesCallbackStack},
-                 kDexVmStackSize});
+            address_space_.Unmap({memory::GuestAddress{kOpenSlesCallbackTls}, address_space_.PageSize()});
+            address_space_.Unmap({memory::GuestAddress{kOpenSlesCallbackThreadInfo}, address_space_.PageSize()});
+            address_space_.Unmap({memory::GuestAddress{kOpenSlesCallbackStack}, kDexVmStackSize});
             open_sles_callback_memory_reserved_ = false;
         }
-        PrepareDexVmThread(kOpenSlesCallbackThreadId,
-                           kOpenSlesCallbackAllocationSlot, false);
+        PrepareDexVmThread(kOpenSlesCallbackThreadId, kOpenSlesCallbackAllocationSlot, false);
         try {
             open_sles_callback_thread_ = std::jthread([this] {
                 for (;;) {
                     OpenSlesGuestCallback callback;
                     {
                         std::unique_lock lock(open_sles_callback_mutex_);
-                        open_sles_callback_ready_.wait(lock, [this] {
-                            return open_sles_callback_stopping_ ||
-                                   !open_sles_callbacks_.empty();
-                        });
+                        open_sles_callback_ready_.wait(
+                            lock, [this] { return open_sles_callback_stopping_ || !open_sles_callbacks_.empty(); });
                         if (open_sles_callback_stopping_) return;
                         callback = open_sles_callbacks_.front();
                         open_sles_callbacks_.pop_front();
                     }
                     if (callback.generation != 0U &&
-                        !boundary_.OpenSlesCallbackCurrent(
-                            callback.object_key, callback.generation)) {
+                        !boundary_.OpenSlesCallbackCurrent(callback.object_key, callback.generation)) {
                         continue;
                     }
                     try {
                         A32GuestCallFrame frame;
                         frame.target = memory::GuestAddress{callback.function};
                         frame.thread_id = kOpenSlesCallbackThreadId;
-                        const auto register_count = std::min<std::size_t>(
-                            callback.argument_count, frame.registers.size());
-                        std::copy_n(callback.arguments.begin(), register_count,
-                                    frame.registers.begin());
+                        const auto register_count =
+                            std::min<std::size_t>(callback.argument_count, frame.registers.size());
+                        std::copy_n(callback.arguments.begin(), register_count, frame.registers.begin());
                         std::array<std::uint32_t, 2> stack{};
-                        const auto stack_count = callback.argument_count > 4U
-                                                     ? callback.argument_count - 4U
-                                                     : 0U;
+                        const auto stack_count = callback.argument_count > 4U ? callback.argument_count - 4U : 0U;
                         if (stack_count != 0U) {
-                            std::copy_n(callback.arguments.begin() + 4U,
-                                        stack_count, stack.begin());
-                            frame.stack_words =
-                                std::span(stack).first(stack_count);
+                            std::copy_n(callback.arguments.begin() + 4U, stack_count, stack.begin());
+                            frame.stack_words = std::span(stack).first(stack_count);
                         }
                         static_cast<void>(Invoke(frame));
                     } catch (...) {
                         const std::scoped_lock lock(open_sles_callback_mutex_);
                         if (!open_sles_callback_failure_) {
-                            open_sles_callback_failure_ =
-                                std::current_exception();
+                            open_sles_callback_failure_ = std::current_exception();
                         }
                         open_sles_callbacks_.clear();
                     }
@@ -1647,29 +1432,18 @@ public:
     }
 
     void ReserveOpenSlesCallbackMemory() {
-        const auto rw = memory::PageProtection::read |
-                        memory::PageProtection::write;
-        address_space_.Map(
-            {memory::GuestAddress{kOpenSlesCallbackTls},
-             address_space_.PageSize()}, rw);
+        const auto rw = memory::PageProtection::read | memory::PageProtection::write;
+        address_space_.Map({memory::GuestAddress{kOpenSlesCallbackTls}, address_space_.PageSize()}, rw);
         try {
-            address_space_.Map(
-                {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
-                 address_space_.PageSize()}, rw);
+            address_space_.Map({memory::GuestAddress{kOpenSlesCallbackThreadInfo}, address_space_.PageSize()}, rw);
             try {
-                address_space_.Map(
-                    {memory::GuestAddress{kOpenSlesCallbackStack},
-                     kDexVmStackSize}, rw);
+                address_space_.Map({memory::GuestAddress{kOpenSlesCallbackStack}, kDexVmStackSize}, rw);
             } catch (...) {
-                address_space_.Unmap(
-                    {memory::GuestAddress{kOpenSlesCallbackThreadInfo},
-                     address_space_.PageSize()});
+                address_space_.Unmap({memory::GuestAddress{kOpenSlesCallbackThreadInfo}, address_space_.PageSize()});
                 throw;
             }
         } catch (...) {
-            address_space_.Unmap(
-                {memory::GuestAddress{kOpenSlesCallbackTls},
-                 address_space_.PageSize()});
+            address_space_.Unmap({memory::GuestAddress{kOpenSlesCallbackTls}, address_space_.PageSize()});
             throw;
         }
         open_sles_callback_memory_reserved_ = true;
@@ -1710,8 +1484,7 @@ public:
             try {
                 const auto joined = clone_runtime_->Join(child.thread_id);
                 if (joined.run.reason != GuestThreadRunStop::guest_exit) {
-                    throw AndroidGuestProcessError(
-                        "Android guest child did not exit cleanly");
+                    throw AndroidGuestProcessError("Android guest child did not exit cleanly");
                 }
             } catch (...) {
                 if (!native_workers_failure_) {
@@ -1738,12 +1511,14 @@ public:
         BeginTeardown();
         boundary_.ShutdownLoopers();
         if (execution_budget_) execution_budget_->BeginDrain();
-        static_cast<void>(
-            boundary_.PcmPlayback().InterruptBlockingWaits());
+        static_cast<void>(boundary_.PcmPlayback().InterruptBlockingWaits());
         StopOpenSlesCallbackThread();
         std::exception_ptr first_child_failure;
-        try { QuiesceNativeWorkers(); }
-        catch (...) { first_child_failure = std::current_exception(); }
+        try {
+            QuiesceNativeWorkers();
+        } catch (...) {
+            first_child_failure = std::current_exception();
+        }
         std::vector<std::uint64_t> dexvm_thread_ids;
         {
             const std::scoped_lock lock(dexvm_threads_mutex_);
@@ -1759,22 +1534,22 @@ public:
         // cleanup leaves guest object invariants unknown: retain the first
         // error and reclaim the process, rather than pretending to dlclose it.
         auto failure = first_child_failure;
-        if (policy == GuestFinalizationPolicy::permitted && !failure && !NativeExitCode() && !teardown_cleanup_failed_ &&
-            !native_state_faulted_.load(std::memory_order_acquire)) {
+        if (policy == GuestFinalizationPolicy::permitted && !failure && !NativeExitCode() &&
+            !teardown_cleanup_failed_ && !native_state_faulted_.load(std::memory_order_acquire)) {
             try {
                 auto fini_order = guest_load_order_;
                 std::reverse(fini_order.begin(), fini_order.end());
-                const auto finalization = BuildGuestFinalizationPlan(
-                    lifecycle_modules_, fini_order);
+                const auto finalization = BuildGuestFinalizationPlan(lifecycle_modules_, fini_order);
                 RunTeardownCleanup([&] {
-                    ExecuteGuestLifecycle(
-                        finalization, [this](const GuestLifecycleCall& call) {
-                            static_cast<void>(Invoke({call.address, {}, {}}));
-                        });
+                    ExecuteGuestLifecycle(finalization, [this](const GuestLifecycleCall& call) {
+                        static_cast<void>(Invoke({call.address, {}, {}}));
+                    });
                 });
             } catch (const A32GuestCallExit&) {
                 // A fini itself may request process exit; do not re-enter it.
-            } catch (...) { failure = std::current_exception(); }
+            } catch (...) {
+                failure = std::current_exception();
+            }
         }
         const auto detached = java_vm_.DetachCurrentThread(kRootThreadId);
         static_cast<void>(environment_.ShutdownMonitors());
@@ -1831,162 +1606,146 @@ public:
                                        {.mode = core::RateLimitMode::none});
         }
         if (detached != JniStatus::ok && !failure) {
-            failure = std::make_exception_ptr(AndroidGuestProcessError(
-                "Android guest root JNI thread detachment failed"));
+            failure =
+                std::make_exception_ptr(AndroidGuestProcessError("Android guest root JNI thread detachment failed"));
         }
         if (failure) std::rethrow_exception(failure);
     }
 
     void BindSyscalls() {
-        BindAndroidTimeSyscalls(dispatcher_, clock_, address_space_,
-            [this](std::uint64_t thread, std::chrono::nanoseconds duration) {
-                if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ ||
-                    cleanup_depth_ == 0U) return;
+        BindAndroidTimeSyscalls(
+            dispatcher_, clock_, address_space_, [this](std::uint64_t thread, std::chrono::nanoseconds duration) {
+                if (thread != kRootThreadId || std::this_thread::get_id() != owner_thread_ || cleanup_depth_ == 0U)
+                    return;
                 const auto now = hal::Clock::SteadyTimestampNs();
                 if (now >= *cleanup_deadline_ns_ ||
                     static_cast<std::uint64_t>(duration.count()) > *cleanup_deadline_ns_ - now)
                     throw A32GuestCallError("teardown cleanup wall-time budget exhausted by nanosleep");
             });
         BindAndroidMemorySyscalls(dispatcher_, address_space_);
-        BindAndroidThreadSyscalls(
-            dispatcher_, futex_table_, memory_bus_);
+        BindAndroidThreadSyscalls(dispatcher_, futex_table_, memory_bus_);
         BindAndroidSignalSyscalls(dispatcher_, address_space_, &lifecycle_);
-        BindAndroidProcessSyscalls(
-            dispatcher_, address_space_,
-            [this](const GuestVmaAnnotation& annotation) {
-                std::scoped_lock lock(vma_mutex_);
-                vma_annotations_.push_back(annotation);
-            });
-        BindAndroidFileSyscalls(
-            dispatcher_, *filesystem_, address_space_,
-            [this](const GuestIoRecord& record) {
-                if (logger_ == nullptr) return;
-                auto level = record.stream == GuestIoStream::stderr_stream
-                                 ? core::LogLevel::error
-                                 : core::LogLevel::info;
-                std::size_t begin{};
-                std::string tag;
-                if (record.stream == GuestIoStream::android_log &&
-                    !record.payload.empty()) {
-                    const auto priority = std::to_integer<std::uint8_t>(
-                        record.payload.front());
-                    level = priority >= 7U ? core::LogLevel::fatal
-                          : priority >= 6U ? core::LogLevel::error
-                          : priority >= 5U ? core::LogLevel::warn
-                          : priority >= 4U ? core::LogLevel::info
-                                           : core::LogLevel::debug;
-                    begin = 1U;
-                    while (begin < record.payload.size() &&
-                           record.payload[begin] != std::byte{}) {
-                        tag.push_back(static_cast<char>(
-                            std::to_integer<unsigned char>(record.payload[begin++])));
-                    }
-                    if (begin < record.payload.size()) ++begin;
+        BindAndroidProcessSyscalls(dispatcher_, address_space_, [this](const GuestVmaAnnotation& annotation) {
+            std::scoped_lock lock(vma_mutex_);
+            vma_annotations_.push_back(annotation);
+        });
+        BindAndroidFileSyscalls(dispatcher_, *filesystem_, address_space_, [this](const GuestIoRecord& record) {
+            if (logger_ == nullptr) return;
+            auto level = record.stream == GuestIoStream::stderr_stream ? core::LogLevel::error : core::LogLevel::info;
+            std::size_t begin{};
+            std::string tag;
+            if (record.stream == GuestIoStream::android_log && !record.payload.empty()) {
+                const auto priority = std::to_integer<std::uint8_t>(record.payload.front());
+                level = priority >= 7U   ? core::LogLevel::fatal
+                        : priority >= 6U ? core::LogLevel::error
+                        : priority >= 5U ? core::LogLevel::warn
+                        : priority >= 4U ? core::LogLevel::info
+                                         : core::LogLevel::debug;
+                begin = 1U;
+                while (begin < record.payload.size() && record.payload[begin] != std::byte{}) {
+                    tag.push_back(static_cast<char>(std::to_integer<unsigned char>(record.payload[begin++])));
                 }
-                std::string message;
-                message.reserve(record.payload.size() - begin);
-                for (std::size_t index = begin; index < record.payload.size(); ++index) {
-                    const auto byte = std::to_integer<unsigned char>(record.payload[index]);
-                    if (byte == 0U) continue;
-                    message.push_back(byte == '\r' ? '\n' : static_cast<char>(byte));
-                }
-                while (!message.empty() &&
-                       (message.back() == '\n' || message.back() == '\0')) {
-                    message.pop_back();
-                }
-                if (message.empty()) message = "<empty guest write>";
-                const auto category = record.stream == GuestIoStream::stderr_stream
-                                          ? "guest.stderr"
-                                      : record.stream == GuestIoStream::stdout_stream
-                                          ? "guest.stdout"
-                                          : "guest.kernel_log";
-                logger_->Write(level, category,
-                               tag.empty() ? "[guest] " + message
-                                           : "[guest] " + tag + ": " + message,
-                               {.guest_thread = record.thread_id},
-                               {{"guest_io_endpoint", record.endpoint},
-                                {"guest_io_bytes",
-                                 static_cast<std::uint64_t>(record.payload.size())}});
-            });
-        BindAndroidFileMetadataSyscalls(
-            dispatcher_, *filesystem_, address_space_);
+                if (begin < record.payload.size()) ++begin;
+            }
+            std::string message;
+            message.reserve(record.payload.size() - begin);
+            for (std::size_t index = begin; index < record.payload.size(); ++index) {
+                const auto byte = std::to_integer<unsigned char>(record.payload[index]);
+                if (byte == 0U) continue;
+                message.push_back(byte == '\r' ? '\n' : static_cast<char>(byte));
+            }
+            while (!message.empty() && (message.back() == '\n' || message.back() == '\0')) {
+                message.pop_back();
+            }
+            if (message.empty()) message = "<empty guest write>";
+            const auto category = record.stream == GuestIoStream::stderr_stream   ? "guest.stderr"
+                                  : record.stream == GuestIoStream::stdout_stream ? "guest.stdout"
+                                                                                  : "guest.kernel_log";
+            logger_->Write(level, category, tag.empty() ? "[guest] " + message : "[guest] " + tag + ": " + message,
+                           {.guest_thread = record.thread_id},
+                           {{"guest_io_endpoint", record.endpoint},
+                            {"guest_io_bytes", static_cast<std::uint64_t>(record.payload.size())}});
+        });
+        BindAndroidFileMetadataSyscalls(dispatcher_, *filesystem_, address_space_);
         BindAndroidThreadLifecycleSyscalls(dispatcher_, lifecycle_);
-        BindAndroidArmPrivateSyscalls(
-            dispatcher_, address_space_,
-            [this](const std::uint64_t thread_id,
-                   const memory::GuestAddress pointer) {
-                lifecycle_.SetThreadPointer(thread_id, pointer);
-                return true;
-            });
+        BindAndroidArmPrivateSyscalls(dispatcher_, address_space_,
+                                      [this](const std::uint64_t thread_id, const memory::GuestAddress pointer) {
+                                          lifecycle_.SetThreadPointer(thread_id, pointer);
+                                          return true;
+                                      });
         const auto device_paths = std::make_shared<std::map<std::int32_t, std::string>>();
-        dispatcher_.SetObserver(
-            [this, device_paths](const A32SyscallFrame& frame,
-                   const std::int32_t result) {
-                if ((frame.number == 3 || frame.number == 4 || frame.number == 6 || frame.number == 146) && result >= 0) {
-                    boundary_.NotifyFileWrite();
+        dispatcher_.SetObserver([this, device_paths](const A32SyscallFrame& frame, const std::int32_t result) {
+            if ((frame.number == 3 || frame.number == 4 || frame.number == 6 || frame.number == 146) && result >= 0) {
+                boundary_.NotifyFileWrite();
+            }
+            // Diagnostic-only metadata; never expose random bytes or let
+            // a failed diagnostic read replace the original syscall result.
+            if (!diagnostics_ || !logger_) return;
+            try {
+                std::string path;
+                auto fd = static_cast<std::int32_t>(frame.arguments[0]);
+                if (frame.number == 5 || frame.number == 322) {
+                    path = syscall_detail::ReadGuestPath(address_space_, frame.arguments[frame.number == 5 ? 0 : 1]);
+                    if (!path.starts_with("/dev/")) return;
+                    fd = result;
+                    if (result >= 0) (*device_paths)[fd] = path;
+                } else if (frame.number == 3 || frame.number == 6) {
+                    const auto found = device_paths->find(fd);
+                    if (found == device_paths->end()) return;
+                    path = found->second;
+                    if (frame.number == 6 && result == 0) device_paths->erase(found);
+                } else {
+                    return;
                 }
-                // Diagnostic-only metadata; never expose random bytes or let
-                // a failed diagnostic read replace the original syscall result.
-                if (!diagnostics_ || !logger_) return;
-                try {
-                    std::string path;
-                    auto fd = static_cast<std::int32_t>(frame.arguments[0]);
-                    if (frame.number == 5 || frame.number == 322) {
-                        path = syscall_detail::ReadGuestPath(address_space_,
-                            frame.arguments[frame.number == 5 ? 0 : 1]);
-                        if (!path.starts_with("/dev/")) return;
-                        fd = result;
-                        if (result >= 0) (*device_paths)[fd] = path;
-                    } else if (frame.number == 3 || frame.number == 6) {
-                        const auto found = device_paths->find(fd);
-                        if (found == device_paths->end()) return;
-                        path = found->second;
-                        if (frame.number == 6 && result == 0) device_paths->erase(found);
-                    } else {
-                        return;
-                    }
-                    logger_->Write(core::LogLevel::info, "guest.device_io",
-                        "native device syscall result", {.guest_thread = frame.thread_id},
-                        {{"path", path}, {"syscall", static_cast<std::uint64_t>(frame.number)},
-                         {"fd", static_cast<std::int64_t>(fd)},
-                         {"flags", static_cast<std::uint64_t>(frame.number == 5 ? frame.arguments[1] : frame.number == 322 ? frame.arguments[2] : 0)},
-                         {"requested", static_cast<std::uint64_t>(frame.number == 3 ? frame.arguments[2] : 0)},
-                         {"result", static_cast<std::int64_t>(result)}},
-                        {.mode = core::RateLimitMode::none});
-                } catch (const std::exception&) {
-                    // The syscall outcome remains authoritative.
+                logger_->Write(core::LogLevel::info, "guest.device_io", "native device syscall result",
+                               {.guest_thread = frame.thread_id},
+                               {{"path", path},
+                                {"syscall", static_cast<std::uint64_t>(frame.number)},
+                                {"fd", static_cast<std::int64_t>(fd)},
+                                {"flags", static_cast<std::uint64_t>(frame.number == 5     ? frame.arguments[1]
+                                                                     : frame.number == 322 ? frame.arguments[2]
+                                                                                           : 0)},
+                                {"requested", static_cast<std::uint64_t>(frame.number == 3 ? frame.arguments[2] : 0)},
+                                {"result", static_cast<std::int64_t>(result)}},
+                               {.mode = core::RateLimitMode::none});
+            } catch (const std::exception&) {
+                // The syscall outcome remains authoritative.
+            }
+        });
+        if (diagnostics_) {
+            dispatcher_.SetDiagnosticObserver([this](const A32SyscallFrame& frame, const A32SyscallOutcome& outcome) {
+                std::optional<std::int32_t> fd;
+                switch (frame.number) {
+                case 3:
+                case 4:
+                case 6:
+                case 19:
+                case 140:
+                case 180:
+                case 181: fd = static_cast<std::int32_t>(frame.arguments[0]); break;
+                case 5:
+                case 322:
+                    if (outcome.return_value >= 0) fd = outcome.return_value;
+                    break;
+                default: break;
+                }
+                diagnostics_->RecordSyscall(frame.thread_id, frame.number, outcome.return_value, outcome.progress, fd,
+                                            fd ? filesystem_->TryDescriptorNode(*fd) : std::nullopt);
+                if (logger_ && frame.number == 192 && frame.arguments[3] == 0x32) {
+                    const auto pending = environment_.IsThreadAttached(frame.thread_id)
+                                             ? core::FieldValue{environment_.ExceptionCheck(frame.thread_id)}
+                                             : core::FieldValue{std::string{"unattached"}};
+                    logger_->Write(core::LogLevel::info, "guest.mmap_fixed", "anonymous fixed mapping result",
+                                   {.guest_thread = frame.thread_id},
+                                   {{"address", core::GuestAddress{frame.arguments[0]}},
+                                    {"length", static_cast<std::uint64_t>(frame.arguments[1])},
+                                    {"protection", static_cast<std::uint64_t>(frame.arguments[2])},
+                                    {"flags", static_cast<std::uint64_t>(frame.arguments[3])},
+                                    {"result", static_cast<std::int64_t>(outcome.return_value)},
+                                    {"pending_exception", pending}},
+                                   {.mode = core::RateLimitMode::none});
                 }
             });
-        if (diagnostics_) {
-            dispatcher_.SetDiagnosticObserver(
-                [this](const A32SyscallFrame& frame,
-                       const A32SyscallOutcome& outcome) {
-                    std::optional<std::int32_t> fd;
-                    switch (frame.number) {
-                    case 3: case 4: case 6: case 19: case 140: case 180: case 181:
-                        fd = static_cast<std::int32_t>(frame.arguments[0]); break;
-                    case 5: case 322: if (outcome.return_value >= 0) fd = outcome.return_value; break;
-                    default: break;
-                    }
-                    diagnostics_->RecordSyscall(
-                        frame.thread_id, frame.number, outcome.return_value,
-                        outcome.progress, fd, fd ? filesystem_->TryDescriptorNode(*fd) : std::nullopt);
-                    if (logger_ && frame.number == 192 && frame.arguments[3] == 0x32) {
-                        const auto pending = environment_.IsThreadAttached(frame.thread_id)
-                            ? core::FieldValue{environment_.ExceptionCheck(frame.thread_id)}
-                            : core::FieldValue{std::string{"unattached"}};
-                        logger_->Write(core::LogLevel::info, "guest.mmap_fixed",
-                            "anonymous fixed mapping result",
-                            {.guest_thread = frame.thread_id},
-                            {{"address", core::GuestAddress{frame.arguments[0]}},
-                             {"length", static_cast<std::uint64_t>(frame.arguments[1])},
-                             {"protection", static_cast<std::uint64_t>(frame.arguments[2])},
-                             {"flags", static_cast<std::uint64_t>(frame.arguments[3])},
-                             {"result", static_cast<std::int64_t>(outcome.return_value)},
-                             {"pending_exception", pending}},
-                            {.mode = core::RateLimitMode::none});
-                    }
-                });
         }
     }
 
@@ -1995,21 +1754,42 @@ public:
     }
 
     dexvm::NioDirectMemoryAccess GuestMemoryAccess() const { return direct_memory_access_; }
+
     void SetBitmapHooks(AndroidBitmapHooks hooks) { boundary_.SetBitmapHooks(hooks); }
+
+    void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
+        boundary_.SetDeviceLocaleProvider(std::move(provider));
+    }
+
     void SetSurfaceHooks(AndroidSurfaceHooks hooks) { boundary_.SetSurfaceHooks(hooks); }
-    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return boundary_.AcquireSurfaceWindow(surface); }
+
+    memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {
+        return boundary_.AcquireSurfaceWindow(surface);
+    }
+
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { boundary_.UpdateSurfaceWindow(surface); }
+
     void RetireSurfaceWindow(memory::GuestAddress identity) { boundary_.RetireSurfaceWindow(identity); }
-    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { boundary_.SetSensorDirectory(std::move(directory)); }
+
+    void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
+        boundary_.SetSensorDirectory(std::move(directory));
+    }
+
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { boundary_.SetAssetManagerHooks(hooks); }
-    memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return boundary_.RegisterAssetManager(std::move(source)); }
+
+    memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
+        return boundary_.RegisterAssetManager(std::move(source));
+    }
+
     void UnregisterAssetManager(memory::GuestAddress manager) { boundary_.UnregisterAssetManager(manager); }
+
     memory::GuestAddress FindModuleExport(const std::size_t index, const std::string_view name) const {
         std::scoped_lock lock(dynamic_link_mutex_);
         if (index >= loaded_.link_namespace.modules.size())
             throw AndroidGuestProcessError("invalid native module index");
-        const auto scope = loader::ExtendElf32LinkNamespace(
-            loaded_.link_namespace, loaded_.link_namespace.modules[index].name, {}).scope;
+        const auto scope =
+            loader::ExtendElf32LinkNamespace(loaded_.link_namespace, loaded_.link_namespace.modules[index].name, {})
+                .scope;
         return loader::LookupElf32Symbol(loaded_.link_namespace, scope, name).address;
     }
 
@@ -2029,79 +1809,80 @@ public:
         }
     }
 
-    memory::GuestAddress GuestEnvironment() const noexcept {
-        return guest_jni_.Environment(); }
-    memory::GuestAddress GuestJavaVm() const noexcept {
-        return guest_jni_.JavaVm(); }
+    memory::GuestAddress GuestEnvironment() const noexcept { return guest_jni_.Environment(); }
+
+    memory::GuestAddress GuestJavaVm() const noexcept { return guest_jni_.JavaVm(); }
+
     JniEnvironment& Environment() noexcept { return environment_; }
+
     JniClassRegistry& Classes() noexcept { return classes_; }
+
     JniInvocationEngine& Invocations() noexcept { return invocations_; }
+
     JniFieldStore& Fields() noexcept { return fields_; }
+
     JniNativeRegistry& Natives() noexcept { return natives_; }
+
     JniGuestObjectRegistry& Objects() noexcept { return objects_; }
+
     JniStringStore& Strings() noexcept { return strings_; }
+
     JniPrimitiveArrayStore& Arrays() noexcept { return arrays_; }
+
     dexvm::NioRuntime& NIO() noexcept { return nio_; }
-    audio::JavaSoundPoolState& SoundPoolState() noexcept {
-        return sound_pool_; }
-    audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept {
-        return sound_pool_mixer_; }
-    audio::EncodedMusicMixer& EncodedMusic() noexcept {
-        return encoded_music_; }
-    audio::OpenSlesPcmMixer& PcmPlayback() noexcept {
-        return boundary_.PcmPlayback(); }
-    void SetAuxiliaryAudioMix(
-        std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+
+    audio::JavaSoundPoolState& SoundPoolState() noexcept { return sound_pool_; }
+
+    audio::JavaSoundPoolMixer& SoundPoolMixer() noexcept { return sound_pool_mixer_; }
+
+    audio::EncodedMusicMixer& EncodedMusic() noexcept { return encoded_music_; }
+
+    audio::OpenSlesPcmMixer& PcmPlayback() noexcept { return boundary_.PcmPlayback(); }
+
+    void SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
         std::scoped_lock lock(auxiliary_audio_mutex_);
         auxiliary_audio_mix_ = std::move(mix);
     }
+
     VirtualFileSystem* Filesystem() noexcept { return filesystem_; }
+
     const GuestCpuConfig& CpuConfig() const noexcept { return cpu_environment_.Config(); }
+
     const GuestMemorySnapshot& MemorySnapshot() const noexcept { return memory_snapshot_; }
-    std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries()
-        const {
+
+    std::vector<GuestProcessEnvironmentEntry> ProcessEnvironmentEntries() const {
         constexpr std::size_t kMaximumEntryBytes = 4096U;
         constexpr std::size_t kMaximumTotalBytes = 64U * 1024U;
-        const auto symbol = loader::LookupElf32Symbol(
-            loaded_.link_namespace, "environ");
-        const auto vector_address = memory::GuestAddress{
-            address_space_.Read32(symbol.address)};
+        const auto symbol = loader::LookupElf32Symbol(loaded_.link_namespace, "environ");
+        const auto vector_address = memory::GuestAddress{address_space_.Read32(symbol.address)};
         if (vector_address.IsNull()) {
-            throw AndroidGuestProcessError(
-                "guest process environ pointer is null");
+            throw AndroidGuestProcessError("guest process environ pointer is null");
         }
         std::vector<GuestProcessEnvironmentEntry> result;
         std::size_t total_bytes{};
-        for (std::size_t index = 0;
-             index <= GuestProcessEnvironment::kMaximumEntries; ++index) {
-            const auto item = memory::GuestAddress{address_space_.Read32(
-                vector_address.Add(index * sizeof(std::uint32_t)))};
+        for (std::size_t index = 0; index <= GuestProcessEnvironment::kMaximumEntries; ++index) {
+            const auto item =
+                memory::GuestAddress{address_space_.Read32(vector_address.Add(index * sizeof(std::uint32_t)))};
             if (item.IsNull()) return result;
             if (index == GuestProcessEnvironment::kMaximumEntries) {
-                throw AndroidGuestProcessError(
-                    "guest process environ is not terminated");
+                throw AndroidGuestProcessError("guest process environ is not terminated");
             }
-            const auto length =
-                address_space_.CStringLength(item, kMaximumEntryBytes);
+            const auto length = address_space_.CStringLength(item, kMaximumEntryBytes);
             total_bytes += length + 1U;
             if (total_bytes > kMaximumTotalBytes) {
-                throw AndroidGuestProcessError(
-                    "guest process environ exceeds its read boundary");
+                throw AndroidGuestProcessError("guest process environ exceeds its read boundary");
             }
             std::vector<std::byte> bytes(length);
             address_space_.Read(item, bytes);
-            std::string text(reinterpret_cast<const char*>(bytes.data()),
-                             bytes.size());
+            std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
             const auto separator = text.find('=');
             if (separator == std::string::npos) continue;
-            result.push_back({text.substr(0, separator),
-                              text.substr(separator + 1U)});
+            result.push_back({text.substr(0, separator), text.substr(separator + 1U)});
         }
-        throw AndroidGuestProcessError(
-            "guest process environ is not terminated");
+        throw AndroidGuestProcessError("guest process environ is not terminated");
     }
-    std::optional<std::string> ProcessEnvironmentValue(
-        const std::string_view name) const {
+
+    std::optional<std::string> ProcessEnvironmentValue(const std::string_view name) const {
         if (name.empty() || name.find('=') != std::string_view::npos) {
             return std::nullopt;
         }
@@ -2110,17 +1891,15 @@ public:
         }
         return std::nullopt;
     }
+
     void InitializeJniLibrary() {
         if (!running_) {
-            throw AndroidGuestProcessError(
-                "guest JNI library cannot initialize in a stopped session");
+            throw AndroidGuestProcessError("guest JNI library cannot initialize in a stopped session");
         }
         if (jni_library_initialized_) {
-            throw AndroidGuestProcessError(
-                "guest JNI library is already initialized");
+            throw AndroidGuestProcessError("guest JNI library is already initialized");
         }
-        const auto on_load = BuildJniGuestLibraryOnLoad(
-            loaded_.link_namespace, root_module_, guest_jni_.JavaVm());
+        const auto on_load = BuildJniGuestLibraryOnLoad(loaded_.link_namespace, root_module_, guest_jni_.JavaVm());
         if (on_load.has_value()) {
             Progress("guest-jni-onload");
             const auto result = Invoke(on_load->call);
@@ -2129,71 +1908,76 @@ public:
         jni_library_initialized_ = true;
         Progress("guest-jni-library-ready");
     }
+
     void OpenManagedSurface() { boundary_.OpenManagedSurface(); }
-    void BindManagedSurfaceOnCallingThread() {
-        boundary_.BindManagedSurfaceOnCallingThread();
-    }
-    void ReleaseManagedSurfaceFromCallingThread() {
-        boundary_.ReleaseManagedSurfaceFromCallingThread();
-    }
-    bool ManagedSurfaceIsOpen() const noexcept {
-        return boundary_.ManagedSurfaceIsOpen();
-    }
-    std::string ManagedGlString(const std::uint32_t parameter) {
-        return boundary_.ManagedGlString(parameter);
-    }
-    std::string ManagedEglString(const std::uint32_t parameter) {
-        return boundary_.ManagedEglString(parameter);
-    }
-    void LatchManagedEglError(const std::uint64_t thread_id,
-                              const std::uint32_t error) {
+
+    void BindManagedSurfaceOnCallingThread() { boundary_.BindManagedSurfaceOnCallingThread(); }
+
+    void ReleaseManagedSurfaceFromCallingThread() { boundary_.ReleaseManagedSurfaceFromCallingThread(); }
+
+    bool ManagedSurfaceIsOpen() const noexcept { return boundary_.ManagedSurfaceIsOpen(); }
+
+    std::string ManagedGlString(const std::uint32_t parameter) { return boundary_.ManagedGlString(parameter); }
+
+    std::string ManagedEglString(const std::uint32_t parameter) { return boundary_.ManagedEglString(parameter); }
+
+    void LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) {
         boundary_.LatchManagedEglError(thread_id, error);
     }
-    std::uint32_t InvokeManagedGles(
-        const gles::GlesApi api, const std::string_view name,
-        const std::span<const std::uint32_t> arguments,
-        const std::uint64_t thread_id) {
+
+    std::uint32_t InvokeManagedGles(const gles::GlesApi api, const std::string_view name,
+                                    const std::span<const std::uint32_t> arguments, const std::uint64_t thread_id) {
         return boundary_.InvokeManagedGles(api, name, arguments, thread_id);
     }
-    std::uint32_t InvokeManagedEgl(
-        const std::string_view name,
-        const std::span<const std::uint32_t> arguments,
-        const std::uint64_t thread_id) {
+
+    std::uint32_t InvokeManagedEgl(const std::string_view name, const std::span<const std::uint32_t> arguments,
+                                   const std::uint64_t thread_id) {
         return boundary_.InvokeManagedEgl(name, arguments, thread_id);
     }
-    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call) { return boundary_.UseExternalTexture(call); }
+
+    gles::ExternalTextureContext UseExternalTexture(const gles::ExternalTextureCall& call) {
+        return boundary_.UseExternalTexture(call);
+    }
+
     void PresentManagedSurface() { boundary_.PresentManagedSurface(); }
+
     void CloseManagedSurface() { boundary_.CloseManagedSurface(); }
-    void RegisterNativeActivity(NativeActivityBoundaryResources resources) { boundary_.RegisterNativeActivity(std::move(resources)); }
+
+    void RegisterNativeActivity(NativeActivityBoundaryResources resources) {
+        boundary_.RegisterNativeActivity(std::move(resources));
+    }
+
     void UnregisterNativeActivity(memory::GuestAddress activity) { boundary_.UnregisterNativeActivity(activity); }
-    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return boundary_.SetNativeActivityWindow(activity, active); }
-    void SetNativeActivityInput(memory::GuestAddress activity, bool active) { boundary_.SetNativeActivityInput(activity, active); }
+
+    memory::GuestAddress SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
+        return boundary_.SetNativeActivityWindow(activity, active);
+    }
+
+    void SetNativeActivityInput(memory::GuestAddress activity, bool active) {
+        boundary_.SetNativeActivityInput(activity, active);
+    }
+
     void PushInput(const AndroidBoundaryInput& input) {
         if (!running_) {
-            throw AndroidGuestProcessError(
-                "Android guest call session is stopped");
+            throw AndroidGuestProcessError("Android guest call session is stopped");
         }
         boundary_.PushInput(input);
     }
-    std::optional<AndroidBoundaryFrame> TakeLatestFrame() {
-        return boundary_.TakeLatestFrame(); }
-    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
-        boundary_.PublishSoftwareFrame(std::move(rgba8));
-    }
-    void SetFrameReadbackFilter(FrameReadbackFilter covered) {
-        boundary_.SetFrameReadbackFilter(std::move(covered));
-    }
-    void RecycleFrame(AndroidBoundaryFrame&& frame) {
-        boundary_.RecycleFrame(std::move(frame));
-    }
-    std::size_t RenderStereoAudio(const std::span<std::int16_t> output,
-                                  const std::uint32_t sample_rate) {
+
+    std::optional<AndroidBoundaryFrame> TakeLatestFrame() { return boundary_.TakeLatestFrame(); }
+
+    void PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { boundary_.PublishSoftwareFrame(std::move(rgba8)); }
+
+    void SetFrameReadbackFilter(FrameReadbackFilter covered) { boundary_.SetFrameReadbackFilter(std::move(covered)); }
+
+    void RecycleFrame(AndroidBoundaryFrame&& frame) { boundary_.RecycleFrame(std::move(frame)); }
+
+    std::size_t RenderStereoAudio(const std::span<std::int16_t> output, const std::uint32_t sample_rate) {
         RethrowOpenSlesCallbackFailure();
         std::vector<std::int64_t> accumulator(output.size());
         sound_pool_mixer_.MixIntoAccumulator(accumulator, sample_rate);
         encoded_music_.MixIntoAccumulator(accumulator, sample_rate);
-        static_cast<void>(
-            boundary_.MixOpenSlesIntoAccumulator(accumulator, sample_rate));
+        static_cast<void>(boundary_.MixOpenSlesIntoAccumulator(accumulator, sample_rate));
         std::function<void(std::span<std::int64_t>, std::uint32_t)> extra;
         {
             std::scoped_lock lock(auxiliary_audio_mutex_);
@@ -2203,42 +1987,38 @@ public:
         audio::SaturateStereoPcm16(accumulator, output);
         return output.size() / 2U;
     }
+
     std::size_t InterruptBlockingWaits() {
-        return futex_table_.InterruptAll() +
-               environment_.InterruptMonitorWaiters();
+        return futex_table_.InterruptAll() + environment_.InterruptMonitorWaiters();
     }
+
     void BeginTeardown() noexcept {
         cleanup_requested_.store(true, std::memory_order_release);
         if (teardown_requested_.exchange(true, std::memory_order_acq_rel)) return;
         if (execution_budget_) execution_budget_->BeginDrain();
         boundary_.ShutdownLoopers();
         boundary_.RetireGuestGraphics();
-        static_cast<void>(
-            boundary_.PcmPlayback().InterruptBlockingWaits());
+        static_cast<void>(boundary_.PcmPlayback().InterruptBlockingWaits());
         static_cast<void>(InterruptBlockingWaits());
     }
 
-    void RunTeardownCleanup(const std::function<void()>& cleanup) {
-        RunCleanup(cleanup, true);
-    }
-    void RunGracefulCleanup(const std::function<void()>& cleanup) {
-        RunCleanup(cleanup, false);
-    }
-    std::uint64_t CleanupDeadlineNs() const noexcept {
-        return cleanup_deadline_ns_.value_or(0);
-    }
+    void RunTeardownCleanup(const std::function<void()>& cleanup) { RunCleanup(cleanup, true); }
+
+    void RunGracefulCleanup(const std::function<void()>& cleanup) { RunCleanup(cleanup, false); }
+
+    std::uint64_t CleanupDeadlineNs() const noexcept { return cleanup_deadline_ns_.value_or(0); }
+
     void RunCleanup(const std::function<void()>& cleanup, const bool retired) {
         if (std::this_thread::get_id() != owner_thread_ ||
-            (retired != teardown_requested_.load(std::memory_order_acquire)) ||
-            !running_ || NativeExitCode() || !cleanup)
+            (retired != teardown_requested_.load(std::memory_order_acquire)) || !running_ || NativeExitCode() ||
+            !cleanup)
             throw AndroidGuestProcessError("teardown cleanup admission rejected");
         if (native_state_faulted_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("guest cleanup unavailable after a CPU fault");
         // Cooperative Activity callbacks still run in a live process and may
         // create Java/native workers. Only irreversible teardown closes admission.
         if (retired) cleanup_requested_.store(true, std::memory_order_release);
-        if (!cleanup_deadline_ns_)
-            cleanup_deadline_ns_ = hal::Clock::SteadyTimestampNs() + kCleanupWallBudgetNs;
+        if (!cleanup_deadline_ns_) cleanup_deadline_ns_ = hal::Clock::SteadyTimestampNs() + kCleanupWallBudgetNs;
         ++cleanup_depth_;
         try {
             CheckCleanupDeadline();
@@ -2254,10 +2034,12 @@ public:
         }
         --cleanup_depth_;
     }
+
     void CheckCleanupDeadline() const {
         if (cleanup_deadline_ns_ && hal::Clock::SteadyTimestampNs() >= *cleanup_deadline_ns_)
             throw A32GuestCallError("teardown cleanup wall-time budget exhausted");
     }
+
     std::optional<std::int32_t> NativeExitCode() const {
         const auto root = lifecycle_.State(kRootThreadId);
         if (root.status != GuestThreadStatus::running &&
@@ -2276,27 +2058,28 @@ public:
     }
 
     bool Running() const noexcept { return running_; }
+
     bool ExitRequested() const noexcept { return process_state_.ExitRequested(); }
-    std::size_t ApplicationModuleCount() const noexcept {
-        return application_module_count_;
-    }
-    std::size_t LoadedGuestModuleCount() const noexcept {
-        return loaded_.modules.size();
-    }
-    std::size_t AttachedJniThreadCount() const {
-        return java_vm_.AttachedThreadCount();
-    }
+
+    std::size_t ApplicationModuleCount() const noexcept { return application_module_count_; }
+
+    std::size_t LoadedGuestModuleCount() const noexcept { return loaded_.modules.size(); }
+
+    std::size_t AttachedJniThreadCount() const { return java_vm_.AttachedThreadCount(); }
+
     bool HasLoadedModule(const std::string_view name) const {
         std::scoped_lock lock(dynamic_link_mutex_);
         return HasLoadedModuleLocked(name);
     }
-    void SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
-        std::string_view, std::uint64_t)> handler) {
+
+    void
+    SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(std::string_view, std::uint64_t)> handler) {
         std::scoped_lock load_lock(native_load_mutex_);
         if (!handler || native_library_load_)
             throw std::logic_error("native library source handler must be installed exactly once");
         native_library_load_ = std::move(handler);
     }
+
     void InitializeDynamicModule(const std::size_t index, const std::uint64_t thread_id,
                                  std::vector<std::string>& initialized) {
         if (const auto failed = constructor_failures_.find(index); failed != constructor_failures_.end())
@@ -2311,13 +2094,18 @@ public:
                 const auto& module = loaded_.link_namespace.modules.at(index);
                 name = module.name;
                 for (const auto& needed : module.dynamic.needed) {
-                    const auto dependency = loader::ExtendElf32LinkNamespace(loaded_.link_namespace, needed, {}).scope.root_module;
+                    const auto dependency =
+                        loader::ExtendElf32LinkNamespace(loaded_.link_namespace, needed, {}).scope.root_module;
                     dependencies.push_back(dependency);
                 }
                 for (const auto& item : lifecycle_modules_)
-                    if (item.module_index == index) { lifecycle_module = item; break; }
+                    if (item.module_index == index) {
+                        lifecycle_module = item;
+                        break;
+                    }
             }
-            for (const auto dependency : dependencies) InitializeDynamicModule(dependency, thread_id, initialized);
+            for (const auto dependency : dependencies)
+                InitializeDynamicModule(dependency, thread_id, initialized);
             if (lifecycle_module) {
                 // Copy the lifecycle record before invoking guest: recursive loads
                 // can grow and reallocate the process lifecycle vectors.
@@ -2340,10 +2128,11 @@ public:
             throw;
         }
     }
-    AndroidGuestApplicationLoad LoadApplicationModules(
-        const std::string_view root_module,
-        const std::span<const AndroidGuestApplicationModuleSource> sources,
-        const std::uint64_t thread_id) {
+
+    AndroidGuestApplicationLoad
+    LoadApplicationModules(const std::string_view root_module,
+                           const std::span<const AndroidGuestApplicationModuleSource> sources,
+                           const std::uint64_t thread_id) {
         // Outside an active guest call, admit the root CPU before taking the
         // linker operation gate, matching Invoke -> dlopen lock order.
         std::unique_lock<std::recursive_mutex> root_call_lock;
@@ -2353,8 +2142,7 @@ public:
         if (cleanup_requested_.load(std::memory_order_acquire))
             throw AndroidGuestProcessError("new guest module rejected during teardown");
         if (!running_ || root_module.empty()) {
-            throw AndroidGuestProcessError(
-                "dynamic application load request is incomplete");
+            throw AndroidGuestProcessError("dynamic application load request is incomplete");
         }
 
         loader::Elf32LoadedModuleExtension extension;
@@ -2370,90 +2158,79 @@ public:
                 }
             }
             auto inputs = AssignDynamicLoadBiases(missing_sources);
-            const auto old_namespace_size =
-                loaded_.link_namespace.modules.size();
+            const auto old_namespace_size = loaded_.link_namespace.modules.size();
             const auto& profile = SelectBionicProfile(api_);
             extension = loader::ExtendElf32ModuleNamespace(
                 loaded_.link_namespace, root_module, inputs, address_space_,
-                [&profile, this](
-                    const loader::Elf32LinkNamespace& link_namespace,
-                    const std::string_view root,
-                    const std::span<const loader::Elf32LinkModule> modules) {
-                    return ExtendBionicLinkNamespace(
-                        profile, link_namespace, root, modules,
-                        boundary_.Symbols());
+                [&profile, this](const loader::Elf32LinkNamespace& link_namespace, const std::string_view root,
+                                 const std::span<const loader::Elf32LinkModule> modules) {
+                    return ExtendBionicLinkNamespace(profile, link_namespace, root, modules, boundary_.Symbols());
                 });
             root_module_index = extension.link_extension.scope.root_module;
             for (std::size_t index = 0; index < inputs.size(); ++index) {
                 const auto namespace_index = old_namespace_size + index;
                 lifecycle_modules_.push_back(
-                    {namespace_index, inputs[index].load_bias,
-                     extension.modules[index].lifecycle});
+                    {namespace_index, inputs[index].load_bias, extension.modules[index].lifecycle});
             }
-            loaded_.link_namespace =
-                extension.link_extension.link_namespace;
-            dynamic_modules_.insert(
-                dynamic_modules_.end(),
-                std::make_move_iterator(extension.modules.begin()),
-                std::make_move_iterator(extension.modules.end()));
+            loaded_.link_namespace = extension.link_extension.link_namespace;
+            dynamic_modules_.insert(dynamic_modules_.end(), std::make_move_iterator(extension.modules.begin()),
+                                    std::make_move_iterator(extension.modules.end()));
             application_module_count_ += inputs.size();
         }
 
         InitializeDynamicModule(root_module_index, thread_id, initialization_names);
         return {root_module_index, std::move(initialization_names)};
     }
-    std::optional<std::uint32_t> InitializeExplicitJniLibrary(
-        const std::string_view root_module) {
+
+    std::optional<std::uint32_t> InitializeExplicitJniLibrary(const std::string_view root_module) {
         std::optional<JniGuestLibraryOnLoad> on_load;
         {
             std::scoped_lock lock(dynamic_link_mutex_);
-            on_load = BuildJniGuestLibraryOnLoad(
-                loaded_.link_namespace, root_module, guest_jni_.JavaVm());
+            on_load = BuildJniGuestLibraryOnLoad(loaded_.link_namespace, root_module, guest_jni_.JavaVm());
         }
         if (!on_load.has_value()) return std::nullopt;
         const auto result = Invoke(on_load->call).return_value;
         ValidateJniGuestLibraryOnLoadResult(result);
         return result;
     }
-    std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const {
-        return movie_state_.Latest();
-    }
-    std::shared_ptr<debug::DiagnosticState> Diagnostics() const {
-        return diagnostics_;
-    }
+
+    std::optional<AndroidGuestMovieRequest> LatestMovieRequest() const { return movie_state_.Latest(); }
+
+    std::shared_ptr<debug::DiagnosticState> Diagnostics() const { return diagnostics_; }
+
     std::optional<core::GpuStats> TryStats() const { return boundary_.TryStats(); }
+
     std::optional<memory::MemoryStatistics> TryMemorySnapshot() const { return address_space_.TrySnapshot(); }
-    std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const { return execution_context_->TrySnapshot(); }
+
+    std::optional<std::vector<cpu::DynarmicCacheSnapshot>> TryCpuSnapshot() const {
+        return execution_context_->TrySnapshot();
+    }
+
     core::GpuStats Stats() const { return boundary_.Stats(); }
 
     std::vector<core::GpuRenderTarget> RenderTargets() const { return boundary_.RenderTargets(); }
 
     std::vector<core::CapabilityWarningHit> CapabilityWarnings() const { return ledger_.Warnings(); }
+
     core::GpuCapabilities Capabilities() const { return boundary_.Capabilities(); }
-    std::vector<core::GpuTraceEntry> Trace(
-        const std::string_view filter, const std::size_t limit) const {
+
+    std::vector<core::GpuTraceEntry> Trace(const std::string_view filter, const std::size_t limit) const {
         return boundary_.Trace(filter, limit);
     }
-    std::optional<std::vector<core::GpuTraceEntry>> TryGlesTrace(
-        const std::size_t limit) const {
+
+    std::optional<std::vector<core::GpuTraceEntry>> TryGlesTrace(const std::size_t limit) const {
         return boundary_.TryTrace(limit);
     }
 
 private:
-    [[nodiscard]] bool HasLoadedModuleLocked(
-        const std::string_view name) const {
-        return std::ranges::any_of(
-            loaded_.link_namespace.modules,
-            [name](const loader::Elf32LinkModule& module) {
-                return module.name == name ||
-                       (module.dynamic.soname.has_value() &&
-                        *module.dynamic.soname == name);
-            });
+    [[nodiscard]] bool HasLoadedModuleLocked(const std::string_view name) const {
+        return std::ranges::any_of(loaded_.link_namespace.modules, [name](const loader::Elf32LinkModule& module) {
+            return module.name == name || (module.dynamic.soname.has_value() && *module.dynamic.soname == name);
+        });
     }
 
     [[nodiscard]] std::vector<loader::Elf32ModuleInput>
-    AssignDynamicLoadBiases(
-        const std::span<const AndroidGuestApplicationModuleSource> sources) {
+    AssignDynamicLoadBiases(const std::span<const AndroidGuestApplicationModuleSource> sources) {
         constexpr std::uint64_t kFirstDynamicBias = 0x30000000U;
         constexpr std::uint64_t kLoadAlignment = 0x10000U;
         const auto align_up = [](const std::uint64_t value) {
@@ -2470,39 +2247,29 @@ private:
         std::set<std::string, std::less<>> names;
         std::uint64_t cursor = kFirstDynamicBias;
         for (const auto& source : sources) {
-            if (source.name.empty() || source.image.empty() ||
-                !names.insert(source.name).second) {
-                throw AndroidGuestProcessError(
-                    "dynamic application module source is invalid or duplicate: " +
-                    source.name);
+            if (source.name.empty() || source.image.empty() || !names.insert(source.name).second) {
+                throw AndroidGuestProcessError("dynamic application module source is invalid or duplicate: " +
+                                               source.name);
             }
             const auto image = loader::ParseElf32Arm(source.image);
             if (image.type != loader::Elf32ImageType::shared_object) {
-                throw AndroidGuestProcessError(
-                    "dynamic application module is not ET_DYN: " +
-                    source.name);
+                throw AndroidGuestProcessError("dynamic application module is not ET_DYN: " + source.name);
             }
             bool assigned{};
             while (!assigned) {
-                if (cursor >= kBionicHleThunkBegin ||
-                    cursor > std::numeric_limits<std::uint32_t>::max()) {
-                    throw AndroidGuestProcessError(
-                        "dynamic application module address space is exhausted");
+                if (cursor >= kBionicHleThunkBegin || cursor > std::numeric_limits<std::uint32_t>::max()) {
+                    throw AndroidGuestProcessError("dynamic application module address space is exhausted");
                 }
-                const auto bias = memory::GuestAddress{
-                    static_cast<std::uint32_t>(cursor)};
-                const auto plan = loader::BuildElf32LoadPlan(
-                    image, bias, address_space_.PageSize());
+                const auto bias = memory::GuestAddress{static_cast<std::uint32_t>(cursor)};
+                const auto plan = loader::BuildElf32LoadPlan(image, bias, address_space_.PageSize());
                 std::uint64_t next_cursor = cursor;
                 bool collision{};
                 for (const auto& region : plan.regions) {
-                    next_cursor = std::max(
-                        next_cursor, region.range.EndExclusive());
+                    next_cursor = std::max(next_cursor, region.range.EndExclusive());
                     for (const auto& used : occupied) {
                         if (!region.range.Overlaps(used)) continue;
                         collision = true;
-                        next_cursor = std::max(
-                            next_cursor, used.EndExclusive());
+                        next_cursor = std::max(next_cursor, used.EndExclusive());
                     }
                 }
                 if (collision) {
@@ -2542,8 +2309,7 @@ private:
     audio::JavaSoundPoolMixer sound_pool_mixer_;
     audio::EncodedMusicMixer encoded_music_;
     std::mutex auxiliary_audio_mutex_;
-    std::function<void(std::span<std::int64_t>, std::uint32_t)>
-        auxiliary_audio_mix_;
+    std::function<void(std::span<std::int64_t>, std::uint32_t)> auxiliary_audio_mix_;
     FrameworkScreenPolicyState screen_policy_;
     AndroidGuestProcessState process_state_;
     AndroidGuestPlatformState platform_state_;
@@ -2587,9 +2353,9 @@ private:
     bool open_sles_callback_stopping_{};
     bool open_sles_callback_memory_reserved_{};
     std::mutex dexvm_threads_mutex_;
-    std::unordered_map<std::uint64_t, std::shared_ptr<DexVmThreadContext>>
-        dexvm_threads_;
+    std::unordered_map<std::uint64_t, std::shared_ptr<DexVmThreadContext>> dexvm_threads_;
     loader::Elf32LoadedNamespace loaded_;
+
     struct DynamicLinkHandle final {
         memory::GuestAddress handle;
         std::string library;
@@ -2599,6 +2365,7 @@ private:
         bool boundary{};
         bool open{};
     };
+
     static constexpr std::uint32_t kRtldDefault = 0xffffffffU;
     std::vector<DynamicLinkHandle> dynamic_link_handles_;
     memory::GuestAddress next_dynamic_link_view_{0x79000000U};
@@ -2634,22 +2401,18 @@ private:
     std::map<std::size_t, std::exception_ptr> constructor_failures_;
 
 public:
-    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(
-        const std::string_view class_name,
-        const std::string_view method_name,
-        const std::string_view descriptor) const {
-        const auto names =
-            BuildJniNativeExportNames(class_name, method_name, descriptor);
+    [[nodiscard]] std::optional<memory::GuestAddress> FindNativeExport(const std::string_view class_name,
+                                                                       const std::string_view method_name,
+                                                                       const std::string_view descriptor) const {
+        const auto names = BuildJniNativeExportNames(class_name, method_name, descriptor);
         for (const auto* candidate : {&names.long_name, &names.short_name}) {
             for (const auto& module : loaded_.link_namespace.modules) {
-                for (std::size_t index = 0;
-                     index < module.symbols.symbols.size(); ++index) {
+                for (std::size_t index = 0; index < module.symbols.symbols.size(); ++index) {
                     const auto& symbol = module.symbols.symbols[index];
                     if (symbol.name != *candidate || !symbol.IsExported()) {
                         continue;
                     }
-                    return memory::GuestAddress(
-                        module.load_bias.Value() + symbol.value.Value());
+                    return memory::GuestAddress(module.load_bias.Value() + symbol.value.Value());
                 }
             }
         }
@@ -2657,12 +2420,10 @@ public:
     }
 };
 
-std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(
-    const AndroidGuestProcessRequest& request) {
+std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(const AndroidGuestProcessRequest& request) {
     try {
         return std::unique_ptr<AndroidGuestProcess>(
-            new AndroidGuestProcess(
-                std::make_unique<Impl>(RootlessStartup(request))));
+            new AndroidGuestProcess(std::make_unique<Impl>(RootlessStartup(request))));
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {
@@ -2670,22 +2431,20 @@ std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::Start(
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "Android guest process startup failed: " +
-            std::string(error.what()));
+        throw AndroidGuestProcessError("Android guest process startup failed: " + std::string(error.what()));
     }
 }
-std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::StartLegacy(
-    const AndroidGuestCallSessionRequest& request) {
+
+std::unique_ptr<AndroidGuestProcess> AndroidGuestProcess::StartLegacy(const AndroidGuestCallSessionRequest& request) {
     return std::unique_ptr<AndroidGuestProcess>(
-        new AndroidGuestProcess(
-            std::make_unique<Impl>(LegacyStartup(request))));
+        new AndroidGuestProcess(std::make_unique<Impl>(LegacyStartup(request))));
 }
-AndroidGuestProcess::AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept
-    : impl_(std::move(impl)) {}
+
+AndroidGuestProcess::AndroidGuestProcess(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+
 AndroidGuestProcess::~AndroidGuestProcess() = default;
-A32GuestCallResult AndroidGuestProcess::Invoke(
-    const A32GuestCallFrame& frame) {
+
+A32GuestCallResult AndroidGuestProcess::Invoke(const A32GuestCallFrame& frame) {
     try {
         return impl_->Invoke(frame);
     } catch (const A32GuestCallCancelled&) {
@@ -2695,47 +2454,67 @@ A32GuestCallResult AndroidGuestProcess::Invoke(
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "Android guest invocation failed: " +
-            std::string(error.what()));
+        throw AndroidGuestProcessError("Android guest invocation failed: " + std::string(error.what()));
     }
 }
-std::optional<A32GuestCallResult>
-AndroidGuestProcess::TryInvokeRegisteredNative(
-    const JniObjectIdentity java_class, const std::string_view name,
-    const std::string_view descriptor, const A32GuestCallFrame& frame) {
+
+std::optional<A32GuestCallResult> AndroidGuestProcess::TryInvokeRegisteredNative(const JniObjectIdentity java_class,
+                                                                                 const std::string_view name,
+                                                                                 const std::string_view descriptor,
+                                                                                 const A32GuestCallFrame& frame) {
     const auto class_name = impl_->Classes().ClassName(java_class);
     try {
-        return impl_->TryInvokeRegisteredNative(java_class, name, descriptor,
-                                                frame);
+        return impl_->TryInvokeRegisteredNative(java_class, name, descriptor, frame);
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "registered JNI native invocation failed:\n"
-            "  class=" +
-            class_name + "\n  method=" + std::string(name) +
-            "\n  descriptor=" + std::string(descriptor) +
-            "\n  guest_thread=" + std::to_string(frame.thread_id) +
-            "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
+        throw AndroidGuestProcessError("registered JNI native invocation failed:\n"
+                                       "  class=" +
+                                       class_name + "\n  method=" + std::string(name) + "\n  descriptor=" +
+                                       std::string(descriptor) + "\n  guest_thread=" + std::to_string(frame.thread_id) +
+                                       "\n  cause:\n" + IndentDiagnostic(error.what(), "    "));
     }
 }
-void AndroidGuestProcess::PrepareDexVmThread(
-    const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
+
+void AndroidGuestProcess::PrepareDexVmThread(const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     impl_->PrepareDexVmThread(thread_id, allocation_slot);
 }
-void AndroidGuestProcess::QuiesceNativeWorkers() { impl_->QuiesceNativeWorkers(); }
-void AndroidGuestProcess::RunTeardownCleanup(const std::function<void()>& cleanup) { impl_->RunTeardownCleanup(cleanup); }
-void AndroidGuestProcess::RunGracefulCleanup(const std::function<void()>& cleanup) { impl_->RunGracefulCleanup(cleanup); }
-std::uint64_t AndroidGuestProcess::CleanupDeadlineNs() const noexcept { return impl_->CleanupDeadlineNs(); }
-std::optional<std::int32_t> AndroidGuestProcess::NativeExitCode() const { return impl_->NativeExitCode(); }
-std::optional<std::uint32_t> AndroidGuestProcess::NativeTerminationSignal() const { return impl_->NativeTerminationSignal(); }
-void AndroidGuestProcess::RethrowAsyncFailure() { impl_->RethrowAsyncFailure(); }
-memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) { return impl_->PrepareThreadLooper(tid); }
-void AndroidGuestProcess::ReleaseDexVmThread(
-    const std::uint64_t thread_id) noexcept {
+
+void AndroidGuestProcess::QuiesceNativeWorkers() {
+    impl_->QuiesceNativeWorkers();
+}
+
+void AndroidGuestProcess::RunTeardownCleanup(const std::function<void()>& cleanup) {
+    impl_->RunTeardownCleanup(cleanup);
+}
+
+void AndroidGuestProcess::RunGracefulCleanup(const std::function<void()>& cleanup) {
+    impl_->RunGracefulCleanup(cleanup);
+}
+
+std::uint64_t AndroidGuestProcess::CleanupDeadlineNs() const noexcept {
+    return impl_->CleanupDeadlineNs();
+}
+
+std::optional<std::int32_t> AndroidGuestProcess::NativeExitCode() const {
+    return impl_->NativeExitCode();
+}
+
+std::optional<std::uint32_t> AndroidGuestProcess::NativeTerminationSignal() const {
+    return impl_->NativeTerminationSignal();
+}
+
+void AndroidGuestProcess::RethrowAsyncFailure() {
+    impl_->RethrowAsyncFailure();
+}
+
+memory::GuestAddress AndroidGuestProcess::PrepareThreadLooper(std::uint64_t tid) {
+    return impl_->PrepareThreadLooper(tid);
+}
+
+void AndroidGuestProcess::ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
     impl_->ReleaseDexVmThread(thread_id);
 }
 
@@ -2751,62 +2530,97 @@ std::optional<memory::GuestAddress> AndroidGuestProcess::FindLibraryExport(std::
                                                                            std::string_view symbol) const {
     return impl_->FindLibraryExport(library, symbol);
 }
-memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept { return impl_->GuestEnvironment(); }
-memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept { return impl_->GuestJavaVm(); }
-JniEnvironment& AndroidGuestProcess::Environment() noexcept { return impl_->Environment(); }
-JniClassRegistry& AndroidGuestProcess::Classes() noexcept { return impl_->Classes(); }
+
+memory::GuestAddress AndroidGuestProcess::GuestEnvironment() const noexcept {
+    return impl_->GuestEnvironment();
+}
+
+memory::GuestAddress AndroidGuestProcess::GuestJavaVm() const noexcept {
+    return impl_->GuestJavaVm();
+}
+
+JniEnvironment& AndroidGuestProcess::Environment() noexcept {
+    return impl_->Environment();
+}
+
+JniClassRegistry& AndroidGuestProcess::Classes() noexcept {
+    return impl_->Classes();
+}
+
 JniInvocationEngine& AndroidGuestProcess::Invocations() noexcept {
     return impl_->Invocations();
 }
-JniFieldStore& AndroidGuestProcess::Fields() noexcept { return impl_->Fields(); }
+
+JniFieldStore& AndroidGuestProcess::Fields() noexcept {
+    return impl_->Fields();
+}
+
 JniNativeRegistry& AndroidGuestProcess::Natives() noexcept {
     return impl_->Natives();
 }
+
 JniGuestObjectRegistry& AndroidGuestProcess::Objects() noexcept {
     return impl_->Objects();
 }
+
 JniStringStore& AndroidGuestProcess::Strings() noexcept {
     return impl_->Strings();
 }
+
 JniPrimitiveArrayStore& AndroidGuestProcess::Arrays() noexcept {
     return impl_->Arrays();
 }
-dexvm::NioRuntime& AndroidGuestProcess::NIO() noexcept { return impl_->NIO(); }
+
+dexvm::NioRuntime& AndroidGuestProcess::NIO() noexcept {
+    return impl_->NIO();
+}
+
 audio::JavaSoundPoolState& AndroidGuestProcess::SoundPoolState() noexcept {
     return impl_->SoundPoolState();
 }
+
 audio::JavaSoundPoolMixer& AndroidGuestProcess::SoundPoolMixer() noexcept {
     return impl_->SoundPoolMixer();
 }
+
 audio::EncodedMusicMixer& AndroidGuestProcess::EncodedMusic() noexcept {
     return impl_->EncodedMusic();
 }
+
 audio::OpenSlesPcmMixer& AndroidGuestProcess::PcmPlayback() noexcept {
     return impl_->PcmPlayback();
 }
-void AndroidGuestProcess::SetAuxiliaryAudioMix(
-    std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+
+void AndroidGuestProcess::SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
     impl_->SetAuxiliaryAudioMix(std::move(mix));
 }
+
 VirtualFileSystem* AndroidGuestProcess::Filesystem() noexcept {
     return impl_->Filesystem();
 }
 
-const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept { return impl_->CpuConfig(); }
-const GuestMemorySnapshot& AndroidGuestProcess::MemorySnapshot() const noexcept { return impl_->MemorySnapshot(); }
-std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(
-    const std::string_view name) const {
+const GuestCpuConfig& AndroidGuestProcess::CpuConfig() const noexcept {
+    return impl_->CpuConfig();
+}
+
+const GuestMemorySnapshot& AndroidGuestProcess::MemorySnapshot() const noexcept {
+    return impl_->MemorySnapshot();
+}
+
+std::optional<std::string> AndroidGuestProcess::ProcessEnvironmentValue(const std::string_view name) const {
     return impl_->ProcessEnvironmentValue(name);
 }
-std::vector<GuestProcessEnvironmentEntry>
-AndroidGuestProcess::ProcessEnvironmentEntries() const {
+
+std::vector<GuestProcessEnvironmentEntry> AndroidGuestProcess::ProcessEnvironmentEntries() const {
     return impl_->ProcessEnvironmentEntries();
 }
-std::optional<memory::GuestAddress> AndroidGuestProcess::FindNativeExport(
-    const std::string_view class_name, const std::string_view method_name,
-    const std::string_view descriptor) const {
+
+std::optional<memory::GuestAddress> AndroidGuestProcess::FindNativeExport(const std::string_view class_name,
+                                                                          const std::string_view method_name,
+                                                                          const std::string_view descriptor) const {
     return impl_->FindNativeExport(class_name, method_name, descriptor);
 }
+
 void AndroidGuestProcess::InitializeJniLibrary() {
     try {
         impl_->InitializeJniLibrary();
@@ -2817,61 +2631,132 @@ void AndroidGuestProcess::InitializeJniLibrary() {
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "guest JNI library initialization failed: " +
-            std::string(error.what()));
+        throw AndroidGuestProcessError("guest JNI library initialization failed: " + std::string(error.what()));
     }
 }
-void AndroidGuestProcess::OpenManagedSurface() { impl_->OpenManagedSurface(); }
-void AndroidGuestProcess::BindManagedSurfaceOnCallingThread() { impl_->BindManagedSurfaceOnCallingThread(); }
-void AndroidGuestProcess::ReleaseManagedSurfaceFromCallingThread() { impl_->ReleaseManagedSurfaceFromCallingThread(); }
-bool AndroidGuestProcess::ManagedSurfaceIsOpen() const noexcept { return impl_->ManagedSurfaceIsOpen(); }
-std::string AndroidGuestProcess::ManagedGlString(const std::uint32_t parameter) { return impl_->ManagedGlString(parameter); }
-std::string AndroidGuestProcess::ManagedEglString(const std::uint32_t parameter) { return impl_->ManagedEglString(parameter); }
-void AndroidGuestProcess::LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) { impl_->LatchManagedEglError(thread_id, error); }
+
+void AndroidGuestProcess::OpenManagedSurface() {
+    impl_->OpenManagedSurface();
+}
+
+void AndroidGuestProcess::BindManagedSurfaceOnCallingThread() {
+    impl_->BindManagedSurfaceOnCallingThread();
+}
+
+void AndroidGuestProcess::ReleaseManagedSurfaceFromCallingThread() {
+    impl_->ReleaseManagedSurfaceFromCallingThread();
+}
+
+bool AndroidGuestProcess::ManagedSurfaceIsOpen() const noexcept {
+    return impl_->ManagedSurfaceIsOpen();
+}
+
+std::string AndroidGuestProcess::ManagedGlString(const std::uint32_t parameter) {
+    return impl_->ManagedGlString(parameter);
+}
+
+std::string AndroidGuestProcess::ManagedEglString(const std::uint32_t parameter) {
+    return impl_->ManagedEglString(parameter);
+}
+
+void AndroidGuestProcess::LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) {
+    impl_->LatchManagedEglError(thread_id, error);
+}
+
 gles::ExternalTextureContext AndroidGuestProcess::UseExternalTexture(const gles::ExternalTextureCall& call) {
     return impl_->UseExternalTexture(call);
 }
-std::uint32_t AndroidGuestProcess::InvokeManagedGles(
-    const gles::GlesApi api, const std::string_view name,
-    const std::span<const std::uint32_t> arguments,
-    const std::uint64_t thread_id) {
+
+std::uint32_t AndroidGuestProcess::InvokeManagedGles(const gles::GlesApi api, const std::string_view name,
+                                                     const std::span<const std::uint32_t> arguments,
+                                                     const std::uint64_t thread_id) {
     return impl_->InvokeManagedGles(api, name, arguments, thread_id);
 }
-std::uint32_t AndroidGuestProcess::InvokeManagedEgl(
-    const std::string_view name,
-    const std::span<const std::uint32_t> arguments,
-    const std::uint64_t thread_id) {
+
+std::uint32_t AndroidGuestProcess::InvokeManagedEgl(const std::string_view name,
+                                                    const std::span<const std::uint32_t> arguments,
+                                                    const std::uint64_t thread_id) {
     return impl_->InvokeManagedEgl(name, arguments, thread_id);
 }
-void AndroidGuestProcess::PresentManagedSurface() { impl_->PresentManagedSurface(); }
-void AndroidGuestProcess::CloseManagedSurface() { impl_->CloseManagedSurface(); }
-void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) { impl_->PushInput(input); }
-std::optional<AndroidBoundaryFrame> AndroidGuestProcess::TakeLatestFrame() { return impl_->TakeLatestFrame(); }
-void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { impl_->PublishSoftwareFrame(std::move(rgba8)); }
-void AndroidGuestProcess::SetFrameReadbackFilter(FrameReadbackFilter covered) { impl_->SetFrameReadbackFilter(std::move(covered)); }
-void AndroidGuestProcess::RecycleFrame(AndroidBoundaryFrame&& frame) { impl_->RecycleFrame(std::move(frame)); }
+
+void AndroidGuestProcess::PresentManagedSurface() {
+    impl_->PresentManagedSurface();
+}
+
+void AndroidGuestProcess::CloseManagedSurface() {
+    impl_->CloseManagedSurface();
+}
+
+void AndroidGuestProcess::PushInput(const AndroidBoundaryInput& input) {
+    impl_->PushInput(input);
+}
+
+std::optional<AndroidBoundaryFrame> AndroidGuestProcess::TakeLatestFrame() {
+    return impl_->TakeLatestFrame();
+}
+
+void AndroidGuestProcess::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
+    impl_->PublishSoftwareFrame(std::move(rgba8));
+}
+
+void AndroidGuestProcess::SetFrameReadbackFilter(FrameReadbackFilter covered) {
+    impl_->SetFrameReadbackFilter(std::move(covered));
+}
+
+void AndroidGuestProcess::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    impl_->RecycleFrame(std::move(frame));
+}
+
 std::size_t AndroidGuestProcess::RenderStereoAudio(const std::span<std::int16_t> output,
-                                                   const std::uint32_t sample_rate) { return impl_->RenderStereoAudio(output, sample_rate); }
-std::size_t AndroidGuestProcess::InterruptBlockingWaits() { return impl_->InterruptBlockingWaits(); }
-void AndroidGuestProcess::BeginTeardown() noexcept { impl_->BeginTeardown(); }
-void AndroidGuestProcess::Stop(const GuestFinalizationPolicy policy) { impl_->Stop(policy); }
-bool AndroidGuestProcess::Running() const noexcept { return impl_->Running(); }
-bool AndroidGuestProcess::ExitRequested() const noexcept { return impl_->ExitRequested(); }
-std::size_t AndroidGuestProcess::ApplicationModuleCount() const noexcept { return impl_->ApplicationModuleCount(); }
-std::size_t AndroidGuestProcess::LoadedGuestModuleCount() const noexcept { return impl_->LoadedGuestModuleCount(); }
-std::size_t AndroidGuestProcess::AttachedJniThreadCount() const { return impl_->AttachedJniThreadCount(); }
+                                                   const std::uint32_t sample_rate) {
+    return impl_->RenderStereoAudio(output, sample_rate);
+}
+
+std::size_t AndroidGuestProcess::InterruptBlockingWaits() {
+    return impl_->InterruptBlockingWaits();
+}
+
+void AndroidGuestProcess::BeginTeardown() noexcept {
+    impl_->BeginTeardown();
+}
+
+void AndroidGuestProcess::Stop(const GuestFinalizationPolicy policy) {
+    impl_->Stop(policy);
+}
+
+bool AndroidGuestProcess::Running() const noexcept {
+    return impl_->Running();
+}
+
+bool AndroidGuestProcess::ExitRequested() const noexcept {
+    return impl_->ExitRequested();
+}
+
+std::size_t AndroidGuestProcess::ApplicationModuleCount() const noexcept {
+    return impl_->ApplicationModuleCount();
+}
+
+std::size_t AndroidGuestProcess::LoadedGuestModuleCount() const noexcept {
+    return impl_->LoadedGuestModuleCount();
+}
+
+std::size_t AndroidGuestProcess::AttachedJniThreadCount() const {
+    return impl_->AttachedJniThreadCount();
+}
+
 bool AndroidGuestProcess::HasLoadedModule(const std::string_view name) const {
     return impl_->HasLoadedModule(name);
 }
-void AndroidGuestProcess::SetNativeLibraryLoadHandler(std::function<AndroidGuestApplicationLoad(
-    std::string_view, std::uint64_t)> handler) {
+
+void AndroidGuestProcess::SetNativeLibraryLoadHandler(
+    std::function<AndroidGuestApplicationLoad(std::string_view, std::uint64_t)> handler) {
     impl_->SetNativeLibraryLoadHandler(std::move(handler));
 }
-AndroidGuestApplicationLoad AndroidGuestProcess::LoadApplicationModules(
-    const std::string_view root_module,
-    const std::span<const AndroidGuestApplicationModuleSource> modules,
-    const std::uint64_t thread_id) {
+
+AndroidGuestApplicationLoad
+AndroidGuestProcess::LoadApplicationModules(const std::string_view root_module,
+                                            const std::span<const AndroidGuestApplicationModuleSource> modules,
+                                            const std::uint64_t thread_id) {
     try {
         return impl_->LoadApplicationModules(root_module, modules, thread_id);
     } catch (const loader::LinkError&) {
@@ -2887,14 +2772,11 @@ AndroidGuestApplicationLoad AndroidGuestProcess::LoadApplicationModules(
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "dynamic application ELF load failed: " +
-            std::string(error.what()));
+        throw AndroidGuestProcessError("dynamic application ELF load failed: " + std::string(error.what()));
     }
 }
-std::optional<std::uint32_t>
-AndroidGuestProcess::InitializeExplicitJniLibrary(
-    const std::string_view root_module) {
+
+std::optional<std::uint32_t> AndroidGuestProcess::InitializeExplicitJniLibrary(const std::string_view root_module) {
     try {
         return impl_->InitializeExplicitJniLibrary(root_module);
     } catch (const A32GuestCallCancelled&) {
@@ -2904,13 +2786,16 @@ AndroidGuestProcess::InitializeExplicitJniLibrary(
     } catch (const AndroidGuestProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidGuestProcessError(
-            "explicit JNI library initialization failed: " +
-            std::string(error.what()));
+        throw AndroidGuestProcessError("explicit JNI library initialization failed: " + std::string(error.what()));
     }
 }
-std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const { return impl_->LatestMovieRequest(); }
-std::shared_ptr<debug::DiagnosticState> AndroidGuestProcess::Diagnostics() const { return impl_->Diagnostics();
+
+std::optional<AndroidGuestMovieRequest> AndroidGuestProcess::LatestMovieRequest() const {
+    return impl_->LatestMovieRequest();
+}
+
+std::shared_ptr<debug::DiagnosticState> AndroidGuestProcess::Diagnostics() const {
+    return impl_->Diagnostics();
 }
 
 core::GpuStats AndroidGuestProcess::Stats() const {
@@ -2924,49 +2809,47 @@ std::vector<core::GpuRenderTarget> AndroidGuestProcess::RenderTargets() const {
 std::vector<core::CapabilityWarningHit> AndroidGuestProcess::CapabilityWarnings() const {
     return impl_->CapabilityWarnings();
 }
-core::GpuCapabilities AndroidGuestProcess::Capabilities() const { return impl_->Capabilities(); }
-std::vector<core::GpuTraceEntry> AndroidGuestProcess::Trace(
-    const std::string_view filter, const std::size_t limit) const { return impl_->Trace(filter, limit); }
-std::optional<std::vector<core::GpuTraceEntry>>
-AndroidGuestProcess::TryGlesTrace(const std::size_t limit) const {
+
+core::GpuCapabilities AndroidGuestProcess::Capabilities() const {
+    return impl_->Capabilities();
+}
+
+std::vector<core::GpuTraceEntry> AndroidGuestProcess::Trace(const std::string_view filter,
+                                                            const std::size_t limit) const {
+    return impl_->Trace(filter, limit);
+}
+
+std::optional<std::vector<core::GpuTraceEntry>> AndroidGuestProcess::TryGlesTrace(const std::size_t limit) const {
     return impl_->TryGlesTrace(limit);
 }
 
-std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(
-    const AndroidGuestCallSessionRequest& request) {
-    if (request.api != 19 || request.root_module.empty() ||
-        request.modules.empty() || request.width == 0 ||
-        request.height == 0 || request.maximum_ticks_per_call == 0 ||
-        request.filesystem == nullptr) {
-        throw AndroidGuestCallSessionError(
-            "Android guest call session request is incomplete");
+std::unique_ptr<AndroidGuestCallSession> AndroidGuestCallSession::Start(const AndroidGuestCallSessionRequest& request) {
+    if (request.api != 19 || request.root_module.empty() || request.modules.empty() || request.width == 0 ||
+        request.height == 0 || request.maximum_ticks_per_call == 0 || request.filesystem == nullptr) {
+        throw AndroidGuestCallSessionError("Android guest call session request is incomplete");
     }
     try {
         return std::unique_ptr<AndroidGuestCallSession>(
             new AndroidGuestCallSession(AndroidGuestProcess::StartLegacy(request)));
     } catch (const std::exception& error) {
-        throw AndroidGuestCallSessionError(
-            "Android guest call session startup failed: " +
-            std::string(error.what()));
+        throw AndroidGuestCallSessionError("Android guest call session startup failed: " + std::string(error.what()));
     }
 }
 
 std::unique_ptr<AndroidGuestCallSession>
-AndroidGuestCallSession::AdoptProcess(
-    std::unique_ptr<AndroidGuestProcess> process) {
+AndroidGuestCallSession::AdoptProcess(std::unique_ptr<AndroidGuestProcess> process) {
     if (!process) {
-        throw AndroidGuestCallSessionError(
-            "cannot adopt an empty Android guest process");
+        throw AndroidGuestCallSessionError("cannot adopt an empty Android guest process");
     }
-    return std::unique_ptr<AndroidGuestCallSession>(
-        new AndroidGuestCallSession(std::move(process)));
+    return std::unique_ptr<AndroidGuestCallSession>(new AndroidGuestCallSession(std::move(process)));
 }
-AndroidGuestCallSession::AndroidGuestCallSession(
-    std::unique_ptr<AndroidGuestProcess> process) noexcept
+
+AndroidGuestCallSession::AndroidGuestCallSession(std::unique_ptr<AndroidGuestProcess> process) noexcept
     : process_(std::move(process)) {}
+
 AndroidGuestCallSession::~AndroidGuestCallSession() = default;
-A32GuestCallResult AndroidGuestCallSession::Invoke(
-    const A32GuestCallFrame& frame) {
+
+A32GuestCallResult AndroidGuestCallSession::Invoke(const A32GuestCallFrame& frame) {
     try {
         return process_->Invoke(frame);
     } catch (const A32GuestCallCancelled&) {
@@ -2979,13 +2862,13 @@ A32GuestCallResult AndroidGuestCallSession::Invoke(
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-std::optional<A32GuestCallResult>
-AndroidGuestCallSession::TryInvokeRegisteredNative(
-    const JniObjectIdentity java_class, const std::string_view name,
-    const std::string_view descriptor, const A32GuestCallFrame& frame) {
+
+std::optional<A32GuestCallResult> AndroidGuestCallSession::TryInvokeRegisteredNative(const JniObjectIdentity java_class,
+                                                                                     const std::string_view name,
+                                                                                     const std::string_view descriptor,
+                                                                                     const A32GuestCallFrame& frame) {
     try {
-        return process_->TryInvokeRegisteredNative(
-            java_class, name, descriptor, frame);
+        return process_->TryInvokeRegisteredNative(java_class, name, descriptor, frame);
     } catch (const A32GuestCallCancelled&) {
         throw;
     } catch (const A32GuestCallExit&) {
@@ -2996,45 +2879,129 @@ AndroidGuestCallSession::TryInvokeRegisteredNative(
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-void AndroidGuestCallSession::PrepareDexVmThread(
-    const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
+
+void AndroidGuestCallSession::PrepareDexVmThread(const std::uint64_t thread_id, const std::uint32_t allocation_slot) {
     process_->PrepareDexVmThread(thread_id, allocation_slot);
 }
-void AndroidGuestCallSession::QuiesceNativeWorkers() { process_->QuiesceNativeWorkers(); }
-void AndroidGuestCallSession::RunTeardownCleanup(const std::function<void()>& cleanup) { process_->RunTeardownCleanup(cleanup); }
-void AndroidGuestCallSession::RunGracefulCleanup(const std::function<void()>& cleanup) { process_->RunGracefulCleanup(cleanup); }
-std::uint64_t AndroidGuestCallSession::CleanupDeadlineNs() const noexcept { return process_->CleanupDeadlineNs(); }
-std::optional<std::int32_t> AndroidGuestCallSession::NativeExitCode() const { return process_->NativeExitCode(); }
-void AndroidGuestCallSession::RethrowAsyncFailure() { process_->RethrowAsyncFailure(); }
-memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) { return process_->PrepareThreadLooper(tid); }
-void AndroidGuestCallSession::ReleaseDexVmThread(
-    const std::uint64_t thread_id) noexcept {
+
+void AndroidGuestCallSession::QuiesceNativeWorkers() {
+    process_->QuiesceNativeWorkers();
+}
+
+void AndroidGuestCallSession::RunTeardownCleanup(const std::function<void()>& cleanup) {
+    process_->RunTeardownCleanup(cleanup);
+}
+
+void AndroidGuestCallSession::RunGracefulCleanup(const std::function<void()>& cleanup) {
+    process_->RunGracefulCleanup(cleanup);
+}
+
+std::uint64_t AndroidGuestCallSession::CleanupDeadlineNs() const noexcept {
+    return process_->CleanupDeadlineNs();
+}
+
+std::optional<std::int32_t> AndroidGuestCallSession::NativeExitCode() const {
+    return process_->NativeExitCode();
+}
+
+void AndroidGuestCallSession::RethrowAsyncFailure() {
+    process_->RethrowAsyncFailure();
+}
+
+memory::GuestAddress AndroidGuestCallSession::PrepareThreadLooper(std::uint64_t tid) {
+    return process_->PrepareThreadLooper(tid);
+}
+
+void AndroidGuestCallSession::ReleaseDexVmThread(const std::uint64_t thread_id) noexcept {
     process_->ReleaseDexVmThread(thread_id);
 }
-memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept { return process_->GuestEnvironment(); }
-memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept { return process_->GuestJavaVm(); }
-JniEnvironment& AndroidGuestCallSession::Environment() noexcept { return process_->Environment(); }
-JniClassRegistry& AndroidGuestCallSession::Classes() noexcept { return process_->Classes(); }
-JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept { return process_->Invocations(); }
-JniFieldStore& AndroidGuestCallSession::Fields() noexcept { return process_->Fields(); }
-JniNativeRegistry& AndroidGuestCallSession::Natives() noexcept { return process_->Natives(); }
-JniGuestObjectRegistry& AndroidGuestCallSession::Objects() noexcept { return process_->Objects(); }
-JniStringStore& AndroidGuestCallSession::Strings() noexcept { return process_->Strings(); }
-JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept { return process_->Arrays(); }
-dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept { return process_->NIO(); }
-audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept { return process_->SoundPoolState(); }
-audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept { return process_->SoundPoolMixer(); }
-audio::EncodedMusicMixer& AndroidGuestCallSession::EncodedMusic() noexcept { return process_->EncodedMusic(); }
-audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept { return process_->PcmPlayback(); }
-void AndroidGuestCallSession::SetAuxiliaryAudioMix(
-    std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
+
+memory::GuestAddress AndroidGuestCallSession::GuestEnvironment() const noexcept {
+    return process_->GuestEnvironment();
+}
+
+memory::GuestAddress AndroidGuestCallSession::GuestJavaVm() const noexcept {
+    return process_->GuestJavaVm();
+}
+
+JniEnvironment& AndroidGuestCallSession::Environment() noexcept {
+    return process_->Environment();
+}
+
+JniClassRegistry& AndroidGuestCallSession::Classes() noexcept {
+    return process_->Classes();
+}
+
+JniInvocationEngine& AndroidGuestCallSession::Invocations() noexcept {
+    return process_->Invocations();
+}
+
+JniFieldStore& AndroidGuestCallSession::Fields() noexcept {
+    return process_->Fields();
+}
+
+JniNativeRegistry& AndroidGuestCallSession::Natives() noexcept {
+    return process_->Natives();
+}
+
+JniGuestObjectRegistry& AndroidGuestCallSession::Objects() noexcept {
+    return process_->Objects();
+}
+
+JniStringStore& AndroidGuestCallSession::Strings() noexcept {
+    return process_->Strings();
+}
+
+JniPrimitiveArrayStore& AndroidGuestCallSession::Arrays() noexcept {
+    return process_->Arrays();
+}
+
+dexvm::NioRuntime& AndroidGuestCallSession::NIO() noexcept {
+    return process_->NIO();
+}
+
+audio::JavaSoundPoolState& AndroidGuestCallSession::SoundPoolState() noexcept {
+    return process_->SoundPoolState();
+}
+
+audio::JavaSoundPoolMixer& AndroidGuestCallSession::SoundPoolMixer() noexcept {
+    return process_->SoundPoolMixer();
+}
+
+audio::EncodedMusicMixer& AndroidGuestCallSession::EncodedMusic() noexcept {
+    return process_->EncodedMusic();
+}
+
+audio::OpenSlesPcmMixer& AndroidGuestCallSession::PcmPlayback() noexcept {
+    return process_->PcmPlayback();
+}
+
+void AndroidGuestCallSession::SetAuxiliaryAudioMix(std::function<void(std::span<std::int64_t>, std::uint32_t)> mix) {
     process_->SetAuxiliaryAudioMix(std::move(mix));
 }
-VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept { return process_->Filesystem(); }
-const GuestCpuConfig& AndroidGuestCallSession::CpuConfig() const noexcept { return process_->CpuConfig(); }
-const GuestMemorySnapshot& AndroidGuestCallSession::MemorySnapshot() const noexcept { return process_->MemorySnapshot(); }
-AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept { return *process_; }
-std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name, std::string_view method_name, std::string_view descriptor) const { return process_->FindNativeExport(class_name, method_name, descriptor); }
+
+VirtualFileSystem* AndroidGuestCallSession::Filesystem() noexcept {
+    return process_->Filesystem();
+}
+
+const GuestCpuConfig& AndroidGuestCallSession::CpuConfig() const noexcept {
+    return process_->CpuConfig();
+}
+
+const GuestMemorySnapshot& AndroidGuestCallSession::MemorySnapshot() const noexcept {
+    return process_->MemorySnapshot();
+}
+
+AndroidGuestProcess& AndroidGuestCallSession::Process() noexcept {
+    return *process_;
+}
+
+std::optional<memory::GuestAddress> AndroidGuestCallSession::FindNativeExport(std::string_view class_name,
+                                                                              std::string_view method_name,
+                                                                              std::string_view descriptor) const {
+    return process_->FindNativeExport(class_name, method_name, descriptor);
+}
+
 void AndroidGuestCallSession::InitializeJniLibrary() {
     try {
         process_->InitializeJniLibrary();
@@ -3048,27 +3015,55 @@ void AndroidGuestCallSession::InitializeJniLibrary() {
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-void AndroidGuestCallSession::OpenManagedSurface() { process_->OpenManagedSurface(); }
-void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() { process_->BindManagedSurfaceOnCallingThread(); }
-void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() { process_->ReleaseManagedSurfaceFromCallingThread(); }
-bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept { return process_->ManagedSurfaceIsOpen(); }
-std::string AndroidGuestCallSession::ManagedGlString(std::uint32_t parameter) { return process_->ManagedGlString(parameter); }
-std::string AndroidGuestCallSession::ManagedEglString(std::uint32_t parameter) { return process_->ManagedEglString(parameter); }
-void AndroidGuestCallSession::LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) { process_->LatchManagedEglError(thread_id, error); }
-std::uint32_t AndroidGuestCallSession::InvokeManagedGles(
-    const gles::GlesApi api, const std::string_view name,
-    const std::span<const std::uint32_t> arguments,
-    const std::uint64_t thread_id) {
+
+void AndroidGuestCallSession::OpenManagedSurface() {
+    process_->OpenManagedSurface();
+}
+
+void AndroidGuestCallSession::BindManagedSurfaceOnCallingThread() {
+    process_->BindManagedSurfaceOnCallingThread();
+}
+
+void AndroidGuestCallSession::ReleaseManagedSurfaceFromCallingThread() {
+    process_->ReleaseManagedSurfaceFromCallingThread();
+}
+
+bool AndroidGuestCallSession::ManagedSurfaceIsOpen() const noexcept {
+    return process_->ManagedSurfaceIsOpen();
+}
+
+std::string AndroidGuestCallSession::ManagedGlString(std::uint32_t parameter) {
+    return process_->ManagedGlString(parameter);
+}
+
+std::string AndroidGuestCallSession::ManagedEglString(std::uint32_t parameter) {
+    return process_->ManagedEglString(parameter);
+}
+
+void AndroidGuestCallSession::LatchManagedEglError(const std::uint64_t thread_id, const std::uint32_t error) {
+    process_->LatchManagedEglError(thread_id, error);
+}
+
+std::uint32_t AndroidGuestCallSession::InvokeManagedGles(const gles::GlesApi api, const std::string_view name,
+                                                         const std::span<const std::uint32_t> arguments,
+                                                         const std::uint64_t thread_id) {
     return process_->InvokeManagedGles(api, name, arguments, thread_id);
 }
-std::uint32_t AndroidGuestCallSession::InvokeManagedEgl(
-    const std::string_view name,
-    const std::span<const std::uint32_t> arguments,
-    const std::uint64_t thread_id) {
+
+std::uint32_t AndroidGuestCallSession::InvokeManagedEgl(const std::string_view name,
+                                                        const std::span<const std::uint32_t> arguments,
+                                                        const std::uint64_t thread_id) {
     return process_->InvokeManagedEgl(name, arguments, thread_id);
 }
-void AndroidGuestCallSession::PresentManagedSurface() { process_->PresentManagedSurface(); }
-void AndroidGuestCallSession::CloseManagedSurface() { process_->CloseManagedSurface(); }
+
+void AndroidGuestCallSession::PresentManagedSurface() {
+    process_->PresentManagedSurface();
+}
+
+void AndroidGuestCallSession::CloseManagedSurface() {
+    process_->CloseManagedSurface();
+}
+
 void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
     try {
         process_->PushInput(input);
@@ -3082,13 +3077,35 @@ void AndroidGuestCallSession::PushInput(const AndroidBoundaryInput& input) {
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() { return process_->TakeLatestFrame(); }
-void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) { process_->PublishSoftwareFrame(std::move(rgba8)); }
-void AndroidGuestCallSession::SetFrameReadbackFilter(FrameReadbackFilter covered) { process_->SetFrameReadbackFilter(std::move(covered)); }
-void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) { process_->RecycleFrame(std::move(frame)); }
-std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) { return process_->RenderStereoAudio(output, sample_rate); }
-std::size_t AndroidGuestCallSession::InterruptBlockingWaits() { return process_->InterruptBlockingWaits(); }
-void AndroidGuestCallSession::BeginTeardown() noexcept { process_->BeginTeardown(); }
+
+std::optional<AndroidBoundaryFrame> AndroidGuestCallSession::TakeLatestFrame() {
+    return process_->TakeLatestFrame();
+}
+
+void AndroidGuestCallSession::PublishSoftwareFrame(std::vector<std::uint8_t> rgba8) {
+    process_->PublishSoftwareFrame(std::move(rgba8));
+}
+
+void AndroidGuestCallSession::SetFrameReadbackFilter(FrameReadbackFilter covered) {
+    process_->SetFrameReadbackFilter(std::move(covered));
+}
+
+void AndroidGuestCallSession::RecycleFrame(AndroidBoundaryFrame&& frame) {
+    process_->RecycleFrame(std::move(frame));
+}
+
+std::size_t AndroidGuestCallSession::RenderStereoAudio(std::span<std::int16_t> output, std::uint32_t sample_rate) {
+    return process_->RenderStereoAudio(output, sample_rate);
+}
+
+std::size_t AndroidGuestCallSession::InterruptBlockingWaits() {
+    return process_->InterruptBlockingWaits();
+}
+
+void AndroidGuestCallSession::BeginTeardown() noexcept {
+    process_->BeginTeardown();
+}
+
 void AndroidGuestCallSession::Stop(const GuestFinalizationPolicy policy) {
     try {
         process_->Stop(policy);
@@ -3102,38 +3119,111 @@ void AndroidGuestCallSession::Stop(const GuestFinalizationPolicy policy) {
         throw AndroidGuestCallSessionError(error.what());
     }
 }
-bool AndroidGuestCallSession::Running() const noexcept { return process_->Running(); }
-bool AndroidGuestCallSession::ExitRequested() const noexcept { return process_->ExitRequested(); }
-std::optional<AndroidGuestMovieRequest> AndroidGuestCallSession::LatestMovieRequest() const { return process_->LatestMovieRequest(); }
-std::shared_ptr<debug::DiagnosticState> AndroidGuestCallSession::Diagnostics() const { return process_->Diagnostics(); }
-core::GpuStats AndroidGuestCallSession::Stats() const { return process_->Stats(); }
-std::vector<core::GpuRenderTarget> AndroidGuestCallSession::RenderTargets() const { return process_->RenderTargets(); }
-core::GpuCapabilities AndroidGuestCallSession::Capabilities() const { return process_->Capabilities(); }
-std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(std::string_view filter, std::size_t limit) const { return process_->Trace(filter, limit); }
+
+bool AndroidGuestCallSession::Running() const noexcept {
+    return process_->Running();
+}
+
+bool AndroidGuestCallSession::ExitRequested() const noexcept {
+    return process_->ExitRequested();
+}
+
+std::optional<AndroidGuestMovieRequest> AndroidGuestCallSession::LatestMovieRequest() const {
+    return process_->LatestMovieRequest();
+}
+
+std::shared_ptr<debug::DiagnosticState> AndroidGuestCallSession::Diagnostics() const {
+    return process_->Diagnostics();
+}
+
+core::GpuStats AndroidGuestCallSession::Stats() const {
+    return process_->Stats();
+}
+
+std::vector<core::GpuRenderTarget> AndroidGuestCallSession::RenderTargets() const {
+    return process_->RenderTargets();
+}
+
+core::GpuCapabilities AndroidGuestCallSession::Capabilities() const {
+    return process_->Capabilities();
+}
+
+std::vector<core::GpuTraceEntry> AndroidGuestCallSession::Trace(std::string_view filter, std::size_t limit) const {
+    return process_->Trace(filter, limit);
+}
 
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime {
-std::optional<core::GpuStats> AndroidGuestProcess::TryStats() const { return impl_->TryStats(); }
-std::optional<memory::MemoryStatistics> AndroidGuestProcess::TryMemorySnapshot() const { return impl_->TryMemorySnapshot(); }
-std::optional<std::vector<cpu::DynarmicCacheSnapshot>> AndroidGuestProcess::TryCpuSnapshot() const { return impl_->TryCpuSnapshot(); }
+std::optional<core::GpuStats> AndroidGuestProcess::TryStats() const {
+    return impl_->TryStats();
 }
 
-namespace ogplay::runtime {
-void AndroidGuestProcess::RegisterNativeActivity(NativeActivityBoundaryResources resources) { impl_->RegisterNativeActivity(std::move(resources)); }
-void AndroidGuestProcess::UnregisterNativeActivity(memory::GuestAddress activity) { impl_->UnregisterNativeActivity(activity); }
-memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active) { return impl_->SetNativeActivityWindow(activity, active); }
-void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, bool active) { impl_->SetNativeActivityInput(activity, active); }
+std::optional<memory::MemoryStatistics> AndroidGuestProcess::TryMemorySnapshot() const {
+    return impl_->TryMemorySnapshot();
 }
 
-namespace ogplay::runtime {
-void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) { impl_->SetBitmapHooks(hooks); }
-void AndroidGuestProcess::SetSurfaceHooks(AndroidSurfaceHooks hooks) { impl_->SetSurfaceHooks(hooks); }
-memory::GuestAddress AndroidGuestProcess::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) { return impl_->AcquireSurfaceWindow(surface); }
-void AndroidGuestProcess::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) { impl_->UpdateSurfaceWindow(surface); }
-void AndroidGuestProcess::RetireSurfaceWindow(memory::GuestAddress identity) { impl_->RetireSurfaceWindow(identity); }
-void AndroidGuestProcess::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) { impl_->SetSensorDirectory(std::move(directory)); }
-void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) { impl_->SetAssetManagerHooks(hooks); }
-memory::GuestAddress AndroidGuestProcess::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) { return impl_->RegisterAssetManager(std::move(source)); }
-void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) { impl_->UnregisterAssetManager(manager); }
+std::optional<std::vector<cpu::DynarmicCacheSnapshot>> AndroidGuestProcess::TryCpuSnapshot() const {
+    return impl_->TryCpuSnapshot();
 }
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void AndroidGuestProcess::RegisterNativeActivity(NativeActivityBoundaryResources resources) {
+    impl_->RegisterNativeActivity(std::move(resources));
+}
+
+void AndroidGuestProcess::UnregisterNativeActivity(memory::GuestAddress activity) {
+    impl_->UnregisterNativeActivity(activity);
+}
+
+memory::GuestAddress AndroidGuestProcess::SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
+    return impl_->SetNativeActivityWindow(activity, active);
+}
+
+void AndroidGuestProcess::SetNativeActivityInput(memory::GuestAddress activity, bool active) {
+    impl_->SetNativeActivityInput(activity, active);
+}
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+void AndroidGuestProcess::SetBitmapHooks(AndroidBitmapHooks hooks) {
+    impl_->SetBitmapHooks(hooks);
+}
+
+void AndroidGuestProcess::SetSurfaceHooks(AndroidSurfaceHooks hooks) {
+    impl_->SetSurfaceHooks(hooks);
+}
+
+memory::GuestAddress AndroidGuestProcess::AcquireSurfaceWindow(const AndroidSurfaceWindow& surface) {
+    return impl_->AcquireSurfaceWindow(surface);
+}
+
+void AndroidGuestProcess::UpdateSurfaceWindow(const AndroidSurfaceWindow& surface) {
+    impl_->UpdateSurfaceWindow(surface);
+}
+
+void AndroidGuestProcess::RetireSurfaceWindow(memory::GuestAddress identity) {
+    impl_->RetireSurfaceWindow(identity);
+}
+
+void AndroidGuestProcess::SetDeviceLocaleProvider(std::function<DeviceLocale()> provider) {
+    impl_->SetDeviceLocaleProvider(std::move(provider));
+}
+
+void AndroidGuestProcess::SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory) {
+    impl_->SetSensorDirectory(std::move(directory));
+}
+
+void AndroidGuestProcess::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
+    impl_->SetAssetManagerHooks(hooks);
+}
+
+memory::GuestAddress AndroidGuestProcess::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
+    return impl_->RegisterAssetManager(std::move(source));
+}
+
+void AndroidGuestProcess::UnregisterAssetManager(memory::GuestAddress manager) {
+    impl_->UnregisterAssetManager(manager);
+}
+}  // namespace ogplay::runtime

@@ -22,8 +22,8 @@ GROUPS = ('View', 'ViewGroup', 'FrameLayout', 'LinearLayout', 'RelativeLayout',
           'TextViewAppearance', 'TextAppearance', 'TextView', 'ImageView',
           'ScrollView', 'HorizontalScrollView')
 PINNED = {
-    '.local/aosp/framework.jar': '90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48',
-    '.local/aosp/framework2.jar': 'b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea',
+    '.local/aosp/framework.jar': '422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
+    '.local/aosp/framework2.jar': '5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',
 }
 
 

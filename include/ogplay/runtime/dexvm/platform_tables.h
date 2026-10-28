@@ -105,9 +105,9 @@ inline constexpr auto kSystemProperties = std::to_array<PlatformProperty>({
     {"os.version", "3.4.0", "uname.release"},
     {"path.separator", ":", ""},
     {"user.home", "/data", "passwd.pw_dir"},
-    {"user.language", "en", ""},
+    {"user.language", "", "DeviceLocale.language"},
     {"user.name", "u0_a0", "passwd.pw_name"},
-    {"user.region", "US", ""},
+    {"user.region", "", "DeviceLocale.region"},
     {"user.dir", "/", ""},
 });
 }  // namespace ogplay::runtime::dexvm

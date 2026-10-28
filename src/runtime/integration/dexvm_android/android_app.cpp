@@ -668,50 +668,65 @@ constexpr std::int32_t kIntentFillFlags = 0xff;  // API19 FILL_IN_*.
 
     // Context callbacks above may park. Recheck teardown before registry access.
     if (context->pending_intents_stopping) UnsupportedPending(call, "PendingIntent process is stopping");
-    // Snapshot the weak registry before calls which can allocate/collect.
-    // Temporary roots keep candidate wrappers alive only for this lookup.
-    std::vector<DexVmAndroidContext::PendingIntentRecord> candidates;
-    std::vector<dx::VmObjectRef> candidate_roots;
-    for (const auto& [_, record] : context->pending_intents) {
-        if (!record.canceled && record.creator_package == package && record.kind == kind &&
-            record.request_code == args.Int(1) && record.flags == (flags & ~kControlFlags)) {
-            candidates.push_back(record);
-            candidate_roots.push_back(record.object);
-        }
-    }
-    const auto roots = call.vm.ProtectReferences(candidate_roots);
-    dx::VmObjectRef existing;
-    for (const auto& record : candidates) {
-        if (CallAndroidMethod(call.vm, record.intent, "filterEquals", "(Landroid/content/Intent;)Z",
-                              {dx::VmValue::Ref(intent)})
-                .AsInt() != 0) {
-            existing = record.object;
-            break;
-        }
-    }
-    if (existing.IsValid()) {
-        if ((flags & kCancelCurrent) != 0) {
-            context->pending_intents.at(existing.Value()).canceled = true;
-            std::erase(context->alarm_operations, existing);
-        } else {
-            if ((flags & kUpdateCurrent) != 0) {
-                const auto snapshot = context->pending_intents.at(existing.Value()).intent;
-                static_cast<void>(CallAndroidMethod(call.vm, snapshot, "replaceExtras",
-                                                    "(Landroid/content/Intent;)Landroid/content/Intent;",
-                                                    {dx::VmValue::Ref(intent)}));
+    for (;;) {
+        // Snapshot the weak registry before calls which can allocate/collect.
+        // Temporary roots keep candidate wrappers alive only for this lookup.
+        std::vector<DexVmAndroidContext::PendingIntentRecord> candidates;
+        std::vector<dx::VmObjectRef> candidate_roots;
+        for (const auto& [_, record] : context->pending_intents) {
+            if (!record.canceled && record.creator_package == package && record.kind == kind &&
+                record.request_code == args.Int(1) && record.flags == (flags & ~kControlFlags)) {
+                candidates.push_back(record);
+                candidate_roots.push_back(record.object);
             }
-            return dx::VmValue::Ref(existing);
         }
+        const auto roots = call.vm.ProtectReferences(candidate_roots);
+        dx::VmObjectRef existing;
+        for (const auto& record : candidates) {
+            if (CallAndroidMethod(call.vm, record.intent, "filterEquals", "(Landroid/content/Intent;)Z",
+                                  {dx::VmValue::Ref(intent)})
+                    .AsInt() != 0) {
+                existing = record.object;
+                break;
+            }
+        }
+        if (existing.IsValid()) {
+            if ((flags & kCancelCurrent) != 0) {
+                context->pending_intents.at(existing.Value()).canceled = true;
+                std::erase(context->alarm_operations, existing);
+            } else {
+                if ((flags & kUpdateCurrent) != 0) {
+                    const auto snapshot = context->pending_intents.at(existing.Value()).intent;
+                    static_cast<void>(CallAndroidMethod(call.vm, snapshot, "replaceExtras",
+                                                        "(Landroid/content/Intent;)Landroid/content/Intent;",
+                                                        {dx::VmValue::Ref(intent)}));
+                }
+                return dx::VmValue::Ref(existing);
+            }
+        }
+        // API19 CANCEL_CURRENT|NO_CREATE returns the old (now canceled) token.
+        if ((flags & kNoCreate) != 0) return dx::VmValue::Ref(existing);
+        const auto snapshot = CopyPendingIntent(call.vm, intent);
+        const auto snapshot_root = call.vm.ProtectReferences(std::array{snapshot});
+        const auto object = call.vm.NewIntrinsicInstance("Landroid/app/PendingIntent;");
+        // Copying the ROM Intent or allocating the wrapper can park this caller.
+        // Candidate roots prevent their collection; retry if another caller has
+        // published a new eligible token while this snapshot was being built.
+        if (context->pending_intents_stopping) UnsupportedPending(call, "PendingIntent process is stopping");
+        const bool published =
+            std::any_of(context->pending_intents.begin(), context->pending_intents.end(), [&](const auto& entry) {
+                const auto& record = entry.second;
+                return !record.canceled && record.creator_package == package && record.kind == kind &&
+                       record.request_code == args.Int(1) && record.flags == (flags & ~kControlFlags) &&
+                       std::none_of(candidates.begin(), candidates.end(),
+                                    [&](const auto& old) { return old.object == record.object; });
+            });
+        if (published) continue;
+        context->pending_intents.emplace(
+            object.Value(), DexVmAndroidContext::PendingIntentRecord{object, snapshot, package, kind, args.Int(1),
+                                                                     flags & ~kControlFlags, false});
+        return dx::VmValue::Ref(object);
     }
-    // API19 CANCEL_CURRENT|NO_CREATE returns the old (now canceled) token.
-    if ((flags & kNoCreate) != 0) return dx::VmValue::Ref(existing);
-    const auto snapshot = CopyPendingIntent(call.vm, intent);
-    const auto snapshot_root = call.vm.ProtectReferences(std::array{snapshot});
-    const auto object = call.vm.NewIntrinsicInstance("Landroid/app/PendingIntent;");
-    context->pending_intents.emplace(
-        object.Value(), DexVmAndroidContext::PendingIntentRecord{object, snapshot, package, kind, args.Int(1),
-                                                                 flags & ~kControlFlags, false});
-    return dx::VmValue::Ref(object);
 }
 }  // namespace
 

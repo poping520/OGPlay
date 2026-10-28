@@ -7,10 +7,10 @@ import dex_survey_lib as dex
 from dexdis import load_catalog
 ROOT=Path(__file__).resolve().parent.parent
 PINNED={
- 'core.jar':'996557954e45f7192b187b2394259bc8aca6e3946652e03b99d837432f83d1ef',
- 'framework.jar':'90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48',
- 'framework2.jar':'b6aba8bec45e2a2faa7a4e1e8ae3d8e450259f7e28c8dae6ca2c31dc34e06bea',
- 'ext.jar':'618663a2f417f7eb4ae903d25809ffdd90fe5b5236184c530228dd66bfcdb65c'}
+ 'core.jar':'60b6cdf3eded2fdf157c6166402477e4f72ade215b334817439960522c0e64ee',
+ 'framework.jar':'422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b',
+ 'framework2.jar':'5866d4e62e5fe44ffaf6ff441b6c361baeb1f8b91e30bb555481ef13ef837973',
+ 'ext.jar':'e95d35989f0e1b438b3b6fea2777a798a0398f457a32875cdadfe3e2573a4ca2'}
 MAGIC=b'OGSK19\x01\n'
 def pack(records):
  index=bytearray(MAGIC+struct.pack('<I',len(records)));payload=bytearray()

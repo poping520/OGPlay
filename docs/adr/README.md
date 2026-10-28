@@ -10,7 +10,7 @@
 | 主题 | 条数 | 编号 |
 | --- | ---: | --- |
 | [构建、依赖与开发流程](development.md) | 4 | [0005](development.md#adr-0005)、[0007](development.md#adr-0007)、[0072](development.md#adr-0072)、[0138](development.md#adr-0138) |
-| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 9 | [0017](dexvm.md#adr-0017)、[0029](dexvm.md#adr-0029)、[0066](dexvm.md#adr-0066)、[0068](dexvm.md#adr-0068)、[0147](dexvm.md#adr-0147)、[0148](dexvm.md#adr-0148)、[0152](dexvm.md#adr-0152)、[0157](dexvm.md#adr-0157)、[0158](dexvm.md#adr-0158) |
+| [DexVM、BootDex 与 Java 平台边界](dexvm.md) | 10 | [0017](dexvm.md#adr-0017)、[0029](dexvm.md#adr-0029)、[0066](dexvm.md#adr-0066)、[0068](dexvm.md#adr-0068)、[0147](dexvm.md#adr-0147)、[0148](dexvm.md#adr-0148)、[0152](dexvm.md#adr-0152)、[0157](dexvm.md#adr-0157)、[0158](dexvm.md#adr-0158)、[0167](dexvm.md#adr-0167) |
 | [可观测性、线程握手与退出](diagnostics.md) | 3 | [0006](diagnostics.md#adr-0006)、[0025](diagnostics.md#adr-0025)、[0026](diagnostics.md#adr-0026) |
 | [图形、音频与视频](media.md) | 5 | [0003](media.md#adr-0003)、[0063](media.md#adr-0063)、[0070](media.md#adr-0070)、[0136](media.md#adr-0136)、[0140](media.md#adr-0140) |
 | [运行时基础与模块边界](runtime.md) | 7 | [0001](runtime.md#adr-0001)、[0002](runtime.md#adr-0002)、[0004](runtime.md#adr-0004)、[0010](runtime.md#adr-0010)、[0011](runtime.md#adr-0011)、[0013](runtime.md#adr-0013)、[0079](runtime.md#adr-0079) |

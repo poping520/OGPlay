@@ -1320,8 +1320,8 @@ note = "DVM-115/ADR-0043：Throwable、StackTraceElement 与 java.lang 异常家
 
 [dexvm.locale_iso_catalogs]
 status = "complete"
-test = "tests/runtime/guest_crypto_bks_tests.cpp#DVM-105; tools/bootdex/build_bootdex.py audit"
-note = "DVM-113/DVM-122 按 API 19 Locale→BootDex ICU Java→guest libogplay_jni.so→payload ICU 51 接通 getISOLanguages/getISOCountries。完整枚举 559 个语言代码（含三字母）与 249 个国家代码；缓存与 clone 归 Java。getAvailableLocales、ISO3 转换未纳入。"
+test = "tests/runtime/guest_icu_tests.cpp#DVM-342; tests/runtime/boundary/integration/android_boundary_hle_tests.cpp#DVM-342; tools/bootdex/build_bootdex.py audit"
+note = "DVM-113/342：Locale 完整形状、常量、规范化、默认值/setDefault、显示名、ISO3、ISO/可用区域枚举及防御性复制执行 AOSP core.jar Java，native 仅用 guest ICU51 C ABI。设备 locale_language/locale_region 严格校验并同源派生 user.* 与 AConfiguration；Java setDefault 不改设备事实。布局方向仍限 en/zh，未接设置 UI、persist.sys.* 或资源 locale qualifier。"
 
 [dexvm.date_format_api19]
 status = "complete"
@@ -1966,7 +1966,7 @@ note = "DVM-192：API19 PermissionInfo 与 CREATOR 归 BootDex；Manifest 顶层
 [dexvm.typeface]
 status = "partial"
 test = "tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-120 Typeface 的常量/缓存/工厂/样式/相等查询来自 BootDex；内置字体四样式通过有限不可变 native 描述符对接真实 measure/raster。family 保留身份并使用内置回退字形；TextView 保存 Java 引用，文件/asset 字体明确记账失败。不含 Skia、系统字体匹配或完整 Paint/Canvas 字体能力。"
+note = "DVM-120/342 Typeface 的常量/缓存/工厂/样式/相等查询来自 AOSP BootDex；内置字体四样式通过有限不可变 native 描述符对接真实 measure/raster。family 保留身份并使用内置回退字形；TextView 保存 Java 引用，文件/asset 字体明确记账失败。CM recreateDefaults/nativeFreeCaches 不提供，按缺失成员失败。不含 Skia、系统字体匹配或完整 Paint/Canvas 字体能力。"
 
 [dexvm.text_appearance]
 status = "partial"

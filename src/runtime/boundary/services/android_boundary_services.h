@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <functional>
+#include "ogplay/runtime/boundary/device_locale.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -10,11 +12,9 @@ namespace ogplay::runtime {
 
 class AndroidBoundaryServices final {
 public:
-    explicit AndroidBoundaryServices(memory::AddressSpace& address_space) noexcept
-        : address_space(address_space) {}
+    explicit AndroidBoundaryServices(memory::AddressSpace& address_space) noexcept : address_space(address_space) {}
 
-    void Write32(const std::uint32_t address, const std::uint32_t value,
-                 const std::uint64_t thread_id) const {
+    void Write32(const std::uint32_t address, const std::uint32_t value, const std::uint64_t thread_id) const {
         if (address == 0U) return;
         std::array<std::byte, 4> bytes{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
@@ -23,6 +23,7 @@ public:
         address_space.Write(memory::GuestAddress{address}, bytes, thread_id);
     }
 
+    std::function<DeviceLocale()> device_locale;
     memory::AddressSpace& address_space;
 };
 

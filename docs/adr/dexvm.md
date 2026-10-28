@@ -11,6 +11,7 @@
 - [ADR-0152 · Java primitive/String 的稳定 guest backing](#adr-0152)
 - [ADR-0157 · Java View 遍历、宿主投影与配对制品](#adr-0157)
 - [ADR-0158 · 固定 ROM 成员组合与开放世界虚派准入](#adr-0158)
+- [ADR-0167 · Locale 的 ROM Java 归属与单一设备语言地区](#adr-0167)
 
 <a id="adr-0017"></a>
 
@@ -291,3 +292,32 @@ BootDex closure 零缺口与实际单 DEX 索引预算保持；每批有界支�
 ### 后果
 
 可逐成员迁移真实 Java，保留诚实失败；不改变默认准入规则，不承诺全部 ROM 虚派目标可运行。
+
+<a id="adr-0167"></a>
+
+## ADR-0167 · Locale 的 ROM Java 归属与单一设备语言地区
+
+- 状态：Accepted
+- 日期：2026-10-28
+
+### 决定
+
+java.util.Locale 的字段、常量、构造、默认值及 setDefault、显示名、ISO3、枚举和复制协议
+统一执行 AOSP android-4.4.4_r2.0.1 core.jar 原版 Java；删除宿主 Locale intrinsic 与 ISO3 注入。
+ICU 准入扩展至显示语言/国家/变体、ISO3 语言/国家及可用区域枚举，仍只使用固定 guest ICU51
+C ABI 与同一 icudt51l.dat；未知代码、空串和 MissingResourceException 决策保持 ROM 语义。
+未准入 native 仍逐签名明确失败，不引入宿主 ICU 或 ICU C++ ABI。
+
+DexVmAndroidContext 的 locale_language（默认 en）和 locale_region（默认 US）是唯一设备事实。
+对齐 AndroidRuntime.readLocale 的两个字符语言/地区输入：仅接受小写两字母语言及大写两字母地区，
+非法输入拒绝；不读取宿主 locale。System 初始化经既有服务写 user.language/user.region，
+boundary 的 AConfiguration 经显式 provider 读取同源投影。Locale.setDefault 仅修改 Java 进程默认值，
+不改变设备事实；Resources.getConfiguration 每次读取当前 Java 默认值。
+
+后续设置项与 persist.sys.* 必须接入同一设备事实；本次不接设置 UI、不改 Bionic 属性区、
+旧 headless FrameworkLocaleHle 或资源 locale qualifier。
+
+### 后果
+
+Java 算法与缓存没有宿主副本；设备语言地区与应用可修改的 Java 默认 Locale 各有明确归属。
+验证入口及范围见 [DVM-342](../tasks/dexvm/DVM-342.md)。

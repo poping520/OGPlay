@@ -112,7 +112,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Status(const Context& context);
 [[nodiscard]] Decl Declare_android_os_AsyncTask_Worker(const Context& context);
 [[nodiscard]] Decl Declare_android_os_SystemProperties(const Context& context);
-[[nodiscard]] Decl Declare_android_os_FileUtils(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Binder(const Context& context);
 [[nodiscard]] Decl Declare_android_os_StrictMode(const Context& context);
 [[nodiscard]] Decl Declare_android_os_Environment(const Context& context);

@@ -1,4 +1,5 @@
 #pragma once
+#include "ogplay/runtime/boundary/device_locale.h"
 
 #include <cstdint>
 #include "ogplay/gles/external_texture.h"
@@ -165,6 +166,7 @@ public:
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);
     void SetSensorDirectory(std::shared_ptr<const AndroidSensorDirectory> directory);
+    void SetDeviceLocaleProvider(std::function<DeviceLocale()> provider);
     // Install before guest calls; clear only after workers stop, retiring assets.
     void SetAssetManagerHooks(AndroidAssetManagerHooks hooks);
     [[nodiscard]] memory::GuestAddress RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source);

@@ -24,9 +24,9 @@ import dexdis
 APK = '.local/aosp/framework-res.apk'
 PINNED = {'.local/aosp/' + name: digest for name, digest in api19_skeleton.PINNED.items()}
 PINNED.update({
-    '.local/aosp/conscrypt.jar': '43ab6b953bd5a9e25f0f0d4411a5aa3f0660d16954a0a84e95ad834558b21a1e',
-    '.local/aosp/android.policy.jar': '23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae',
-    APK: 'b76835c5bd2c2d70c624b33d82e26ba00445196ce73a70381982540796a90f0e',
+    '.local/aosp/conscrypt.jar': 'c7d0849cde38cd0d0dc99d89ee61bd33a65618567fc18171d6605dc6b8e15004',
+    '.local/aosp/android.policy.jar': '660fa192659bf02285cfeb559d3fad547a72d4986aa295ef5a9453b2b2372ad1',
+    APK: '5beb897ee2ede51f02e2fdf1a004ce3f12d7d5cd938b56672f70a7cba96471e3',
 })
 SCROLLBARS = ('scrollbar_handle_horizontal', 'scrollbar_handle_vertical',
               'scrollbar_handle_holo_dark', 'scrollbar_handle_holo_light')

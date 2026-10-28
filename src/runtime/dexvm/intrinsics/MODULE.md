@@ -150,9 +150,11 @@
 
 ## Locale、ICU、正则与密码
 
-- Locale 保持 API19 类型/字段与 22 个静态强根常量，默认值按 VM 注入；大小写和 he/id/yi
-  规范化遵循原版。LocaleData 由 guest ICU51 区域资源及回退提供；ISO native 用固定 ICU51
-  的 559 语言/249 国家表，不过滤或越过 NULL，Java 缓存每次返回 clone。
+- Locale 的类型、字段、常量、构造/规范化、equals/hashCode/clone、默认值/setDefault、
+  显示名、ISO3 和区域枚举均执行 pinned core.jar Java，不注册 Locale intrinsic。
+  默认值由 System 初始化注入的 user.language/user.region 派生，setDefault 只改 Java 默认值。
+  LocaleData、显示名和 ISO3 使用 guest ICU51 的资源与回退；未知 ISO3 的异常由 ROM Java 决定。
+  ISO 与可用区域枚举读取固定 ICU51 原表，缓存与防御性复制归 Java。
 - Date/Calendar/Format/NumberFormat/TimeZone 普通状态和算法归 BootDex；TimeZone default
   只消费注入值且保持 clone/reset。ICU 数字/日期能力走固定 guest ICU，不恢复 java_text TU；
   formatter long/double/digit-list 仅存 per-VM token，guest JNI 管 clone/close/错误，GC/teardown 回收。

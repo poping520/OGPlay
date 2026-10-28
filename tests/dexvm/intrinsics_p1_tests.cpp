@@ -38,29 +38,10 @@ using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 
 std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-  const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
-}
-
-std::vector<std::uint8_t> ReadBootDex() {
-    const auto path = std::filesystem::path(OGPLAY_SOURCE_DIR) / "data" /
-                      "android" / "19" / "framework" / "bootdex.jar";
-    std::ifstream stream(path, std::ios::binary);
-    REQUIRE_MESSAGE(stream.good(), "missing boot dex: ", path.string());
-    const std::vector<char> raw{
-        std::istreambuf_iterator<char>(stream),
-        std::istreambuf_iterator<char>()};
-    std::vector<std::byte> bytes(raw.size());
-    std::memcpy(bytes.data(), raw.data(), raw.size());
-    const auto archive = ogplay::loader::ParseApkArchive(bytes);
-    const auto entry =
-        ogplay::loader::ReadApkEntry(bytes, archive, "classes.dex");
-    std::vector<std::uint8_t> result(entry.size());
-    std::memcpy(result.data(), entry.data(), entry.size());
-    return result;
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 struct Vm final {
@@ -75,68 +56,64 @@ struct Vm final {
     Interpreter interpreter;
     VmThreadRuntime threads;
 
-    explicit Vm(const InterpreterConfig config = {},
-                const bool load_boot_dex = true,
-                const CoreIntrinsicServices& services = {},
-                const bool full_platform = false)
-      : model(strings, arrays), linker(),
+    explicit Vm(const InterpreterConfig config = {}, const bool load_boot_dex = true,
+                const CoreIntrinsicServices& services = {}, const bool full_platform = false)
+        : model(strings, arrays), linker(),
           interpreter(
               [this, load_boot_dex, &services, full_platform]() -> DexClassLinker& {
                   linker.RegisterIntrinsics(CoreIntrinsicCatalog(services));
-                  if (full_platform) linker.RegisterIntrinsics(AndroidIntrinsicCatalog(
-                      std::make_shared<DexVmAndroidContext>()));
+                  if (full_platform)
+                      linker.RegisterIntrinsics(AndroidIntrinsicCatalog(std::make_shared<DexVmAndroidContext>()));
                   if (load_boot_dex) {
                       ogplay::test::BindBootDexPlatformNatives(linker);
-                      linker.RegisterBootDex(ReadBootDex());
+                      ogplay::test::RegisterBootDex(linker);
                       ogplay::test::RegisterBootDexSkeleton(linker);
                   }
                   linker.RegisterDex(ReadFixture("p1.dex"));
                   linker.Link();
                   return linker;
               }(),
-              model, nullptr, ledger, config), threads(interpreter) {
+              model, nullptr, ledger, config),
+          threads(interpreter) {
         interpreter.SetLogger(&logger);
     }
 
-  [[nodiscard]] VmCallOutcome CallStatic(const std::string &name,
-                                         const std::string &descriptor,
-        std::vector<VmValue> arguments = {},
-        const std::string &owner = "LP1;") {
+    [[nodiscard]] VmCallOutcome CallStatic(const std::string& name, const std::string& descriptor,
+                                           std::vector<VmValue> arguments = {}, const std::string& owner = "LP1;") {
         const auto java_class = linker.FindClass(owner);
         REQUIRE(java_class.has_value());
-    const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
+        const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
         const std::string qualified = owner + "." + name;
         REQUIRE_MESSAGE(method.has_value(), qualified);
         return interpreter.Call(*method, arguments);
     }
 
     [[nodiscard]] std::string AsString(const VmCallOutcome& outcome) {
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+        REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
         REQUIRE(outcome.value.kind == VmValue::Kind::ref);
         return interpreter.StringUtf8(outcome.value.ref);
     }
 };
 
 void ExpectInt(const VmCallOutcome& outcome, const std::int32_t expected) {
-  REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     REQUIRE(outcome.value.kind == VmValue::Kind::cat1);
     CHECK(outcome.value.AsInt() == expected);
 }
 
-void ExpectThrow(const Vm& vm, const VmCallOutcome& outcome,
-                 const std::string& descriptor, const std::string& message) {
-  const std::string context = "expected " + descriptor + " but it returned";
-  REQUIRE_MESSAGE(outcome.exception.IsValid(), context);
-  CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
-  CHECK(outcome.exception_message == message);
+void ExpectThrow(const Vm& vm, const VmCallOutcome& outcome, const std::string& descriptor,
+                 const std::string& message) {
+    const std::string context = "expected " + descriptor + " but it returned";
+    REQUIRE_MESSAGE(outcome.exception.IsValid(), context);
+    CHECK(vm.linker.Class(outcome.exception_class).descriptor == descriptor);
+    CHECK(outcome.exception_message == message);
 }
 
 }  // namespace
 
 TEST_CASE("dexvm P1 StringBuilder chain renders like the class library") {
     Vm vm;
-  CHECK(vm.AsString(vm.CallStatic("buildString", "(I)Ljava/lang/String;",
-                                    {VmValue::Int(42)})) == "value:42true");
+    CHECK(vm.AsString(vm.CallStatic("buildString", "(I)Ljava/lang/String;", {VmValue::Int(42)})) == "value:42true");
 }
 
 TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
@@ -144,8 +121,8 @@ TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
         CoreIntrinsicServices services;
         services.cpu_cores = cores;
         Vm vm({}, true, services, true);
-        const auto invoke = [&](const VmObjectRef receiver, const std::string& name,
-                                const std::string& descriptor, std::vector<VmValue> args = {}) {
+        const auto invoke = [&](const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
+                                std::vector<VmValue> args = {}) {
             const auto type = vm.model.ObjectClass(receiver);
             const auto slot = vm.linker.FindVtableIndex(type, name, descriptor);
             REQUIRE(slot.has_value());
@@ -172,133 +149,96 @@ TEST_CASE("BND-42 Java Runtime and Posix share the configured CPU count") {
 TEST_CASE("dexvm P1 String surface: trim/lower/startsWith/indexOf") {
     Vm vm;
     ExpectInt(vm.CallStatic("stringOps", "()I"), 12);
-  CHECK(vm.AsString(vm.CallStatic("substrings", "()Ljava/lang/String;")) ==
-        "Rocks");
+    CHECK(vm.AsString(vm.CallStatic("substrings", "()Ljava/lang/String;")) == "Rocks");
     ExpectInt(vm.CallStatic("compareIgnore", "()I"), 0);
 }
 
 TEST_CASE("dexvm System.getenv reads the injected guest process environment") {
     CoreIntrinsicServices services;
-    const std::vector<std::pair<std::string, std::string>> entries{
-        {"PATH", "/system/bin"}, {"ANDROID_ROOT", "/system"}};
-    services.environment_value = [entries](const std::string_view name)
-        -> std::optional<std::string> {
-        const auto found = std::ranges::find(entries, name, &std::pair<
-            std::string, std::string>::first);
-        return found == entries.end() ? std::nullopt
-                                      : std::optional(found->second);
+    const std::vector<std::pair<std::string, std::string>> entries{{"PATH", "/system/bin"},
+                                                                   {"ANDROID_ROOT", "/system"}};
+    services.environment_value = [entries](const std::string_view name) -> std::optional<std::string> {
+        const auto found = std::ranges::find(entries, name, &std::pair<std::string, std::string>::first);
+        return found == entries.end() ? std::nullopt : std::optional(found->second);
     };
     services.environment_entries = [entries] { return entries; };
 
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        INFO("backend=", backend == InterpreterBackend::threaded
-                             ? "threaded"
-                             : "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         Vm vm({.backend = backend}, true, services);
         const auto string = [&vm](const std::string& value) {
             return VmValue::Ref(vm.interpreter.NewStringUtf8(value));
         };
-        const auto path = vm.CallStatic(
-            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
-            {string("PATH")}, "Ljava/lang/System;");
+        const auto path =
+            vm.CallStatic("getenv", "(Ljava/lang/String;)Ljava/lang/String;", {string("PATH")}, "Ljava/lang/System;");
         REQUIRE_FALSE(path.exception.IsValid());
         REQUIRE(path.value.ref.IsValid());
         CHECK(vm.interpreter.StringUtf8(path.value.ref) == "/system/bin");
 
-        const auto missing = vm.CallStatic(
-            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
-            {string("HOME")}, "Ljava/lang/System;");
+        const auto missing =
+            vm.CallStatic("getenv", "(Ljava/lang/String;)Ljava/lang/String;", {string("HOME")}, "Ljava/lang/System;");
         REQUIRE_FALSE(missing.exception.IsValid());
         CHECK_FALSE(missing.value.ref.IsValid());
 
-        const auto null_name = vm.CallStatic(
-            "getenv", "(Ljava/lang/String;)Ljava/lang/String;",
-            {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/System;");
-        ExpectThrow(vm, null_name, "Ljava/lang/NullPointerException;",
-                    "name == null");
+        const auto null_name = vm.CallStatic("getenv", "(Ljava/lang/String;)Ljava/lang/String;",
+                                             {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/System;");
+        ExpectThrow(vm, null_name, "Ljava/lang/NullPointerException;", "name == null");
 
-        const auto all = vm.CallStatic(
-            "getenv", "()Ljava/util/Map;", {}, "Ljava/lang/System;");
+        const auto all = vm.CallStatic("getenv", "()Ljava/util/Map;", {}, "Ljava/lang/System;");
         REQUIRE_FALSE(all.exception.IsValid());
         REQUIRE(all.value.ref.IsValid());
-        const auto all_root = vm.interpreter.ProtectReferences(
-            std::array{all.value.ref});
+        const auto all_root = vm.interpreter.ProtectReferences(std::array{all.value.ref});
         static_cast<void>(vm.interpreter.CollectGarbage());
         CHECK(vm.linker.Class(vm.model.ObjectClass(all.value.ref)).descriptor ==
               "Ljava/lang/System$SystemEnvironment;");
         const auto type = vm.model.ObjectClass(all.value.ref);
-        const auto get = vm.linker.FindVtableIndex(
-            type, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+        const auto get = vm.linker.FindVtableIndex(type, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
         REQUIRE(get.has_value());
-        const std::vector<VmValue> get_arguments{
-            VmValue::Ref(all.value.ref), string("ANDROID_ROOT")};
-        const auto read = vm.interpreter.Call(
-            vm.linker.Class(type).vtable[*get],
-            get_arguments);
+        const std::vector<VmValue> get_arguments{VmValue::Ref(all.value.ref), string("ANDROID_ROOT")};
+        const auto read = vm.interpreter.Call(vm.linker.Class(type).vtable[*get], get_arguments);
         REQUIRE_FALSE(read.exception.IsValid());
         REQUIRE(read.value.ref.IsValid());
         CHECK(vm.interpreter.StringUtf8(read.value.ref) == "/system");
 
-        const auto integer_class =
-            vm.linker.ResolveDescriptor("Ljava/lang/Integer;");
-        const auto value_of = vm.linker.FindDirectMethod(
-            integer_class, "valueOf", "(I)Ljava/lang/Integer;");
+        const auto integer_class = vm.linker.ResolveDescriptor("Ljava/lang/Integer;");
+        const auto value_of = vm.linker.FindDirectMethod(integer_class, "valueOf", "(I)Ljava/lang/Integer;");
         REQUIRE(value_of.has_value());
         const std::vector<VmValue> value_of_arguments{VmValue::Int(7)};
-        const auto integer = vm.interpreter.Call(
-            *value_of, value_of_arguments);
+        const auto integer = vm.interpreter.Call(*value_of, value_of_arguments);
         REQUIRE_FALSE(integer.exception.IsValid());
-        const std::vector<VmValue> wrong_key_arguments{
-            VmValue::Ref(all.value.ref), VmValue::Ref(integer.value.ref)};
-        const auto wrong_key = vm.interpreter.Call(
-            vm.linker.Class(type).vtable[*get], wrong_key_arguments);
+        const std::vector<VmValue> wrong_key_arguments{VmValue::Ref(all.value.ref), VmValue::Ref(integer.value.ref)};
+        const auto wrong_key = vm.interpreter.Call(vm.linker.Class(type).vtable[*get], wrong_key_arguments);
         REQUIRE(wrong_key.exception.IsValid());
-        CHECK(vm.linker.Class(wrong_key.exception_class).descriptor ==
-              "Ljava/lang/ClassCastException;");
+        CHECK(vm.linker.Class(wrong_key.exception_class).descriptor == "Ljava/lang/ClassCastException;");
 
-        const auto put = vm.linker.FindVtableIndex(
-            type, "put",
-            "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+        const auto put =
+            vm.linker.FindVtableIndex(type, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
         REQUIRE(put.has_value());
-        const std::vector<VmValue> put_arguments{
-            VmValue::Ref(all.value.ref), string("PATH"), string("changed")};
-        const auto mutation = vm.interpreter.Call(
-            vm.linker.Class(type).vtable[*put],
-            put_arguments);
+        const std::vector<VmValue> put_arguments{VmValue::Ref(all.value.ref), string("PATH"), string("changed")};
+        const auto mutation = vm.interpreter.Call(vm.linker.Class(type).vtable[*put], put_arguments);
         REQUIRE(mutation.exception.IsValid());
-        CHECK(vm.linker.Class(mutation.exception_class).descriptor ==
-              "Ljava/lang/UnsupportedOperationException;");
+        CHECK(vm.linker.Class(mutation.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
     }
 }
 
 TEST_CASE("dexvm String.toLowerCase fast path preserves API19 value and identity") {
     Vm vm;
-    const auto locale_class =
-        vm.linker.ResolveDescriptor("Ljava/util/Locale;");
+    const auto locale_class = vm.linker.ResolveDescriptor("Ljava/util/Locale;");
     const auto initialized = vm.interpreter.EnsureClassInitialized(locale_class);
-    REQUIRE_MESSAGE(!initialized.exception.IsValid(),
-                    initialized.exception_message);
-    const auto english_field = vm.linker.FindFieldRecursive(
-        locale_class, "ENGLISH", "Ljava/util/Locale;");
+    REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
+    const auto english_field = vm.linker.FindFieldRecursive(locale_class, "ENGLISH", "Ljava/util/Locale;");
     REQUIRE(english_field.has_value());
     const auto& linked_english = vm.linker.Field(*english_field);
-    const auto english = VmObjectRef(
-        vm.linker.Class(linked_english.owner)
-            .static_storage[linked_english.slot]);
+    const auto english = VmObjectRef(vm.linker.Class(linked_english.owner).static_storage[linked_english.slot]);
     REQUIRE(english.IsValid());
 
-    const auto call = [&](const VmObjectRef receiver,
-                          const VmObjectRef locale) {
+    const auto call = [&](const VmObjectRef receiver, const VmObjectRef locale) {
         const auto string_class = vm.model.ObjectClass(receiver);
-        const auto method = vm.linker.FindVtableIndex(
-            string_class, "toLowerCase",
-            "(Ljava/util/Locale;)Ljava/lang/String;");
+        const auto method =
+            vm.linker.FindVtableIndex(string_class, "toLowerCase", "(Ljava/util/Locale;)Ljava/lang/String;");
         REQUIRE(method.has_value());
-        const std::array arguments{VmValue::Ref(receiver),
-                                   VmValue::Ref(locale)};
-        return vm.interpreter.Call(
-            vm.linker.Class(string_class).vtable[*method], arguments);
+        const std::array arguments{VmValue::Ref(receiver), VmValue::Ref(locale)};
+        return vm.interpreter.Call(vm.linker.Class(string_class).vtable[*method], arguments);
     };
 
     const auto mixed = vm.interpreter.NewStringUtf8("SeRvEr-CONFIG_19");
@@ -311,11 +251,8 @@ TEST_CASE("dexvm String.toLowerCase fast path preserves API19 value and identity
     REQUIRE_FALSE(unchanged.exception.IsValid());
     CHECK(unchanged.value.ref == stable);
 
-    ExpectThrow(vm, call(mixed, VmObjectRef{}),
-                "Ljava/lang/NullPointerException;", "locale == null");
-    const auto unicode = vm.model.NewString(u"\u00c4");
-    CHECK(vm.AsString(call(unicode, english)) == "ä");
-
+    ExpectThrow(vm, call(mixed, VmObjectRef{}), "Ljava/lang/NullPointerException;", "locale == null");
+    // Unicode conversion is exercised with the real guest ICU backend in DVM-342.
 }
 
 TEST_CASE("dexvm P1 boxed values") {
@@ -328,41 +265,34 @@ TEST_CASE("dexvm P1 boxed values") {
 }
 
 TEST_CASE("dexvm P1 collections use Java string equality for keys") {
-  for (const auto backend : {InterpreterBackend::switch_dispatch,
-                             InterpreterBackend::threaded}) {
-    INFO("backend=", backend == InterpreterBackend::threaded ? "threaded"
-                                                              : "switch");
-    InterpreterConfig config;
-    config.backend = backend;
-    Vm vm(config);
-    ExpectInt(vm.CallStatic("mapRoundTrip", "()I"), 99);
-    ExpectInt(vm.CallStatic("vectorOps", "()I"), 4);
-    ExpectInt(vm.CallStatic("stackOps", "()I"), 6);
-    ExpectInt(vm.CallStatic("collectionListOps", "()I"), 5);
-    ExpectInt(vm.CallStatic("collectionMapViews", "()I"), 10);
-    ExpectInt(vm.CallStatic("collectionFailFast", "()I"), 1);
-    ExpectInt(vm.CallStatic("collectionDequeOps", "()I"), 3);
-    ExpectInt(vm.CallStatic("collectionExceptions", "()I"), 7);
-    ExpectInt(vm.CallStatic("collectionAbstractSubclass", "()I"), 0);
-  }
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        InterpreterConfig config;
+        config.backend = backend;
+        Vm vm(config);
+        ExpectInt(vm.CallStatic("mapRoundTrip", "()I"), 99);
+        ExpectInt(vm.CallStatic("vectorOps", "()I"), 4);
+        ExpectInt(vm.CallStatic("stackOps", "()I"), 6);
+        ExpectInt(vm.CallStatic("collectionListOps", "()I"), 5);
+        ExpectInt(vm.CallStatic("collectionMapViews", "()I"), 10);
+        ExpectInt(vm.CallStatic("collectionFailFast", "()I"), 1);
+        ExpectInt(vm.CallStatic("collectionDequeOps", "()I"), 3);
+        ExpectInt(vm.CallStatic("collectionExceptions", "()I"), 7);
+        ExpectInt(vm.CallStatic("collectionAbstractSubclass", "()I"), 0);
+    }
 }
 
 TEST_CASE("dexvm core java.io streams and missing filesystem use production class sources") {
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         InterpreterConfig config;
         config.backend = backend;
         CoreIntrinsicServices services;
         services.current_time_millis = [] { return INT64_C(1400000000000); };
         Vm vm(config, true, services);
-        CHECK_THROWS_AS(
-            static_cast<void>(vm.interpreter.IO().CreateFile("/direct.dat")),
-            IoRuntimeError);
+        CHECK_THROWS_AS(static_cast<void>(vm.interpreter.IO().CreateFile("/direct.dat")), IoRuntimeError);
         ExpectInt(vm.CallStatic("coreIoReadInt", "()I"), 42);
-        ExpectThrow(
-            vm,
-            vm.CallStatic("coreIoCreateWithoutFileSystem", "()Z"),
-            "Ljava/io/IOException;", "open failed: EIO (I/O error)");
+        ExpectThrow(vm, vm.CallStatic("coreIoCreateWithoutFileSystem", "()Z"), "Ljava/io/IOException;",
+                    "open failed: EIO (I/O error)");
     }
 }
 
@@ -385,9 +315,11 @@ TEST_CASE("dexvm reference arraycopy checks each element and retains the copied 
         vm.model.SetObjectElement(source, 0, text);
         vm.model.SetObjectElement(source, 2, bad);
         vm.model.SetObjectElement(source, 3, text);
-        for (int i = 0; i < 4; ++i) vm.model.SetObjectElement(target, i, sentinel);
+        for (int i = 0; i < 4; ++i)
+            vm.model.SetObjectElement(target, i, sentinel);
         const auto copy = [&](VmObjectRef src, int from, VmObjectRef dst, int to, int length) {
-            return vm.CallStatic("arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
+            return vm.CallStatic(
+                "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V",
                 {VmValue::Ref(src), VmValue::Int(from), VmValue::Ref(dst), VmValue::Int(to), VmValue::Int(length)},
                 "Ljava/lang/System;");
         };
@@ -415,12 +347,13 @@ TEST_CASE("dexvm String regionMatches overloads preserve libcore bounds and case
         const auto other = vm.model.NewString(u"abcd");
         const auto type = vm.linker.ResolveDescriptor("Ljava/lang/String;");
         const auto call = [&](bool overloaded, bool ignore, int start, VmObjectRef rhs, int offset, int length) {
-            const auto slot = vm.linker.FindVtableIndex(type, "regionMatches",
-                overloaded ? "(ZILjava/lang/String;II)Z" : "(ILjava/lang/String;II)Z");
+            const auto slot = vm.linker.FindVtableIndex(
+                type, "regionMatches", overloaded ? "(ZILjava/lang/String;II)Z" : "(ILjava/lang/String;II)Z");
             REQUIRE(slot.has_value());
             std::vector<VmValue> args{VmValue::Ref(receiver)};
             if (overloaded) args.push_back(VmValue::Int(ignore));
-            args.insert(args.end(), {VmValue::Int(start), VmValue::Ref(rhs), VmValue::Int(offset), VmValue::Int(length)});
+            args.insert(args.end(),
+                        {VmValue::Int(start), VmValue::Ref(rhs), VmValue::Int(offset), VmValue::Int(length)});
             return vm.interpreter.Call(vm.linker.Class(type).vtable[*slot], args);
         };
         for (bool overloaded : {false, true}) {
@@ -442,21 +375,22 @@ TEST_CASE("dexvm String valueOf Object invokes the enum object's toString") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         Vm vm({.backend = backend});
         const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
-        const auto constant = vm.CallStatic("valueOf", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;",
-            {VmValue::Ref(vm.model.ClassObject(enum_class)), VmValue::Ref(vm.model.NewString(u"SMALL"))},
-            "Ljava/lang/Enum;");
+        const auto constant =
+            vm.CallStatic("valueOf", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;",
+                          {VmValue::Ref(vm.model.ClassObject(enum_class)), VmValue::Ref(vm.model.NewString(u"SMALL"))},
+                          "Ljava/lang/Enum;");
         REQUIRE_FALSE(constant.exception.IsValid());
-        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
-            {constant.value}, "Ljava/lang/String;")) == "SMALL");
+        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;", {constant.value},
+                                        "Ljava/lang/String;")) == "SMALL");
         const auto tag = vm.linker.ResolveDescriptor("LP1EnumTagged;");
         REQUIRE_FALSE(vm.interpreter.EnsureClassInitialized(tag).exception.IsValid());
         const auto field = vm.linker.FindFieldRecursive(tag, "TAG", "LP1EnumTagged;");
         REQUIRE(field.has_value());
         const auto tagged = VmObjectRef(vm.linker.Class(tag).static_storage[vm.linker.Field(*field).slot]);
+        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;", {VmValue::Ref(tagged)},
+                                        "Ljava/lang/String;")) == "TAG!");
         CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
-            {VmValue::Ref(tagged)}, "Ljava/lang/String;")) == "TAG!");
-        CHECK(vm.AsString(vm.CallStatic("valueOf", "(Ljava/lang/Object;)Ljava/lang/String;",
-            {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/String;")) == "null");
+                                        {VmValue::Ref(VmObjectRef{})}, "Ljava/lang/String;")) == "null");
     }
 }
 
@@ -479,14 +413,15 @@ TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
                 ++natives;
                 CHECK(linked.kind == MethodKind::intrinsic);
                 CHECK(static_cast<bool>(linked.implementation));
-            } else CHECK(linked.kind == MethodKind::interpreted);
+            } else
+                CHECK(linked.kind == MethodKind::interpreted);
         }
         CHECK(natives == 24);
         const auto nan = std::numeric_limits<float>::quiet_NaN();
         const auto inf = std::numeric_limits<float>::infinity();
-        for (const auto [value, expected] : std::array{
-                 std::pair{1.5F, 2}, std::pair{-1.5F, -1}, std::pair{-0.5F, 0},
-                 std::pair{nan, 0}, std::pair{inf, INT32_MAX}, std::pair{-inf, INT32_MIN}})
+        for (const auto [value, expected] :
+             std::array{std::pair{1.5F, 2}, std::pair{-1.5F, -1}, std::pair{-0.5F, 0}, std::pair{nan, 0},
+                        std::pair{inf, INT32_MAX}, std::pair{-inf, INT32_MIN}})
             CHECK(call("round", "(F)I", {VmValue::Float(value)}).AsInt() == expected);
         CHECK(call("round", "(D)J", {VmValue::Double(-1.5)}).AsLong() == -1);
         CHECK(call("round", "(D)J", {VmValue::Double(inf)}).AsLong() == INT64_MAX);
@@ -498,17 +433,21 @@ TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
         CHECK(std::isnan(call("min", "(DD)D", {VmValue::Double(1), VmValue::Double(nan)}).AsDouble()));
         CHECK(std::signbit(call("min", "(DD)D", {VmValue::Double(0), VmValue::Double(-0.0)}).AsDouble()));
         CHECK_FALSE(std::signbit(call("max", "(FF)F", {VmValue::Float(-0.0F), VmValue::Float(0)}).AsFloat()));
-        struct Unary { const char* name; double input; double expected; };
-        for (const auto& test : std::array{
-                 Unary{"acos", 1, 0}, Unary{"asin", 0, 0}, Unary{"atan", 0, 0},
-                 Unary{"cbrt", -8, -2}, Unary{"ceil", -0.2, 0}, Unary{"cos", 0, 1},
-                 Unary{"cosh", 0, 1}, Unary{"exp", 0, 1}, Unary{"expm1", 0, 0},
-                 Unary{"floor", -0.2, -1}, Unary{"log", 1, 0}, Unary{"log10", 100, 2},
-                 Unary{"log1p", 0, 0}, Unary{"rint", 2.5, 2}, Unary{"sin", 0, 0},
-                 Unary{"sinh", 0, 0}, Unary{"sqrt", 4, 2}, Unary{"tan", 0, 0}, Unary{"tanh", 0, 0}}) {
+
+        struct Unary {
+            const char* name;
+            double input;
+            double expected;
+        };
+
+        for (const auto& test :
+             std::array{Unary{"acos", 1, 0}, Unary{"asin", 0, 0}, Unary{"atan", 0, 0}, Unary{"cbrt", -8, -2},
+                        Unary{"ceil", -0.2, 0}, Unary{"cos", 0, 1}, Unary{"cosh", 0, 1}, Unary{"exp", 0, 1},
+                        Unary{"expm1", 0, 0}, Unary{"floor", -0.2, -1}, Unary{"log", 1, 0}, Unary{"log10", 100, 2},
+                        Unary{"log1p", 0, 0}, Unary{"rint", 2.5, 2}, Unary{"sin", 0, 0}, Unary{"sinh", 0, 0},
+                        Unary{"sqrt", 4, 2}, Unary{"tan", 0, 0}, Unary{"tanh", 0, 0}}) {
             CAPTURE(test.name);
-            CHECK(call(test.name, "(D)D", {VmValue::Double(test.input)}).AsDouble() ==
-                  doctest::Approx(test.expected));
+            CHECK(call(test.name, "(D)D", {VmValue::Double(test.input)}).AsDouble() == doctest::Approx(test.expected));
         }
         CHECK(call("hypot", "(DD)D", {VmValue::Double(3), VmValue::Double(4)}).AsDouble() == 5);
         CHECK(call("pow", "(DD)D", {VmValue::Double(2), VmValue::Double(10)}).AsDouble() == 1024);
@@ -531,91 +470,74 @@ TEST_CASE("DVM-118 Math uses API19 Java rounding and libm native primitives") {
 TEST_CASE("dexvm P1 System.out println reaches the structured logger") {
     Vm vm;
     const auto outcome = vm.CallStatic("printHello", "()V");
-  REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
-  const auto records = vm.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+    const auto records = vm.logger.Snapshot(std::nullopt, "runtime.dexvm.guest");
     REQUIRE(!records.empty());
     CHECK(records.back().message == "hello from dexvm");
 }
 
 TEST_CASE("dexvm Object notify validates monitor ownership") {
-  Vm vm;
-  const auto owned = vm.CallStatic("notifyOwnedMonitor", "()V");
-  CHECK_FALSE(owned.exception.IsValid());
+    Vm vm;
+    const auto owned = vm.CallStatic("notifyOwnedMonitor", "()V");
+    CHECK_FALSE(owned.exception.IsValid());
 
-  const auto unowned = vm.CallStatic("notifyUnownedMonitor", "()V");
-  REQUIRE(unowned.exception.IsValid());
-  CHECK(vm.linker.Class(unowned.exception_class).descriptor ==
-        "Ljava/lang/IllegalMonitorStateException;");
+    const auto unowned = vm.CallStatic("notifyUnownedMonitor", "()V");
+    REQUIRE(unowned.exception.IsValid());
+    CHECK(vm.linker.Class(unowned.exception_class).descriptor == "Ljava/lang/IllegalMonitorStateException;");
 }
 
 TEST_CASE("dexvm P1 Enum constants answer name/ordinal/hash/identity") {
-  Vm vm;
-  CHECK(vm.AsString(vm.CallStatic("nameOf", "()Ljava/lang/String;", {},
-                                  "LP1Enum;")) == "SMALL");
-  ExpectInt(vm.CallStatic("ordinals", "()I", {}, "LP1Enum;"), 1);
-  CHECK(vm.AsString(vm.CallStatic("stringOf", "()Ljava/lang/String;", {},
-                                  "LP1Enum;")) == "SMALL");
-  ExpectInt(vm.CallStatic("equalsSelf", "()I", {}, "LP1Enum;"), 1);
-  ExpectInt(vm.CallStatic("equalsOther", "()I", {}, "LP1Enum;"), 0);
+    Vm vm;
+    CHECK(vm.AsString(vm.CallStatic("nameOf", "()Ljava/lang/String;", {}, "LP1Enum;")) == "SMALL");
+    ExpectInt(vm.CallStatic("ordinals", "()I", {}, "LP1Enum;"), 1);
+    CHECK(vm.AsString(vm.CallStatic("stringOf", "()Ljava/lang/String;", {}, "LP1Enum;")) == "SMALL");
+    ExpectInt(vm.CallStatic("equalsSelf", "()I", {}, "LP1Enum;"), 1);
+    ExpectInt(vm.CallStatic("equalsOther", "()I", {}, "LP1Enum;"), 0);
 
-  // AOSP Enum.hashCode: ordinal + name.hashCode (Java formula, UTF-16 units).
-  std::int32_t name_hash = 0;
-  for (const auto unit : std::u16string{u"SMALL"}) {
-    name_hash = 31 * name_hash + static_cast<std::int32_t>(unit);
-  }
-  ExpectInt(vm.CallStatic("hashOfSmall", "()I", {}, "LP1Enum;"),
-            0 + name_hash);
+    // AOSP Enum.hashCode: ordinal + name.hashCode (Java formula, UTF-16 units).
+    std::int32_t name_hash = 0;
+    for (const auto unit : std::u16string{u"SMALL"}) {
+        name_hash = 31 * name_hash + static_cast<std::int32_t>(unit);
+    }
+    ExpectInt(vm.CallStatic("hashOfSmall", "()I", {}, "LP1Enum;"), 0 + name_hash);
 
-  // toString is not final: the subclass override wins virtual dispatch.
-  CHECK(vm.AsString(vm.CallStatic("tagged", "()Ljava/lang/String;", {},
-                                  "LP1EnumTagged;")) == "TAG!");
+    // toString is not final: the subclass override wins virtual dispatch.
+    CHECK(vm.AsString(vm.CallStatic("tagged", "()Ljava/lang/String;", {}, "LP1EnumTagged;")) == "TAG!");
 }
 
 TEST_CASE("dexvm P1 Enum compareTo follows ordinals") {
-  Vm vm;
-  ExpectInt(vm.CallStatic("compare", "()I", {}, "LP1Enum;"), -1);
-  ExpectInt(vm.CallStatic("compareBridge", "()I", {}, "LP1Enum;"), -1);
-  ExpectThrow(vm, vm.CallStatic("compareBridgeMismatch", "()I", {},
-                                "LP1Enum;"),
-              "Ljava/lang/ClassCastException;",
-              "argument is not an enum constant");
-  ExpectThrow(vm, vm.CallStatic("compareNull", "()I", {}, "LP1Enum;"),
-              "Ljava/lang/NullPointerException;",
-              "ordinal of null enum constant");
+    Vm vm;
+    ExpectInt(vm.CallStatic("compare", "()I", {}, "LP1Enum;"), -1);
+    ExpectInt(vm.CallStatic("compareBridge", "()I", {}, "LP1Enum;"), -1);
+    ExpectThrow(vm, vm.CallStatic("compareBridgeMismatch", "()I", {}, "LP1Enum;"), "Ljava/lang/ClassCastException;",
+                "argument is not an enum constant");
+    ExpectThrow(vm, vm.CallStatic("compareNull", "()I", {}, "LP1Enum;"), "Ljava/lang/NullPointerException;",
+                "ordinal of null enum constant");
 }
 
 TEST_CASE("dexvm P1 Enum getDeclaringClass and valueOf") {
-  Vm vm;
-  ExpectInt(vm.CallStatic("declaringIsOwn", "()I", {}, "LP1Enum;"), 1);
+    Vm vm;
+    ExpectInt(vm.CallStatic("declaringIsOwn", "()I", {}, "LP1Enum;"), 1);
 
-  // valueOf answers the live singleton, not a copy.
-  const auto resolved = vm.CallStatic(
-      "valueOfSmall", "()Ljava/lang/Enum;", {}, "LP1Enum;");
-  REQUIRE_MESSAGE(!resolved.exception.IsValid(), resolved.exception_message);
-  const auto constant = vm.CallStatic(
-      "smallConstant", "()Ljava/lang/Enum;", {}, "LP1Enum;");
-  REQUIRE_MESSAGE(!constant.exception.IsValid(), constant.exception_message);
-  CHECK(resolved.value.ref == constant.value.ref);
+    // valueOf answers the live singleton, not a copy.
+    const auto resolved = vm.CallStatic("valueOfSmall", "()Ljava/lang/Enum;", {}, "LP1Enum;");
+    REQUIRE_MESSAGE(!resolved.exception.IsValid(), resolved.exception_message);
+    const auto constant = vm.CallStatic("smallConstant", "()Ljava/lang/Enum;", {}, "LP1Enum;");
+    REQUIRE_MESSAGE(!constant.exception.IsValid(), constant.exception_message);
+    CHECK(resolved.value.ref == constant.value.ref);
 
-  ExpectThrow(vm, vm.CallStatic("valueOfMissing", "()Ljava/lang/Enum;", {},
-                                "LP1Enum;"),
-              "Ljava/lang/IllegalArgumentException;",
-              "NOPE is not a constant in P1Enum");
-  ExpectThrow(vm, vm.CallStatic("valueOfNullName", "()Ljava/lang/Enum;", {},
-                                "LP1Enum;"),
-              "Ljava/lang/NullPointerException;", "name == null");
-  ExpectThrow(vm, vm.CallStatic("valueOfNotEnum", "()Ljava/lang/Enum;", {},
-                                "LP1Enum;"),
-              "Ljava/lang/IllegalArgumentException;",
-              "class java.lang.String is not an enum type");
+    ExpectThrow(vm, vm.CallStatic("valueOfMissing", "()Ljava/lang/Enum;", {}, "LP1Enum;"),
+                "Ljava/lang/IllegalArgumentException;", "NOPE is not a constant in P1Enum");
+    ExpectThrow(vm, vm.CallStatic("valueOfNullName", "()Ljava/lang/Enum;", {}, "LP1Enum;"),
+                "Ljava/lang/NullPointerException;", "name == null");
+    ExpectThrow(vm, vm.CallStatic("valueOfNotEnum", "()Ljava/lang/Enum;", {}, "LP1Enum;"),
+                "Ljava/lang/IllegalArgumentException;", "class java.lang.String is not an enum type");
 }
 
 TEST_CASE("dexvm P1 Enum clone is rejected like the platform") {
-  Vm vm;
-  ExpectThrow(vm, vm.CallStatic("cloneOfSmall", "()Ljava/lang/Object;", {},
-                                "LP1Enum;"),
-              "Ljava/lang/CloneNotSupportedException;",
-              "Enums may not be cloned");
+    Vm vm;
+    ExpectThrow(vm, vm.CallStatic("cloneOfSmall", "()Ljava/lang/Object;", {}, "LP1Enum;"),
+                "Ljava/lang/CloneNotSupportedException;", "Enums may not be cloned");
 }
 
 TEST_CASE("dexvm P1 enum values array clone is a shallow copy") {
@@ -673,11 +595,8 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
         "Ljava/util/concurrent/locks/ReentrantLock$Sync;",
         "Ljava/util/concurrent/locks/ReentrantLock;",
     };
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
-        INFO("backend=", backend == InterpreterBackend::threaded
-                              ? "threaded"
-                              : "switch");
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        INFO("backend=", backend == InterpreterBackend::threaded ? "threaded" : "switch");
         InterpreterConfig config;
         config.backend = backend;
         Vm vm(config, true);
@@ -686,28 +605,21 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
             REQUIRE_MESSAGE(java_class.has_value(), descriptor);
             CHECK(vm.linker.Class(*java_class).is_boot_dex);
         }
-        const auto abstract_collection =
-            vm.linker.FindClass("Ljava/util/AbstractCollection;");
+        const auto abstract_collection = vm.linker.FindClass("Ljava/util/AbstractCollection;");
         REQUIRE(abstract_collection.has_value());
         CHECK_FALSE(vm.linker.Class(*abstract_collection).is_intrinsic);
-        const auto collection_constructor = vm.linker.FindDirectMethod(
-            *abstract_collection, "<init>", "()V");
+        const auto collection_constructor = vm.linker.FindDirectMethod(*abstract_collection, "<init>", "()V");
         REQUIRE(collection_constructor.has_value());
-        CHECK(vm.linker.Method(*collection_constructor).kind ==
-              MethodKind::interpreted);
+        CHECK(vm.linker.Method(*collection_constructor).kind == MethodKind::interpreted);
         CHECK(vm.linker.Method(*collection_constructor).dex_unit.has_value());
 
-        const auto security_manager =
-            vm.linker.ResolveDescriptor("Ljava/lang/SecurityManager;");
+        const auto security_manager = vm.linker.ResolveDescriptor("Ljava/lang/SecurityManager;");
         CHECK(vm.linker.Class(security_manager).is_boot_dex);
         const auto get_security_manager = vm.linker.FindDirectMethod(
-            vm.linker.ResolveDescriptor("Ljava/lang/System;"),
-            "getSecurityManager", "()Ljava/lang/SecurityManager;");
+            vm.linker.ResolveDescriptor("Ljava/lang/System;"), "getSecurityManager", "()Ljava/lang/SecurityManager;");
         REQUIRE(get_security_manager.has_value());
-        const auto security_manager_result =
-            vm.interpreter.Call(*get_security_manager, {});
-        REQUIRE_MESSAGE(!security_manager_result.exception.IsValid(),
-                        security_manager_result.exception_message);
+        const auto security_manager_result = vm.interpreter.Call(*get_security_manager, {});
+        REQUIRE_MESSAGE(!security_manager_result.exception.IsValid(), security_manager_result.exception_message);
         CHECK_FALSE(security_manager_result.value.ref.IsValid());
 
         const auto enum_class = vm.linker.ResolveDescriptor("LP1Enum;");
@@ -716,29 +628,21 @@ TEST_CASE("API 19 boot dex loads every class and executes EnumSet") {
         CHECK(vm.model.ArrayLength(shared) == 2);
         CHECK(vm.interpreter.SharedEnumConstants(enum_class) == shared);
 
-        const auto enum_set =
-            vm.linker.ResolveDescriptor("Ljava/util/EnumSet;");
-        const auto all_of = vm.linker.FindDirectMethod(
-            enum_set, "allOf", "(Ljava/lang/Class;)Ljava/util/EnumSet;");
+        const auto enum_set = vm.linker.ResolveDescriptor("Ljava/util/EnumSet;");
+        const auto all_of = vm.linker.FindDirectMethod(enum_set, "allOf", "(Ljava/lang/Class;)Ljava/util/EnumSet;");
         REQUIRE(all_of.has_value());
         CHECK(vm.linker.Method(*all_of).kind == MethodKind::interpreted);
         CHECK(vm.linker.Method(*all_of).dex_unit.has_value());
-        const std::array arguments{
-            VmValue::Ref(vm.model.ClassObject(enum_class))};
+        const std::array arguments{VmValue::Ref(vm.model.ClassObject(enum_class))};
         const auto set = vm.interpreter.Call(*all_of, arguments);
         REQUIRE_MESSAGE(!set.exception.IsValid(), set.exception_message);
         REQUIRE(set.value.kind == VmValue::Kind::ref);
-        CHECK(vm.linker.Class(vm.model.ObjectClass(set.value.ref)).descriptor ==
-              "Ljava/util/MiniEnumSet;");
-        const auto size_slot = vm.linker.FindVtableIndex(
-            vm.model.ObjectClass(set.value.ref), "size", "()I");
+        CHECK(vm.linker.Class(vm.model.ObjectClass(set.value.ref)).descriptor == "Ljava/util/MiniEnumSet;");
+        const auto size_slot = vm.linker.FindVtableIndex(vm.model.ObjectClass(set.value.ref), "size", "()I");
         REQUIRE(size_slot.has_value());
         const std::array receiver{VmValue::Ref(set.value.ref)};
-        ExpectInt(vm.interpreter.Call(
-                      vm.linker.Class(vm.model.ObjectClass(set.value.ref))
-                          .vtable[*size_slot],
-                      receiver),
-                  2);
+        ExpectInt(
+            vm.interpreter.Call(vm.linker.Class(vm.model.ObjectClass(set.value.ref)).vtable[*size_slot], receiver), 2);
     }
 }
 

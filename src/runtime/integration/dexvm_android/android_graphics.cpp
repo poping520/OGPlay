@@ -1498,13 +1498,6 @@ Decl Declare_android_graphics_Typeface(const Context&) {
             return dx::VmValue::Void();
         },
         flags);
-    builder.StaticMethod(
-        "nativeFreeCaches", "()V",
-        [](dx::IntrinsicContext&) {
-            // Pinned framework extension: this backend owns no native font cache.
-            return dx::VmValue::Void();
-        },
-        flags);
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.typeface", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external font files are unsupported"};

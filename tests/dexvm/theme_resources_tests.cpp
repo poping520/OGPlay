@@ -237,7 +237,7 @@ TEST_CASE("DVM-288 generated theme registration and three-state values are expli
     CHECK_FALSE(r.Attribute(token, 0x010100d5, true, table));  // padding: certified absent
     CHECK(r.Attribute(token, 0x01010063, true, table)->Slots() == std::array<std::uint32_t, 6>{5, 0x0a01, 1, 0, 0, 0});
     CHECK(r.Attribute(token, 0x01010064, true, table)->Slots() ==
-          std::array<std::uint32_t, 6>{1, 0x01080554, 1, 0x01080554, 0, 0});
+          std::array<std::uint32_t, 6>{1, 0x0108052a, 1, 0x0108052a, 0, 0});
     CHECK(r.Attribute(token, 0x01010066, true, table)->type == 1);  // @null remains reference in theme
     CHECK_THROWS(static_cast<void>(r.Attribute(token, 0x0101ffff, true, table)));
     CHECK_THROWS(r.Apply(token, 0x0103ffff, true, table));
@@ -2172,8 +2172,8 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
         for (std::int32_t i = 0; i < 4; ++i)
             f.model.SetPrimitiveElement(requested, i, 0x01010064U + static_cast<std::uint32_t>(i));
         for (const auto [theme_id, thumb_h, thumb_v] :
-             {std::array{0x01030005, 0x01080554, 0x01080555}, std::array{0x0103006b, 0x01080552, 0x01080552},
-              std::array{0x0103006e, 0x01080553, 0x01080553}}) {
+             {std::array{0x01030005, 0x0108052a, 0x0108052b}, std::array{0x0103006b, 0x01080528, 0x01080528},
+              std::array{0x0103006e, 0x01080529, 0x01080529}}) {
             f.On(plain_owner, "setTheme", "(I)V", {VmValue::Int(theme_id)});
             const auto values = f.On(plain_owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;",
                                      {VmValue::Ref(requested)})

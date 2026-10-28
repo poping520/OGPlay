@@ -4,16 +4,16 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/content/Context;",
-      "smali_sha256": "83c4da9c409ad52ddd20d0d200dc5c36a771bd8fc2359c003e00e20a518fff58",
+      "smali_sha256": "31d95552f70c8a9d7198acc7f3b619ea9b3fb35c57cdedaa68524ff9cb541e0e",
       "methods": [
         {
           "signature": "<init>()V",
           "flags": 65537,
-          "body_sha256": "414379926fe891fda595ebc885f73737e8ea240f31e60b433d05a03cbe4980ac",
+          "body_sha256": "ca4a26f772e765eb0fc1d51bd31bd6984b428d6a1fdcee01cf77414a603168ef",
           "source": "overlay",
           "review": {
             "reason": "DVM-289 preserve bounded Context platform provider; process base theme adapter",
@@ -39,7 +39,7 @@
         {
           "signature": "bindServiceAsUser(Landroid/content/Intent;Landroid/content/ServiceConnection;ILandroid/os/UserHandle;)Z",
           "flags": 1,
-          "body_sha256": "b90525d92963a2e81aa72d5481d29c343f6c61ef3c25b6c443e91f39c52e0f71",
+          "body_sha256": "77ddb903ebcfdb629c9ef855ffb2a36dce81acb22f9ceb10dacc8a4ba93154a0",
           "source": "failure"
         },
         {
@@ -131,12 +131,6 @@
         },
         {
           "signature": "createPackageContextAsUser(Ljava/lang/String;ILandroid/os/UserHandle;)Landroid/content/Context;",
-          "flags": 1025,
-          "body_sha256": "dce300197c1718a4b53ce5496e0e6fc483d1db8b2096d73330cc794ce79ca701",
-          "source": "failure"
-        },
-        {
-          "signature": "createPackageContextAsUser(Ljava/lang/String;Ljava/lang/String;ILandroid/os/UserHandle;)Landroid/content/Context;",
           "flags": 1025,
           "body_sha256": "dce300197c1718a4b53ce5496e0e6fc483d1db8b2096d73330cc794ce79ca701",
           "source": "failure"
@@ -533,7 +527,7 @@
         {
           "signature": "getString(I)Ljava/lang/String;",
           "flags": 17,
-          "body_sha256": "216a8890de48a5d3d83c9a6fda6db2cecdf11ce7cbdaf71feee79aa9f38cd045",
+          "body_sha256": "8095323ecfa5ec7b28b05a89be06fce9be4e221317c2bf3477da1f66af65af6f",
           "source": "overlay",
           "review": {
             "reason": "DVM-289 preserve bounded Context platform provider; process base theme adapter",
@@ -546,7 +540,7 @@
         {
           "signature": "getString(I[Ljava/lang/Object;)Ljava/lang/String;",
           "flags": 145,
-          "body_sha256": "ea051483961b699b4d1973c6ee6808942bd0e8be246c16c9b54c30d43eeaaee0",
+          "body_sha256": "8b6b10589705879136f496b3789f72a3a7a7a422514804f1ea955a66705de3d2",
           "source": "failure"
         },
         {
@@ -565,7 +559,7 @@
         {
           "signature": "getText(I)Ljava/lang/CharSequence;",
           "flags": 17,
-          "body_sha256": "2a34065546533d7d9a1b6e8ee07cd495bc27620295ef61f1ead2850bcc5c657c",
+          "body_sha256": "2359d878f395b1a711f27f21d543bb047d57d8c2171838e184ac53452432d093",
           "source": "failure"
         },
         {
@@ -584,7 +578,7 @@
         {
           "signature": "getThemeResId()I",
           "flags": 1,
-          "body_sha256": "b557b3896d82f501ae5541df03fc10b033ba87ad14bb5c2766eb67bb6ae6bf94",
+          "body_sha256": "9a6f8f3e015b5a9aed3b22fafcc02a99ad1e3fbf007dff7cbfd4d3477e1f261a",
           "source": "failure"
         },
         {
@@ -620,31 +614,31 @@
         {
           "signature": "isRestricted()Z",
           "flags": 1,
-          "body_sha256": "e0ef8323e7b1c3fff84f2b127f28eba65477c75a45d57636876bdf658795a0ae",
+          "body_sha256": "0daf97e606acd8ec06b67f8dda6ffd70af4f1352f3fa65fe09611ffe860f2aff",
           "source": "failure"
         },
         {
           "signature": "obtainStyledAttributes(I[I)Landroid/content/res/TypedArray;",
           "flags": 17,
-          "body_sha256": "8bd7ac44871bcf1db9c1953dafbc1c39013b275f0c184befec2e37b8e2b343f3",
+          "body_sha256": "d7067580ee09554c9a677f82c034d26c43c634c3e063493ab213fd722b35a10c",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes(Landroid/util/AttributeSet;[I)Landroid/content/res/TypedArray;",
           "flags": 17,
-          "body_sha256": "f495ac9e6814fddb6923709f687f6d640b3bd213b21a567f9bbbe8afcc3a414e",
+          "body_sha256": "1dcdb35d55abb06feb769e753d6d61ad3309ab21893c6238b7681421e083df2c",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes(Landroid/util/AttributeSet;[III)Landroid/content/res/TypedArray;",
           "flags": 17,
-          "body_sha256": "0b80e4442f979fc25cf8487ae8a55f40e8546f83ee15263f1b0fca1d9375f90d",
+          "body_sha256": "845e061c8ec091b579dbac7a5d627dca76d23e4eab7eff00833b2d9a7ff5e96e",
           "source": "rom"
         },
         {
           "signature": "obtainStyledAttributes([I)Landroid/content/res/TypedArray;",
           "flags": 17,
-          "body_sha256": "94787ad05a07e8e95e004a673fd87fd4d6e244d7308858446bcfb3d6c8b7803a",
+          "body_sha256": "79ee41047a1db408f6beb3a69f3ac5963042692b38f5f8461ae6212ad63e62d6",
           "source": "rom"
         },
         {
@@ -708,7 +702,7 @@
         {
           "signature": "registerComponentCallbacks(Landroid/content/ComponentCallbacks;)V",
           "flags": 1,
-          "body_sha256": "2402528e490075a3ce674b5c81fe37bd77758c702c75e9da40ab1a03c839874f",
+          "body_sha256": "c10a42d728a15f293a7e7f76f6d8745f7ac3d62d044fc80f789b770e04675871",
           "source": "failure"
         },
         {
@@ -872,7 +866,7 @@
         {
           "signature": "startActivitiesAsUser([Landroid/content/Intent;Landroid/os/Bundle;Landroid/os/UserHandle;)V",
           "flags": 1,
-          "body_sha256": "cdf5e66e66b1011ca2ad1df4897778f94bad306c55a1a33737e7071e9e6bb20b",
+          "body_sha256": "abc39a73ea6e3dbf6b0ff787445b5fb92f4908a558b42764aa1dc2cf7b388699",
           "source": "failure"
         },
         {
@@ -897,13 +891,13 @@
         {
           "signature": "startActivityAsUser(Landroid/content/Intent;Landroid/os/Bundle;Landroid/os/UserHandle;)V",
           "flags": 1,
-          "body_sha256": "ff1b116c81bb95e9d2e5fe905562cca0973cc27f548e4e85a1de470d1b11f2f0",
+          "body_sha256": "95620f420eb1a08502dd26c133e7cb0e3a18c5991425a65e2f24c04022470d4f",
           "source": "failure"
         },
         {
           "signature": "startActivityAsUser(Landroid/content/Intent;Landroid/os/UserHandle;)V",
           "flags": 1,
-          "body_sha256": "92bbcd2076695bbf56c4cb9775bef59f93dc98954102fa410a58d2aa96a2ec41",
+          "body_sha256": "a38639c4cee6dae3bc8055cd2481433b7e167c85e8cef564d646a89f08b77109",
           "source": "failure"
         },
         {
@@ -971,7 +965,7 @@
         {
           "signature": "unregisterComponentCallbacks(Landroid/content/ComponentCallbacks;)V",
           "flags": 1,
-          "body_sha256": "60a7375bc886977c2f5cd04f4c960fc3e663863dcd68326d8728c4656dc96da3",
+          "body_sha256": "62919bae186ed5ea404113cc82e11e022f5ef8aec5734dc99a36a391d73e065b",
           "source": "failure"
         },
         {
@@ -1036,12 +1030,6 @@
           "flags": 25,
           "source": "rom",
           "initialization": "rom-encoded:\"backup\""
-        },
-        {
-          "signature": "BATTERY_SERVICE:Ljava/lang/String;",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:\"battery\""
         },
         {
           "signature": "BIND_ABOVE_CLIENT:I",
@@ -1266,12 +1254,6 @@
           "initialization": "rom-encoded:0x2"
         },
         {
-          "signature": "MSIM_TELEPHONY_SERVICE:Ljava/lang/String;",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:\"phone_msim\""
-        },
-        {
           "signature": "NETWORKMANAGEMENT_SERVICE:Ljava/lang/String;",
           "flags": 25,
           "source": "rom",
@@ -1320,12 +1302,6 @@
           "initialization": "rom-encoded:\"print\""
         },
         {
-          "signature": "PROFILE_SERVICE:Ljava/lang/String;",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:\"profile\""
-        },
-        {
           "signature": "SEARCH_SERVICE:Ljava/lang/String;",
           "flags": 25,
           "source": "rom",
@@ -1372,18 +1348,6 @@
           "flags": 25,
           "source": "rom",
           "initialization": "rom-encoded:\"textservices\""
-        },
-        {
-          "signature": "THEME_SERVICE:Ljava/lang/String;",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:\"themes\""
-        },
-        {
-          "signature": "TORCH_SERVICE:Ljava/lang/String;",
-          "flags": 25,
-          "source": "rom",
-          "initialization": "rom-encoded:\"torch\""
         },
         {
           "signature": "UI_MODE_SERVICE:Ljava/lang/String;",
@@ -1445,9 +1409,9 @@
       "shape_owner": "rom",
       "clinit_owner": "rom-absent",
       "rom_input": ".local/aosp/framework.jar",
-      "rom_input_sha256": "90fc9fd36b45db1810ecf51e40119222da081b552f9a64a6d0c09cac09f98a48",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
+      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
       "owner": "Landroid/view/ContextThemeWrapper;",
       "smali_sha256": "55928eaeb3bd5350bb968de330caefac97ba085a53c981ba356826101ac7e360",
       "methods": [

@@ -44,7 +44,7 @@ Decl Declare_android_app_Notification(const Context&) {
     return std::move(builder).Build();
 }
 
-Decl Declare_android_app_ActivityManager(const Context&) {
+Decl Declare_android_app_ActivityManager(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/app/ActivityManager;");
     builder.StaticMethod("staticGetMemoryClass", "()I", [](dx::IntrinsicContext& c) {
         return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().HeapGrowthLimitBytes() / (1024U * 1024U)));
@@ -59,12 +59,28 @@ Decl Declare_android_app_ActivityManager(const Context&) {
         return dx::VmValue::Int(static_cast<std::int32_t>(c.vm.Model().MaximumHeapBytes() / (1024U * 1024U)));
     });
     builder.StaticMethod(
-        "nativeUnsupported", "(Ljava/lang/String;)Ljava/lang/UnsupportedOperationException;",
-        [](dx::IntrinsicContext& call) -> dx::VmValue {
-            static_cast<void>(dx::IntrinsicCall(call).NonNullRef(0, "operation"));
-            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.activity_process_query", 0);
-            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                  "ActivityManager process enumeration is not provided"};
+        "nativeReadProcess", "([Ljava/lang/String;[I)V",
+        [context](dx::IntrinsicContext& call) {
+            const auto identity = call.arguments[0].ref;
+            const auto facts = call.arguments[1].ref;
+            auto& model = call.vm.Model();
+            model.SetObjectElement(identity, 0,
+                                   call.vm.NewStringUtf8(context->application_process_name.empty()
+                                                             ? context->package_name
+                                                             : context->application_process_name));
+            model.SetObjectElement(identity, 1, call.vm.NewStringUtf8(context->package_name));
+            const auto& stack = context->activity_stack;
+            const bool top = !stack.empty() && !stack.back().stopped;
+            const bool visible =
+                std::any_of(stack.begin(), stack.end(), [](const auto& activity) { return activity.visible; });
+            const std::int32_t importance = top ? 100 : visible ? 200 : 400;
+            // API19 oomAdjToImportance: first (and only) cached process is MIN_ADJ + 0.
+            const std::array<std::int32_t, 5> values{kGuestProcessId,
+                                                     static_cast<std::int32_t>(context->application_uid),
+                                                     stack.empty() ? 0 : 4, importance, importance == 400 ? 1 : 0};
+            for (std::size_t i = 0; i < values.size(); ++i)
+                model.SetPrimitiveElement(facts, static_cast<JniSize>(i), static_cast<std::uint32_t>(values[i]));
+            return dx::VmValue::Void();
         },
         dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();

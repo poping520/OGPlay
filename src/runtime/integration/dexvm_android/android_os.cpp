@@ -1672,15 +1672,15 @@ Decl Declare_android_os_Process(const Context& context) {
         .ConstantInt("THREAD_PRIORITY_DEFAULT", "I", 0, constant_access)
         .ConstantInt("THREAD_PRIORITY_BACKGROUND", "I", 10, constant_access)
         .ConstantInt("THREAD_PRIORITY_URGENT_DISPLAY", "I", -8, constant_access);
-    builder.StaticMethod("myPid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
+    builder.StaticMethod("myPid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(kGuestProcessId); })
         .StaticMethod("myUid", "()I",
                       [context](dx::IntrinsicContext&) {
                           return dx::VmValue::Int(static_cast<std::int32_t>(context->application_uid));
                       })
-        .StaticMethod("myTid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); })
+        .StaticMethod("myTid", "()I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(kGuestProcessId); })
         .StaticMethod("killProcess", "(I)V",
                       [context](dx::IntrinsicContext& call) -> dx::VmValue {
-                          if (call.arguments[0].AsInt() != 1)
+                          if (call.arguments[0].AsInt() != kGuestProcessId)
                               throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "foreign process"};
                           context->exit_requested = true;
                           call.vm.Exit(0);

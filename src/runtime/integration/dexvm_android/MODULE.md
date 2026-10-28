@@ -38,6 +38,10 @@ locale 每次取当前 Locale.getDefault；setDefault 不修改设备事实。�
 Bionic 属性区、旧 headless HLE 与资源 locale qualifier 不属于此边界。
 
 
+ActivityManager.getRunningAppProcesses 的 private native 仅读取会话身份与 activity_stack，
+Java 创建列表和值对象；PID 与 Process/Context 权限查询共享常量。栈顶未 stopped（含
+onCreate/onStart）为前台，否则任一可见为 visible，其余为 cached 后台；仅本进程，不枚举宿主。
+
 ActivityManager.getMemoryClass/staticGetMemoryClass 读取本 VM 的 growth limit，
 getLargeMemoryClass/staticGetLargeMemoryClass 读取 maximum，单位 MiB；与 Runtime 内存查询
 共用 JavaObjectModel 配置，不读取宿主内存，不使用固定档位。
@@ -64,7 +68,7 @@ Runtime.nativeExit 共用不可返回 VM 退出协议，展开 Java 并终止 ex
 
 | 内存查询 | 平台边界 |
 | --- | --- |
-| ActivityManager.MemoryInfo | Java 字段/算法，nativeRead 写注入快照；availMem=(free+cached)*1024，64 位字段/阈值完整提交，lowMemory 比较归 Java；缺事实/进程枚举 UOE，wrapper 共用 base |
+| ActivityManager.MemoryInfo | Java 字段/算法，nativeRead 写注入快照；availMem=(free+cached)*1024，64 位字段/阈值完整提交，lowMemory 比较归 Java；缺内存事实 UOE，wrapper 共用 base |
 | Debug.MemoryInfo | 原版字段/构造/汇总/Parcel；仅当前进程，注入值优先 provider，全部校验后提交；缺事实/忙 UOE，非法数据 IAE，null NPE；无 PID 查询/trace/DDMS |
 
 ## PackageManager、权限与路径

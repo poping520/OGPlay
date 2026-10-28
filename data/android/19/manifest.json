@@ -87,17 +87,17 @@
           "src/guest/framework/java",
           "src/guest/io/java"
         ],
-        "source_sha256": "46c8496c63068f24d3456058233fde6ddf6e1bb77d2066a7a635853018f189c6",
+        "source_sha256": "108ca47c617806ba83c03300924e8a7679611db2f107e7c71bd4a4fd49f02e05",
         "javac": "17.0.18",
         "android_jar_sha256": "4032a201eeb1d0430c7d9f1075151dd280427de5ca9e36f734f464ab605cb690",
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 11083140,
-    "sha256": "904e0f7897ec8e89aab7e8c1fb8b7b2f29945588e9afb2ce87ffe24925f32438",
+    "size": 11083280,
+    "sha256": "5bfa0178eb55e0a3b8385405ad7e666c4b7fd0fe42048a0ca2cc23e204fa6dcf",
     "dex_entry": "classes.dex",
-    "dex_size": 6202560,
-    "dex_sha256": "bf9fc859e4053703a6478c8b0d71480709a03a5dab7f12dc39d464e76d3ef9ad",
+    "dex_size": 6202700,
+    "dex_sha256": "55db50306c0aee8b433c8753cee2359fec0b9a1de3d1b743247d35dde8bffe3f",
     "class_count": 3865,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
@@ -110,15 +110,15 @@
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "1c0fce01dfc597e27fdf29d9dbf50496d61b0abd3307de59e1933ba3e8394ea7",
+      "sha256": "3bd6f9368b428a054ab849c915a1b56b181d3238383f90a87d56e027972fb65d",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "3f8d8e023fd294be10e803cd56b5d8af40e4fb46752e10f78b779e550628e94d",
+      "manifest_sha256": "e8a30842aad3d7a716ced07bf26c0a6ee5c47ea8b83fa42c1c64899d1507b0a9",
       "composer": "tools/bootdex/compose_bootdex.py",
-      "composer_sha256": "1fe99b2d50c26262b077d251487c6f1294277c9c650bd7b07e2e53a7e7d9bfd0"
+      "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },
     "theme_projection": {
       "entry": "META-INF/ogplay/theme-projection.json",
@@ -306,7 +306,7 @@
           },
           {
             "path": "src/guest/icu/icu_jni.c",
-            "sha256": "2d64f83220a5b378efd143cfaa4b0edc1415e34df35cf69d1f1b9c147511a3e7"
+            "sha256": "d2057ce79113aaa59847bb52147f234b8c3a031f5b2a856c2369b52e217c0513"
           },
           {
             "path": "src/guest/icu/regex_jni.c",
@@ -326,7 +326,7 @@
           },
           {
             "path": "src/guest/icu/icu51_capi.h",
-            "sha256": "e0a5922da0a7193efcc27573ec3c63c71435d04206691dd682a67bcfbc0974b6"
+            "sha256": "f06691b18b4bf07b23d291fe50c644668ca13b4719c12e8172b85d668fc829b6"
           }
         ],
         "inputs": [

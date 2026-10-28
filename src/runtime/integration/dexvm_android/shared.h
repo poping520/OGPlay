@@ -9,6 +9,7 @@
 namespace ogplay::runtime::android_intrinsics {
 
 namespace dx = dexvm;
+inline constexpr std::int32_t kGuestProcessId = 1;
 [[nodiscard]] dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context,
                                                       dx::VmObjectRef view);
 [[nodiscard]] dx::VmObjectRef ManagedWindowToken(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjectRef);

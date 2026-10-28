@@ -25,6 +25,45 @@ builder.FRAMEWORK_JAVA_NAMES = tuple(sorted((*builder.FRAMEWORK_JAVA_NAMES,
     'android/content/ContentResolver.java')))
 
 
+_original_compile_guest_java = builder.compile_guest_java
+
+
+def compile_guest_java(work):
+    # The facade source hides the SDK nested type from javac. This shape is
+    # compile-only: remove it before D8; production keeps the selected ROM class.
+    manager_source = builder.FRAMEWORK_JAVA_ROOT / 'android/app/ActivityManager.java'
+    manager_compile = work / 'activity-manager-compile-only/android/app/ActivityManager.java'
+    manager_compile.parent.mkdir(parents=True, exist_ok=True)
+    text = manager_source.read_text(encoding='utf-8')
+    manager_compile.write_text(text[:text.rfind('}')] + """
+    public static class RunningAppProcessInfo {
+        public static final int REASON_UNKNOWN = 0;
+        public int uid, flags, importance, lru, lastTrimLevel;
+        public int importanceReasonCode, importanceReasonPid;
+        public android.content.ComponentName importanceReasonComponent;
+        public RunningAppProcessInfo(String name, int pid, String[] packages) {
+            throw new AssertionError();
+        }
+    }
+}
+""", encoding='utf-8')
+    sources = tuple(manager_compile if source == manager_source else source
+                    for source in builder.guest_java_sources())
+    original_run = builder.run
+
+    def run(command):
+        result = original_run(command)
+        if command[0] == str(builder.JAVAC):
+            (work / 'guest-java-classes/android/app/ActivityManager$RunningAppProcessInfo.class').unlink()
+        return result
+
+    with patch.object(builder, 'guest_java_sources', return_value=sources), patch.object(builder, 'run', run):
+        return _original_compile_guest_java(work)
+
+
+builder.compile_guest_java = compile_guest_java
+
+
 CANDIDATE_RECIPE = Path(__file__).with_name('java-traversal.json')
 VIDEO_ENTRY = 'META-INF/ogplay/view-video-adapter.json'
 RECIPE_ENTRY = 'META-INF/ogplay/java-traversal-recipe.json'

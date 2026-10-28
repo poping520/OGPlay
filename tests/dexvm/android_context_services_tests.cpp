@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -431,6 +432,7 @@ TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds
         const auto query = [&] {
             f.On(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {VmValue::Ref(info)});
         };
+        f.context->memory_snapshot.reset();  // Explicitly exercise missing facts, independent of fixture defaults.
         const auto absent =
             f.OnOutcome(manager, "getMemoryInfo", "(Landroid/app/ActivityManager$MemoryInfo;)V", {VmValue::Ref(info)});
         REQUIRE(absent.exception.IsValid());
@@ -470,9 +472,6 @@ TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds
                                       {VmValue::Ref(VmObjectRef{})});
         REQUIRE(null.exception.IsValid());
         CHECK(f.linker.Class(null.exception_class).descriptor == "Ljava/lang/NullPointerException;");
-        const auto refused = f.OnOutcome(manager, "getRunningAppProcesses", "()Ljava/util/List;");
-        REQUIRE(refused.exception.IsValid());
-        CHECK(f.linker.Class(refused.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
         const auto wrapper =
             f.New("Landroid/content/ContextWrapper;", "(Landroid/content/Context;)V", {VmValue::Ref(base)});
         CHECK(f.On(wrapper, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
@@ -482,6 +481,91 @@ TEST_CASE("DVM228 ActivityManager queries preserve guest memory units thresholds
         CHECK(service() == manager);
         query();
         CHECK(number("availMem") == UINT64_C(6442450944));
+    }
+}
+
+TEST_CASE("DVM228 ActivityManager reports fresh current process facts and lifecycle importance") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        std::function<void()> during_create;
+        auto activity_decl = IntrinsicClassBuilder::Class("Ltest/ProcessActivity;", "Landroid/app/Activity;");
+        activity_decl.Constructor("()V", [](IntrinsicContext&) { return VmValue::Void(); });
+        activity_decl.OverrideMethod("onCreate", "(Landroid/os/Bundle;)V", [&](IntrinsicContext&) {
+            during_create();
+            return VmValue::Void();
+        });
+        AndroidValueVm f(backend, {std::move(activity_decl).Build()});
+        f.vm.SetGcIntegration(
+            {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+        f.context->package_name = "test.process";
+        f.context->application_uid = 10234;
+        const auto base = f.New("Landroid/content/Context;");
+        f.context->application_base_context = base;
+        const auto base_root = f.vm.ProtectReferences(std::array{base});
+        const auto manager = f.On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                                  {VmValue::Ref(f.vm.NewStringUtf8("activity"))})
+                                 .ref;
+        const auto query = [&] { return f.On(manager, "getRunningAppProcesses", "()Ljava/util/List;").ref; };
+        const auto first = query();
+        const auto first_root = f.vm.ProtectReferences(std::array{first});
+        const auto item = [&](VmObjectRef list) {
+            CHECK(f.On(list, "size", "()I").AsInt() == 1);
+            return f.On(list, "get", "(I)Ljava/lang/Object;", {VmValue::Int(0)}).ref;
+        };
+        const auto info = item(first);
+        CHECK(f.linker.Class(f.model.ObjectClass(info)).is_boot_dex);
+        const auto field = [&](VmObjectRef object, const char* name, const char* type = "I") {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+            REQUIRE(id.has_value());
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot].bits;
+        };
+        CHECK(field(info, "pid") == f.Static("Landroid/os/Process;", "myPid", "()I").AsInt());
+        CHECK(field(info, "uid") == f.Static("Landroid/os/Process;", "myUid", "()I").AsInt());
+        CHECK(f.vm.StringUtf8(VmObjectRef(field(info, "processName", "Ljava/lang/String;"))) == "test.process");
+        const auto packages = VmObjectRef(field(info, "pkgList", "[Ljava/lang/String;"));
+        CHECK(f.model.ArrayLength(packages) == 1);
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(packages, 0)) == "test.process");
+        CHECK(field(info, "flags") == 0);
+        CHECK(field(info, "importance") == 400);
+        CHECK(field(info, "lru") == 1);
+        for (const auto* name :
+             {"lastTrimLevel", "importanceReasonCode", "importanceReasonPid", "importanceReasonImportance"})
+            CHECK(field(info, name) == 0);
+        CHECK(field(info, "importanceReasonComponent", "Landroid/content/ComponentName;") == 0);
+        f.context->application_process_name = "test.process:worker";
+        // A newly pushed record during onCreate has not started/resumed, but is not stopped.
+        const auto activity = f.New("Ltest/ProcessActivity;");
+        f.context->activity_stack.emplace_back().object = activity;
+        during_create = [&] {
+            const auto list = query();
+            const auto root = f.vm.ProtectReferences(std::array{list});
+            CHECK(field(item(list), "importance") == 100);
+        };
+        f.On(activity, "onCreate", "(Landroid/os/Bundle;)V", {VmValue::Ref(VmObjectRef{})});
+        const auto second = query();
+        const auto second_root = f.vm.ProtectReferences(std::array{second});
+        const auto created = item(second);
+        CHECK(second != first);
+        CHECK(created != info);
+        CHECK(VmObjectRef(field(created, "pkgList", "[Ljava/lang/String;")) != packages);
+        CHECK(f.vm.StringUtf8(VmObjectRef(field(created, "processName", "Ljava/lang/String;"))) ==
+              "test.process:worker");
+        CHECK(field(created, "flags") == 4);
+        CHECK(field(created, "importance") == 100);
+        CHECK(field(created, "lru") == 0);
+        static_cast<void>(f.vm.CollectGarbage("activity-process-facts"));
+        CHECK(field(item(first), "importance") == 400);  // Detached value snapshot survives GC.
+        f.context->activity_stack.back().stopped = true;
+        const auto stopped = query();
+        const auto stopped_root = f.vm.ProtectReferences(std::array{stopped});
+        CHECK(field(item(stopped), "importance") == 400);
+        CHECK(field(item(stopped), "lru") == 1);
+        CHECK(field(item(stopped), "flags") == 4);
+        f.context->activity_stack.insert(f.context->activity_stack.begin(), DexVmAndroidContext::ActivityRecord{});
+        f.context->activity_stack.front().visible = true;
+        const auto visible = query();
+        const auto visible_root = f.vm.ProtectReferences(std::array{visible});
+        CHECK(field(item(visible), "importance") == 200);
+        CHECK(field(item(visible), "lru") == 0);
     }
 }
 

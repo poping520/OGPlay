@@ -1139,7 +1139,6 @@ Decl Declare_android_content_Context(const Context& context) {
                 return dx::VmValue::Ref(theme);
             });
     }
-    constexpr std::int32_t kGuestProcessId = 1;
     constexpr std::int32_t kPermissionGranted = 0;
     constexpr std::int32_t kPermissionDenied = -1;
     const auto require_permission = [](dx::IntrinsicContext& call, const std::size_t index) {

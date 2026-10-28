@@ -49,6 +49,63 @@ dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& 
     return instance;
 }
 
+Decl Declare_android_hardware_usb_UsbManager(const Context&) {
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/hardware/usb/UsbManager;");
+    constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
+    builder.StaticMethod(
+        "nativeGetDeviceList", "(Landroid/os/Bundle;)V", [](dx::IntrinsicContext&) { return dx::VmValue::Void(); },
+        flags);
+    builder.StaticMethod(
+        "nativeGetCurrentAccessory", "()Landroid/hardware/usb/UsbAccessory;",
+        [](dx::IntrinsicContext&) { return dx::VmValue::Ref(dx::VmObjectRef{}); }, flags);
+    builder.StaticMethod(
+        "nativeHasPermission", "()Z",
+        [](dx::IntrinsicContext& call) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.usb_transport", 0);
+            return dx::VmValue::Int(0);
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeOpenDevice", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.usb_transport", 0);
+            return dx::VmValue::Void();
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeUnsupported", "(Ljava/lang/String;)V",
+        [](dx::IntrinsicContext& call) -> dx::VmValue {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.usb_transport", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "USB transport is outside the compatibility scope"};
+        },
+        flags);
+    return std::move(builder).Build();
+}
+
+dx::VmObjectRef UsbManagerForContext(dx::IntrinsicContext& call, const Context& context) {
+    const auto found = context->singletons.find("usb");
+    if (found != context->singletons.end()) return found->second;
+    auto& vm = call.vm;
+    const auto type = vm.Linker().ResolveDescriptor("Landroid/hardware/usb/UsbManager;");
+    const auto require = [&](const dx::VmCallOutcome& outcome) {
+        if (outcome.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(outcome.exception_class).descriptor, outcome.exception_message,
+                                  outcome.exception};
+    };
+    require(vm.EnsureClassInitialized(type));
+    const auto instance = vm.NewIntrinsicInstance("Landroid/hardware/usb/UsbManager;");
+    const auto roots = vm.ProtectReferences(std::array{instance});
+    const auto constructor =
+        vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;Landroid/hardware/usb/IUsbManager;)V");
+    if (!constructor)
+        throw dx::DexVmError(dx::DexVmErrorReason::unresolved_reference, "UsbManager constructor is missing");
+    require(vm.Call(*constructor, std::array{dx::VmValue::Ref(instance), dx::VmValue::Ref(call.receiver),
+                                             dx::VmValue::Ref(dx::VmObjectRef{})}));
+    context->singletons.emplace("usb", instance);
+    return instance;
+}
+
 Decl Declare_android_location_LocationListener(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Interface("Landroid/location/LocationListener;");

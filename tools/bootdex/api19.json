@@ -2604,7 +2604,6 @@
       "Landroid/hardware/usb/UsbEndpoint;",
       "Landroid/hardware/usb/UsbInterface$1;",
       "Landroid/hardware/usb/UsbInterface;",
-      "Landroid/hardware/usb/UsbManager;",
       "Landroid/location/Geofence$1;",
       "Landroid/location/Geofence;",
       "Landroid/location/GpsSatellite;",

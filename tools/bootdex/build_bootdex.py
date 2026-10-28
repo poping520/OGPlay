@@ -87,6 +87,7 @@ FRAMEWORK_JAVA_NAMES = (
     "android/hardware/LocalSensorManager.java",
     "android/hardware/Sensor.java",
     "android/hardware/SensorManager.java",
+    "android/hardware/usb/UsbManager.java",
     "android/net/ConnectivityManager.java",
     "android/net/wifi/WifiManager.java",
     "android/nfc/NfcAdapter.java",
@@ -362,13 +363,30 @@ def compile_guest_java(work: Path) -> tuple[Path, tuple[str, ...]]:
     version = "javac " + javac_release()
     if not version.startswith("javac 17."):
         raise BuildError(f"unexpected javac: {version}")
+    # Hidden API19 types are absent from the public SDK android.jar. These are
+    # compile-only declarations; production definitions stay in framework.jar.
+    compile_only = work / "guest-java-compile-only"
+    hidden_sources = {
+        "android/hardware/usb/IUsbManager.java":
+            "package android.hardware.usb; public interface IUsbManager {}",
+        "android/os/SystemProperties.java":
+            "package android.os; public class SystemProperties {"
+            " public static String get(String key, String def) { throw new AssertionError(); } }",
+    }
+    for name, source in hidden_sources.items():
+        path = compile_only / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
     classes = work / "guest-java-classes"
     classes.mkdir()
     run([
         str(JAVAC), "-J-Duser.language=en", "-encoding", "UTF-8", "-source", "7", "-target", "7",
         "-Xlint:-options", "-g:none", "-bootclasspath", str(ANDROID_JAR),
         "-d", str(classes), *(str(source) for source in sources),
+        *(str(compile_only / name) for name in hidden_sources),
     ])
+    for name in hidden_sources:
+        (classes / Path(name).with_suffix(".class")).unlink()
     class_files = tuple(sorted(classes.rglob("*.class")))
     if not class_files:
         raise BuildError("KeyStore Java compilation produced no classes")
@@ -475,6 +493,12 @@ def zip_stream_native_signatures() -> dict[str, dict[str, int]]:
         "Landroid/app/Activity;": {
             "nativeStartActivityForResult(Landroid/content/Intent;ILandroid/os/Bundle;)V": 0x102,
             "nativeFinish(ILandroid/content/Intent;)V": 0x102},
+        "Landroid/hardware/usb/UsbManager;": {
+            "nativeGetDeviceList(Landroid/os/Bundle;)V": 0x10a,
+            "nativeGetCurrentAccessory()Landroid/hardware/usb/UsbAccessory;": 0x10a,
+            "nativeHasPermission()Z": 0x10a,
+            "nativeOpenDevice(Ljava/lang/String;)V": 0x10a,
+            "nativeUnsupported(Ljava/lang/String;)V": 0x10a},
         "Landroid/nfc/NfcAdapter;": {
             "nativeGetAdapter()Landroid/nfc/NfcAdapter;": 0x10a,
             "nativeUnsupported(Ljava/lang/String;)V": 0x10a},

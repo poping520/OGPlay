@@ -37,3 +37,6 @@ EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 
 分配/绑定失败传播真实 EGL 错误，不冒充 resize 成功。NDK getter 可先于 EGL dequeue 变化。
 托管 holder 的读回按 supersample 解析到 buffer 尺寸，经显式纯像素 hook 交 owner 快照，
 合成缩放至 View frame；普通 standalone/NativeActivity 无 holder 时保持原 frame service。
+
+window swap 成功后经显式 native-window 身份回调通知 buffer queued；创建 surface、
+失败 swap 与 pbuffer 不发送该通知，Java EGL 与 native window 共用此路径，不获取 VM 锁。

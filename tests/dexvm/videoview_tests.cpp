@@ -1357,7 +1357,9 @@ TEST_CASE("DVM-339 MediaPlayer size event fixes buffer and stretches pixels to t
         CHECK(vm.CallOn(view, "getHeight", "()I").AsInt() == 32);
         CHECK(changed == 1);
         CHECK(vm.CallOn(player, "isPlaying", "()Z").AsInt() == 1);
+        CHECK_FALSE(vm.context->surface_buffer_queued.at(holder.Value()));
         static_cast<void>(vm.Pump());
+        CHECK(vm.context->surface_buffer_queued.at(holder.Value()));
         RefreshAndroidSurfaceFrames(*vm.context);
         static_cast<void>(EnsureAndroidUiTraversal(vm.interpreter, *vm.context, AndroidUiTraversalReason::OwnerTick,
                                                    AndroidUiTraversalPhase::ResolveOnly));

@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。DVM-339：全部活跃Surface像素已冻结时，modal变化独立出帧，producer停绘也能消除弹窗。CPU已验证；GPU/九场景/Windows待外验。主题/items/custom content/完整Window未支持。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-345; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。DVM-345：活跃Surface逐holder记录created以来真实queue；全部未出帧或像素已冻结时，modal变化独立出帧，未出帧开孔黑底。已queue无保留像素不覆盖producer；停绘可消除弹窗。Windows/title gate未验。主题/items/custom content/完整Window未支持。"
 
 [dexvm.drawable_resource]
 status = "partial"
@@ -1626,7 +1626,7 @@ note = "保留ROM shape、onMeasure/isFixedSize与非正请求−1。DVM-339：V
 [dexvm.surface_video_layers]
 status = "partial"
 test = "tests/dexvm/videoview_traversal_tests.cpp; tests/dexvm/owner_traversal_tests.cpp#DVM-310"
-note = "DVM-331：managed Surface/Video 层序由 owner 冻结，Compose 只消费共同快照；固定buffer内容按View frame缩放（DVM-339）。GPU/EGL、九场景外验；不保留旧 UiTree 宿主布局合成回落。"
+note = "DVM-345：holder真实queue事实按created复位/退役清除，Canvas/媒体/Java与native EGL成功swap上报，未出帧不阻止owner黑底。DVM-331：managed Surface/Video 层序由 owner 冻结，Compose 只消费共同快照；固定buffer内容按View frame缩放（DVM-339）。GPU/EGL、九场景外验；不保留旧 UiTree 宿主布局合成回落。"
 
 [dexvm.media_player_local_video]
 status = "partial"

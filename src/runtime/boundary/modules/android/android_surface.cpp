@@ -88,6 +88,14 @@ std::optional<AndroidSurfaceWindow> AndroidModule::NativeWindowGeometry(memory::
     return AndroidSurfaceWindow{found->second.surface_identity, found->second.width, found->second.height};
 }
 
+void AndroidModule::NotifySurfaceBufferQueued(memory::GuestAddress window) {
+    std::scoped_lock guard(surface_hook_mutex_);
+    std::scoped_lock publish(surface_publish_mutex_);
+    const auto geometry = NativeWindowGeometry(window);
+    if (geometry && !geometry->identity.IsNull() && surface_hooks_.buffer_queued)
+        surface_hooks_.buffer_queued(surface_hooks_.owner, geometry->identity);
+}
+
 bool AndroidModule::PublishSurfacePixels(memory::GuestAddress window, std::uint32_t width, std::uint32_t height,
                                          std::vector<std::uint8_t> pixels) {
     std::scoped_lock guard(surface_hook_mutex_);

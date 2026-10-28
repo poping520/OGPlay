@@ -23,6 +23,7 @@ public:
                   core::Logger* logger = nullptr, core::CapabilityLedger* ledger = nullptr);
     ~AndroidModule();
     void SetSurfaceHooks(AndroidSurfaceHooks hooks);
+    void NotifySurfaceBufferQueued(memory::GuestAddress window);
     void RetireSurfaceWindow(memory::GuestAddress identity);
     memory::GuestAddress AcquireSurfaceWindow(const AndroidSurfaceWindow& surface);
     void UpdateSurfaceWindow(const AndroidSurfaceWindow& surface);

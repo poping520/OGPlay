@@ -1202,6 +1202,13 @@ std::optional<std::string> PumpVideoViews(dexvm::Interpreter& vm, DexVmAndroidCo
                 frame = state.player->TakeFrame(position);
                 if (frame) {
                     state.latest_frame = *frame;
+                    const auto holder = context.surface_holders.find(media_player ? state.display_view.Value()
+                                                                                  : static_cast<std::uint32_t>(handle));
+                    if (holder != context.surface_holders.end()) {
+                        std::scoped_lock pixels_lock(context.surface_pixels_mutex);
+                        const auto queued = context.surface_buffer_queued.find(holder->second.Value());
+                        if (queued != context.surface_buffer_queued.end()) queued->second = true;
+                    }
                     state.frame_requested = false;
                 }
                 if (state.playing && !state.looping && position >= state.duration_ms && !state.completed) {

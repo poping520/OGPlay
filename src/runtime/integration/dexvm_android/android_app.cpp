@@ -996,6 +996,10 @@ std::optional<std::string> DispatchHolderCallbacks(
             // AOSP sets mSurfaceCreated before invoking callbacks.
             context.active_surface_holders.insert(holder_handle);
             {
+                std::scoped_lock lock(context.surface_pixels_mutex);
+                context.surface_buffer_queued[holder_handle] = false;
+            }
+            {
                 RecordAndroidSurfaceDiagnostic(
                     vm, context, "ui.surface.holder", "holder activated",
                     {{"holder", std::uint64_t(holder_handle)},
@@ -1031,6 +1035,7 @@ std::optional<std::string> DispatchHolderCallbacks(
                 {
                     std::scoped_lock lock(context.surface_pixels_mutex);
                     context.surface_pixels.erase(holder);
+                    context.surface_buffer_queued.erase(holder);
                 }
                 {
                     const auto surface = context.holder_surfaces.find(holder);
@@ -1392,6 +1397,10 @@ std::optional<std::string> RetireSurfaceHolderGeneration(dexvm::Interpreter& vm,
     context.surface_callbacks.clear();
     context.surface_holders.clear();
     context.active_surface_holders.clear();
+    {
+        std::scoped_lock lock(context.surface_pixels_mutex);
+        context.surface_buffer_queued.clear();
+    }
     context.surface_callback_sizes.clear();
     context.surface_traversal_pending.clear();
     context.managed_host_surface_open = false;

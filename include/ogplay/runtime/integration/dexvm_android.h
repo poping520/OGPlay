@@ -123,12 +123,14 @@ struct AndroidPlatformServices final {
 struct DexVmAndroidContext final {
     explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
                                  AndroidPlatformServices platform = {})
-        : ui_traversal_owner(owner), platform_services(platform), ui_tree(CreateUiTree(ui::UiGeometryOwner::ExternalProjection, nullptr)) {}
+        : ui_traversal_owner(owner), platform_services(platform),
+          ui_tree(CreateUiTree(ui::UiGeometryOwner::ExternalProjection, nullptr)) {}
 
     [[nodiscard]] static ui::UiTree CreateUiTree(ui::UiGeometryOwner owner,
-                                                std::shared_ptr<const ui::UiFallbackFont> font) {
+                                                 std::shared_ptr<const ui::UiFallbackFont> font) {
         return ui::UiTree(owner, std::move(font));
     }
+
     [[nodiscard]] ui::UiTree CreateHostUiTree() const {
         return CreateUiTree(ui::UiGeometryOwner::HostLayout, ui_tree.FallbackFont());
     }
@@ -674,6 +676,9 @@ struct DexVmAndroidContext final {
     // Producer pixels contain no Java references; boundary workers never acquire the VM lock.
     std::mutex surface_pixels_mutex;
     std::unordered_map<std::uint32_t, video::VideoFrame> surface_pixels;
+    // Protected by surface_pixels_mutex, including boundary-worker notifications.
+    // An entry belongs to one created lifetime; missing/retired holders cannot be revived.
+    std::unordered_map<std::uint32_t, bool> surface_buffer_queued;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
     std::int32_t window_format{1};
     std::unordered_set<std::uint32_t> active_surface_holders;

@@ -121,6 +121,8 @@ struct AndroidSurfaceHooks final {
     void* owner{};
     memory::GuestAddress (*from_java)(void*, std::uint64_t, memory::GuestAddress, SurfaceJavaReference){};
     void (*publish)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t, std::vector<std::uint8_t>){};
+    // Successful window swap only. Carries holder identity; must not acquire the VM lock.
+    void (*buffer_queued)(void*, memory::GuestAddress){};
 };
 
 struct AndroidLooperHooks final {

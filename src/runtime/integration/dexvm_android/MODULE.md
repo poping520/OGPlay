@@ -726,6 +726,11 @@ Canvas、NDK/EGL 与 MediaPlayer 使用 buffer→View frame 最近邻缩放；Me
 内保留比例，VideoView 仍走原 letterbox。呈现快照冻结像素及缩放策略，alpha/ZOrder/输入不变。
 EGL producer 经显式 boundary hook 投递纯像素，不获取 VM 锁或保存 Java 引用；surface 退役与
 发布串行，owner 安全点才共同发布新像素与几何。
+holder 的 buffer queue 事实由 created 复位、destroyed/退役清除；Canvas post、媒体实际帧及
+纯像素发布置位。Java/native 共用 EGL 成功 window swap 通过显式 holder 身份回调上报，
+只操作独立同步的 producer 状态，不在 boundary worker 获取 VM 锁。EGL 创建/Canvas lock
+不算 queue；未 queue 的 Surface 按 API19 不提供合成层，owner 可发布黑底叠加 Dialog，
+已 queue 且共同快照无像素时保留 producer 的底帧权威。
 
 ## 窗口与呈现事实
 

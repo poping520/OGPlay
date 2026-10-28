@@ -355,6 +355,10 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              context->surface_callbacks.erase(key);
              if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
              context->active_surface_holders.erase(key);
+             {
+                 std::scoped_lock lock(context->surface_pixels_mutex);
+                 context->surface_buffer_queued.erase(key);
+             }
              context->managed_window_tokens.erase(key);
              context->view_tree_observers.erase(key);
              context->global_layout_listeners.erase(key);
@@ -1909,6 +1913,11 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                  auto& state = *static_cast<Impl*>(owner);
                  const auto context = state.android_context;
                  if (!context) throw DexVmBridgeError("Surface producer has no live owner");
+                 {
+                     std::scoped_lock lock(context->surface_pixels_mutex);
+                     const auto queued = context->surface_buffer_queued.find(holder.Value());
+                     if (queued != context->surface_buffer_queued.end()) queued->second = true;
+                 }
                  if (holder.Value() == context->window_surface_holder.Value()) {
                      state.session->PublishSoftwareFrame(std::move(pixels));
                      return;
@@ -1919,6 +1928,13 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
                  }
                  state.session->PublishSoftwareFrame(std::vector<std::uint8_t>(
                      static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
+             },
+             +[](void* owner, memory::GuestAddress holder) {
+                 const auto context = static_cast<Impl*>(owner)->android_context;
+                 if (!context) return;
+                 std::scoped_lock lock(context->surface_pixels_mutex);
+                 const auto queued = context->surface_buffer_queued.find(holder.Value());
+                 if (queued != context->surface_buffer_queued.end()) queued->second = true;
              }});
         android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width,
                                                                 std::uint32_t height) {

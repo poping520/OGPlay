@@ -36,6 +36,7 @@ struct EglBoundaryContext final {
     bool (*native_window_is_current)(void*, memory::GuestAddress){};
     core::CapabilityLedger* ledger{};
     std::optional<AndroidSurfaceWindow> (*native_window_geometry)(void*, memory::GuestAddress){};
+    void (*surface_buffer_queued)(void*, memory::GuestAddress){};
     bool (*publish_surface_pixels)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t,
                                    std::vector<std::uint8_t>){};
 };

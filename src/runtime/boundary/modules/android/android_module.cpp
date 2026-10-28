@@ -15,24 +15,29 @@ std::uint32_t SignedResult(const std::int32_t value) noexcept {
 }
 }  // namespace
 
-AndroidModule::AndroidModule(BoundaryCallServices& calls,
-                             AndroidBoundaryServices& services, AndroidLooperHooks hooks,
+AndroidModule::AndroidModule(BoundaryCallServices& calls, AndroidBoundaryServices& services, AndroidLooperHooks hooks,
                              core::Logger* logger, core::CapabilityLedger* ledger)
     : looper_hooks_(std::move(hooks)), calls_(calls), services_(services), logger_(logger), ledger_(ledger) {}
 
-BoundaryCallServices& AndroidModule::CallServices() noexcept { return calls_; }
+BoundaryCallServices& AndroidModule::CallServices() noexcept {
+    return calls_;
+}
 
 bool AndroidModule::NativeWindowIsCurrent(memory::GuestAddress window) {
     std::scoped_lock lock(mutex_);
     const auto found = windows_.find(window.Value());
     if (found != windows_.end()) return found->second.active;
+    if (const auto alias = surface_geometries_.find(window.Value()); alias != surface_geometries_.end())
+        return alias->second.width != 0 && alias->second.height != 0;
     // Java SurfaceHolder and standalone-runner identities retain their existing
     // registry path. Reserved NativeActivity identities must never fall back.
     return window.Value() < kNativeActivityWindowHandleBegin.Value() ||
            window.Value() >= kNativeActivityWindowHandleEnd.Value();
 }
 
-void AndroidModule::NotifyFileWrite() { ready_.notify_all(); }
+void AndroidModule::NotifyFileWrite() {
+    ready_.notify_all();
+}
 
 void AndroidModule::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
     std::scoped_lock guard(asset_hook_mutex_);
@@ -46,6 +51,7 @@ void AndroidModule::SetAssetManagerHooks(AndroidAssetManagerHooks hooks) {
         assets_.clear();
     }
 }
+
 memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<AndroidAssetManagerSource> source) {
     if (!source) throw std::invalid_argument("AssetManager source is missing");
     std::scoped_lock guard(mutex_);
@@ -56,6 +62,7 @@ memory::GuestAddress AndroidModule::RegisterAssetManager(std::shared_ptr<Android
     next_asset_manager_ = handle.Add(1);
     return handle;
 }
+
 void AndroidModule::UnregisterAssetManager(memory::GuestAddress manager) {
     std::scoped_lock guard(mutex_);
     // Existing Assets have independent backing leases, like API19 _FileAsset.
@@ -65,8 +72,7 @@ void AndroidModule::UnregisterAssetManager(memory::GuestAddress manager) {
 
 void AndroidModule::RegisterNativeActivity(NativeActivityBoundaryResources resources) {
     std::scoped_lock lock(mutex_);
-    if (resources.activity.IsNull() || resources.assets.IsNull() ||
-        resources.queue.IsNull())
+    if (resources.activity.IsNull() || resources.assets.IsNull() || resources.queue.IsNull())
         throw std::invalid_argument("incomplete NativeActivity boundary resources");
     managed_activity_seen_ = true;
     const auto key = resources.activity.Value();
@@ -74,6 +80,7 @@ void AndroidModule::RegisterNativeActivity(NativeActivityBoundaryResources resou
     if (!resources_.emplace(key, Resource{std::move(resources)}).second)
         throw std::logic_error("duplicate NativeActivity boundary registration");
 }
+
 void AndroidModule::UnregisterNativeActivity(memory::GuestAddress activity) {
     std::scoped_lock lock(mutex_);
     const auto found = resources_.find(activity.Value());
@@ -81,6 +88,7 @@ void AndroidModule::UnregisterNativeActivity(memory::GuestAddress activity) {
     RetireWindow(found->second);
     resources_.erase(found);
 }
+
 void AndroidModule::RetireWindow(Resource& resource) {
     if (resource.window.IsNull()) return;
     auto found = windows_.find(resource.window.Value());
@@ -91,10 +99,14 @@ void AndroidModule::RetireWindow(Resource& resource) {
     }
     resource.window = memory::GuestAddress{};
 }
+
 memory::GuestAddress AndroidModule::SetNativeActivityWindow(memory::GuestAddress activity, bool active) {
     std::scoped_lock lock(mutex_);
     auto& item = resources_.at(activity.Value());
-    if (!active) { RetireWindow(item); return memory::GuestAddress{}; }
+    if (!active) {
+        RetireWindow(item);
+        return memory::GuestAddress{};
+    }
     if (!item.window.IsNull()) throw std::logic_error("NativeActivity window is already active");
     if (next_window_.Value() >= kNativeActivityWindowHandleEnd.Value())
         throw std::runtime_error("NativeActivity window identity budget exhausted");
@@ -104,6 +116,7 @@ memory::GuestAddress AndroidModule::SetNativeActivityWindow(memory::GuestAddress
     item.window = window;
     return window;
 }
+
 void AndroidModule::SetNativeActivityInput(memory::GuestAddress activity, bool active) {
     std::scoped_lock lock(mutex_);
     auto& item = resources_.at(activity.Value());
@@ -113,11 +126,13 @@ void AndroidModule::SetNativeActivityInput(memory::GuestAddress activity, bool a
         item.input = {};
     }
 }
+
 AndroidModule::Resource& AndroidModule::Queue(std::uint32_t handle) {
     for (auto& [_, item] : resources_)
         if (item.resources.queue.Value() == handle && item.input_active) return item;
     throw std::invalid_argument("AInputQueue is stale or unregistered");
 }
+
 AndroidModule::WindowResource& AndroidModule::Window(std::uint32_t handle) {
     const auto found = windows_.find(handle);
     if (found != windows_.end()) return found->second;
@@ -177,13 +192,12 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId >= 85U && FunctionId <= 99U) return SensorExport(call, FunctionId);
     if constexpr (FunctionId == 83U) {
         std::scoped_lock guard(asset_hook_mutex_);
-        if (!asset_hooks_.from_java)
-            throw std::runtime_error("NDK AssetManager JNI backend is unavailable");
-        return asset_hooks_.from_java(asset_hooks_.owner, tid,
-            call.Pointer<void>(0).Address(), AssetManagerJavaReference{args[1]}).Value();
+        if (!asset_hooks_.from_java) throw std::runtime_error("NDK AssetManager JNI backend is unavailable");
+        return asset_hooks_
+            .from_java(asset_hooks_.owner, tid, call.Pointer<void>(0).Address(), AssetManagerJavaReference{args[1]})
+            .Value();
     }
-    if constexpr ((FunctionId >= 13U && FunctionId <= 18U) ||
-                  (FunctionId >= 37U && FunctionId <= 81U)) {
+    if constexpr ((FunctionId >= 13U && FunctionId <= 18U) || (FunctionId >= 37U && FunctionId <= 81U)) {
         return ReadInput<FunctionId>(call);
     }
     if constexpr (FunctionId == 0U) return kFakeConfiguration;
@@ -196,33 +210,36 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             if (managed_activity_seen_) Queue(args[0]).input_attached = false;
         }
         if constexpr (FunctionId == 11U)
-            if (!queue.inflight.contains(args[1]))
-                throw std::invalid_argument("invalid input event pre-dispatch");
+            if (!queue.inflight.contains(args[1])) throw std::invalid_argument("invalid input event pre-dispatch");
         if constexpr (FunctionId == 82U) return queue.pending.empty() ? 0U : 1U;
         return 0;
     }
     if constexpr (FunctionId == 19U || (FunctionId >= 26U && FunctionId <= 30U)) {
         std::scoped_lock lock(mutex_);
         if constexpr (FunctionId == 19U) {
-            if (!managed_activity_seen_ && !windows_.contains(args[0])) return 0; // legacy standalone runner
+            if (!managed_activity_seen_ && !windows_.contains(args[0])) return 0;  // legacy standalone runner
         }
         auto& item = Window(args[0]);
         if constexpr (FunctionId == 19U) {
             // The single managed ANGLE surface has a fixed size and RGBA8 format.
             // NDK callers can reset to defaults or request that exact geometry.
-            return item.active && ((args[1] == 0 && args[2] == 0) ||
-                    (args[1] == item.width && args[2] == item.height)) &&
-                    (args[3] == 0 || args[3] == 1) ? 0U : SignedResult(-22);
+            return item.active &&
+                           ((args[1] == 0 && args[2] == 0) || (args[1] == item.width && args[2] == item.height)) &&
+                           (args[3] == 0 || args[3] == 1)
+                       ? 0U
+                       : SignedResult(-22);
         }
         if constexpr (FunctionId == 26U) return item.width;
         if constexpr (FunctionId == 27U) return item.height;
         if constexpr (FunctionId == 28U) return 1;
         if constexpr (FunctionId == 29U) {
             if (item.references == UINT32_MAX) throw std::overflow_error("ANativeWindow reference overflow");
-            ++item.references; return 0;
+            ++item.references;
+            return 0;
         }
         if constexpr (FunctionId == 30U) {
-            if (item.references <= (item.owned ? 1U : 0U)) throw std::invalid_argument("unbalanced ANativeWindow_release");
+            if (item.references <= (item.owned ? 1U : 0U))
+                throw std::invalid_argument("unbalanced ANativeWindow_release");
             if (--item.references == 0) windows_.erase(args[0]);
             return 0;
         }
@@ -237,7 +254,7 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         if (!manager) throw std::invalid_argument("AAssetManager is stale or unregistered");
         if (args[2] > 3) return 0;
         std::string name;
-        for (std::size_t i=0; i<4096; ++i) {
+        for (std::size_t i = 0; i < 4096; ++i) {
             std::array<std::byte, 1> byte{};
             services_.address_space.Read(call.Pointer<std::byte>(1).Address().Add(i), byte, tid);
             if (byte[0] == std::byte{}) break;
@@ -247,8 +264,7 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         const auto source = manager->Open(name);
         if (!source) return 0;
         std::scoped_lock lock(mutex_);
-        if (!asset_managers_.contains(args[0]))
-            throw std::invalid_argument("AAssetManager retired during open");
+        if (!asset_managers_.contains(args[0])) throw std::invalid_argument("AAssetManager retired during open");
         if (assets_.size() >= 4096 || next_asset_ == 0x6e200000U)
             throw std::runtime_error("NDK asset handle budget exhausted");
         const auto handle = next_asset_++;
@@ -264,7 +280,10 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             const auto found = assets_.find(args[0]);
             if (found == assets_.end()) throw std::invalid_argument("AAsset is stale or unregistered");
             owner = found->second;
-            if constexpr (FunctionId == 22U) { assets_.erase(found); return 0; }
+            if constexpr (FunctionId == 22U) {
+                assets_.erase(found);
+                return 0;
+            }
         }
         auto& asset = *owner;
         std::scoped_lock guard(asset.mutex);
@@ -272,8 +291,8 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             const auto count = std::min<std::uint64_t>(args[2], asset.source->Length() - asset.offset);
             if (count > INT32_MAX) return SignedResult(-1);
             const auto output = call.Pointer<std::byte>(1).Address();
-            if (count != 0) services_.address_space.Validate(
-                memory::GuestRange(output, count), memory::AccessType::write, tid);
+            if (count != 0)
+                services_.address_space.Validate(memory::GuestRange(output, count), memory::AccessType::write, tid);
             std::array<std::byte, 65536> bytes{};
             std::uint64_t completed{};
             while (completed < count) {
@@ -306,13 +325,17 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             if (descriptor.fd < 0) return SignedResult(descriptor.fd);
             const auto encode = [](std::uint64_t value) {
                 std::array<std::byte, 4> bytes{};
-                for (std::size_t i = 0; i < bytes.size(); ++i) bytes[i] = static_cast<std::byte>(value >> (i * 8));
+                for (std::size_t i = 0; i < bytes.size(); ++i)
+                    bytes[i] = static_cast<std::byte>(value >> (i * 8));
                 return bytes;
             };
             try {
                 services_.address_space.WritePrevalidated(start, encode(descriptor.start));
                 services_.address_space.WritePrevalidated(length, encode(descriptor.length));
-            } catch (...) { asset.source->CloseFileDescriptor(descriptor.fd); throw; }
+            } catch (...) {
+                asset.source->CloseFileDescriptor(descriptor.fd);
+                throw;
+            }
             return SignedResult(descriptor.fd);
         }
     }
@@ -344,17 +367,21 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
             if (looper.references <= owner_reference) throw std::invalid_argument("unbalanced ALooper_release");
             if (--looper.references == 0) loopers_.erase(args[0]);
         }
-        if constexpr (FunctionId == 35U) { looper.wake = true; ready_.notify_all(); }
-        if constexpr (FunctionId == 36U) return SignedResult(RemoveLooperFdLocked(
-            call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1])));
+        if constexpr (FunctionId == 35U) {
+            looper.wake = true;
+            ready_.notify_all();
+        }
+        if constexpr (FunctionId == 36U)
+            return SignedResult(
+                RemoveLooperFdLocked(call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1])));
         return 0;
     }
     if constexpr (FunctionId == 6U) {
         std::scoped_lock lock(mutex_);
         SweepLoopers();
-        return SignedResult(AddLooperFdLocked(call.Pointer<void>(0).Address(),
-            std::bit_cast<std::int32_t>(args[1]), std::bit_cast<std::int32_t>(args[2]), args[3],
-            call.Pointer<void>(4).Address(), call.Pointer<void>(5).Address()));
+        return SignedResult(AddLooperFdLocked(call.Pointer<void>(0).Address(), std::bit_cast<std::int32_t>(args[1]),
+                                              std::bit_cast<std::int32_t>(args[2]), args[3],
+                                              call.Pointer<void>(4).Address(), call.Pointer<void>(5).Address()));
     }
     if constexpr (FunctionId == 7U || FunctionId == 34U) return PollAll(args, tid);
     if constexpr (FunctionId == 8U) {
@@ -378,14 +405,17 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
         auto& queue = InputQueue(args[0]);
         if (call.Pointer<void>(1).IsNull())
             throw std::invalid_argument("AInputQueue_getEvent requires an output pointer");
-        if (queue.pending.empty()) return SignedResult(-11); // EAGAIN
-        if (next_input_.Value() >= 0x6e400000U)
-            throw std::runtime_error("input event identity budget exhausted");
+        if (queue.pending.empty()) return SignedResult(-11);  // EAGAIN
+        if (next_input_.Value() >= 0x6e400000U) throw std::runtime_error("input event identity budget exhausted");
         const auto handle = next_input_;
         // Publish only after the guest destination and host allocation succeed.
         queue.inflight.emplace(handle.Value(), queue.pending.front());
-        try { services_.Write32(args[1], handle.Value(), tid); }
-        catch (...) { queue.inflight.erase(handle.Value()); throw; }
+        try {
+            services_.Write32(args[1], handle.Value(), tid);
+        } catch (...) {
+            queue.inflight.erase(handle.Value());
+            throw;
+        }
         next_input_ = next_input_.Add(4);
         queue.pending.pop_front();
         return 0;
@@ -393,16 +423,15 @@ BoundaryResult AndroidModule::ExecuteExport(const A32CallFrame& call) {
     if constexpr (FunctionId == 12U) {
         std::scoped_lock lock(mutex_);
         auto& queue = InputQueue(args[0]);
-        if (queue.inflight.erase(args[1]) == 0)
-            throw std::invalid_argument("invalid input event completion");
+        if (queue.inflight.erase(args[1]) == 0) throw std::invalid_argument("invalid input event completion");
         return 0;
     }
     throw std::logic_error("unbound concrete libandroid export");
 }
 
-#define OGPLAY_DEFINE_ANDROID(name, id, count, method) \
-    BoundaryResult AndroidModule::method(const A32CallFrame& call) { \
-        return ExecuteExport<id>(call); \
+#define OGPLAY_DEFINE_ANDROID(name, id, count, method)                                                                 \
+    BoundaryResult AndroidModule::method(const A32CallFrame& call) {                                                   \
+        return ExecuteExport<id>(call);                                                                                \
     }
 OGPLAY_ANDROID_BOUNDARY_EXPORTS(OGPLAY_DEFINE_ANDROID)
 #undef OGPLAY_DEFINE_ANDROID

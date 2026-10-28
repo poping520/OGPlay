@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。CPU已验证；GPU/九场景/Windows待外验。主题/items/custom content/完整Window未支持。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。DVM-339：全部活跃Surface像素已冻结时，modal变化独立出帧，producer停绘也能消除弹窗。CPU已验证；GPU/九场景/Windows待外验。主题/items/custom content/完整Window未支持。"
 
 [dexvm.drawable_resource]
 status = "partial"
@@ -1621,12 +1621,12 @@ note = "DVM-303: bounded local VFS/file/APK video, transport/volume, eight insta
 [dexvm.surface_view_lifecycle]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/egl_facade_tests.cpp#SurfaceView null-attribute constructors; tests/dexvm/egl_facade_tests.cpp#SurfaceHolder frame; tests/dexvm/surfaceview_traversal_tests.cpp"
-note = "JavaTraversal保留ROM shape与onMeasure/isFixedSize，受审构造/managed holder接缝；非正请求映射−1，匹配fixed可测量，不匹配buffer先失败。DVM-309接入owner安全点，window/View holder分型、逐回调代次重验、late激活及稳定Rect。同尺寸不重发，addCallback不补created。WMS/updateWindow、独立buffer resize与SurfaceFlinger未启用；窗口切换/E2E待外验。"
+note = "保留ROM shape、onMeasure/isFixedSize与非正请求−1。DVM-339：View holder独立buffer；owner安全点按buffer尺寸交付changed；稳定Rect遵循4.4窗口frame，同尺寸去重，addCallback不补created；window holder不变。完整WMS/updateWindow、系统SurfaceFlinger未启用；GPU/窗口切换/游戏E2E待外验。"
 
 [dexvm.surface_video_layers]
 status = "partial"
 test = "tests/dexvm/videoview_traversal_tests.cpp; tests/dexvm/owner_traversal_tests.cpp#DVM-310"
-note = "DVM-331：managed Surface/Video 层序由 owner 冻结，Compose 只消费共同快照；固定大小仍须匹配真实 buffer。GPU/EGL、九场景外验；不保留旧 UiTree 宿主布局合成回落。"
+note = "DVM-331：managed Surface/Video 层序由 owner 冻结，Compose 只消费共同快照；固定buffer内容按View frame缩放（DVM-339）。GPU/EGL、九场景外验；不保留旧 UiTree 宿主布局合成回落。"
 
 [dexvm.media_player_local_video]
 status = "partial"
@@ -2090,8 +2090,8 @@ note = "同包有界 task 保留实例/窗口/结果；默认 affinity 四种 la
 
 [dexvm.surface_buffer_geometry]
 status = "partial"
-test = "tests/runtime/activity_window_lifecycle_tests.cpp#DVM-235"
-note = "托管 SurfaceHolder 支持固定为当前真实 buffer 尺寸及返回 layout 模式，requested size 属于 holder；surfaceCreated/Changed 的 Rect 与回调保持真实一致。独立 buffer 尺寸与固定请求不匹配新托管尺寸时明确失败并记账，不伪造 resize。"
+test = "tests/dexvm/surfaceview_traversal_tests.cpp#DVM-339; tests/dexvm/videoview_tests.cpp#DVM-339; tests/dexvm/egl_facade_tests.cpp#DVM-339"
+note = "DVM-339：View holder支持独立固定buffer及回到View frame，每轴≤4096；Canvas/MediaPlayer/EGL按buffer生产、最近邻缩放到frame。NDK getter同步，已有EGL在下一swap更新backing；window holder与NDK setBuffersGeometry边界不变。CPU双后端可验证，GPU resize/像素与原APK待外验；未知holder及超预算明确失败。"
 
 [dexvm.notification_values]
 status = "partial"

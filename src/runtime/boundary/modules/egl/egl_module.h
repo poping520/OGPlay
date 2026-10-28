@@ -18,7 +18,9 @@
 #include "runtime/boundary/modules/gles1/gles1_draw.h"
 #include "runtime/boundary/services/graphics_boundary_context.h"
 
-namespace ogplay::core { class CapabilityLedger; }
+namespace ogplay::core {
+class CapabilityLedger;
+}
 
 namespace ogplay::runtime {
 
@@ -33,23 +35,24 @@ struct EglBoundaryContext final {
     void* native_window_owner{};
     bool (*native_window_is_current)(void*, memory::GuestAddress){};
     core::CapabilityLedger* ledger{};
+    std::optional<AndroidSurfaceWindow> (*native_window_geometry)(void*, memory::GuestAddress){};
+    bool (*publish_surface_pixels)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t,
+                                   std::vector<std::uint8_t>){};
 };
 
 class EglModule final {
 public:
-    EglModule(BoundaryCallServices& calls,
-              EglBoundaryContext& context) noexcept;
+    EglModule(BoundaryCallServices& calls, EglBoundaryContext& context) noexcept;
     ~EglModule();
     [[nodiscard]] BoundaryCallServices& CallServices() noexcept;
     void RetireGuestGraphics() noexcept;
-    [[nodiscard]] gles::AngleFrame* CurrentFrameForHostThread(
-        std::thread::id host_thread, std::string_view operation = {});
+    [[nodiscard]] gles::AngleFrame* CurrentFrameForHostThread(std::thread::id host_thread,
+                                                              std::string_view operation = {});
     void ActivateStateForHostThread(std::thread::id host_thread);
     [[nodiscard]] std::string QueryStringValue(std::uint32_t name);
     void LatchError(std::uint64_t thread_id, std::uint32_t error);
 
-#define OGPLAY_DECLARE_EGL(name, id, count, method) \
-    std::uint32_t method(const A32CallFrame& call);
+#define OGPLAY_DECLARE_EGL(name, id, count, method) std::uint32_t method(const A32CallFrame& call);
     OGPLAY_EGL_BOUNDARY_EXPORTS(OGPLAY_DECLARE_EGL)
     OGPLAY_GLES_IMAGE_EXPORTS(OGPLAY_DECLARE_EGL)
 #undef OGPLAY_DECLARE_EGL
@@ -61,6 +64,7 @@ public:
 private:
     BoundaryResult SurfaceExtension(const A32CallFrame& call, bool presentation);
     BoundaryResult UnsupportedClock(const A32CallFrame& call);
+
     struct ThreadState final {
         std::uint32_t error{0x3000U};
         std::uint32_t bound_api{0x30A0U};
@@ -91,6 +95,7 @@ private:
     };
 
     enum class SurfaceKind : std::uint8_t { window, pbuffer };
+
     struct SurfaceState final {
         std::uint32_t display{};
         std::uint32_t config{};
@@ -113,16 +118,13 @@ private:
 
     void SetError(std::uint64_t thread_id, std::uint32_t error);
     [[nodiscard]] std::uint32_t TakeError(std::uint64_t thread_id);
-    [[nodiscard]] std::uint32_t PublishQueryString(
-        std::uint32_t name, std::uint64_t thread_id);
-    [[nodiscard]] std::uint32_t ResolveProcAddress(
-        GuestCString name, std::uint64_t thread_id) const;
+    [[nodiscard]] std::uint32_t PublishQueryString(std::uint32_t name, std::uint64_t thread_id);
+    [[nodiscard]] std::uint32_t ResolveProcAddress(GuestCString name, std::uint64_t thread_id) const;
     void CollectRetiredObjectsLocked();
     void SaveActiveStateLocked();
     void RestoreStateLocked(std::uint32_t handle);
     [[nodiscard]] bool IsConfig(std::uint32_t handle);
-    [[nodiscard]] std::uint32_t ConfigAttributeLocked(std::uint32_t handle,
-                                                    std::uint32_t attribute);
+    [[nodiscard]] std::uint32_t ConfigAttributeLocked(std::uint32_t handle, std::uint32_t attribute);
 
     BoundaryCallServices& calls_;
     EglBoundaryContext& context_;

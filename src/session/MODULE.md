@@ -169,10 +169,13 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   owner 刷新 producer/叶像素事实，纯绘制只冻结快照；presentation epoch 变化触发纯 View
   软件基帧或 intrinsic renderer draw request，空窗口与纯 modal 也可呈现。guest 仅使用此 owner 时序。
 - JavaTraversal 的 `ComposePresentedFrame` 只读一次 AcquireAndroidPresentation 得到的共同快照，
-  按 video下层→guest UI→video上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
+  按 Surface/视频下层→guest UI→Surface/视频上层→可见宿主modal栈合成；不刷新输入、不调用遍历或 guest。
   session 持有有界 UI 平面缓存：完整投影/冻结 modal 身份、viewport 和 bitmap 输入未变时
   复用栅格结果；producer 单独更新不重绘 UI。新 producer 底图仍每帧按原顺序混合、上传，
   不缓存替代 guest 帧；缓存仅保留当前发布的平面，失败不替换完整缓存。
+  全部活跃 managed Surface 的像素已保留在共同快照时，owner 可在 UI/modal epoch 改变后
+  独立提交合成触发帧，不等待 producer 再次 post/swap；有未被快照覆盖的活跃 producer 时
+  保留其基帧权威，干净 epoch 不重复提交。
   新帧尺寸须与共同快照一致，失败保留发布序列。不保留 guest 刷新/宿主布局合成回落。
   modal 输入先由 integration 使用同一发布对象命中/捕获，再进入 Java Dialog 协议；
   每个输入事件从 modal、NativeActivity 队列、编辑/键、pointer/焦点/scroll 到 deep/Activity
@@ -275,7 +278,7 @@ DexActivityLifecycle 成功启动与恢复后向已连接 DiagnosticState 发布
 退出前记录并退役已失败调用的 root JNI 异常；本地服务在 scheduler 关闭前解绑。
 native 清理失败仍继续关闭进程和 surface；前端保留运行首错，独立报告清理错误。
 
-本地视频在最终 frame handoff 按 UiTree 的 SurfaceView 层事实合成（ADR-0094）；
+本地视频及托管 Canvas/EGL buffer 在最终 frame handoff 按 UiTree 的 SurfaceView 层事实合成（ADR-0094）；
 GLES/Canvas producer 活跃时视频泵不覆盖底图。纯视频窗口使用空软件底图触发统一合成。
 
 DVM-218/236、ADR-0095/0115：进程 Stop 显式区分 host shutdown、guest exit 与运行 fault，

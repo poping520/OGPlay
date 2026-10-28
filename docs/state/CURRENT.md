@@ -15,7 +15,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| Island Castaway 1.3 | macOS | ROM 属性动画闪屏约608ms淡出并移除；窗口回前台后Activity焦点恢复，尝试intro视频 | [DVM-338](../tasks/dexvm/DVM-338.md)，原 APK 待外验；退出 `System.runFinalizersOnExit` | [DVM-337](../tasks/dexvm/DVM-337.md) |
+| Island Castaway 1.3 | macOS | 闪屏淡出移除；主 GL 与视频 SurfaceView 按独立 buffer 建立，视频 prepare 完成 | 视频 start 时 `setKeepScreenOn(true)` 未实现致 fault；退出 `System.runFinalizersOnExit` | [DVM-339](../tasks/dexvm/DVM-339.md) |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |

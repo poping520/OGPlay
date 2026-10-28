@@ -558,8 +558,13 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             return 0U;
         }
         const auto handle = next_surface_++;
+        const auto geometry =
+            context_.native_window_geometry
+                ? context_.native_window_geometry(context_.native_window_owner, memory::GuestAddress{args[2]})
+                : std::nullopt;
         surfaces_.emplace(handle, SurfaceState{kFakeDisplay, args[1], SurfaceKind::window,
-                                               graphics.layout.logical_width, graphics.layout.logical_height});
+                                               geometry ? geometry->width : graphics.layout.logical_width,
+                                               geometry ? geometry->height : graphics.layout.logical_height});
         surfaces_.at(handle).native_window = memory::GuestAddress{args[2]};
         return handle;
     }
@@ -881,7 +886,23 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
             frame->BindSurfaces(draw, draw);
             try {
                 frame->BindFramebuffer(target, 0U);
-                graphics.PublishFrame();
+                const auto& surface = surfaces_.at(args[1]);
+                const auto geometry =
+                    context_.native_window_geometry
+                        ? context_.native_window_geometry(context_.native_window_owner, surface.native_window)
+                        : std::nullopt;
+                if (geometry && !geometry->identity.IsNull() && context_.publish_surface_pixels) {
+                    auto pixels = gles::ResolveSupersampledRgba8(
+                        frame->ReadRgba8(),
+                        gles::MakeSupersampleLayout(surface.width, surface.height, graphics.layout.factor));
+                    if (!context_.publish_surface_pixels(context_.native_window_owner, surface.native_window,
+                                                         surface.width, surface.height, std::move(pixels))) {
+                        restore();
+                        SetError(tid, kEglBadNativeWindow);
+                        return 0U;
+                    }
+                } else
+                    graphics.PublishFrame();
             } catch (...) {
                 restore();
                 throw;
@@ -892,7 +913,24 @@ std::uint32_t EglModule::ExecuteExport(const A32CallFrame& call) {
         {
             std::scoped_lock lock(mutex_);
             try {
-                surfaces_.at(args[1]).backing->SwapBuffers();
+                auto& surface = surfaces_.at(args[1]);
+                surface.backing->SwapBuffers();
+                const auto geometry =
+                    context_.native_window_geometry
+                        ? context_.native_window_geometry(context_.native_window_owner, surface.native_window)
+                        : std::nullopt;
+                if (surface.kind == SurfaceKind::window && geometry &&
+                    (surface.width != geometry->width || surface.height != geometry->height)) {
+                    auto resized = gles::EglSurfaceResources::Create(
+                        native_display_, geometry->width * graphics.layout.factor,
+                        geometry->height * graphics.layout.factor, surface.texture_format, surface.mipmap,
+                        ColorFormat(surface.config));
+                    const auto read_handle = threads_.at(tid).read_surface;
+                    frame->BindSurfaces(resized, read_handle == args[1] ? resized : surfaces_.at(read_handle).backing);
+                    surface.backing = std::move(resized);
+                    surface.width = geometry->width;
+                    surface.height = geometry->height;
+                }
             } catch (const gles::EglLifecycleError& error) {
                 threads_[tid].error = error.NativeError();
                 return 0U;

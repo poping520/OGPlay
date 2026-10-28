@@ -474,6 +474,7 @@ struct DexVmAndroidContext final {
         dexvm::VmObjectRef activity{};
         ui::UiBitmapCache bitmaps;
         std::map<ui::UiNodeId, video::VideoFrame> video_frames;
+        std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> scaled_surface_frames;
 
         struct ModalSnapshot final {
             dexvm::VmObjectRef dialog, owner;
@@ -658,6 +659,9 @@ struct DexVmAndroidContext final {
     // Lifecycle notification only; window state remains owned by the holder.
     std::function<void(dexvm::VmObjectRef)> retire_native_surface;
     std::function<void(dexvm::VmObjectRef, std::uint32_t, std::uint32_t)> update_native_surface;
+    // Producer pixels contain no Java references; boundary workers never acquire the VM lock.
+    std::mutex surface_pixels_mutex;
+    std::unordered_map<std::uint32_t, video::VideoFrame> surface_pixels;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
     std::int32_t window_format{1};
     std::unordered_set<std::uint32_t> active_surface_holders;

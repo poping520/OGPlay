@@ -506,7 +506,13 @@ public:
                 if (surface != object || !(live || android_context->destroying_surface_holders.contains(holder)))
                     continue;
                 return session->Process().AcquireSurfaceWindow(
-                    {memory::GuestAddress{holder}, android_context->surface_width, android_context->surface_height});
+                    {memory::GuestAddress{holder},
+                     static_cast<std::uint32_t>(
+                         android_intrinsics::ManagedSurfaceBufferSize(*vm, *android_context, dx::VmObjectRef{holder})
+                             .width),
+                     static_cast<std::uint32_t>(
+                         android_intrinsics::ManagedSurfaceBufferSize(*vm, *android_context, dx::VmObjectRef{holder})
+                             .height)});
             }
         } catch (const dx::VmJavaThrow& error) {
             static_cast<void>(NativeApiException(thread, error));
@@ -1891,8 +1897,25 @@ DexVmGuestBridge::DexVmGuestBridge(AndroidGuestCallSession& session, std::vector
     if (android_context) {
         session.Process().SetSensorDirectory(android_context->sensor_directory);
         session.Process().SetSurfaceHooks(
-            {bridge_state, +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
+            {bridge_state,
+             +[](void* owner, std::uint64_t thread, memory::GuestAddress env, SurfaceJavaReference ref) {
                  return static_cast<Impl*>(owner)->SurfaceFromJava(thread, env, ref);
+             },
+             +[](void* owner, memory::GuestAddress holder, std::uint32_t width, std::uint32_t height,
+                 std::vector<std::uint8_t> pixels) {
+                 auto& state = *static_cast<Impl*>(owner);
+                 const auto context = state.android_context;
+                 if (!context) throw DexVmBridgeError("Surface producer has no live owner");
+                 if (holder.Value() == context->window_surface_holder.Value()) {
+                     state.session->PublishSoftwareFrame(std::move(pixels));
+                     return;
+                 }
+                 {
+                     std::scoped_lock lock(context->surface_pixels_mutex);
+                     context->surface_pixels[holder.Value()] = video::VideoFrame{0, width, height, std::move(pixels)};
+                 }
+                 state.session->PublishSoftwareFrame(std::vector<std::uint8_t>(
+                     static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
              }});
         android_context->update_native_surface = [bridge_state](dx::VmObjectRef holder, std::uint32_t width,
                                                                 std::uint32_t height) {

@@ -731,10 +731,25 @@ LifecycleFrameState DexActivityLifecycle::StepFrame() {
                 submitted_presentation_epoch_ = snapshot->presentation_epoch;
             }
         }
-        if (!context.renderer.IsValid() && context.active_surface_holders.empty() &&
-            !runtime::AnyVideoPlaying(context) && context.holder_canvases.empty() && context.session) {
+        if (!context.renderer.IsValid() && context.session) {
             const auto snapshot = runtime::AcquireAndroidPresentation(context);
-            if (snapshot && snapshot->presentation_epoch != submitted_presentation_epoch_) {
+            const bool pure_view = context.active_surface_holders.empty() && !runtime::AnyVideoPlaying(context) &&
+                                   context.holder_canvases.empty();
+            // Managed producers may stop drawing while a modal is open. Their
+            // frozen buffers can supply the base for an owner-only UI change.
+            // Never replace a live producer whose pixels are not in this lease.
+            const bool retained_surfaces = snapshot && !context.active_surface_holders.empty() &&
+                                           std::ranges::all_of(context.active_surface_holders, [&](const auto holder) {
+                                               for (const auto& [view, candidate] : context.surface_holders) {
+                                                   if (candidate.Value() != holder) continue;
+                                                   const auto id = runtime::FindViewUiNode(context, view);
+                                                   return id && snapshot->scaled_surface_frames.contains(*id) &&
+                                                          snapshot->video_frames.contains(*id);
+                                               }
+                                               return false;
+                                           });
+            if ((pure_view || retained_surfaces) && snapshot &&
+                snapshot->presentation_epoch != submitted_presentation_epoch_) {
                 const auto pixels = static_cast<std::size_t>(context.surface_width) * context.surface_height;
                 std::vector<std::uint8_t> rgba8(pixels * 4U, 0U);
                 for (std::size_t pixel = 0; pixel < pixels; ++pixel)

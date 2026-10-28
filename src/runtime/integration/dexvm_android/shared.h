@@ -31,9 +31,11 @@ void SetAndroidDialogVisible(DexVmAndroidContext& context, dx::VmObjectRef dialo
                                                std::int32_t request_code);
 
 // One guest Rect per holder. Publish managed dimensions before callbacks;
-// destruction retains the last frame. No side-table references or UI bounds.
+// destruction retains the last frame. The API19 Rect is the View window frame,
+// independent of the producer buffer dimensions.
 [[nodiscard]] dx::VmObjectRef GetSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context,
                                                     dx::VmObjectRef holder);
+[[nodiscard]] ui::Size ManagedSurfaceBufferSize(dx::Interpreter&, DexVmAndroidContext&, dx::VmObjectRef);
 void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef holder);
 
 // Private, GC-owned MotionEvent snapshot encoding. Header followed by (id, tool)

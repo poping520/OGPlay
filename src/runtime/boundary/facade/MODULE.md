@@ -7,3 +7,6 @@
 managed surface 关闭仅退役自身资源；清空活动 shadow 不能清空其他 Context 的映射。
 遵守父级 boundary MODULE 的依赖方向、日志和 guest 指针约束。验证：boundary integration
 图形/线程回归及 architecture.boundary_hot_path。
+
+托管 window geometry 与纯像素发布由 AndroidModule 的显式接口注入 EglModule；facade 只接线，
+不读取 Java holder 状态。独立 buffer 的 resolve 归 EGL，View frame 合成归 integration/session。

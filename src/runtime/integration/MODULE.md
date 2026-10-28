@@ -260,7 +260,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - SurfaceHolder 按 view 保持身份与 active generation；callback 去重、null 拒绝，按事件
   快照向全部注册者分发，缺方法明确失败。attach/detach 驱动对应事件，不新建像素 owner。
   EGL policy setter 只保留受 GC 追踪的策略身份，未支持行为不越权调用；render mode 不创建
-  GLThread。Canvas 的 ARGB backing 经唯一 boundary frame 队列发布。
+  GLThread。Canvas 的 ARGB backing 使用 holder buffer 尺寸；与 NDK/EGL producer 经纯像素
+  handoff 冻结到共同 presentation，再缩放至 View frame。窗口 holder 保留原软件基帧。
 - AudioTrack/legacy JNI/OpenSL ES 共享一个 PCM mixer，guest→player 映射不成为 GC 根，
   release/GC 回收 player；回压阻塞释放 VM 锁。OpenSL callback 经专用 A32 thread/CPU/TLS/栈，
   不隐式 attach JNI，允许 SVC 重入，失败在后续 process call 报告；混音只向 HAL 提交一次。

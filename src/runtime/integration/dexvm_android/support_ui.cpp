@@ -1,3 +1,4 @@
+#include "ogplay/video/rgba_canvas.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 // DVM-80: API-family translation unit. Physical consolidation only.
 
@@ -810,6 +811,10 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 context.holder_surfaces.erase(key);
                 if (context.retire_native_surface) context.retire_native_surface(dexvm::VmObjectRef(key));
                 context.active_surface_holders.erase(key);
+                {
+                    std::scoped_lock lock(context.surface_pixels_mutex);
+                    context.surface_pixels.erase(key);
+                }
                 context.surface_callback_sizes.erase(key);
                 context.surface_holders.erase(holder);
             }
@@ -2220,7 +2225,37 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             if (!id) continue;
             for (const auto& partition : next->guest_window_epoch_refs) {
                 if (!partition->Get(*id) || !partition->IsAttached(*id) || !partition->IsVisible(*id)) continue;
-                next->video_frames.emplace(*id, *state.latest_frame);
+                auto pixels = frame;
+                if (state.media_player) {
+                    const auto holder = context.surface_holders.find(state.display_view.Value());
+                    if (holder == context.surface_holders.end()) continue;
+                    const auto size = context.surface_callback_sizes.find(holder->second.Value());
+                    if (size == context.surface_callback_sizes.end()) continue;
+                    if (pixels.width != size->second.first || pixels.height != size->second.second) {
+                        pixels.rgba8 = video::ComposeRgbaOnCanvas(frame, size->second.first, size->second.second);
+                        pixels.width = size->second.first;
+                        pixels.height = size->second.second;
+                    }
+                    next->scaled_surface_frames.insert(*id);
+                }
+                next->video_frames.emplace(*id, std::move(pixels));
+                break;
+            }
+        }
+    }
+    {
+        std::scoped_lock lock(context.surface_pixels_mutex);
+        for (const auto& [view, holder] : context.surface_holders) {
+            if (!context.active_surface_holders.contains(holder.Value())) continue;
+            const auto pixels = context.surface_pixels.find(holder.Value());
+            if (pixels == context.surface_pixels.end()) continue;
+            const auto id = FindViewUiNode(context, view);
+            if (!id) continue;
+            for (const auto& partition : next->guest_window_epoch_refs) {
+                if (!partition->Get(*id) || !partition->IsAttached(*id) || !partition->IsVisible(*id)) continue;
+                if (!next->video_frames.emplace(*id, pixels->second).second)
+                    throw std::runtime_error("Surface has competing producers");
+                next->scaled_surface_frames.insert(*id);
                 break;
             }
         }

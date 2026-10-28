@@ -26,7 +26,7 @@
 namespace ogplay::core {
 class Logger;
 class CapabilityLedger;
-}
+}  // namespace ogplay::core
 
 namespace ogplay::runtime {
 
@@ -88,10 +88,8 @@ struct BionicDynamicLinkHooks final {
     };
 
     void* owner{};
-    std::uint32_t (*open)(void*, std::string_view, std::uint32_t,
-                          std::uint64_t){};
-    std::uint32_t (*symbol)(void*, std::uint32_t, std::string_view,
-                            std::uint64_t){};
+    std::uint32_t (*open)(void*, std::string_view, std::uint32_t, std::uint64_t){};
+    std::uint32_t (*symbol)(void*, std::uint32_t, std::string_view, std::uint64_t){};
     std::int32_t (*close)(void*, std::uint32_t, std::uint64_t){};
     ArmExidx (*find_exidx)(void*, std::uint32_t, std::uint64_t){};
 };
@@ -109,14 +107,19 @@ struct NativeActivityBoundaryResources final {
     std::uint32_t width{}, height{};
 };
 
-struct SurfaceJavaReference final { std::uint32_t token{}; };
+struct SurfaceJavaReference final {
+    std::uint32_t token{};
+};
+
 struct AndroidSurfaceWindow final {
     memory::GuestAddress identity;
     std::uint32_t width{}, height{};
 };
+
 struct AndroidSurfaceHooks final {
     void* owner{};
     memory::GuestAddress (*from_java)(void*, std::uint64_t, memory::GuestAddress, SurfaceJavaReference){};
+    void (*publish)(void*, memory::GuestAddress, std::uint32_t, std::uint32_t, std::vector<std::uint8_t>){};
 };
 
 struct AndroidLooperHooks final {
@@ -133,8 +136,7 @@ struct AndroidBoundaryOptions final {
     bool allow_gles1_single_stage_texcoord_fallback{true};
     core::Logger* logger{};
     void* guest_file_owner{};
-    bool (*read_guest_file)(void*, std::string_view,
-                            std::vector<std::byte>&){};
+    bool (*read_guest_file)(void*, std::string_view, std::vector<std::byte>&){};
     BionicDynamicLinkHooks dynamic_link{};
     OpenSlesCallbackSink open_sles_callbacks{};
     AndroidLooperHooks loopers{};
@@ -150,11 +152,8 @@ struct FrameReadbackFilter final {
 
 class AndroidBoundaryHle final : public core::GpuStateProvider {
 public:
-    AndroidBoundaryHle(memory::AddressSpace& address_space,
-                       gles::AngleBackend backend,
-                       std::uint32_t width, std::uint32_t height,
-                       std::uint32_t supersample_factor = 1,
-                       AndroidBoundaryOptions options = {});
+    AndroidBoundaryHle(memory::AddressSpace& address_space, gles::AngleBackend backend, std::uint32_t width,
+                       std::uint32_t height, std::uint32_t supersample_factor = 1, AndroidBoundaryOptions options = {});
     ~AndroidBoundaryHle();
     AndroidBoundaryHle(const AndroidBoundaryHle&) = delete;
     AndroidBoundaryHle& operator=(const AndroidBoundaryHle&) = delete;
@@ -177,13 +176,11 @@ public:
     [[nodiscard]] std::string ManagedGlString(std::uint32_t parameter);
     [[nodiscard]] std::string ManagedEglString(std::uint32_t parameter);
     void LatchManagedEglError(std::uint64_t thread_id, std::uint32_t error);
-    [[nodiscard]] std::uint32_t InvokeManagedGles(
-        gles::GlesApi api, std::string_view name,
-        std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
-    [[nodiscard]] std::uint32_t InvokeManagedEgl(
-        std::string_view name, std::span<const std::uint32_t> arguments,
-        std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedGles(gles::GlesApi api, std::string_view name,
+                                                  std::span<const std::uint32_t> arguments,
+                                                  std::uint64_t thread_id = 0);
+    [[nodiscard]] std::uint32_t InvokeManagedEgl(std::string_view name, std::span<const std::uint32_t> arguments,
+                                                 std::uint64_t thread_id = 0);
     // Permanently closes guest-facing graphics entry points for process
     // teardown. Calls already past the boundary may finish, but no later
     // GLES work is allowed to enter ANGLE.
@@ -193,8 +190,7 @@ public:
     void CloseManagedSurface();
     [[nodiscard]] const BionicHleSymbolProvider& Symbols() const noexcept;
     [[nodiscard]] cpu::HostCallHook FastHostCallHook() noexcept;
-    [[nodiscard]] SupervisorCallProgress HandleWithProgress(
-        cpu::Cpu& cpu, const cpu::RunResult& stopped);
+    [[nodiscard]] SupervisorCallProgress HandleWithProgress(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     // Compatibility wrapper for boundary-only consumers.
     [[nodiscard]] bool Handle(cpu::Cpu& cpu, const cpu::RunResult& stopped);
     void NotifyFileWrite();
@@ -214,23 +210,18 @@ public:
     // Explicit upper-layer coverage certificate; true suppresses only host
     // present readback. Guest GL/readPixels execution is unaffected.
     void SetFrameReadbackFilter(FrameReadbackFilter covered);
+    [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer> MixOpenSlesPcm16(std::span<std::int16_t> output,
+                                                                              std::uint32_t output_rate);
     [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
-    MixOpenSlesPcm16(std::span<std::int16_t> output,
-                     std::uint32_t output_rate);
-    [[nodiscard]] std::vector<audio::OpenSlesConsumedBuffer>
-    MixOpenSlesIntoAccumulator(std::span<std::int64_t> accumulator,
-                               std::uint32_t output_rate);
-    [[nodiscard]] bool OpenSlesCallbackCurrent(std::uint32_t object_key,
-                                               std::uint32_t generation) const;
+    MixOpenSlesIntoAccumulator(std::span<std::int64_t> accumulator, std::uint32_t output_rate);
+    [[nodiscard]] bool OpenSlesCallbackCurrent(std::uint32_t object_key, std::uint32_t generation) const;
     [[nodiscard]] audio::OpenSlesPcmMixer& PcmPlayback() noexcept;
     [[nodiscard]] std::optional<core::GpuStats> TryStats() const;
     [[nodiscard]] core::GpuStats Stats() const override;
     [[nodiscard]] std::vector<core::GpuRenderTarget> RenderTargets() const override;
     [[nodiscard]] core::GpuCapabilities Capabilities() const override;
-    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(
-        std::string_view filter, std::size_t limit) const override;
-    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryTrace(
-        std::size_t limit) const;
+    [[nodiscard]] std::vector<core::GpuTraceEntry> Trace(std::string_view filter, std::size_t limit) const override;
+    [[nodiscard]] std::optional<std::vector<core::GpuTraceEntry>> TryTrace(std::size_t limit) const;
 
 private:
     class Impl;

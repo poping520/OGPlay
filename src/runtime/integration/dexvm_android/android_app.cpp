@@ -998,6 +998,10 @@ std::optional<std::string> DispatchHolderCallbacks(
                 if (context.retire_native_surface) context.retire_native_surface(dexvm::VmObjectRef(holder));
                 context.destroying_surface_holders.erase(holder);
                 {
+                    std::scoped_lock lock(context.surface_pixels_mutex);
+                    context.surface_pixels.erase(holder);
+                }
+                {
                     const auto surface = context.holder_surfaces.find(holder);
                     if (surface != context.holder_surfaces.end()) {
                         // Invalidate this endpoint permanently before a later
@@ -1019,22 +1023,24 @@ std::optional<std::string> DispatchHolderCallbacks(
         } scope{context, holder_handle, phase == SurfaceHolderPhase::destroyed};
 
         if (scope.destroying) context.destroying_surface_holders.insert(holder_handle);
-        if (phase == SurfaceHolderPhase::changed) {
-            if (context.update_native_surface)
-                context.update_native_surface(dx::VmObjectRef(holder_handle), context.surface_width,
-                                              context.surface_height);
-            const auto size = std::pair{context.surface_width, context.surface_height};
-            const auto previous = context.surface_callback_sizes.find(holder_handle);
-            if (previous != context.surface_callback_sizes.end() && previous->second == size) continue;
-            context.surface_callback_sizes[holder_handle] = size;
-        }
-
         if (phase != SurfaceHolderPhase::destroyed) {
             try {
+                const auto size =
+                    android_intrinsics::ManagedSurfaceBufferSize(vm, context, dx::VmObjectRef(holder_handle));
+                if (context.update_native_surface)
+                    context.update_native_surface(dx::VmObjectRef(holder_handle),
+                                                  static_cast<std::uint32_t>(size.width),
+                                                  static_cast<std::uint32_t>(size.height));
+                if (phase == SurfaceHolderPhase::changed) {
+                    extra = {dx::VmValue::Int(1), dx::VmValue::Int(size.width), dx::VmValue::Int(size.height)};
+                    const auto dimensions =
+                        std::pair{static_cast<std::uint32_t>(size.width), static_cast<std::uint32_t>(size.height)};
+                    const auto previous = context.surface_callback_sizes.find(holder_handle);
+                    if (previous != context.surface_callback_sizes.end() && previous->second == dimensions) continue;
+                    context.surface_callback_sizes[holder_handle] = dimensions;
+                }
                 android_intrinsics::PublishSurfaceHolderFrame(vm, context, dx::VmObjectRef(holder_handle));
             } catch (const dx::VmJavaThrow& error) {
-                RecordAndroidSurfaceDiagnostic(vm, context, "ui.surface.holder", "holder buffer rejected",
-                                               {{"holder", std::uint64_t(holder_handle)}, {"reason", error.message}});
                 return error.descriptor + ": " + error.message;
             }
         }
@@ -1057,8 +1063,18 @@ std::optional<std::string> DispatchHolderCallbacks(
         }
         // A Java owner transaction shares this callback snapshot across phases.
         const auto callback_roots = vm.ProtectReferences(callbacks);
+        const auto callback_size = phase == SurfaceHolderPhase::changed
+                                       ? std::optional{context.surface_callback_sizes.at(holder_handle)}
+                                       : std::nullopt;
         for (const auto callback : callbacks) {
             if (!current(holder_handle)) break;
+            if (callback_size) {
+                const auto size =
+                    android_intrinsics::ManagedSurfaceBufferSize(vm, context, dx::VmObjectRef{holder_handle});
+                if (static_cast<std::uint32_t>(size.width) != callback_size->first ||
+                    static_cast<std::uint32_t>(size.height) != callback_size->second)
+                    break;
+            }
             const auto callback_class = vm.Model().ObjectClass(callback);
             const auto index = linker.FindVtableIndex(callback_class, name, descriptor);
             if (!index.has_value()) {

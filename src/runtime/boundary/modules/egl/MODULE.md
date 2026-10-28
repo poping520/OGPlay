@@ -30,3 +30,10 @@ API19 lock/unlock surface 校验 display、初始化和 surface；无 ANGLE lock
 presentation-time 校验后保存 surface 的有符号 64 位生产者时间戳并返回 TRUE，
 与 4.4 wrapper 忽略 native-window setter 返回码一致；不改变时钟/调度，未发布该扩展。
 这些入口不适用 GL gl_unimplemented 的错误模型。
+
+托管 window surface 通过显式 native-window geometry hook 获取独立 buffer 尺寸；创建、
+EGL_WIDTH/HEIGHT 和实际 ANGLE backing 一致。尺寸变化在下一次 swap 发布旧 buffer 后，
+重新分配并绑定下一 buffer；成功后 query 返回新尺寸，GL viewport 保持 guest 自己的状态。
+分配/绑定失败传播真实 EGL 错误，不冒充 resize 成功。NDK getter 可先于 EGL dequeue 变化。
+托管 holder 的读回按 supersample 解析到 buffer 尺寸，经显式纯像素 hook 交 owner 快照，
+合成缩放至 View frame；普通 standalone/NativeActivity 无 holder 时保持原 frame service。

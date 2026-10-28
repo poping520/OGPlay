@@ -17,60 +17,43 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-constexpr std::string_view kConfigDescriptor =
-    "Landroid/graphics/Bitmap$Config;";
-constexpr std::array kConfigs{
-    std::pair{"ALPHA_8", 1}, std::pair{"RGB_565", 3},
-    std::pair{"ARGB_4444", 4}, std::pair{"ARGB_8888", 5}};
+constexpr std::string_view kConfigDescriptor = "Landroid/graphics/Bitmap$Config;";
+constexpr std::array kConfigs{std::pair{"ALPHA_8", 1}, std::pair{"RGB_565", 3}, std::pair{"ARGB_4444", 4},
+                              std::pair{"ARGB_8888", 5}};
 
-[[nodiscard]] dx::VmObjectRef NewConfigArray(
-    dx::Interpreter& vm, const std::span<const dx::VmObjectRef> values) {
-    const auto array_class = vm.Linker().ResolveDescriptor(
-        "[Landroid/graphics/Bitmap$Config;");
-    const auto element_class = vm.Linker().ResolveDescriptor(
-        kConfigDescriptor);
-    const auto array = vm.Model().NewObjectArray(
-        array_class, element_class,
-        static_cast<JniSize>(values.size()));
+[[nodiscard]] dx::VmObjectRef NewConfigArray(dx::Interpreter& vm, const std::span<const dx::VmObjectRef> values) {
+    const auto array_class = vm.Linker().ResolveDescriptor("[Landroid/graphics/Bitmap$Config;");
+    const auto element_class = vm.Linker().ResolveDescriptor(kConfigDescriptor);
+    const auto array = vm.Model().NewObjectArray(array_class, element_class, static_cast<JniSize>(values.size()));
     for (std::size_t index = 0; index < values.size(); ++index) {
-        vm.Model().SetObjectElement(
-            array, static_cast<JniSize>(index), values[index]);
+        vm.Model().SetObjectElement(array, static_cast<JniSize>(index), values[index]);
     }
     return array;
 }
 
-[[nodiscard]] std::int32_t ReadIntField(
-    dx::Interpreter& vm, const dx::VmObjectRef object,
-    const std::string_view name) {
-    const auto field = vm.Linker().FindFieldRecursive(
-        vm.Model().ObjectClass(object), std::string(name), "I");
+[[nodiscard]] std::int32_t ReadIntField(dx::Interpreter& vm, const dx::VmObjectRef object,
+                                        const std::string_view name) {
+    const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), std::string(name), "I");
     if (!field.has_value()) {
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "intrinsic int field is unavailable: " +
-                                 std::string(name));
+                             "intrinsic int field is unavailable: " + std::string(name));
     }
     const auto& linked = vm.Linker().Field(*field);
     const auto slots = vm.Model().InstanceSlots(object);
     if (linked.is_ref || linked.is_wide || linked.slot >= slots.size()) {
         throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant,
-                             "intrinsic int field is invalid: " +
-                                 std::string(name));
+                             "intrinsic int field is invalid: " + std::string(name));
     }
     return static_cast<std::int32_t>(slots[linked.slot].bits);
 }
 
-[[nodiscard]] std::int32_t BitmapConfigValue(
-    dx::IntrinsicContext& call, const dx::VmObjectRef config) {
+[[nodiscard]] std::int32_t BitmapConfigValue(dx::IntrinsicContext& call, const dx::VmObjectRef config) {
     if (!config.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "createBitmap config is null"};
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "createBitmap config is null"};
     }
-    const auto config_class = call.vm.Linker().ResolveDescriptor(
-        "Landroid/graphics/Bitmap$Config;");
-    if (!call.vm.Linker().IsAssignable(
-            config_class, call.vm.Model().ObjectClass(config))) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                              "createBitmap config has the wrong type"};
+    const auto config_class = call.vm.Linker().ResolveDescriptor("Landroid/graphics/Bitmap$Config;");
+    if (!call.vm.Linker().IsAssignable(config_class, call.vm.Model().ObjectClass(config))) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "createBitmap config has the wrong type"};
     }
     return ReadIntField(call.vm, config, "nativeInt");
 }
@@ -79,51 +62,42 @@ constexpr std::array kConfigs{
 
 Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicEnumBuilder enum_builder(
-        std::string(kConfigDescriptor),
-        {"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"});
+    dx::IntrinsicEnumBuilder enum_builder(std::string(kConfigDescriptor),
+                                          {"ALPHA_8", "RGB_565", "ARGB_4444", "ARGB_8888"});
     auto& builder = enum_builder.ClassBuilder();
-    const auto configs = builder.BoundStaticField(
-        "sConfigs", "[Landroid/graphics/Bitmap$Config;", dx::kAccPrivate);
-    const auto native_int =
-        builder.BoundInstanceField("nativeInt", "I", dx::kAccFinal);
-    builder.Constructor("(Ljava/lang/String;II)V",
+    const auto configs = builder.BoundStaticField("sConfigs", "[Landroid/graphics/Bitmap$Config;", dx::kAccPrivate);
+    const auto native_int = builder.BoundInstanceField("nativeInt", "I", dx::kAccFinal);
+    builder.Constructor(
+        "(Ljava/lang/String;II)V",
         [native_int](dx::IntrinsicContext& context) {
             const dx::IntrinsicCall call(context);
-            dx::IntrinsicEnumBuilder::InitializeBase(
-                context, context.receiver,
-                context.vm.StringUtf8(call.NonNullRef(0, "name")),
-                call.Int(1));
+            dx::IntrinsicEnumBuilder::InitializeBase(context, context.receiver,
+                                                     context.vm.StringUtf8(call.NonNullRef(0, "name")), call.Int(1));
             call.SetInt(native_int, call.Int(2));
             return dx::VmValue::Void();
-        }, dx::kAccPrivate);
+        },
+        dx::kAccPrivate);
     builder.StaticMethod(
         "nativeToConfig", "(I)Landroid/graphics/Bitmap$Config;",
         [configs](dx::IntrinsicContext& context) {
             const dx::IntrinsicCall call(context);
             const auto index = call.Int(0);
             if (index < 0 || index >= 6) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
-                    "Bitmap.Config native index " + std::to_string(index)};
+                throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                                      "Bitmap.Config native index " + std::to_string(index)};
             }
-            return dx::VmValue::Ref(
-                context.vm.Model().GetObjectElement(call.GetRef(configs), index));
-        }, dx::kAccStatic);
-    enum_builder.WithConstantInitializer(
-        [native_int](dx::IntrinsicContext& context,
-                     const dx::VmObjectRef value, std::string_view,
-                     const std::int32_t ordinal) {
-            const dx::IntrinsicCall call(context);
-            call.SetInt(native_int, value,
-                        kConfigs[static_cast<std::size_t>(ordinal)].second);
-        });
+            return dx::VmValue::Ref(context.vm.Model().GetObjectElement(call.GetRef(configs), index));
+        },
+        dx::kAccStatic);
+    enum_builder.WithConstantInitializer([native_int](dx::IntrinsicContext& context, const dx::VmObjectRef value,
+                                                      std::string_view, const std::int32_t ordinal) {
+        const dx::IntrinsicCall call(context);
+        call.SetInt(native_int, value, kConfigs[static_cast<std::size_t>(ordinal)].second);
+    });
     enum_builder.AfterConstants(
-        [configs](dx::IntrinsicContext& context,
-                  const std::span<const dx::VmObjectRef> values) {
-            const std::array<dx::VmObjectRef, 6> native_configs{
-                dx::VmObjectRef{}, values[0], dx::VmObjectRef{}, values[1],
-                values[2], values[3]};
+        [configs](dx::IntrinsicContext& context, const std::span<const dx::VmObjectRef> values) {
+            const std::array<dx::VmObjectRef, 6> native_configs{dx::VmObjectRef{}, values[0], dx::VmObjectRef{},
+                                                                values[1],         values[2], values[3]};
             const dx::IntrinsicCall call(context);
             call.SetRef(configs, NewConfigArray(context.vm, native_configs));
         });
@@ -132,7 +106,6 @@ Decl Declare_android_graphics_Bitmap_Config(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_graphics_Bitmap.cpp ----
 #include "catalog.h"
 
@@ -140,43 +113,34 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-[[nodiscard]] DexVmAndroidContext::BitmapState& BitmapOf(
-    dx::IntrinsicContext& call, const Context& context) {
+[[nodiscard]] DexVmAndroidContext::BitmapState& BitmapOf(dx::IntrinsicContext& call, const Context& context) {
     const auto found = context->bitmaps.find(call.receiver.Value());
     if (found == context->bitmaps.end() || found->second.recycled) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                              "bitmap is recycled or was never created"};
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is recycled or was never created"};
     }
     return found->second;
 }
 
 // Builds a Bitmap intrinsic instance from pixels copied out of a guest int
 // array (offset/stride window per the createBitmap contract).
-[[nodiscard]] dx::VmValue MakeBitmapFromArray(
-    dx::IntrinsicContext& call, const Context& context,
-    const dx::VmObjectRef array, const std::int32_t offset,
-    const std::int32_t stride, const std::int32_t width,
-    const std::int32_t height, const dx::VmObjectRef config) {
+[[nodiscard]] dx::VmValue MakeBitmapFromArray(dx::IntrinsicContext& call, const Context& context,
+                                              const dx::VmObjectRef array, const std::int32_t offset,
+                                              const std::int32_t stride, const std::int32_t width,
+                                              const std::int32_t height, const dx::VmObjectRef config) {
     auto& model = call.vm.Model();
     if (!array.IsValid()) {
-        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                              "createBitmap colors array is null"};
+        throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "createBitmap colors array is null"};
     }
     if (width <= 0 || height <= 0 || stride < width) {
-        throw dx::VmJavaThrow{
-            "Ljava/lang/IllegalArgumentException;",
-            "createBitmap dimensions are invalid: " + std::to_string(width) +
-                "x" + std::to_string(height) + " stride " +
-                std::to_string(stride)};
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "createBitmap dimensions are invalid: " + std::to_string(width) + "x" +
+                                  std::to_string(height) + " stride " + std::to_string(stride)};
     }
     const auto length = static_cast<std::int64_t>(model.ArrayLength(array));
-    const auto last = static_cast<std::int64_t>(offset) +
-                      static_cast<std::int64_t>(stride) * (height - 1) +
-                      width;
+    const auto last = static_cast<std::int64_t>(offset) + static_cast<std::int64_t>(stride) * (height - 1) + width;
     if (offset < 0 || last > length) {
-        throw dx::VmJavaThrow{
-            "Ljava/lang/ArrayIndexOutOfBoundsException;",
-            "createBitmap window exceeds the colors array"};
+        throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                              "createBitmap window exceeds the colors array"};
     }
     DexVmAndroidContext::BitmapState state;
     state.width = width;
@@ -185,36 +149,30 @@ namespace {
     state.pixels = std::make_shared<BitmapPixels>(width, height, state.config);
     for (std::int32_t row = 0; row < height; ++row) {
         for (std::int32_t column = 0; column < width; ++column) {
-            state.pixels->Set(static_cast<std::size_t>(row) *
-                           static_cast<std::size_t>(width) +
-                       static_cast<std::size_t>(column), static_cast<std::uint32_t>(model.GetPrimitiveElement(
-                    array, offset + row * stride + column)));
+            state.pixels->Set(
+                static_cast<std::size_t>(row) * static_cast<std::size_t>(width) + static_cast<std::size_t>(column),
+                static_cast<std::uint32_t>(model.GetPrimitiveElement(array, offset + row * stride + column)));
         }
     }
-    const auto instance =
-        call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    const auto instance = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
     context->bitmaps[instance.Value()] = std::move(state);
     return dx::VmValue::Ref(instance);
 }
 
-[[nodiscard]] dx::VmValue MakeEmptyBitmap(
-    dx::IntrinsicContext& call, const Context& context,
-    const std::int32_t width, const std::int32_t height,
-    const dx::VmObjectRef config) {
+[[nodiscard]] dx::VmValue MakeEmptyBitmap(dx::IntrinsicContext& call, const Context& context, const std::int32_t width,
+                                          const std::int32_t height, const dx::VmObjectRef config) {
     const auto config_value = BitmapConfigValue(call, config);
     if (width <= 0 || height <= 0) {
-        throw dx::VmJavaThrow{
-            "Ljava/lang/IllegalArgumentException;",
-            "createBitmap dimensions are invalid: " +
-                std::to_string(width) + "x" + std::to_string(height)};
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                              "createBitmap dimensions are invalid: " + std::to_string(width) + "x" +
+                                  std::to_string(height)};
     }
     DexVmAndroidContext::BitmapState state;
     state.width = width;
     state.height = height;
     state.config = config_value;
     state.pixels = std::make_shared<BitmapPixels>(width, height, state.config);
-    const auto instance =
-        call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+    const auto instance = call.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
     context->bitmaps[instance.Value()] = std::move(state);
     return dx::VmValue::Ref(instance);
 }
@@ -224,155 +182,130 @@ namespace {
 Decl Declare_android_graphics_Bitmap(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Bitmap;", "Ljava/lang/Object;",
                                                     {"Landroid/os/Parcelable;"});
-    builder.StaticMethod("createBitmap",
-        "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
-        [context](dx::IntrinsicContext& call) {
-            return MakeEmptyBitmap(call, context, call.arguments[0].AsInt(),
-                                   call.arguments[1].AsInt(),
-                                   call.arguments[2].ref);
-        });
-    builder.StaticMethod("createBitmap",
-        "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
-        [context](dx::IntrinsicContext& call) {
-            const auto array = call.arguments[0].ref;
-            const auto width = call.arguments[1].AsInt();
-            const auto height = call.arguments[2].AsInt();
-            return MakeBitmapFromArray(call, context, array, 0, width, width,
-                                       height, call.arguments[3].ref);
-        });
-    builder.StaticMethod("createBitmap",
-        "([IIIIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
-        [context](dx::IntrinsicContext& call) {
-            const auto array = call.arguments[0].ref;
-            const auto offset = call.arguments[1].AsInt();
-            const auto stride = call.arguments[2].AsInt();
-            const auto width = call.arguments[3].AsInt();
-            const auto height = call.arguments[4].AsInt();
-            return MakeBitmapFromArray(call, context, array, offset, stride,
-                                        width, height, call.arguments[5].ref);
-        });
-    builder.FinalMethod("getWidth", "()I",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(BitmapOf(call, context).width);
-        });
-    builder.FinalMethod("getHeight", "()I",
-        [context](dx::IntrinsicContext& call) {
-            return dx::VmValue::Int(BitmapOf(call, context).height);
-        });
-    builder.VirtualMethod("getDensity", "()I", [context](dx::IntrinsicContext& call) { return dx::VmValue::Int(BitmapOf(call, context).density); });
+    builder.StaticMethod("createBitmap", "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                         [context](dx::IntrinsicContext& call) {
+                             return MakeEmptyBitmap(call, context, call.arguments[0].AsInt(), call.arguments[1].AsInt(),
+                                                    call.arguments[2].ref);
+                         });
+    builder.StaticMethod("createBitmap", "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                         [context](dx::IntrinsicContext& call) {
+                             const auto array = call.arguments[0].ref;
+                             const auto width = call.arguments[1].AsInt();
+                             const auto height = call.arguments[2].AsInt();
+                             return MakeBitmapFromArray(call, context, array, 0, width, width, height,
+                                                        call.arguments[3].ref);
+                         });
+    builder.StaticMethod("createBitmap", "([IIIIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                         [context](dx::IntrinsicContext& call) {
+                             const auto array = call.arguments[0].ref;
+                             const auto offset = call.arguments[1].AsInt();
+                             const auto stride = call.arguments[2].AsInt();
+                             const auto width = call.arguments[3].AsInt();
+                             const auto height = call.arguments[4].AsInt();
+                             return MakeBitmapFromArray(call, context, array, offset, stride, width, height,
+                                                        call.arguments[5].ref);
+                         });
+    builder.FinalMethod("getWidth", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapOf(call, context).width);
+    });
+    builder.FinalMethod("getHeight", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapOf(call, context).height);
+    });
+    builder.VirtualMethod("getDensity", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapOf(call, context).density);
+    });
     builder.VirtualMethod("setDensity", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto density = call.arguments[0].AsInt();
-        if (density < 0) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
-        BitmapOf(call, context).density = density; return dx::VmValue::Void();
+        if (density < 0)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
+        BitmapOf(call, context).density = density;
+        return dx::VmValue::Void();
     });
-    builder.VirtualMethod("isMutable", "()Z", [context](dx::IntrinsicContext& call) { return dx::VmValue::Int(BitmapOf(call, context).mutable_pixels); });
-    builder.FinalMethod("getPixels", "([IIIIIII)V",
-        [context](dx::IntrinsicContext& call) {
-            auto& model = call.vm.Model();
-            const auto& state = BitmapOf(call, context);
-            const auto array = call.arguments[0].ref;
-            const auto offset = call.arguments[1].AsInt();
-            const auto stride = call.arguments[2].AsInt();
-            const auto x = call.arguments[3].AsInt();
-            const auto y = call.arguments[4].AsInt();
-            const auto width = call.arguments[5].AsInt();
-            const auto height = call.arguments[6].AsInt();
-            if (!array.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "getPixels target array is null"};
+    builder.VirtualMethod("isMutable", "()Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapOf(call, context).mutable_pixels);
+    });
+    builder.FinalMethod("getPixels", "([IIIIIII)V", [context](dx::IntrinsicContext& call) {
+        auto& model = call.vm.Model();
+        const auto& state = BitmapOf(call, context);
+        const auto array = call.arguments[0].ref;
+        const auto offset = call.arguments[1].AsInt();
+        const auto stride = call.arguments[2].AsInt();
+        const auto x = call.arguments[3].AsInt();
+        const auto y = call.arguments[4].AsInt();
+        const auto width = call.arguments[5].AsInt();
+        const auto height = call.arguments[6].AsInt();
+        if (!array.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "getPixels target array is null"};
+        }
+        if (x < 0 || y < 0 || width < 0 || height < 0 || x + width > state.width || y + height > state.height) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "getPixels region exceeds the bitmap"};
+        }
+        if (width == 0 || height == 0) return dx::VmValue::Void();
+        const auto length = static_cast<std::int64_t>(model.ArrayLength(array));
+        const auto last = static_cast<std::int64_t>(offset) + static_cast<std::int64_t>(stride) * (height - 1) + width;
+        if (offset < 0 || stride < width || last > length) {
+            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                                  "getPixels window exceeds the target array"};
+        }
+        for (std::int32_t row = 0; row < height; ++row) {
+            for (std::int32_t column = 0; column < width; ++column) {
+                const auto pixel =
+                    state.pixels->Get(static_cast<std::size_t>(y + row) * static_cast<std::size_t>(state.width) +
+                                      static_cast<std::size_t>(x + column));
+                model.SetPrimitiveElement(array, offset + row * stride + column, pixel);
             }
-            if (x < 0 || y < 0 || width < 0 || height < 0 ||
-                x + width > state.width || y + height > state.height) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/IllegalArgumentException;",
-                    "getPixels region exceeds the bitmap"};
+        }
+        return dx::VmValue::Void();
+    });
+    builder.FinalMethod("setPixels", "([IIIIIII)V", [context](dx::IntrinsicContext& call) {
+        auto& model = call.vm.Model();
+        auto& state = BitmapOf(call, context);
+        if (!state.mutable_pixels) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is immutable"};
+        const auto array = call.arguments[0].ref;
+        const auto offset = call.arguments[1].AsInt();
+        const auto stride = call.arguments[2].AsInt();
+        const auto x = call.arguments[3].AsInt();
+        const auto y = call.arguments[4].AsInt();
+        const auto width = call.arguments[5].AsInt();
+        const auto height = call.arguments[6].AsInt();
+        if (!array.IsValid()) {
+            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "setPixels source array is null"};
+        }
+        if (x < 0 || y < 0 || width < 0 || height < 0 || x + width > state.width || y + height > state.height) {
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "setPixels region exceeds the bitmap"};
+        }
+        if (width == 0 || height == 0) return dx::VmValue::Void();
+        const auto final_row = static_cast<std::int64_t>(offset) + static_cast<std::int64_t>(stride) * (height - 1);
+        const auto first = std::min<std::int64_t>(offset, final_row);
+        const auto last = std::max<std::int64_t>(offset, final_row) + width;
+        const auto absolute_stride = std::abs(static_cast<std::int64_t>(stride));
+        if (first < 0 || last > model.ArrayLength(array) || absolute_stride < width) {
+            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;",
+                                  "setPixels window exceeds the source array"};
+        }
+        for (std::int32_t row = 0; row < height; ++row) {
+            for (std::int32_t column = 0; column < width; ++column) {
+                state.pixels->Set(
+                    static_cast<std::size_t>(y + row) * static_cast<std::size_t>(state.width) +
+                        static_cast<std::size_t>(x + column),
+                    static_cast<std::uint32_t>(model.GetPrimitiveElement(array, offset + row * stride + column)));
             }
-            if (width == 0 || height == 0) return dx::VmValue::Void();
-            const auto length =
-                static_cast<std::int64_t>(model.ArrayLength(array));
-            const auto last = static_cast<std::int64_t>(offset) +
-                              static_cast<std::int64_t>(stride) *
-                                  (height - 1) +
-                              width;
-            if (offset < 0 || stride < width || last > length) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
-                    "getPixels window exceeds the target array"};
-            }
-            for (std::int32_t row = 0; row < height; ++row) {
-                for (std::int32_t column = 0; column < width; ++column) {
-                    const auto pixel =
-                        state.pixels->Get(static_cast<std::size_t>(y + row) *
-                                       static_cast<std::size_t>(
-                                           state.width) +
-                                   static_cast<std::size_t>(x + column));
-                    model.SetPrimitiveElement(array,
-                                              offset + row * stride + column,
-                                              pixel);
-                }
-            }
-            return dx::VmValue::Void();
-        });
-    builder.FinalMethod("setPixels", "([IIIIIII)V",
-        [context](dx::IntrinsicContext& call) {
-            auto& model = call.vm.Model();
-            auto& state = BitmapOf(call, context);
-            if (!state.mutable_pixels) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is immutable"};
-            const auto array = call.arguments[0].ref;
-            const auto offset = call.arguments[1].AsInt();
-            const auto stride = call.arguments[2].AsInt();
-            const auto x = call.arguments[3].AsInt();
-            const auto y = call.arguments[4].AsInt();
-            const auto width = call.arguments[5].AsInt();
-            const auto height = call.arguments[6].AsInt();
-            if (!array.IsValid()) {
-                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;",
-                                      "setPixels source array is null"};
-            }
-            if (x < 0 || y < 0 || width < 0 || height < 0 ||
-                x + width > state.width || y + height > state.height) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/IllegalArgumentException;",
-                    "setPixels region exceeds the bitmap"};
-            }
-            if (width == 0 || height == 0) return dx::VmValue::Void();
-            const auto final_row = static_cast<std::int64_t>(offset) +
-                static_cast<std::int64_t>(stride) * (height - 1);
-            const auto first = std::min<std::int64_t>(offset, final_row);
-            const auto last = std::max<std::int64_t>(offset, final_row) + width;
-            const auto absolute_stride =
-                std::abs(static_cast<std::int64_t>(stride));
-            if (first < 0 || last > model.ArrayLength(array) ||
-                absolute_stride < width) {
-                throw dx::VmJavaThrow{
-                    "Ljava/lang/ArrayIndexOutOfBoundsException;",
-                    "setPixels window exceeds the source array"};
-            }
-            for (std::int32_t row = 0; row < height; ++row) {
-                for (std::int32_t column = 0; column < width; ++column) {
-                    state.pixels->Set(static_cast<std::size_t>(y + row) *
-                                   static_cast<std::size_t>(state.width) +
-                               static_cast<std::size_t>(x + column), static_cast<std::uint32_t>(model.GetPrimitiveElement(
-                            array, offset + row * stride + column)));
-                }
-            }
-            return dx::VmValue::Void();
-        });
+        }
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("prepareToDraw", "()V", GraphicsNoopHandler());
-    builder.FinalMethod("recycle", "()V",
-        [context](dx::IntrinsicContext& call) {
-            const auto found = context->bitmaps.find(call.receiver.Value());
-            if (found != context->bitmaps.end()) {
-                found->second.recycled = true;
-                found->second.pixels->Retire();
-            }
-            return dx::VmValue::Void();
-        });
+    builder.FinalMethod("recycle", "()V", [context](dx::IntrinsicContext& call) {
+        const auto found = context->bitmaps.find(call.receiver.Value());
+        if (found != context->bitmaps.end()) {
+            found->second.recycled = true;
+            found->second.pixels->Retire();
+        }
+        return dx::VmValue::Void();
+    });
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_graphics_BitmapFactory.cpp ----
 #include "ogplay/runtime/integration/host_image_decode.h"
@@ -382,50 +315,79 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
 namespace ogplay::runtime::android_intrinsics {
 
 namespace {
-enum DecodeField : std::size_t { reuse, config, sample, density, target_density, screen_density,
-    scaled, bounds, mutable_flag, premultiplied, dither, purgeable, shareable, quality,
-    cancel, out_width, out_height, out_mime, temp_storage };
+enum DecodeField : std::size_t {
+    reuse,
+    config,
+    sample,
+    density,
+    target_density,
+    screen_density,
+    scaled,
+    bounds,
+    mutable_flag,
+    premultiplied,
+    dither,
+    purgeable,
+    shareable,
+    quality,
+    cancel,
+    out_width,
+    out_height,
+    out_mime,
+    temp_storage
+};
+
 using DecodeFields = std::vector<dx::IntrinsicFieldHandle>;
 
 [[noreturn]] void DecodeUnsupported(dx::IntrinsicContext& call, const char* message) {
     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.bitmap_decode", 0);
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", message};
 }
+
 void ValidateDecodeOptions(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
     if (!opts.IsValid()) return;
     const dx::IntrinsicCall api(call);
     const auto preferred = api.GetRef(fields[config], opts);
     if (api.GetRef(fields[reuse], opts).IsValid() || api.GetInt(fields[sample], opts) > 1 ||
-        (preferred.IsValid() && BitmapConfigValue(call, preferred) != 5) ||
-        !api.GetInt(fields[premultiplied], opts) || api.GetInt(fields[dither], opts) ||
-        api.GetInt(fields[purgeable], opts) || api.GetInt(fields[quality], opts))
-        DecodeUnsupported(call, "BitmapFactory supports default ARGB8888, bounds and density scaling; reuse/sampling/purge/dither/quality modes are unavailable");
-    if (api.GetInt(fields[density], opts) < 0 || api.GetInt(fields[target_density], opts) < 0 || api.GetInt(fields[screen_density], opts) < 0)
+        (preferred.IsValid() && BitmapConfigValue(call, preferred) != 5) || !api.GetInt(fields[premultiplied], opts) ||
+        api.GetInt(fields[dither], opts) || api.GetInt(fields[purgeable], opts) || api.GetInt(fields[quality], opts))
+        DecodeUnsupported(
+            call,
+            "BitmapFactory supports default ARGB8888, bounds and density scaling; reuse/sampling/purge/dither/quality modes are unavailable");
+    if (api.GetInt(fields[density], opts) < 0 || api.GetInt(fields[target_density], opts) < 0 ||
+        api.GetInt(fields[screen_density], opts) < 0)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap density cannot be negative"};
 }
+
 void ResetDecodeOutput(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
     if (!opts.IsValid()) return;
     const dx::IntrinsicCall api(call);
-    api.SetInt(fields[out_width], opts, -1); api.SetInt(fields[out_height], opts, -1);
+    api.SetInt(fields[out_width], opts, -1);
+    api.SetInt(fields[out_height], opts, -1);
     api.SetRef(fields[out_mime], opts, dx::VmObjectRef{});
 }
+
 bool Cancelled(dx::IntrinsicContext& call, const DecodeFields& fields, dx::VmObjectRef opts) {
     return opts.IsValid() && dx::IntrinsicCall(call).GetInt(fields[cancel], opts);
 }
+
 bool HasNinePatchChunk(std::span<const std::byte> bytes) {
     if (bytes.size() < 8 || std::to_integer<unsigned>(bytes[0]) != 137) return false;
     for (std::size_t pos = 8; pos + 12 <= bytes.size();) {
         std::uint32_t size{};
-        for (std::size_t i = 0; i < 4; ++i) size = (size << 8) | std::to_integer<unsigned>(bytes[pos+i]);
+        for (std::size_t i = 0; i < 4; ++i)
+            size = (size << 8) | std::to_integer<unsigned>(bytes[pos + i]);
         if (size > bytes.size() - pos - 12) break;
-        if (std::to_integer<char>(bytes[pos+4]) == 'n' && std::to_integer<char>(bytes[pos+5]) == 'p' &&
-            std::to_integer<char>(bytes[pos+6]) == 'T' && std::to_integer<char>(bytes[pos+7]) == 'c') return true;
+        if (std::to_integer<char>(bytes[pos + 4]) == 'n' && std::to_integer<char>(bytes[pos + 5]) == 'p' &&
+            std::to_integer<char>(bytes[pos + 6]) == 'T' && std::to_integer<char>(bytes[pos + 7]) == 'c')
+            return true;
         pos += size + 12;
     }
     return false;
 }
-dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context,
-    const DecodeFields& fields, std::span<const std::byte> bytes, dx::VmObjectRef opts) {
+
+dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context, const DecodeFields& fields,
+                              std::span<const std::byte> bytes, dx::VmObjectRef opts) {
     const dx::IntrinsicCall api(call);
     if (bytes.size() > kMaximumImageEncodedBytes)
         throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "encoded bitmap exceeds decode budget"};
@@ -443,8 +405,10 @@ dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context
             const auto ratio = static_cast<float>(target) / static_cast<float>(source);
             const auto w = static_cast<double>(width) * ratio + 0.5;
             const auto h = static_cast<double>(height) * ratio + 0.5;
-            if (w > 8192 || h > 8192) throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap exceeds decode budget"};
-            width = static_cast<int>(w); height = static_cast<int>(h);
+            if (w > 8192 || h > 8192)
+                throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap exceeds decode budget"};
+            width = static_cast<int>(w);
+            height = static_cast<int>(h);
             if (!ImageDimensionsSupported(width, height))
                 throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "scaled bitmap dimensions are invalid"};
         }
@@ -452,13 +416,16 @@ dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context
     auto image = only_bounds ? std::optional<DecodedImage>{} : DecodeImageToArgb(bytes);
     if (!only_bounds && !image) return dx::VmValue::Ref(dx::VmObjectRef{});
     if (opts.IsValid()) {
-        api.SetInt(fields[out_width], opts, width); api.SetInt(fields[out_height], opts, height);
-        api.SetRef(fields[out_mime], opts, info->mime_type ? call.vm.NewStringUtf8(info->mime_type) : dx::VmObjectRef{});
+        api.SetInt(fields[out_width], opts, width);
+        api.SetInt(fields[out_height], opts, height);
+        api.SetRef(fields[out_mime], opts,
+                   info->mime_type ? call.vm.NewStringUtf8(info->mime_type) : dx::VmObjectRef{});
     }
     if (only_bounds) return dx::VmValue::Ref(dx::VmObjectRef{});
     auto result = ResizeArgbImage(std::move(*image), width, height);
     DexVmAndroidContext::BitmapState state;
-    state.width = width; state.height = height;
+    state.width = width;
+    state.height = height;
     if (!std::isfinite(context->ui_density) || context->ui_density <= 0 || context->ui_density > 8192)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "default bitmap density is invalid"};
     state.density = static_cast<int>(std::lround(context->ui_density * 160.0F));
@@ -468,61 +435,100 @@ dx::VmValue DecodeBitmapBytes(dx::IntrinsicContext& call, const Context& context
     context->bitmaps[object.Value()] = std::move(state);
     return dx::VmValue::Ref(object);
 }
-} // namespace
+}  // namespace
 
 Decl Declare_android_graphics_BitmapFactory_Options(const Context&, DecodeFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory$Options;");
-    constexpr std::array<std::pair<const char*, const char*>, 19> shape{{
-        {"inBitmap", "Landroid/graphics/Bitmap;"}, {"inPreferredConfig", "Landroid/graphics/Bitmap$Config;"},
-        {"inSampleSize", "I"}, {"inDensity", "I"}, {"inTargetDensity", "I"}, {"inScreenDensity", "I"},
-        {"inScaled", "Z"}, {"inJustDecodeBounds", "Z"}, {"inMutable", "Z"}, {"inPremultiplied", "Z"},
-        {"inDither", "Z"}, {"inPurgeable", "Z"}, {"inInputShareable", "Z"}, {"inPreferQualityOverSpeed", "Z"},
-        {"mCancel", "Z"}, {"outWidth", "I"}, {"outHeight", "I"}, {"outMimeType", "Ljava/lang/String;"}, {"inTempStorage", "[B"}}};
-    for (const auto& [name, type] : shape) fields.push_back(builder.BoundInstanceField(name, type, dx::kAccPublic));
+    constexpr std::array<std::pair<const char*, const char*>, 19> shape{
+        {{"inBitmap", "Landroid/graphics/Bitmap;"},
+         {"inPreferredConfig", "Landroid/graphics/Bitmap$Config;"},
+         {"inSampleSize", "I"},
+         {"inDensity", "I"},
+         {"inTargetDensity", "I"},
+         {"inScreenDensity", "I"},
+         {"inScaled", "Z"},
+         {"inJustDecodeBounds", "Z"},
+         {"inMutable", "Z"},
+         {"inPremultiplied", "Z"},
+         {"inDither", "Z"},
+         {"inPurgeable", "Z"},
+         {"inInputShareable", "Z"},
+         {"inPreferQualityOverSpeed", "Z"},
+         {"mCancel", "Z"},
+         {"outWidth", "I"},
+         {"outHeight", "I"},
+         {"outMimeType", "Ljava/lang/String;"},
+         {"inTempStorage", "[B"}}};
+    for (const auto& [name, type] : shape)
+        fields.push_back(builder.BoundInstanceField(name, type, dx::kAccPublic));
     // Java mCancel is authoritative. Serialized synchronous decode has no
     // separately registered Skia job; cancellation remains best effort.
-    builder.DirectMethod("requestCancel", "()V", [fields](dx::IntrinsicContext& call) {
-        dx::IntrinsicCall(call).SetInt(fields[cancel], call.receiver, 1);
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate | dx::kAccNative);
+    builder.DirectMethod(
+        "requestCancel", "()V",
+        [fields](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetInt(fields[cancel], call.receiver, 1);
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate | dx::kAccNative);
     return std::move(builder).Build();
 }
 
 Decl Declare_android_graphics_BitmapFactory(const Context& context, const DecodeFields& fields) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/BitmapFactory;");
-    builder.StaticMethod("nativeValidateOptions", "(Landroid/graphics/BitmapFactory$Options;)V",
-        [fields](dx::IntrinsicContext& call) { ValidateDecodeOptions(call, fields, call.arguments[0].ref); return dx::VmValue::Void(); },
+    builder.StaticMethod(
+        "nativeValidateOptions", "(Landroid/graphics/BitmapFactory$Options;)V",
+        [fields](dx::IntrinsicContext& call) {
+            ValidateDecodeOptions(call, fields, call.arguments[0].ref);
+            return dx::VmValue::Void();
+        },
         dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
-    builder.StaticMethod("nativeDecodeByteArray", "([BIILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+    builder.StaticMethod(
+        "nativeDecodeByteArray", "([BIILandroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
         [context, fields](dx::IntrinsicContext& call) {
             const auto opts = call.arguments[3].ref;
-            ValidateDecodeOptions(call, fields, opts); ResetDecodeOutput(call, fields, opts);
+            ValidateDecodeOptions(call, fields, opts);
+            ResetDecodeOutput(call, fields, opts);
             const auto array = dx::IntrinsicCall(call).NonNullRef(0, "data");
             const auto offset = call.arguments[1].AsInt(), length = call.arguments[2].AsInt();
-            if (offset < 0 || length < 0 || static_cast<std::int64_t>(offset) + length > call.vm.Model().ArrayLength(array))
+            if (offset < 0 || length < 0 ||
+                static_cast<std::int64_t>(offset) + length > call.vm.Model().ArrayLength(array))
                 throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "bitmap byte range is invalid"};
             if (static_cast<std::size_t>(length) > kMaximumImageEncodedBytes)
                 throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "encoded bitmap exceeds decode budget"};
-            return DecodeBitmapBytes(call, context, fields, call.vm.Model().ReadByteRegion(array, offset, length), opts);
-        }, dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
-    builder.StaticMethod("nativeDecodeStream", "(Ljava/io/InputStream;Landroid/graphics/Rect;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
+            return DecodeBitmapBytes(call, context, fields, call.vm.Model().ReadByteRegion(array, offset, length),
+                                     opts);
+        },
+        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+    builder.StaticMethod(
+        "nativeDecodeStream",
+        "(Ljava/io/InputStream;Landroid/graphics/Rect;Landroid/graphics/BitmapFactory$Options;)Landroid/graphics/Bitmap;",
         [context, fields](dx::IntrinsicContext& call) {
             const auto stream = dx::IntrinsicCall(call).NonNullRef(0, "stream");
             const auto opts = call.arguments[2].ref;
-            ValidateDecodeOptions(call, fields, opts); ResetDecodeOutput(call, fields, opts);
+            ValidateDecodeOptions(call, fields, opts);
+            ResetDecodeOutput(call, fields, opts);
             if (call.arguments[1].ref.IsValid())
-                static_cast<void>(CallAndroidMethod(call.vm, call.arguments[1].ref, "set", "(IIII)V",
+                static_cast<void>(CallAndroidMethod(
+                    call.vm, call.arguments[1].ref, "set", "(IIII)V",
                     {dx::VmValue::Int(-1), dx::VmValue::Int(-1), dx::VmValue::Int(-1), dx::VmValue::Int(-1)}));
-            const auto buffer = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4096);
+            const auto buffer = call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[B"),
+                                                                  JniPrimitiveKind::byte, 4096);
             const auto root = call.vm.ProtectReferences(std::array{buffer});
             std::vector<std::byte> bytes;
             unsigned stalled{};
             while (!Cancelled(call, fields, opts)) {
-                const auto count = CallAndroidMethod(call.vm, stream, "read", "([BII)I",
-                    {dx::VmValue::Ref(buffer), dx::VmValue::Int(0), dx::VmValue::Int(4096)}).AsInt();
+                const auto count =
+                    CallAndroidMethod(call.vm, stream, "read", "([BII)I",
+                                      {dx::VmValue::Ref(buffer), dx::VmValue::Int(0), dx::VmValue::Int(4096)})
+                        .AsInt();
                 if (count < 0) break;
-                if (count > 4096) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "bitmap stream returned an invalid byte count"};
-                if (!count) { if (++stalled > 8) DecodeUnsupported(call, "bitmap stream made no progress"); continue; }
+                if (count > 4096)
+                    throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                          "bitmap stream returned an invalid byte count"};
+                if (!count) {
+                    if (++stalled > 8) DecodeUnsupported(call, "bitmap stream made no progress");
+                    continue;
+                }
                 stalled = 0;
                 if (bytes.size() + static_cast<std::size_t>(count) > kMaximumImageEncodedBytes)
                     throw dx::VmJavaThrow{"Ljava/lang/OutOfMemoryError;", "bitmap stream exceeds decode budget"};
@@ -530,12 +536,12 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context, const Decode
                 bytes.insert(bytes.end(), chunk.begin(), chunk.end());
             }
             return DecodeBitmapBytes(call, context, fields, bytes, opts);
-        }, dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
+        },
+        dx::kAccPrivate | dx::kAccStatic | dx::kAccNative);
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_graphics_Canvas.cpp ----
 #include "catalog.h"
@@ -544,21 +550,30 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Canvas(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;", "Ljava/lang/Object;");
+    for (const bool width : {true, false}) {
+        builder.FinalMethod(width ? "getWidth" : "getHeight", "()I", [context, width](dx::IntrinsicContext& call) {
+            const auto found = context->canvases.find(call.receiver.Value());
+            if (found == context->canvases.end() || !found->second.locked)
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
+            return dx::VmValue::Int(static_cast<std::int32_t>(width ? found->second.width : found->second.height));
+        });
+    }
     builder.VirtualMethod("save", "(I)I", [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
     builder.VirtualMethod("restore", "()V", GraphicsNoopHandler());
     builder.VirtualMethod("clipRect", "(FFFFLandroid/graphics/Region$Op;)Z",
                           [](dx::IntrinsicContext&) { return dx::VmValue::Int(1); });
-    builder.FinalMethod("getClipBounds", "()Landroid/graphics/Rect;",
-        [context](dx::IntrinsicContext& call) {
-            const auto rect =
-                call.vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
-            const auto slots = call.vm.Model().InstanceSlots(rect);
-            slots[0] = {0, dx::SlotTag::cat1};
-            slots[1] = {0, dx::SlotTag::cat1};
-            slots[2] = {context->surface_width, dx::SlotTag::cat1};
-            slots[3] = {context->surface_height, dx::SlotTag::cat1};
-            return dx::VmValue::Ref(rect);
-        });
+    builder.FinalMethod("getClipBounds", "()Landroid/graphics/Rect;", [context](dx::IntrinsicContext& call) {
+        const auto rect = call.vm.NewIntrinsicInstance("Landroid/graphics/Rect;");
+        const auto root = call.vm.ProtectReferences(std::array{rect});
+        const auto found = context->canvases.find(call.receiver.Value());
+        if (found == context->canvases.end() || !found->second.locked)
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
+        static_cast<void>(CallAndroidMethod(call.vm, rect, "set", "(IIII)V",
+                                            {dx::VmValue::Int(0), dx::VmValue::Int(0),
+                                             dx::VmValue::Int(static_cast<std::int32_t>(found->second.width)),
+                                             dx::VmValue::Int(static_cast<std::int32_t>(found->second.height))}));
+        return dx::VmValue::Ref(rect);
+    });
     builder.VirtualMethod("drawColor", "(I)V", [context](dx::IntrinsicContext& call) {
         const auto found = context->canvases.find(call.receiver.Value());
         if (found == context->canvases.end() || !found->second.locked) {
@@ -573,19 +588,15 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             const auto canvas = context->canvases.find(call.receiver.Value());
             const auto bitmap = context->bitmaps.find(call.arguments[0].ref.Value());
             if (canvas == context->canvases.end() || !canvas->second.locked) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;",
-                                      "Canvas is not locked"};
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
             }
-            if (!call.arguments[0].ref.IsValid() ||
-                bitmap == context->bitmaps.end() || bitmap->second.recycled) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "drawBitmap source is invalid"};
+            if (!call.arguments[0].ref.IsValid() || bitmap == context->bitmaps.end() || bitmap->second.recycled) {
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "drawBitmap source is invalid"};
             }
             const auto left_value = call.arguments[1].AsFloat();
             const auto top_value = call.arguments[2].AsFloat();
             if (!std::isfinite(left_value) || !std::isfinite(top_value)) {
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
-                                      "drawBitmap coordinates are not finite"};
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "drawBitmap coordinates are not finite"};
             }
             const auto left = static_cast<std::int32_t>(std::floor(left_value));
             const auto top = static_cast<std::int32_t>(std::floor(top_value));
@@ -593,18 +604,16 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
             const auto& source = bitmap->second;
             for (std::int32_t y = 0; y < source.height; ++y) {
                 const auto destination_y = top + y;
-                if (destination_y < 0 ||
-                    destination_y >= static_cast<std::int32_t>(target.height)) {
+                if (destination_y < 0 || destination_y >= static_cast<std::int32_t>(target.height)) {
                     continue;
                 }
                 for (std::int32_t x = 0; x < source.width; ++x) {
                     const auto destination_x = left + x;
-                    if (destination_x < 0 || destination_x >=
-                        static_cast<std::int32_t>(target.width)) {
+                    if (destination_x < 0 || destination_x >= static_cast<std::int32_t>(target.width)) {
                         continue;
                     }
-                    target.argb[static_cast<std::size_t>(destination_y) *
-                                    target.width + static_cast<std::size_t>(destination_x)] =
+                    target.argb[static_cast<std::size_t>(destination_y) * target.width +
+                                static_cast<std::size_t>(destination_x)] =
                         source.pixels->Get(static_cast<std::size_t>(y) * static_cast<std::size_t>(source.width) +
                                            static_cast<std::size_t>(x));
                 }
@@ -622,7 +631,6 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_graphics_drawable_Drawable.cpp ----
 #include "catalog.h"
@@ -656,7 +664,6 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_graphics_drawable_PaintDrawable.cpp ----
 #include "catalog.h"
 
@@ -664,14 +671,14 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
     static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/PaintDrawable;", "Landroid/graphics/drawable/Drawable;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/PaintDrawable;",
+                                                    "Landroid/graphics/drawable/Drawable;");
     builder.Constructor("(I)V", GraphicsNoopHandler());
     builder.VirtualMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
     return std::move(builder).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_graphics_Matrix.cpp ----
 #include "catalog.h"
@@ -720,7 +727,6 @@ Decl Declare_android_graphics_Matrix(const Context& context) {
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 // ---- migrated from android_graphics_Paint.cpp ----
 #include "catalog.h"
@@ -871,7 +877,6 @@ Decl Declare_android_graphics_Paint(const Context& context) {
 
 }  // namespace ogplay::runtime::android_intrinsics
 
-
 // ---- migrated from android_graphics_Region_Op.cpp ----
 #include "catalog.h"
 
@@ -879,13 +884,10 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_graphics_Region_Op(const Context& context) {
     static_cast<void>(context);
-    return dx::IntrinsicEnumBuilder(
-               "Landroid/graphics/Region$Op;", {"REPLACE"})
-        .Build();
+    return dx::IntrinsicEnumBuilder("Landroid/graphics/Region$Op;", {"REPLACE"}).Build();
 }
 
 }  // namespace ogplay::runtime::android_intrinsics
-
 
 namespace ogplay::runtime::android_intrinsics {
 namespace {
@@ -906,17 +908,13 @@ namespace {
     std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     constexpr std::array names{
-        std::pair{"black", 0xff000000U}, std::pair{"darkgray", 0xff444444U},
-        std::pair{"gray", 0xff888888U}, std::pair{"lightgray", 0xffccccccU},
-        std::pair{"white", 0xffffffffU}, std::pair{"red", 0xffff0000U},
-        std::pair{"green", 0xff00ff00U}, std::pair{"blue", 0xff0000ffU},
-        std::pair{"yellow", 0xffffff00U}, std::pair{"cyan", 0xff00ffffU},
-        std::pair{"magenta", 0xffff00ffU}, std::pair{"transparent", 0x00000000U}};
-    const auto found = std::find_if(names.begin(), names.end(), [&normalized](const auto& item) {
-        return item.first == normalized;
-    });
-    if (found == names.end())
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown color"};
+        std::pair{"black", 0xff000000U},     std::pair{"darkgray", 0xff444444U}, std::pair{"gray", 0xff888888U},
+        std::pair{"lightgray", 0xffccccccU}, std::pair{"white", 0xffffffffU},    std::pair{"red", 0xffff0000U},
+        std::pair{"green", 0xff00ff00U},     std::pair{"blue", 0xff0000ffU},     std::pair{"yellow", 0xffffff00U},
+        std::pair{"cyan", 0xff00ffffU},      std::pair{"magenta", 0xffff00ffU},  std::pair{"transparent", 0x00000000U}};
+    const auto found =
+        std::find_if(names.begin(), names.end(), [&normalized](const auto& item) { return item.first == normalized; });
+    if (found == names.end()) throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Unknown color"};
     return found->second;
 }
 
@@ -929,42 +927,55 @@ namespace {
 Decl Declare_android_graphics_Color(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Color;", "Ljava/lang/Object;");
-    for (const auto [name, value] : std::array{
-             std::pair{"BLACK", 0xff000000U}, std::pair{"DKGRAY", 0xff444444U},
-             std::pair{"GRAY", 0xff888888U}, std::pair{"LTGRAY", 0xffccccccU},
-             std::pair{"WHITE", 0xffffffffU}, std::pair{"RED", 0xffff0000U},
-             std::pair{"GREEN", 0xff00ff00U}, std::pair{"BLUE", 0xff0000ffU},
-             std::pair{"YELLOW", 0xffffff00U}, std::pair{"CYAN", 0xff00ffffU},
-             std::pair{"MAGENTA", 0xffff00ffU}, std::pair{"TRANSPARENT", 0x00000000U}}) {
-        builder.ConstantInt(
-            name, "I", static_cast<std::int32_t>(value),
-            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
+    for (const auto [name, value] :
+         std::array{std::pair{"BLACK", 0xff000000U}, std::pair{"DKGRAY", 0xff444444U}, std::pair{"GRAY", 0xff888888U},
+                    std::pair{"LTGRAY", 0xffccccccU}, std::pair{"WHITE", 0xffffffffU}, std::pair{"RED", 0xffff0000U},
+                    std::pair{"GREEN", 0xff00ff00U}, std::pair{"BLUE", 0xff0000ffU}, std::pair{"YELLOW", 0xffffff00U},
+                    std::pair{"CYAN", 0xff00ffffU}, std::pair{"MAGENTA", 0xffff00ffU},
+                    std::pair{"TRANSPARENT", 0x00000000U}}) {
+        builder.ConstantInt(name, "I", static_cast<std::int32_t>(value),
+                            dx::kAccPublic | dx::kAccStatic | dx::kAccFinal);
     }
-    builder.StaticMethod("alpha", "(I)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 24U);
-    }).StaticMethod("red", "(I)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 16U) & 0xffU);
-    }).StaticMethod("green", "(I)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 8U) & 0xffU);
-    }).StaticMethod("blue", "(I)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU);
-    }).StaticMethod("rgb", "(III)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(0xff000000U |
-            ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 16U) |
-            ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 8U) |
-            (static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU)));
-    }).StaticMethod("argb", "(IIII)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(
-            ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 24U) |
-            ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 16U) |
-            ((static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU) << 8U) |
-            (static_cast<std::uint32_t>(call.arguments[3].AsInt()) & 0xffU)));
-    }).StaticMethod("parseColor", "(Ljava/lang/String;)I", [](dx::IntrinsicContext& call) {
-        if (!call.arguments[0].ref.IsValid())
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "colorString"};
-        return dx::VmValue::Int(static_cast<std::int32_t>(
-            ParseColorValue(call.vm.StringUtf8(call.arguments[0].ref))));
-    });
+    builder
+        .StaticMethod("alpha", "(I)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 24U);
+                      })
+        .StaticMethod("red", "(I)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 16U) &
+                                                  0xffU);
+                      })
+        .StaticMethod("green", "(I)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int((static_cast<std::uint32_t>(call.arguments[0].AsInt()) >> 8U) &
+                                                  0xffU);
+                      })
+        .StaticMethod("blue", "(I)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int(static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU);
+                      })
+        .StaticMethod("rgb", "(III)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int(static_cast<std::int32_t>(
+                              0xff000000U | ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 16U) |
+                              ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 8U) |
+                              (static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU)));
+                      })
+        .StaticMethod("argb", "(IIII)I",
+                      [](dx::IntrinsicContext& call) {
+                          return dx::VmValue::Int(static_cast<std::int32_t>(
+                              ((static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 0xffU) << 24U) |
+                              ((static_cast<std::uint32_t>(call.arguments[1].AsInt()) & 0xffU) << 16U) |
+                              ((static_cast<std::uint32_t>(call.arguments[2].AsInt()) & 0xffU) << 8U) |
+                              (static_cast<std::uint32_t>(call.arguments[3].AsInt()) & 0xffU)));
+                      })
+        .StaticMethod("parseColor", "(Ljava/lang/String;)I", [](dx::IntrinsicContext& call) {
+            if (!call.arguments[0].ref.IsValid())
+                throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "colorString"};
+            return dx::VmValue::Int(
+                static_cast<std::int32_t>(ParseColorValue(call.vm.StringUtf8(call.arguments[0].ref))));
+        });
     // AOSP 4.4 ROM line 37.
     builder.Constructor(
         "()V",
@@ -1184,12 +1195,15 @@ Decl Declare_android_graphics_PointF(const Context& context) {
         return dx::VmValue::Void();
     };
     builder.Constructor("(FF)V", set).FinalMethod("set", "(FF)V", set);
-    builder.FinalMethod("length", "()F", [](dx::IntrinsicContext& call) {
-        const auto s = call.vm.Model().InstanceSlots(call.receiver);
-        return FloatBits(std::hypot(std::bit_cast<float>(s[0].bits), std::bit_cast<float>(s[1].bits)));
-    }).StaticMethod("length", "(FF)F", [](dx::IntrinsicContext& call) {
-        return FloatBits(std::hypot(call.arguments[0].AsFloat(), call.arguments[1].AsFloat()));
-    });
+    builder
+        .FinalMethod("length", "()F",
+                     [](dx::IntrinsicContext& call) {
+                         const auto s = call.vm.Model().InstanceSlots(call.receiver);
+                         return FloatBits(std::hypot(std::bit_cast<float>(s[0].bits), std::bit_cast<float>(s[1].bits)));
+                     })
+        .StaticMethod("length", "(FF)F", [](dx::IntrinsicContext& call) {
+            return FloatBits(std::hypot(call.arguments[0].AsFloat(), call.arguments[1].AsFloat()));
+        });
     const auto wu_x = builder.BoundInstanceField("x", "F");
     const auto wu_y = builder.BoundInstanceField("y", "F");
     // AOSP 4.4 ROM line 38.
@@ -1226,23 +1240,22 @@ Decl Declare_android_graphics_PointF(const Context& context) {
 
 Decl Declare_android_graphics_Path_Direction(const Context& context) {
     static_cast<void>(context);
-    dx::IntrinsicEnumBuilder enum_builder(
-        "Landroid/graphics/Path$Direction;", {"CW", "CCW"});
+    dx::IntrinsicEnumBuilder enum_builder("Landroid/graphics/Path$Direction;", {"CW", "CCW"});
     auto& builder = enum_builder.ClassBuilder();
-    const auto native_int = builder.BoundInstanceField(
-        "nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
-    builder.Constructor("(I)V", [native_int](dx::IntrinsicContext& context) {
-        const dx::IntrinsicCall call(context);
-        call.SetInt(native_int, call.Int(0));
-        return dx::VmValue::Void();
-    }, dx::kAccPrivate);
-    enum_builder.WithConstantInitializer(
-        [native_int](dx::IntrinsicContext& context,
-                     const dx::VmObjectRef value, std::string_view,
-                     const std::int32_t ordinal) {
+    const auto native_int = builder.BoundInstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
+    builder.Constructor(
+        "(I)V",
+        [native_int](dx::IntrinsicContext& context) {
             const dx::IntrinsicCall call(context);
-            call.SetInt(native_int, value, ordinal);
-        });
+            call.SetInt(native_int, call.Int(0));
+            return dx::VmValue::Void();
+        },
+        dx::kAccPrivate);
+    enum_builder.WithConstantInitializer([native_int](dx::IntrinsicContext& context, const dx::VmObjectRef value,
+                                                      std::string_view, const std::int32_t ordinal) {
+        const dx::IntrinsicCall call(context);
+        call.SetInt(native_int, value, ordinal);
+    });
     return std::move(enum_builder).Build();
 }
 
@@ -1253,8 +1266,7 @@ Decl Declare_android_graphics_Path(const Context& context) {
         return dx::VmValue::Void();
     });
     builder.Constructor("(Landroid/graphics/Path;)V", [context](dx::IntrinsicContext& call) {
-        if (!call.arguments[0].ref.IsValid())
-            throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "src"};
+        if (!call.arguments[0].ref.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "src"};
         context->paths[call.receiver.Value()] = context->paths[call.arguments[0].ref.Value()];
         return dx::VmValue::Void();
     });
@@ -1291,12 +1303,10 @@ Decl Declare_android_graphics_Path(const Context& context) {
         .VirtualMethod("addRect", "(FFFFLandroid/graphics/Path$Direction;)V", [context](dx::IntrinsicContext& call) {
             if (!call.arguments[4].ref.IsValid())
                 throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "direction"};
-            const auto direction =
-                ReadIntField(call.vm, call.arguments[4].ref, "nativeInt");
-            context->paths[call.receiver.Value()].commands.push_back({
-                DexVmAndroidContext::PathState::Verb::rect,
-                call.arguments[0].AsFloat(), call.arguments[1].AsFloat(),
-                call.arguments[2].AsFloat(), call.arguments[3].AsFloat(), direction});
+            const auto direction = ReadIntField(call.vm, call.arguments[4].ref, "nativeInt");
+            context->paths[call.receiver.Value()].commands.push_back(
+                {DexVmAndroidContext::PathState::Verb::rect, call.arguments[0].AsFloat(), call.arguments[1].AsFloat(),
+                 call.arguments[2].AsFloat(), call.arguments[3].AsFloat(), direction});
             return dx::VmValue::Void();
         });
     return std::move(builder).Build();
@@ -1304,29 +1314,23 @@ Decl Declare_android_graphics_Path(const Context& context) {
 
 Decl Declare_android_graphics_PorterDuff_Mode(const Context& context) {
     static_cast<void>(context);
-    constexpr std::array modes{
-        std::pair{"CLEAR", 0}, std::pair{"SRC", 1}, std::pair{"DST", 2},
-        std::pair{"SRC_OVER", 3}, std::pair{"DST_OVER", 4},
-        std::pair{"SRC_IN", 5}, std::pair{"DST_IN", 6}, std::pair{"SRC_OUT", 7},
-        std::pair{"DST_OUT", 8}, std::pair{"SRC_ATOP", 9}, std::pair{"DST_ATOP", 10},
-        std::pair{"XOR", 11}, std::pair{"DARKEN", 12}, std::pair{"LIGHTEN", 13},
-        std::pair{"MULTIPLY", 14}, std::pair{"SCREEN", 15}, std::pair{"ADD", 16},
-        std::pair{"OVERLAY", 17}};
-    dx::IntrinsicEnumBuilder enum_builder(
-        "Landroid/graphics/PorterDuff$Mode;",
-        {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN",
-         "DST_IN", "SRC_OUT", "DST_OUT", "SRC_ATOP", "DST_ATOP", "XOR",
-         "DARKEN", "LIGHTEN", "MULTIPLY", "SCREEN", "ADD", "OVERLAY"});
-    const auto native_int = enum_builder.ClassBuilder().BoundInstanceField(
-        "nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
-    enum_builder.WithConstantInitializer(
-        [native_int, modes](dx::IntrinsicContext& context,
-                            const dx::VmObjectRef value, std::string_view,
-                            const std::int32_t ordinal) {
-            const dx::IntrinsicCall call(context);
-            call.SetInt(native_int, value,
-                        modes[static_cast<std::size_t>(ordinal)].second);
-        });
+    constexpr std::array modes{std::pair{"CLEAR", 0},    std::pair{"SRC", 1},       std::pair{"DST", 2},
+                               std::pair{"SRC_OVER", 3}, std::pair{"DST_OVER", 4},  std::pair{"SRC_IN", 5},
+                               std::pair{"DST_IN", 6},   std::pair{"SRC_OUT", 7},   std::pair{"DST_OUT", 8},
+                               std::pair{"SRC_ATOP", 9}, std::pair{"DST_ATOP", 10}, std::pair{"XOR", 11},
+                               std::pair{"DARKEN", 12},  std::pair{"LIGHTEN", 13},  std::pair{"MULTIPLY", 14},
+                               std::pair{"SCREEN", 15},  std::pair{"ADD", 16},      std::pair{"OVERLAY", 17}};
+    dx::IntrinsicEnumBuilder enum_builder("Landroid/graphics/PorterDuff$Mode;",
+                                          {"CLEAR", "SRC", "DST", "SRC_OVER", "DST_OVER", "SRC_IN", "DST_IN", "SRC_OUT",
+                                           "DST_OUT", "SRC_ATOP", "DST_ATOP", "XOR", "DARKEN", "LIGHTEN", "MULTIPLY",
+                                           "SCREEN", "ADD", "OVERLAY"});
+    const auto native_int =
+        enum_builder.ClassBuilder().BoundInstanceField("nativeInt", "I", dx::kAccPublic | dx::kAccFinal);
+    enum_builder.WithConstantInitializer([native_int, modes](dx::IntrinsicContext& context, const dx::VmObjectRef value,
+                                                             std::string_view, const std::int32_t ordinal) {
+        const dx::IntrinsicCall call(context);
+        call.SetInt(native_int, value, modes[static_cast<std::size_t>(ordinal)].second);
+    });
     return std::move(enum_builder).Build();
 }
 
@@ -1336,14 +1340,15 @@ Decl Declare_android_graphics_PorterDuff(const Context& context) {
 }
 
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/graphics/drawable/BitmapDrawable;", "Landroid/graphics/drawable/Drawable;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/BitmapDrawable;",
+                                                    "Landroid/graphics/drawable/Drawable;");
 
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
             const auto bitmap = call.arguments[index].ref;
             if (bitmap.IsValid() && !context->bitmaps.contains(bitmap.Value()))
-                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "BitmapDrawable requires a Bitmap backing"};
+                throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;",
+                                      "BitmapDrawable requires a Bitmap backing"};
             {
                 const auto ctor = call.vm.Linker().FindDirectMethod(
                     call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
@@ -1394,8 +1399,8 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
 }
 
 Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class(
-        "Landroid/graphics/drawable/ColorDrawable;", "Landroid/graphics/drawable/Drawable;");
+    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/ColorDrawable;",
+                                                    "Landroid/graphics/drawable/Drawable;");
 
     builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
         {
@@ -1410,7 +1415,6 @@ Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
         return dx::VmValue::Void();
     });
     const auto set = [context](dx::IntrinsicContext& call) {
-
         context->ui_drawables[call.receiver.Value()].color = call.arguments[0].cat1;
 
         return dx::VmValue::Void();
@@ -1453,6 +1457,7 @@ int TypefaceToken(int family, int style) {
     if (style < 0 || style > 3) style = 0;
     return 1 + family * 4 + style;
 }
+
 int CheckTypefaceToken(int token) {
     if (token < 1 || token > 16)
         throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid typeface descriptor"};
@@ -1463,35 +1468,49 @@ int CheckTypefaceToken(int token) {
 Decl Declare_android_graphics_Typeface(const Context&) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Typeface;");
     constexpr auto flags = dx::kAccPrivate | dx::kAccNative;
-    builder.StaticMethod("nativeCreate", "(Ljava/lang/String;I)I", [](dx::IntrinsicContext& call) {
-        const auto name = call.arguments[0].ref.IsValid()
-            ? call.vm.StringUtf8(call.arguments[0].ref) : std::string{};
-        // API19 unknown family names fall back to the default face.
-        const int family = name == "sans-serif" ? 1 : name == "serif" ? 2 : name == "monospace" ? 3 : 0;
-        return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
-    }, flags);
-    builder.StaticMethod("nativeCreateFromTypeface", "(II)I", [](dx::IntrinsicContext& call) {
-        const auto token = call.arguments[0].AsInt();
-        const auto family = token == 0 ? 0 : CheckTypefaceToken(token) / 4;
-        return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
-    }, flags);
-    builder.StaticMethod("nativeGetStyle", "(I)I", [](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(CheckTypefaceToken(call.arguments[0].AsInt()) % 4);
-    }, flags);
-    builder.StaticMethod("nativeUnref", "(I)V", [](dx::IntrinsicContext& call) {
-        // Finite immutable descriptors own no allocation or native reference count.
-        static_cast<void>(CheckTypefaceToken(call.arguments[0].AsInt()));
-        return dx::VmValue::Void();
-    }, flags);
-    builder.StaticMethod("nativeFreeCaches", "()V", [](dx::IntrinsicContext&) {
-        // Pinned framework extension: this backend owns no native font cache.
-        return dx::VmValue::Void();
-    }, flags);
+    builder.StaticMethod(
+        "nativeCreate", "(Ljava/lang/String;I)I",
+        [](dx::IntrinsicContext& call) {
+            const auto name =
+                call.arguments[0].ref.IsValid() ? call.vm.StringUtf8(call.arguments[0].ref) : std::string{};
+            // API19 unknown family names fall back to the default face.
+            const int family = name == "sans-serif" ? 1 : name == "serif" ? 2 : name == "monospace" ? 3 : 0;
+            return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeCreateFromTypeface", "(II)I",
+        [](dx::IntrinsicContext& call) {
+            const auto token = call.arguments[0].AsInt();
+            const auto family = token == 0 ? 0 : CheckTypefaceToken(token) / 4;
+            return dx::VmValue::Int(TypefaceToken(family, call.arguments[1].AsInt()));
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeGetStyle", "(I)I",
+        [](dx::IntrinsicContext& call) { return dx::VmValue::Int(CheckTypefaceToken(call.arguments[0].AsInt()) % 4); },
+        flags);
+    builder.StaticMethod(
+        "nativeUnref", "(I)V",
+        [](dx::IntrinsicContext& call) {
+            // Finite immutable descriptors own no allocation or native reference count.
+            static_cast<void>(CheckTypefaceToken(call.arguments[0].AsInt()));
+            return dx::VmValue::Void();
+        },
+        flags);
+    builder.StaticMethod(
+        "nativeFreeCaches", "()V",
+        [](dx::IntrinsicContext&) {
+            // Pinned framework extension: this backend owns no native font cache.
+            return dx::VmValue::Void();
+        },
+        flags);
     const auto unsupported = [](dx::IntrinsicContext& call) -> dx::VmValue {
         if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.typeface", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "external font files are unsupported"};
     };
-    builder.StaticMethod("nativeCreateFromAsset", "(Landroid/content/res/AssetManager;Ljava/lang/String;)I", unsupported, flags);
+    builder.StaticMethod("nativeCreateFromAsset", "(Landroid/content/res/AssetManager;Ljava/lang/String;)I",
+                         unsupported, flags);
     builder.StaticMethod("nativeCreateFromFile", "(Ljava/lang/String;)I", unsupported, flags);
     return std::move(builder).Build();
 }

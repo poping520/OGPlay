@@ -1,6 +1,7 @@
 #include "container_traversal_fixture.h"
 #include "../../src/runtime/integration/dexvm_android/shared.h"
 #include <bit>
+#include <future>
 #include <algorithm>
 #include <tuple>
 
@@ -131,11 +132,11 @@ TEST_CASE("DVM-302 SurfaceView managed fixed rejection is atomic and requestLayo
         const auto before = f.model.InstanceSlots(view);
         const std::vector<Slot> saved(before.begin(), before.end());
         const auto epoch = published->ProjectionEpoch();
-        for (const auto pair : {std::pair{320, 241}, std::pair{321, 240}, std::pair{0, 241}}) {
+        for (const auto pair : {std::pair{320, 4097}, std::pair{4097, 240}, std::pair{0, 4097}}) {
             const auto rejected =
                 f.OnOutcome(holder, "setFixedSize", "(II)V", {VmValue::Int(pair.first), VmValue::Int(pair.second)});
             REQUIRE(rejected.exception.IsValid());
-            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
             const auto after = f.model.InstanceSlots(view);
             REQUIRE(after.size() == saved.size());
             for (std::size_t i = 0; i < saved.size(); ++i)
@@ -146,7 +147,7 @@ TEST_CASE("DVM-302 SurfaceView managed fixed rejection is atomic and requestLayo
             CHECK(f.context->surface_width == 320);
             CHECK(f.context->surface_height == 240);
         }
-        CHECK_FALSE(f.ledger.Unimplemented().empty());
+        CHECK(f.ledger.Unimplemented().empty());
         f.On(holder, "setSizeFromLayout", "()V");
         CHECK(f.On(view, "isLayoutRequested", "()Z").AsInt() == 1);
         CHECK(Field(f, view, "mRequestedWidth").bits == UINT32_MAX);
@@ -551,5 +552,129 @@ TEST_CASE("DVM-315 Surface recreation completes changed when created appends unr
             CHECK(events == std::vector<int>{1, 2, 3, 1, 2});
             CHECK(f.ledger.Unimplemented().empty());
         }
+    }
+}
+
+TEST_CASE("DVM-339 SurfaceView independent buffers notify once and return to layout on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (bool before_activation : {false, true}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+            const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+            const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder, callback});
+            std::vector<std::pair<int, int>> changed;
+            int created = 0;
+            SurfaceHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+                ++created;
+                Shape(f, Frame(f, holder), 320, 240);
+                return VmValue::Void();
+            });
+            SurfaceHook(f, callback, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext& c) {
+                changed.emplace_back(c.arguments[2].AsInt(), c.arguments[3].AsInt());
+                Shape(f, Frame(f, holder), 320, 240);
+                return VmValue::Void();
+            });
+            f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+            if (before_activation) Size(f, holder, 480, 320);
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+            const auto initial = changed.size();
+            Size(f, holder, 480, 320);
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            REQUIRE(changed.size() == initial + (before_activation ? 0 : 1));
+            CHECK(changed.back() == std::pair{480, 320});
+            CHECK(Get(f, view, "getWidth") == 320);
+            CHECK(Get(f, view, "getHeight") == 240);
+            Size(f, holder, 480, 320);
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(changed.size() == initial + (before_activation ? 0 : 1));
+            // ANativeWindow_fromSurface queries on the NDK producer's own host
+            // thread while the owner keeps the default execution bound.
+            f.vm.BindDefaultExecutionHost();
+            const auto native_size = [&] {
+                return std::async(std::launch::async,
+                                  [&] {
+                                      const ogplay::runtime::dexvm::VmExecutionLockScope guard(f.vm.ExecutionLock());
+                                      return ogplay::runtime::android_intrinsics::ManagedSurfaceBufferSize(
+                                          f.vm, *f.context, holder);
+                                  })
+                    .get();
+            };
+            const auto fixed = native_size();
+            CHECK(std::pair{fixed.width, fixed.height} == std::pair{480, 320});
+            f.On(holder, "setSizeFromLayout", "()V");
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(changed.back() == std::pair{320, 240});
+            const auto layout = native_size();
+            CHECK(std::pair{layout.width, layout.height} == std::pair{320, 240});
+            CHECK(created == 1);
+            CHECK(f.ledger.Unimplemented().empty());
+            const auto stale = f.vm.NewIntrinsicInstance("Landroid/view/SurfaceHolder$Impl;");
+            CHECK(f.OnOutcome(stale, "setFixedSize", "(II)V", {VmValue::Int(12), VmValue::Int(8)}).exception.IsValid());
+            const auto gaps = f.ledger.Unimplemented();
+            CHECK(std::ranges::any_of(gaps, [](const auto& gap) { return gap.id == "dexvm.surface_buffer_geometry"; }));
+        }
+    }
+}
+
+TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across the View frame") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+        f.context->surface_width = 800;
+        f.context->surface_height = 480;
+        Size(f, holder, 2, 3);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        const auto dirty = f.New("Landroid/graphics/Rect;");
+        const auto canvas =
+            f.On(holder, "lockCanvas", "(Landroid/graphics/Rect;)Landroid/graphics/Canvas;", {VmValue::Ref(dirty)}).ref;
+        const auto canvas_roots = f.vm.ProtectReferences(std::array{canvas, dirty});
+        CHECK(Get(f, canvas, "getWidth") == 2);
+        CHECK(Get(f, canvas, "getHeight") == 3);
+        Shape(f, dirty, 2, 3);
+        Shape(f, f.On(canvas, "getClipBounds", "()Landroid/graphics/Rect;").ref, 2, 3);
+        f.On(canvas, "drawColor", "(I)V", {VmValue::Int(std::bit_cast<int>(0xff123456U))});
+        const auto config = f.Static("Landroid/graphics/Bitmap$Config;", "valueOf",
+                                     "(Ljava/lang/String;)Landroid/graphics/Bitmap$Config;",
+                                     {VmValue::Ref(f.vm.NewStringUtf8("ARGB_8888"))})
+                                .ref;
+        const auto colors =
+            f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), ogplay::runtime::JniPrimitiveKind::integer, 6);
+        const auto color_roots = f.vm.ProtectReferences(std::array{config, colors});
+        const std::array<std::uint32_t, 6> pattern{0xff102030, 0xff405060, 0xff708090,
+                                                   0xffa0b0c0, 0xffd0e0f0, 0xff123456};
+        for (int i = 0; i < 6; ++i)
+            f.model.SetPrimitiveElement(colors, i, pattern[static_cast<std::size_t>(i)]);
+        const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                     "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                     {VmValue::Ref(colors), VmValue::Int(2), VmValue::Int(3), VmValue::Ref(config)})
+                                .ref;
+        const auto bitmap_root = f.vm.ProtectReferences(std::array{bitmap});
+        f.On(canvas, "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
+             {VmValue::Ref(bitmap), VmValue::Float(0), VmValue::Float(0), VmValue::Ref(VmObjectRef{})});
+        f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+        RefreshAndroidSurfaceFrames(*f.context);
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
+        REQUIRE(PublishAndroidPresentation(*f.context));
+        const auto presentation = AcquireAndroidPresentation(*f.context);
+        REQUIRE(presentation);
+        std::vector<std::uint8_t> pixels(800U * 480U * 4U, 0);
+        ComposeVideoViews(*presentation, pixels, 800, 480, false);
+        for (auto y : {0U, 239U, 479U})
+            for (auto x : {0U, 399U, 799U}) {
+                const auto offset = (y * 800U + x) * 4U;
+                const auto color = pattern[(y * 3U / 480U) * 2U + x * 2U / 800U];
+                CHECK(pixels[offset] == ((color >> 16U) & 255U));
+                CHECK(pixels[offset + 1] == ((color >> 8U) & 255U));
+                CHECK(pixels[offset + 2] == (color & 255U));
+                CHECK(pixels[offset + 3] == 0xff);
+            }
+        CHECK(f.ledger.Unimplemented().empty());
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+        CHECK(f.context->surface_pixels.empty());
+        CHECK(f.OnOutcome(holder, "lockCanvas", "()Landroid/graphics/Canvas;").exception.IsValid());
     }
 }

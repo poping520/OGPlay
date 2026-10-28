@@ -352,21 +352,26 @@ boundary window registry acquire；changed/销毁/GC 经显式通知同步几何
 surfaceDestroyed 回调之后，销毁后不重建旧身份。
 SurfaceHolder 按 attach/host generation 执行 created→changed→destroyed，detached 不提前收事件/
 关闭 host surface。getSurfaceFrame 为稳定 Java Rect：初始零、回调前/late holder 写真实 managed
-像素尺寸、destroyed 保留末值，旧 holder 不随新代更新；不从 View bounds 推导独立 buffer。
-setFixedSize 仅物理托管尺寸、保存请求，setSizeFromLayout 解除固定，不匹配独立几何失败。
+frame 尺寸（AOSP 4.4 mWinFrame）、destroyed 保留末值，旧 holder 不随新代更新。
+Rect 与 surfaceChanged 的 buffer 尺寸可不同。View holder 的正请求使用独立
+buffer，各非正轴回到 View frame；window holder 保留窗口尺寸。每轴上限 4096（RGBA ≤64 MiB），
+超限抛 IllegalArgumentException；未知 holder 记账拒绝。尺寸改变由下一 owner 安全点派 changed，
+同值不重发，激活前的请求在 created/changed 直接生效。
 SurfaceView 保留完整 ROM shape，onMeasure/isFixedSize 执行 ROM；三构造受审调用对应 View
 构造并初始化请求为 −1、setWillNotDraw(true)，getHolder 继续返回真实 managed holder。setFrame
 仅精确调用 ROM View 父协议，不执行 WMS updateWindow；WMS 相关字段/方法保留 failure。
-holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1，正数只接受真实 managed
-buffer 尺寸；先校验双轴再原子写 Java 请求，改变时真实 requestLayout。setSizeFromLayout
-恢复两轴 −1。请求与 View 重排不改 buffer/Rect；回调前仍只发布实际 managed 尺寸。
+holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1；先校验双轴再原子写 Java 请求，
+改变时真实 requestLayout。setSizeFromLayout 恢复两轴 −1。ROM onMeasure 保留读取请求的
+原版行为；View frame 与 buffer 几何分别发布，回调前更新真实 Rect。
 请求由 Java mRequestedWidth/Height 唯一持有，不建宿主请求镜像。
 SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 AttributeSet/三参数 defStyle
 不支持；注册 XML 沿 Context 构造及既有属性投影。层序唯一归 UiTree，setZOrderMediaOverlay/
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
 View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
 ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
-setKeepScreenOn(false) 清空请求、true 记账拒绝；Canvas/Bitmap 为 ARGB，post 发软件帧，Surface 返回限制见 session。
+setKeepScreenOn(false) 清空请求、true 记账拒绝；Canvas/Bitmap 为 ARGB。lockCanvas 仅接受 active
+holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
+holder 像素快照合成到 View frame。窗口 holder 仍发布原软件基帧。
 
 NativeActivity/NativeContentView 执行原 Java，private native 经 NativeActivityRuntime 接进程；
 takeSurface/takeInputQueue 支持 null/切换，先销毁旧 owner，首次遍历前解除不收旧事件。
@@ -700,7 +705,11 @@ PumpAndroidSurfaceEvents 只在 owner 帧屏障执行 size→created→changed�
 挂载集合，每次 guest 回调后重验窗口/root/holder/挂载与 buffer 尺寸。换根/新增挂载留下一轮，
 同尺寸不重发；迟建/迟挂 holder 由下一轮发现，addCallback 只更新列表。View holder 校验
 SurfaceView 请求，Window.takeSurface holder 只用真实 managed window buffer，不反查 View。
-Rect 身份稳定，销毁后 retire native surface；完整 WMS/updateWindow/独立 buffer resize 仍失败。
+Rect 身份稳定，销毁后 retire native surface 并清除 producer 像素；完整 WMS/updateWindow 未启用。
+Canvas、NDK/EGL 与 MediaPlayer 使用 buffer→View frame 最近邻缩放；MediaPlayer 先在 buffer
+内保留比例，VideoView 仍走原 letterbox。呈现快照冻结像素及缩放策略，alpha/ZOrder/输入不变。
+EGL producer 经显式 boundary hook 投递纯像素，不获取 VM 锁或保存 Java 引用；surface 退役与
+发布串行，owner 安全点才共同发布新像素与几何。
 
 ## 窗口与呈现事实
 

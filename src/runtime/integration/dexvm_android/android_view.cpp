@@ -1179,13 +1179,17 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
                               std::int32_t height) {
     // Managed holder 0 means layout, never ROM fixed=0. Canonicalize the old
     // nonpositive layout requests to the exact ROM sentinel before publication.
-    if ((width > 0 && static_cast<std::uint32_t>(width) != context.surface_width) ||
-        (height > 0 && static_cast<std::uint32_t>(height) != context.surface_height)) {
-        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                              "independent Surface buffer geometry is unavailable"};
+    if (call.receiver == context.window_surface_holder) {
+        if ((width > 0 && static_cast<std::uint32_t>(width) != context.surface_width) ||
+            (height > 0 && static_cast<std::uint32_t>(height) != context.surface_height)) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "window buffer geometry is fixed"};
+        }
+        return;
     }
-    if (call.receiver == context.window_surface_holder) return;
+    if (width > 4096 || height > 4096) {
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Surface buffer exceeds 4096 extent budget"};
+    }
     const auto view = ManagedHolderView(call.vm, context, call.receiver);
     dx::IntrinsicContext view_call{call.vm, view, {}};
     dx::IntrinsicCall fields(view_call);
@@ -1201,34 +1205,56 @@ void SetManagedSurfaceRequest(dx::IntrinsicContext& call, DexVmAndroidContext& c
         static_cast<void>(CallAndroidMethod(call.vm, view, "requestLayout", "()V"));
     }
 }
+
+// ROM View.getWidth/getHeight are final mRight-mLeft / mBottom-mTop. Reading the
+// fields keeps buffer geometry queries out of the interpreter, so NDK producer
+// threads (ANativeWindow_fromSurface) never borrow the owner execution.
+ui::Size ViewFrameSize(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    if (!context.view_java_measure_fields)
+        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "View frame fields are not bound");
+    dx::IntrinsicContext call{vm, view, {}};
+    dx::IntrinsicCall fields(call);
+    const auto& frame = context.view_java_measure_fields->frame;
+    return {fields.GetInt(frame[2]) - fields.GetInt(frame[0]), fields.GetInt(frame[3]) - fields.GetInt(frame[1])};
+}
 }  // namespace
 
-void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef holder) {
-    if (holder != context.window_surface_holder) {
+ui::Size ManagedSurfaceBufferSize(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef holder) {
+    ui::Size size{static_cast<std::int32_t>(context.surface_width), static_cast<std::int32_t>(context.surface_height)};
+    if (holder != context.window_surface_holder && !context.window_surface_holders.contains(holder.Value())) {
         const auto view = ManagedHolderView(vm, context, holder);
         dx::IntrinsicContext call{vm, view, {}};
         dx::IntrinsicCall fields(call);
-        for (const auto& [field, actual] :
-             std::array{std::pair{*context.surface_view_requested_width_field, context.surface_width},
-                        std::pair{*context.surface_view_requested_height_field, context.surface_height}}) {
-            const auto requested = fields.GetInt(field);
-            if (requested > 0 && static_cast<std::uint32_t>(requested) != actual) {
-                if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_buffer_geometry", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "fixed Surface buffer differs from managed geometry"};
-            }
-        }
+        // ROM updateWindow resolves each nonpositive axis against the View frame.
+        // Legacy fixtures without a Java layout keep their existing window geometry.
+        const auto [w, h] = ViewFrameSize(vm, context, view);
+        if (w > 0) size.width = w;
+        if (h > 0) size.height = h;
+        const auto rw = fields.GetInt(*context.surface_view_requested_width_field);
+        const auto rh = fields.GetInt(*context.surface_view_requested_height_field);
+        if (rw > 0) size.width = rw;
+        if (rh > 0) size.height = rh;
     }
-    constexpr auto max_extent = static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
-    if (context.surface_width > max_extent || context.surface_height > max_extent) {
-        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Surface dimensions exceed Rect range"};
+    if (size.width <= 0 || size.height <= 0 || size.width > 4096 || size.height > 4096)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "Surface buffer exceeds managed extent budget"};
+    return size;
+}
+
+void PublishSurfaceHolderFrame(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::VmObjectRef holder) {
+    auto size = ManagedSurfaceBufferSize(vm, context, holder);
+    if (holder != context.window_surface_holder && !context.window_surface_holders.contains(holder.Value())) {
+        const auto view = ManagedHolderView(vm, context, holder);
+        // API19 SurfaceView publishes the relayout window frame here, while
+        // surfaceChanged and producer dequeue report the independent buffer size.
+        const auto [width, height] = ViewFrameSize(vm, context, view);
+        if (width > 0) size.width = width;
+        if (height > 0) size.height = height;
     }
     const auto holder_root = vm.ProtectReferences(std::array{holder});
     const auto frame = GetSurfaceHolderFrame(vm, context, holder);
-    static_cast<void>(CallAndroidMethod(vm, frame, "set", "(IIII)V",
-                                        {dx::VmValue::Int(0), dx::VmValue::Int(0),
-                                         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_width)),
-                                         dx::VmValue::Int(static_cast<std::int32_t>(context.surface_height))}));
+    static_cast<void>(CallAndroidMethod(
+        vm, frame, "set", "(IIII)V",
+        {dx::VmValue::Int(0), dx::VmValue::Int(0), dx::VmValue::Int(size.width), dx::VmValue::Int(size.height)}));
 }
 
 namespace {
@@ -1244,9 +1270,18 @@ dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder canvas is already locked"};
         }
         state.holder = call.receiver.Value();
-        state.width = context->surface_width;
-        state.height = context->surface_height;
+        if (!context->active_surface_holders.contains(call.receiver.Value()))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder is not active"};
+        const auto size = ManagedSurfaceBufferSize(call.vm, *context, call.receiver);
+        state.width = static_cast<std::uint32_t>(size.width);
+        state.height = static_cast<std::uint32_t>(size.height);
         state.argb.assign(static_cast<std::size_t>(state.width) * state.height, 0xff000000U);
+        if (!call.arguments.empty() && call.arguments[0].ref.IsValid()) {
+            // Every lock currently redraws the complete buffer; advertise the expanded dirty region.
+            static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "set", "(IIII)V",
+                                                {dx::VmValue::Int(0), dx::VmValue::Int(0), dx::VmValue::Int(size.width),
+                                                 dx::VmValue::Int(size.height)}));
+        }
         state.locked = true;
         return dx::VmValue::Ref(canvas);
     };
@@ -1263,6 +1298,8 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
         if (context->session == nullptr) {
             throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder has no guest session"};
         }
+        if (!context->active_surface_holders.contains(call.receiver.Value()))
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceHolder is no longer active"};
         auto& state = found->second;
         std::vector<std::uint8_t> rgba8;
         rgba8.reserve(state.argb.size() * 4U);
@@ -1273,7 +1310,17 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
             rgba8.push_back(static_cast<std::uint8_t>(pixel >> 24U));
         }
         state.locked = false;
-        context->session->PublishSoftwareFrame(std::move(rgba8));
+        if (call.receiver == context->window_surface_holder) {
+            context->session->PublishSoftwareFrame(std::move(rgba8));
+            return dx::VmValue::Void();
+        }
+        {
+            std::scoped_lock lock(context->surface_pixels_mutex);
+            context->surface_pixels[call.receiver.Value()] =
+                video::VideoFrame{0, state.width, state.height, std::move(rgba8)};
+        }
+        context->session->PublishSoftwareFrame(std::vector<std::uint8_t>(
+            static_cast<std::size_t>(context->surface_width) * context->surface_height * 4U, 0U));
         return dx::VmValue::Void();
     };
 }

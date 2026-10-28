@@ -214,6 +214,8 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LocalSensorManager(const Context& context);
 [[nodiscard]] Decl Declare_android_hardware_LegacySensorManager(const Context& context);
 [[nodiscard]] dx::VmObjectRef SensorManagerForContext(dx::IntrinsicContext& call, const Context& context);
+[[nodiscard]] Decl Declare_android_hardware_usb_UsbManager(const Context& context);
+[[nodiscard]] dx::VmObjectRef UsbManagerForContext(dx::IntrinsicContext& call, const Context& context);
 [[nodiscard]] Decl Declare_android_nfc_NfcAdapter(const Context& context);
 [[nodiscard]] dx::VmObjectRef NfcManagerForContext(dx::IntrinsicContext& call, const Context& context);
 

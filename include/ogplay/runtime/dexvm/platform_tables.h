@@ -4,7 +4,7 @@
 #include <string_view>
 
 namespace ogplay::runtime::dexvm {
-enum class ServiceFactory { unsupported, singleton, inflater, activity, sensor, nfc, notification, keyguard };
+enum class ServiceFactory { unsupported, singleton, inflater, activity, sensor, nfc, usb, notification, keyguard };
 
 struct PlatformService final {
     std::string_view name;
@@ -53,7 +53,7 @@ inline constexpr auto kSystemServices = std::to_array<PlatformService>({
     {"storage", ServiceFactory::unsupported, "", "storage"},
     {"textservices", ServiceFactory::unsupported, "", "textservices"},
     {"uimode", ServiceFactory::unsupported, "", "uimode"},
-    {"usb", ServiceFactory::unsupported, "", "usb"},
+    {"usb", ServiceFactory::usb, "", "usb"},
     {"user", ServiceFactory::unsupported, "", "user"},
     {"vibrator", ServiceFactory::singleton, "Landroid/os/Vibrator;", "vibrator"},
     {"wallpaper", ServiceFactory::unsupported, "", "wallpaper"},

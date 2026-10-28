@@ -158,6 +158,7 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_hardware_LocalSensorManager(context),
         Declare_android_hardware_LegacySensorManager(context),
         Declare_android_nfc_NfcAdapter(context),
+        Declare_android_hardware_usb_UsbManager(context),
         Declare_android_location_LocationListener(context),
         Declare_android_location_Criteria(context),
         Declare_android_location_LocationManager(context),

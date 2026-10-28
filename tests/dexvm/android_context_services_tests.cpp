@@ -661,6 +661,82 @@ TEST_CASE("DVM-222 NFC discovery preserves API19 absence without transport") {
     }
 }
 
+TEST_CASE("DVM-341 USB manager preserves API19 absence without transport") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        f.vm.SetGcIntegration(
+            {{}, {}, [&f](const VmRootVisitor& visit) { VisitAndroidSessionRoots(*f.context, visit); }});
+        const auto base = f.New("Landroid/content/Context;");
+        const auto roots = f.vm.ProtectReferences(std::array{base});
+        const auto service = [&] {
+            return f
+                .On(base, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",
+                    {VmValue::Ref(f.vm.NewStringUtf8("usb"))})
+                .ref;
+        };
+        const auto manager = service();
+        REQUIRE(manager.IsValid());
+        CHECK(service() == manager);
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).is_boot_dex);
+        CHECK(f.linker.Class(f.model.ObjectClass(manager)).descriptor == "Landroid/hardware/usb/UsbManager;");
+        const auto devices = f.On(manager, "getDeviceList", "()Ljava/util/HashMap;").ref;
+        REQUIRE(devices.IsValid());
+        CHECK(f.On(devices, "size", "()I").AsInt() == 0);
+        CHECK_FALSE(f.On(manager, "getAccessoryList", "()[Landroid/hardware/usb/UsbAccessory;").ref.IsValid());
+        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto* type : {"UsbDevice", "UsbAccessory"}) {
+            const auto argument = std::string("(Landroid/hardware/usb/") + type + ";";
+            CHECK(f.On(manager, "hasPermission", (argument + ")Z").c_str(), {VmValue::Ref(VmObjectRef{})}).AsInt() ==
+                  0);
+            const auto denied =
+                f.OnOutcome(manager, "requestPermission", (argument + "Landroid/app/PendingIntent;)V").c_str(),
+                            {VmValue::Ref(VmObjectRef{}), VmValue::Ref(VmObjectRef{})});
+            REQUIRE(denied.exception.IsValid());
+            CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        }
+        const auto denied = f.OnOutcome(manager, "setCurrentFunction", "(Ljava/lang/String;Z)V",
+                                        {VmValue::Ref(f.vm.NewStringUtf8("mtp")), VmValue::Int(1)});
+        REQUIRE(denied.exception.IsValid());
+        CHECK(f.linker.Class(denied.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        for (const auto& [method, signature] : std::array{
+                 std::pair{"openAccessory", "(Landroid/hardware/usb/UsbAccessory;)Landroid/os/ParcelFileDescriptor;"},
+                 std::pair{"setMassStorageBackingFile", "(Ljava/lang/String;)V"}}) {
+            const auto result = f.OnOutcome(manager, method, signature, {VmValue::Ref(VmObjectRef{})});
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        }
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.usb_transport");
+        CHECK(hits[0].count == 7);
+        const auto property =
+            f.Static("Landroid/os/SystemProperties;", "get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("sys.usb.config")), VmValue::Ref(f.vm.NewStringUtf8(""))})
+                .ref;
+        const auto functions = f.vm.StringUtf8(property);
+        for (const auto* function : {"mtp", "adb", "rndis", "mt", ""}) {
+            const auto pos = functions.find(function);
+            const auto end = pos == std::string::npos ? pos : pos + std::string_view(function).size();
+            const bool expected = pos != std::string::npos && (pos == 0 || functions[pos - 1] == ',') &&
+                                  (end == functions.size() || functions[end] == ',');
+            CHECK(f.On(manager, "isFunctionEnabled", "(Ljava/lang/String;)Z",
+                       {VmValue::Ref(f.vm.NewStringUtf8(function))})
+                      .AsInt() == expected);
+        }
+        const auto defaults =
+            f.Static("Landroid/os/SystemProperties;", "get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("persist.sys.usb.config")), VmValue::Ref(f.vm.NewStringUtf8(""))})
+                .ref;
+        const auto default_functions = f.vm.StringUtf8(defaults);
+        const auto comma = default_functions.find(',');
+        CHECK(f.vm.StringUtf8(f.On(manager, "getDefaultFunction", "()Ljava/lang/String;").ref) ==
+              (comma > 0 ? default_functions.substr(0, comma) : default_functions));
+        static_cast<void>(f.vm.CollectGarbage("usb-no-device"));
+        CHECK(service() == manager);
+        CHECK(f.On(f.On(manager, "getDeviceList", "()Ljava/util/HashMap;").ref, "size", "()I").AsInt() == 0);
+    }
+}
+
 TEST_CASE("DVM-136 API 19 OrientationEventListener preserves absent sensor semantics") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         std::int32_t orientation_callbacks{};

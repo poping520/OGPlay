@@ -1433,6 +1433,7 @@ Decl Declare_android_content_Context(const Context& context) {
             }
             case dx::ServiceFactory::activity: return dx::VmValue::Ref(ActivityManagerForContext(call, context));
             case dx::ServiceFactory::sensor: return dx::VmValue::Ref(SensorManagerForContext(call, context));
+            case dx::ServiceFactory::usb: return dx::VmValue::Ref(UsbManagerForContext(call, context));
             case dx::ServiceFactory::nfc: return dx::VmValue::Ref(NfcManagerForContext(call, context));
             case dx::ServiceFactory::notification:
                 return dx::VmValue::Ref(NotificationManagerForContext(call, context));

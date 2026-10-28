@@ -37,6 +37,13 @@
   回收后重新打开复核身份与挂载大小，变化失败；挂载至首次 Open 之间不保证原身份。
   不通过无界重开或提高 OS/CRT 上限兜底。小读不触发全文件物化；宿主外部
   原地修改不承诺快照，截断造成短读时明确 `-EIO`。
+- `CaptureMappingSource` 在打开状态、节点、元数据锁序下捕获稳定普通节点的
+  positioned reader、尺寸和访问模式，不依赖 fd 后续存活或数字复用。读取源持有读保护，
+  活跃期间 Write/WriteAt/Truncate、O_TRUNC 与 rename 的源/替换目标返回 EBUSY；
+  拒绝与保护登记在同一元数据锁下排序，回调记账且不得重入 VFS。弱 token 关联节点身份，
+  最后读取源释放后自动解除；unlink 后旧节点仍受保护，同名新节点独立。
+  syscall 负责区间生命周期与快照内存，VFS 不依赖 syscall 或其账本。
+  私有快照复制期间也临时持有保护；不拦截宿主在 VFS 外对 backing 的修改。
 - `VfsReadLease` 固定节点来源版本与窗口，独立于 FD offset/Close/unlink/rename。只读
   backing 共享拥有状态，并将每次读取的取消 token 传到上层注入的区间 reader；lease
   不提供无预算的全量复制接口。可写来源捕获时在统一资源预算内复制窗口，超限 `-ENOSPC`。

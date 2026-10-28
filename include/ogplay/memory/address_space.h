@@ -22,10 +22,8 @@ enum class PageProtection : std::uint8_t {
     execute = 1U << 2U,
 };
 
-[[nodiscard]] constexpr PageProtection operator|(const PageProtection left,
-                                                 const PageProtection right) noexcept {
-    return static_cast<PageProtection>(static_cast<std::uint8_t>(left) |
-                                       static_cast<std::uint8_t>(right));
+[[nodiscard]] constexpr PageProtection operator|(const PageProtection left, const PageProtection right) noexcept {
+    return static_cast<PageProtection>(static_cast<std::uint8_t>(left) | static_cast<std::uint8_t>(right));
 }
 
 enum class AccessType : std::uint8_t { read, write, execute };
@@ -33,38 +31,28 @@ enum class FaultReason : std::uint8_t { unmapped, permission_denied, misaligned 
 
 // Diagnostic names for guest-fault reports; callers append the numeric value
 // so historical numeric workflows keep matching.
-[[nodiscard]] constexpr std::string_view ToString(
-    const AccessType access) noexcept {
+[[nodiscard]] constexpr std::string_view ToString(const AccessType access) noexcept {
     switch (access) {
-        case AccessType::read:
-            return "read";
-        case AccessType::write:
-            return "write";
-        case AccessType::execute:
-            return "execute";
+    case AccessType::read: return "read";
+    case AccessType::write: return "write";
+    case AccessType::execute: return "execute";
     }
     return "unknown";
 }
 
-[[nodiscard]] constexpr std::string_view ToString(
-    const FaultReason reason) noexcept {
+[[nodiscard]] constexpr std::string_view ToString(const FaultReason reason) noexcept {
     switch (reason) {
-        case FaultReason::unmapped:
-            return "unmapped";
-        case FaultReason::permission_denied:
-            return "permission_denied";
-        case FaultReason::misaligned:
-            return "misaligned";
+    case FaultReason::unmapped: return "unmapped";
+    case FaultReason::permission_denied: return "permission_denied";
+    case FaultReason::misaligned: return "misaligned";
     }
     return "unknown";
 }
 
 inline constexpr std::uint32_t kMemorySnapshotVersion = 1;
 inline constexpr std::size_t kGuestPageBits = 12;
-inline constexpr std::size_t kGuestPageCount =
-    std::size_t{1} << (32U - kGuestPageBits);
-using DirectMemoryPageTable =
-    std::array<std::uint8_t*, kGuestPageCount>;
+inline constexpr std::size_t kGuestPageCount = std::size_t{1} << (32U - kGuestPageBits);
+using DirectMemoryPageTable = std::array<std::uint8_t*, kGuestPageCount>;
 
 struct MemoryMappingInfo final {
     GuestRange range;
@@ -85,12 +73,14 @@ struct MemorySnapshot final {
 
 class MemoryFault final : public std::runtime_error {
 public:
-    MemoryFault(GuestAddress address, AccessType access, FaultReason reason,
-                std::uint64_t thread_id);
+    MemoryFault(GuestAddress address, AccessType access, FaultReason reason, std::uint64_t thread_id);
 
     [[nodiscard]] GuestAddress Address() const noexcept { return address_; }
+
     [[nodiscard]] AccessType Access() const noexcept { return access_; }
+
     [[nodiscard]] FaultReason Reason() const noexcept { return reason_; }
+
     [[nodiscard]] std::uint64_t ThreadId() const noexcept { return thread_id_; }
 
 private:
@@ -105,11 +95,9 @@ public:
     ValidatedGuestWrite() = default;
 
 private:
-    ValidatedGuestWrite(GuestAddress address, std::uint64_t size,
-                        std::uint64_t generation,
+    ValidatedGuestWrite(GuestAddress address, std::uint64_t size, std::uint64_t generation,
                         std::uint64_t thread_id) noexcept
-        : address_(address), size_(size), generation_(generation),
-          thread_id_(thread_id) {}
+        : address_(address), size_(size), generation_(generation), thread_id_(thread_id) {}
 
     GuestAddress address_{};
     std::uint64_t size_{};
@@ -160,13 +148,13 @@ public:
     [[nodiscard]] MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler);
     void Map(const GuestRange& range, PageProtection protection);
     // Atomically replace guest pages (including holes) with zeroed anonymous
-    // memory. Outside pages and ordinary Map overlap checks are preserved.
-    void ReplaceAnonymous(const GuestRange& range, PageProtection protection);
+    // memory. Optional initial bytes are copied before final protection publishes;
+    // the remaining bytes are zero. Outside pages and Map overlap checks survive.
+    void ReplaceAnonymous(const GuestRange& range, PageProtection protection, std::span<const std::byte> initial = {});
     // Atomically first-fit and map inside bounds; PROT_NONE is occupied.
     // Throws bad_alloc when no contiguous free range exists.
-    [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds,
-                                          std::uint64_t size,
-                                          PageProtection protection);
+    [[nodiscard]] GuestAddress MapAnywhere(const GuestRange& bounds, std::uint64_t size, PageProtection protection,
+                                           std::span<const std::byte> initial = {});
     // Diagnostics run under the mapping lock and must not reenter AddressSpace.
     [[nodiscard]] ProtectedMappingOwner RegisterProtectedOwner(std::function<void(std::string_view)> diagnostic);
     [[nodiscard]] GuestAddress MapProtectedAnywhere(const ProtectedMappingOwner& owner, const GuestRange& bounds,
@@ -178,56 +166,39 @@ public:
     void RejectProtectedMutation(const GuestRange& range, std::string_view operation) const;
     void Protect(const GuestRange& range, PageProtection protection);
     void Unmap(const GuestRange& range);
-    void ValidateMapped(const GuestRange& range,
-                        std::uint64_t thread_id = 0) const;
-    void Validate(const GuestRange& range, AccessType access,
-                  std::uint64_t thread_id = 0) const;
-    void Read(GuestAddress address, std::span<std::byte> destination,
-              std::uint64_t thread_id = 0) const;
-    void Fetch(GuestAddress address, std::span<std::byte> destination,
-               std::uint64_t thread_id = 0) const;
-    void Write(GuestAddress address, std::span<const std::byte> source,
-               std::uint64_t thread_id = 0);
-    [[nodiscard]] ValidatedGuestWrite PreflightWrite(
-        const GuestRange& range, std::uint64_t thread_id = 0) const;
-    void WritePrevalidated(const ValidatedGuestWrite& validation,
-                           std::span<const std::byte> source);
-    [[nodiscard]] std::size_t CStringLength(
-        GuestAddress address, std::size_t maximum_bytes,
-        std::uint64_t thread_id = 0) const;
-    [[nodiscard]] std::uint8_t Read8(GuestAddress address,
-                                     std::uint64_t thread_id = 0) const;
-    [[nodiscard]] std::uint16_t Read16(GuestAddress address,
-                                       std::uint64_t thread_id = 0) const;
-    [[nodiscard]] std::uint32_t Read32(GuestAddress address,
-                                       std::uint64_t thread_id = 0) const;
-    [[nodiscard]] std::uint64_t Read64(GuestAddress address,
-                                       std::uint64_t thread_id = 0) const;
-    void Write8(GuestAddress address, std::uint8_t value,
-                std::uint64_t thread_id = 0);
-    void Write16(GuestAddress address, std::uint16_t value,
-                 std::uint64_t thread_id = 0);
-    void Write32(GuestAddress address, std::uint32_t value,
-                 std::uint64_t thread_id = 0);
-    void Write64(GuestAddress address, std::uint64_t value,
-                 std::uint64_t thread_id = 0);
+    void ValidateMapped(const GuestRange& range, std::uint64_t thread_id = 0) const;
+    void Validate(const GuestRange& range, AccessType access, std::uint64_t thread_id = 0) const;
+    void Read(GuestAddress address, std::span<std::byte> destination, std::uint64_t thread_id = 0) const;
+    void Fetch(GuestAddress address, std::span<std::byte> destination, std::uint64_t thread_id = 0) const;
+    void Write(GuestAddress address, std::span<const std::byte> source, std::uint64_t thread_id = 0);
+    [[nodiscard]] ValidatedGuestWrite PreflightWrite(const GuestRange& range, std::uint64_t thread_id = 0) const;
+    void WritePrevalidated(const ValidatedGuestWrite& validation, std::span<const std::byte> source);
+    [[nodiscard]] std::size_t CStringLength(GuestAddress address, std::size_t maximum_bytes,
+                                            std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint8_t Read8(GuestAddress address, std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint16_t Read16(GuestAddress address, std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint32_t Read32(GuestAddress address, std::uint64_t thread_id = 0) const;
+    [[nodiscard]] std::uint64_t Read64(GuestAddress address, std::uint64_t thread_id = 0) const;
+    void Write8(GuestAddress address, std::uint8_t value, std::uint64_t thread_id = 0);
+    void Write16(GuestAddress address, std::uint16_t value, std::uint64_t thread_id = 0);
+    void Write32(GuestAddress address, std::uint32_t value, std::uint64_t thread_id = 0);
+    void Write64(GuestAddress address, std::uint64_t value, std::uint64_t thread_id = 0);
     // Naturally aligned, little-endian, atomic against JIT direct stores.
     // A value comparison, not an ARM reservation or an ABA detector.
-    [[nodiscard]] bool CompareExchange8(GuestAddress address, std::uint8_t expected,
-                                        std::uint8_t value, std::uint64_t thread_id = 0);
-    [[nodiscard]] bool CompareExchange16(GuestAddress address, std::uint16_t expected,
-                                         std::uint16_t value, std::uint64_t thread_id = 0);
-    [[nodiscard]] bool CompareExchange32(GuestAddress address, std::uint32_t expected,
-                                         std::uint32_t value, std::uint64_t thread_id = 0);
-    [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected,
-                                         std::uint64_t value, std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange8(GuestAddress address, std::uint8_t expected, std::uint8_t value,
+                                        std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange16(GuestAddress address, std::uint16_t expected, std::uint16_t value,
+                                         std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange32(GuestAddress address, std::uint32_t expected, std::uint32_t value,
+                                         std::uint64_t thread_id = 0);
+    [[nodiscard]] bool CompareExchange64(GuestAddress address, std::uint64_t expected, std::uint64_t value,
+                                         std::uint64_t thread_id = 0);
     [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept;
     // Read permission only. Never use these entries for stores or fetches.
     [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept;
     [[nodiscard]] std::optional<MemoryStatistics> TrySnapshot() const;
     // Metadata only, bounded by maximum_ranges; never copies guest contents.
-    [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(
-        std::size_t maximum_ranges = 65536) const;
+    [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(std::size_t maximum_ranges = 65536) const;
     [[nodiscard]] MemorySnapshot CaptureSnapshot() const;
     void RestoreSnapshot(const MemorySnapshot& snapshot);
 

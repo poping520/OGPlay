@@ -28,28 +28,35 @@ class SandboxStore;
 struct VfsGeneratedFileState;
 struct VfsCharacterDeviceState;
 using VfsCharacterReader = std::function<std::size_t(std::span<std::byte>)>;
+
 // Retirement waits for in-flight reads; retained descriptors then fail with EIO.
 class VfsCharacterDeviceRegistration final {
 public:
     ~VfsCharacterDeviceRegistration();
     VfsCharacterDeviceRegistration(const VfsCharacterDeviceRegistration&) = delete;
     VfsCharacterDeviceRegistration& operator=(const VfsCharacterDeviceRegistration&) = delete;
+
 private:
     friend class VirtualFileSystem;
+
     explicit VfsCharacterDeviceRegistration(std::shared_ptr<VfsCharacterDeviceState> state)
         : state_(std::move(state)) {}
+
     std::shared_ptr<VfsCharacterDeviceState> state_;
 };
+
 // Revokes the provider synchronously on destruction. Open snapshots remain valid.
 class VfsGeneratedFileRegistration final {
 public:
     ~VfsGeneratedFileRegistration();
     VfsGeneratedFileRegistration(const VfsGeneratedFileRegistration&) = delete;
     VfsGeneratedFileRegistration& operator=(const VfsGeneratedFileRegistration&) = delete;
+
 private:
     friend class VirtualFileSystem;
-    explicit VfsGeneratedFileRegistration(std::shared_ptr<VfsGeneratedFileState> state)
-        : state_(std::move(state)) {}
+
+    explicit VfsGeneratedFileRegistration(std::shared_ptr<VfsGeneratedFileState> state) : state_(std::move(state)) {}
+
     std::shared_ptr<VfsGeneratedFileState> state_;
 };
 
@@ -57,9 +64,13 @@ class VfsReadLease {
 public:
     virtual ~VfsReadLease() = default;
     [[nodiscard]] virtual std::uint64_t Size() const noexcept = 0;
-    [[nodiscard]] virtual std::size_t ReadAt(
-        std::uint64_t offset, std::span<std::byte> destination,
-        std::stop_token stop = {}) const = 0;
+    [[nodiscard]] virtual std::size_t ReadAt(std::uint64_t offset, std::span<std::byte> destination,
+                                             std::stop_token stop = {}) const = 0;
+};
+
+struct VfsMappingSource final {
+    std::shared_ptr<const VfsReadLease> lease;
+    bool readable{}, writable{};
 };
 
 struct VfsOpenOptions final {
@@ -96,40 +107,35 @@ struct VfsMountEntry final {
 };
 
 using VfsReadOnlyLoader = std::function<std::vector<std::byte>()>;
+
 class VfsReadAtLoader final {
 public:
     VfsReadAtLoader() = default;
 
     template <class Loader>
     VfsReadAtLoader(Loader loader) {
-        if constexpr (std::is_invocable_r_v<std::size_t, Loader&,
-                          std::uint64_t, std::span<std::byte>, std::stop_token>) {
+        if constexpr (std::is_invocable_r_v<std::size_t, Loader&, std::uint64_t, std::span<std::byte>,
+                                            std::stop_token>) {
             loader_ = std::move(loader);
         } else {
-            static_assert(std::is_invocable_r_v<std::size_t, Loader&,
-                              std::uint64_t, std::span<std::byte>>);
-            loader_ = [loader = std::move(loader)](
-                          const std::uint64_t offset,
-                          const std::span<std::byte> destination,
-                          const std::stop_token stop) mutable {
+            static_assert(std::is_invocable_r_v<std::size_t, Loader&, std::uint64_t, std::span<std::byte>>);
+            loader_ = [loader = std::move(loader)](const std::uint64_t offset, const std::span<std::byte> destination,
+                                                   const std::stop_token stop) mutable {
                 if (stop.stop_requested()) return std::size_t{};
                 return loader(offset, destination);
             };
         }
     }
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(loader_);
-    }
-    [[nodiscard]] std::size_t operator()(
-        const std::uint64_t offset, const std::span<std::byte> destination,
-        const std::stop_token stop = {}) const {
+    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(loader_); }
+
+    [[nodiscard]] std::size_t operator()(const std::uint64_t offset, const std::span<std::byte> destination,
+                                         const std::stop_token stop = {}) const {
         return loader_(offset, destination, stop);
     }
 
 private:
-    std::function<std::size_t(std::uint64_t, std::span<std::byte>,
-                              std::stop_token)> loader_;
+    std::function<std::size_t(std::uint64_t, std::span<std::byte>, std::stop_token)> loader_;
 };
 
 struct VfsLazyMountEntry final {
@@ -183,7 +189,12 @@ struct VfsDescriptorSnapshot final {
     std::optional<std::uint64_t> node_id, offset;
     bool readable{}, writable{}, busy{};
 };
-struct VfsMountSnapshot final { std::string root; VfsSource source{}; };
+
+struct VfsMountSnapshot final {
+    std::string root;
+    VfsSource source{};
+};
+
 struct VfsSnapshot final {
     VfsIoStatistics io;
     std::vector<VfsMountSnapshot> mounts;
@@ -217,9 +228,8 @@ private:
 class VfsError final : public std::runtime_error {
 public:
     VfsError(std::int32_t error_number, std::string message);
-    [[nodiscard]] std::int32_t ErrorNumber() const noexcept {
-        return error_number_;
-    }
+
+    [[nodiscard]] std::int32_t ErrorNumber() const noexcept { return error_number_; }
 
 private:
     std::int32_t error_number_{};
@@ -240,22 +250,17 @@ public:
 
     // Provider runs outside VFS locks, once per open; stat size is zero.
     // Caller bounds allocation to maximum_bytes; the VFS reserves that budget first.
-    [[nodiscard]] std::unique_ptr<VfsGeneratedFileRegistration> RegisterGeneratedReadOnly(
-        std::string_view path, std::uint64_t maximum_bytes, VfsReadOnlyLoader provider);
+    [[nodiscard]] std::unique_ptr<VfsGeneratedFileRegistration>
+    RegisterGeneratedReadOnly(std::string_view path, std::uint64_t maximum_bytes, VfsReadOnlyLoader provider);
     // Reader runs per non-empty Read outside global/node locks. No EOF is
     // inferred from st_size (zero); positioned IO and leases are unsupported.
-    [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration> RegisterReadOnlyCharacterDevice(
-        std::string_view path, std::uint64_t device_number, VfsCharacterReader reader);
-    void PutFile(std::string_view path, std::span<const std::byte> contents,
-                 bool writable);
-    void Mount(VfsSource source, std::string_view root,
-               std::span<const VfsMountEntry> entries);
-    void MountLazyReadOnly(VfsSource source, std::string_view root,
-                           std::span<const VfsLazyMountEntry> entries);
-    void MountHostDirectory(std::string_view root,
-                            const std::filesystem::path& directory);
-    void MountHostFile(VfsSource source, std::string_view root,
-                       const std::filesystem::path& file);
+    [[nodiscard]] std::unique_ptr<VfsCharacterDeviceRegistration>
+    RegisterReadOnlyCharacterDevice(std::string_view path, std::uint64_t device_number, VfsCharacterReader reader);
+    void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
+    void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);
+    void MountLazyReadOnly(VfsSource source, std::string_view root, std::span<const VfsLazyMountEntry> entries);
+    void MountHostDirectory(std::string_view root, const std::filesystem::path& directory);
+    void MountHostFile(VfsSource source, std::string_view root, const std::filesystem::path& file);
     // Canonicalizes a path prefix onto an already mounted namespace. Both
     // spellings then address the same nodes and overlay.
     void AddPathAlias(std::string_view alias, std::string_view target);
@@ -272,23 +277,20 @@ public:
     // Immediate children (sorted, deduplicated) of a directory path; empty
     // when nothing is below it. Directories exist both implicitly, through
     // the files mounted beneath them, and explicitly through CreateDirectory.
-    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(
-        std::string_view path) const;
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(std::string_view path) const;
 
     // Directory and metadata operations (ADR-0020). Pure in-memory
     // semantics; a sandbox attached later persists them at flush points.
-    void CreateDirectory(std::string_view path);   // parent must exist
-    void RemoveFile(std::string_view path);        // unlink
-    void RemoveDirectory(std::string_view path);   // rmdir, -ENOTEMPTY
+    void CreateDirectory(std::string_view path);  // parent must exist
+    void RemoveFile(std::string_view path);       // unlink
+    void RemoveDirectory(std::string_view path);  // rmdir, -ENOTEMPTY
     void Rename(std::string_view from, std::string_view to);
-    [[nodiscard]] std::int32_t Open(std::string_view path,
-                                    VfsOpenOptions options);
+    [[nodiscard]] std::int32_t Open(std::string_view path, VfsOpenOptions options);
     // Directory descriptor for getdents64: the child list is snapshotted at
     // open time and consumed by ReadDirectory, so paging is stable even if
     // the guest creates files while walking.
     [[nodiscard]] std::int32_t OpenDirectory(std::string_view path);
-    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
-        std::int32_t descriptor, std::size_t maximum);
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
     // Append status is immutable for the lifetime of an open description.
@@ -297,27 +299,21 @@ public:
     // ALOOPER-style bits: read=1, write=2, error=4, hangup=8, invalid=16.
     // nullopt means the descriptor type is outside the pipe polling contract.
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
-    [[nodiscard]] std::size_t Read(std::int32_t descriptor,
-                                   std::span<std::byte> destination);
-    [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor,
-                                     std::uint64_t offset,
-                                     std::span<std::byte> destination);
-    [[nodiscard]] std::size_t Write(std::int32_t descriptor,
-                                    std::span<const std::byte> source);
-    [[nodiscard]] std::size_t WriteAt(std::int32_t descriptor,
-                                      std::uint64_t offset,
-                                      std::span<const std::byte> source);
-    [[nodiscard]] std::shared_ptr<const VfsReadLease> CaptureReadLease(
-        std::int32_t descriptor, std::uint64_t offset,
-        std::uint64_t length = std::numeric_limits<std::uint64_t>::max());
-    [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor,
-                                     std::int64_t offset,
-                                     VfsSeekWhence whence);
+    [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
+    [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
+    [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);
+    [[nodiscard]] std::size_t WriteAt(std::int32_t descriptor, std::uint64_t offset, std::span<const std::byte> source);
+    // Pins a regular node and its bytes against VFS mutations (EBUSY). Diagnostic
+    // runs under the metadata lock and must not reenter VFS. Token outlives FD.
+    [[nodiscard]] VfsMappingSource CaptureMappingSource(std::int32_t descriptor, std::function<void()> rejected);
+    [[nodiscard]] std::shared_ptr<const VfsReadLease>
+    CaptureReadLease(std::int32_t descriptor, std::uint64_t offset,
+                     std::uint64_t length = std::numeric_limits<std::uint64_t>::max());
+    [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor, std::int64_t offset, VfsSeekWhence whence);
     // Attaches the per-title overlay. Writes inside writable_roots then
     // persist at the flush points; everything else keeps its current
     // read-only base-layer behaviour.
-    void AttachSandbox(SandboxStore& store,
-                       std::span<const std::string> writable_roots);
+    void AttachSandbox(SandboxStore& store, std::span<const std::string> writable_roots);
     [[nodiscard]] bool SandboxAttached() const;
     [[nodiscard]] VfsIoStatistics IoStatistics() const;
     [[nodiscard]] std::optional<VfsSnapshot> TrySnapshot() const;
@@ -325,8 +321,7 @@ public:
     // Reserves from the same aggregate memory budget used by writable lease
     // snapshots. Callers must reserve before allocating and retain the token
     // for as long as the allocation is reachable.
-    [[nodiscard]] std::shared_ptr<const VfsResourceReservation>
-    ReserveResourceMemory(std::uint64_t bytes);
+    [[nodiscard]] std::shared_ptr<const VfsResourceReservation> ReserveResourceMemory(std::uint64_t bytes);
 
     void Truncate(std::int32_t descriptor, std::uint64_t size);
     // fsync/fdatasync join here; without an attached sandbox both only

@@ -15,11 +15,9 @@
 namespace ogplay::memory {
 namespace {
 
-inline constexpr std::uint64_t kGuestPageSize = std::uint64_t{1}
-                                                      << kGuestPageBits;
+inline constexpr std::uint64_t kGuestPageSize = std::uint64_t{1} << kGuestPageBits;
 
-[[nodiscard]] bool HasProtection(const PageProtection value,
-                                 const PageProtection flag) noexcept {
+[[nodiscard]] bool HasProtection(const PageProtection value, const PageProtection flag) noexcept {
     return (static_cast<std::uint8_t>(value) & static_cast<std::uint8_t>(flag)) != 0;
 }
 
@@ -27,8 +25,7 @@ void ValidateProtection(const PageProtection protection) {
     if ((static_cast<std::uint8_t>(protection) & ~7U) != 0) {
         throw std::invalid_argument("invalid guest page protection");
     }
-    if (HasProtection(protection, PageProtection::write) &&
-        !HasProtection(protection, PageProtection::read)) {
+    if (HasProtection(protection, PageProtection::write) && !HasProtection(protection, PageProtection::read)) {
         throw std::invalid_argument("writable guest pages must also be readable");
     }
 }
@@ -44,8 +41,8 @@ void ValidateProtection(const PageProtection protection) {
 
 }  // namespace
 
-MemoryFault::MemoryFault(const GuestAddress address, const AccessType access,
-                         const FaultReason reason, const std::uint64_t thread_id)
+MemoryFault::MemoryFault(const GuestAddress address, const AccessType access, const FaultReason reason,
+                         const std::uint64_t thread_id)
     : std::runtime_error(reason == FaultReason::unmapped ? "guest memory is unmapped"
                                                          : "guest memory permission denied"),
       address_(address), access_(access), reason_(reason), thread_id_(thread_id) {}
@@ -57,23 +54,30 @@ public:
         std::map<std::uint64_t, MappingChangeHandler> handlers;
         std::uint64_t next_id{};
     };
+
     MappingChangeSubscription ObserveMappingChanges(MappingChangeHandler handler) {
         if (!handler) throw std::invalid_argument("mapping change handler is empty");
         const auto observers = mapping_observers_;
         std::uint64_t id;
-        { std::scoped_lock lock(observers->mutex); id = ++observers->next_id; }
+        {
+            std::scoped_lock lock(observers->mutex);
+            id = ++observers->next_id;
+        }
         auto token = std::shared_ptr<void>(new std::uint64_t{id},
-            [weak = std::weak_ptr<MappingObservers>(observers), id](void* value) {
-                delete static_cast<std::uint64_t*>(value);
-                if (const auto registry = weak.lock()) {
-                    std::scoped_lock registry_lock(registry->mutex);
-                    registry->handlers.erase(id);
-                }
-            });
-        { std::scoped_lock lock(observers->mutex);
-          observers->handlers.emplace(id, std::move(handler)); }
+                                           [weak = std::weak_ptr<MappingObservers>(observers), id](void* value) {
+                                               delete static_cast<std::uint64_t*>(value);
+                                               if (const auto registry = weak.lock()) {
+                                                   std::scoped_lock registry_lock(registry->mutex);
+                                                   registry->handlers.erase(id);
+                                               }
+                                           });
+        {
+            std::scoped_lock lock(observers->mutex);
+            observers->handlers.emplace(id, std::move(handler));
+        }
         return token;
     }
+
     void PublishMappingChange(GuestRange range) {
         // Serialize retirement with callbacks, without holding the ledger lock.
         std::scoped_lock lock(mapping_observers_->mutex);
@@ -85,17 +89,13 @@ public:
 
     Impl() : reservation_(hal::ReserveVirtualMemory(kGuestAddressSpaceSize)) {
         host_page_size_ = reservation_->PageSize();
-        if (host_page_size_ < kGuestPageSize ||
-            host_page_size_ % kGuestPageSize != 0) {
-            throw std::runtime_error(
-                "host page size cannot back 4096-byte guest pages");
+        if (host_page_size_ < kGuestPageSize || host_page_size_ % kGuestPageSize != 0) {
+            throw std::runtime_error("host page size cannot back 4096-byte guest pages");
         }
         page_size_ = kGuestPageSize;
-        pages_.resize(static_cast<std::size_t>(kGuestAddressSpaceSize / page_size_),
-                      PageProtection::none);
+        pages_.resize(static_cast<std::size_t>(kGuestAddressSpaceSize / page_size_), PageProtection::none);
         mapped_.resize(pages_.size(), false);
-        host_committed_.resize(static_cast<std::size_t>(
-            kGuestAddressSpaceSize / host_page_size_), false);
+        host_committed_.resize(static_cast<std::size_t>(kGuestAddressSpaceSize / host_page_size_), false);
         direct_page_table_ = std::make_unique<DirectMemoryPageTable>();
         direct_page_table_->fill(nullptr);
         direct_read_page_table_ = std::make_unique<DirectMemoryPageTable>();
@@ -103,6 +103,7 @@ public:
     }
 
     [[nodiscard]] std::uint64_t ReservedSize() const noexcept { return reservation_->Size(); }
+
     [[nodiscard]] std::uint64_t PageSize() const noexcept { return page_size_; }
 
     [[nodiscard]] std::uint64_t BackingPageSize() const noexcept { return host_page_size_; }
@@ -110,7 +111,8 @@ public:
     std::optional<MemoryStatistics> TrySnapshot() const {
         std::unique_lock lock(mutex_, std::try_to_lock);
         if (!lock.owns_lock()) return std::nullopt;
-        MemoryStatistics result; result.generation = mapping_generation_;
+        MemoryStatistics result;
+        result.generation = mapping_generation_;
         for (std::size_t i = 0; i < pages_.size(); ++i)
             if (mapped_[i]) ++result.pages_by_protection[static_cast<std::size_t>(pages_[i])];
         return result;
@@ -126,7 +128,9 @@ public:
         MapLocked(range, protection);
     }
 
-    void ReplaceAnonymous(const GuestRange& range, const PageProtection protection) {
+    void ReplaceAnonymous(const GuestRange& range, const PageProtection protection,
+                          const std::span<const std::byte> initial) {
+        if (initial.size() > range.Size()) throw std::invalid_argument("mapping initializer exceeds range");
         ValidateProtection(protection);
         ValidatePageRange(range);
         if (range.Overlaps(LowAddressGuard())) {
@@ -134,11 +138,12 @@ public:
         }
         std::scoped_lock lock(mutex_);
         RejectProtectedLocked(range, "replace");
-        ReplaceAnonymousLocked(range, protection);
+        ReplaceAnonymousLocked(range, protection, initial);
     }
 
-    GuestAddress MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
-                             const PageProtection protection) {
+    GuestAddress MapAnywhere(const GuestRange& bounds, const std::uint64_t size, const PageProtection protection,
+                             const std::span<const std::byte> initial) {
+        if (initial.size() > size) throw std::invalid_argument("mapping initializer exceeds range");
         ValidateProtection(protection);
         ValidatePageRange(bounds);
         if (size == 0 || size % page_size_ != 0) {
@@ -147,7 +152,7 @@ public:
         if (size > bounds.Size()) throw std::bad_alloc();
         std::scoped_lock lock(mutex_);
         const auto address = FindFreeLocked(bounds, size);
-        MapLocked({address, size}, protection);
+        ReplaceAnonymousLocked({address, size}, protection, initial);
         return address;
     }
 
@@ -245,20 +250,20 @@ public:
 
     void MapLocked(const GuestRange& range, const PageProtection protection) {
         const auto [first, last] = PageIndexes(range);
-        if (std::any_of(mapped_.begin() + first, mapped_.begin() + last,
-                        [](const bool mapped) { return mapped; })) {
+        if (std::any_of(mapped_.begin() + first, mapped_.begin() + last, [](const bool mapped) { return mapped; })) {
             throw std::logic_error("guest memory range overlaps an existing mapping");
         }
         ReplaceAnonymousLocked(range, protection);
     }
 
-    void ReplaceAnonymousLocked(const GuestRange& range, const PageProtection protection) {
+    void ReplaceAnonymousLocked(const GuestRange& range, const PageProtection protection,
+                                const std::span<const std::byte> initial = {}) {
         const auto [first, last] = PageIndexes(range);
         // Prepare every missing host page before touching existing guest bytes
         // or metadata. Zero only the exact guest range, even on 16 KiB hosts.
         EnsureHostBacking(range);
-        std::memset(reservation_->Base() + range.Start().Value(), 0,
-                    static_cast<std::size_t>(range.Size()));
+        std::memset(reservation_->Base() + range.Start().Value(), 0, static_cast<std::size_t>(range.Size()));
+        if (!initial.empty()) std::memcpy(reservation_->Base() + range.Start().Value(), initial.data(), initial.size());
         std::fill(pages_.begin() + first, pages_.begin() + last, protection);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, true);
         UpdateDirectPages(first, last);
@@ -287,8 +292,7 @@ public:
     void UnmapLocked(const GuestRange& range) {
         const auto [first, last] = PageIndexes(range);
         RequireMapped(range, first, last, AccessType::read, 0);
-        std::memset(reservation_->Base() + range.Start().Value(), 0,
-                    static_cast<std::size_t>(range.Size()));
+        std::memset(reservation_->Base() + range.Start().Value(), 0, static_cast<std::size_t>(range.Size()));
         std::fill(pages_.begin() + first, pages_.begin() + last, PageProtection::none);
         std::fill(mapped_.begin() + first, mapped_.begin() + last, false);
         UpdateDirectPages(first, last);
@@ -296,36 +300,30 @@ public:
         ++mapping_generation_;
     }
 
-    void Validate(const GuestRange& range, const AccessType access,
-                  const std::uint64_t thread_id) const {
+    void Validate(const GuestRange& range, const AccessType access, const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, access, thread_id);
     }
 
-    void ValidateMapped(const GuestRange& range,
-                        const std::uint64_t thread_id) const {
+    void ValidateMapped(const GuestRange& range, const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         const auto first = range.Start().Value() / page_size_;
         const auto last = (range.EndExclusive() - 1U) / page_size_;
         for (auto page = first; page <= last; ++page) {
             if (mapped_[static_cast<std::size_t>(page)]) continue;
-            const auto fault_address = std::max<std::uint64_t>(
-                range.Start().Value(),
-                static_cast<std::uint64_t>(page) * page_size_);
-            throw MemoryFault(
-                GuestAddress{static_cast<std::uint32_t>(fault_address)},
-                AccessType::read, FaultReason::unmapped, thread_id);
+            const auto fault_address =
+                std::max<std::uint64_t>(range.Start().Value(), static_cast<std::uint64_t>(page) * page_size_);
+            throw MemoryFault(GuestAddress{static_cast<std::uint32_t>(fault_address)}, AccessType::read,
+                              FaultReason::unmapped, thread_id);
         }
     }
 
-    void Read(const GuestAddress address, const std::span<std::byte> destination,
-              const std::uint64_t thread_id) const {
+    void Read(const GuestAddress address, const std::span<std::byte> destination, const std::uint64_t thread_id) const {
         if (destination.empty()) return;
         const GuestRange range(address, destination.size());
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, AccessType::read, thread_id);
-        std::memcpy(destination.data(), reservation_->Base() + address.Value(),
-                    destination.size());
+        std::memcpy(destination.data(), reservation_->Base() + address.Value(), destination.size());
     }
 
     void Fetch(const GuestAddress address, const std::span<std::byte> destination,
@@ -334,12 +332,10 @@ public:
         const GuestRange range(address, destination.size());
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, AccessType::execute, thread_id);
-        std::memcpy(destination.data(), reservation_->Base() + address.Value(),
-                    destination.size());
+        std::memcpy(destination.data(), reservation_->Base() + address.Value(), destination.size());
     }
 
-    void Write(const GuestAddress address, const std::span<const std::byte> source,
-               const std::uint64_t thread_id) {
+    void Write(const GuestAddress address, const std::span<const std::byte> source, const std::uint64_t thread_id) {
         if (source.empty()) return;
         const GuestRange range(address, source.size());
         std::scoped_lock lock(mutex_);
@@ -347,56 +343,45 @@ public:
         std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
     }
 
-    [[nodiscard]] std::uint64_t PreflightWrite(
-        const GuestRange& range, const std::uint64_t thread_id) const {
+    [[nodiscard]] std::uint64_t PreflightWrite(const GuestRange& range, const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         ValidateLocked(range, AccessType::write, thread_id);
         return mapping_generation_;
     }
 
-    void WritePrevalidated(const GuestAddress address,
-                           const std::span<const std::byte> source,
-                           const std::uint64_t expected_generation,
-                           const std::uint64_t thread_id) {
+    void WritePrevalidated(const GuestAddress address, const std::span<const std::byte> source,
+                           const std::uint64_t expected_generation, const std::uint64_t thread_id) {
         if (source.empty()) return;
         const GuestRange range(address, source.size());
         std::scoped_lock lock(mutex_);
         if (mapping_generation_ != expected_generation) {
             ValidateLocked(range, AccessType::write, thread_id);
         }
-        std::memcpy(reservation_->Base() + address.Value(), source.data(),
-                    source.size());
+        std::memcpy(reservation_->Base() + address.Value(), source.data(), source.size());
     }
 
-    [[nodiscard]] std::size_t CStringLength(
-        const GuestAddress address, const std::size_t maximum_bytes,
-        const std::uint64_t thread_id) const {
+    [[nodiscard]] std::size_t CStringLength(const GuestAddress address, const std::size_t maximum_bytes,
+                                            const std::uint64_t thread_id) const {
         std::scoped_lock lock(mutex_);
         std::size_t scanned{};
         while (scanned < maximum_bytes) {
             const auto current = address.Add(scanned);
             const auto page_offset = current.Value() % page_size_;
-            const auto page_remaining =
-                static_cast<std::size_t>(page_size_ - page_offset);
-            const auto chunk = std::min(maximum_bytes - scanned,
-                                        page_remaining);
-            ValidateLocked(GuestRange(current, chunk), AccessType::read,
-                           thread_id);
+            const auto page_remaining = static_cast<std::size_t>(page_size_ - page_offset);
+            const auto chunk = std::min(maximum_bytes - scanned, page_remaining);
+            ValidateLocked(GuestRange(current, chunk), AccessType::read, thread_id);
             const auto* begin = reservation_->Base() + current.Value();
-            const auto* terminator = static_cast<const std::byte*>(
-                std::memchr(begin, 0, chunk));
+            const auto* terminator = static_cast<const std::byte*>(std::memchr(begin, 0, chunk));
             if (terminator != nullptr) {
                 return scanned + static_cast<std::size_t>(terminator - begin);
             }
             scanned += chunk;
         }
-        throw std::length_error(
-            "guest C string is not terminated within the byte limit");
+        throw std::length_error("guest C string is not terminated within the byte limit");
     }
 
     template <typename UInt>
-    [[nodiscard]] UInt ReadScalar(const GuestAddress address,
-                                  const std::uint64_t thread_id) const {
+    [[nodiscard]] UInt ReadScalar(const GuestAddress address, const std::uint64_t thread_id) const {
         static_assert(std::is_unsigned_v<UInt>);
         const GuestRange range(address, sizeof(UInt));
         std::scoped_lock lock(mutex_);
@@ -406,8 +391,7 @@ public:
         if constexpr (std::endian::native == std::endian::big) {
             UInt reversed{};
             for (std::size_t index = 0; index < sizeof(UInt); ++index) {
-                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU))
-                            << ((sizeof(UInt) - index - 1U) * 8U);
+                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU)) << ((sizeof(UInt) - index - 1U) * 8U);
             }
             return reversed;
         }
@@ -415,8 +399,7 @@ public:
     }
 
     template <typename UInt>
-    void WriteScalar(const GuestAddress address, UInt value,
-                     const std::uint64_t thread_id) {
+    void WriteScalar(const GuestAddress address, UInt value, const std::uint64_t thread_id) {
         static_assert(std::is_unsigned_v<UInt>);
         const GuestRange range(address, sizeof(UInt));
         std::scoped_lock lock(mutex_);
@@ -424,8 +407,7 @@ public:
         if constexpr (std::endian::native == std::endian::big) {
             UInt reversed{};
             for (std::size_t index = 0; index < sizeof(UInt); ++index) {
-                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU))
-                            << ((sizeof(UInt) - index - 1U) * 8U);
+                reversed |= ((value >> (index * 8U)) & static_cast<UInt>(0xffU)) << ((sizeof(UInt) - index - 1U) * 8U);
             }
             value = reversed;
         }
@@ -433,8 +415,8 @@ public:
     }
 
     template <typename UInt>
-    [[nodiscard]] bool CompareExchange(const GuestAddress address, UInt expected,
-                                        UInt value, const std::uint64_t thread_id) {
+    [[nodiscard]] bool CompareExchange(const GuestAddress address, UInt expected, UInt value,
+                                       const std::uint64_t thread_id) {
         // A locking atomic implementation would not synchronize with generated
         // machine-code stores. Require a real host atomic instruction.
         static_assert(std::atomic_ref<UInt>::is_always_lock_free);
@@ -444,8 +426,7 @@ public:
         ValidateLocked(range, AccessType::read, thread_id);
         ValidateLocked(range, AccessType::write, thread_id);
         if (address.Value() % sizeof(UInt) != 0) {
-            throw MemoryFault(address, AccessType::write, FaultReason::misaligned,
-                              thread_id);
+            throw MemoryFault(address, AccessType::write, FaultReason::misaligned, thread_id);
         }
         if constexpr (std::endian::native == std::endian::big) {
             const auto reverse = [](UInt input) {
@@ -463,28 +444,29 @@ public:
         // CAS supplies atomicity against stores emitted by the JIT, which do
         // not acquire that lock. Do not split this into ReadScalar/WriteScalar.
         auto& storage = *reinterpret_cast<UInt*>(reservation_->Base() + address.Value());
-        return std::atomic_ref<UInt>(storage).compare_exchange_strong(
-            expected, value, std::memory_order_seq_cst);
+        return std::atomic_ref<UInt>(storage).compare_exchange_strong(expected, value, std::memory_order_seq_cst);
     }
 
-    [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept {
-        return direct_page_table_.get();
-    }
-    [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept {
-        return direct_read_page_table_.get();
-    }
+    [[nodiscard]] DirectMemoryPageTable* DirectPageTable() noexcept { return direct_page_table_.get(); }
+
+    [[nodiscard]] DirectMemoryPageTable* DirectReadPageTable() noexcept { return direct_read_page_table_.get(); }
 
     [[nodiscard]] std::vector<MemoryMappingInfo> DescribeMappings(const std::size_t maximum_ranges) const {
         std::scoped_lock lock(mutex_);
         std::vector<MemoryMappingInfo> result;
         std::size_t first = 0;
         while (first < pages_.size()) {
-            if (!mapped_[first]) { ++first; continue; }
+            if (!mapped_[first]) {
+                ++first;
+                continue;
+            }
             auto last = first + 1;
-            while (last < pages_.size() && mapped_[last] && pages_[last] == pages_[first]) ++last;
+            while (last < pages_.size() && mapped_[last] && pages_[last] == pages_[first])
+                ++last;
             if (result.size() >= maximum_ranges) throw std::length_error("guest mapping metadata limit exceeded");
-            result.push_back({GuestRange(GuestAddress(static_cast<std::uint32_t>(first * page_size_)),
-                                        (last - first) * page_size_), pages_[first]});
+            result.push_back(
+                {GuestRange(GuestAddress(static_cast<std::uint32_t>(first * page_size_)), (last - first) * page_size_),
+                 pages_[first]});
             first = last;
         }
         return result;
@@ -503,8 +485,7 @@ public:
             }
             const auto protection = pages_[first];
             auto last = first + 1;
-            while (last < pages_.size() && mapped_[last] &&
-                   pages_[last] == protection) {
+            while (last < pages_.size() && mapped_[last] && pages_[last] == protection) {
                 ++last;
             }
 
@@ -515,8 +496,7 @@ public:
                 protection,
                 std::vector<std::byte>(static_cast<std::size_t>(size)),
             };
-            std::memcpy(mapping.data.data(), reservation_->Base() + offset,
-                        mapping.data.size());
+            std::memcpy(mapping.data.data(), reservation_->Base() + offset, mapping.data.size());
             snapshot.mappings.push_back(std::move(mapping));
             first = last;
         }
@@ -533,43 +513,29 @@ public:
         if (replacement->PageSize() != host_page_size_) {
             throw std::runtime_error("replacement virtual memory page size changed");
         }
-        std::vector<PageProtection> replacement_pages(pages_.size(),
-                                                      PageProtection::none);
+        std::vector<PageProtection> replacement_pages(pages_.size(), PageProtection::none);
         std::vector<bool> replacement_mapped(pages_.size(), false);
-        std::vector<bool> replacement_host_committed(host_committed_.size(),
-                                                     false);
+        std::vector<bool> replacement_host_committed(host_committed_.size(), false);
 
         for (const auto& mapping : snapshot.mappings) {
             const auto offset = mapping.range.Start().Value();
-            const auto first_host = static_cast<std::size_t>(
-                offset / host_page_size_);
-            const auto last_host = static_cast<std::size_t>(
-                (mapping.range.EndExclusive() + host_page_size_ - 1U) /
-                host_page_size_);
+            const auto first_host = static_cast<std::size_t>(offset / host_page_size_);
+            const auto last_host =
+                static_cast<std::size_t>((mapping.range.EndExclusive() + host_page_size_ - 1U) / host_page_size_);
             for (auto host = first_host; host < last_host; ++host) {
                 if (replacement_host_committed[host]) continue;
                 replacement->Commit(host * host_page_size_, host_page_size_,
-                                    hal::MemoryProtection::read |
-                                        hal::MemoryProtection::write);
+                                    hal::MemoryProtection::read | hal::MemoryProtection::write);
                 replacement_host_committed[host] = true;
             }
-            std::memcpy(replacement->Base() + offset, mapping.data.data(),
-                        mapping.data.size());
+            std::memcpy(replacement->Base() + offset, mapping.data.data(), mapping.data.size());
             const auto first = static_cast<std::size_t>(offset / page_size_);
-            const auto last = static_cast<std::size_t>(mapping.range.EndExclusive() /
-                                                       page_size_);
-            using PageDifference =
-                std::vector<PageProtection>::difference_type;
-            std::fill(replacement_pages.begin() +
-                          static_cast<PageDifference>(first),
-                      replacement_pages.begin() +
-                          static_cast<PageDifference>(last),
-                      mapping.protection);
-            std::fill(replacement_mapped.begin() +
-                          static_cast<std::vector<bool>::difference_type>(first),
-                      replacement_mapped.begin() +
-                          static_cast<std::vector<bool>::difference_type>(last),
-                      true);
+            const auto last = static_cast<std::size_t>(mapping.range.EndExclusive() / page_size_);
+            using PageDifference = std::vector<PageProtection>::difference_type;
+            std::fill(replacement_pages.begin() + static_cast<PageDifference>(first),
+                      replacement_pages.begin() + static_cast<PageDifference>(last), mapping.protection);
+            std::fill(replacement_mapped.begin() + static_cast<std::vector<bool>::difference_type>(first),
+                      replacement_mapped.begin() + static_cast<std::vector<bool>::difference_type>(last), true);
         }
 
         std::scoped_lock lock(mutex_);
@@ -603,8 +569,7 @@ private:
             ValidateProtection(mapping.protection);
             ValidatePageRange(mapping.range);
             if (mapping.range.Start().Value() < previous_end) {
-                throw std::invalid_argument(
-                    "memory snapshot mappings overlap, are unordered, or enter low guard");
+                throw std::invalid_argument("memory snapshot mappings overlap, are unordered, or enter low guard");
             }
             if (mapping.range.Size() != mapping.data.size()) {
                 throw std::invalid_argument("memory snapshot mapping size is inconsistent");
@@ -613,20 +578,15 @@ private:
         }
     }
 
-    [[nodiscard]] std::pair<PageIterator, PageIterator> PageIndexes(
-        const GuestRange& range) const {
+    [[nodiscard]] std::pair<PageIterator, PageIterator> PageIndexes(const GuestRange& range) const {
         const auto first = static_cast<PageIterator>(range.Start().Value() / page_size_);
         const auto last = static_cast<PageIterator>(range.EndExclusive() / page_size_);
         return {first, last};
     }
 
-    [[nodiscard]] std::pair<std::size_t, std::size_t> HostPageIndexes(
-        const GuestRange& range) const {
-        const auto first = static_cast<std::size_t>(
-            range.Start().Value() / host_page_size_);
-        const auto last = static_cast<std::size_t>(
-            (range.EndExclusive() + host_page_size_ - 1U) /
-            host_page_size_);
+    [[nodiscard]] std::pair<std::size_t, std::size_t> HostPageIndexes(const GuestRange& range) const {
+        const auto first = static_cast<std::size_t>(range.Start().Value() / host_page_size_);
+        const auto last = static_cast<std::size_t>((range.EndExclusive() + host_page_size_ - 1U) / host_page_size_);
         return {first, last};
     }
 
@@ -640,15 +600,13 @@ private:
             for (auto host = first; host < last; ++host) {
                 if (host_committed_[host]) continue;
                 reservation_->Commit(host * host_page_size_, host_page_size_,
-                                     hal::MemoryProtection::read |
-                                         hal::MemoryProtection::write);
+                                     hal::MemoryProtection::read | hal::MemoryProtection::write);
                 host_committed_[host] = true;
                 added.push_back(host);
             }
         } catch (...) {
             for (const auto host : added) {
-                reservation_->Decommit(host * host_page_size_,
-                                       host_page_size_);
+                reservation_->Decommit(host * host_page_size_, host_page_size_);
                 host_committed_[host] = false;
             }
             throw;
@@ -659,17 +617,11 @@ private:
         const auto [first, last] = HostPageIndexes(range);
         const auto guest_pages_per_host = host_page_size_ / page_size_;
         for (auto host = first; host < last; ++host) {
-            const auto first_guest = static_cast<std::size_t>(
-                host * guest_pages_per_host);
-            const auto last_guest = first_guest +
-                                    static_cast<std::size_t>(
-                                        guest_pages_per_host);
-            const auto begin = mapped_.begin() +
-                static_cast<std::vector<bool>::difference_type>(first_guest);
-            const auto end = mapped_.begin() +
-                static_cast<std::vector<bool>::difference_type>(last_guest);
-            if (std::any_of(begin, end,
-                            [](const bool mapped) { return mapped; })) {
+            const auto first_guest = static_cast<std::size_t>(host * guest_pages_per_host);
+            const auto last_guest = first_guest + static_cast<std::size_t>(guest_pages_per_host);
+            const auto begin = mapped_.begin() + static_cast<std::vector<bool>::difference_type>(first_guest);
+            const auto end = mapped_.begin() + static_cast<std::vector<bool>::difference_type>(last_guest);
+            if (std::any_of(begin, end, [](const bool mapped) { return mapped; })) {
                 continue;
             }
             if (!host_committed_[host]) continue;
@@ -678,35 +630,29 @@ private:
         }
     }
 
-    void RequireMapped(const GuestRange& range, const PageIterator first,
-                       const PageIterator last, const AccessType access,
-                       const std::uint64_t thread_id) const {
-        const auto missing = std::find(mapped_.begin() + first,
-                                       mapped_.begin() + last, false);
+    void RequireMapped(const GuestRange& range, const PageIterator first, const PageIterator last,
+                       const AccessType access, const std::uint64_t thread_id) const {
+        const auto missing = std::find(mapped_.begin() + first, mapped_.begin() + last, false);
         if (missing == mapped_.begin() + last) return;
-        const auto page_index = static_cast<std::uint64_t>(
-            missing - mapped_.begin());
-        const auto fault = std::max<std::uint64_t>(range.Start().Value(),
-                                                   page_index * page_size_);
-        throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault)), access,
-                          FaultReason::unmapped, thread_id);
+        const auto page_index = static_cast<std::uint64_t>(missing - mapped_.begin());
+        const auto fault = std::max<std::uint64_t>(range.Start().Value(), page_index * page_size_);
+        throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault)), access, FaultReason::unmapped, thread_id);
     }
 
-    void ValidateLocked(const GuestRange& range, const AccessType access,
-                        const std::uint64_t thread_id) const {
+    void ValidateLocked(const GuestRange& range, const AccessType access, const std::uint64_t thread_id) const {
         const auto first = range.Start().Value() / page_size_;
         const auto last = (range.EndExclusive() - 1U) / page_size_;
         for (auto page = first; page <= last; ++page) {
             const auto protection = pages_[static_cast<std::size_t>(page)];
-            const auto fault_address = std::max<std::uint64_t>(
-                range.Start().Value(), static_cast<std::uint64_t>(page) * page_size_);
+            const auto fault_address =
+                std::max<std::uint64_t>(range.Start().Value(), static_cast<std::uint64_t>(page) * page_size_);
             if (!mapped_[static_cast<std::size_t>(page)]) {
-                throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault_address)),
-                                  access, FaultReason::unmapped, thread_id);
+                throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault_address)), access,
+                                  FaultReason::unmapped, thread_id);
             }
             if (!Allows(protection, access)) {
-                throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault_address)),
-                                  access, FaultReason::permission_denied, thread_id);
+                throw MemoryFault(GuestAddress(static_cast<std::uint32_t>(fault_address)), access,
+                                  FaultReason::permission_denied, thread_id);
             }
         }
     }
@@ -716,18 +662,13 @@ private:
         for (auto page = first; page < last; ++page) {
             const auto index = static_cast<std::size_t>(page);
             const auto protection = pages_[index];
-            const auto direct = mapped_[index] &&
-                                Allows(protection, AccessType::read) &&
-                                Allows(protection, AccessType::write) &&
-                                !Allows(protection, AccessType::execute);
+            const auto direct = mapped_[index] && Allows(protection, AccessType::read) &&
+                                Allows(protection, AccessType::write) && !Allows(protection, AccessType::execute);
             (*direct_page_table_)[index] =
-                direct ? reinterpret_cast<std::uint8_t*>(
-                             base + index * kGuestPageSize)
-                       : nullptr;
-            (*direct_read_page_table_)[index] =
-                mapped_[index] && Allows(protection, AccessType::read)
-                    ? reinterpret_cast<std::uint8_t*>(base + index * kGuestPageSize)
-                    : nullptr;
+                direct ? reinterpret_cast<std::uint8_t*>(base + index * kGuestPageSize) : nullptr;
+            (*direct_read_page_table_)[index] = mapped_[index] && Allows(protection, AccessType::read)
+                                                    ? reinterpret_cast<std::uint8_t*>(base + index * kGuestPageSize)
+                                                    : nullptr;
         }
     }
 
@@ -753,6 +694,7 @@ private:
 };
 
 AddressSpace::AddressSpace() : impl_(std::make_unique<Impl>()) {}
+
 AddressSpace::~AddressSpace() = default;
 AddressSpace::AddressSpace(AddressSpace&&) noexcept = default;
 AddressSpace& AddressSpace::operator=(AddressSpace&&) noexcept = default;
@@ -772,18 +714,21 @@ std::uint64_t AddressSpace::BackingPageSize() const noexcept {
 MappingChangeSubscription AddressSpace::ObserveMappingChanges(MappingChangeHandler handler) {
     return impl_->ObserveMappingChanges(std::move(handler));
 }
+
 void AddressSpace::Map(const GuestRange& range, const PageProtection protection) {
     impl_->Map(range, protection);
     impl_->PublishMappingChange(range);
 }
-void AddressSpace::ReplaceAnonymous(const GuestRange& range, const PageProtection protection) {
-    impl_->ReplaceAnonymous(range, protection);
+
+void AddressSpace::ReplaceAnonymous(const GuestRange& range, const PageProtection protection,
+                                    const std::span<const std::byte> initial) {
+    impl_->ReplaceAnonymous(range, protection, initial);
     impl_->PublishMappingChange(range);
 }
 
 GuestAddress AddressSpace::MapAnywhere(const GuestRange& bounds, const std::uint64_t size,
-                                      const PageProtection protection) {
-    const auto start = impl_->MapAnywhere(bounds, size, protection);
+                                       const PageProtection protection, const std::span<const std::byte> initial) {
+    const auto start = impl_->MapAnywhere(bounds, size, protection, initial);
     impl_->PublishMappingChange({start, size});
     return start;
 }
@@ -827,127 +772,128 @@ std::byte* AddressSpace::ResolveProtected(const ProtectedMappingOwner& owner, co
 void AddressSpace::RejectProtectedMutation(const GuestRange& range, std::string_view operation) const {
     impl_->RejectProtectedMutation(range, operation);
 }
+
 void AddressSpace::Protect(const GuestRange& range, const PageProtection protection) {
     impl_->Protect(range, protection);
     impl_->PublishMappingChange(range);
 }
+
 void AddressSpace::Unmap(const GuestRange& range) {
     impl_->Unmap(range);
     impl_->PublishMappingChange(range);
 }
-void AddressSpace::ValidateMapped(const GuestRange& range,
-                                  const std::uint64_t thread_id) const {
+
+void AddressSpace::ValidateMapped(const GuestRange& range, const std::uint64_t thread_id) const {
     impl_->ValidateMapped(range, thread_id);
 }
-void AddressSpace::Validate(const GuestRange& range, const AccessType access,
-                            const std::uint64_t thread_id) const {
+
+void AddressSpace::Validate(const GuestRange& range, const AccessType access, const std::uint64_t thread_id) const {
     impl_->Validate(range, access, thread_id);
 }
-void AddressSpace::Read(const GuestAddress address,
-                        const std::span<std::byte> destination,
+
+void AddressSpace::Read(const GuestAddress address, const std::span<std::byte> destination,
                         const std::uint64_t thread_id) const {
     impl_->Read(address, destination, thread_id);
 }
-void AddressSpace::Fetch(const GuestAddress address,
-                         const std::span<std::byte> destination,
+
+void AddressSpace::Fetch(const GuestAddress address, const std::span<std::byte> destination,
                          const std::uint64_t thread_id) const {
     impl_->Fetch(address, destination, thread_id);
 }
-void AddressSpace::Write(const GuestAddress address,
-                         const std::span<const std::byte> source,
+
+void AddressSpace::Write(const GuestAddress address, const std::span<const std::byte> source,
                          const std::uint64_t thread_id) {
     impl_->Write(address, source, thread_id);
 }
-ValidatedGuestWrite AddressSpace::PreflightWrite(
-    const GuestRange& range, const std::uint64_t thread_id) const {
-    return ValidatedGuestWrite(
-        range.Start(), range.Size(), impl_->PreflightWrite(range, thread_id),
-        thread_id);
+
+ValidatedGuestWrite AddressSpace::PreflightWrite(const GuestRange& range, const std::uint64_t thread_id) const {
+    return ValidatedGuestWrite(range.Start(), range.Size(), impl_->PreflightWrite(range, thread_id), thread_id);
 }
-void AddressSpace::WritePrevalidated(
-    const ValidatedGuestWrite& validation,
-    const std::span<const std::byte> source) {
+
+void AddressSpace::WritePrevalidated(const ValidatedGuestWrite& validation, const std::span<const std::byte> source) {
     if (validation.size_ != source.size()) {
-        throw std::invalid_argument(
-            "prevalidated guest write size does not match its source");
+        throw std::invalid_argument("prevalidated guest write size does not match its source");
     }
-    impl_->WritePrevalidated(validation.address_, source,
-                             validation.generation_, validation.thread_id_);
+    impl_->WritePrevalidated(validation.address_, source, validation.generation_, validation.thread_id_);
 }
-std::size_t AddressSpace::CStringLength(
-    const GuestAddress address, const std::size_t maximum_bytes,
-    const std::uint64_t thread_id) const {
+
+std::size_t AddressSpace::CStringLength(const GuestAddress address, const std::size_t maximum_bytes,
+                                        const std::uint64_t thread_id) const {
     return impl_->CStringLength(address, maximum_bytes, thread_id);
 }
-std::uint8_t AddressSpace::Read8(const GuestAddress address,
-                                 const std::uint64_t thread_id) const {
+
+std::uint8_t AddressSpace::Read8(const GuestAddress address, const std::uint64_t thread_id) const {
     return impl_->ReadScalar<std::uint8_t>(address, thread_id);
 }
-std::uint16_t AddressSpace::Read16(const GuestAddress address,
-                                   const std::uint64_t thread_id) const {
+
+std::uint16_t AddressSpace::Read16(const GuestAddress address, const std::uint64_t thread_id) const {
     return impl_->ReadScalar<std::uint16_t>(address, thread_id);
 }
-std::uint32_t AddressSpace::Read32(const GuestAddress address,
-                                   const std::uint64_t thread_id) const {
+
+std::uint32_t AddressSpace::Read32(const GuestAddress address, const std::uint64_t thread_id) const {
     return impl_->ReadScalar<std::uint32_t>(address, thread_id);
 }
-std::uint64_t AddressSpace::Read64(const GuestAddress address,
-                                   const std::uint64_t thread_id) const {
+
+std::uint64_t AddressSpace::Read64(const GuestAddress address, const std::uint64_t thread_id) const {
     return impl_->ReadScalar<std::uint64_t>(address, thread_id);
 }
-void AddressSpace::Write8(const GuestAddress address, const std::uint8_t value,
-                          const std::uint64_t thread_id) {
+
+void AddressSpace::Write8(const GuestAddress address, const std::uint8_t value, const std::uint64_t thread_id) {
     impl_->WriteScalar(address, value, thread_id);
 }
-void AddressSpace::Write16(const GuestAddress address, const std::uint16_t value,
-                           const std::uint64_t thread_id) {
+
+void AddressSpace::Write16(const GuestAddress address, const std::uint16_t value, const std::uint64_t thread_id) {
     impl_->WriteScalar(address, value, thread_id);
 }
-void AddressSpace::Write32(const GuestAddress address, const std::uint32_t value,
-                           const std::uint64_t thread_id) {
+
+void AddressSpace::Write32(const GuestAddress address, const std::uint32_t value, const std::uint64_t thread_id) {
     impl_->WriteScalar(address, value, thread_id);
 }
-void AddressSpace::Write64(const GuestAddress address, const std::uint64_t value,
-                           const std::uint64_t thread_id) {
+
+void AddressSpace::Write64(const GuestAddress address, const std::uint64_t value, const std::uint64_t thread_id) {
     impl_->WriteScalar(address, value, thread_id);
 }
-bool AddressSpace::CompareExchange8(const GuestAddress address,
-    const std::uint8_t expected, const std::uint8_t value,
-    const std::uint64_t thread_id) {
+
+bool AddressSpace::CompareExchange8(const GuestAddress address, const std::uint8_t expected, const std::uint8_t value,
+                                    const std::uint64_t thread_id) {
     return impl_->CompareExchange(address, expected, value, thread_id);
 }
 
-bool AddressSpace::CompareExchange16(const GuestAddress address,
-    const std::uint16_t expected, const std::uint16_t value,
-    const std::uint64_t thread_id) {
+bool AddressSpace::CompareExchange16(const GuestAddress address, const std::uint16_t expected,
+                                     const std::uint16_t value, const std::uint64_t thread_id) {
     return impl_->CompareExchange(address, expected, value, thread_id);
 }
 
-bool AddressSpace::CompareExchange32(const GuestAddress address,
-    const std::uint32_t expected, const std::uint32_t value,
-    const std::uint64_t thread_id) {
+bool AddressSpace::CompareExchange32(const GuestAddress address, const std::uint32_t expected,
+                                     const std::uint32_t value, const std::uint64_t thread_id) {
     return impl_->CompareExchange(address, expected, value, thread_id);
 }
 
-bool AddressSpace::CompareExchange64(const GuestAddress address,
-    const std::uint64_t expected, const std::uint64_t value,
-    const std::uint64_t thread_id) {
+bool AddressSpace::CompareExchange64(const GuestAddress address, const std::uint64_t expected,
+                                     const std::uint64_t value, const std::uint64_t thread_id) {
     return impl_->CompareExchange(address, expected, value, thread_id);
 }
 
 DirectMemoryPageTable* AddressSpace::DirectPageTable() noexcept {
     return impl_->DirectPageTable();
 }
+
 DirectMemoryPageTable* AddressSpace::DirectReadPageTable() noexcept {
     return impl_->DirectReadPageTable();
 }
-std::optional<MemoryStatistics> AddressSpace::TrySnapshot() const { return impl_->TrySnapshot(); }
+
+std::optional<MemoryStatistics> AddressSpace::TrySnapshot() const {
+    return impl_->TrySnapshot();
+}
 
 std::vector<MemoryMappingInfo> AddressSpace::DescribeMappings(const std::size_t maximum_ranges) const {
     return impl_->DescribeMappings(maximum_ranges);
 }
 
-MemorySnapshot AddressSpace::CaptureSnapshot() const { return impl_->CaptureSnapshot(); }
+MemorySnapshot AddressSpace::CaptureSnapshot() const {
+    return impl_->CaptureSnapshot();
+}
+
 void AddressSpace::RestoreSnapshot(const MemorySnapshot& snapshot) {
     impl_->RestoreSnapshot(snapshot);
     impl_->PublishMappingChange({GuestAddress{0}, kGuestAddressSpaceSize});

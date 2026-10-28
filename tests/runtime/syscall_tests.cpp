@@ -30,41 +30,28 @@ TEST_CASE("Android ARM syscall baseline exposes identity and coverage") {
     const auto coverage = dispatcher.Coverage();
     CHECK(coverage.declared >= 120);
     CHECK(coverage.implemented == 6);
-    CHECK(coverage.declared_by_group.at(
-              ogplay::runtime::SyscallGroup::file) > 20);
+    CHECK(coverage.declared_by_group.at(ogplay::runtime::SyscallGroup::file) > 20);
 }
 
 TEST_CASE("syscall progress table locks I/O and conservative defaults") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
-    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) {
-        return 1;
-    });
-    dispatcher.Implement(4U, [](const ogplay::runtime::A32SyscallFrame&) {
-        return 1;
-    });
-    dispatcher.Implement(180U, [](const ogplay::runtime::A32SyscallFrame&) {
-        return 1;
-    });
-    dispatcher.Implement(181U, [](const ogplay::runtime::A32SyscallFrame&) {
-        return 1;
-    });
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) { return 1; });
+    dispatcher.Implement(4U, [](const ogplay::runtime::A32SyscallFrame&) { return 1; });
+    dispatcher.Implement(180U, [](const ogplay::runtime::A32SyscallFrame&) { return 1; });
+    dispatcher.Implement(181U, [](const ogplay::runtime::A32SyscallFrame&) { return 1; });
     ogplay::runtime::A32SyscallFrame frame;
     for (const auto number : {3U, 4U, 180U, 181U}) {
         frame.number = number;
-        CHECK(dispatcher.DispatchOutcome(frame).progress ==
-              ogplay::runtime::SupervisorCallProgress::handled_advanced);
+        CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
     }
     frame.number = 20U;  // getpid
-    CHECK(dispatcher.DispatchOutcome(frame).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
 }
 
 TEST_CASE("extended Android ARM syscall directory remains explicitly observable") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 220;
     frame.link_register = 0x2200U;
@@ -75,14 +62,12 @@ TEST_CASE("extended Android ARM syscall directory remains explicitly observable"
     CHECK(hits[0].first_lr == 0x2200U);
     const auto coverage = dispatcher.Coverage();
     CHECK(coverage.declared >= 120);
-    CHECK(coverage.declared_by_group.at(
-              ogplay::runtime::SyscallGroup::signal) >= 8);
+    CHECK(coverage.declared_by_group.at(ogplay::runtime::SyscallGroup::signal) >= 8);
 }
 
 TEST_CASE("declared and unknown syscalls return ENOSYS and are observable") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 3;
     frame.link_register = 0x1234;
@@ -102,67 +87,50 @@ TEST_CASE("syscall declarations reject duplicate numbers and empty handlers") {
     ogplay::core::CapabilityLedger ledger;
     ogplay::runtime::A32SyscallDispatcher dispatcher{ledger};
     dispatcher.Declare(1, "first", ogplay::runtime::SyscallGroup::process);
-    CHECK_THROWS_AS(
-        dispatcher.Declare(1, "second", ogplay::runtime::SyscallGroup::process),
-        ogplay::runtime::SyscallError);
-    CHECK_THROWS_AS(
-        dispatcher.Register(2, "empty", ogplay::runtime::SyscallGroup::process,
-                            {}),
-        ogplay::runtime::SyscallError);
+    CHECK_THROWS_AS(dispatcher.Declare(1, "second", ogplay::runtime::SyscallGroup::process),
+                    ogplay::runtime::SyscallError);
+    CHECK_THROWS_AS(dispatcher.Register(2, "empty", ogplay::runtime::SyscallGroup::process, {}),
+                    ogplay::runtime::SyscallError);
 }
 
 TEST_CASE("syscall observer sees implemented and unimplemented results") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     std::vector<std::pair<std::uint32_t, std::int32_t>> observed;
-    dispatcher.SetObserver(
-        [&observed](const ogplay::runtime::A32SyscallFrame& frame,
-                    const std::int32_t result) {
-            observed.emplace_back(frame.number, result);
-        });
+    dispatcher.SetObserver([&observed](const ogplay::runtime::A32SyscallFrame& frame, const std::int32_t result) {
+        observed.emplace_back(frame.number, result);
+    });
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 20;
     CHECK(dispatcher.Dispatch(frame) == 1000);
     frame.number = 999;
     CHECK(dispatcher.Dispatch(frame) == -ogplay::runtime::kLinuxEnosys);
     CHECK(observed ==
-          std::vector<std::pair<std::uint32_t, std::int32_t>>{
-              {20, 1000}, {999, -ogplay::runtime::kLinuxEnosys}});
+          std::vector<std::pair<std::uint32_t, std::int32_t>>{{20, 1000}, {999, -ogplay::runtime::kLinuxEnosys}});
 }
 
 TEST_CASE("syscall diagnostic observer receives classified progress") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
-    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) {
-        return 4;
-    });
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    dispatcher.Implement(3U, [](const ogplay::runtime::A32SyscallFrame&) { return 4; });
     std::optional<ogplay::runtime::A32SyscallOutcome> observed;
-    dispatcher.SetDiagnosticObserver(
-        [&](const ogplay::runtime::A32SyscallFrame&,
-            const ogplay::runtime::A32SyscallOutcome& outcome) {
-            observed = outcome;
-        });
+    dispatcher.SetDiagnosticObserver([&](const ogplay::runtime::A32SyscallFrame&,
+                                         const ogplay::runtime::A32SyscallOutcome& outcome) { observed = outcome; });
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 3U;
     CHECK(dispatcher.Dispatch(frame) == 4);
     REQUIRE(observed.has_value());
-    CHECK(observed->progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(observed->progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
 }
 
 TEST_CASE("Android time syscalls use the unified clock and checked guest memory") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::hal::FixedStepClock clock{100, 1000};
     clock.AdvanceFrames(12);
     ogplay::memory::AddressSpace memory;
-    const ogplay::memory::GuestRange page{
-        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
-    memory.Map(page, ogplay::memory::PageProtection::read |
-                         ogplay::memory::PageProtection::write);
+    const ogplay::memory::GuestRange page{ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     ogplay::runtime::BindAndroidTimeSyscalls(dispatcher, clock, memory);
 
     const auto read32 = [&memory](const std::uint32_t address) {
@@ -170,8 +138,7 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
         memory.Read(ogplay::memory::GuestAddress{address}, bytes);
         std::uint32_t value{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
-            value |= static_cast<std::uint32_t>(
-                         std::to_integer<std::uint8_t>(bytes[index]))
+            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index]))
                      << static_cast<unsigned>(index * 8U);
         }
         return value;
@@ -193,8 +160,7 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
     CHECK(read32(0x10014) == 200000);
     CHECK(read32(0x10020) == 0);
 
-    const auto write32 = [&memory](const std::uint32_t address,
-                                   const std::uint32_t value) {
+    const auto write32 = [&memory](const std::uint32_t address, const std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
             bytes[index] = static_cast<std::byte>(value >> (index * 8U));
@@ -206,11 +172,9 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
     frame.arguments[1] = 0;
     write32(0x10030, 0U);
     write32(0x10034, 0U);
-    CHECK(dispatcher.DispatchOutcome(frame).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
     write32(0x10034, 1U);
-    CHECK(dispatcher.DispatchOutcome(frame).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
 
     frame.number = 263;
     frame.arguments[0] = 99;
@@ -222,8 +186,7 @@ TEST_CASE("Android time syscalls use the unified clock and checked guest memory"
 
 TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::memory::AddressSpace memory;
     ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
     ogplay::runtime::A32SyscallFrame frame;
@@ -241,22 +204,19 @@ TEST_CASE("Android memory syscalls map protect unmap and grow brk safely") {
     frame.arguments[1] = 5000;
     frame.arguments[2] = 5;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker),
-                    ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker), ogplay::memory::MemoryFault);
     frame.arguments[2] = 6;
     CHECK(dispatcher.Dispatch(frame) == 0);
     CHECK_NOTHROW(memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker));
     std::array<std::byte, 1> fetched{};
-    CHECK_NOTHROW(memory.Fetch(ogplay::memory::GuestAddress{0x60000000},
-                               fetched));
+    CHECK_NOTHROW(memory.Fetch(ogplay::memory::GuestAddress{0x60000000}, fetched));
 
     frame.number = 91;
     frame.arguments[0] = 0x60000000;
     frame.arguments[1] = 5000;
     CHECK(dispatcher.Dispatch(frame) == 0);
     std::array<std::byte, 1> output{};
-    CHECK_THROWS_AS(memory.Read(ogplay::memory::GuestAddress{0x60000000}, output),
-                    ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Read(ogplay::memory::GuestAddress{0x60000000}, output), ogplay::memory::MemoryFault);
 
     frame.number = 45;
     frame.arguments[0] = 0;
@@ -271,8 +231,7 @@ TEST_CASE("Android mmap avoids occupied regions and reuses released space") {
     auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::memory::AddressSpace memory;
     ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
-    memory.Map({ogplay::memory::GuestAddress{0x60001000}, 4096},
-               ogplay::memory::PageProtection::none);
+    memory.Map({ogplay::memory::GuestAddress{0x60001000}, 4096}, ogplay::memory::PageProtection::none);
     ogplay::runtime::A32SyscallFrame frame{};
     frame.number = 192;
     frame.arguments = {0, 8192, 3, 0x22, 0xffffffff, 0};
@@ -353,10 +312,13 @@ TEST_CASE("SBX-15 mmap fixed errors preserve mappings and the last page is valid
     CHECK(dispatcher.Dispatch(frame) == -22);
     frame.arguments = valid;
     frame.arguments[3] = 0x12;
-    CHECK(dispatcher.Dispatch(frame) == -22);
+    CHECK(dispatcher.Dispatch(frame) == -9);
+    CHECK(ledger.Unimplemented().empty());
     frame.arguments = valid;
     frame.arguments[5] = 1;
-    CHECK(dispatcher.Dispatch(frame) == -22);
+    CHECK(dispatcher.Dispatch(frame) == -38);
+    REQUIRE(ledger.Unimplemented().size() == 1);
+    CHECK(ledger.Unimplemented()[0].id == "syscall.mmap2");
     frame.arguments = valid;
     frame.arguments[0] = 0xf000;
     CHECK(dispatcher.Dispatch(frame) == -1);
@@ -376,15 +338,259 @@ TEST_CASE("SBX-15 mmap fixed errors preserve mappings and the last page is valid
     CHECK(memory.Read8(GuestAddress{0xffffffff}) == 0);
 }
 
+TEST_CASE("SBX-16 file mmap snapshots offsets EOF and package windows") {
+    for (const auto flags : {1U, 2U}) {
+        ogplay::core::CapabilityLedger ledger;
+        auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+        ogplay::memory::AddressSpace memory;
+        ogplay::runtime::VirtualFileSystem vfs;
+        std::vector<std::byte> contents(9003);
+        for (std::size_t i = 0; i < contents.size(); ++i)
+            contents[i] = static_cast<std::byte>((i * 37U + 11U) & 255U);
+        vfs.PutFile("/package", contents, true);
+        const auto fd = vfs.Open("/package", {.read = true});
+        CHECK(vfs.Seek(fd, 23, ogplay::runtime::VfsSeekWhence::begin) == 23);
+        ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+        ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = 192;
+        frame.arguments = {0, 5000, 1, flags, static_cast<std::uint32_t>(fd), 1};
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        CHECK(vfs.Seek(fd, 0, ogplay::runtime::VfsSeekWhence::current) == 23);
+        vfs.Close(fd);
+        std::vector<std::byte> actual(8192);
+        memory.Read(ogplay::memory::GuestAddress{0x60000000}, actual);
+        auto expected = std::vector(contents.begin() + 4096, contents.end());
+        expected.resize(8192);
+        CHECK(actual == expected);
+        // OBB-style unaligned window: offset=4321, aligned mapping at 4096.
+        CHECK(std::equal(actual.begin() + 225, actual.begin() + 1225, contents.begin() + 4321));
+        CHECK_THROWS_AS(memory.Write(ogplay::memory::GuestAddress{0x60000000}, std::span{contents}.first(1)),
+                        ogplay::memory::MemoryFault);
+        CHECK(ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("SBX-16 anonymous hint flags map and madvise never zeroes file snapshots") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::byte> contents(4096, std::byte{0x47});
+    vfs.PutFile("/package", contents, true);
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 192;
+    // bionic pthread_create: MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE.
+    for (const auto flags : {0x4022U, 0x20022U, 0x2022U, 0x8022U}) {
+        frame.arguments = {0, 8192, 3, flags, UINT32_MAX, 0};
+        CHECK(dispatcher.Dispatch(frame) > 0);
+    }
+    CHECK(ledger.Unimplemented().empty());
+    frame.arguments = {0, 8192, 3, 0x122U, UINT32_MAX, 0};  // MAP_GROWSDOWN
+    CHECK(dispatcher.Dispatch(frame) == -38);
+    REQUIRE(ledger.Unimplemented().size() == 1);
+
+    const auto fd = vfs.Open("/package", {.read = true});
+    frame.arguments = {0, 4096, 1, 0x4002U, static_cast<std::uint32_t>(fd), 0};
+    const auto file_map = std::bit_cast<std::uint32_t>(dispatcher.Dispatch(frame));
+    REQUIRE(file_map >= 0x60000000U);
+    frame.number = 220;
+    frame.arguments = {file_map, 4096, 3, 0, 0, 0};  // MADV_WILLNEED is advice only.
+    CHECK(dispatcher.Dispatch(frame) == 0);
+    frame.arguments[2] = 4;  // DONTNEED would refill from the file on Linux.
+    CHECK(dispatcher.Dispatch(frame) == -38);
+    CHECK(ledger.Unimplemented().size() == 2);
+    CHECK(memory.Read8(ogplay::memory::GuestAddress{file_map}) == 0x47);
+    frame.number = 91;
+    frame.arguments = {file_map, 4096, 0, 0, 0, 0};
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    frame.number = 192;
+    frame.arguments = {file_map, 4096, 3, 0x32U, UINT32_MAX, 0};
+    REQUIRE(dispatcher.Dispatch(frame) == std::bit_cast<std::int32_t>(file_map));
+    frame.number = 220;
+    frame.arguments = {file_map, 4096, 4, 0, 0, 0};
+    CHECK(dispatcher.Dispatch(frame) == 0);  // anonymous replacement discards normally
+}
+
+TEST_CASE("SBX-16 private writable fixed mapping preserves file and reuses holes") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::byte> contents(4096, std::byte{0x31});
+    vfs.PutFile("/file", contents, true);
+    const auto fd = vfs.Open("/file", {.read = true, .write = true});
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    memory.Map({ogplay::memory::GuestAddress{0x60000000}, 8192},
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    const std::array marker{std::byte{0x7a}};
+    memory.Write(ogplay::memory::GuestAddress{0x60001000}, marker);
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 192;
+    frame.arguments = {0x60000000, 4096, 3, 0x12, static_cast<std::uint32_t>(fd), 0};
+    REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+    std::vector<std::byte> actual(4096);
+    memory.Read(ogplay::memory::GuestAddress{0x60000000}, actual);
+    CHECK(actual == contents);
+    memory.Write(ogplay::memory::GuestAddress{0x60000000}, marker);
+    CHECK(vfs.ReadAt(fd, 0, actual) == actual.size());
+    CHECK(actual == contents);
+    std::array<std::byte, 1> adjacent{};
+    memory.Read(ogplay::memory::GuestAddress{0x60001000}, adjacent);
+    CHECK(adjacent == marker);
+    frame.number = 91;
+    frame.arguments = {0x60000000, 4096, 0, 0, 0, 0};
+    REQUIRE(dispatcher.Dispatch(frame) == 0);
+    frame.number = 192;
+    frame.arguments = {0, 4096, 1, 2, static_cast<std::uint32_t>(fd), 0};
+    CHECK(dispatcher.Dispatch(frame) == 0x60000000);
+    CHECK(ledger.Unimplemented().empty());
+}
+
+TEST_CASE("SBX-16 shared snapshots block node mutations until the last interval retires") {
+    ogplay::core::CapabilityLedger ledger;
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::byte> contents(12288, std::byte{0x42});
+    vfs.PutFile("/file", contents, true);
+    vfs.PutFile("/other", contents, true);
+    vfs.AddPathAlias("/alias", "/file");
+    const auto fd = vfs.Open("/file", {.read = true});
+    const auto writer = vfs.Open("/alias", {.write = true});
+    const auto rejected = [&](auto operation) {
+        try {
+            operation();
+            FAIL("mutation unexpectedly succeeded");
+        } catch (const ogplay::runtime::VfsError& error) {
+            CHECK(error.ErrorNumber() == 16);
+        }
+    };
+    {
+        auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+        ogplay::memory::AddressSpace memory;
+        ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+        ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = 192;
+        frame.arguments = {0, 12288, 1, 1, static_cast<std::uint32_t>(fd), 0};
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        CHECK(ledger.Unimplemented().empty());
+        vfs.Close(fd);
+        rejected([&] { (void)vfs.Write(writer, std::span{contents}.first(1)); });
+        rejected([&] { (void)vfs.WriteAt(writer, 0, std::span{contents}.first(1)); });
+        rejected([&] { vfs.Truncate(writer, 1); });
+        rejected([&] { (void)vfs.Open("/file", {.write = true, .truncate = true}); });
+        rejected([&] { vfs.Rename("/other", "/file"); });
+        rejected([&] { vfs.Rename("/file", "/new"); });
+        REQUIRE(ledger.Unimplemented().size() == 1);
+        CHECK(ledger.Unimplemented()[0].id == "vfs.shared_mapping_mutation");
+        CHECK(ledger.Unimplemented()[0].count == 6);
+        frame.number = 125;
+        frame.arguments = {0x60000000, 4096, 3, 0, 0, 0};
+        CHECK(dispatcher.Dispatch(frame) == -38);
+        // A partial fixed overwrite splits the interval and retains its node pin.
+        frame.number = 192;
+        frame.arguments = {0x60001000, 4096, 3, 0x32, UINT32_MAX, 0};
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60001000);
+        frame.number = 91;
+        frame.arguments = {0x60000000, 4096, 0, 0, 0, 0};
+        REQUIRE(dispatcher.Dispatch(frame) == 0);
+        rejected([&] { vfs.Truncate(writer, 1); });
+        frame.arguments[0] = 0x60002000;
+        REQUIRE(dispatcher.Dispatch(frame) == 0);
+        CHECK(vfs.WriteAt(writer, 0, std::span{contents}.first(1)) == 1);
+        // A second pin retires with the process dispatcher.
+        const auto again = vfs.Open("/file", {.read = true});
+        frame.number = 192;
+        frame.arguments = {0, 4096, 1, 1, static_cast<std::uint32_t>(again), 0};
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        vfs.Close(again);
+    }
+    CHECK_NOTHROW(vfs.Truncate(writer, 1));
+    CHECK(vfs.Write(writer, std::span{contents}.first(1)) == 1);
+}
+
+TEST_CASE("SBX-16 file mapping errors are explicit accounted and preserve addresses") {
+    ogplay::core::CapabilityLedger ledger;
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    ogplay::memory::AddressSpace memory;
+    ogplay::runtime::VirtualFileSystem vfs;
+    const std::vector<std::byte> contents(4097, std::byte{0x63});
+    vfs.PutFile("/file", contents, true);
+    const auto ro = vfs.Open("/file", {.read = true});
+    const auto rw = vfs.Open("/file", {.read = true, .write = true});
+    const auto wo = vfs.Open("/file", {.write = true});
+    const auto pipe = vfs.CreatePipe();
+    vfs.CreateDirectory("/dir");
+    const auto dir = vfs.OpenDirectory("/dir");
+    const auto device =
+        vfs.RegisterReadOnlyCharacterDevice("/device", 1, [](std::span<std::byte>) { return std::size_t{}; });
+    const auto dev = vfs.Open("/device", {.read = true});
+    ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
+    ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
+
+    struct Error {
+        std::uint32_t fd, prot, flags, offset, length;
+        std::int32_t result;
+    };
+
+    const std::array errors{
+        Error{static_cast<std::uint32_t>(ro), 3, 1, 0, 4096, -13},
+        Error{static_cast<std::uint32_t>(rw), 3, 1, 0, 4096, -38},
+        Error{static_cast<std::uint32_t>(wo), 3, 1, 0, 4096, -38},
+        Error{static_cast<std::uint32_t>(ro), 5, 2, 0, 4096, -38},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, 0, 12288, -38},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, 2, 4096, -38},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, UINT32_MAX, 4096, -38},
+        Error{static_cast<std::uint32_t>(pipe.read_descriptor), 1, 2, 0, 4096, -19},
+        Error{static_cast<std::uint32_t>(dir), 1, 2, 0, 4096, -19},
+        Error{static_cast<std::uint32_t>(dev), 1, 2, 0, 4096, -19},
+        Error{9999, 1, 2, 0, 4096, -9},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, 0, 0, -22},
+        Error{static_cast<std::uint32_t>(ro), 1, 2, 0, UINT32_MAX, -12},
+    };
+    std::uint64_t enosys{};
+    for (const auto& error : errors) {
+        ogplay::runtime::A32SyscallFrame frame;
+        frame.number = 192;
+        frame.arguments = {0, error.length, error.prot, error.flags, error.fd, error.offset};
+        CHECK(dispatcher.Dispatch(frame) == error.result);
+        if (error.result == -38) ++enosys;
+        const auto hits = ledger.Unimplemented();
+        CHECK((hits.empty() ? 0 : hits[0].count) == enosys);
+        frame.arguments = {0, 4096, 3, 0x22, UINT32_MAX, 0};
+        REQUIRE(dispatcher.Dispatch(frame) == 0x60000000);
+        frame.number = 91;
+        frame.arguments[0] = 0x60000000;
+        REQUIRE(dispatcher.Dispatch(frame) == 0);
+    }
+    CHECK(ledger.Unimplemented()[0].id == "syscall.mmap2");
+    // Read failure must not destroy an existing MAP_FIXED destination.
+    const std::array lazy{ogplay::runtime::VfsLazyMountEntry{
+        "broken", 4096, []() -> std::vector<std::byte> { throw ogplay::runtime::VfsError(5, "read failure"); }, {}}};
+    vfs.MountLazyReadOnly(ogplay::runtime::VfsSource::obb, "/data", lazy);
+    const auto broken = vfs.Open("/data/broken", {.read = true});
+    memory.Map({ogplay::memory::GuestAddress{0x60000000}, 4096},
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    memory.Write(ogplay::memory::GuestAddress{0x60000000}, std::span{contents}.first(4096));
+    ogplay::runtime::A32SyscallFrame frame;
+    frame.number = 192;
+    frame.arguments = {0x60000000, 4096, 1, 0x12, static_cast<std::uint32_t>(broken), 0};
+    CHECK(dispatcher.Dispatch(frame) == -5);
+    std::vector<std::byte> actual(4096);
+    memory.Read(ogplay::memory::GuestAddress{0x60000000}, actual);
+    CHECK(std::equal(actual.begin(), actual.end(), contents.begin()));
+    CHECK(vfs.WriteAt(rw, 0, std::span{contents}.first(1)) == 1);
+}
+
 TEST_CASE("Android madvise validates hints and discards writable pages") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress page{0x12000U};
-    memory.Map({page, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write);
+    memory.Map({page, memory.PageSize()}, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     const std::array marker{std::byte{0x5a}, std::byte{0x6b}};
     memory.Write(page.Add(32), marker);
     ogplay::runtime::BindAndroidMemorySyscalls(dispatcher, memory);
@@ -418,19 +624,15 @@ TEST_CASE("Android madvise validates hints and discards writable pages") {
     frame.arguments[1] = static_cast<std::uint32_t>(memory.PageSize());
     frame.arguments[2] = 0;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK_THROWS_AS(memory.Read(page, discarded),
-                    ogplay::memory::MemoryFault);
+    CHECK_THROWS_AS(memory.Read(page, discarded), ogplay::memory::MemoryFault);
 }
 
 TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::memory::AddressSpace memory;
-    const ogplay::memory::GuestRange page{
-        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
-    memory.Map(page, ogplay::memory::PageProtection::read |
-                         ogplay::memory::PageProtection::write);
+    const ogplay::memory::GuestRange page{ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     ogplay::memory::CheckedMemoryBus bus{memory};
     bus.Write32(ogplay::memory::GuestAddress{0x10000}, 7);
     ogplay::cpu::FutexTable futex;
@@ -443,19 +645,16 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     mismatch.arguments[2] = 8;
     const auto mismatch_outcome = dispatcher.DispatchOutcome(mismatch);
     CHECK(mismatch_outcome.return_value == -11);
-    CHECK(mismatch_outcome.progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(mismatch_outcome.progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
 
     bus.Write32(ogplay::memory::GuestAddress{0x10020}, 0U);
     bus.Write32(ogplay::memory::GuestAddress{0x10024}, 0U);
     auto timed = mismatch;
     timed.arguments[2] = 7;
     timed.arguments[3] = 0x10020;
-    CHECK(dispatcher.DispatchOutcome(timed).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(dispatcher.DispatchOutcome(timed).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
     bus.Write32(ogplay::memory::GuestAddress{0x10024}, 1U);
-    CHECK(dispatcher.DispatchOutcome(timed).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(dispatcher.DispatchOutcome(timed).progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
 
     std::atomic<std::int32_t> wait_result{-999};
     std::thread waiter{[&] {
@@ -464,9 +663,7 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
         wait.thread_id = 42;
         wait_result = dispatcher.Dispatch(wait);
     }};
-    for (std::size_t attempt = 0;
-         attempt < 100000 &&
-         futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
+    for (std::size_t attempt = 0; attempt < 100000 && futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
          ++attempt) {
         std::this_thread::yield();
     }
@@ -476,8 +673,7 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     wake.arguments[2] = 1;
     const auto wake_outcome = dispatcher.DispatchOutcome(wake);
     CHECK(wake_outcome.return_value == 1);
-    CHECK(wake_outcome.progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(wake_outcome.progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
     waiter.join();
     CHECK(wait_result == 0);
 
@@ -491,9 +687,7 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
         wait_result = outcome.return_value;
         interrupted_progress = outcome.progress;
     }};
-    for (std::size_t attempt = 0;
-         attempt < 100000 &&
-         futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
+    for (std::size_t attempt = 0; attempt < 100000 && futex.WaiterCount(ogplay::memory::GuestAddress{0x10000}) == 0;
          ++attempt) {
         std::this_thread::yield();
     }
@@ -501,14 +695,12 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
     CHECK(futex.InterruptAll() == 1);
     interrupted_waiter.join();
     CHECK(wait_result == -4);
-    CHECK(interrupted_progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(interrupted_progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
     CHECK(dispatcher.Dispatch(mismatch) == -11);
     mismatch.arguments[2] = 7;
     const auto preinterrupted = dispatcher.DispatchOutcome(mismatch);
     CHECK(preinterrupted.return_value == -4);
-    CHECK(preinterrupted.progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(preinterrupted.progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
 
     mismatch.arguments[0] = 0x10001;
     CHECK(dispatcher.Dispatch(mismatch) == -22);
@@ -521,18 +713,14 @@ TEST_CASE("Android futex syscall waits wakes and reports Linux errors") {
 
 TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::VirtualFileSystem vfs;
     const std::array initial{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
     vfs.PutFile("/data/sample.txt", initial, true);
     ogplay::memory::AddressSpace memory;
-    const ogplay::memory::GuestRange page{
-        ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
-    memory.Map(page, ogplay::memory::PageProtection::read |
-                         ogplay::memory::PageProtection::write);
-    const auto write_string = [&memory](const std::uint32_t address,
-                                        const char* value) {
+    const ogplay::memory::GuestRange page{ogplay::memory::GuestAddress{0x10000}, memory.PageSize()};
+    memory.Map(page, ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    const auto write_string = [&memory](const std::uint32_t address, const char* value) {
         std::vector<std::byte> bytes;
         do {
             bytes.push_back(static_cast<std::byte>(*value));
@@ -554,10 +742,8 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     frame.arguments[2] = 3;
     const auto read_outcome = dispatcher.DispatchOutcome(frame);
     CHECK(read_outcome.return_value == 3);
-    CHECK(read_outcome.progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
-    CHECK(dispatcher.DispatchOutcome(frame).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);  // EOF
+    CHECK(read_outcome.progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);  // EOF
     std::array<std::byte, 3> output{};
     memory.Read(ogplay::memory::GuestAddress{0x10100}, output);
     CHECK(output == initial);
@@ -573,11 +759,9 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
     frame.arguments[2] = 2;
     const auto write_outcome = dispatcher.DispatchOutcome(frame);
     CHECK(write_outcome.return_value == 2);
-    CHECK(write_outcome.progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_advanced);
+    CHECK(write_outcome.progress == ogplay::runtime::SupervisorCallProgress::handled_advanced);
     frame.arguments[2] = 0;
-    CHECK(dispatcher.DispatchOutcome(frame).progress ==
-          ogplay::runtime::SupervisorCallProgress::handled_idle);
+    CHECK(dispatcher.DispatchOutcome(frame).progress == ogplay::runtime::SupervisorCallProgress::handled_idle);
     frame.number = 6;
     CHECK(dispatcher.Dispatch(frame) == 0);
 
@@ -595,23 +779,17 @@ TEST_CASE("Android file syscalls transfer checked guest bytes through VFS") {
 
 TEST_CASE("guest stderr and dev log writev are captured with endpoint facts") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::memory::AddressSpace memory;
     memory.Map({ogplay::memory::GuestAddress{0x10000}, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write);
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     std::vector<ogplay::runtime::GuestIoRecord> records;
     ogplay::runtime::BindAndroidFileSyscalls(
         dispatcher, vfs, memory,
-        [&records](const ogplay::runtime::GuestIoRecord& record) {
-            records.push_back(record);
-        });
+        [&records](const ogplay::runtime::GuestIoRecord& record) { records.push_back(record); });
 
-    const std::array stderr_bytes{std::byte{'f'}, std::byte{'a'},
-                                  std::byte{'t'}, std::byte{'a'},
-                                  std::byte{'l'}};
+    const std::array stderr_bytes{std::byte{'f'}, std::byte{'a'}, std::byte{'t'}, std::byte{'a'}, std::byte{'l'}};
     memory.Write(ogplay::memory::GuestAddress{0x10100}, stderr_bytes, 9U);
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 4U;
@@ -621,14 +799,11 @@ TEST_CASE("guest stderr and dev log writev are captured with endpoint facts") {
     REQUIRE(records.size() == 1U);
     CHECK(records.back().stream == ogplay::runtime::GuestIoStream::stderr_stream);
     CHECK(records.back().endpoint == "stderr");
-    CHECK(records.back().payload ==
-          std::vector<std::byte>(stderr_bytes.begin(), stderr_bytes.end()));
+    CHECK(records.back().payload == std::vector<std::byte>(stderr_bytes.begin(), stderr_bytes.end()));
 
-    const std::array path{std::byte{'/'}, std::byte{'d'}, std::byte{'e'},
-                          std::byte{'v'}, std::byte{'/'}, std::byte{'l'},
-                          std::byte{'o'}, std::byte{'g'}, std::byte{'/'},
-                          std::byte{'m'}, std::byte{'a'}, std::byte{'i'},
-                          std::byte{'n'}, std::byte{0}};
+    const std::array path{std::byte{'/'}, std::byte{'d'}, std::byte{'e'}, std::byte{'v'}, std::byte{'/'},
+                          std::byte{'l'}, std::byte{'o'}, std::byte{'g'}, std::byte{'/'}, std::byte{'m'},
+                          std::byte{'a'}, std::byte{'i'}, std::byte{'n'}, std::byte{0}};
     memory.Write(ogplay::memory::GuestAddress{0x10200}, path, 9U);
     frame.number = 5U;
     frame.arguments = {0x10200U, 1U};
@@ -636,24 +811,25 @@ TEST_CASE("guest stderr and dev log writev are captured with endpoint facts") {
     REQUIRE(log_fd > 2);
 
     const std::array priority{std::byte{6}};
-    const std::array tag{std::byte{'l'}, std::byte{'i'}, std::byte{'b'},
-                         std::byte{'c'}, std::byte{0}};
+    const std::array tag{std::byte{'l'}, std::byte{'i'}, std::byte{'b'}, std::byte{'c'}, std::byte{0}};
     const std::array message{std::byte{'s'}, std::byte{'t'}, std::byte{'a'},
                              std::byte{'c'}, std::byte{'k'}, std::byte{0}};
     memory.Write(ogplay::memory::GuestAddress{0x10300}, priority, 9U);
     memory.Write(ogplay::memory::GuestAddress{0x10310}, tag, 9U);
     memory.Write(ogplay::memory::GuestAddress{0x10320}, message, 9U);
-    const auto put_word = [&memory](const std::uint32_t address,
-                                    const std::uint32_t value) {
+    const auto put_word = [&memory](const std::uint32_t address, const std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
         for (std::size_t index = 0; index < 4; ++index) {
             bytes[index] = static_cast<std::byte>(value >> (index * 8U));
         }
         memory.Write(ogplay::memory::GuestAddress{address}, bytes, 9U);
     };
-    put_word(0x10400, 0x10300); put_word(0x10404, 1);
-    put_word(0x10408, 0x10310); put_word(0x1040c, 5);
-    put_word(0x10410, 0x10320); put_word(0x10414, 6);
+    put_word(0x10400, 0x10300);
+    put_word(0x10404, 1);
+    put_word(0x10408, 0x10310);
+    put_word(0x1040c, 5);
+    put_word(0x10410, 0x10320);
+    put_word(0x10414, 6);
     frame.number = 146U;
     frame.arguments = {static_cast<std::uint32_t>(log_fd), 0x10400U, 3U};
     CHECK(dispatcher.Dispatch(frame) == 12);
@@ -666,13 +842,11 @@ TEST_CASE("guest stderr and dev log writev are captured with endpoint facts") {
 
 TEST_CASE("Android pipe syscall publishes a working descriptor pair") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::memory::AddressSpace memory;
     memory.Map({ogplay::memory::GuestAddress{0x10000}, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write);
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
 
     ogplay::runtime::A32SyscallFrame frame;
@@ -682,10 +856,8 @@ TEST_CASE("Android pipe syscall publishes a working descriptor pair") {
     CHECK(dispatcher.Dispatch(frame) == 0);
     std::array<std::byte, 8> descriptor_bytes{};
     memory.Read(ogplay::memory::GuestAddress{0x10000}, descriptor_bytes);
-    const auto read_descriptor =
-        std::to_integer<std::uint8_t>(descriptor_bytes[0]);
-    const auto write_descriptor =
-        std::to_integer<std::uint8_t>(descriptor_bytes[4]);
+    const auto read_descriptor = std::to_integer<std::uint8_t>(descriptor_bytes[0]);
+    const auto write_descriptor = std::to_integer<std::uint8_t>(descriptor_bytes[4]);
     REQUIRE(read_descriptor >= 3);
     REQUIRE(write_descriptor > read_descriptor);
 
@@ -711,18 +883,15 @@ TEST_CASE("Android pipe syscall publishes a working descriptor pair") {
 
 TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::cpu::A32State state;
     state.SetThreadId(42);
     ogplay::memory::AddressSpace memory;
     memory.Map({ogplay::memory::GuestAddress{0x12000U}, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write |
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write |
                    ogplay::memory::PageProtection::execute);
     ogplay::runtime::BindAndroidArmPrivateSyscalls(
-        dispatcher, memory, [&state](const std::uint64_t thread_id,
-                             const ogplay::memory::GuestAddress value) {
+        dispatcher, memory, [&state](const std::uint64_t thread_id, const ogplay::memory::GuestAddress value) {
             if (thread_id != state.ThreadId()) return false;
             if (value.Value() == UINT32_MAX) {
                 throw std::invalid_argument("reserved test pointer");
@@ -736,8 +905,7 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     frame.thread_id = 42;
     frame.arguments[0] = 0x72000000U;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK(state.ThreadPointer() ==
-          ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(state.ThreadPointer() == ogplay::memory::GuestAddress{0x72000000U});
     frame.number = 0x0f0002U;
     frame.arguments = {0x12010U, 0x12020U, 0U};
     CHECK(dispatcher.Dispatch(frame) == 0);
@@ -755,15 +923,13 @@ TEST_CASE("ARM set_tls updates only the current guest thread pointer") {
     frame.thread_id = 42;
     frame.arguments[0] = UINT32_MAX;
     CHECK(dispatcher.Dispatch(frame) == -22);
-    CHECK_THROWS_AS(
-        ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, memory, {}),
-        ogplay::runtime::SyscallError);
+    CHECK_THROWS_AS(ogplay::runtime::BindAndroidArmPrivateSyscalls(dispatcher, memory, {}),
+                    ogplay::runtime::SyscallError);
 }
 
 TEST_CASE("thread lifecycle syscalls request exit and retain clear child tid") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     ogplay::runtime::GuestThreadLifecycle lifecycle;
     lifecycle.Register(41);
     lifecycle.Register(42);
@@ -774,13 +940,11 @@ TEST_CASE("thread lifecycle syscalls request exit and retain clear child tid") {
     frame.thread_id = 42;
     frame.arguments[0] = 0x10020U;
     CHECK(dispatcher.Dispatch(frame) == 42);
-    CHECK(lifecycle.State(42).clear_child_tid ==
-          ogplay::memory::GuestAddress{0x10020U});
+    CHECK(lifecycle.State(42).clear_child_tid == ogplay::memory::GuestAddress{0x10020U});
     frame.number = 1;
     frame.arguments[0] = 3;
     CHECK(dispatcher.Dispatch(frame) == 0);
-    CHECK(lifecycle.State(42).status ==
-          ogplay::runtime::GuestThreadStatus::exit_requested);
+    CHECK(lifecycle.State(42).status == ogplay::runtime::GuestThreadStatus::exit_requested);
     CHECK(lifecycle.State(42).exit_code == 3);
 
     frame.number = 248;
@@ -795,15 +959,13 @@ TEST_CASE("thread lifecycle syscalls request exit and retain clear child tid") {
 
 TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     std::optional<ogplay::runtime::GuestThreadCloneRequest> captured;
-    ogplay::runtime::BindAndroidCloneSyscall(
-        dispatcher,
-        [&captured](const ogplay::runtime::GuestThreadCloneRequest& request) {
-            captured = request;
-            return 52;
-        });
+    ogplay::runtime::BindAndroidCloneSyscall(dispatcher,
+                                             [&captured](const ogplay::runtime::GuestThreadCloneRequest& request) {
+                                                 captured = request;
+                                                 return 52;
+                                             });
 
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 120;
@@ -813,15 +975,11 @@ TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
     parent_state.SetRegister(ogplay::cpu::CoreRegister::pc, 0x20004U);
     parent_state.SetCpsr(0x20U);
     frame.cpu_state = parent_state;
-    frame.arguments[0] =
-        ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
-        ogplay::runtime::kLinuxCloneFiles |
-        ogplay::runtime::kLinuxCloneSighand |
-        ogplay::runtime::kLinuxCloneThread |
-        ogplay::runtime::kLinuxCloneSysvsem |
-        ogplay::runtime::kLinuxCloneSettls |
-        ogplay::runtime::kLinuxCloneParentSettid |
-        ogplay::runtime::kLinuxCloneChildCleartid;
+    frame.arguments[0] = ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
+                         ogplay::runtime::kLinuxCloneFiles | ogplay::runtime::kLinuxCloneSighand |
+                         ogplay::runtime::kLinuxCloneThread | ogplay::runtime::kLinuxCloneSysvsem |
+                         ogplay::runtime::kLinuxCloneSettls | ogplay::runtime::kLinuxCloneParentSettid |
+                         ogplay::runtime::kLinuxCloneChildCleartid;
     frame.arguments[1] = 0x71001000U;
     frame.arguments[2] = 0x10020U;
     frame.arguments[3] = 0x72000000U;
@@ -829,41 +987,30 @@ TEST_CASE("ARM clone decodes pthread arguments at an explicit spawn boundary") {
     CHECK(dispatcher.Dispatch(frame) == 52);
     REQUIRE(captured.has_value());
     CHECK(captured->parent_thread_id == 41);
-    CHECK(captured->child_stack ==
-          ogplay::memory::GuestAddress{0x71001000U});
-    CHECK(captured->parent_tid ==
-          ogplay::memory::GuestAddress{0x10020U});
-    CHECK(captured->thread_pointer ==
-          ogplay::memory::GuestAddress{0x72000000U});
-    CHECK(captured->child_tid ==
-          ogplay::memory::GuestAddress{0x10024U});
-    CHECK(captured->parent_cpu_state.Register(
-              ogplay::cpu::CoreRegister::pc) == 0x20004U);
-    CHECK(captured->parent_cpu_state.State() ==
-          ogplay::cpu::ExecutionState::thumb);
+    CHECK(captured->child_stack == ogplay::memory::GuestAddress{0x71001000U});
+    CHECK(captured->parent_tid == ogplay::memory::GuestAddress{0x10020U});
+    CHECK(captured->thread_pointer == ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(captured->child_tid == ogplay::memory::GuestAddress{0x10024U});
+    CHECK(captured->parent_cpu_state.Register(ogplay::cpu::CoreRegister::pc) == 0x20004U);
+    CHECK(captured->parent_cpu_state.State() == ogplay::cpu::ExecutionState::thumb);
 }
 
 TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
     ogplay::core::CapabilityLedger ledger;
-    auto dispatcher =
-        ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
+    auto dispatcher = ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger);
     std::size_t calls{};
-    ogplay::runtime::BindAndroidCloneSyscall(
-        dispatcher,
-        [&calls](const ogplay::runtime::GuestThreadCloneRequest&) {
-            ++calls;
-            return 0;
-        });
+    ogplay::runtime::BindAndroidCloneSyscall(dispatcher, [&calls](const ogplay::runtime::GuestThreadCloneRequest&) {
+        ++calls;
+        return 0;
+    });
     ogplay::runtime::A32SyscallFrame frame;
     frame.number = 120;
     frame.thread_id = 41;
     ogplay::cpu::A32State parent_state;
     parent_state.SetThreadId(41);
     frame.cpu_state = parent_state;
-    frame.arguments[0] =
-        ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
-        ogplay::runtime::kLinuxCloneFiles |
-        ogplay::runtime::kLinuxCloneSighand;
+    frame.arguments[0] = ogplay::runtime::kLinuxCloneVm | ogplay::runtime::kLinuxCloneFs |
+                         ogplay::runtime::kLinuxCloneFiles | ogplay::runtime::kLinuxCloneSighand;
     frame.arguments[1] = 0x71001000U;
     CHECK(dispatcher.Dispatch(frame) == -95);
     frame.arguments[0] |= ogplay::runtime::kLinuxCloneThread;
@@ -878,23 +1025,20 @@ TEST_CASE("ARM clone rejects unsupported shapes before spawning") {
     frame.arguments[1] = 0x71001000U;
     frame.cpu_state.reset();
     CHECK(dispatcher.Dispatch(frame) == -22);
-    CHECK_THROWS_AS(ogplay::runtime::BindAndroidCloneSyscall(dispatcher, {}),
-                    ogplay::runtime::SyscallError);
+    CHECK_THROWS_AS(ogplay::runtime::BindAndroidCloneSyscall(dispatcher, {}), ogplay::runtime::SyscallError);
 }
 
 TEST_CASE("clone commit publishes Bionic TID TLS and lifecycle state") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress tid{0x10020U};
     memory.Map({ogplay::memory::GuestAddress{0x10000U}, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write);
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     ogplay::runtime::GuestThreadLifecycle lifecycle;
     lifecycle.Register(41);
     ogplay::runtime::GuestThreadCloneCommitter committer{lifecycle, memory};
     ogplay::runtime::GuestThreadCloneRequest request;
     request.parent_thread_id = 41;
-    request.flags = ogplay::runtime::kLinuxCloneParentSettid |
-                    ogplay::runtime::kLinuxCloneSettls |
+    request.flags = ogplay::runtime::kLinuxCloneParentSettid | ogplay::runtime::kLinuxCloneSettls |
                     ogplay::runtime::kLinuxCloneChildCleartid;
     request.child_stack = ogplay::memory::GuestAddress{0x71001000U};
     request.parent_tid = tid;
@@ -903,12 +1047,10 @@ TEST_CASE("clone commit publishes Bionic TID TLS and lifecycle state") {
     CHECK(committer.Commit(request, 52) == 52);
     std::array<std::byte, 4> stored{};
     memory.Read(tid, stored);
-    const std::array expected{std::byte{52}, std::byte{0},
-                              std::byte{0}, std::byte{0}};
+    const std::array expected{std::byte{52}, std::byte{0}, std::byte{0}, std::byte{0}};
     CHECK(stored == expected);
     const auto child = lifecycle.State(52);
-    CHECK(child.thread_pointer ==
-          ogplay::memory::GuestAddress{0x72000000U});
+    CHECK(child.thread_pointer == ogplay::memory::GuestAddress{0x72000000U});
     CHECK(child.clear_child_tid == tid);
 }
 
@@ -916,26 +1058,22 @@ TEST_CASE("clone commit preflights all TID writes and rejects partial state") {
     ogplay::memory::AddressSpace memory;
     const ogplay::memory::GuestAddress parent_tid{0x10020U};
     memory.Map({ogplay::memory::GuestAddress{0x10000U}, memory.PageSize()},
-               ogplay::memory::PageProtection::read |
-                   ogplay::memory::PageProtection::write);
-    const std::array original{std::byte{0x63}, std::byte{0},
-                              std::byte{0}, std::byte{0}};
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+    const std::array original{std::byte{0x63}, std::byte{0}, std::byte{0}, std::byte{0}};
     memory.Write(parent_tid, original);
     ogplay::runtime::GuestThreadLifecycle lifecycle;
     lifecycle.Register(61);
     ogplay::runtime::GuestThreadCloneCommitter committer{lifecycle, memory};
     ogplay::runtime::GuestThreadCloneRequest request;
     request.parent_thread_id = 61;
-    request.flags = ogplay::runtime::kLinuxCloneParentSettid |
-                    ogplay::runtime::kLinuxCloneChildSettid;
+    request.flags = ogplay::runtime::kLinuxCloneParentSettid | ogplay::runtime::kLinuxCloneChildSettid;
     request.parent_tid = parent_tid;
     request.child_tid = ogplay::memory::GuestAddress{0x20000U};
     CHECK(committer.Commit(request, 62) == -14);
     std::array<std::byte, 4> stored{};
     memory.Read(parent_tid, stored);
     CHECK(stored == original);
-    CHECK_THROWS_AS(static_cast<void>(lifecycle.State(62)),
-                    ogplay::runtime::GuestThreadLifecycleError);
+    CHECK_THROWS_AS(static_cast<void>(lifecycle.State(62)), ogplay::runtime::GuestThreadLifecycleError);
 
     request.flags = ogplay::runtime::kLinuxCloneSettls;
     request.parent_tid.reset();
@@ -960,14 +1098,11 @@ struct MetadataSyscallFixture final {
     ogplay::memory::AddressSpace memory;
 
     explicit MetadataSyscallFixture(ogplay::runtime::VfsConfig config = {})
-        : dispatcher(
-              ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)), vfs(config) {
+        : dispatcher(ogplay::runtime::CreateAndroidArmSyscallDispatcher(ledger)), vfs(config) {
         memory.Map({GuestAddress{0x20000}, memory.PageSize()},
-                   ogplay::memory::PageProtection::read |
-                       ogplay::memory::PageProtection::write);
+                   ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
         ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory);
-        ogplay::runtime::BindAndroidFileMetadataSyscalls(dispatcher, vfs,
-                                                         memory);
+        ogplay::runtime::BindAndroidFileMetadataSyscalls(dispatcher, vfs, memory);
     }
 
     void WriteString(const std::uint32_t address, const std::string& value) {
@@ -979,8 +1114,7 @@ struct MetadataSyscallFixture final {
         memory.Write(GuestAddress{address}, bytes);
     }
 
-    [[nodiscard]] std::int32_t Call(const std::uint32_t number,
-                                    const std::array<std::uint32_t, 6>& args) {
+    [[nodiscard]] std::int32_t Call(const std::uint32_t number, const std::array<std::uint32_t, 6>& args) {
         ogplay::runtime::A32SyscallFrame frame;
         frame.number = number;
         frame.thread_id = 1;
@@ -990,16 +1124,13 @@ struct MetadataSyscallFixture final {
         return dispatcher.Dispatch(frame);
     }
 
-    [[nodiscard]] std::uint64_t ReadField(const std::uint32_t address,
-                                          const std::size_t offset,
+    [[nodiscard]] std::uint64_t ReadField(const std::uint32_t address, const std::size_t offset,
                                           const std::size_t width) {
         std::vector<std::byte> bytes(width);
-        memory.Read(GuestAddress{address + static_cast<std::uint32_t>(offset)},
-                    bytes);
+        memory.Read(GuestAddress{address + static_cast<std::uint32_t>(offset)}, bytes);
         std::uint64_t value = 0;
         for (std::size_t index = 0; index < width; ++index) {
-            value |= static_cast<std::uint64_t>(
-                         std::to_integer<std::uint8_t>(bytes[index]))
+            value |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(bytes[index]))
                      << static_cast<unsigned>(index * 8U);
         }
         return value;
@@ -1012,7 +1143,9 @@ TEST_CASE("ARM F_GETFL reports the shared VFS open description") {
     MetadataSyscallFixture f;
     std::uint32_t syscall = 55;
     SUBCASE("fcntl") {}
-    SUBCASE("fcntl64") { syscall = 221; }
+    SUBCASE("fcntl64") {
+        syscall = 221;
+    }
     f.vfs.PutFile("/data/status", {}, true);
     f.WriteString(0x20000, "/data/status");
     for (const std::uint32_t access : {0U, 1U, 2U}) {
@@ -1033,7 +1166,7 @@ TEST_CASE("ARM F_GETFL reports the shared VFS open description") {
     const auto read_only = f.vfs.Open("/data/status", {.read = true});
     const auto fd = static_cast<std::uint32_t>(read_only);
     CHECK(f.Call(syscall, {fd, 3}) == 0);
-    CHECK(f.Call(syscall, {fd, 4, 0x400}) == -38); // F_SETFL remains unimplemented.
+    CHECK(f.Call(syscall, {fd, 4, 0x400}) == -38);  // F_SETFL remains unimplemented.
     REQUIRE(f.ledger.Unimplemented().size() == 1);
     CHECK(f.ledger.Unimplemented()[0].id == (syscall == 55 ? "syscall.fcntl" : "syscall.fcntl64"));
     CHECK(f.Call(syscall, {0xffffffffU, 3}) == -9);
@@ -1047,8 +1180,7 @@ TEST_CASE("ARM F_GETFL reports the shared VFS open description") {
     const auto directory = f.Call(5, {0x20000, 0x2c000});
     REQUIRE(directory >= 3);
     CHECK(f.Call(syscall, {static_cast<std::uint32_t>(directory), 3}) == 0x2c000);
-    auto device = f.vfs.RegisterReadOnlyCharacterDevice("/dev/status", 0,
-        [](auto) -> std::size_t { return 0; });
+    auto device = f.vfs.RegisterReadOnlyCharacterDevice("/dev/status", 0, [](auto) -> std::size_t { return 0; });
     f.WriteString(0x20000, "/dev/status");
     const auto nonblocking = f.Call(5, {0x20000, 0x800});
     REQUIRE(nonblocking >= 3);
@@ -1061,23 +1193,27 @@ TEST_CASE("ARM F_GETFL standard endpoints share write dup and close state") {
     ogplay::runtime::VirtualFileSystem vfs;
     ogplay::memory::AddressSpace memory;
     memory.Map({GuestAddress{0x10000}, memory.PageSize()},
-        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+               ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     std::vector<ogplay::runtime::GuestIoRecord> records;
     ogplay::runtime::BindAndroidFileSyscalls(dispatcher, vfs, memory,
-        [&](const auto& record) { records.push_back(record); });
+                                             [&](const auto& record) { records.push_back(record); });
     const auto call = [&](std::uint32_t number, std::array<std::uint32_t, 7> args) {
         ogplay::runtime::A32SyscallFrame frame;
-        frame.number = number; frame.arguments = args; frame.thread_id = 7;
+        frame.number = number;
+        frame.arguments = args;
+        frame.thread_id = 7;
         return dispatcher.Dispatch(frame);
     };
     std::uint32_t query = 55;
     SUBCASE("fcntl") {}
-    SUBCASE("fcntl64") { query = 221; }
+    SUBCASE("fcntl64") {
+        query = 221;
+    }
     memory.Write8(GuestAddress{0x10100}, 'x');
     memory.Write32(GuestAddress{0x10200}, 0x10100);
     memory.Write32(GuestAddress{0x10204}, 1);
     CHECK(call(query, {0, 3}) == 0);
-    CHECK(call(3, {0, 0x10100, 1}) == 0); // EOF, preserving caller bytes.
+    CHECK(call(3, {0, 0x10100, 1}) == 0);  // EOF, preserving caller bytes.
     CHECK(memory.Read8(GuestAddress{0x10100}) == 'x');
     CHECK(call(4, {0, 0x10100, 1}) == -9);
     CHECK(call(146, {0, 0x10200, 1}) == -9);
@@ -1090,7 +1226,8 @@ TEST_CASE("ARM F_GETFL standard endpoints share write dup and close state") {
         CHECK(call(4, {fd, 0x10100, 1}) == 1);
         CHECK(call(146, {fd, 0x10200, 1}) == 1);
         REQUIRE(records.size() >= 2);
-        CHECK(records.back().stream == (fd == 1 ? ogplay::runtime::GuestIoStream::stdout_stream : ogplay::runtime::GuestIoStream::stderr_stream));
+        CHECK(records.back().stream == (fd == 1 ? ogplay::runtime::GuestIoStream::stdout_stream
+                                                : ogplay::runtime::GuestIoStream::stderr_stream));
         const auto duplicate = call(41, {fd});
         REQUIRE(duplicate > 2);
         const auto dup = static_cast<std::uint32_t>(duplicate);
@@ -1127,26 +1264,22 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     // word of the guest's st_size.
     CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == 0);
     CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0040000U);
-    CHECK(fixture.ReadField(0x20200, 20, 4) == 1);       // st_nlink
-    CHECK(fixture.ReadField(0x20200, 48, 8) == 0);       // st_size
-    CHECK(fixture.ReadField(0x20200, 56, 4) == 4096);    // st_blksize
-    CHECK(fixture.ReadField(0x20200, 96, 8) != 0);       // st_ino
+    CHECK(fixture.ReadField(0x20200, 20, 4) == 1);     // st_nlink
+    CHECK(fixture.ReadField(0x20200, 48, 8) == 0);     // st_size
+    CHECK(fixture.ReadField(0x20200, 56, 4) == 4096);  // st_blksize
+    CHECK(fixture.ReadField(0x20200, 96, 8) != 0);     // st_ino
     // The padding before st_size stays clear, so a guest reading the 64-bit
     // st_size cannot pick up a neighbouring field as its high word.
     CHECK(fixture.ReadField(0x20200, 44, 4) == 0);
 
     fixture.WriteString(0x20100, "/sdcard/saves/slot0.sav");
-    const auto descriptor =
-        fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});  // O_CREAT|O_WRONLY
+    const auto descriptor = fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});  // O_CREAT|O_WRONLY
     REQUIRE(descriptor >= 3);
     const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
     fixture.memory.Write(GuestAddress{0x20300}, payload);
-    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300, 3,
-                           0, 0, 0}) == 3);
-    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(descriptor), 0, 0, 0,
-                             0, 0}) == 0);  // fsync
-    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
-                           0}) == 0);
+    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300, 3, 0, 0, 0}) == 3);
+    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0, 0}) == 0);  // fsync
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0, 0}) == 0);
 
     CHECK(fixture.Call(195, {0x20100, 0x20200, 0, 0, 0, 0}) == 0);
     CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0100000U);
@@ -1158,7 +1291,6 @@ TEST_CASE("Android mkdir, stat64 and unlink syscalls reach the VFS") {
     CHECK(fixture.Call(40, {0x20000, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(195, {0x20000, 0x20200, 0, 0, 0, 0}) == -2);
 }
-
 
 TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file state") {
     MetadataSyscallFixture fixture;
@@ -1179,11 +1311,14 @@ TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file stat
     CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 6);
     const auto encode32 = [&](std::uint32_t address, std::uint32_t word) {
         std::array<std::byte, 4> bytes{};
-        for (std::size_t i = 0; i < 4; ++i) bytes[i] = static_cast<std::byte>((word >> (8 * i)) & 255);
+        for (std::size_t i = 0; i < 4; ++i)
+            bytes[i] = static_cast<std::byte>((word >> (8 * i)) & 255);
         fixture.memory.Write(GuestAddress{address}, bytes);
     };
-    encode32(0x20400, 0x20303); encode32(0x20404, 1);
-    encode32(0x20408, 0x20304); encode32(0x2040c, 1);
+    encode32(0x20400, 0x20303);
+    encode32(0x20404, 1);
+    encode32(0x20408, 0x20304);
+    encode32(0x2040c, 1);
     CHECK(fixture.Call(146, {fd, 0x20400, 2, 0, 0, 0}) == 2);
     CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 9);
     CHECK(fixture.vfs.IoStatistics().resource_memory_bytes == 0);
@@ -1195,31 +1330,33 @@ TEST_CASE("VFS-08 ARM append openat writev and pwrite64 use one shared file stat
     CHECK(fixture.Call(146, {fd, 0, 0, 0, 0, 0}) == 0);
     CHECK(fixture.Call(146, {0xffffffffU, 0, 0, 0, 0, 0}) == -9);
     CHECK(fixture.Call(5, {0x20000, 0x1000000U | 0x401U, 0, 0, 0, 0}) == -22);
-    CHECK(fixture.Call(55, {fd, 3, 0, 0, 0, 0}) == 0x20401); // WRONLY | APPEND | LARGEFILE
+    CHECK(fixture.Call(55, {fd, 3, 0, 0, 0, 0}) == 0x20401);  // WRONLY | APPEND | LARGEFILE
     const auto reader = fixture.vfs.Open("/sdcard/log", {.read = true});
     std::array<std::byte, 9> bytes{};
     REQUIRE(fixture.vfs.Read(reader, bytes) == bytes.size());
-    CHECK(bytes == std::array{std::byte{'b'}, std::byte{'a'}, std::byte{'s'}, std::byte{'e'},
-        std::byte{'1'}, std::byte{'2'}, std::byte{'3'}, std::byte{'A'}, std::byte{'B'}});
-    fixture.vfs.Close(reader); fixture.vfs.Close(opened); fixture.vfs.Close(duplicate);
+    CHECK(bytes == std::array{std::byte{'b'}, std::byte{'a'}, std::byte{'s'}, std::byte{'e'}, std::byte{'1'},
+                              std::byte{'2'}, std::byte{'3'}, std::byte{'A'}, std::byte{'B'}});
+    fixture.vfs.Close(reader);
+    fixture.vfs.Close(opened);
+    fixture.vfs.Close(duplicate);
 }
-
 
 TEST_CASE("VFS-08 large append writes stay one record across the transfer scratch boundary") {
     MetadataSyscallFixture fixture;
     constexpr std::uint32_t base = 0x300000;
     constexpr std::uint32_t length = 64U * 1024U + 3U;
     fixture.memory.Map({GuestAddress{base}, 128U * 1024U},
-        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+                       ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     std::vector<std::byte> payload(length);
-    for (std::size_t i = 0; i < payload.size(); ++i) payload[i] = static_cast<std::byte>('a' + i % 26);
+    for (std::size_t i = 0; i < payload.size(); ++i)
+        payload[i] = static_cast<std::byte>('a' + i % 26);
     fixture.memory.Write(GuestAddress{base}, payload);
     fixture.WriteString(0x20000, "/sdcard/log");
     const auto opened = fixture.Call(5, {0x20000, 0x441, 0, 0, 0, 0});
     REQUIRE(opened >= 3);
     const auto fd = static_cast<std::uint32_t>(opened);
     REQUIRE(fixture.Call(4, {fd, base, length, 0, 0, 0}) == static_cast<std::int32_t>(length));
-    CHECK(fixture.vfs.Stat("/sdcard/log").generation == 2); // one committed write, not two chunks
+    CHECK(fixture.vfs.Stat("/sdcard/log").generation == 2);  // one committed write, not two chunks
     CHECK(fixture.Call(19, {fd, 0, 0, 0, 0, 0}) == 0);
     REQUIRE(fixture.Call(181, {fd, base, length, 0, 0, 0}) == static_cast<std::int32_t>(length));
     CHECK(fixture.Call(19, {fd, 0, 1, 0, 0, 0}) == 0);
@@ -1230,7 +1367,8 @@ TEST_CASE("VFS-08 large append writes stay one record across the transfer scratc
     CHECK(std::equal(payload.begin(), payload.end(), actual.begin()));
     CHECK(std::equal(payload.begin(), payload.end(), actual.begin() + length));
     CHECK(fixture.vfs.IoStatistics().resource_memory_bytes == 0);
-    fixture.vfs.Close(opened); fixture.vfs.Close(reader);
+    fixture.vfs.Close(opened);
+    fixture.vfs.Close(reader);
 }
 
 TEST_CASE("VFS-08 writev staging uses the shared resource budget before mutation") {
@@ -1240,7 +1378,7 @@ TEST_CASE("VFS-08 writev staging uses the shared resource budget before mutation
     REQUIRE(opened >= 3);
     fixture.WriteString(0x20300, "abc");
     const std::array vector{std::byte{0}, std::byte{3}, std::byte{2}, std::byte{0},
-        std::byte{3}, std::byte{0}, std::byte{0}, std::byte{0}};
+                            std::byte{3}, std::byte{0}, std::byte{0}, std::byte{0}};
     fixture.memory.Write(GuestAddress{0x20400}, vector);
     CHECK(fixture.Call(146, {static_cast<std::uint32_t>(opened), 0x20400, 1, 0, 0, 0}) == -28);
     CHECK(fixture.vfs.Stat("/sdcard/log").size == 0);
@@ -1255,11 +1393,9 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     REQUIRE(fixture.Call(39, {0x20000, 0755, 0, 0, 0, 0}) == 0);
     for (const auto* name : {"/sdcard/dir/a.sav", "/sdcard/dir/b.sav"}) {
         fixture.WriteString(0x20100, name);
-        const auto descriptor =
-            fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});
+        const auto descriptor = fixture.Call(5, {0x20100, 0x40 | 1, 0, 0, 0, 0});
         REQUIRE(descriptor >= 3);
-        REQUIRE(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0,
-                                 0, 0, 0}) == 0);
+        REQUIRE(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0, 0}) == 0);
     }
 
     // The guest obtains its directory descriptor through open(O_DIRECTORY),
@@ -1269,70 +1405,57 @@ TEST_CASE("Android getdents64 emits aligned records and pages") {
     fixture.WriteString(0x20000, "/sdcard/dir");
     constexpr std::uint32_t kODirectory = 0x4000;
     constexpr std::uint32_t kOCloexec = 0x80000;
-    const auto directory =
-        fixture.Call(5, {0x20000, kODirectory | kOCloexec, 0, 0, 0, 0});
+    const auto directory = fixture.Call(5, {0x20000, kODirectory | kOCloexec, 0, 0, 0, 0});
     REQUIRE(directory >= 3);
 
     // One 32-byte record fits. The second entry must remain pending for the
     // next call instead of being consumed and turned into -EINVAL.
-    const auto written = fixture.Call(
-        217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
+    const auto written = fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
     REQUIRE(written == 32);
 
     // linux_dirent64: u64 ino, s64 off, u16 reclen, u8 type, char name[].
     const auto reclen = fixture.ReadField(0x20400, 16, 2);
     CHECK(reclen % 8 == 0);
     CHECK(fixture.ReadField(0x20400, 18, 1) == 8);  // DT_REG
-    std::vector<std::byte> name(6);  // "a.sav" plus its NUL
+    std::vector<std::byte> name(6);                 // "a.sav" plus its NUL
     fixture.memory.Read(GuestAddress{0x20400 + 19}, name);
     CHECK(static_cast<char>(name[0]) == 'a');
     CHECK(static_cast<char>(name[4]) == 'v');
     CHECK(static_cast<char>(name[5]) == '\0');
     CHECK(static_cast<std::uint64_t>(written) == reclen);
 
-    const auto second = fixture.Call(
-        217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
+    const auto second = fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0});
     CHECK(second == 32);
     std::vector<std::byte> second_name(6);
     fixture.memory.Read(GuestAddress{0x20400 + 19}, second_name);
     CHECK(static_cast<char>(second_name[0]) == 'b');
-    CHECK(fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400,
-                             32, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(217, {static_cast<std::uint32_t>(directory), 0x20400, 32, 0, 0, 0}) == 0);
 
     // fstat64 sees a directory and fsync(dirfd) is a safe metadata barrier.
-    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(directory), 0x20200,
-                             0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(directory), 0x20200, 0, 0, 0, 0}) == 0);
     CHECK((fixture.ReadField(0x20200, 16, 4) & 0170000U) == 0040000U);
-    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(directory), 0, 0, 0,
-                             0, 0}) == 0);
-    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(directory), 0, 0, 0, 0,
-                           0}) == 0);
+    CHECK(fixture.Call(118, {static_cast<std::uint32_t>(directory), 0, 0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(directory), 0, 0, 0, 0, 0}) == 0);
 }
 
 TEST_CASE("Android fstat64 preserves the live file descriptor offset") {
     MetadataSyscallFixture fixture;
     fixture.vfs.CreateDirectory("/sdcard");
     fixture.WriteString(0x20000, "/sdcard/save.dat");
-    const auto descriptor =
-        fixture.Call(5, {0x20000, 0x40 | 2, 0, 0, 0, 0});
+    const auto descriptor = fixture.Call(5, {0x20000, 0x40 | 2, 0, 0, 0, 0});
     REQUIRE(descriptor >= 3);
     const std::array payload{std::byte{'a'}, std::byte{'b'}, std::byte{'c'}};
     fixture.memory.Write(GuestAddress{0x20300}, payload);
-    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300,
-                             3, 0, 0, 0}) == 3);
-    REQUIRE(fixture.Call(19, {static_cast<std::uint32_t>(descriptor), 1, 0, 0,
-                              0, 0}) == 1);
+    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300, 3, 0, 0, 0}) == 3);
+    REQUIRE(fixture.Call(19, {static_cast<std::uint32_t>(descriptor), 1, 0, 0, 0, 0}) == 1);
 
-    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(descriptor), 0x20200,
-                             0, 0, 0, 0}) == 0);
+    CHECK(fixture.Call(197, {static_cast<std::uint32_t>(descriptor), 0x20200, 0, 0, 0, 0}) == 0);
     CHECK(fixture.ReadField(0x20200, 48, 8) == 3);
-    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(descriptor), 0x20320, 1,
-                           0, 0, 0}) == 1);
+    CHECK(fixture.Call(3, {static_cast<std::uint32_t>(descriptor), 0x20320, 1, 0, 0, 0}) == 1);
     std::array<std::byte, 1> next{};
     fixture.memory.Read(GuestAddress{0x20320}, next);
     CHECK(next[0] == std::byte{'b'});
-    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
-                           0}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0, 0}) == 0);
 }
 
 TEST_CASE("Android access, rename and positional IO keep their contracts") {
@@ -1340,34 +1463,27 @@ TEST_CASE("Android access, rename and positional IO keep their contracts") {
     fixture.WriteString(0x20000, "/sdcard/old.sav");
     const auto descriptor = fixture.Call(5, {0x20000, 0x40 | 1, 0, 0, 0, 0});
     REQUIRE(descriptor >= 3);
-    const std::array payload{std::byte{'0'}, std::byte{'1'}, std::byte{'2'},
-                             std::byte{'3'}};
+    const std::array payload{std::byte{'0'}, std::byte{'1'}, std::byte{'2'}, std::byte{'3'}};
     fixture.memory.Write(GuestAddress{0x20300}, payload);
-    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300,
-                             4, 0, 0, 0}) == 4);
+    REQUIRE(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20300, 4, 0, 0, 0}) == 4);
 
     // pwrite64 must not disturb the descriptor offset.
     const std::array patch{std::byte{'X'}};
     fixture.memory.Write(GuestAddress{0x20310}, patch);
-    CHECK(fixture.Call(181, {static_cast<std::uint32_t>(descriptor), 0x20310,
-                             1, 0, 1, 0}) == 1);
+    CHECK(fixture.Call(181, {static_cast<std::uint32_t>(descriptor), 0x20310, 1, 0, 1, 0}) == 1);
     const std::array tail{std::byte{'4'}};
     fixture.memory.Write(GuestAddress{0x20320}, tail);
-    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20320, 1,
-                           0, 0, 0}) == 1);
-    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0,
-                           0}) == 0);
+    CHECK(fixture.Call(4, {static_cast<std::uint32_t>(descriptor), 0x20320, 1, 0, 0, 0}) == 1);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(descriptor), 0, 0, 0, 0, 0}) == 0);
 
     const auto reader = fixture.Call(5, {0x20000, 0, 0, 0, 0, 0});
     REQUIRE(reader >= 3);
-    CHECK(fixture.Call(180, {static_cast<std::uint32_t>(reader), 0x20330, 5, 0,
-                             0, 0}) == 5);
+    CHECK(fixture.Call(180, {static_cast<std::uint32_t>(reader), 0x20330, 5, 0, 0, 0}) == 5);
     std::vector<std::byte> read_back(5);
     fixture.memory.Read(GuestAddress{0x20330}, read_back);
     CHECK(static_cast<char>(read_back[1]) == 'X');
     CHECK(static_cast<char>(read_back[4]) == '4');
-    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(reader), 0, 0, 0, 0,
-                           0}) == 0);
+    CHECK(fixture.Call(6, {static_cast<std::uint32_t>(reader), 0, 0, 0, 0, 0}) == 0);
 
     // access: F_OK on a present file, ENOENT on an absent one.
     CHECK(fixture.Call(33, {0x20000, 0, 0, 0, 0, 0}) == 0);
@@ -1384,7 +1500,7 @@ TEST_CASE("Android large file IO exceeds sixteen MiB with bounded transfers") {
     constexpr std::uint32_t size = 17U * 1024U * 1024U + 123U;
     constexpr std::uint32_t base = 0x100000U;
     fixture.memory.Map({GuestAddress{base}, 18U * 1024U * 1024U},
-        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+                       ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     std::vector<std::byte> expected(size);
     for (std::size_t i = 0; i < expected.size(); ++i)
         expected[i] = static_cast<std::byte>((i * 37U + i / 65536U) & 255U);
@@ -1446,8 +1562,7 @@ TEST_CASE("VFS-09 Android cwd syscalls share directory state and validate errors
     CHECK(fixture.Call(133, {999}) == -9);
     CHECK(fixture.Call(12, {0}) == -14);
     for (const auto& [path, error] : std::vector<std::pair<std::string, int>>{
-             {"", -2}, {"missing", -2}, {"missing/..", -2},
-             {"data/file.bin", -20}, {"data/file.bin/..", -20}}) {
+             {"", -2}, {"missing", -2}, {"missing/..", -2}, {"data/file.bin", -20}, {"data/file.bin/..", -20}}) {
         fixture.WriteString(0x20000, path);
         CHECK(fixture.Call(12, {0x20000}) == error);
         CHECK(fixture.vfs.WorkingDirectory() == "/SDCARD/games/EXAMPLE");
@@ -1536,13 +1651,12 @@ TEST_CASE("VFS-05 generated proc files share ARM access open and read semantics"
 TEST_CASE("VFS-06 ARM random device flags metadata and errors") {
     MetadataSyscallFixture fixture;
     unsigned reads{};
-    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109,
-        [&](auto bytes) -> std::size_t {
-            ++reads;
-            if (reads == 3) throw std::runtime_error("OS entropy unavailable");
-            std::ranges::fill(bytes, static_cast<std::byte>(reads));
-            return bytes.size();
-        });
+    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/urandom", 0x109, [&](auto bytes) -> std::size_t {
+        ++reads;
+        if (reads == 3) throw std::runtime_error("OS entropy unavailable");
+        std::ranges::fill(bytes, static_cast<std::byte>(reads));
+        return bytes.size();
+    });
     fixture.WriteString(0x20000, "/dev/urandom");
     // Observed Mono flags: O_RDONLY | O_NOCTTY | O_NONBLOCK | O_LARGEFILE.
     const auto fd = fixture.Call(5, {0x20000, 0x20900, 0, 0, 0, 0});
@@ -1577,7 +1691,7 @@ TEST_CASE("VFS-06 ARM random device flags metadata and errors") {
     const auto dir = fixture.Call(5, {0x20000, 0x4000, 0, 0, 0, 0});
     REQUIRE(dir >= 3);
     CHECK(fixture.Call(217, {static_cast<std::uint32_t>(dir), 0x20400, 128, 0, 0, 0}) > 0);
-    CHECK(fixture.memory.Read8(GuestAddress{0x20400 + 18}) == 2); // DT_CHR
+    CHECK(fixture.memory.Read8(GuestAddress{0x20400 + 18}) == 2);  // DT_CHR
     device.reset();
     CHECK(fixture.Call(3, {dup, 0x20300, 128, 0, 0, 0}) == -5);
     CHECK(fixture.Call(6, {dup, 0, 0, 0, 0, 0}) == 0);
@@ -1587,13 +1701,13 @@ TEST_CASE("VFS-06 ARM random device flags metadata and errors") {
 TEST_CASE("VFS-06 ARM device transfers preserve completed bytes on later failure") {
     MetadataSyscallFixture fixture;
     fixture.memory.Map({GuestAddress{0x30000}, 128U * 1024U},
-        ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
+                       ogplay::memory::PageProtection::read | ogplay::memory::PageProtection::write);
     unsigned calls{};
-    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/test", 0,
-        [&](auto bytes) -> std::size_t {
-            if (++calls == 2) throw std::runtime_error("random failed");
-            std::ranges::fill(bytes, std::byte{0xa5}); return bytes.size();
-        });
+    auto device = fixture.vfs.RegisterReadOnlyCharacterDevice("/dev/test", 0, [&](auto bytes) -> std::size_t {
+        if (++calls == 2) throw std::runtime_error("random failed");
+        std::ranges::fill(bytes, std::byte{0xa5});
+        return bytes.size();
+    });
     fixture.WriteString(0x20000, "/dev/test");
     const auto fd = fixture.Call(322, {0xffffff9c, 0x20000, 0x20900, 0, 0, 0});
     REQUIRE(fd >= 3);

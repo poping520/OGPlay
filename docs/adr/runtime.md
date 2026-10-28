@@ -9,6 +9,7 @@
 - [ADR-0011 · 固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
 - [ADR-0013 · Runtime 子模块边界与显式装配](#adr-0013)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
+- [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
 
 <a id="adr-0001"></a>
 
@@ -184,3 +185,21 @@ futex 通知不制造 WAKE token；SA_RESTART 只重启无超时 WAIT，其余�
 
 不安装宿主 OS handler；不实现实时信号队列、作业控制、外部进程/定时器信号或 CPU fault
 自动转信号。坏帧、坏栈明确失败；不能以此宣称完整 Linux 信号或游戏 GC 兼容。
+
+<a id="adr-0168"></a>
+
+## ADR-0168 · 从连接拓扑发布本地接口查询视图
+
+- 状态：Accepted
+- 日期：2026-10-28
+- 背景：API19 ROM NetworkInterface 直接枚举 sysfs/proc 并以 Posix ioctl 查询地址；
+  单独提供 ConnectivityManager 的断开状态不足以表达内核接口视图。
+- 决定：integration 从同一 offline_connectivity 事实派生唯一不可变接口表，
+  离线时仅有 API19 时代 Linux 回环 lo；只读 VFS 发布和地址查询共用该表。
+  发布冲突回滚，禁止读取宿主网卡或复用既有接口事实。
+  Posix 从“不扩展 socket”放宽到 AF_INET/AF_INET6、SOCK_DGRAM、protocol 0 的
+  接口查询描述符，由 IoRuntime 管理，只允许三项 IPv4 地址 ioctl 与幂等 close。
+  本地查询不执行网络 IO，不受 transport NetworkPolicy 限制；缺拓扑/在线状态
+  仍记账并明确失败。地址对象由既有 ROM InetAddress 构造路径建立。
+- 后果：ROM NetworkInterface 可枚举离线回环，普通算法仍归 Java；不增加通用 socket、
+  netlink/getifaddrs/if_indextoname 或在线 provider。验证见 [DVM-343](../tasks/dexvm/DVM-343.md)。

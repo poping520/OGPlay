@@ -28,6 +28,7 @@
 #include "ogplay/runtime/dexvm/interpreter.h"
 #include "ogplay/runtime/dexvm/intrinsic_builder.h"
 #include "ogplay/runtime/dexvm/network_runtime.h"
+#include "runtime/integration/guest_network_environment.h"
 #include "ogplay/runtime/dexvm/object_model.h"
 #include "ogplay/runtime/dexvm/vm_monitors.h"
 #include "ogplay/runtime/dexvm/vm_threads.h"
@@ -2036,4 +2037,137 @@ TEST_CASE("DVM-265 DEX DatagramPacket setData owns length") {
         CHECK(f.vm.StringUtf8(f.On(received_address, "getHostAddress", "()Ljava/lang/String;").ref) == "203.0.113.7");
         f.vm.Network().Shutdown();
     }
+}
+
+TEST_CASE("DVM-343 ROM network interfaces enumerate the offline kernel view") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        NetworkSqliteVm f(backend, {}, "test.game", true);
+        const auto file = f.New("Ljava/io/File;", "(Ljava/lang/String;)V",
+            {VmValue::Ref(f.vm.NewStringUtf8("/sys/class/net"))});
+        const auto names = f.On(file, "list", "()[Ljava/lang/String;").ref;
+        REQUIRE(names.IsValid());
+        REQUIRE(f.model.ArrayLength(names) == 1);
+        CHECK(f.vm.StringUtf8(f.model.GetObjectElement(names, 0)) == "lo");
+        const auto enumeration = f.Static("Ljava/net/NetworkInterface;", "getNetworkInterfaces",
+            "()Ljava/util/Enumeration;").ref;
+        REQUIRE(f.On(enumeration, "hasMoreElements", "()Z").AsInt() == 1);
+        const auto lo = f.On(enumeration, "nextElement", "()Ljava/lang/Object;").ref;
+        CHECK(f.On(enumeration, "hasMoreElements", "()Z").AsInt() == 0);
+        CHECK(f.vm.StringUtf8(f.On(lo, "getName", "()Ljava/lang/String;").ref) == "lo");
+        CHECK(f.On(lo, "getIndex", "()I").AsInt() == 1);
+        CHECK(f.On(lo, "isUp", "()Z").AsInt() == 1);
+        CHECK(f.On(lo, "isLoopback", "()Z").AsInt() == 1);
+        CHECK_FALSE(f.On(lo, "getHardwareAddress", "()[B").ref.IsValid());
+        CHECK(f.On(lo, "getMTU", "()I").AsInt() == 16436);
+        const auto addresses = f.On(lo, "getInetAddresses", "()Ljava/util/Enumeration;").ref;
+        std::vector<std::vector<std::byte>> actual;
+        while (f.On(addresses, "hasMoreElements", "()Z").AsInt()) {
+            const auto address = f.On(addresses, "nextElement", "()Ljava/lang/Object;").ref;
+            CHECK(f.On(address, "isLoopbackAddress", "()Z").AsInt() == 1);
+            const auto bytes = f.On(address, "getAddress", "()[B").ref;
+            actual.push_back(f.model.ReadByteRegion(bytes, 0, f.model.ArrayLength(bytes)));
+        }
+        std::vector<std::byte> ipv6(16); ipv6.back() = std::byte{1};
+        const std::vector<std::byte> ipv4{std::byte{127}, std::byte{0}, std::byte{0}, std::byte{1}};
+        REQUIRE(actual.size() == 2);
+        CHECK(std::find(actual.begin(), actual.end(), ipv4) != actual.end());
+        CHECK(std::find(actual.begin(), actual.end(), ipv6) != actual.end());
+        const auto interface_addresses = f.On(lo, "getInterfaceAddresses", "()Ljava/util/List;").ref;
+        CHECK(f.On(interface_addresses, "size", "()I").AsInt() == 2);
+        for (int i = 0; i < 2; ++i) {
+            const auto entry = f.On(interface_addresses, "get", "(I)Ljava/lang/Object;", {VmValue::Int(i)}).ref;
+            const auto address = f.On(entry, "getAddress", "()Ljava/net/InetAddress;").ref;
+            const auto bytes = f.On(address, "getAddress", "()[B").ref;
+            const bool v4 = f.model.ArrayLength(bytes) == 4;
+            CHECK(f.On(entry, "getNetworkPrefixLength", "()S").AsInt() == (v4 ? 8 : 128));
+            CHECK_FALSE(f.On(entry, "getBroadcast", "()Ljava/net/InetAddress;").ref.IsValid());
+        }
+        for (const auto* name : {"lo", "wlan0"}) {
+            const auto found = f.Static("Ljava/net/NetworkInterface;", "getByName",
+                "(Ljava/lang/String;)Ljava/net/NetworkInterface;", {VmValue::Ref(f.vm.NewStringUtf8(name))}).ref;
+            CHECK(found.IsValid() == (std::string_view(name) == "lo"));
+        }
+    }
+}
+
+TEST_CASE("DVM-343 interface query descriptors bound Posix errno and close semantics") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        NetworkSqliteVm f(backend, {}, "test.game", true);
+        const auto posix = f.New("Llibcore/io/Posix;");
+        const auto errno_is = [&](const VmCallOutcome& outcome, const int expected) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Llibcore/io/ErrnoException;");
+            const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(outcome.exception), "errno", "I");
+            REQUIRE(field.has_value());
+            CHECK(static_cast<int>(f.model.InstanceSlots(outcome.exception)[f.linker.Field(*field).slot].bits) == expected);
+        };
+        for (const auto args : {std::array{1, 2, 0}, std::array{2, 1, 0}, std::array{10, 2, 1}}) {
+            errno_is(f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
+                {VmValue::Int(args[0]), VmValue::Int(args[1]), VmValue::Int(args[2])}), 38);
+        }
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(), [](const auto& hit) {
+            return hit.id == "libcore.io.Posix.socket" && hit.count == 3;
+        }));
+        for (const auto domain : {2, 10}) {
+            const auto fd = f.On(posix, "socket", "(III)Ljava/io/FileDescriptor;",
+                {VmValue::Int(domain), VmValue::Int(2), VmValue::Int(0)}).ref;
+            const auto ioctl = [&](VmObjectRef descriptor, int cmd, const char* name) {
+                return f.OnOutcome(posix, "ioctlInetAddress",
+                    "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
+                    {VmValue::Ref(descriptor), VmValue::Int(cmd), VmValue::Ref(f.vm.NewStringUtf8(name))});
+            };
+            errno_is(ioctl(fd, 0x8915, "wlan0"), 19);
+            errno_is(ioctl(fd, 0, "lo"), 38);
+            const auto other = f.New("Ljava/io/FileDescriptor;");
+            errno_is(ioctl(other, 0x8915, "lo"), 38);
+            errno_is(f.OnOutcome(posix, "dup", "(Ljava/io/FileDescriptor;)Ljava/io/FileDescriptor;",
+                {VmValue::Ref(fd)}), 38);
+            f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+            f.On(posix, "close", "(Ljava/io/FileDescriptor;)V", {VmValue::Ref(fd)});
+            errno_is(ioctl(fd, 0x8915, "lo"), 38);
+        }
+        // Local interface queries do not consult the transport's NetworkPolicy.
+        f.vm.Network().Configure({.enabled = true}, nullptr);
+        CHECK(f.Static("Ljava/net/NetworkInterface;", "getByName",
+            "(Ljava/lang/String;)Ljava/net/NetworkInterface;", {VmValue::Ref(f.vm.NewStringUtf8("lo"))}).ref.IsValid());
+        f.context->offline_connectivity.reset();
+        const auto unavailable = f.OnOutcome(posix, "socket", "(III)Ljava/io/FileDescriptor;",
+            {VmValue::Int(2), VmValue::Int(2), VmValue::Int(0)});
+        REQUIRE(unavailable.exception.IsValid());
+        CHECK(f.linker.Class(unavailable.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+    }
+}
+
+TEST_CASE("DVM-343 interface publication is readonly and rolls back every collision") {
+    const std::array paths{"/sys/class/net/lo/ifindex", "/sys/class/net/lo/flags",
+        "/sys/class/net/lo/mtu", "/sys/class/net/lo/address", "/proc/net/if_inet6"};
+    for (const auto* conflict : paths) {
+        VirtualFileSystem vfs;
+        const std::array original{std::byte{'x'}};
+        vfs.PutFile(conflict, original, false);
+        GuestNetworkEnvironment environment(AndroidOfflineConnectivity{});
+        CHECK_THROWS_AS(environment.Publish(vfs), VfsError);
+        for (const auto* path : paths) {
+            if (std::string_view(path) != conflict) CHECK_THROWS_AS(static_cast<void>(vfs.Stat(path)), VfsError);
+        }
+        const auto fd = vfs.Open(conflict, {.read = true});
+        std::array<std::byte, 2> bytes{};
+        REQUIRE(vfs.Read(fd, bytes) == 1);
+        CHECK(bytes[0] == std::byte{'x'});
+        vfs.Close(fd);
+    }
+    VirtualFileSystem vfs;
+    {
+        GuestNetworkEnvironment environment(AndroidOfflineConnectivity{});
+        environment.Publish(vfs);
+        const auto fd = vfs.Open("/proc/net/if_inet6", {.read = true});
+        std::array<std::byte, 128> bytes{};
+        const auto count = vfs.Read(fd, bytes);
+        CHECK(std::string(reinterpret_cast<const char*>(bytes.data()), count) ==
+            "00000000000000000000000000000001 01 80 10 80       lo\n");
+        vfs.Close(fd);
+        for (const auto* path : paths) CHECK_THROWS_AS(static_cast<void>(vfs.Open(path, {.write = true})), VfsError);
+    }
+    CHECK(vfs.ListDirectory("/sys/class/net").empty());
 }

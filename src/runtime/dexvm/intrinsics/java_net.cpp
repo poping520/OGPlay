@@ -72,6 +72,11 @@ namespace ogplay::runtime::dexvm::intrinsics {
             if (!descriptor.IsValid()) throw VmJavaThrow{"Ljava/lang/NullPointerException;", "fd == null"};
             const auto& field = ObjectField(call.vm, descriptor, "descriptor", "I");
             const auto handle = static_cast<std::int32_t>(call.vm.Model().InstanceSlots(descriptor)[field.slot].bits);
+            if (const auto* state = call.vm.IO().FindDescriptor(descriptor);
+                state && state->kind == IoRuntime::DescriptorKind::interface_query) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.posix.interface_query." + std::string(function), 0);
+                ThrowErrno(call.vm, function, 38);
+            }
             try {
                 return call.vm.IO().ResolveDescriptor(descriptor, handle);
             } catch (const IoRuntimeError& error) {
@@ -966,6 +971,12 @@ namespace ogplay::runtime::dexvm::intrinsics {
             posix.VirtualMethod("close", "(Ljava/io/FileDescriptor;)V",
                 [](IntrinsicContext& call) {
                     const auto fd = call.arguments[0].ref;
+                    if (const auto* state = call.vm.IO().FindDescriptor(fd);
+                        state && state->kind == IoRuntime::DescriptorKind::interface_query) {
+                        call.vm.IO().CloseDescriptor(fd);
+                        SetIntField(call.vm, fd, "descriptor", -1);
+                        return VmValue::Void();
+                    }
                     try {
                         static_cast<void>(PosixDescriptor(call, fd, "close"));
                     } catch (const VmJavaThrow&) {
@@ -1274,6 +1285,38 @@ namespace ogplay::runtime::dexvm::intrinsics {
                             NewAddress(call.vm, *bytes, numeric_input ? VmObjectRef{0} : host_ref));
                     }
                     return VmValue::Ref(array);
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("socket", "(III)Ljava/io/FileDescriptor;",
+                [interfaces = services.network_interfaces](IntrinsicContext& call) {
+                    const auto domain = call.arguments[0].AsInt();
+                    if ((domain != 2 && domain != 10) || call.arguments[1].AsInt() != 2 ||
+                        call.arguments[2].AsInt() != 0 || !interfaces) {
+                        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("libcore.io.Posix.socket", 0);
+                        ThrowErrno(call.vm, "socket", 38);
+                    }
+                    static_cast<void>(interfaces(call.vm));
+                    const auto fd = call.vm.NewIntrinsicInstance("Ljava/io/FileDescriptor;");
+                    call.vm.IO().SetDescriptor(fd, {IoRuntime::DescriptorKind::interface_query, {}, 0, false, {}, {}, {}});
+                    // Logical identity only: never a host or VFS fd. Other operations reject this kind.
+                    SetIntField(call.vm, fd, "descriptor", 0);
+                    return VmValue::Ref(fd);
+                }, kAccPublic | kAccNative);
+            posix.VirtualMethod("ioctlInetAddress", "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;",
+                [interfaces = services.network_interfaces](IntrinsicContext& call) {
+                    const auto* state = call.vm.IO().FindDescriptor(call.arguments[0].ref);
+                    const auto cmd = call.arguments[1].AsInt();
+                    if (!state || state->closed || state->kind != IoRuntime::DescriptorKind::interface_query ||
+                        (cmd != 0x8915 && cmd != 0x8919 && cmd != 0x891b) || !interfaces) {
+                        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("libcore.io.Posix.ioctlInetAddress", 0);
+                        ThrowErrno(call.vm, "ioctl", 38);
+                    }
+                    const auto name = call.vm.StringUtf8(call.arguments[2].ref);
+                    const auto& table = interfaces(call.vm);
+                    const auto found = std::find_if(table.begin(), table.end(), [&name](const auto& entry) { return entry.name == name; });
+                    if (found == table.end()) ThrowErrno(call.vm, "ioctl", 19);
+                    if (!found->ipv4) ThrowErrno(call.vm, "ioctl", 99);
+                    const auto& bytes = cmd == 0x8915 ? *found->ipv4 : cmd == 0x8919 ? found->broadcast : found->netmask;
+                    return VmValue::Ref(NewAddress(call.vm, bytes));
                 }, kAccPublic | kAccNative);
             posix.VirtualMethod("inet_pton", "(ILjava/lang/String;)Ljava/net/InetAddress;",
                 [](IntrinsicContext& call) {

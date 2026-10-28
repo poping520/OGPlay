@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ogplay/runtime/common/guest_network_interface.h"
+
 #include <array>
 #include <compare>
 #include <cstddef>
@@ -36,6 +38,7 @@ using HostStateDestructor = std::function<void(std::uint64_t)>;
 struct CoreIntrinsicServices final {
     std::function<void(Interpreter&)> initialize_system_properties;
     std::uint32_t cpu_cores{1};
+    std::function<const std::vector<GuestNetworkInterface>&(Interpreter&)> network_interfaces;
     enum class ClasspathLoader : std::uint8_t { bootstrap, application };
 
     // Location names a sealed guest archive, never a host filesystem path.

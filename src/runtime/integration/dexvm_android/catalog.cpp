@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "runtime/integration/guest_network_environment.h"
 #include "ogplay/runtime/boundary/device_locale.h"
 
 #include <algorithm>
@@ -14,6 +15,19 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
     dexvm::CoreIntrinsicServices services;
     services.secure_random = hal::FillSecureRandom;
     if (context == nullptr) return services;
+    if (context->offline_connectivity && !context->network_policy.enabled && !context->network_environment) {
+        auto environment = std::make_shared<GuestNetworkEnvironment>(*context->offline_connectivity);
+        if (context->vfs) environment->Publish(*context->vfs);
+        context->network_environment = std::move(environment);
+    }
+    services.network_interfaces = [context](dexvm::Interpreter& vm)
+        -> const std::vector<GuestNetworkInterface>& {
+        if (!context->offline_connectivity || context->network_policy.enabled || !context->network_environment) {
+            if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest interface topology is unavailable"};
+        }
+        return context->network_environment->Interfaces();
+    };
     static_cast<void>(DeviceLocale(context->locale_language, context->locale_region));
     services.initialize_system_properties = [context](dexvm::Interpreter& vm) {
         android_intrinsics::InitializeAndroidSystemProperties(vm, context);

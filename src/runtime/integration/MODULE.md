@@ -30,6 +30,10 @@ sysfs 拓扑/标称频率。API19 `sysconf` 导出通过进程私有 RX guest �
 不修改原 ELF 指令。DexVM bridge 从该进程取得核数，禁止另用宿主硬件事实。
 不支持统计负载、热插拔、调频控制或周期精确模拟，见 ADR-0080。
 
+`GuestNetworkEnvironment` 从会话 offline_connectivity 派生不可变接口表，仅发布 API19
+回环 lo 的只读 sysfs/proc；CoreIntrinsicServices 回调与 VFS 共用同表。注册冲突整体回滚，
+owner 退役同步撤销文件；缺事实或 context 在线策略明确失败。不采样宿主网卡，见 ADR-0168。
+
 第二阶段（ADR-0081）可按配置建立一个进程共享 ExecutionBudget，所有主/clone/Java
 native/音频回调及重入 CPU 使用同一 Dynarmic context。并发上限可独立启用为配置核数，
 总速率以百万 backend tick/秒指定；默认不设预算。BeginTeardown/Stop 先解除预算等待，

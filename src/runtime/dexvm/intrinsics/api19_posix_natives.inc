@@ -35,7 +35,6 @@ posix.UnimplementedVirtual("getsockoptUcred", "(Ljava/io/FileDescriptor;II)Llibc
 posix.UnimplementedVirtual("gettid", "()I");
 posix.UnimplementedVirtual("getuid", "()I");
 posix.UnimplementedVirtual("if_indextoname", "(I)Ljava/lang/String;");
-posix.UnimplementedVirtual("ioctlInetAddress", "(Ljava/io/FileDescriptor;ILjava/lang/String;)Ljava/net/InetAddress;");
 posix.UnimplementedVirtual("kill", "(II)V");
 posix.UnimplementedVirtual("lchown", "(Ljava/lang/String;II)V");
 posix.UnimplementedVirtual("listen", "(Ljava/io/FileDescriptor;I)V");
@@ -63,7 +62,6 @@ posix.UnimplementedVirtual("setsockoptLinger", "(Ljava/io/FileDescriptor;IILlibc
 posix.UnimplementedVirtual("setsockoptTimeval", "(Ljava/io/FileDescriptor;IILlibcore/io/StructTimeval;)V");
 posix.UnimplementedVirtual("setuid", "(I)V");
 posix.UnimplementedVirtual("shutdown", "(Ljava/io/FileDescriptor;I)V");
-posix.UnimplementedVirtual("socket", "(III)Ljava/io/FileDescriptor;");
 posix.UnimplementedVirtual("socketpair", "(IIILjava/io/FileDescriptor;Ljava/io/FileDescriptor;)V");
 posix.UnimplementedVirtual("strsignal", "(I)Ljava/lang/String;");
 posix.UnimplementedVirtual("symlink", "(Ljava/lang/String;Ljava/lang/String;)V");

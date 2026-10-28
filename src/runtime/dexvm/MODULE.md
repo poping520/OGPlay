@@ -191,11 +191,13 @@ switch/threaded 解释、异常、线程/monitor、反射及 `java.*` core intri
   DatagramPacket 状态归 Java；DatagramSocket 经 VM 虚派 getter/setter 读取 payload 区间、
   地址和端口、提交接收长度及来源，NetworkRuntime 只消费一次性的 Endpoint/payload 快照，
   不保存 packet 侧表。InputSource 的值状态和 Appendable 接口归 ROM，SAX 解析边界仍明确失败。
-- `IoRuntime` 只持文件资源与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
+- `IoRuntime` 只持文件资源、本地接口查询描述符与增量解码状态，文件仅走注入 `IoFileSystem`；API 19
   File/FIS/FOS/RAF/FileChannelImpl 普通算法来自 BootDex，Posix 文件 native 是唯一入口。FIS/FOS 的
   OpenFileDescription 保存隔离的 VFS descriptor 与访问模式，同一逻辑 FileDescriptor 共享
   VFS offset；未登记的非负 guest fd 可按 HandleInfo/HandleFlags 惰性接管，不复制数据或移动 offset。
   DuplicateHandle 共享 VFS offset，关闭互不影响；GC sweep 只移除登记，不关闭 fd。
+  接口查询描述符不对应 VFS/host fd，只允许同拓扑表的地址 ioctl 与幂等 close；
+  其他操作记账失败，不能惰性接管为普通文件。接口事实经 CoreIntrinsicServices 显式注入。
   FileChannel 的当前受检操作也只消费该状态，定位传输保持源 offset 且不伪造 mmap。
   RandomAccessFile 的定位、长度与截断同样走该 descriptor；IoFileSystem 错误携带真实 VFS errno。
   `Posix.mkdir/remove/rename` 不经 bool 降级，VFS 的 ENOENT/EEXIST/EACCES/ENOSPC 等原样构造

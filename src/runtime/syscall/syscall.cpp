@@ -164,27 +164,23 @@ constexpr std::array kAndroidArmBaseline{
 
 }  // namespace
 
-A32SyscallDispatcher::A32SyscallDispatcher(core::CapabilityLedger& ledger)
-    : ledger_(ledger) {}
+A32SyscallDispatcher::A32SyscallDispatcher(core::CapabilityLedger& ledger) : ledger_(ledger) {}
 
-void A32SyscallDispatcher::Declare(const std::uint32_t number, std::string name,
-                                   const SyscallGroup group) {
+void A32SyscallDispatcher::Declare(const std::uint32_t number, std::string name, const SyscallGroup group) {
     if (name.empty()) throw SyscallError("syscall name is empty");
-    const auto [iterator, inserted] = entries_.emplace(
-        number, Entry{std::move(name), group, {}});
+    const auto [iterator, inserted] = entries_.emplace(number, Entry{std::move(name), group, {}});
     static_cast<void>(iterator);
     if (!inserted) throw SyscallError("syscall number is already declared");
 }
 
-void A32SyscallDispatcher::Register(const std::uint32_t number, std::string name,
-                                    const SyscallGroup group, Handler handler) {
+void A32SyscallDispatcher::Register(const std::uint32_t number, std::string name, const SyscallGroup group,
+                                    Handler handler) {
     if (!handler) throw SyscallError("syscall handler is empty");
     Declare(number, std::move(name), group);
     entries_.at(number).handler = std::move(handler);
 }
 
-void A32SyscallDispatcher::Implement(const std::uint32_t number,
-                                     Handler handler) {
+void A32SyscallDispatcher::Implement(const std::uint32_t number, Handler handler) {
     if (!handler) throw SyscallError("syscall handler is empty");
     const auto found = entries_.find(number);
     if (found == entries_.end()) {
@@ -196,45 +192,41 @@ void A32SyscallDispatcher::Implement(const std::uint32_t number,
     found->second.handler = std::move(handler);
 }
 
+std::function<void()> A32SyscallDispatcher::MappingMutationRecorder() const {
+    return [ledger = &ledger_] { ledger->RecordUnimplemented("vfs.shared_mapping_mutation", 0); };
+}
+
 void A32SyscallDispatcher::SetObserver(Observer observer) {
     observer_ = std::move(observer);
 }
 
-void A32SyscallDispatcher::SetDiagnosticObserver(
-    DiagnosticObserver observer) {
+void A32SyscallDispatcher::SetDiagnosticObserver(DiagnosticObserver observer) {
     diagnostic_observer_ = std::move(observer);
 }
 
-A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(
-    const A32SyscallFrame& frame) {
+A32SyscallOutcome A32SyscallDispatcher::DispatchOutcome(const A32SyscallFrame& frame) {
     // Auditable progress table. Everything absent from this list is idle.
     // read/pread advance only when new bytes were delivered; write/pwrite
     // advance only when bytes were accepted. Futex wait residency is marked
     // by its handler because the Linux return value alone is ambiguous.
-    const auto classify = [](const std::uint32_t number,
-                             const std::int32_t value) {
+    const auto classify = [](const std::uint32_t number, const std::int32_t value) {
         switch (number) {
         case 3:    // read
         case 180:  // pread64
         case 4:    // write
         case 181:  // pwrite64
-            return value > 0 ? SupervisorCallProgress::handled_advanced
-                             : SupervisorCallProgress::handled_idle;
-        default:
-            return SupervisorCallProgress::handled_idle;
+            return value > 0 ? SupervisorCallProgress::handled_advanced : SupervisorCallProgress::handled_idle;
+        default: return SupervisorCallProgress::handled_idle;
         }
     };
 
     const auto found = entries_.find(frame.number);
     A32SyscallOutcome outcome;
     if (found == entries_.end()) {
-        ledger_.RecordUnimplemented("syscall.arm." +
-                                        std::to_string(frame.number),
-                                    frame.link_register);
+        ledger_.RecordUnimplemented("syscall.arm." + std::to_string(frame.number), frame.link_register);
         outcome.return_value = -kLinuxEnosys;
     } else if (!found->second.handler) {
-        ledger_.RecordUnimplemented("syscall." + found->second.name,
-                                    frame.link_register);
+        ledger_.RecordUnimplemented("syscall." + found->second.name, frame.link_register);
         outcome.return_value = -kLinuxEnosys;
     } else {
         outcome = found->second.handler(frame);
@@ -271,8 +263,8 @@ SyscallCoverage A32SyscallDispatcher::Coverage() const {
     return result;
 }
 
-A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
-    core::CapabilityLedger& ledger, const AndroidProcessIdentity identity) {
+A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& ledger,
+                                                       const AndroidProcessIdentity identity) {
     A32SyscallDispatcher result{ledger};
     result.identity = identity;
     for (const auto& declaration : kAndroidArmBaseline) {
@@ -280,36 +272,26 @@ A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
             return static_cast<std::int32_t>(value);
         };
         if (declaration.number == 20) {
-            result.Register(declaration.number, declaration.name,
-                            declaration.group, constant);
+            result.Register(declaration.number, declaration.name, declaration.group, constant);
         } else if (declaration.number == 199 || declaration.number == 201) {
-            result.Register(declaration.number, declaration.name,
-                            declaration.group,
-                            [value = identity.user_id](const A32SyscallFrame&) {
-                                return static_cast<std::int32_t>(value);
-                            });
+            result.Register(
+                declaration.number, declaration.name, declaration.group,
+                [value = identity.user_id](const A32SyscallFrame&) { return static_cast<std::int32_t>(value); });
         } else if (declaration.number == 200 || declaration.number == 202) {
-            result.Register(declaration.number, declaration.name,
-                            declaration.group,
-                            [value = identity.group_id](const A32SyscallFrame&) {
-                                return static_cast<std::int32_t>(value);
-                            });
+            result.Register(
+                declaration.number, declaration.name, declaration.group,
+                [value = identity.group_id](const A32SyscallFrame&) { return static_cast<std::int32_t>(value); });
         } else if (declaration.number == 224) {
-            result.Register(declaration.number, declaration.name,
-                            declaration.group, [](const A32SyscallFrame& frame) {
-                                return static_cast<std::int32_t>(frame.thread_id);
-                            });
+            result.Register(declaration.number, declaration.name, declaration.group,
+                            [](const A32SyscallFrame& frame) { return static_cast<std::int32_t>(frame.thread_id); });
         } else {
-            result.Declare(declaration.number, declaration.name,
-                           declaration.group);
+            result.Declare(declaration.number, declaration.name, declaration.group);
         }
     }
     return result;
 }
 
-void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
-                             hal::Clock& clock,
-                             memory::AddressSpace& address_space,
+void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
                              std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep) {
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
@@ -318,23 +300,19 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
     if (frequency == 0 || frequency > UINT64_C(1000000000)) {
         throw SyscallError("clock frequency cannot be represented as nanoseconds");
     }
-    const auto write32 = [&address_space](const memory::GuestAddress address,
-                                          const std::uint32_t value) {
+    const auto write32 = [&address_space](const memory::GuestAddress address, const std::uint32_t value) {
         std::array<std::byte, 4> bytes{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
-            bytes[index] = static_cast<std::byte>(
-                (value >> static_cast<unsigned>(index * 8U)) & 0xffU);
+            bytes[index] = static_cast<std::byte>((value >> static_cast<unsigned>(index * 8U)) & 0xffU);
         }
         address_space.Write(address, bytes);
     };
-    const auto read32 = [&address_space](const memory::GuestAddress address,
-                                         const std::uint64_t thread_id) {
+    const auto read32 = [&address_space](const memory::GuestAddress address, const std::uint64_t thread_id) {
         std::array<std::byte, 4> bytes{};
         address_space.Read(address, bytes, thread_id);
         std::uint32_t value{};
         for (std::size_t index = 0; index < bytes.size(); ++index) {
-            value |= static_cast<std::uint32_t>(
-                         std::to_integer<std::uint8_t>(bytes[index]))
+            value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[index]))
                      << static_cast<unsigned>(index * 8U);
         }
         return value;
@@ -346,74 +324,59 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
         const auto nanoseconds = remainder * UINT64_C(1000000000) / frequency;
         return std::pair{seconds, nanoseconds};
     };
+    dispatcher.Implement(263, [&address_space, write32, current](const A32SyscallFrame& frame) {
+        if (frame.arguments[0] != 0 && frame.arguments[0] != 1 && frame.arguments[0] != 7) {
+            return -kEinval;
+        }
+        const auto [seconds, nanoseconds] = current();
+        if (seconds > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
+            return -kEoverflow;
+        }
+        try {
+            const memory::GuestAddress output{frame.arguments[1]};
+            address_space.Validate({output, 8}, memory::AccessType::write, frame.thread_id);
+            write32(output, static_cast<std::uint32_t>(seconds));
+            write32(output.Add(4), static_cast<std::uint32_t>(nanoseconds));
+            return 0;
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        }
+    });
+    dispatcher.Implement(78, [&address_space, write32, current](const A32SyscallFrame& frame) {
+        const auto [seconds, nanoseconds] = current();
+        if (seconds > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
+            return -kEoverflow;
+        }
+        try {
+            const memory::GuestAddress output{frame.arguments[0]};
+            address_space.Validate({output, 8}, memory::AccessType::write, frame.thread_id);
+            write32(output, static_cast<std::uint32_t>(seconds));
+            write32(output.Add(4), static_cast<std::uint32_t>(nanoseconds / 1000U));
+            if (frame.arguments[1] != 0) {
+                const memory::GuestAddress timezone{frame.arguments[1]};
+                address_space.Validate({timezone, 8}, memory::AccessType::write, frame.thread_id);
+                write32(timezone, 0);
+                write32(timezone.Add(4), 0);
+            }
+            return 0;
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        }
+    });
     dispatcher.Implement(
-        263, [&address_space, write32, current](const A32SyscallFrame& frame) {
-            if (frame.arguments[0] != 0 && frame.arguments[0] != 1 &&
-                frame.arguments[0] != 7) {
-                return -kEinval;
-            }
-            const auto [seconds, nanoseconds] = current();
-            if (seconds > static_cast<std::uint64_t>(
-                              std::numeric_limits<std::int32_t>::max())) {
-                return -kEoverflow;
-            }
-            try {
-                const memory::GuestAddress output{frame.arguments[1]};
-                address_space.Validate({output, 8}, memory::AccessType::write,
-                                       frame.thread_id);
-                write32(output, static_cast<std::uint32_t>(seconds));
-                write32(output.Add(4), static_cast<std::uint32_t>(nanoseconds));
-                return 0;
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            }
-        });
-    dispatcher.Implement(
-        78, [&address_space, write32, current](const A32SyscallFrame& frame) {
-            const auto [seconds, nanoseconds] = current();
-            if (seconds > static_cast<std::uint64_t>(
-                              std::numeric_limits<std::int32_t>::max())) {
-                return -kEoverflow;
-            }
-            try {
-                const memory::GuestAddress output{frame.arguments[0]};
-                address_space.Validate({output, 8}, memory::AccessType::write,
-                                       frame.thread_id);
-                write32(output, static_cast<std::uint32_t>(seconds));
-                write32(output.Add(4),
-                        static_cast<std::uint32_t>(nanoseconds / 1000U));
-                if (frame.arguments[1] != 0) {
-                    const memory::GuestAddress timezone{frame.arguments[1]};
-                    address_space.Validate({timezone, 8},
-                                           memory::AccessType::write,
-                                           frame.thread_id);
-                    write32(timezone, 0);
-                    write32(timezone.Add(4), 0);
-                }
-                return 0;
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            }
-        });
-    dispatcher.Implement(
-        162, [&address_space, read32, signals = dispatcher.signal_binding,
-              admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame)
-                 -> A32SyscallOutcome {
+        162,
+        [&address_space, read32, signals = dispatcher.signal_binding,
+         admit_sleep = std::move(admit_sleep)](const A32SyscallFrame& frame) -> A32SyscallOutcome {
             auto progress = SupervisorCallProgress::handled_idle;
             try {
                 const memory::GuestAddress request{frame.arguments[0]};
-                address_space.Validate({request, 8U}, memory::AccessType::read,
-                                       frame.thread_id);
-                const auto seconds =
-                    std::bit_cast<std::int32_t>(read32(request, frame.thread_id));
-                const auto nanoseconds = std::bit_cast<std::int32_t>(
-                    read32(request.Add(4U), frame.thread_id));
-                if (seconds < 0 || nanoseconds < 0 ||
-                    nanoseconds >= 1'000'000'000) {
+                address_space.Validate({request, 8U}, memory::AccessType::read, frame.thread_id);
+                const auto seconds = std::bit_cast<std::int32_t>(read32(request, frame.thread_id));
+                const auto nanoseconds = std::bit_cast<std::int32_t>(read32(request.Add(4U), frame.thread_id));
+                if (seconds < 0 || nanoseconds < 0 || nanoseconds >= 1'000'000'000) {
                     return -kEinval;
                 }
-                const auto duration = std::chrono::seconds(seconds) +
-                                      std::chrono::nanoseconds(nanoseconds);
+                const auto duration = std::chrono::seconds(seconds) + std::chrono::nanoseconds(nanoseconds);
                 if (duration.count() == 0) return 0;
                 if (admit_sleep) admit_sleep(frame.thread_id, duration);
                 if (signals->runtime) {
@@ -422,16 +385,13 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
                     if (result.interrupted) {
                         if (frame.arguments[1] != 0) {
                             const auto left = result.remaining.count();
-                            const std::array words{
-                                static_cast<std::uint32_t>(left / 1'000'000'000),
-                                static_cast<std::uint32_t>(left % 1'000'000'000)};
+                            const std::array words{static_cast<std::uint32_t>(left / 1'000'000'000),
+                                                   static_cast<std::uint32_t>(left % 1'000'000'000)};
                             std::array<std::byte, 8> bytes{};
                             for (std::size_t index = 0; index < bytes.size(); ++index) {
-                                bytes[index] = static_cast<std::byte>(
-                                    (words[index / 4] >> ((index % 4) * 8)) & 0xffU);
+                                bytes[index] = static_cast<std::byte>((words[index / 4] >> ((index % 4) * 8)) & 0xffU);
                             }
-                            address_space.Write(memory::GuestAddress{frame.arguments[1]}, bytes,
-                                                frame.thread_id);
+                            address_space.Write(memory::GuestAddress{frame.arguments[1]}, bytes, frame.thread_id);
                         }
                         // nanosleep is never restarted by SA_RESTART.
                         return {-4, progress};
@@ -446,24 +406,53 @@ void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
         });
 }
 
-void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space) {
+void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space) {
     constexpr std::int32_t kEperm = 1;
     constexpr std::int32_t kEnomem = 12;
     constexpr std::int32_t kEinval = 22;
     constexpr std::uint32_t kMapPrivate = 0x02;
     constexpr std::uint32_t kMapFixed = 0x10;
     constexpr std::uint32_t kMapAnonymous = 0x20;
+    // Placement/commit hints with no observable effect here: pages are always
+    // committed and resident (DENYWRITE 0x800, EXECUTABLE 0x1000, LOCKED 0x2000,
+    // NORESERVE 0x4000, POPULATE 0x8000, NONBLOCK 0x10000, STACK 0x20000).
+    // bionic pthread stacks pass MAP_NORESERVE. GROWSDOWN/HUGETLB stay unsupported.
+    constexpr std::uint32_t kMapHints = 0x800U | 0x1000U | 0x2000U | 0x4000U | 0x8000U | 0x10000U | 0x20000U;
+
     struct State final {
+        struct Mapping final {
+            std::uint64_t begin, end;
+            std::shared_ptr<const void> guard;
+            bool shared;
+        };
+
+        std::mutex mapping_mutex;
+        std::vector<Mapping> mappings;
+
+        // Prepare splits before mutating memory so allocation failure is atomic.
+        std::vector<Mapping> Without(std::uint64_t begin, std::uint64_t end) const {
+            std::vector<Mapping> result;
+            result.reserve(mappings.size() + 1U);
+            for (const auto& m : mappings) {
+                if (m.end <= begin || m.begin >= end)
+                    result.push_back(m);
+                else {
+                    if (m.begin < begin) result.push_back({m.begin, begin, m.guard, m.shared});
+                    if (m.end > end) result.push_back({end, m.end, m.guard, m.shared});
+                }
+            }
+            return result;
+        }
+
         std::mutex break_mutex;
         std::uint32_t current_break{0x50000000};
     };
+
     const auto state = std::make_shared<State>();
     const auto page_size = address_space.PageSize();
     const auto aligned_size = [page_size](const std::uint32_t size) {
         if (size == 0) throw std::invalid_argument("zero mapping size");
-        const auto result = (static_cast<std::uint64_t>(size) + page_size - 1U) &
-                            ~(page_size - 1U);
+        const auto result = (static_cast<std::uint64_t>(size) + page_size - 1U) & ~(page_size - 1U);
         if (result > std::numeric_limits<std::uint32_t>::max()) {
             throw std::overflow_error("mapping size overflows");
         }
@@ -478,8 +467,7 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
             result = result | memory::PageProtection::read;
         }
         if ((linux_protection & 2U) != 0) {
-            result = result | memory::PageProtection::read |
-                     memory::PageProtection::write;
+            result = result | memory::PageProtection::read | memory::PageProtection::write;
         }
         if ((linux_protection & 4U) != 0) {
             result = result | memory::PageProtection::execute;
@@ -487,63 +475,109 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
         return result;
     };
 
-    dispatcher.Implement(
-        192, [&address_space, page_size, aligned_size,
-              protection](const A32SyscallFrame& frame) {
-            try {
-                const auto size = aligned_size(frame.arguments[1]);
-                const auto flags = frame.arguments[3];
-                if ((flags & kMapAnonymous) == 0 ||
-                    (flags & kMapPrivate) == 0 || frame.arguments[5] != 0) {
-                    return -kEinval;
-                }
-                std::uint32_t address{};
-                if ((flags & kMapFixed) != 0) {
-                    address = frame.arguments[0];
-                    if (address % page_size != 0) return -kEinval;
-                    if (address < memory::kGuestLowGuardSize) return -kEperm;
-                    address_space.ReplaceAnonymous({memory::GuestAddress{address}, size},
-                                                   protection(frame.arguments[2]));
-                } else {
-                    address = address_space.MapAnywhere(
-                        {memory::GuestAddress{0x60000000U}, UINT64_C(0xa0000000)},
-                        size, protection(frame.arguments[2])).Value();
-                }
-                return std::bit_cast<std::int32_t>(address);
-            } catch (const memory::ProtectedMappingError&) {
-                return -kEperm;
-            } catch (const std::invalid_argument&) {
-                return -kEinval;
-            } catch (const std::overflow_error&) {
-                return -kEnomem;
-            } catch (const std::exception&) {
-                return -kEnomem;
+    dispatcher.Implement(192, [&address_space, state, binding = dispatcher.filesystem_binding,
+                               rejected = dispatcher.MappingMutationRecorder(), page_size, aligned_size,
+                               protection](const A32SyscallFrame& frame) {
+        std::scoped_lock lock(state->mapping_mutex);
+        try {
+            const auto size = aligned_size(frame.arguments[1]);
+            const auto flags = frame.arguments[3];
+            const auto prot = frame.arguments[2];
+            const auto permissions = protection(prot);
+            const auto kind = flags & 3U;
+            if (kind != 1U && kind != kMapPrivate) return -kEinval;
+            if ((flags & ~(3U | kMapFixed | kMapAnonymous | kMapHints)) != 0) return -kLinuxEnosys;
+            const bool fixed = (flags & kMapFixed) != 0;
+            std::uint32_t address = frame.arguments[0];
+            if (fixed) {
+                if (address % page_size != 0) return -kEinval;
+                if (address < memory::kGuestLowGuardSize) return -kEperm;
+                if (std::uint64_t{address} + size > UINT64_C(0x100000000)) return -kEnomem;
             }
-        });
+            std::shared_ptr<const void> guard;
+            std::shared_ptr<const VfsResourceReservation> reservation;
+            std::vector<std::byte> snapshot;
+            if ((flags & kMapAnonymous) != 0) {
+                if (kind != kMapPrivate || frame.arguments[5] != 0) return -kLinuxEnosys;
+            } else {
+                auto* vfs = *binding;
+                if (!vfs) return -9;
+                const auto fd = std::bit_cast<std::int32_t>(frame.arguments[4]);
+                // Guard first, then inspect size/copy: VFS mutations serialize
+                // on its metadata lock. Private snapshots release at return.
+                const auto source = vfs->CaptureMappingSource(fd, rejected);
+                guard = source.lease;
+                if (kind == 1U && (prot & 2U) != 0) return source.writable ? -kLinuxEnosys : -13;
+                if (!source.readable) return -13;
+                if ((prot & 4U) != 0 || (prot != 1U && prot != 3U)) return -kLinuxEnosys;
+                if (kind == 1U && source.writable) return -kLinuxEnosys;
+                const auto offset = std::uint64_t{frame.arguments[5]} * 4096U;
+                if (source.lease->Size() == 0 || offset + size - page_size >= source.lease->Size())
+                    return -kLinuxEnosys;
+                const auto count = std::min<std::uint64_t>(size, source.lease->Size() - offset);
+                reservation = vfs->ReserveResourceMemory(count);
+                snapshot.resize(static_cast<std::size_t>(count));
+                std::size_t copied{};
+                while (copied < snapshot.size()) {
+                    const auto got = source.lease->ReadAt(offset + copied, std::span{snapshot}.subspan(copied));
+                    if (got == 0) throw VfsError(5, "short mapping snapshot read");
+                    copied += got;
+                }
+            }
+            auto next = fixed ? state->Without(address, std::uint64_t{address} + size) : state->mappings;
+            next.reserve(next.size() + 1U);
+            if (fixed) {
+                address_space.ReplaceAnonymous({memory::GuestAddress{address}, size}, permissions, snapshot);
+            } else {
+                address = address_space
+                              .MapAnywhere({memory::GuestAddress{0x60000000U}, UINT64_C(0xa0000000)}, size, permissions,
+                                           snapshot)
+                              .Value();
+            }
+            if ((flags & kMapAnonymous) == 0)
+                next.push_back(
+                    {address, std::uint64_t{address} + size, kind == 1U ? std::move(guard) : nullptr, kind == 1U});
+            state->mappings.swap(next);
+            return std::bit_cast<std::int32_t>(address);
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        } catch (const memory::ProtectedMappingError&) {
+            return -kEperm;
+        } catch (const std::invalid_argument&) {
+            return -kEinval;
+        } catch (const std::overflow_error&) {
+            return -kEnomem;
+        } catch (const std::exception&) {
+            return -kEnomem;
+        }
+    });
+    dispatcher.Implement(91, [&address_space, state, page_size, aligned_size](const A32SyscallFrame& frame) {
+        std::scoped_lock lock(state->mapping_mutex);
+        try {
+            if (frame.arguments[0] % page_size != 0) return -kEinval;
+            const auto size = aligned_size(frame.arguments[1]);
+            auto next = state->Without(frame.arguments[0], std::uint64_t{frame.arguments[0]} + size);
+            address_space.Unmap({memory::GuestAddress{frame.arguments[0]}, size});
+            state->mappings.swap(next);
+            return 0;
+        } catch (const memory::ProtectedMappingError&) {
+            return -kEperm;
+        } catch (const std::exception&) {
+            return -kEinval;
+        }
+    });
     dispatcher.Implement(
-        91, [&address_space, page_size,
-             aligned_size](const A32SyscallFrame& frame) {
+        125, [&address_space, state, page_size, aligned_size, protection](const A32SyscallFrame& frame) {
+            std::scoped_lock lock(state->mapping_mutex);
             try {
                 if (frame.arguments[0] % page_size != 0) return -kEinval;
-                address_space.Unmap(
-                    {memory::GuestAddress{frame.arguments[0]},
-                     aligned_size(frame.arguments[1])});
-                return 0;
-            } catch (const memory::ProtectedMappingError&) {
-                return -kEperm;
-            } catch (const std::exception&) {
-                return -kEinval;
-            }
-        });
-    dispatcher.Implement(
-        125, [&address_space, page_size, aligned_size,
-              protection](const A32SyscallFrame& frame) {
-            try {
-                if (frame.arguments[0] % page_size != 0) return -kEinval;
-                address_space.Protect(
-                    {memory::GuestAddress{frame.arguments[0]},
-                     aligned_size(frame.arguments[1])},
-                    protection(frame.arguments[2]));
+                const auto end = std::uint64_t{frame.arguments[0]} + aligned_size(frame.arguments[1]);
+                for (const auto& m : state->mappings)
+                    if (m.begin < end && frame.arguments[0] < m.end &&
+                        ((frame.arguments[2] & 4U) != 0 || (m.shared && (frame.arguments[2] & 2U) != 0)))
+                        return -kLinuxEnosys;
+                address_space.Protect({memory::GuestAddress{frame.arguments[0]}, aligned_size(frame.arguments[1])},
+                                      protection(frame.arguments[2]));
                 return 0;
             } catch (const memory::ProtectedMappingError&) {
                 return -kEperm;
@@ -567,80 +601,69 @@ void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
             return -kEinval;
         }
     });
-    dispatcher.Implement(
-        220, [&address_space, page_size,
-              aligned_size](const A32SyscallFrame& frame) {
-            constexpr std::uint32_t kMadvDontneed = 4;
-            const auto supported_advice = [](const std::uint32_t advice) {
-                return advice <= kMadvDontneed ||
-                       (advice >= 12U && advice <= 15U);
-            };
-            if (frame.arguments[0] % page_size != 0 ||
-                !supported_advice(frame.arguments[2])) {
-                return -kEinval;
-            }
-            try {
-                const auto size = aligned_size(frame.arguments[1]);
-                const memory::GuestRange range{
-                    memory::GuestAddress{frame.arguments[0]}, size};
-                const auto access = frame.arguments[2] == kMadvDontneed
-                                        ? memory::AccessType::write
-                                        : memory::AccessType::read;
-                address_space.Validate(range, access, frame.thread_id);
-                if (frame.arguments[2] != kMadvDontneed) return 0;
+    dispatcher.Implement(220, [&address_space, state, page_size, aligned_size](const A32SyscallFrame& frame) {
+        constexpr std::uint32_t kMadvDontneed = 4;
+        const auto supported_advice = [](const std::uint32_t advice) {
+            return advice <= kMadvDontneed || (advice >= 12U && advice <= 15U);
+        };
+        if (frame.arguments[0] % page_size != 0 || !supported_advice(frame.arguments[2])) {
+            return -kEinval;
+        }
+        std::scoped_lock lock(state->mapping_mutex);
+        try {
+            const auto size = aligned_size(frame.arguments[1]);
+            const memory::GuestRange range{memory::GuestAddress{frame.arguments[0]}, size};
+            // Linux refills discarded file pages from the file, never zero;
+            // snapshot mappings keep no source to refill from.
+            const auto end = std::uint64_t{frame.arguments[0]} + size;
+            if (frame.arguments[2] == kMadvDontneed)
+                for (const auto& m : state->mappings)
+                    if (m.begin < end && frame.arguments[0] < m.end) return -kLinuxEnosys;
+            const auto access =
+                frame.arguments[2] == kMadvDontneed ? memory::AccessType::write : memory::AccessType::read;
+            address_space.Validate(range, access, frame.thread_id);
+            if (frame.arguments[2] != kMadvDontneed) return 0;
 
-                const std::array<std::byte, 4096> zeroes{};
-                std::uint64_t offset{};
-                while (offset < size) {
-                    const auto count = static_cast<std::size_t>(
-                        std::min<std::uint64_t>(zeroes.size(), size - offset));
-                    address_space.Write(range.Start().Add(offset),
-                                        std::span{zeroes}.first(count),
-                                        frame.thread_id);
-                    offset += count;
-                }
-                return 0;
-            } catch (const memory::MemoryFault&) {
-                return -kEnomem;
-            } catch (const std::exception&) {
-                return -kEinval;
+            const std::array<std::byte, 4096> zeroes{};
+            std::uint64_t offset{};
+            while (offset < size) {
+                const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(zeroes.size(), size - offset));
+                address_space.Write(range.Start().Add(offset), std::span{zeroes}.first(count), frame.thread_id);
+                offset += count;
             }
-        });
-    dispatcher.Implement(
-        45, [&address_space, state, page_size](const A32SyscallFrame& frame) {
-            std::scoped_lock lock(state->break_mutex);
-            const auto requested = frame.arguments[0];
-            if (requested == 0) {
-                return std::bit_cast<std::int32_t>(state->current_break);
-            }
-            if (requested < 0x50000000 || requested >= 0x58000000) {
-                return std::bit_cast<std::int32_t>(state->current_break);
-            }
-            const auto old_page = (static_cast<std::uint64_t>(state->current_break) +
-                                   page_size - 1U) & ~(page_size - 1U);
-            const auto new_page = (static_cast<std::uint64_t>(requested) +
-                                   page_size - 1U) & ~(page_size - 1U);
-            try {
-                if (new_page > old_page) {
-                    address_space.Map(
-                        {memory::GuestAddress{static_cast<std::uint32_t>(old_page)},
-                         new_page - old_page},
-                        memory::PageProtection::read |
-                            memory::PageProtection::write);
-                } else if (new_page < old_page) {
-                    address_space.Unmap(
-                        {memory::GuestAddress{static_cast<std::uint32_t>(new_page)},
-                         old_page - new_page});
-                }
-                state->current_break = requested;
-            } catch (const std::exception&) {
-            }
+            return 0;
+        } catch (const memory::MemoryFault&) {
+            return -kEnomem;
+        } catch (const std::exception&) {
+            return -kEinval;
+        }
+    });
+    dispatcher.Implement(45, [&address_space, state, page_size](const A32SyscallFrame& frame) {
+        std::scoped_lock lock(state->break_mutex);
+        const auto requested = frame.arguments[0];
+        if (requested == 0) {
             return std::bit_cast<std::int32_t>(state->current_break);
-        });
+        }
+        if (requested < 0x50000000 || requested >= 0x58000000) {
+            return std::bit_cast<std::int32_t>(state->current_break);
+        }
+        const auto old_page = (static_cast<std::uint64_t>(state->current_break) + page_size - 1U) & ~(page_size - 1U);
+        const auto new_page = (static_cast<std::uint64_t>(requested) + page_size - 1U) & ~(page_size - 1U);
+        try {
+            if (new_page > old_page) {
+                address_space.Map({memory::GuestAddress{static_cast<std::uint32_t>(old_page)}, new_page - old_page},
+                                  memory::PageProtection::read | memory::PageProtection::write);
+            } else if (new_page < old_page) {
+                address_space.Unmap({memory::GuestAddress{static_cast<std::uint32_t>(new_page)}, old_page - new_page});
+            }
+            state->current_break = requested;
+        } catch (const std::exception&) {
+        }
+        return std::bit_cast<std::int32_t>(state->current_break);
+    });
 }
 
-void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
-                               cpu::FutexTable& futex_table,
+void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus) {
     dispatcher.signal_binding->waiters = &futex_table;
     constexpr std::int32_t kEagain = 11;
@@ -654,8 +677,9 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     constexpr std::uint32_t kFutexPrivateFlag = 128;
     constexpr std::uint32_t kFutexClockRealtime = 256;
     dispatcher.Implement(
-        240, [binding = dispatcher.signal_binding, &futex_table, &memory_bus](const A32SyscallFrame& frame)
-                 -> A32SyscallOutcome {
+        240,
+        [binding = dispatcher.signal_binding, &futex_table,
+         &memory_bus](const A32SyscallFrame& frame) -> A32SyscallOutcome {
             const memory::GuestAddress address{frame.arguments[0]};
             if (!address.IsAligned(4)) return -kEinval;
             const auto operation = frame.arguments[1];
@@ -665,50 +689,39 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
                 if (command == kFutexWait) {
                     std::optional<std::chrono::nanoseconds> timeout;
                     if (frame.arguments[3] != 0) {
-                        const memory::GuestAddress timeout_address{
-                            frame.arguments[3]};
-                        const auto seconds = std::bit_cast<std::int32_t>(
-                            memory_bus.Read32(timeout_address, frame.thread_id));
-                        const auto nanoseconds = std::bit_cast<std::int32_t>(
-                            memory_bus.Read32(timeout_address.Add(4),
-                                              frame.thread_id));
-                        if (seconds < 0 || nanoseconds < 0 ||
-                            nanoseconds >= 1'000'000'000) {
+                        const memory::GuestAddress timeout_address{frame.arguments[3]};
+                        const auto seconds =
+                            std::bit_cast<std::int32_t>(memory_bus.Read32(timeout_address, frame.thread_id));
+                        const auto nanoseconds =
+                            std::bit_cast<std::int32_t>(memory_bus.Read32(timeout_address.Add(4), frame.thread_id));
+                        if (seconds < 0 || nanoseconds < 0 || nanoseconds >= 1'000'000'000) {
                             return -kEinval;
                         }
-                        timeout = std::chrono::seconds(seconds) +
-                                  std::chrono::nanoseconds(nanoseconds);
+                        timeout = std::chrono::seconds(seconds) + std::chrono::nanoseconds(nanoseconds);
                     }
                     const auto result = futex_table.Wait(
-                        memory_bus, address, frame.arguments[2], frame.thread_id,
-                        timeout, [binding, &frame] {
-                            return binding->runtime && binding->runtime->Pending(frame.thread_id);
-                        });
+                        memory_bus, address, frame.arguments[2], frame.thread_id, timeout,
+                        [binding, &frame] { return binding->runtime && binding->runtime->Pending(frame.thread_id); });
                     const auto parked =
                         result == cpu::FutexWaitResult::awoken ||
                         result == cpu::FutexWaitResult::interrupted_after_wait ||
-                        (result == cpu::FutexWaitResult::timed_out &&
-                         timeout.has_value() && timeout->count() > 0);
+                        (result == cpu::FutexWaitResult::timed_out && timeout.has_value() && timeout->count() > 0);
                     std::int32_t value{-kEagain};
                     if (result == cpu::FutexWaitResult::awoken) {
                         value = 0;
                     } else if (result == cpu::FutexWaitResult::timed_out) {
                         value = -kEtimedout;
-                    } else if (
-                        result == cpu::FutexWaitResult::interrupted ||
-                        result ==
-                            cpu::FutexWaitResult::interrupted_after_wait) {
+                    } else if (result == cpu::FutexWaitResult::interrupted ||
+                               result == cpu::FutexWaitResult::interrupted_after_wait) {
                         value = -kEintr;
                         if (binding->runtime) binding->runtime->InterruptedWait(frame);
                     }
-                    return {value, parked
-                                       ? SupervisorCallProgress::handled_advanced
-                                       : SupervisorCallProgress::handled_idle};
+                    return {value,
+                            parked ? SupervisorCallProgress::handled_advanced : SupervisorCallProgress::handled_idle};
                 }
                 if (command == kFutexWake) {
                     const auto count = futex_table.Wake(address, frame.arguments[2]);
-                    if (count > static_cast<std::size_t>(
-                                    std::numeric_limits<std::int32_t>::max())) {
+                    if (count > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
                         return std::numeric_limits<std::int32_t>::max();
                     }
                     return static_cast<std::int32_t>(count);
@@ -726,10 +739,9 @@ void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
     });
 }
 
-void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
-                             VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space,
-                             GuestIoSink io_sink) {
+void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
+                             memory::AddressSpace& address_space, GuestIoSink io_sink) {
+    *dispatcher.filesystem_binding = &vfs;
     constexpr std::int32_t kEfault = 14;
     constexpr std::int32_t kEinval = 22;
     constexpr std::int32_t kEoverflow = 75;
@@ -750,37 +762,29 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         constexpr std::uint32_t kCloseOnExec = 0x80000;
         constexpr std::uint32_t kNoControllingTerminal = 0x100;
         constexpr std::uint32_t kNonBlocking = 0x800;
-        constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate | kAppend |
-                                         kLargeFile | kDirectory | kNoFollow |
+        constexpr std::uint32_t kKnown = 3 | kCreate | kTruncate | kAppend | kLargeFile | kDirectory | kNoFollow |
                                          kCloseOnExec | kNoControllingTerminal | kNonBlocking;
         if ((flags & ~kKnown) != 0 || (flags & 3U) == 3U) {
             throw VfsError(kEinval, "unsupported Android open flags");
         }
         const auto access = flags & 3U;
-        return VfsOpenOptions{access == 0 || access == 2,
-                              access == 1 || access == 2,
-                              (flags & kCreate) != 0,
-                              (flags & kTruncate) != 0,
-                              (flags & kDirectory) != 0,
-                              (flags & kNonBlocking) != 0,
-                              (flags & kAppend) != 0,
-                              (flags & kLargeFile) != 0,
-                              (flags & kNoFollow) != 0};
+        return VfsOpenOptions{access == 0 || access == 2, access == 1 || access == 2, (flags & kCreate) != 0,
+                              (flags & kTruncate) != 0,   (flags & kDirectory) != 0,  (flags & kNonBlocking) != 0,
+                              (flags & kAppend) != 0,     (flags & kLargeFile) != 0,  (flags & kNoFollow) != 0};
     };
     const auto status_flags = [](const VfsOpenStatus& status) {
         // ARM EABI status flags; creation flags and FD_CLOEXEC are excluded.
-        return (status.write ? (status.read ? 2 : 1) : 0) |
-               (status.append ? 0x400 : 0) |
-               (status.non_blocking ? 0x800 : 0) |
-               (status.directory ? 0x4000 : 0) |
-               (status.no_follow ? 0x8000 : 0) |
+        return (status.write ? (status.read ? 2 : 1) : 0) | (status.append ? 0x400 : 0) |
+               (status.non_blocking ? 0x800 : 0) | (status.directory ? 0x4000 : 0) | (status.no_follow ? 0x8000 : 0) |
                (status.large_file ? 0x20000 : 0);
     };
+
     struct DiagnosticEndpoint final {
         std::string path;
         std::optional<GuestIoStream> stream;
         VfsOpenStatus status;
     };
+
     struct DiagnosticDescriptors final {
         std::mutex mutex;
         std::unordered_map<std::int32_t, DiagnosticEndpoint> endpoints{
@@ -789,26 +793,26 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             {2, {"stderr", GuestIoStream::stderr_stream, {.write = true}}}};
         std::int32_t next{0x40000000};
     };
-    const auto diagnostic_descriptors =
-        std::make_shared<DiagnosticDescriptors>();
-    const auto open = [&vfs, read_path, options, io_sink,
-                       diagnostic_descriptors](const std::uint32_t path,
-                                                const std::uint32_t flags) {
+
+    const auto diagnostic_descriptors = std::make_shared<DiagnosticDescriptors>();
+    const auto open = [&vfs, read_path, options, io_sink, diagnostic_descriptors](const std::uint32_t path,
+                                                                                  const std::uint32_t flags) {
         try {
             const auto guest_path = read_path(path);
             const auto open_options = options(flags);
-            if (io_sink && guest_path.starts_with("/dev/log/") &&
-                open_options.write) {
+            if (io_sink && guest_path.starts_with("/dev/log/") && open_options.write) {
                 std::scoped_lock lock(diagnostic_descriptors->mutex);
                 if (diagnostic_descriptors->next == std::numeric_limits<std::int32_t>::max()) return -24;
                 const auto descriptor = diagnostic_descriptors->next++;
                 diagnostic_descriptors->endpoints.emplace(descriptor,
-                    DiagnosticEndpoint{guest_path, GuestIoStream::android_log,
-                        {.read = open_options.read, .write = true,
-                         .append = open_options.append,
-                         .non_blocking = open_options.non_blocking,
-                         .large_file = open_options.large_file,
-                         .no_follow = open_options.no_follow}});
+                                                          DiagnosticEndpoint{guest_path,
+                                                                             GuestIoStream::android_log,
+                                                                             {.read = open_options.read,
+                                                                              .write = true,
+                                                                              .append = open_options.append,
+                                                                              .non_blocking = open_options.non_blocking,
+                                                                              .large_file = open_options.large_file,
+                                                                              .no_follow = open_options.no_follow}});
                 return descriptor;
             }
             return vfs.Open(guest_path, open_options);
@@ -820,33 +824,29 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             return -error.ErrorNumber();
         }
     };
-    dispatcher.Implement(5, [open](const A32SyscallFrame& frame) {
-        return open(frame.arguments[0], frame.arguments[1]);
-    });
-    dispatcher.Implement(
-        322, [open, read_path](const A32SyscallFrame& frame) {
-            try {
-                const auto path = read_path(frame.arguments[1]);
-                const auto absolute = !path.empty() && path.front() == '/';
-                if (!absolute && frame.arguments[0] !=
-                                     std::bit_cast<std::uint32_t>(-100)) {
-                    return -kEnotsup;
-                }
-                if (!absolute) return -kEnotsup;
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            } catch (const std::overflow_error&) {
-                return -kEfault;
-            } catch (const VfsError& error) {
-                return -error.ErrorNumber();
+    dispatcher.Implement(5,
+                         [open](const A32SyscallFrame& frame) { return open(frame.arguments[0], frame.arguments[1]); });
+    dispatcher.Implement(322, [open, read_path](const A32SyscallFrame& frame) {
+        try {
+            const auto path = read_path(frame.arguments[1]);
+            const auto absolute = !path.empty() && path.front() == '/';
+            if (!absolute && frame.arguments[0] != std::bit_cast<std::uint32_t>(-100)) {
+                return -kEnotsup;
             }
-            return open(frame.arguments[1], frame.arguments[2]);
-        });
+            if (!absolute) return -kEnotsup;
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        } catch (const std::overflow_error&) {
+            return -kEfault;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+        return open(frame.arguments[1], frame.arguments[2]);
+    });
     dispatcher.Implement(3, [&vfs, &address_space, diagnostic_descriptors](const A32SyscallFrame& frame) {
         {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
-            const auto found = diagnostic_descriptors->endpoints.find(
-                std::bit_cast<std::int32_t>(frame.arguments[0]));
+            const auto found = diagnostic_descriptors->endpoints.find(std::bit_cast<std::int32_t>(frame.arguments[0]));
             if (found != diagnostic_descriptors->endpoints.end()) {
                 // stdin has no host input. Reads of Android log devices are
                 // still unsupported even if opened with read permission.
@@ -859,8 +859,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(41, [&vfs, diagnostic_descriptors](const A32SyscallFrame& frame) {
         {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
-            const auto found = diagnostic_descriptors->endpoints.find(
-                std::bit_cast<std::int32_t>(frame.arguments[0]));
+            const auto found = diagnostic_descriptors->endpoints.find(std::bit_cast<std::int32_t>(frame.arguments[0]));
             if (found != diagnostic_descriptors->endpoints.end()) {
                 if (diagnostic_descriptors->next == std::numeric_limits<std::int32_t>::max()) return -24;
                 const auto duplicate = diagnostic_descriptors->next++;
@@ -876,7 +875,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
         }
     });
     const auto get_status = [&vfs, diagnostic_descriptors, status_flags](const A32SyscallFrame& frame) {
-        if (frame.arguments[1] != 3U) return -kLinuxEnosys; // F_GETFL only
+        if (frame.arguments[1] != 3U) return -kLinuxEnosys;  // F_GETFL only
         const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         {
             std::scoped_lock lock(diagnostic_descriptors->mutex);
@@ -892,10 +891,8 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(55, get_status);
     dispatcher.Implement(221, get_status);
     const auto emit = [&address_space, io_sink, diagnostic_descriptors](
-                          const A32SyscallFrame& frame,
-                          const std::int32_t descriptor,
-                          const memory::GuestAddress address,
-                          const std::size_t size) -> std::optional<std::int32_t> {
+                          const A32SyscallFrame& frame, const std::int32_t descriptor,
+                          const memory::GuestAddress address, const std::size_t size) -> std::optional<std::int32_t> {
         GuestIoStream stream{};
         std::string endpoint;
         {
@@ -914,8 +911,7 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             if (!payload.empty()) {
                 address_space.Read(address, payload, frame.thread_id);
             }
-            io_sink({stream, std::move(endpoint), std::move(payload),
-                     frame.thread_id});
+            io_sink({stream, std::move(endpoint), std::move(payload), frame.thread_id});
             return static_cast<std::int32_t>(size);
         } catch (const memory::MemoryFault&) {
             return -kEfault;
@@ -923,15 +919,12 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     };
     dispatcher.Implement(4, [&vfs, &address_space, emit](const A32SyscallFrame& frame) {
         const auto fd = std::bit_cast<std::int32_t>(frame.arguments[0]);
-        if (const auto captured = emit(frame, fd,
-                                       memory::GuestAddress{frame.arguments[1]},
-                                       frame.arguments[2])) {
+        if (const auto captured = emit(frame, fd, memory::GuestAddress{frame.arguments[1]}, frame.arguments[2])) {
             return *captured;
         }
         return syscall_detail::TransferFile(vfs, address_space, frame, true);
     });
-    dispatcher.Implement(146, [&vfs, &address_space, io_sink,
-                               diagnostic_descriptors](const A32SyscallFrame& frame) {
+    dispatcher.Implement(146, [&vfs, &address_space, io_sink, diagnostic_descriptors](const A32SyscallFrame& frame) {
         constexpr std::size_t kMaximumVectors = 64U;
         const auto count = static_cast<std::size_t>(frame.arguments[2]);
         if (count > kMaximumVectors) return -kEinval;
@@ -958,26 +951,21 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             // writev is one node-locked write, including on append descriptors.
             for (std::size_t index = 0; index < count; ++index) {
                 std::array<std::byte, 8> encoded{};
-                address_space.Read(
-                    memory::GuestAddress{frame.arguments[1]}.Add(index * 8U),
-                    encoded, frame.thread_id);
+                address_space.Read(memory::GuestAddress{frame.arguments[1]}.Add(index * 8U), encoded, frame.thread_id);
                 const auto word = [&encoded](const std::size_t offset) {
                     std::uint32_t value{};
                     for (std::size_t byte = 0; byte < 4; ++byte)
-                        value |= static_cast<std::uint32_t>(
-                            std::to_integer<std::uint8_t>(encoded[offset + byte]))
-                            << static_cast<unsigned>(byte * 8U);
+                        value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(encoded[offset + byte]))
+                                 << static_cast<unsigned>(byte * 8U);
                     return value;
                 };
                 const auto length = word(4);
                 if (length > 1024U * 1024U ||
-                    length > static_cast<std::uint32_t>(
-                        std::numeric_limits<std::int32_t>::max() - total))
+                    length > static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max() - total))
                     return -kEoverflow;
                 vectors[index] = {memory::GuestAddress{word(0)}, length};
                 if (length != 0)
-                    address_space.Validate({vectors[index].address, length},
-                        memory::AccessType::read, frame.thread_id);
+                    address_space.Validate({vectors[index].address, length}, memory::AccessType::read, frame.thread_id);
                 total += static_cast<std::int32_t>(length);
             }
             std::shared_ptr<const VfsResourceReservation> reservation;
@@ -988,15 +976,14 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             for (std::size_t index = 0; index < count; ++index) {
                 const auto length = vectors[index].length;
                 if (length != 0)
-                    address_space.Read(vectors[index].address,
-                        std::span{payload}.subspan(offset, length), frame.thread_id);
+                    address_space.Read(vectors[index].address, std::span{payload}.subspan(offset, length),
+                                       frame.thread_id);
                 offset += length;
             }
             if (diagnostic_stream) {
                 if (!io_sink) return -9;
                 if (!payload.empty())
-                    io_sink({*diagnostic_stream, std::move(diagnostic_endpoint),
-                             std::move(payload), frame.thread_id});
+                    io_sink({*diagnostic_stream, std::move(diagnostic_endpoint), std::move(payload), frame.thread_id});
                 return total;
             }
             return static_cast<std::int32_t>(vfs.Write(fd, payload));
@@ -1010,38 +997,34 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
             return -12;
         }
     });
-    dispatcher.Implement(
-        42, [&vfs, &address_space](const A32SyscallFrame& frame) {
-            const memory::GuestAddress output{frame.arguments[0]};
-            try {
-                address_space.Validate({output, 8}, memory::AccessType::write,
-                                       frame.thread_id);
-                const auto descriptors = vfs.CreatePipe();
-                std::array<std::byte, 8> bytes{};
-                const std::array values{
-                    static_cast<std::uint32_t>(descriptors.read_descriptor),
-                    static_cast<std::uint32_t>(descriptors.write_descriptor)};
-                for (std::size_t word = 0; word < values.size(); ++word) {
-                    for (std::size_t byte = 0; byte < 4; ++byte) {
-                        bytes[word * 4U + byte] = static_cast<std::byte>(
-                            (values[word] >> static_cast<unsigned>(byte * 8U)) &
-                            0xffU);
-                    }
+    dispatcher.Implement(42, [&vfs, &address_space](const A32SyscallFrame& frame) {
+        const memory::GuestAddress output{frame.arguments[0]};
+        try {
+            address_space.Validate({output, 8}, memory::AccessType::write, frame.thread_id);
+            const auto descriptors = vfs.CreatePipe();
+            std::array<std::byte, 8> bytes{};
+            const std::array values{static_cast<std::uint32_t>(descriptors.read_descriptor),
+                                    static_cast<std::uint32_t>(descriptors.write_descriptor)};
+            for (std::size_t word = 0; word < values.size(); ++word) {
+                for (std::size_t byte = 0; byte < 4; ++byte) {
+                    bytes[word * 4U + byte] =
+                        static_cast<std::byte>((values[word] >> static_cast<unsigned>(byte * 8U)) & 0xffU);
                 }
-                try {
-                    address_space.Write(output, bytes, frame.thread_id);
-                } catch (...) {
-                    vfs.Close(descriptors.read_descriptor);
-                    vfs.Close(descriptors.write_descriptor);
-                    throw;
-                }
-                return 0;
-            } catch (const memory::MemoryFault&) {
-                return -kEfault;
-            } catch (const VfsError& error) {
-                return -error.ErrorNumber();
             }
-        });
+            try {
+                address_space.Write(output, bytes, frame.thread_id);
+            } catch (...) {
+                vfs.Close(descriptors.read_descriptor);
+                vfs.Close(descriptors.write_descriptor);
+                throw;
+            }
+            return 0;
+        } catch (const memory::MemoryFault&) {
+            return -kEfault;
+        } catch (const VfsError& error) {
+            return -error.ErrorNumber();
+        }
+    });
     dispatcher.Implement(6, [&vfs, diagnostic_descriptors](const A32SyscallFrame& frame) {
         const auto descriptor = std::bit_cast<std::int32_t>(frame.arguments[0]);
         {
@@ -1058,12 +1041,10 @@ void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
     dispatcher.Implement(19, [&vfs](const A32SyscallFrame& frame) {
         try {
             if (frame.arguments[2] > 2) return -kEinval;
-            const auto result = vfs.Seek(
-                std::bit_cast<std::int32_t>(frame.arguments[0]),
-                std::bit_cast<std::int32_t>(frame.arguments[1]),
-                static_cast<VfsSeekWhence>(frame.arguments[2]));
-            if (result > static_cast<std::uint64_t>(
-                             std::numeric_limits<std::int32_t>::max())) {
+            const auto result = vfs.Seek(std::bit_cast<std::int32_t>(frame.arguments[0]),
+                                         std::bit_cast<std::int32_t>(frame.arguments[1]),
+                                         static_cast<VfsSeekWhence>(frame.arguments[2]));
+            if (result > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
                 return -kEoverflow;
             }
             return static_cast<std::int32_t>(result);

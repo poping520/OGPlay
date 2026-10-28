@@ -15,7 +15,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 
 | 游戏 | 平台 | 到达点 | 阻塞 / 待办 | 任务 |
 | --- | --- | --- | --- | --- |
-| Island Castaway 1.3 | macOS | 两段 CG 带字幕播放，点按后视频移除、进入主菜单 | 原生磁盘空间弹窗；退出 `runFinalizersOnExit` | [DVM-340](../tasks/dexvm/DVM-340.md) |
+| Island Castaway 1.3 | macOS | CG 带字幕，PLAY 进入第一关地形与对白 | 原生磁盘空间弹窗；退出 `runFinalizersOnExit` | [SBX-16](../tasks/sandbox/SBX-16.md) |
 | TML 1.0 | macOS | 标题；三点击 survey 零命中；基础场景退出 0 | 正式交互/稳定性待验 | [LUI-18](../tasks/layoutui/LUI-18.md)、[DVM-257](../tasks/dexvm/DVM-257.md) |
 | Lili 1.06 | macOS | 两段开场影片、CONTINUE 存档菜单，纹理正常 | 音频、按钮退出未验收 | [DVM-247](../tasks/dexvm/DVM-247.md)..249、[BND-54](../tasks/boundary/BND-54.md) |
 | Wild Blood 1.0.4 | Win / macOS | 中文菜单/教学；macOS 基础场景 1200 帧退出 0 | GAThread `ContentValues$1.<init>` 未实现；CG/Win 待验 | [DVM-257](../tasks/dexvm/DVM-257.md) |

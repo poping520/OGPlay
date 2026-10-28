@@ -13,6 +13,8 @@
   普通 `Map` 拒绝重叠；`ReplaceAnonymous(range,protection)` 在同一锁内替换目标页及空洞，
   先准备宿主 backing，再仅清零目标 guest 范围，并发布权限、映射账本、直接页表与世代。
   参数或 backing 准备失败不改变已有 guest 映射；范围外页保持数据和权限。
+  ReplaceAnonymous/MapAnywhere 可接收有界初始化字节：先准备 backing、清零并拷贝，
+  再在同一锁内发布最终权限与世代；初始化超出映射长度在任何变更前拒绝。
   `MapAnywhere(bounds,size,protection)` 在同一账本锁内 first-fit 选址并 Map，
   跳过低地址 guard 和全部已映射页（包括 PROT_NONE），无连续空间抛 bad_alloc。
   复用 Map 的清零、宿主 backing、direct-page-table 与映射世代发布；失败不占 guest 页。

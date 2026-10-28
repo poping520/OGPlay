@@ -71,8 +71,7 @@ struct AndroidProcessIdentity final {
     std::uint32_t group_id{10000};
 };
 
-using GuestThreadPointerSetter =
-    std::function<bool(std::uint64_t, memory::GuestAddress)>;
+using GuestThreadPointerSetter = std::function<bool(std::uint64_t, memory::GuestAddress)>;
 
 struct GuestThreadCloneRequest final {
     std::uint64_t parent_thread_id{};
@@ -84,16 +83,14 @@ struct GuestThreadCloneRequest final {
     cpu::A32State parent_cpu_state;
 };
 
-using GuestThreadCloneSpawner =
-    std::function<std::int32_t(const GuestThreadCloneRequest&)>;
+using GuestThreadCloneSpawner = std::function<std::int32_t(const GuestThreadCloneRequest&)>;
 
 struct GuestVmaAnnotation final {
     memory::GuestRange range;
     std::string name;
 };
 
-using GuestVmaAnnotationSink =
-    std::function<void(const GuestVmaAnnotation&)>;
+using GuestVmaAnnotationSink = std::function<void(const GuestVmaAnnotation&)>;
 
 enum class GuestIoStream : std::uint8_t { stdout_stream, stderr_stream, android_log };
 
@@ -108,10 +105,8 @@ using GuestIoSink = std::function<void(const GuestIoRecord&)>;
 
 class GuestThreadCloneCommitter final {
 public:
-    GuestThreadCloneCommitter(GuestThreadLifecycle& lifecycle,
-                              memory::AddressSpace& address_space);
-    [[nodiscard]] std::int32_t Commit(const GuestThreadCloneRequest& request,
-                                      std::uint64_t child_thread_id);
+    GuestThreadCloneCommitter(GuestThreadLifecycle& lifecycle, memory::AddressSpace& address_space);
+    [[nodiscard]] std::int32_t Commit(const GuestThreadCloneRequest& request, std::uint64_t child_thread_id);
 
 private:
     GuestThreadLifecycle& lifecycle_;
@@ -130,7 +125,9 @@ struct A32SyscallOutcome final {
     SupervisorCallProgress progress{SupervisorCallProgress::handled_idle};
 
     A32SyscallOutcome() = default;
+
     A32SyscallOutcome(std::int32_t value) : return_value(value) {}
+
     A32SyscallOutcome(std::int32_t value, SupervisorCallProgress made_progress)
         : return_value(value), progress(made_progress) {}
 };
@@ -143,26 +140,24 @@ struct GuestSignalBinding final {
 class A32SyscallDispatcher final {
 public:
     using Handler = std::function<A32SyscallOutcome(const A32SyscallFrame&)>;
-    using Observer =
-        std::function<void(const A32SyscallFrame&, std::int32_t)>;
-    using DiagnosticObserver =
-        std::function<void(const A32SyscallFrame&, const A32SyscallOutcome&)>;
+    using Observer = std::function<void(const A32SyscallFrame&, std::int32_t)>;
+    using DiagnosticObserver = std::function<void(const A32SyscallFrame&, const A32SyscallOutcome&)>;
 
     explicit A32SyscallDispatcher(core::CapabilityLedger& ledger);
     void Declare(std::uint32_t number, std::string name, SyscallGroup group);
-    void Register(std::uint32_t number, std::string name, SyscallGroup group,
-                  Handler handler);
+    void Register(std::uint32_t number, std::string name, SyscallGroup group, Handler handler);
     void Implement(std::uint32_t number, Handler handler);
     void SetObserver(Observer observer);
     void SetDiagnosticObserver(DiagnosticObserver observer);
-    [[nodiscard]] A32SyscallOutcome DispatchOutcome(
-        const A32SyscallFrame& frame);
+    [[nodiscard]] A32SyscallOutcome DispatchOutcome(const A32SyscallFrame& frame);
     // Compatibility query for callers which only consume the Linux result.
     [[nodiscard]] std::int32_t Dispatch(const A32SyscallFrame& frame);
     [[nodiscard]] SyscallCoverage Coverage() const;
     // Shared indirection keeps bound handlers valid if the dispatcher is moved.
     std::shared_ptr<GuestSignalBinding> signal_binding{std::make_shared<GuestSignalBinding>()};
     AndroidProcessIdentity identity;
+    std::shared_ptr<VirtualFileSystem*> filesystem_binding{std::make_shared<VirtualFileSystem*>(nullptr)};
+    [[nodiscard]] std::function<void()> MappingMutationRecorder() const;
 
 private:
     struct Entry final {
@@ -175,47 +170,31 @@ private:
     std::map<std::uint32_t, Entry> entries_;
     Observer observer_;
     DiagnosticObserver diagnostic_observer_;
-    std::shared_ptr<std::mutex> observer_mutex_{
-        std::make_shared<std::mutex>()};
+    std::shared_ptr<std::mutex> observer_mutex_{std::make_shared<std::mutex>()};
 };
 
-[[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(
-    core::CapabilityLedger& ledger, AndroidProcessIdentity identity = {});
-void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher,
-                             hal::Clock& clock,
-                             memory::AddressSpace& address_space,
-                             std::function<void(std::uint64_t, std::chrono::nanoseconds)>
-                                 admit_sleep = {});
-void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space);
-void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher,
-                               cpu::FutexTable& futex_table,
+[[nodiscard]] A32SyscallDispatcher CreateAndroidArmSyscallDispatcher(core::CapabilityLedger& ledger,
+                                                                     AndroidProcessIdentity identity = {});
+void BindAndroidTimeSyscalls(A32SyscallDispatcher& dispatcher, hal::Clock& clock, memory::AddressSpace& address_space,
+                             std::function<void(std::uint64_t, std::chrono::nanoseconds)> admit_sleep = {});
+void BindAndroidMemorySyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space);
+void BindAndroidThreadSyscalls(A32SyscallDispatcher& dispatcher, cpu::FutexTable& futex_table,
                                memory::MemoryBus& memory_bus);
-void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher,
-                               memory::AddressSpace& address_space,
+void BindAndroidSignalSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
                                GuestThreadLifecycle* lifecycle = nullptr);
-void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher,
-                                memory::AddressSpace& address_space,
+void BindAndroidProcessSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
                                 GuestVmaAnnotationSink vma_annotation_sink);
-void BindAndroidArmPrivateSyscalls(
-    A32SyscallDispatcher& dispatcher,
-    memory::AddressSpace& address_space,
-    GuestThreadPointerSetter thread_pointer_setter);
-void BindAndroidThreadLifecycleSyscalls(
-    A32SyscallDispatcher& dispatcher,
-    GuestThreadLifecycle& thread_lifecycle);
-void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher,
-                             GuestThreadCloneSpawner spawner);
+void BindAndroidArmPrivateSyscalls(A32SyscallDispatcher& dispatcher, memory::AddressSpace& address_space,
+                                   GuestThreadPointerSetter thread_pointer_setter);
+void BindAndroidThreadLifecycleSyscalls(A32SyscallDispatcher& dispatcher, GuestThreadLifecycle& thread_lifecycle);
+void BindAndroidCloneSyscall(A32SyscallDispatcher& dispatcher, GuestThreadCloneSpawner spawner);
 // File metadata and directory syscalls on top of the same VFS (ADR-0020):
 // mkdir/rmdir/unlink/rename, stat64 family, getdents64, access, ftruncate,
 // fsync and the positional read/write pair.
-void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher,
-                                     VirtualFileSystem& vfs,
+void BindAndroidFileMetadataSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
                                      memory::AddressSpace& address_space);
 
-void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher,
-                             VirtualFileSystem& vfs,
-                             memory::AddressSpace& address_space,
-                             GuestIoSink io_sink = {});
+void BindAndroidFileSyscalls(A32SyscallDispatcher& dispatcher, VirtualFileSystem& vfs,
+                             memory::AddressSpace& address_space, GuestIoSink io_sink = {});
 
 }  // namespace ogplay::runtime

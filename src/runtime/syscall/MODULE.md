@@ -24,7 +24,20 @@ exit/exit_group/clear-child-tid 所需的 guest 线程生命周期状态。
   munmap 后空洞自动可复用，失败不消耗地址。brk 状态用独立锁串行化。
   非固定 hint 仍为可忽略建议；匿名私有 MAP_FIXED 调用 `ReplaceAnonymous` 原子替换，
   长度向上对齐到 4 KiB，成功返回请求地址；未对齐/非法参数返回 EINVAL，低地址 guard
-  返回 EPERM，范围溢出或 backing 失败返回 ENOMEM。文件 mmap 与非零页偏移仍未支持。
+  返回 EPERM，范围溢出或 backing 失败返回 ENOMEM。文件映射沿用相同选址/替换原语。
+- 文件 mmap2 的 pgoff 单位为 4096 字节；支持 PRIVATE 的 R/RW 与只读 fd 的 SHARED R。
+  读取 VFS 节点快照后一次发布内存，尾页补零；失败不消耗地址或破坏固定目标。
+  文件执行映射、整页超 EOF、共享回写与其他未支持组合返回 ENOSYS，由 dispatcher 记账；
+  SHARED WRITE 的只读 fd 返回 EACCES，非普通文件 ENODEV，坏 fd EBADF。
+  文件绑定通过 dispatcher 共享间接状态提供同一个 VFS，先后绑定次序均支持。
+  syscall 串行维护文件映射区间，munmap/固定覆盖先准备拆分，再提交内存与区间账本；
+  共享 R 区间持有 VFS 节点读保护，最后区间释放或进程 owner 退役时解除。
+  mprotect 不允许共享 R 增加写入，也不允许文件映射增加执行权限，返回 ENOSYS 并记账。
+  mmap2 接受本模型无可观察差异的提示位 DENYWRITE/EXECUTABLE/LOCKED/NORESERVE/POPULATE/
+  NONBLOCK/STACK（bionic pthread 栈带 NORESERVE）；GROWSDOWN、HUGETLB 与未知位 ENOSYS 记账。
+  私有文件映射复制期间临时冻结节点，并发写入得到 EBUSY 并记账。
+  madvise 保留 WU-0088：advice 0–4、12–15 校验区间，DONTNEED 清零匿名可写页；与文件映射
+  区间重叠的 DONTNEED 返回 ENOSYS 记账（Linux 从文件重填，快照无来源），其余 advice 如实成功。
 - memory 登记的 provider 保护范围：munmap/mprotect 和 MAP_FIXED 任意部分重叠均返回
   `-EPERM` 并由 owner ledger 记账，整次操作不改映射。mremap 检查原区与 FIXED 目标，
   命中保护范围同样 EPERM；普通 mremap 仍返回 ENOSYS 并记账，没有扩展通用搬移实现。

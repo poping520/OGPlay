@@ -546,7 +546,7 @@ note = "SBX-6/10/11：SharedPreferences 以 Android 同构 XML 存于沙盒 shar
 [runtime.syscall_anonymous_mapping]
 status = "partial"
 test = "tests/memory/address_space_tests.cpp; tests/runtime/syscall_tests.cpp"
-note = "SBX-14 匿名私有 mmap2 使用真实映射账本原子 first-fit，避开已占页（含 PROT_NONE），释放空洞可重用且失败不消耗地址；brk 状态串行化。SBX-15 匿名私有 MAP_FIXED 原子替换已映射页与空洞，清零并更新权限，返回请求地址或 EINVAL/EPERM/ENOMEM；非固定 hint 可忽略，非零页偏移与文件 mmap 未支持，故保持 partial"
+note = "匿名私有 mmap2 原子 first-fit/MAP_FIXED、空洞复用与失败无副作用；brk 串行化。文件 mmap2 支持非零 4096 字节页偏移、PRIVATE R/RW 和只读 fd 的 SHARED R 快照，尾页补零；共享节点写入/截断/rename 返回 EBUSY 并记账，区间释放后解除。匿名/文件映射接受 NORESERVE/STACK 等无语义提示位；文件执行、共享回写、整页超 EOF 与文件区间 DONTNEED 返回 ENOSYS；SIGBUS/msync/mremap 未支持。"
 
 [runtime.syscall_large_file_io]
 status = "complete"

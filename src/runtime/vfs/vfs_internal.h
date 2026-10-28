@@ -38,22 +38,20 @@ inline constexpr std::int32_t kEnospc = 28;
 inline constexpr std::int32_t kEnotempty = 39;
 inline constexpr std::int32_t kEcanceled = 125;
 
-[[nodiscard]] std::string NormalizeAbsolutePath(std::string_view path,
-                                                bool allow_root);
+[[nodiscard]] std::string NormalizeAbsolutePath(std::string_view path, bool allow_root);
 [[nodiscard]] std::string NormalizePath(std::string_view path);
 // Returns the absolute spelled path when it names canonical up to ASCII case.
-[[nodiscard]] std::string PreserveSpelling(std::string_view canonical,
-                                           std::string_view spelled);
-[[nodiscard]] std::string ResolvePath(
-    std::string_view path,
-    const std::optional<std::string>& working_directory,
-    const std::map<std::string, std::string, std::less<>>& aliases);
+[[nodiscard]] std::string PreserveSpelling(std::string_view canonical, std::string_view spelled);
+[[nodiscard]] std::string ResolvePath(std::string_view path, const std::optional<std::string>& working_directory,
+                                      const std::map<std::string, std::string, std::less<>>& aliases);
+
 struct VfsGeneratedFileState final {
     std::mutex mutex;
     std::atomic_bool active{true};
     VfsReadOnlyLoader provider;
     std::uint64_t maximum_bytes{};
 };
+
 struct VfsCharacterDeviceState final {
     std::mutex mutex;
     std::atomic_bool active{true};
@@ -63,20 +61,20 @@ struct VfsCharacterDeviceState final {
 
 struct File final {
     File() = default;
-    File(std::vector<std::byte> initial_contents, std::uint64_t initial_size,
-         VfsReadOnlyLoader initial_read_all, VfsReadAtLoader initial_read_at,
-         bool initial_writable, VfsSource initial_source, bool initial_dirty,
+
+    File(std::vector<std::byte> initial_contents, std::uint64_t initial_size, VfsReadOnlyLoader initial_read_all,
+         VfsReadAtLoader initial_read_at, bool initial_writable, VfsSource initial_source, bool initial_dirty,
          std::string initial_overlay_path)
-        : contents(std::move(initial_contents)), size(initial_size),
-          read_all(std::move(initial_read_all)),
-          read_at(std::move(initial_read_at)), writable(initial_writable),
-          source(initial_source), dirty(initial_dirty),
+        : contents(std::move(initial_contents)), size(initial_size), read_all(std::move(initial_read_all)),
+          read_at(std::move(initial_read_at)), writable(initial_writable), source(initial_source), dirty(initial_dirty),
           overlay_path(std::move(initial_overlay_path)) {}
 
     std::shared_ptr<std::mutex> mutex{std::make_shared<std::mutex>()};
     // Stable for the node lifetime. Paths may be removed or rebound; caches
     // and leases must never use a pathname as content identity.
     std::uint64_t node_id{};
+    // Accessed only under the VFS metadata lock; weak tokens do not pin nodes.
+    std::vector<std::weak_ptr<const std::function<void()>>> mapping_readers;
     std::shared_ptr<VfsGeneratedFileState> generated;
     std::shared_ptr<VfsCharacterDeviceState> character_device;
     std::vector<std::byte> contents;
@@ -89,8 +87,7 @@ struct File final {
     bool host_mounted{};
     // Retained only when a writable lazy backing was converted to owned
     // memory; the reservation is acquired before read_all allocates.
-    std::vector<std::shared_ptr<const VfsResourceReservation>>
-        materialized_reservations;
+    std::vector<std::shared_ptr<const VfsResourceReservation>> materialized_reservations;
     std::uint64_t materialized_reserved_bytes{};
     bool writable{};
     VfsSource source{VfsSource::runtime};
@@ -112,16 +109,13 @@ struct OpenDirectoryState final {
     VfsFileInfo info;
     std::string path;
     std::string spelling;  // Guest spelling of path, for fchdir/getcwd.
-    bool unlinked{};  // Guarded by the VFS namespace mutex.
+    bool unlinked{};       // Guarded by the VFS namespace mutex.
 };
 
 struct OpenFile final {
-    OpenFile(std::shared_ptr<File> initial_file, std::uint64_t initial_offset,
-             bool initial_readable, bool initial_writable,
-             std::shared_ptr<OpenDirectoryState> initial_directory,
-             bool initial_pipe = false)
-        : file(std::move(initial_file)), offset(initial_offset),
-          readable(initial_readable), writable(initial_writable),
+    OpenFile(std::shared_ptr<File> initial_file, std::uint64_t initial_offset, bool initial_readable,
+             bool initial_writable, std::shared_ptr<OpenDirectoryState> initial_directory, bool initial_pipe = false)
+        : file(std::move(initial_file)), offset(initial_offset), readable(initial_readable), writable(initial_writable),
           directory(std::move(initial_directory)), pipe(initial_pipe) {}
 
     mutable std::mutex mutex;
@@ -150,56 +144,39 @@ struct ResourceBudget final {
 class VirtualFileSystem::Impl final {
 public:
     explicit Impl(const VfsConfig config) {
-        if (config.resource_memory_budget_bytes == 0U)
-            throw VfsError(kEinval, "VFS resource budget must be positive");
+        if (config.resource_memory_budget_bytes == 0U) throw VfsError(kEinval, "VFS resource budget must be positive");
         resource_budget_->limit = config.resource_memory_budget_bytes;
         host_pool_ = std::make_shared<HostFilePool>(config.host_file_handle_budget);
     }
+
     // ---- mounts and files (vfs.cpp) -------------------------------------
     void RegisterGeneratedReadOnly(std::string_view path, std::shared_ptr<VfsGeneratedFileState> state);
     void RegisterReadOnlyCharacterDevice(std::string_view path, std::shared_ptr<VfsCharacterDeviceState> state);
-    void PutFile(std::string_view path, std::span<const std::byte> contents,
-                 bool writable);
-    void Mount(VfsSource source, std::string_view root,
-               std::span<const VfsMountEntry> entries);
-    void MountLazy(VfsSource source, std::string_view root,
-                   std::span<const VfsLazyMountEntry> entries, bool writable,
+    void PutFile(std::string_view path, std::span<const std::byte> contents, bool writable);
+    void Mount(VfsSource source, std::string_view root, std::span<const VfsMountEntry> entries);
+    void MountLazy(VfsSource source, std::string_view root, std::span<const VfsLazyMountEntry> entries, bool writable,
                    std::span<const std::shared_ptr<HostFileBacking>> host_backings = {});
-    void MountHostDirectory(std::string_view root,
-                            const std::filesystem::path& directory);
-    void MountHostFile(VfsSource source, std::string_view root,
-                       const std::filesystem::path& file);
+    void MountHostDirectory(std::string_view root, const std::filesystem::path& directory);
+    void MountHostFile(VfsSource source, std::string_view root, const std::filesystem::path& file);
     void AddPathAlias(std::string_view alias, std::string_view target);
     void SetWorkingDirectory(std::string_view path);
     void SetWorkingDirectory(std::int32_t descriptor);
     [[nodiscard]] std::optional<std::string> WorkingDirectory() const;
     [[nodiscard]] std::string CanonicalPath(std::string_view path) const;
-    [[nodiscard]] std::int32_t Open(std::string_view path,
-                                    VfsOpenOptions options);
-    [[nodiscard]] std::int32_t OpenDirectory(
-        std::string_view path, bool large_file = false, bool no_follow = false);
-    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(
-        std::int32_t descriptor, std::size_t maximum);
+    [[nodiscard]] std::int32_t Open(std::string_view path, VfsOpenOptions options);
+    [[nodiscard]] std::int32_t OpenDirectory(std::string_view path, bool large_file = false, bool no_follow = false);
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ReadDirectory(std::int32_t descriptor, std::size_t maximum);
     [[nodiscard]] VfsFileInfo DescriptorInfo(std::int32_t descriptor) const;
     [[nodiscard]] VfsOpenStatus DescriptorStatus(std::int32_t descriptor) const;
     [[nodiscard]] VfsPipeDescriptors CreatePipe();
     [[nodiscard]] std::optional<std::uint32_t> PipePollEvents(std::int32_t descriptor) const;
-    [[nodiscard]] std::size_t Read(std::int32_t descriptor,
-                                   std::span<std::byte> destination);
-    [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor,
-                                     std::uint64_t offset,
-                                     std::span<std::byte> destination);
-    [[nodiscard]] std::size_t Write(std::int32_t descriptor,
-                                    std::span<const std::byte> source);
-    [[nodiscard]] std::size_t WriteAt(std::int32_t descriptor,
-                                      std::uint64_t offset,
-                                      std::span<const std::byte> source);
-    [[nodiscard]] std::shared_ptr<const VfsReadLease> CaptureReadLease(
-        std::int32_t descriptor, std::uint64_t offset,
-        std::uint64_t length);
-    [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor,
-                                     std::int64_t offset,
-                                     VfsSeekWhence whence);
+    [[nodiscard]] std::size_t Read(std::int32_t descriptor, std::span<std::byte> destination);
+    [[nodiscard]] std::size_t ReadAt(std::int32_t descriptor, std::uint64_t offset, std::span<std::byte> destination);
+    [[nodiscard]] std::size_t Write(std::int32_t descriptor, std::span<const std::byte> source);
+    [[nodiscard]] std::size_t WriteAt(std::int32_t descriptor, std::uint64_t offset, std::span<const std::byte> source);
+    [[nodiscard]] std::shared_ptr<const VfsReadLease> CaptureReadLease(std::int32_t descriptor, std::uint64_t offset,
+                                                                       std::uint64_t length);
+    [[nodiscard]] std::uint64_t Seek(std::int32_t descriptor, std::int64_t offset, VfsSeekWhence whence);
     void Close(std::int32_t descriptor);
     [[nodiscard]] std::int32_t Duplicate(std::int32_t descriptor);
 
@@ -207,8 +184,7 @@ public:
     [[nodiscard]] VfsFileInfo Stat(std::string_view path) const;
     [[nodiscard]] GuestFileSystemStats StatVfs(std::string_view path) const;
     [[nodiscard]] VfsFileInfo StatLocked(const std::string& normalized) const;
-    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(
-        std::string_view path) const;
+    [[nodiscard]] std::vector<VfsDirectoryEntry> ListDirectory(std::string_view path) const;
     void CreateDirectory(std::string_view path);
     void RemoveFile(std::string_view path);
     void RemoveDirectory(std::string_view path);
@@ -216,27 +192,25 @@ public:
     void Truncate(std::int32_t descriptor, std::uint64_t size);
     void Flush(std::int32_t descriptor);
     void FlushAll();
-    void AttachSandbox(SandboxStore& store,
-                       std::span<const std::string> writable_roots);
+    void AttachSandbox(SandboxStore& store, std::span<const std::string> writable_roots);
     [[nodiscard]] bool SandboxAttached() const;
     [[nodiscard]] VfsIoStatistics IoStatistics() const;
     [[nodiscard]] std::optional<VfsSnapshot> TrySnapshot() const;
-    [[nodiscard]] std::shared_ptr<const VfsResourceReservation>
-    ReserveResourceMemory(std::uint64_t bytes, bool snapshot);
+    [[nodiscard]] std::shared_ptr<const VfsResourceReservation> ReserveResourceMemory(std::uint64_t bytes,
+                                                                                      bool snapshot);
 
     void Materialize(File& file);
+    void RejectMappedMutationLocked(File& file) const;
 
     // Callers hold mutex_ for every helper below.
     [[nodiscard]] bool IsDirectoryLocked(const std::string& path) const;
-    [[nodiscard]] VfsFileInfo DirectoryInfoLocked(
-        const std::string& path) const;
+    [[nodiscard]] VfsFileInfo DirectoryInfoLocked(const std::string& path) const;
     // True when the path sits under a writable namespace root, which is the
     // only place the overlay accepts writes.
     [[nodiscard]] bool IsWritableNamespaceLocked(const std::string& path) const;
     void MarkOverlayLocked(const std::string& path, File& file);
     void FlushFileLocked(File& file);
-    void RequireSandboxQuotaLocked(const File& target,
-                                   std::uint64_t prospective_size) const;
+    void RequireSandboxQuotaLocked(const File& target, std::uint64_t prospective_size) const;
     // The only place a node's size or dirty flag may change: it keeps the
     // running dirty-byte aggregate consistent so quota checks stay O(1)
     // instead of rescanning every file per write.
@@ -244,8 +218,7 @@ public:
     void PersistDirectoryLocked(const std::string& path);
     void PersistRemovalLocked(const std::string& path);
     [[nodiscard]] std::int32_t AllocateDescriptor() const;
-    [[nodiscard]] std::shared_ptr<OpenFile> FindDescriptor(
-        std::int32_t descriptor) const;
+    [[nodiscard]] std::shared_ptr<OpenFile> FindDescriptor(std::int32_t descriptor) const;
 
     mutable std::mutex mutex_;
     // Separate from mutex_ so notification never runs under the index lock.
@@ -270,8 +243,7 @@ public:
     // SetNodeSizeDirtyLocked and FlushFileLocked. Sizes are bounded by the
     // sandbox quota and host memory, so a signed 64-bit delta cannot wrap.
     std::int64_t dirty_overlay_delta_{};
-    std::shared_ptr<ResourceBudget> resource_budget_{
-        std::make_shared<ResourceBudget>()};
+    std::shared_ptr<ResourceBudget> resource_budget_{std::make_shared<ResourceBudget>()};
     std::shared_ptr<HostFilePool> host_pool_;
     std::uint64_t next_node_id_{1U};
     std::atomic_uint64_t flushes_{};

@@ -10,11 +10,13 @@ struct FallbackGlyph final {
     std::int32_t width{}, height{}, x{}, y{};
     std::vector<std::uint8_t> alpha;
 };
-// Immutable API19 fallback font, injected from the checked runtime payload.
+// Immutable ordered API19 font chain, injected from the checked runtime payload.
 // Simple BMP glyph rasterization; shaping/bidi and arbitrary app fonts are outside this interface.
 class UiFallbackFont final {
 public:
-    explicit UiFallbackFont(std::span<const std::byte> bytes);
+    UiFallbackFont(std::span<const std::byte> roboto, std::span<const std::byte> droid);
+    // First covering font; rejects unsupported scalar/shaping requirements.
+    [[nodiscard]] std::size_t SourceIndex(char16_t unit) const;
     ~UiFallbackFont();
     [[nodiscard]] std::shared_ptr<const FallbackGlyph> Glyph(char16_t unit, std::int32_t pixels) const;
 private:

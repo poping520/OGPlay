@@ -2568,7 +2568,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
     {
         if (context->dialog_host_revision == std::numeric_limits<std::uint64_t>::max())
             unsupported("Dialog host revision exhausted");
-        modal.host_tree = std::make_shared<ui::UiTree>(ui::UiGeometryOwner::HostLayout);
+        modal.host_tree = std::make_shared<ui::UiTree>(context->CreateHostUiTree());
         modal.partition = modal.revision = context->dialog_host_revision + 1;
         modal.generation = static_cast<std::uint64_t>(call.arguments[5].AsLong());
         modal.prior_guest_focus = prior_guest_focus;
@@ -2657,6 +2657,9 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         FocusModal(*context, modal);
         ClearModalCapture(*context);
         PublishAndroidPresentation(*context);
+    } catch (const std::runtime_error& error) {
+        if (tree.Get(root)) tree.DestroySubtree(root);
+        unsupported(error.what());
     } catch (...) {
         if (tree.Get(root)) tree.DestroySubtree(root);
         throw;

@@ -2,6 +2,7 @@
 #include "../fixtures/bitmap_decode_data.h"
 #include "file_vfs_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
+#include "ogplay/runtime/ui/ui_fallback_font.h"
 #include <algorithm>
 
 using ogplay::test::container_traversal::ContainerVm;
@@ -561,5 +562,53 @@ TEST_CASE("DVM-328 ROM default TextView XML and EditText constructors retain laz
             f.OnOutcome(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
         CHECK(failed.exception.IsValid());
         CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-344 TextView Paint and actual EditText input share copyright coverage") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+        const auto load = [&](const char* name) {
+            std::ifstream stream(root / "data/android/19/fonts" / name, std::ios::binary);
+            REQUIRE(stream.good());
+            const std::vector<char> raw{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+            std::vector<std::byte> bytes(raw.size());
+            std::memcpy(bytes.data(), raw.data(), raw.size());
+            return bytes;
+        };
+        const auto roboto = load("Roboto-Regular.ttf"), droid = load("DroidSansFallback.ttf");
+        f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(roboto, droid));
+        const auto owner = Owner(f);
+        const auto roots = f.vm.ProtectReferences(std::array{owner});
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto text = f.New("Landroid/widget/TextView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto edit = f.New("Landroid/widget/EditText;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(group, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(text), VmValue::Int(-2), VmValue::Int(-2)});
+        f.On(group, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(edit), VmValue::Int(-2), VmValue::Int(-2)});
+        f.context->content_view = group;
+        ++f.context->ui_content_revision;
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"©"))});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 80}));
+        CHECK(f.On(edit, "requestFocus", "()Z").AsInt() == 1);
+        AndroidBoundaryInput event{};
+        event.type = AndroidBoundaryInputType::key;
+        event.pressed = true;
+        event.unicode_char = 0x00a9;
+        {
+            const AndroidInputEvent transaction(f.vm, *f.context);
+            CHECK(DispatchAndroidBoundedEditInput(f.vm, *f.context, event));
+        }
+        CHECK(State(f, edit).text == State(f, text).text);
+        CHECK(State(f, edit).text == u"©");
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        f.On(paint, "setTextSize", "(F)V", {VmValue::Float(State(f, text).text_size_px)});
+        CHECK(f.On(paint, "measureText", "(Ljava/lang/String;)F", {VmValue::Ref(f.model.NewString(u"©"))}).AsFloat() ==
+              ui::MeasureFixedText(u"©", State(f, text).text_size_px, 0, f.context->ui_tree.FallbackFont().get()).width);
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{160, 80}));
+        CHECK(f.On(edit, "getMeasuredWidth", "()I").AsInt() > 0);
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

@@ -447,6 +447,8 @@ static int RunGameSession(GameRunOptions options, core::Logger& logger, bool sta
         app_request.icu_data = ReadBytes(bundled_data.root / bionic.data_directory / "icu" / "icudt51l.dat");
         app_request.tzdata = ReadBytes(bundled_data.root / bionic.data_directory / "zoneinfo" / "tzdata");
         app_request.context = dex_context;
+        app_request.ui_primary_font =
+            ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "Roboto-Regular.ttf");
         app_request.ui_fallback_font =
             ReadBytes(bundled_data.root / bionic.data_directory / "fonts" / "DroidSansFallback.ttf");
         app_request.api_level = api_level;

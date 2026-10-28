@@ -1158,10 +1158,9 @@ Decl ExperimentalTextView(const Context& context) {
         const auto font_style = face.IsValid() ? CallAndroidMethod(vm, face, "getStyle", "()I").AsInt() : 0;
         if (size < 1 || size > 128 || text.size() > 1024)
             TextInputFailure(vm, "text size/length outside bounded service");
-        for (const auto unit : text)
-            if (!(unit == u'\n' || (unit >= 0x20 && unit <= 0x7e) || (unit >= 0x4e00 && unit <= 0x9fff)))
-                TextInputFailure(vm, "unsupported text glyph/shaping");
         try {
+            for (const auto unit : text)
+                if (unit != u'\n') ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
             static_cast<void>(ui::MeasureFixedText(text, static_cast<float>(size),
                                                    static_cast<std::uint32_t>(font_style),
                                                    context->ui_tree.FallbackFont().get()));
@@ -1247,10 +1246,9 @@ Decl ExperimentalTextView(const Context& context) {
                              std::uint32_t style) {
         if (text.size() > 1024 || !std::isfinite(size) || size < 1 || size > 128 || style > 3)
             TextInputFailure(c.vm, "text outside bounded service");
-        for (auto ch : text)
-            if (!(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff)))
-                TextInputFailure(c.vm, "unsupported text glyph/shaping");
         try {
+            for (const auto unit : text)
+                if (unit != u'\n') ui::RequireTextGlyph(unit, node.fallback_font.get());
             static_cast<void>(ui::MeasureFixedText(text, size, style, node.fallback_font.get()));
         } catch (const std::runtime_error& e) {
             TextInputFailure(c.vm, e.what());

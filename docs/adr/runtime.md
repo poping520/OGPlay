@@ -9,6 +9,7 @@
 - [ADR-0011 · 固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
 - [ADR-0013 · Runtime 子模块边界与显式装配](#adr-0013)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
+- [ADR-0169 · API19 两级 UI 字体链与会话同源注入](#adr-0169)
 - [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
 
 <a id="adr-0001"></a>
@@ -203,3 +204,24 @@ futex 通知不制造 WAKE token；SA_RESTART 只重启无超时 WAIT，其余�
   仍记账并明确失败。地址对象由既有 ROM InetAddress 构造路径建立。
 - 后果：ROM NetworkInterface 可枚举离线回环，普通算法仍归 Java；不增加通用 socket、
   netlink/getifaddrs/if_indextoname 或在线 provider。验证见 [DVM-343](../tasks/dexvm/DVM-343.md)。
+
+<a id="adr-0169"></a>
+
+## ADR-0169 · API19 两级 UI 字体链与会话同源注入
+
+- 状态：Accepted
+- 日期：2026-10-28
+
+ADR-0114（历史记录见 Git）单独注入 DroidSansFallback，无法覆盖 © 等默认 sans-serif
+字形，另建宿主 Dialog 树也可漏注入。改为 AOSP android-4.4.4_r2.0.1
+frameworks/base/data/fonts/system_fonts.xml 默认 sans-serif Regular 的 Roboto-Regular，
+再取 fallback_fonts.xml 中的 DroidSansFallback，组成受审两级子集；不引入其他字体。
+
+两文件原样随 payload 发布并各自固定 SHA-256，整链不可变，按顺序取首个覆盖字体。
+会话主树提供唯一字体来源，独立宿主分区经统一工厂创建，复制保持同一资源身份；
+UiTree 构造显式接受字体。ASCII 继续原 5x7 像素与度量，粗斜体继续合成。
+Paint、TextView 和文本输入共享 UI 覆盖判定，失败携带码点并保留原记账及 Java 转换。
+
+只支持独立 BMP，保留 shaping/combining/bidi、补充平面失败及整链128项缓存上限。
+不读取宿主或应用字体，不实现完整 Android 字体匹配、系统服务与排版。
+范围与验证见 [DVM-344](../tasks/dexvm/DVM-344.md)。

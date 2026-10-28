@@ -12,7 +12,8 @@ std::size_t UiNodeIdHash::operator()(const UiNodeId id) const noexcept {
     return std::hash<std::uint64_t>{}(id.Value());
 }
 
-UiTree::UiTree(const UiGeometryOwner owner) : geometry_owner_(owner) {
+UiTree::UiTree(const UiGeometryOwner owner, std::shared_ptr<const UiFallbackFont> font)
+    : geometry_owner_(owner), fallback_font_(std::move(font)) {
     Reset();
 }
 

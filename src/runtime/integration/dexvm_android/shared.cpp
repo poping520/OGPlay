@@ -290,6 +290,8 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
     after.replace(static_cast<std::size_t>(start), static_cast<std::size_t>(before_count), filtered);
 
     try {
+        for (const auto unit : after)
+            if (unit != u'\n') ui::RequireTextGlyph(unit, context.ui_tree.FallbackFont().get());
         static_cast<void>(
             ui::MeasureFixedText(after, state->text_size_px, state->text_style, context.ui_tree.FallbackFont().get()));
     } catch (const std::runtime_error& error) {
@@ -297,12 +299,6 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", error.what()};
     }
 
-    if ((after.size() > 1024 || std::any_of(after.begin(), after.end(), [](char16_t ch) {
-             return !(ch == u'\n' || (ch >= 32 && ch <= 126) || (ch >= 0x4e00 && ch <= 0x9fff));
-         }))) {
-        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
-        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text outside bounded edit service"};
-    }
     const auto before = state->text;
     auto watchers = context.text_watchers[view.Value()];
     const auto old_text = vm.Model().NewString(before);

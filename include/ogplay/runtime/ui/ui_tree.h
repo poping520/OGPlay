@@ -259,7 +259,9 @@ public:
     static constexpr std::size_t kMaxChildren = 1024;
     static constexpr std::size_t kMaxDepth = 128;
 
-    explicit UiTree(UiGeometryOwner owner = UiGeometryOwner::HostLayout);
+    explicit UiTree(std::shared_ptr<const UiFallbackFont> font)
+        : UiTree(UiGeometryOwner::HostLayout, std::move(font)) {}
+    UiTree(UiGeometryOwner owner, std::shared_ptr<const UiFallbackFont> font);
 
     [[nodiscard]] UiGeometryOwner GeometryOwner() const { return geometry_owner_; }
 

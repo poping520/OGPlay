@@ -123,7 +123,15 @@ struct AndroidPlatformServices final {
 struct DexVmAndroidContext final {
     explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
                                  AndroidPlatformServices platform = {})
-        : ui_traversal_owner(owner), platform_services(platform), ui_tree(ui::UiGeometryOwner::ExternalProjection) {}
+        : ui_traversal_owner(owner), platform_services(platform), ui_tree(CreateUiTree(ui::UiGeometryOwner::ExternalProjection, nullptr)) {}
+
+    [[nodiscard]] static ui::UiTree CreateUiTree(ui::UiGeometryOwner owner,
+                                                std::shared_ptr<const ui::UiFallbackFont> font) {
+        return ui::UiTree(owner, std::move(font));
+    }
+    [[nodiscard]] ui::UiTree CreateHostUiTree() const {
+        return CreateUiTree(ui::UiGeometryOwner::HostLayout, ui_tree.FallbackFont());
+    }
 
     const AndroidUiTraversalOwner ui_traversal_owner;
     const AndroidPlatformServices platform_services;

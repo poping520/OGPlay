@@ -118,8 +118,8 @@ public:
                  "ANDROID_ID");
         }
         state = AndroidAppProcessState::package_ready;
-        if (!request.ui_fallback_font.empty())
-            context->ui_tree.SetFallbackFont(std::make_shared<runtime::ui::UiFallbackFont>(request.ui_fallback_font));
+        if (!request.ui_primary_font.empty() || !request.ui_fallback_font.empty())
+            context->ui_tree.SetFallbackFont(std::make_shared<runtime::ui::UiFallbackFont>(request.ui_primary_font, request.ui_fallback_font));
         if (!request.tzdata.empty()) {
             request.filesystem->PutFile("/system/usr/share/zoneinfo/tzdata",
                                         request.tzdata, false);

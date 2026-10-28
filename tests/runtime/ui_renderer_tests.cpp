@@ -16,7 +16,7 @@
 namespace ui = ogplay::runtime::ui;
 
 TEST_CASE("DVM-248 Surface hole follows paint order clipping and final transparency") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     tree.Get(tree.Root())->background_color = 0x000000ffU;
     const auto surface = tree.CreateNode(ui::UiClass::View);
     tree.Get(surface)->layout.width = {ui::SizeMode::Fixed, 8};
@@ -57,7 +57,7 @@ TEST_CASE("DVM-248 Surface hole follows paint order clipping and final transpare
 }
 
 TEST_CASE("DVM-246 modal render plane separates Surface ordering and shares dirty evidence") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto normal = tree.CreateNode(ui::UiClass::FrameLayout);
     tree.Get(normal)->layout.width.mode = ui::SizeMode::MatchParent;
     tree.Get(normal)->layout.height.mode = ui::SizeMode::MatchParent;
@@ -105,7 +105,33 @@ TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
     const std::vector<char> raw{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
     std::vector<std::byte> bytes(raw.size());
     std::memcpy(bytes.data(), raw.data(), raw.size());
-    const auto font = std::make_shared<ui::UiFallbackFont>(bytes);
+    std::ifstream primary(root / "data/android/19/fonts/Roboto-Regular.ttf", std::ios::binary);
+    REQUIRE(primary.good());
+    const std::vector<char> primary_raw{std::istreambuf_iterator<char>{primary}, std::istreambuf_iterator<char>{}};
+    std::vector<std::byte> roboto(primary_raw.size());
+    std::memcpy(roboto.data(), primary_raw.data(), primary_raw.size());
+    const auto font = std::make_shared<ui::UiFallbackFont>(roboto, bytes);
+    CHECK(font->SourceIndex(u'©') == 0);
+    CHECK(font->SourceIndex(u'é') == 0);
+    CHECK(font->SourceIndex(u'中') == 1);
+    CHECK_FALSE(font->Glyph(u'©', 15)->alpha.empty());
+    CHECK_FALSE(font->Glyph(u'é', 15)->alpha.empty());
+    CHECK_THROWS_WITH((void)font->Glyph(u'\u0378', 15), "U+0378 is absent from API19 font chain");
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"\u0378", 16, 0, font.get()), "U+0378 is absent from API19 font chain");
+    CHECK_THROWS_WITH((void)ui::RasterizeUiOverlay({ui::DrawText{0, 0, u"\u0378", 0xffffffffU, 16, 1, 0, font}}, {32, 24}),
+                      "U+0378 is absent from API19 font chain");
+    const ui::UiRenderList fixed{ui::DrawText{0, 0, u"ASCII ©", 0xffffffffU, 16, 1, 0, font}};
+    CHECK_FALSE(ui::RasterizeUiOverlay(fixed, {128, 24}).fully_transparent);
+    for (unsigned style = 0; style < 4; ++style) {
+        const auto ascii = u" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+        const auto original = ui::RasterizeUiOverlay({ui::DrawText{0, 0, ascii, 0xffffffffU, 8, 1, style}}, {1024, 16});
+        const auto chained = ui::RasterizeUiOverlay({ui::DrawText{0, 0, ascii, 0xffffffffU, 8, 1, style, font}}, {1024, 16});
+        CHECK(original.rgba8 == chained.rgba8);
+        CHECK(ui::MeasureFixedText(ascii, 8, style) == ui::MeasureFixedText(ascii, 8, style, font.get()));
+    }
+    roboto[0] ^= std::byte{1};
+    CHECK_THROWS_WITH((ui::UiFallbackFont{roboto, bytes}), "fallback font is not the pinned API19 trusted payload");
+    roboto[0] ^= std::byte{1};
     const auto king = font->Glyph(u'王', 15), village = font->Glyph(u'村', 15);
     REQUIRE_FALSE(king->alpha.empty());
     REQUIRE_FALSE(village->alpha.empty());
@@ -117,7 +143,7 @@ TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
     const auto frame = ui::RasterizeUiOverlay(commands, {64, 24});
     CHECK_FALSE(frame.fully_transparent);
     bytes[0] ^= std::byte{1};
-    CHECK_THROWS_WITH(ui::UiFallbackFont{bytes}, "fallback font is not the pinned API19 trusted payload");
+    CHECK_THROWS_WITH((ui::UiFallbackFont{roboto, bytes}), "fallback font is not the pinned API19 trusted payload");
     CHECK_THROWS(static_cast<void>(font->Glyph(u'ا', 15)));
     CHECK_THROWS(static_cast<void>(font->Glyph(u'\u202e', 15)));
     CHECK_THROWS(static_cast<void>(font->Glyph(u'\u20d0', 15)));
@@ -138,7 +164,7 @@ namespace {
 }  // namespace
 
 TEST_CASE("UI overlay starts transparent and honors draw cache") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     ui::LayoutUiTree(tree, {2, 2});
     ui::UiOverlayRenderer renderer;
     const ui::UiBitmapCache bitmaps;
@@ -153,7 +179,7 @@ TEST_CASE("UI overlay starts transparent and honors draw cache") {
 }
 
 TEST_CASE("layout preserves text draw dirty until overlay cache rebuild") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto text = tree.CreateNode(ui::UiClass::TextView);
     tree.Get(text)->text = u"A";
     tree.Attach(tree.Root(), text);
@@ -176,7 +202,7 @@ TEST_CASE("layout preserves text draw dirty until overlay cache rebuild") {
 }
 
 TEST_CASE("GONE layout mutation rebuilds cache and removes child pixels") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto child = tree.CreateNode(ui::UiClass::View);
     tree.Get(child)->layout.width = {ui::SizeMode::Fixed, 1};
     tree.Get(child)->layout.height = {ui::SizeMode::Fixed, 1};
@@ -196,7 +222,7 @@ TEST_CASE("GONE layout mutation rebuilds cache and removes child pixels") {
 }
 
 TEST_CASE("UI overlay draws bitmap clips and document-order alpha") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto bitmap_node = tree.CreateNode(ui::UiClass::ImageButton);
     tree.Get(bitmap_node)->layout.width = {ui::SizeMode::Fixed, 2};
     tree.Get(bitmap_node)->layout.height = {ui::SizeMode::Fixed, 2};
@@ -222,7 +248,7 @@ TEST_CASE("UI overlay draws bitmap clips and document-order alpha") {
 }
 
 TEST_CASE("UI overlay omits INVISIBLE and GONE nodes") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto invisible = tree.CreateNode(ui::UiClass::View);
     const auto gone = tree.CreateNode(ui::UiClass::View);
     for (const auto node : {invisible, gone}) {
@@ -241,7 +267,7 @@ TEST_CASE("UI overlay omits INVISIBLE and GONE nodes") {
 TEST_CASE("fixed UI font drives wrap-content measurement") {
     CHECK(ui::MeasureFixedText(u"Hi", 8.0F) == ui::FixedTextMetrics{11, 7, 1});
     CHECK(ui::MeasureFixedText(u"Hi", 16.0F) == ui::FixedTextMetrics{22, 14, 2});
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto text = tree.CreateNode(ui::UiClass::TextView);
     tree.Get(text)->text = u"HI";
     tree.Get(text)->padding = {1, 1, 1, 1};
@@ -256,11 +282,11 @@ TEST_CASE("fixed UI font drives wrap-content measurement") {
 
     CHECK(ui::MeasureFixedText(u"two\nlines", 8.0F) == ui::FixedTextMetrics{29, 15, 1});
     CHECK(ui::WrapFixedText(u"one two", 8.0F, 0, 23, 4) == u"one\ntwo");
-    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F), "unsupported fixed-font glyph");
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F), "U+4E2D is absent from 5x7 fixed font");
 }
 
 TEST_CASE("fixed UI font raster matches the exact HI golden") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto text = tree.CreateNode(ui::UiClass::TextView);
     tree.Get(text)->layout.width = {ui::SizeMode::Fixed, 11};
     tree.Get(text)->layout.height = {ui::SizeMode::Fixed, 7};
@@ -287,7 +313,7 @@ TEST_CASE("fixed UI font raster matches the exact HI golden") {
 }
 
 TEST_CASE("Button owns deterministic background padding and text content") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto button = tree.CreateNode(ui::UiClass::Button);
     tree.Get(button)->text = u"GO";
     tree.Attach(tree.Root(), button);
@@ -306,7 +332,7 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
     bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255};
     const ui::UiBitmapCache bitmaps{{9, bitmap}};
     const auto destination = [&bitmaps](const ui::ImageScaleType scale_type) {
-        ui::UiTree tree;
+        ui::UiTree tree{nullptr};
         const auto image = tree.CreateNode(ui::UiClass::ImageView);
         tree.Get(image)->layout.width = {ui::SizeMode::Fixed, 4};
         tree.Get(image)->layout.height = {ui::SizeMode::Fixed, 4};
@@ -328,7 +354,7 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
     CHECK(destination(ui::ImageScaleType::FitXy) == ui::Rect{0, 0, 4, 4});
     CHECK(destination(ui::ImageScaleType::CenterCrop) == ui::Rect{-1, 0, 7, 4});
 
-    ui::UiTree crop_tree;
+    ui::UiTree crop_tree{nullptr};
     const auto crop = crop_tree.CreateNode(ui::UiClass::ImageView);
     crop_tree.Get(crop)->layout.width = {ui::SizeMode::Fixed, 4};
     crop_tree.Get(crop)->layout.height = {ui::SizeMode::Fixed, 4};
@@ -346,7 +372,7 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
 }
 
 TEST_CASE("compound drawables rasterize and inset the text band") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto button = tree.CreateNode(ui::UiClass::Button);
     tree.Get(button)->text = u"AB";
     tree.Get(button)->text_color = 0xffffffffU;
@@ -372,7 +398,7 @@ TEST_CASE("compound drawables rasterize and inset the text band") {
 }
 
 TEST_CASE("UI overlay preserves nine-patch fixed edges while stretching center") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto view = tree.CreateNode(ui::UiClass::View);
     tree.Get(view)->background_resource_id = 9;
     tree.Attach(tree.Root(), view);
@@ -392,7 +418,7 @@ TEST_CASE("UI overlay preserves nine-patch fixed edges while stretching center")
 }
 
 TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto view = tree.CreateNode(ui::UiClass::TextView);
     auto* node = tree.Get(view);
     node->text = u"A";
@@ -452,7 +478,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     const std::vector<std::uint8_t> kClear{0, 0, 0, 0};
     const ui::UiBitmapCache bitmaps{{9, SolidBitmap(6, 2, 255, 0, 0)}};
     const auto make_padded_crop = [](const bool clip_children, const bool clip_to_padding) {
-        ui::UiTree tree;
+        ui::UiTree tree{nullptr};
         const auto container = tree.CreateNode(ui::UiClass::FrameLayout);
         auto* group = tree.Get(container);
         CHECK(group->clip_children);
@@ -494,7 +520,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     CHECK(Pixel(unclipped, 3, 1) == kRed);
     CHECK(Pixel(unclipped, 5, 1) == kRed);
 
-    ui::UiTree nested;
+    ui::UiTree nested{nullptr};
     const auto outer = nested.CreateNode(ui::UiClass::FrameLayout);
     nested.Get(outer)->layout.width = {ui::SizeMode::Fixed, 6};
     nested.Get(outer)->layout.height = {ui::SizeMode::Fixed, 4};
@@ -521,7 +547,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     CHECK(Pixel(nested_frame, 1, 0) == kRed);
     CHECK(Pixel(nested_frame, 3, 0) == kRed);
 
-    ui::UiTree isolated;
+    ui::UiTree isolated{nullptr};
     const auto row = isolated.CreateNode(ui::UiClass::LinearLayout);
     isolated.Get(row)->layout.width = {ui::SizeMode::Fixed, 8};
     isolated.Get(row)->layout.height = {ui::SizeMode::Fixed, 4};
@@ -632,7 +658,7 @@ TEST_CASE("DVM-291 compound line plan preserves Legacy formula and drives raster
     CHECK(legacy.desired == ui::Size{43, 11});
     CHECK(legacy.constrained == ui::Size{32, 11});
     // The original caller still commits its original measured dimensions.
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto id = tree.CreateNode(ui::UiClass::TextView);
     auto& node = *tree.Get(id);
     node.text = text.text;
@@ -680,7 +706,7 @@ TEST_CASE("DVM-295 Java TextView compound plan uses final width and TextView sta
     CHECK(result.baseline == 9);
     REQUIRE(result.line_plan);
     CHECK(result.line_plan->text == u"HI\nHI");
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     tree.Get(tree.Root())->frame = tree.Get(tree.Root())->screen_frame = {0, 0, 64, 32};
     const auto id = tree.CreateNode(ui::UiClass::TextView);
     tree.Attach(tree.Root(), id);
@@ -758,7 +784,7 @@ TEST_CASE("DVM-340 text shadow offsets blurs clips and preserves foreground and 
 }
 
 TEST_CASE("DVM-340 shadow input dirties cached rendering without changing measurement") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto id = tree.CreateNode(ui::UiClass::TextView);
     tree.Attach(tree.Root(), id);
     auto& node = *tree.Get(id);
@@ -782,12 +808,17 @@ TEST_CASE("DVM-340 fallback shadow consumes the frozen styled multiline plan") {
     const std::vector<char> raw{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
     std::vector<std::byte> bytes(raw.size());
     std::memcpy(bytes.data(), raw.data(), raw.size());
+    std::ifstream primary(root / "data/android/19/fonts/Roboto-Regular.ttf", std::ios::binary);
+    REQUIRE(primary.good());
+    const std::vector<char> primary_raw{std::istreambuf_iterator<char>{primary}, std::istreambuf_iterator<char>{}};
+    std::vector<std::byte> roboto(primary_raw.size());
+    std::memcpy(roboto.data(), primary_raw.data(), primary_raw.size());
     ui::TextLeafInput leaf;
     leaf.text = u"王Hi 王Hi";
     leaf.size_px = 16;
     leaf.style = 3;
     leaf.max_lines = 3;
-    leaf.fallback_font = std::make_shared<ui::UiFallbackFont>(bytes);
+    leaf.fallback_font = std::make_shared<ui::UiFallbackFont>(roboto, bytes);
     const auto measured = ui::MeasureTextLeaf(leaf, {ui::MeasureMode::AtMost, 64}, {});
     REQUIRE(measured.line_plan->text.find(u'\n') != std::u16string::npos);
     ui::DrawText planned{8, 8, u"\t", 0xffffffffU, 0};  // deliberately invalid non-plan inputs

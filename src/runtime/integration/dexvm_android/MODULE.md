@@ -369,7 +369,7 @@ SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 Attr
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
 View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
 ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
-setKeepScreenOn(false) 清空请求、true 记账拒绝；Canvas/Bitmap 为 ARGB。lockCanvas 仅接受 active
+setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；Canvas/Bitmap 为 ARGB。lockCanvas 仅接受 active
 holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
 holder 像素快照合成到 View frame。窗口 holder 仍发布原软件基帧。
 

@@ -42,6 +42,8 @@
 - `hal::WindowInput::PumpEvents`：处理宿主窗口消息但不移除规范化输入事件，供长任务
   在主线程维持窗口响应；关闭窗口上调用明确失败。
 - `hal::WindowInput::PresentRgba8`：校验完整 RGBA8 帧并缩放提交到当前 SDL 窗口。
+- `hal::WindowState::display_sleep_inhibited`：窗口打开期间宿主是否阻止显示休眠；SDL 取
+  `!SDL_ScreenSaverEnabled()`（视频子系统默认禁用屏保），只报告事实，不另行修改宿主策略。
 - `hal::FrameRateSampler`：以调用方提供的单调 ticks 和累计成功 present 数按固定窗口计算
   FPS；输入倒退明确失败，未到采样周期不发布新值。
 - `hal::FitDisplayRect`：用无浮点整数运算把源画面等比居中适配到目标 surface。

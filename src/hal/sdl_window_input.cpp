@@ -15,12 +15,9 @@
 
 namespace ogplay::hal {
 
-DisplayRect FitDisplayRect(const std::uint32_t source_width,
-                           const std::uint32_t source_height,
-                           const std::uint32_t target_width,
-                           const std::uint32_t target_height) {
-    if (source_width == 0 || source_height == 0 ||
-        target_width == 0 || target_height == 0) {
+DisplayRect FitDisplayRect(const std::uint32_t source_width, const std::uint32_t source_height,
+                           const std::uint32_t target_width, const std::uint32_t target_height) {
+    if (source_width == 0 || source_height == 0 || target_width == 0 || target_height == 0) {
         throw std::invalid_argument("display layout dimensions must be non-zero");
     }
     const auto width_limited = static_cast<std::uint64_t>(target_width) * source_height <=
@@ -29,54 +26,41 @@ DisplayRect FitDisplayRect(const std::uint32_t source_width,
     std::uint32_t height{};
     if (width_limited) {
         width = target_width;
-        height = static_cast<std::uint32_t>(
-            static_cast<std::uint64_t>(target_width) * source_height / source_width);
+        height = static_cast<std::uint32_t>(static_cast<std::uint64_t>(target_width) * source_height / source_width);
         if (height == 0) height = 1;
     } else {
         height = target_height;
-        width = static_cast<std::uint32_t>(
-            static_cast<std::uint64_t>(target_height) * source_width / source_height);
+        width = static_cast<std::uint32_t>(static_cast<std::uint64_t>(target_height) * source_width / source_height);
         if (width == 0) width = 1;
     }
-    return {(target_width - width) / 2U, (target_height - height) / 2U,
-            width, height};
+    return {(target_width - width) / 2U, (target_height - height) / 2U, width, height};
 }
 
-MappedDisplayPoint MapDisplayPoint(
-    const float target_x, const float target_y,
-    const std::uint32_t source_width, const std::uint32_t source_height,
-    const std::uint32_t target_width, const std::uint32_t target_height) {
+MappedDisplayPoint MapDisplayPoint(const float target_x, const float target_y, const std::uint32_t source_width,
+                                   const std::uint32_t source_height, const std::uint32_t target_width,
+                                   const std::uint32_t target_height) {
     if (!std::isfinite(target_x) || !std::isfinite(target_y)) {
         throw std::invalid_argument("display point coordinates must be finite");
     }
-    const auto layout = FitDisplayRect(
-        source_width, source_height, target_width, target_height);
+    const auto layout = FitDisplayRect(source_width, source_height, target_width, target_height);
     const auto left = static_cast<float>(layout.x);
     const auto top = static_cast<float>(layout.y);
     const auto right = left + static_cast<float>(layout.width);
     const auto bottom = top + static_cast<float>(layout.height);
-    const auto inside = target_x >= left && target_x < right &&
-                        target_y >= top && target_y < bottom;
-    const auto normalized_x = std::clamp(
-        (target_x - left) / static_cast<float>(layout.width), 0.0F, 1.0F);
-    const auto normalized_y = std::clamp(
-        (target_y - top) / static_cast<float>(layout.height), 0.0F, 1.0F);
-    return {normalized_x * static_cast<float>(source_width),
-            normalized_y * static_cast<float>(source_height), inside};
+    const auto inside = target_x >= left && target_x < right && target_y >= top && target_y < bottom;
+    const auto normalized_x = std::clamp((target_x - left) / static_cast<float>(layout.width), 0.0F, 1.0F);
+    const auto normalized_y = std::clamp((target_y - top) / static_cast<float>(layout.height), 0.0F, 1.0F);
+    return {normalized_x * static_cast<float>(source_width), normalized_y * static_cast<float>(source_height), inside};
 }
 
-FrameRateSampler::FrameRateSampler(
-    const std::uint64_t ticks_per_second,
-    const std::uint64_t update_interval_ticks)
-    : ticks_per_second_(ticks_per_second),
-      update_interval_ticks_(update_interval_ticks) {
+FrameRateSampler::FrameRateSampler(const std::uint64_t ticks_per_second, const std::uint64_t update_interval_ticks)
+    : ticks_per_second_(ticks_per_second), update_interval_ticks_(update_interval_ticks) {
     if (ticks_per_second_ == 0U || update_interval_ticks_ == 0U) {
         throw std::invalid_argument("frame-rate sampler periods must be non-zero");
     }
 }
 
-std::optional<double> FrameRateSampler::Observe(
-    const std::uint64_t presented_frames, const std::uint64_t ticks) {
+std::optional<double> FrameRateSampler::Observe(const std::uint64_t presented_frames, const std::uint64_t ticks) {
     if (!initialized_) {
         previous_frames_ = presented_frames;
         previous_ticks_ = ticks;
@@ -89,8 +73,7 @@ std::optional<double> FrameRateSampler::Observe(
     const auto elapsed = ticks - previous_ticks_;
     if (elapsed < update_interval_ticks_) return std::nullopt;
     const auto frames = presented_frames - previous_frames_;
-    const auto rate = static_cast<long double>(frames) *
-                      static_cast<long double>(ticks_per_second_) /
+    const auto rate = static_cast<long double>(frames) * static_cast<long double>(ticks_per_second_) /
                       static_cast<long double>(elapsed);
     previous_frames_ = presented_frames;
     previous_ticks_ = ticks;
@@ -157,8 +140,7 @@ public:
                 throw std::logic_error("SDL video subsystem already uses another backend");
             }
         }
-        if (!already_initialized && !requested.empty() &&
-            !SDL_SetHint(SDL_HINT_VIDEO_DRIVER, requested.c_str())) {
+        if (!already_initialized && !requested.empty() && !SDL_SetHint(SDL_HINT_VIDEO_DRIVER, requested.c_str())) {
             throw SdlError("SDL_SetHint(SDL_HINT_VIDEO_DRIVER)");
         }
         if (!SDL_InitSubSystem(kSdlSubsystems)) {
@@ -238,6 +220,9 @@ public:
             .width = static_cast<std::uint32_t>(width),
             .height = static_cast<std::uint32_t>(height),
             .present_count = present_count_,
+            // SDL disables the screen saver for its video lifetime unless
+            // SDL_HINT_VIDEO_ALLOW_SCREENSAVER asks otherwise.
+            .display_sleep_inhibited = !SDL_ScreenSaverEnabled(),
         };
     }
 
@@ -270,51 +255,43 @@ public:
             // Cancel boundaries invalidate queued input, including a partial
             // down/up pair. Do not replay a stale click after resuming.
             std::erase_if(result, [](const auto& input) {
-                return input.type != InputEventType::quit &&
-                       input.type != InputEventType::gamepad_added &&
+                return input.type != InputEventType::quit && input.type != InputEventType::gamepad_added &&
                        input.type != InputEventType::gamepad_removed;
             });
-            result.insert(result.begin(), lifecycle_events_.begin(),
-                          lifecycle_events_.begin() + lifecycle_count_);
+            result.insert(result.begin(), lifecycle_events_.begin(), lifecycle_events_.begin() + lifecycle_count_);
             lifecycle_count_ = 0;
         }
         return result;
     }
 
-    void PresentRgba8(const std::span<const std::uint8_t> pixels,
-                      const std::uint32_t width, const std::uint32_t height) override {
+    void PresentRgba8(const std::span<const std::uint8_t> pixels, const std::uint32_t width,
+                      const std::uint32_t height) override {
         if (window_ == nullptr) throw std::logic_error("frame presentation requires an open window");
-        if (width == 0 || height == 0 ||
-            width > static_cast<std::uint32_t>(std::numeric_limits<int>::max() / 4) ||
+        if (width == 0 || height == 0 || width > static_cast<std::uint32_t>(std::numeric_limits<int>::max() / 4) ||
             height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
             throw std::invalid_argument("RGBA8 frame dimensions are out of range");
         }
         const auto row_bytes = static_cast<std::size_t>(width) * 4;
-        if (height > std::numeric_limits<std::size_t>::max() / row_bytes ||
-            pixels.size() != row_bytes * height) {
+        if (height > std::numeric_limits<std::size_t>::max() / row_bytes || pixels.size() != row_bytes * height) {
             throw std::invalid_argument("RGBA8 frame byte count does not match dimensions");
         }
 
         EnsureFrameTexture(width, height);
-        if (!SDL_UpdateTexture(texture_, nullptr, pixels.data(),
-                               static_cast<int>(row_bytes))) {
+        if (!SDL_UpdateTexture(texture_, nullptr, pixels.data(), static_cast<int>(row_bytes))) {
             throw SdlError("SDL_UpdateTexture");
         }
         int output_width{};
         int output_height{};
-        if (!SDL_GetCurrentRenderOutputSize(renderer_, &output_width,
-                                            &output_height)) {
+        if (!SDL_GetCurrentRenderOutputSize(renderer_, &output_width, &output_height)) {
             throw SdlError("SDL_GetCurrentRenderOutputSize");
         }
         if (output_width <= 0 || output_height <= 0) {
             throw std::runtime_error("SDL render output dimensions are invalid");
         }
-        const auto layout = FitDisplayRect(
-            width, height, static_cast<std::uint32_t>(output_width),
-            static_cast<std::uint32_t>(output_height));
-        const SDL_FRect destination{
-            static_cast<float>(layout.x), static_cast<float>(layout.y),
-            static_cast<float>(layout.width), static_cast<float>(layout.height)};
+        const auto layout = FitDisplayRect(width, height, static_cast<std::uint32_t>(output_width),
+                                           static_cast<std::uint32_t>(output_height));
+        const SDL_FRect destination{static_cast<float>(layout.x), static_cast<float>(layout.y),
+                                    static_cast<float>(layout.width), static_cast<float>(layout.height)};
         if (!SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255)) {
             throw SdlError("SDL_SetRenderDrawColor");
         }
@@ -330,10 +307,9 @@ private:
     static bool SDLCALL WatchLifecycle(void* userdata, SDL_Event* event) noexcept {
         auto& self = *static_cast<SdlWindowInput*>(userdata);
         const auto type = event->type;
-        if (type != SDL_EVENT_WILL_ENTER_BACKGROUND &&
-            type != SDL_EVENT_DID_ENTER_BACKGROUND &&
-            type != SDL_EVENT_DID_ENTER_FOREGROUND &&
-            type != SDL_EVENT_TERMINATING) return true;
+        if (type != SDL_EVENT_WILL_ENTER_BACKGROUND && type != SDL_EVENT_DID_ENTER_BACKGROUND &&
+            type != SDL_EVENT_DID_ENTER_FOREGROUND && type != SDL_EVENT_TERMINATING)
+            return true;
         // No SDL calls, allocation, guest calls or thread-completion waits
         // here: SDL invokes watches while holding its event-watch lock.
         std::scoped_lock lock(self.lifecycle_mutex_);
@@ -351,8 +327,8 @@ private:
         if (self.lifecycle_count_ == self.lifecycle_events_.size()) {
             self.lifecycle_overflow_ = true;
         } else {
-            self.lifecycle_events_[self.lifecycle_count_++] = {
-                .type = normalized, .timestamp_ns = event->common.timestamp};
+            self.lifecycle_events_[self.lifecycle_count_++] = {.type = normalized,
+                                                               .timestamp_ns = event->common.timestamp};
         }
         return true;
     }
@@ -366,16 +342,13 @@ private:
         texture_height_ = 0;
     }
 
-    void EnsureFrameTexture(const std::uint32_t width,
-                            const std::uint32_t height) {
-        if (texture_ != nullptr && texture_width_ == width &&
-            texture_height_ == height) {
+    void EnsureFrameTexture(const std::uint32_t width, const std::uint32_t height) {
+        if (texture_ != nullptr && texture_width_ == width && texture_height_ == height) {
             return;
         }
         DestroyFrameTexture();
-        texture_ = SDL_CreateTexture(
-            renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
-            static_cast<int>(width), static_cast<int>(height));
+        texture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING,
+                                     static_cast<int>(width), static_cast<int>(height));
         if (texture_ == nullptr) throw SdlError("SDL_CreateTexture");
         if (!SDL_SetTextureBlendMode(texture_, SDL_BLENDMODE_NONE)) {
             DestroyFrameTexture();
@@ -396,8 +369,7 @@ private:
     void AppendEvent(const SDL_Event& event, std::vector<InputEvent>& result) {
         switch (event.type) {
         case SDL_EVENT_QUIT:
-            result.push_back({.type = InputEventType::quit,
-                              .timestamp_ns = event.quit.timestamp});
+            result.push_back({.type = InputEventType::quit, .timestamp_ns = event.quit.timestamp});
             break;
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             if (IsOwnedWindow(event.window.windowID)) {
@@ -414,18 +386,17 @@ private:
         case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
             if (IsOwnedWindow(event.window.windowID))
                 result.push_back({.type = InputEventType::input_reset,
-                    .timestamp_ns = event.window.timestamp, .window_id = event.window.windowID});
+                                  .timestamp_ns = event.window.timestamp,
+                                  .window_id = event.window.windowID});
             break;
         case SDL_EVENT_WILL_ENTER_BACKGROUND:
         case SDL_EVENT_DID_ENTER_BACKGROUND:
         case SDL_EVENT_DID_ENTER_FOREGROUND:
-        case SDL_EVENT_TERMINATING:
-            break; // Delivered by the durable lifecycle watch above.
+        case SDL_EVENT_TERMINATING: break;  // Delivered by the durable lifecycle watch above.
         case SDL_EVENT_MOUSE_REMOVED:
         case SDL_EVENT_KEYBOARD_REMOVED:
             if (event.type == SDL_EVENT_KEYBOARD_REMOVED) modifiers_ = 0;
-            result.push_back({.type = InputEventType::input_reset,
-                              .timestamp_ns = event.common.timestamp});
+            result.push_back({.type = InputEventType::input_reset, .timestamp_ns = event.common.timestamp});
             break;
         case SDL_EVENT_FINGER_DOWN:
         case SDL_EVENT_FINGER_MOTION:
@@ -434,15 +405,17 @@ private:
             if (IsOwnedWindow(event.tfinger.windowID) && event.tfinger.touchID != SDL_MOUSE_TOUCHID) {
                 const auto state = State();
                 result.push_back({
-                    .type = event.type == SDL_EVENT_FINGER_DOWN ? InputEventType::touch_down :
-                        event.type == SDL_EVENT_FINGER_UP ? InputEventType::touch_up :
-                        event.type == SDL_EVENT_FINGER_CANCELED ? InputEventType::touch_cancel : InputEventType::touch_motion,
+                    .type = event.type == SDL_EVENT_FINGER_DOWN       ? InputEventType::touch_down
+                            : event.type == SDL_EVENT_FINGER_UP       ? InputEventType::touch_up
+                            : event.type == SDL_EVENT_FINGER_CANCELED ? InputEventType::touch_cancel
+                                                                      : InputEventType::touch_motion,
                     .timestamp_ns = event.tfinger.timestamp,
                     .window_id = event.tfinger.windowID,
                     .x = event.tfinger.x * static_cast<float>(state.width),
                     .y = event.tfinger.y * static_cast<float>(state.height),
                     .key_modifiers = modifiers_,
-                    .touch_device_id = event.tfinger.touchID, .contact_id = event.tfinger.fingerID,
+                    .touch_device_id = event.tfinger.touchID,
+                    .contact_id = event.tfinger.fingerID,
                     .pressure = event.tfinger.pressure,
                 });
             }
@@ -459,9 +432,8 @@ private:
                     .code = static_cast<std::int32_t>(event.key.scancode),
                     .pressed = event.key.down,
                     .repeat = event.key.repeat,
-                    .key_symbol = static_cast<std::int32_t>(
-                        SDL_GetKeyFromScancode(event.key.scancode,
-                                               event.key.mod, true)),
+                    .key_symbol =
+                        static_cast<std::int32_t>(SDL_GetKeyFromScancode(event.key.scancode, event.key.mod, true)),
                     .key_modifiers = modifiers_,
                 });
             }
@@ -489,8 +461,7 @@ private:
                     .timestamp_ns = event.button.timestamp,
                     .window_id = event.button.windowID,
                     .device_id = event.button.which,
-                    .code = static_cast<std::int32_t>(
-                        MapPointerButton(event.button.button)),
+                    .code = static_cast<std::int32_t>(MapPointerButton(event.button.button)),
                     .x = event.button.x,
                     .y = event.button.y,
                     .pressed = event.button.down,
@@ -520,9 +491,8 @@ private:
         case SDL_EVENT_GAMEPAD_ADDED:
         case SDL_EVENT_GAMEPAD_REMOVED:
             result.push_back({
-                .type = event.type == SDL_EVENT_GAMEPAD_ADDED
-                            ? InputEventType::gamepad_added
-                            : InputEventType::gamepad_removed,
+                .type = event.type == SDL_EVENT_GAMEPAD_ADDED ? InputEventType::gamepad_added
+                                                              : InputEventType::gamepad_removed,
                 .timestamp_ns = event.gdevice.timestamp,
                 .device_id = event.gdevice.which,
             });

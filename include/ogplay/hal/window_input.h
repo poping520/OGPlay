@@ -67,6 +67,8 @@ struct WindowState {
     std::uint32_t width{};
     std::uint32_t height{};
     std::uint64_t present_count{};
+    // The host keeps the display awake while this window is open.
+    bool display_sleep_inhibited{};
 };
 
 struct DisplayRect final {
@@ -78,9 +80,8 @@ struct DisplayRect final {
     bool operator==(const DisplayRect&) const = default;
 };
 
-[[nodiscard]] DisplayRect FitDisplayRect(
-    std::uint32_t source_width, std::uint32_t source_height,
-    std::uint32_t target_width, std::uint32_t target_height);
+[[nodiscard]] DisplayRect FitDisplayRect(std::uint32_t source_width, std::uint32_t source_height,
+                                         std::uint32_t target_width, std::uint32_t target_height);
 
 struct MappedDisplayPoint final {
     float x{};
@@ -88,17 +89,14 @@ struct MappedDisplayPoint final {
     bool inside{};
 };
 
-[[nodiscard]] MappedDisplayPoint MapDisplayPoint(
-    float target_x, float target_y,
-    std::uint32_t source_width, std::uint32_t source_height,
-    std::uint32_t target_width, std::uint32_t target_height);
+[[nodiscard]] MappedDisplayPoint MapDisplayPoint(float target_x, float target_y, std::uint32_t source_width,
+                                                 std::uint32_t source_height, std::uint32_t target_width,
+                                                 std::uint32_t target_height);
 
 class FrameRateSampler final {
 public:
-    FrameRateSampler(std::uint64_t ticks_per_second,
-                     std::uint64_t update_interval_ticks);
-    [[nodiscard]] std::optional<double> Observe(
-        std::uint64_t presented_frames, std::uint64_t ticks);
+    FrameRateSampler(std::uint64_t ticks_per_second, std::uint64_t update_interval_ticks);
+    [[nodiscard]] std::optional<double> Observe(std::uint64_t presented_frames, std::uint64_t ticks);
 
 private:
     std::uint64_t ticks_per_second_{};
@@ -137,12 +135,10 @@ public:
     [[nodiscard]] virtual std::string_view BackendName() const noexcept = 0;
     virtual void PumpEvents() = 0;
     [[nodiscard]] virtual std::vector<InputEvent> PollEvents() = 0;
-    virtual void PresentRgba8(std::span<const std::uint8_t> pixels,
-                              std::uint32_t width, std::uint32_t height) = 0;
+    virtual void PresentRgba8(std::span<const std::uint8_t> pixels, std::uint32_t width, std::uint32_t height) = 0;
 };
 
-[[nodiscard]] std::unique_ptr<WindowInput> CreateSdlWindowInput(
-    VideoBackend backend = VideoBackend::automatic);
+[[nodiscard]] std::unique_ptr<WindowInput> CreateSdlWindowInput(VideoBackend backend = VideoBackend::automatic);
 
 // Opens an http(s) URL in the user's default browser; failure throws.
 void OpenUrlInBrowser(std::string_view url);

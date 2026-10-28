@@ -265,6 +265,9 @@ struct DexVmAndroidContext final {
     std::unordered_set<std::string> system_features;
     std::uint32_t surface_width{};
     std::uint32_t surface_height{};
+    // Host window fact: display sleep is already inhibited for the session,
+    // which is the only effect SurfaceHolder.setKeepScreenOn(true) can request.
+    bool host_display_sleep_inhibited{};
     // API19 UI fallback until a title exposes reliable DisplayMetrics.
     float ui_density{1.0F};
     float ui_scaled_density{1.0F};

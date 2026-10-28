@@ -94,7 +94,7 @@
       }
     ],
     "size": 11083825,
-    "sha256": "fae38d54c22b258d1d3c4aacee23ffde58044b062b6ccfeabdfcffe56c12e3fb",
+    "sha256": "996a553a80f2888fba2a108cf73b7172bcd4a958e698de28328d89d94e4b6748",
     "dex_entry": "classes.dex",
     "dex_size": 6202700,
     "dex_sha256": "55db50306c0aee8b433c8753cee2359fec0b9a1de3d1b743247d35dde8bffe3f",
@@ -110,13 +110,13 @@
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "4aa996fe174788930570b9708ec5e29072e118ec4dd86062908035283e46a35d",
+      "sha256": "8db140f87569bd00a7f856c6da03cec5752203cedb041a4ba37aa5eb97a00a9d",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "7883819e99129035453963db8e7e92ecb4c266bcc26be7bc74c72a85267397a8",
+      "manifest_sha256": "c9ab6d9034e67e5b3738e50e3896cf0ae28953d76f46caab724defea4621a7bc",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },
@@ -410,23 +410,30 @@
     "notice_sha256": "0b79c8a0e10961301cfca725ef7df3571ca6a150e3a9539cde57c06607d5e6ee"
   },
   "ui_fallback_font": {
-    "font": {
-      "path": "fonts/DroidSansFallback.ttf",
-      "sha256": "05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d",
-      "bytes": 3939852
-    },
     "notice": {
       "path": "notices/fonts.txt",
-      "sha256": "38751245389e1e23f73e6f5384b5cbe7fa972cc4410c5adc9c04b082a0b9561a",
-      "bytes": 10695
+      "sha256": "76c385d70648368a8793a9f2a0b40b2446e14fcb832a77993a8b61ca0d84f6a1",
+      "bytes": 10901
     },
     "provenance": {
       "path": "fonts/README.md",
-      "sha256": "52fef966f2dbfb2ec6457082b8e61065378d3cf35028215f2540e82e8bc66c6e",
-      "bytes": 440
+      "sha256": "70307c7d610c8bfb10eb615a250671d8d50a05847f7fce2b0b232753d22f457c",
+      "bytes": 658
     },
     "source_project": "platform/frameworks/base",
-    "source_path": "data/fonts/DroidSansFallback.ttf",
-    "tag": "android-4.4.4_r2.0.1"
+    "tag": "android-4.4.4_r2.0.1",
+    "fonts": [
+      {
+        "path": "fonts/Roboto-Regular.ttf",
+        "sha256": "f87925e2be4c38abba7920ec54e5634f0538ba6368d758e4da300d9af12c9d27",
+        "bytes": 114976
+      },
+      {
+        "path": "fonts/DroidSansFallback.ttf",
+        "sha256": "05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d",
+        "bytes": 3939852
+      }
+    ],
+    "source_directory": "data/fonts"
   }
 }

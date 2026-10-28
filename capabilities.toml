@@ -101,7 +101,7 @@ note = "DVM-331：纯宿主 HostLayout 横纵 LinearLayout 的 padding/margin/we
 [runtime.ui_text_widgets]
 status = "complete"
 test = "tests/runtime/ui_renderer_tests.cpp; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp"
-note = "TextView/Button 文本、字号、gravity、compound 与阴影收敛到 UiNode；5x7 覆盖完整可打印 ASCII，保留 immutable line-plan/fallback 路径。阴影先偏移再高斯模糊（radius<=32px），原值可查询；非有限值及超界偏移明确失败。默认主题、有界 NinePatch、EditText 与 ScrollView 保留。完整字体排版、XML 阴影属性不在范围内。"
+note = "TextView/Button 文本、字号、gravity、compound 与阴影收敛到 UiNode；5x7 覆盖完整可打印 ASCII，独立 BMP 与 Paint/输入共用 API19 字体链覆盖判定，保留 immutable line-plan。阴影先偏移再高斯模糊（radius<=32px），原值可查询；非有限值及超界偏移明确失败。默认主题、有界 NinePatch、EditText 与 ScrollView 保留。完整字体排版、XML 阴影属性不在范围内。"
 
 [runtime.ui_relative_layout]
 status = "complete"
@@ -110,8 +110,8 @@ note = "DVM-331：纯宿主 HostLayout parent/sibling 约束、环检测与 grav
 
 [runtime.ui_fallback_font]
 status = "partial"
-test = "tests/runtime/ui_renderer_tests.cpp#DVM-235; tools.android_payload_current"
-note = "DVM-235/ADR-0114：注入固定 SHA-256 的 API19 DroidSansFallback，stb_truetype 有界栅格化独立 BMP 字形，支持中文及普通标点；ASCII 保留既有固定字体。缓存有界，不读取宿主/应用字体；缺字、需要 shaping/bidi 的文字与补充平面明确失败。不是完整 Android 字体排版，跨平台与 title gate 未验收。"
+test = "tests/runtime/ui_renderer_tests.cpp#DVM-235; tests/dexvm/widget_window_dialog_tests.cpp#DVM-344; tests/dexvm/edittext_traversal_tests.cpp#DVM-344; tools.android_payload_current"
+note = "DVM-344/ADR-0169：固定 SHA-256 的 API19 Roboto-Regular → DroidSansFallback 不可变链，所有会话宿主树同源注入；首个覆盖字体有界栅格化独立 BMP，ASCII 保留原 5x7 像素/度量，粗斜体合成。Paint/TextView/输入统一覆盖判定，缺字及 shaping/bidi/补充平面失败携带码点。整链缓存128项，不读宿主/应用字体；完整排版、跨平台及 title gate 未验收。"
 
 [runtime.ui_include_resources_images]
 status = "complete"
@@ -2156,7 +2156,7 @@ note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、
 [dexvm.paint_measure]
 status = "partial"
 test = "tests/dexvm/paint_measure_tests.cpp"
-note = "DVM-293：默认配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定ASCII字表与有fallback字形的基本CJK；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
+note = "DVM-293：默认配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定 ASCII 字表与 API19 字体链覆盖的独立 BMP；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
 
 [dexvm.text_constructor]
 status = "partial"

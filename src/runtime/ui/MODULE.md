@@ -6,9 +6,13 @@
 render 与 hit-test 快照。本模块不执行 guest Java，不保存 DexVM object/listener，也不拥有
 SDL、ANGLE 或视频解码。
 
-`UiFallbackFont` 只解析 SHA-256 固定的 API19 system font，由上层 bytes 注入每 tree；
-BMP glyph 按字形/像素高度缓存，最多 128 项，ASCII 保持原有固定字体路径。缺字、
-shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用字体。
+`UiFallbackFont` 是有序不可变 API19 字体链：Roboto-Regular → DroidSansFallback，
+上层注入固定 SHA-256 的两份 bytes，按顺序选择首个覆盖字形；只使用 Regular，粗斜体合成。
+BMP glyph 按码点/像素高度缓存，整链最多 128 项；ASCII 保持原有 5x7 像素与度量。
+`RequireTextGlyph` 统一覆盖判定，缺字、shaping/combining/bidi 与补充平面失败均携带码点。
+不读取宿主字体或任意应用字体；不提供完整 Android 字体匹配与排版。
+UiTree 构造必须显式给出字体资源（独立 ASCII 测试可传 nullptr），复制保留同一链。
+会话由主树字体来源经统一工厂创建独立宿主分区，禁止默认构造漏注入。
 
 ## 公共 API
 

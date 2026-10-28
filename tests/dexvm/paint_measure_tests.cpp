@@ -15,7 +15,12 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
         const std::vector<char> raw{std::istreambuf_iterator<char>(input), {}};
         std::vector<std::byte> bytes(raw.size());
         std::memcpy(bytes.data(), raw.data(), raw.size());
-        f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(bytes));
+        std::ifstream primary(root / "data/android/19/fonts/Roboto-Regular.ttf", std::ios::binary);
+        REQUIRE(primary.good());
+        const std::vector<char> primary_raw{std::istreambuf_iterator<char>{primary}, std::istreambuf_iterator<char>{}};
+        std::vector<std::byte> roboto(primary_raw.size());
+        std::memcpy(roboto.data(), primary_raw.data(), primary_raw.size());
+        f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(roboto, bytes));
         const auto type = f.linker.ResolveDescriptor("Landroid/widget/TextView;");
         f.Checked(f.vm.EnsureClassInitialized(type));
         REQUIRE(f.context->paint_measure_states.size() == 1);
@@ -80,6 +85,9 @@ TEST_CASE("DVM-293 ROM TextView clinit measures H through instance Paint on both
         const auto cjk = f.model.NewString(u"王");
         CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(cjk)}) ==
               ui::MeasureFixedText(u"王", 24, 3, f.context->ui_tree.FallbackFont().get()).width);
+        const auto copyright = f.model.NewString(u"©");
+        CHECK(measure(a, "(Ljava/lang/String;)F", {VmValue::Ref(copyright)}) ==
+              ui::MeasureFixedText(u"©", 24, 3, f.context->ui_tree.FallbackFont().get()).width);
         const auto retired = f.New("Landroid/graphics/Paint;");
         static_cast<void>(f.vm.CollectGarbage("paint-measure-owners"));
         f.vm.RunFinalization();

@@ -572,7 +572,7 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
 measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
 测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
-固定ASCII字表/基本CJK、1024单位、1..128px、flags位集0x501以外明确失败并记账；
+固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、1024单位、1..128px、flags位集0x501以外明确失败并记账；
 完整 shaping、Paint 绘制与 TextPaint/Layout/Editor 保持 failure。
 真实finalize及GC sweep/teardown 删除实例测量状态。
 
@@ -874,3 +874,8 @@ AnimatorInflater XML；硬件 display list、非主 Looper 动画帧与跨平台
 
 ROM 基线只保留 AOSP 4.4.4 声明；CM 的 Typeface 缓存重建/清理、MediaPlayer suspend/resume
 及 FileUtils 卷 UUID 扩展不提供，不登记额外成功入口；查询/调用遵循缺失成员的明确失败。
+
+DVM-344：会话主树保存注入的 API19 Roboto-Regular → DroidSansFallback 不可变链，
+CreateHostUiTree 从同一来源建立 Dialog HostLayout；投影和模态复制保持资源身份。
+Paint、TextView 构造/setText 与 EditText 实际输入复用 UI 的 RequireTextGlyph 覆盖判定，
+各接缝保留原记账/Java 异常转换；宿主 raster 的缺字也报告码点。

@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
+#include <iomanip>
 #include <stdexcept>
 
 namespace ogplay::runtime::ui {
@@ -106,8 +108,18 @@ using Glyph = std::array<std::uint8_t, 7>;
     case u'|': return {4, 4, 4, 4, 4, 4, 4};
     case u'}': return {8, 4, 4, 2, 4, 4, 8};
     case u'~': return {0, 0, 8, 21, 2, 0, 0};
-    default: throw std::runtime_error("unsupported fixed-font glyph");
+    default: {
+        std::ostringstream error;
+        error << "U+" << std::uppercase << std::hex << std::setfill('0') << std::setw(4)
+              << static_cast<unsigned>(value) << " is absent from 5x7 fixed font";
+        throw std::runtime_error(error.str());
     }
+    }
+}
+
+void RequireTextGlyph(const char16_t unit, const UiFallbackFont* fallback) {
+    if (unit > 127 && fallback) static_cast<void>(fallback->SourceIndex(unit));
+    else static_cast<void>(GlyphRows(unit));
 }
 
 FixedTextMetrics MeasureFixedText(const std::u16string_view text, const float size_px, const std::uint32_t style,
@@ -121,11 +133,7 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text, const float si
     }
     for (const auto unit : text) {
         if (unit == u'\n' || unit == u'\r') continue;
-        if (unit > 127 && fallback)
-            static_cast<void>(
-                fallback->Glyph(unit, std::max(1, static_cast<int>(std::lround(size_px / 8.0F))) * 8 - 1));
-        else
-            static_cast<void>(GlyphRows(unit));
+        RequireTextGlyph(unit, fallback);
     }
     const auto scale = std::max(1, static_cast<std::int32_t>(std::lround(size_px / 8.0F)));
     const auto extra = ((style & 1U) ? 1 : 0) + ((style & 2U) ? 2 : 0);

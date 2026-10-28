@@ -43,6 +43,9 @@ struct FixedTextMetrics final {
     constexpr auto operator<=>(const FixedTextMetrics&) const = default;
 };
 
+// Shared coverage check. Throws with the codepoint and the unsupported requirement.
+void RequireTextGlyph(char16_t unit, const UiFallbackFont* fallback = nullptr);
+
 // Deterministic built-in 5x7 ASCII font, with optional trusted API19 BMP
 // fallback. Unsupported glyphs and invalid sizes fail explicitly.
 [[nodiscard]] FixedTextMetrics MeasureFixedText(std::u16string_view text, float size_px, std::uint32_t style = 0,

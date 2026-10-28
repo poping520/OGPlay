@@ -26,6 +26,8 @@
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/loader/apk.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
+#include "ogplay/runtime/ui/ui_fallback_font.h"
+#include <cstring>
 #include "ogplay/runtime/vfs/vfs.h"
 #include "ogplay/session/dex_activity_lifecycle.h"
 #include "ogplay/video/fake_video_player.h"
@@ -178,5 +180,54 @@ TEST_CASE("LUI18 Window attributes copy API19 values with stable per-window iden
         CHECK(slot(b, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(-1.0F));
         slot(source, "screenBrightness", "F") = {0, SlotTag::cat1};
         CHECK(slot(a, "screenBrightness", "F").bits == std::bit_cast<std::uint32_t>(0.25F));
+    }
+}
+
+TEST_CASE("DVM-344 AlertDialog shares the session API19 font chain on both interpreters") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ClickVm vm(backend);
+        const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+        const auto load = [&](const char* name) {
+            std::ifstream stream(root / "data/android/19/fonts" / name, std::ios::binary);
+            REQUIRE(stream.good());
+            const std::vector<char> raw{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+            std::vector<std::byte> bytes(raw.size());
+            std::memcpy(bytes.data(), raw.data(), raw.size());
+            return bytes;
+        };
+        const auto roboto = load("Roboto-Regular.ttf"), droid = load("DroidSansFallback.ttf");
+        vm.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(roboto, droid));
+        const auto owner = vm.interpreter.NewIntrinsicInstance("LManagedDialogActivity;");
+        const auto listener = vm.interpreter.NewIntrinsicInstance("LDialogObserver;");
+        const auto roots = vm.interpreter.ProtectReferences(std::array{owner, listener});
+        const auto dialog = vm.NewTextDialog(owner, listener);
+        const auto dialog_root = vm.interpreter.ProtectReferences(std::array{dialog});
+        vm.CallOn(dialog, "setMessage", "(Ljava/lang/CharSequence;)V",
+                  {VmValue::Ref(vm.model.NewString(u"© 中"))});
+        vm.CallOn(owner, "supply", "(Landroid/app/Dialog;)V", {VmValue::Ref(dialog)});
+        vm.CallOn(owner, "showDialog", "(I)V", {VmValue::Int(1)});
+        REQUIRE(vm.context->dialog_presentations.size() == 1);
+        const auto tree = vm.context->dialog_presentations.front().host_tree;
+        REQUIRE(tree);
+        CHECK(tree->FallbackFont() == vm.context->ui_tree.FallbackFont());
+        const ui::UiTree copy(*tree);
+        CHECK(copy.FallbackFont() == tree->FallbackFont());
+        bool found = false;
+        std::vector<ui::UiNodeId> pending{tree->Root()};
+        while (!pending.empty()) {
+            const auto id = pending.back();
+            pending.pop_back();
+            const auto& node = *tree->Get(id);
+            pending.insert(pending.end(), node.children.begin(), node.children.end());
+            if (node.text != u"© 中") continue;
+            found = true;
+            CHECK(node.fallback_font == tree->FallbackFont());
+            CHECK(node.measured.width > 0);
+            CHECK(node.measured.height > 0);
+        }
+        CHECK(found);
+        ui::UiOverlayRenderer renderer;
+        CHECK_FALSE(renderer.Render(*tree, {}, {800, 480}).fully_transparent);
+        CHECK(vm.ledger.Unimplemented().empty());
     }
 }

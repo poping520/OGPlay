@@ -1,10 +1,15 @@
-# API19 system fallback font
+# API19 UI font chain
 
-DroidSansFallback.ttf is copied unchanged from AOSP android-4.4.4_r2.0.1,
-platform/frameworks/base/data/fonts/DroidSansFallback.ttf.
+Copied unchanged from AOSP android-4.4.4_r2.0.1,
+platform/frameworks/base/data/fonts/:
 
-SHA-256: 05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d.
-Apache-2.0 notice: ../notices/fonts.txt.
+1. Roboto-Regular.ttf: sans-serif Regular in system_fonts.xml.
+2. DroidSansFallback.ttf: fallback in fallback_fonts.xml.
 
-The UI uses this reviewed font for bounded BMP fallback glyphs; shaping,
-bidi, supplementary-plane characters and arbitrary application fonts are unsupported.
+The ordered, pinned subset selects the first covering glyph. ASCII retains
+OGPlay's 5x7 font and metrics; bold/italic remain synthetic. Only independent
+BMP glyphs are supported; shaping, combining, bidi and supplementary scalars
+fail explicitly. No host or application fonts are read.
+
+Apache-2.0 notice: ../notices/fonts.txt (AOSP data/fonts/NOTICE with a source header).
+Hashes and sizes are recorded in ../manifest.json.

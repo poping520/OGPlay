@@ -54,6 +54,7 @@ BOOT_DEX_NOTICE = "notices/bootdex.jar.txt"
 ICU_DATA = "icu/icudt51l.dat"
 TZDATA = "zoneinfo/tzdata"
 TZDATA_NOTICE = "notices/tzdata.txt"
+UI_PRIMARY_FONT = "fonts/Roboto-Regular.ttf"
 UI_FONT = "fonts/DroidSansFallback.ttf"
 UI_FONT_NOTICE = "notices/fonts.txt"
 ICU_NOTICES = {
@@ -62,7 +63,7 @@ ICU_NOTICES = {
 }
 PAYLOAD_FILES = LIBRARIES | NOTICES | {
     BOOT_DEX, BOOT_DEX_NOTICE, ICU_DATA, "manifest.json",
-    "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
+    "source-manifest.xml", TZDATA, TZDATA_NOTICE, UI_PRIMARY_FONT, UI_FONT, UI_FONT_NOTICE, "fonts/README.md"} | ICU_NOTICES
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -217,6 +218,8 @@ def validate(root: Path) -> None:
     root = root.resolve()
     if _digest(root / UI_FONT) != "05d71b179ef97b82cf1bb91cef290c600a510f77f39b4964359e3ef88378c79d":
         raise PayloadError("API19 fallback font does not match its trusted source")
+    if _digest(root / UI_PRIMARY_FONT) != "f87925e2be4c38abba7920ec54e5634f0538ba6368d758e4da300d9af12c9d27":
+        raise PayloadError("API19 primary font does not match its trusted source")
     actual_files = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*") if path.is_file()
@@ -233,7 +236,15 @@ def validate(root: Path) -> None:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PayloadError(f"manifest.json is invalid: {error}") from error
     font = _mapping(manifest.get("ui_fallback_font"), "ui_fallback_font")
-    for key, relative in (("font", UI_FONT), ("notice", UI_FONT_NOTICE), ("provenance", "fonts/README.md")):
+    fonts = font.get("fonts")
+    if not isinstance(fonts, list) or len(fonts) != 2:
+        raise PayloadError("API19 UI font chain must contain two ordered fonts")
+    for index, relative in enumerate((UI_PRIMARY_FONT, UI_FONT)):
+        entry = _mapping(fonts[index], f"ui_fallback_font.fonts[{index}]")
+        if entry.get("path") != relative:
+            raise PayloadError("API19 UI font chain order differs")
+        _validate_digest(root / relative, entry.get("bytes"), entry.get("sha256"), relative)
+    for key, relative in (("notice", UI_FONT_NOTICE), ("provenance", "fonts/README.md")):
         entry = _mapping(font.get(key), f"ui_fallback_font.{key}")
         if entry.get("path") != relative:
             raise PayloadError("fallback font asset path differs")

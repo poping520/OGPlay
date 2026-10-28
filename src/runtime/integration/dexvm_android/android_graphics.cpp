@@ -845,10 +845,12 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                             CallAndroidMethod(c.vm, ref, "charAt", "(I)C", {dx::VmValue::Int(i)}).AsInt()));
                 } else
                     text = c.vm.Model().StringRegion(ref, start, static_cast<JniSize>(end - start));
-                // No shaping, bidi, combining marks or multi-line layout in this seam.
-                for (const auto unit : text)
-                    if (!((unit >= 0x20 && unit <= 0x7e) || (unit >= 0x4e00 && unit <= 0x9fff)))
-                        UnsupportedPaint(c, "unsupported Paint glyph or shaping");
+                // Paint remains single-line; use the same glyph coverage as TextView.
+                try {
+                    for (const auto unit : text) ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
+                } catch (const std::runtime_error& error) {
+                    UnsupportedPaint(c, error.what());
+                }
                 const auto typeface = dx::IntrinsicCall(c).GetRef(face);
                 const auto style =
                     typeface.IsValid() ? CallAndroidMethod(c.vm, typeface, "getStyle", "()I").AsInt() : 0;

@@ -27,7 +27,8 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
   alias 直接使用 loader 封存的继承主题。receiver 声明独立注入，供当前包
   `getReceiverInfo/queryBroadcastReceivers` 使用，逐过滤器事实不合并。`AndroidAppProcessRequest` 同时把显式 `GuestProcFacts` 原样传给 native process；session
   还接收前端已解包的 curated API 19 Boot DEX，并与应用 DEX 一起交给 bridge；session
-  可接收受审 API19 fallback font bytes，交给 UI 校验并绑定进程 UiTree；不读取宿主字体。
+  可接收受审 API19 Roboto-Regular 与 DroidSansFallback bytes，交给 UI 按固定顺序校验为
+  不可变链并绑定主树；独立宿主树经 context 工厂同源注入，不读取宿主/应用字体。
   不选择 Boot 类、不读取宿主内存，也不从 Profile 隐式覆盖虚拟设备 `/proc` 事实。
   外部 guest slice observer 及其可选宿主线程限定原样传给 native process。呈现帧的 UI
   overlay 在自有 RGBA8 buffer 上合成；经 renderer 认证的全透明 overlay 省略扫描，

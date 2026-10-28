@@ -25,7 +25,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
-| GTA3 | macOS | 本地 IP 枚举 NPE 已消失，仅离线回环 | `unsupported fixed-font glyph`，退出 1；仅 reached-fault，未修下一首错 | [DVM-343](../tasks/dexvm/DVM-343.md)、[DVM-228](../tasks/dexvm/DVM-228.md) |
+| GTA3 | macOS | 原字体异常消失，onResume 与 Surface 回调完成 | 主循环推进但零呈现帧；EULA 截图/Accept 未能验证，未修下一阻塞 | [DVM-344](../tasks/dexvm/DVM-344.md)、[DVM-343](../tasks/dexvm/DVM-343.md) |
 
 ## 未闭合问题
 

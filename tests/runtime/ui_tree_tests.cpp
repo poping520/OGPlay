@@ -6,7 +6,7 @@
 namespace ui = ogplay::runtime::ui;
 
 TEST_CASE("DVM-235 window visibility preserves attachment and guest View visibility") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto window = tree.CreateNode(ui::UiClass::FrameLayout);
     const auto view = tree.CreateNode(ui::UiClass::Button);
     tree.Get(view)->focusable = true;
@@ -30,7 +30,7 @@ TEST_CASE("DVM-235 window visibility preserves attachment and guest View visibil
 }
 
 TEST_CASE("DVM-235 RelativeLayout edge pairs stretch and take precedence over centering") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto parent = tree.CreateNode(ui::UiClass::RelativeLayout);
     tree.Get(parent)->layout.width = {ui::SizeMode::MatchParent, 0};
     tree.Get(parent)->layout.height = {ui::SizeMode::MatchParent, 0};
@@ -56,7 +56,7 @@ TEST_CASE("DVM-235 RelativeLayout edge pairs stretch and take precedence over ce
 }
 
 TEST_CASE("UI tree preserves hierarchy order and attached id lookup") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto parent = tree.CreateNode(ui::UiClass::FrameLayout);
     const auto first = tree.CreateNode(ui::UiClass::View);
     const auto second = tree.CreateNode(ui::UiClass::ImageButton);
@@ -80,7 +80,7 @@ TEST_CASE("UI tree preserves hierarchy order and attached id lookup") {
 }
 
 TEST_CASE("UI tree brings a child to front without detaching it") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto parent = tree.CreateNode(ui::UiClass::FrameLayout);
     const auto first = tree.CreateNode(ui::UiClass::Button);
     const auto second = tree.CreateNode(ui::UiClass::TextView);
@@ -115,7 +115,7 @@ TEST_CASE("UI tree brings a child to front without detaching it") {
 }
 
 TEST_CASE("UI tree updates ids visibility and dirty propagation") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto child = tree.CreateNode(ui::UiClass::TextView);
     tree.Attach(tree.Root(), child);
     tree.ClearLayoutDirty();
@@ -143,7 +143,7 @@ TEST_CASE("UI tree updates ids visibility and dirty propagation") {
 }
 
 TEST_CASE("empty text widget measurement retains one font line") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto edit = tree.CreateNode(ui::UiClass::EditText);
     tree.Get(edit)->layout.width = {ui::SizeMode::WrapContent, 0};
     tree.Get(edit)->layout.height = {ui::SizeMode::WrapContent, 0};
@@ -155,7 +155,7 @@ TEST_CASE("empty text widget measurement retains one font line") {
 }
 
 TEST_CASE("UI tree destroy and generation reset invalidate old nodes") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto old_root = tree.Root();
     const auto parent = tree.CreateNode(ui::UiClass::LinearLayout);
     const auto child = tree.CreateNode(ui::UiClass::ImageView);
@@ -177,7 +177,7 @@ TEST_CASE("UI tree destroy and generation reset invalidate old nodes") {
 }
 
 TEST_CASE("UI tree rejects invalid hierarchy mutations") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto parent = tree.CreateNode(ui::UiClass::FrameLayout);
     const auto child = tree.CreateNode(ui::UiClass::View);
     tree.Attach(tree.Root(), parent);
@@ -191,7 +191,7 @@ TEST_CASE("UI tree rejects invalid hierarchy mutations") {
 }
 
 TEST_CASE("FrameLayout resolves fullscreen bottom center and overlap geometry") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto full = tree.CreateNode(ui::UiClass::VideoView);
     const auto bottom = tree.CreateNode(ui::UiClass::View);
     const auto centered = tree.CreateNode(ui::UiClass::View);
@@ -215,7 +215,7 @@ TEST_CASE("FrameLayout resolves fullscreen bottom center and overlap geometry") 
 }
 
 TEST_CASE("FrameLayout applies parent padding and child margins") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     auto* root = tree.Get(tree.Root());
     root->padding = {5, 6, 7, 8};
     const auto child = tree.CreateNode(ui::UiClass::View);
@@ -232,7 +232,7 @@ TEST_CASE("FrameLayout applies parent padding and child margins") {
 }
 
 TEST_CASE("FrameLayout wrap content uses intrinsic size within parent bounds") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto child = tree.CreateNode(ui::UiClass::ImageView);
     tree.Get(child)->intrinsic = {24, 16};
     tree.Get(child)->padding = {1, 2, 3, 4};
@@ -242,7 +242,7 @@ TEST_CASE("FrameLayout wrap content uses intrinsic size within parent bounds") {
 }
 
 TEST_CASE("horizontal LinearLayout removes GONE and preserves INVISIBLE space") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto row = tree.CreateNode(ui::UiClass::LinearLayout);
     tree.Get(row)->layout.width.mode = ui::SizeMode::MatchParent;
     tree.Get(row)->layout.height.mode = ui::SizeMode::WrapContent;
@@ -271,7 +271,7 @@ TEST_CASE("horizontal LinearLayout removes GONE and preserves INVISIBLE space") 
 }
 
 TEST_CASE("ScrollView measures document height while clipping to viewport") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto scroll = tree.CreateNode(ui::UiClass::ScrollView);
     tree.Get(scroll)->layout.width.mode = ui::SizeMode::MatchParent;
     tree.Get(scroll)->layout.height.mode = ui::SizeMode::MatchParent;
@@ -297,7 +297,7 @@ TEST_CASE("ScrollView measures document height while clipping to viewport") {
 }
 
 TEST_CASE("vertical LinearLayout distributes weight with padding and margins") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto column = tree.CreateNode(ui::UiClass::LinearLayout);
     auto* column_state = tree.Get(column);
     column_state->orientation = ui::Orientation::Vertical;
@@ -327,7 +327,7 @@ TEST_CASE("vertical LinearLayout distributes weight with padding and margins") {
 }
 
 TEST_CASE("horizontal LinearLayout distributes weighted zero-width children") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto row = tree.CreateNode(ui::UiClass::LinearLayout);
     auto* row_state = tree.Get(row);
     row_state->layout.width.mode = ui::SizeMode::MatchParent;
@@ -362,7 +362,7 @@ TEST_CASE("horizontal LinearLayout distributes weighted zero-width children") {
 }
 
 TEST_CASE("RelativeLayout resolves parent center and sibling edge rules") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto relative = tree.CreateNode(ui::UiClass::RelativeLayout);
     tree.Get(relative)->layout.width.mode = ui::SizeMode::MatchParent;
     tree.Get(relative)->layout.height.mode = ui::SizeMode::MatchParent;
@@ -402,7 +402,7 @@ TEST_CASE("RelativeLayout resolves parent center and sibling edge rules") {
 }
 
 TEST_CASE("RelativeLayout resolves dependencies independent of document order") {
-    ui::UiTree tree;
+    ui::UiTree tree{nullptr};
     const auto relative = tree.CreateNode(ui::UiClass::RelativeLayout);
     tree.Get(relative)->layout.width.mode = ui::SizeMode::MatchParent;
     tree.Get(relative)->layout.height.mode = ui::SizeMode::MatchParent;
@@ -426,7 +426,7 @@ TEST_CASE("RelativeLayout resolves dependencies independent of document order") 
 }
 
 TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
-    ui::UiTree missing;
+    ui::UiTree missing{nullptr};
     const auto missing_parent =
         missing.CreateNode(ui::UiClass::RelativeLayout);
     const auto missing_child = missing.CreateNode(ui::UiClass::View);
@@ -436,7 +436,7 @@ TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
     CHECK_THROWS_WITH(ui::LayoutUiTree(missing, {20, 20}),
                       "RelativeLayout rule references a missing sibling id");
 
-    ui::UiTree cycle;
+    ui::UiTree cycle{nullptr};
     const auto cycle_parent = cycle.CreateNode(ui::UiClass::RelativeLayout);
     const auto first = cycle.CreateNode(ui::UiClass::View);
     const auto second = cycle.CreateNode(ui::UiClass::View);
@@ -454,7 +454,7 @@ TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
 
 TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget") {
     using namespace ogplay::runtime::ui;
-    UiTree tree;
+    UiTree tree{nullptr};
     const auto leaf = tree.CreateNode(UiClass::View);
     auto root = leaf;
     for (std::size_t depth = 1; depth < UiTree::kMaxDepth; ++depth) {
@@ -473,7 +473,7 @@ TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget")
 namespace {
 
 struct ProjectionFixture {
-    ui::UiTree tree{ui::UiGeometryOwner::ExternalProjection};
+    ui::UiTree tree{ui::UiGeometryOwner::ExternalProjection, nullptr};
     ui::UiNodeId parent = tree.CreateNode(ui::UiClass::FrameLayout);
     ui::UiNodeId leaf = tree.CreateNode(ui::UiClass::View);
     ui::UiProjectionTarget target{tree.Root(), 7, 11, 13, {100, 100}};
@@ -617,7 +617,7 @@ TEST_CASE("VD-06a projected identity retirement preserves the published epoch") 
     next.nodes.resize(2);
     f.tree.CommitProjection(next);
     CHECK_FALSE(f.tree.PublishedProjection()->FindByAndroidId(77));
-    ui::UiTree legacy;
+    ui::UiTree legacy{nullptr};
     CHECK_THROWS(legacy.RetireProjectedIdentity(legacy.CreateNode(ui::UiClass::View)));
 }
 
@@ -738,7 +738,7 @@ TEST_CASE("VD-02 external owner rejects C++ layout and direct hierarchy mutation
     CHECK_THROWS(f.tree.Detach(f.leaf));
     CHECK_THROWS(static_cast<void>(f.tree.BringChildToFront(f.parent, f.leaf)));
     CHECK_THROWS(f.tree.SetVisibility(f.leaf, ui::Visibility::Gone));
-    ui::UiTree host;
+    ui::UiTree host{nullptr};
     CHECK_NOTHROW(ui::LayoutUiTree(host, {200, 300}));
     CHECK(host.Get(host.Root())->measured == ui::Size{200, 300});
     auto batch = f.Batch();

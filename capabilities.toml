@@ -1705,8 +1705,8 @@ note = "DVM-152/153/164/173：URI、InetAddress、URLConnection/HttpURLConnectio
 
 [dexvm.connectivity_offline]
 status = "partial"
-test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tests/runtime/jni_android_platform_tests.cpp#DVM-241"
-note = "DVM-241/ADR-0120：原版 NetworkInfo 与有界 ConnectivityManager 客户端；默认拓扑为断开的逻辑 WiFi，活动网络 null，与禁用 Wifi 一致；缺 ACCESS_NETWORK_STATE 抛 SecurityException，缺事实或 online 策略记账抛 UOE。IO 仍受 NetworkPolicy 控制；不探测宿主网络，不提供系统服务、广播或无线控制。"
+test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_context_services_tests.cpp#DVM-241; tests/dexvm/android_value_tests.cpp#DVM-98; tests/dexvm/android_wifi_locks_tests.cpp#DVM-209; tests/runtime/jni_android_platform_tests.cpp#DVM-241; tests/dexvm/network_sqlite_tests.cpp#DVM-343"
+note = "DVM-241/343：原版 NetworkInfo 与有界 ConnectivityManager；断开逻辑 WiFi/活动网络 null。相同离线拓扑派生 lo，只读 sysfs/proc 与三项 IPv4 ioctl 同表，ROM NetworkInterface 枚举回环；Posix 仅接口查询描述符，close 幂等。本地查询不受 transport policy 限制。连接状态需 ACCESS_NETWORK_STATE；缺事实/context 在线策略记账 UOE。不探测宿主网络，不提供通用 socket、netlink 或无线控制。"
 
 [dexvm.apache_http_bootdex]
 status = "partial"

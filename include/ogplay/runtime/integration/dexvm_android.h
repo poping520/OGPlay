@@ -78,6 +78,8 @@ using AndroidKeyguardStateProvider = std::function<AndroidKeyguardState()>;
 
 // Explicit bounded guest topology: a disabled logical WiFi network type,
 // independent of host adapters. Online states require a separate capability.
+class GuestNetworkEnvironment;
+
 struct AndroidOfflineConnectivity final {
     bool wifi_type_supported{true};
 };
@@ -522,6 +524,7 @@ struct DexVmAndroidContext final {
     dexvm::NetworkPolicy network_policy;
     dexvm::NetworkTransport* network_transport{};
     std::optional<AndroidOfflineConnectivity> offline_connectivity{AndroidOfflineConnectivity{}};
+    std::shared_ptr<GuestNetworkEnvironment> network_environment;
 
     // SharedPreferences, keyed by prefs file name. Loaded from and written
     // back to /data/data/<pkg>/shared_prefs/<name>.xml through the VFS, so

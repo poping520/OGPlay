@@ -110,7 +110,9 @@
   同一 FD 的流共享 VFS offset，append 交 VFS 原子选择 EOF，借用/拥有关闭语义一致，不保存宿主句柄。
   Posix 文件入口统一解析 descriptor：非负裸 guest fd 惰性接管，负值 EBADF；close 清为 -1，
   dup 经 VFS Duplicate 返回独立 fd 并共享 offset。fcntl 仅 F_GETFL 查询与 F_SETFL 未变状态受检，
-  状态变化及其余选择子记账并以 ENOSYS 失败；不扩展 pipe/socket。
+  状态变化及其余选择子记账并以 ENOSYS 失败；不扩展 pipe。Posix.socket 仅接受
+  AF_INET/AF_INET6、SOCK_DGRAM、protocol 0，产生 IoRuntime 管理的本地接口查询描述符，
+  只支持三项 IPv4 地址 ioctl 与幂等 close；其他操作记账并明确失败。
   FileChannel 当前受检的 size/position/transferTo/close 复用同一状态；transferTo 以有界缓冲
   复制并恢复源 offset，不用虚假 MappedByteBuffer 冒充文件 mmap。
   RandomAccessFile 的路径/模式、基础字节读写、seek/getFilePointer、length/setLength、FD/channel
@@ -140,7 +142,10 @@
   或公开 CA 缺失当成成功。SAX 保留构造/handler 身份，未支持 parse 明确失败。
 - InetAddress/Inet4Address/Inet6Address、地址缓存、InetSocketAddress 与 NetworkInterface 普通
   行为归 API 19 BootDex；IP 字节、hostName、scope 与 endpoint 字段是唯一状态。Posix 仅保留
-  地址解析、受策略 DNS/反向查询及确定性 guest uname 边界；其余原生 OS 调用明确失败。
+  地址解析、受策略 DNS/反向查询、确定性 guest uname 及本地接口查询边界。
+  NetworkInterface 从离线拓扑派生的只读 sysfs/proc 与同表 ioctl 枚举 lo；本地查询不受
+  transport NetworkPolicy 限制，不探测宿主网卡。未知接口 ENODEV，无 IPv4 EADDRNOTAVAIL；
+  其他 ioctl/非查询描述符记账 ENOSYS。netlink/getifaddrs/if_indextoname 仍明确失败。
 - URI、内部 encoder、URISyntaxException 与 UrlUtils 普通行为归 BootDex；构造、create、
   normalize/resolve/relativize、比较和对象流协议使用原版字段与算法。URL 仍使用现有有界
   intrinsic，因此共用的 C++ URL 解析辅助函数继续保留。

@@ -81,6 +81,7 @@ public:
   enum class DescriptorKind : std::uint8_t {
     vfs_path,
     apk_entry,
+    interface_query,
   };
   struct InputState final {
     std::vector<std::byte> bytes;

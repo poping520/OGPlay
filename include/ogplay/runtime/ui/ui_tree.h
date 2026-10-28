@@ -180,6 +180,14 @@ struct CompoundDrawable final {
     constexpr auto operator<=>(const CompoundDrawable&) const = default;
 };
 
+// RGBA color; radius <= 0 disables drawing. Raster blur is capped at 32 px.
+struct TextShadow final {
+    float radius{};
+    float dx{};
+    float dy{};
+    std::uint32_t rgba{};
+};
+
 struct UiNode final {
     UiNodeId id;
     std::optional<UiNodeId> parent;
@@ -216,6 +224,7 @@ struct UiNode final {
     std::u16string text;
     std::shared_ptr<const TextLinePlan> text_line_plan;  // Frozen with Java projection geometry.
     std::uint32_t text_color{0xffffffffU};
+    TextShadow text_shadow;
     float text_size_px{8.0F};
     std::uint32_t text_style{};  // Built-in font: BOLD=1, ITALIC=2.
     std::int32_t max_lines{0x7fffffff};

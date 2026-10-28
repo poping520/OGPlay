@@ -12,24 +12,18 @@ namespace ogplay::runtime::ui {
 namespace {
 
 [[nodiscard]] Rect Intersect(const Rect a, const Rect b) {
-    return {std::max(a.left, b.left), std::max(a.top, b.top),
-            std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
+    return {std::max(a.left, b.left), std::max(a.top, b.top), std::min(a.right, b.right), std::min(a.bottom, b.bottom)};
 }
 
-[[nodiscard]] std::int32_t ScaleRounded(const std::int32_t value,
-                                        const std::int32_t numerator,
+[[nodiscard]] std::int32_t ScaleRounded(const std::int32_t value, const std::int32_t numerator,
                                         const std::int32_t denominator) {
     if (denominator <= 0) throw std::runtime_error("invalid UI bitmap scale");
-    return static_cast<std::int32_t>(
-        (static_cast<std::int64_t>(value) * numerator + denominator / 2) /
-        denominator);
+    return static_cast<std::int32_t>((static_cast<std::int64_t>(value) * numerator + denominator / 2) / denominator);
 }
 
 [[nodiscard]] Rect ImageDestination(const UiNode& node, const Size source) {
-    const Rect content{node.screen_frame.left + node.padding.left,
-                       node.screen_frame.top + node.padding.top,
-                       node.screen_frame.right - node.padding.right,
-                       node.screen_frame.bottom - node.padding.bottom};
+    const Rect content{node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,
+                       node.screen_frame.right - node.padding.right, node.screen_frame.bottom - node.padding.bottom};
     const auto content_width = std::max(0, content.right - content.left);
     const auto content_height = std::max(0, content.bottom - content.top);
     if (content_width == 0 || content_height == 0 || source.width <= 0 || source.height <= 0) {
@@ -68,19 +62,15 @@ namespace {
 }
 
 [[nodiscard]] Rect ContentBox(const UiNode& node) {
-    return {node.screen_frame.left + node.padding.left,
-            node.screen_frame.top + node.padding.top,
-            node.screen_frame.right - node.padding.right,
-            node.screen_frame.bottom - node.padding.bottom};
+    return {node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,
+            node.screen_frame.right - node.padding.right, node.screen_frame.bottom - node.padding.bottom};
 }
 
 [[nodiscard]] bool HasPadding(const Insets& padding) {
-    return padding.left != 0 || padding.top != 0 || padding.right != 0 ||
-           padding.bottom != 0;
+    return padding.left != 0 || padding.top != 0 || padding.right != 0 || padding.bottom != 0;
 }
 
-void AppendNode(const UiTree& tree, const UiNodeId id,
-                const UiBitmapCache& bitmaps, UiRenderList& out,
+void AppendNode(const UiTree& tree, const UiNodeId id, const UiBitmapCache& bitmaps, UiRenderList& out,
                 const bool parent_clips_children, UiRenderPlane plane) {
     const auto& node = *tree.Get(id);
     if (!node.window_visible || node.visibility != Visibility::Visible) return;
@@ -94,27 +84,22 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         out.emplace_back(ClearSurfaceRect{node.screen_frame});
     }
     if (node.background_color.has_value() && !(id == tree.Root() && plane == UiRenderPlane::modal)) {
-        out.emplace_back(DrawSolidRect{node.screen_frame,
-                                       *node.background_color,
-                                       node.alpha * node.background_alpha});
+        out.emplace_back(DrawSolidRect{node.screen_frame, *node.background_color, node.alpha * node.background_alpha});
     }
     if (node.background_resource_id != 0) {
         const auto found = bitmaps.find(node.background_resource_id);
         if (found != bitmaps.end() && found->second != nullptr) {
-            out.emplace_back(DrawBitmap{node.screen_frame, found->second,
-                                        node.alpha * node.background_alpha});
+            out.emplace_back(DrawBitmap{node.screen_frame, found->second, node.alpha * node.background_alpha});
         }
     }
     if (node.image_color) {
-        const Rect content{node.screen_frame.left + node.padding.left,
-                           node.screen_frame.top + node.padding.top,
+        const Rect content{node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,
                            node.screen_frame.right - node.padding.right,
                            node.screen_frame.bottom - node.padding.bottom};
         out.emplace_back(DrawSolidRect{content, *node.image_color, node.alpha * node.image_alpha});
     } else if (node.image_resource_id != 0 || node.image_bitmap) {
         const auto found = bitmaps.find(node.image_resource_id);
-        const auto image = node.image_bitmap ? node.image_bitmap :
-            found != bitmaps.end() ? found->second : nullptr;
+        const auto image = node.image_bitmap ? node.image_bitmap : found != bitmaps.end() ? found->second : nullptr;
         if (image) {
             const auto& bitmap = *image;
             // Java Drawable intrinsic dimensions include target density; backing
@@ -125,75 +110,55 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
             out.emplace_back(DrawBitmap{ImageDestination(node, source), image, node.alpha * node.image_alpha});
         }
     }
-    if (!node.text.empty() ||
-        std::any_of(node.compound_drawables.begin(),
-                    node.compound_drawables.end(),
-                    [](const CompoundDrawable& drawable) {
-                        return drawable.resource_id != 0;
-                    })) {
+    if (!node.text.empty() || std::any_of(node.compound_drawables.begin(), node.compound_drawables.end(),
+                                          [](const CompoundDrawable& drawable) { return drawable.resource_id != 0; })) {
         auto rendered_text = node.text;
-        const auto content = Rect{
-            node.screen_frame.left + node.padding.left,
-            node.screen_frame.top + node.padding.top,
-            node.screen_frame.right - node.padding.right,
-            node.screen_frame.bottom - node.padding.bottom};
+        const auto content =
+            Rect{node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,
+                 node.screen_frame.right - node.padding.right, node.screen_frame.bottom - node.padding.bottom};
         // API19 TextView: compound drawables sit on the content edges; the
         // text is laid out inside the remaining band.
         const auto& compound = node.compound_drawables;
-        const Rect text_content{content.left + compound[0].width,
-                                content.top + compound[1].height,
-                                content.right - compound[2].width,
-                                content.bottom - compound[3].height};
+        const Rect text_content{content.left + compound[0].width, content.top + compound[1].height,
+                                content.right - compound[2].width, content.bottom - compound[3].height};
         if (!node.text_line_plan && node.max_lines > 1 && !rendered_text.empty()) {
-            rendered_text = WrapFixedText(
-                rendered_text, node.text_size_px, node.text_style,
-                text_content.right - text_content.left, node.max_lines, node.fallback_font.get());
+            rendered_text =
+                WrapFixedText(rendered_text, node.text_size_px, node.text_style, text_content.right - text_content.left,
+                              node.max_lines, node.fallback_font.get());
         }
         if (node.text_line_plan) rendered_text = node.text_line_plan->text;
         const auto metrics = node.text_line_plan ? node.text_line_plan->metrics
                                                  : MeasureFixedText(rendered_text, node.text_size_px, node.text_style,
                                                                     node.fallback_font.get());
-        const auto drawable_rect =
-            [&text_content](const std::size_t index, const Rect content_box,
-                        const std::int32_t width, const std::int32_t height) {
-                if (width <= 0 || height <= 0) {
-                    return Rect{content_box.left, content_box.top,
-                                content_box.left, content_box.top};
-                }
-                const auto box_width = text_content.right - text_content.left;
-                const auto box_height = text_content.bottom - text_content.top;
-                switch (index) {
-                    case 0:  // left, vertically centered
-                        return Rect{content_box.left,
-                                    text_content.top + (box_height - height) / 2,
-                                    content_box.left + width,
-                                    text_content.top + (box_height - height) / 2 + height};
-                    case 1:  // top, horizontally centered
-                        return Rect{text_content.left + (box_width - width) / 2,
-                                    content_box.top,
-                                    text_content.left + (box_width - width) / 2 + width,
-                                    content_box.top + height};
-                    case 2:  // right, vertically centered
-                        return Rect{content_box.right - width,
-                                    text_content.top + (box_height - height) / 2,
-                                    content_box.right,
-                                    text_content.top + (box_height - height) / 2 + height};
-                    default:  // bottom, horizontally centered
-                        return Rect{text_content.left + (box_width - width) / 2,
-                                    content_box.bottom - height,
-                                    text_content.left + (box_width - width) / 2 + width,
-                                    content_box.bottom};
-                }
-            };
+        const auto drawable_rect = [&text_content](const std::size_t index, const Rect content_box,
+                                                   const std::int32_t width, const std::int32_t height) {
+            if (width <= 0 || height <= 0) {
+                return Rect{content_box.left, content_box.top, content_box.left, content_box.top};
+            }
+            const auto box_width = text_content.right - text_content.left;
+            const auto box_height = text_content.bottom - text_content.top;
+            switch (index) {
+            case 0:  // left, vertically centered
+                return Rect{content_box.left, text_content.top + (box_height - height) / 2, content_box.left + width,
+                            text_content.top + (box_height - height) / 2 + height};
+            case 1:  // top, horizontally centered
+                return Rect{text_content.left + (box_width - width) / 2, content_box.top,
+                            text_content.left + (box_width - width) / 2 + width, content_box.top + height};
+            case 2:  // right, vertically centered
+                return Rect{content_box.right - width, text_content.top + (box_height - height) / 2, content_box.right,
+                            text_content.top + (box_height - height) / 2 + height};
+            default:  // bottom, horizontally centered
+                return Rect{text_content.left + (box_width - width) / 2, content_box.bottom - height,
+                            text_content.left + (box_width - width) / 2 + width, content_box.bottom};
+            }
+        };
         for (std::size_t index = 0; index < compound.size(); ++index) {
             const auto& drawable = compound[index];
             if (drawable.resource_id == 0) continue;
             const auto found = bitmaps.find(drawable.resource_id);
             if (found == bitmaps.end() || found->second == nullptr) continue;
-            out.emplace_back(DrawBitmap{
-                drawable_rect(index, content, found->second->width,
-                              found->second->height),
-                found->second, node.alpha});
+            out.emplace_back(DrawBitmap{drawable_rect(index, content, found->second->width, found->second->height),
+                                        found->second, node.alpha});
         }
         std::int32_t x = text_content.left;
         std::int32_t y = text_content.top;
@@ -209,7 +174,7 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
         }
         if (!rendered_text.empty()) {
             out.emplace_back(DrawText{x, y, rendered_text, node.text_color, node.text_size_px, node.alpha,
-                                      node.text_style, node.fallback_font, node.text_line_plan});
+                                      node.text_style, node.fallback_font, node.text_line_plan, node.text_shadow});
         }
     }
     // clipToPadding clips descendants to the padding box (AOSP dispatchDraw),
@@ -220,7 +185,8 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
     }
     for (const auto child : node.children) {
         if (id == tree.Root() && plane != UiRenderPlane::all &&
-            tree.Get(child)->modal_layer != (plane == UiRenderPlane::modal)) continue;
+            tree.Get(child)->modal_layer != (plane == UiRenderPlane::modal))
+            continue;
         AppendNode(tree, child, bitmaps, out, node.clip_children, plane);
     }
     if (clip_children_to_padding) {
@@ -232,50 +198,108 @@ void AppendNode(const UiTree& tree, const UiNodeId id,
 }
 
 [[nodiscard]] std::uint8_t AlphaByte(const float alpha) {
-    return static_cast<std::uint8_t>(
-        std::lround(std::clamp(alpha, 0.0F, 1.0F) * 255.0F));
+    return static_cast<std::uint8_t>(std::lround(std::clamp(alpha, 0.0F, 1.0F) * 255.0F));
 }
 
-void Blend(std::uint8_t* destination, const std::uint8_t red,
-           const std::uint8_t green, const std::uint8_t blue,
+void Blend(std::uint8_t* destination, const std::uint8_t red, const std::uint8_t green, const std::uint8_t blue,
            const std::uint8_t source_alpha) {
     const auto inverse = 255U - source_alpha;
-    const auto blend = [source_alpha, inverse](const std::uint8_t source,
-                                                const std::uint8_t target) {
+    const auto blend = [source_alpha, inverse](const std::uint8_t source, const std::uint8_t target) {
         return static_cast<std::uint8_t>(
-            (static_cast<std::uint32_t>(source) * source_alpha +
-             static_cast<std::uint32_t>(target) * inverse + 127U) /
+            (static_cast<std::uint32_t>(source) * source_alpha + static_cast<std::uint32_t>(target) * inverse + 127U) /
             255U);
     };
     destination[0] = blend(red, destination[0]);
     destination[1] = blend(green, destination[1]);
     destination[2] = blend(blue, destination[2]);
-    destination[3] = static_cast<std::uint8_t>(
-        source_alpha +
-        (static_cast<std::uint32_t>(destination[3]) * inverse + 127U) / 255U);
+    destination[3] =
+        static_cast<std::uint8_t>(source_alpha + (static_cast<std::uint32_t>(destination[3]) * inverse + 127U) / 255U);
 }
 
 template <typename Pixel>
-void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip,
-               Pixel&& pixel) {
-    const auto bounds = Intersect(Intersect(rect, clip),
-                                  {0, 0, static_cast<std::int32_t>(frame.width),
-                                   static_cast<std::int32_t>(frame.height)});
+void PaintRect(UiOverlayFrame& frame, const Rect rect, const Rect clip, Pixel&& pixel) {
+    const auto bounds = Intersect(
+        Intersect(rect, clip), {0, 0, static_cast<std::int32_t>(frame.width), static_cast<std::int32_t>(frame.height)});
     for (auto y = bounds.top; y < bounds.bottom; ++y) {
         for (auto x = bounds.left; x < bounds.right; ++x) {
-            const auto offset =
-                (static_cast<std::size_t>(y) * frame.width +
-                 static_cast<std::size_t>(x)) * 4U;
+            const auto offset = (static_cast<std::size_t>(y) * frame.width + static_cast<std::size_t>(x)) * 4U;
             pixel(x, y, frame.rgba8.data() + offset);
             if (frame.rgba8[offset + 3U] != 0) frame.fully_transparent = false;
         }
     }
 }
 
+// Use the ordinary text rasterizer with opaque white to obtain exactly the same
+// styled/fallback/line-plan mask. Expand before clipping so off-clip glyphs cast
+// shadows into the visible region. No Java state or second font path lives here.
+void PaintTextShadow(UiOverlayFrame& frame, const DrawText& text, Rect clip) {
+    const auto& shadow = text.shadow;
+    if (!std::isfinite(shadow.radius) || !std::isfinite(shadow.dx) || !std::isfinite(shadow.dy) ||
+        std::abs(shadow.dx) > 4096 || std::abs(shadow.dy) > 4096)
+        throw std::runtime_error("unsupported text shadow geometry");
+    if (shadow.radius <= 0 || !(shadow.rgba & 0xffU)) return;
+    clip = Intersect(clip, {0, 0, static_cast<int>(frame.width), static_cast<int>(frame.height)});
+    if (clip.left >= clip.right || clip.top >= clip.bottom) return;
+    // SkBlurMask::ConvertRadiusToSigma; normalized Gaussian truncated at 3 sigma.
+    const float sigma = 0.57735F * std::min(shadow.radius, 32.F) + 0.5F;
+    const int support = static_cast<int>(std::ceil(3 * sigma));
+    const int margin = support + 1;  // additional pixel for fractional translation
+    const int width = clip.right - clip.left + 2 * margin;
+    const int height = clip.bottom - clip.top + 2 * margin;
+    const int ox = clip.left - margin - static_cast<int>(std::floor(shadow.dx));
+    const int oy = clip.top - margin - static_cast<int>(std::floor(shadow.dy));
+    auto mask_text = text;
+    mask_text.shadow = {};
+    mask_text.x -= ox;
+    mask_text.y -= oy;
+    mask_text.rgba = 0xffffffffU;
+    mask_text.alpha = 1;
+    const auto mask = RasterizeUiOverlay({mask_text}, {width, height});
+    std::vector<float> kernel(static_cast<std::size_t>(2 * support + 1));
+    float total = 0;
+    for (int k = -support; k <= support; ++k) {
+        const float weight = std::exp(-static_cast<float>(k * k) / (2 * sigma * sigma));
+        kernel[static_cast<std::size_t>(k + support)] = weight;
+        total += weight;
+    }
+    for (auto& weight : kernel)
+        weight /= total;
+    const auto index = [width](int x, int y) {
+        return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+    };
+    std::vector<float> horizontal(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+            for (int k = std::max(-support, -x); k <= std::min(support, width - 1 - x); ++k)
+                horizontal[index(x, y)] +=
+                    mask.rgba8[index(x + k, y) * 4 + 3] * kernel[static_cast<std::size_t>(k + support)];
+    // Only compute the vertical samples the final clip actually consumes.
+    const int output_width = clip.right - clip.left + 1;
+    const int output_height = clip.bottom - clip.top + 1;
+    std::vector<float> blurred(static_cast<std::size_t>(output_width) * static_cast<std::size_t>(output_height));
+    for (int y = 0; y < output_height; ++y)
+        for (int x = 0; x < output_width; ++x)
+            for (int k = -support; k <= support; ++k)
+                blurred[static_cast<std::size_t>(y) * static_cast<std::size_t>(output_width) +
+                        static_cast<std::size_t>(x)] += horizontal[index(x + margin - 1, y + margin - 1 + k)] *
+                                                        kernel[static_cast<std::size_t>(k + support)];
+    const float fx = shadow.dx - std::floor(shadow.dx), fy = shadow.dy - std::floor(shadow.dy);
+    const float alpha = static_cast<float>(shadow.rgba & 0xffU) * AlphaByte(text.alpha) / (255.F * 255.F);
+    PaintRect(frame, clip, clip, [&](int x, int y, auto* dst) {
+        const auto i = static_cast<std::size_t>(y - clip.top) * static_cast<std::size_t>(output_width) +
+                       static_cast<std::size_t>(x - clip.left);
+        const float coverage = (blurred[i] * fx + blurred[i + 1] * (1 - fx)) * fy +
+                               (blurred[i + static_cast<std::size_t>(output_width)] * fx +
+                                blurred[i + static_cast<std::size_t>(output_width) + 1] * (1 - fx)) *
+                                   (1 - fy);
+        Blend(dst, static_cast<std::uint8_t>(shadow.rgba >> 24U), static_cast<std::uint8_t>(shadow.rgba >> 16U),
+              static_cast<std::uint8_t>(shadow.rgba >> 8U), static_cast<std::uint8_t>(std::lround(coverage * alpha)));
+    });
+}
+
 }  // namespace
 
-UiRenderList BuildUiRenderList(const UiTree& tree,
-                               const UiBitmapCache& bitmaps, UiRenderPlane plane) {
+UiRenderList BuildUiRenderList(const UiTree& tree, const UiBitmapCache& bitmaps, UiRenderPlane plane) {
     if (tree.GeometryOwner() == UiGeometryOwner::ExternalProjection && !tree.IsProjectionSnapshot())
         throw std::runtime_error("UI rendering requires a complete projection snapshot");
     UiRenderList commands;
@@ -285,14 +309,14 @@ UiRenderList BuildUiRenderList(const UiTree& tree,
     return commands;
 }
 
-UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
-                                  const UiMetrics metrics) {
+UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands, const UiMetrics metrics) {
     if (metrics.width < 0 || metrics.height < 0) {
         throw std::runtime_error("UI overlay metrics must be non-negative");
     }
     UiOverlayFrame frame{.width = static_cast<std::uint32_t>(metrics.width),
                          .height = static_cast<std::uint32_t>(metrics.height),
-                         .rgba8 = {}, .fully_transparent = true};
+                         .rgba8 = {},
+                         .fully_transparent = true};
     frame.rgba8.resize(static_cast<std::size_t>(frame.width) * frame.height * 4U);
     std::vector<Rect> clips{{0, 0, metrics.width, metrics.height}};
     for (const auto& command : commands) {
@@ -302,82 +326,65 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
             if (clips.size() <= 1) throw std::runtime_error("UI clip stack underflow");
             clips.pop_back();
         } else if (const auto* clear = std::get_if<ClearSurfaceRect>(&command)) {
-            PaintRect(frame, clear->rect, clips.back(), [](auto, auto, auto* dst) {
-                std::fill_n(dst, 4, std::uint8_t{});
-            });
+            PaintRect(frame, clear->rect, clips.back(),
+                      [](auto, auto, auto* dst) { std::fill_n(dst, 4, std::uint8_t{}); });
         } else if (const auto* solid = std::get_if<DrawSolidRect>(&command)) {
             const auto alpha = static_cast<std::uint8_t>(
-                (static_cast<std::uint32_t>(solid->rgba & 0xffU) *
-                 AlphaByte(solid->alpha) + 127U) / 255U);
-            PaintRect(frame, solid->rect, clips.back(), [solid, alpha](auto, auto,
-                                                                       auto* dst) {
-                Blend(dst, static_cast<std::uint8_t>(solid->rgba >> 24U),
-                      static_cast<std::uint8_t>(solid->rgba >> 16U),
+                (static_cast<std::uint32_t>(solid->rgba & 0xffU) * AlphaByte(solid->alpha) + 127U) / 255U);
+            PaintRect(frame, solid->rect, clips.back(), [solid, alpha](auto, auto, auto* dst) {
+                Blend(dst, static_cast<std::uint8_t>(solid->rgba >> 24U), static_cast<std::uint8_t>(solid->rgba >> 16U),
                       static_cast<std::uint8_t>(solid->rgba >> 8U), alpha);
             });
         } else if (const auto* bitmap = std::get_if<DrawBitmap>(&command)) {
-            if (bitmap->bitmap == nullptr || bitmap->bitmap->width <= 0 ||
-                bitmap->bitmap->height <= 0 ||
-                bitmap->bitmap->rgba8.size() !=
-                    static_cast<std::size_t>(bitmap->bitmap->width) *
-                        static_cast<std::size_t>(bitmap->bitmap->height) * 4U) {
+            if (bitmap->bitmap == nullptr || bitmap->bitmap->width <= 0 || bitmap->bitmap->height <= 0 ||
+                bitmap->bitmap->rgba8.size() != static_cast<std::size_t>(bitmap->bitmap->width) *
+                                                    static_cast<std::size_t>(bitmap->bitmap->height) * 4U) {
                 throw std::runtime_error("invalid UI bitmap command");
             }
-            const auto destination_width =
-                bitmap->rect.right - bitmap->rect.left;
-            const auto destination_height =
-                bitmap->rect.bottom - bitmap->rect.top;
+            const auto destination_width = bitmap->rect.right - bitmap->rect.left;
+            const auto destination_height = bitmap->rect.bottom - bitmap->rect.top;
             if (destination_width <= 0 || destination_height <= 0) continue;
             PaintRect(frame, bitmap->rect, clips.back(),
-                      [bitmap, destination_width, destination_height](
-                          const auto x, const auto y, auto* dst) {
-                const auto map_axis = [](const std::int32_t position,
-                                         const std::int32_t destination,
-                                         const std::int32_t source,
-                                         const std::array<std::int32_t, 2> divs) {
-                    if (divs[0] < 0 || divs[1] <= divs[0] ||
-                        divs[1] > source) {
-                        return static_cast<std::int32_t>(
-                            static_cast<std::int64_t>(position) * source /
-                            destination);
-                    }
-                    const auto leading = divs[0];
-                    const auto trailing = source - divs[1];
-                    if (position < leading) return position;
-                    if (position >= destination - trailing) {
-                        return source - (destination - position);
-                    }
-                    const auto stretch_destination = std::max(
-                        1, destination - leading - trailing);
-                    return divs[0] + static_cast<std::int32_t>(
-                        static_cast<std::int64_t>(position - leading) *
-                        (divs[1] - divs[0]) / stretch_destination);
-                };
-                const auto bx = bitmap->bitmap->nine_patch
-                    ? map_axis(x - bitmap->rect.left, destination_width,
-                               bitmap->bitmap->width,
-                               bitmap->bitmap->stretch_x)
-                    : static_cast<std::int32_t>(
-                          static_cast<std::int64_t>(x - bitmap->rect.left) *
-                          bitmap->bitmap->width / destination_width);
-                const auto by = bitmap->bitmap->nine_patch
-                    ? map_axis(y - bitmap->rect.top, destination_height,
-                               bitmap->bitmap->height,
-                               bitmap->bitmap->stretch_y)
-                    : static_cast<std::int32_t>(
-                          static_cast<std::int64_t>(y - bitmap->rect.top) *
-                          bitmap->bitmap->height / destination_height);
-                const auto offset =
-                    (static_cast<std::size_t>(by) *
-                         static_cast<std::size_t>(bitmap->bitmap->width) +
-                     static_cast<std::size_t>(bx)) * 4U;
-                const auto* src = bitmap->bitmap->rgba8.data() + offset;
-                const auto alpha = static_cast<std::uint8_t>(
-                    (static_cast<std::uint32_t>(src[3]) *
-                     AlphaByte(bitmap->alpha) + 127U) / 255U);
-                Blend(dst, src[0], src[1], src[2], alpha);
-            });
+                      [bitmap, destination_width, destination_height](const auto x, const auto y, auto* dst) {
+                          const auto map_axis = [](const std::int32_t position, const std::int32_t destination,
+                                                   const std::int32_t source, const std::array<std::int32_t, 2> divs) {
+                              if (divs[0] < 0 || divs[1] <= divs[0] || divs[1] > source) {
+                                  return static_cast<std::int32_t>(static_cast<std::int64_t>(position) * source /
+                                                                   destination);
+                              }
+                              const auto leading = divs[0];
+                              const auto trailing = source - divs[1];
+                              if (position < leading) return position;
+                              if (position >= destination - trailing) {
+                                  return source - (destination - position);
+                              }
+                              const auto stretch_destination = std::max(1, destination - leading - trailing);
+                              return divs[0] + static_cast<std::int32_t>(static_cast<std::int64_t>(position - leading) *
+                                                                         (divs[1] - divs[0]) / stretch_destination);
+                          };
+                          const auto bx =
+                              bitmap->bitmap->nine_patch
+                                  ? map_axis(x - bitmap->rect.left, destination_width, bitmap->bitmap->width,
+                                             bitmap->bitmap->stretch_x)
+                                  : static_cast<std::int32_t>(static_cast<std::int64_t>(x - bitmap->rect.left) *
+                                                              bitmap->bitmap->width / destination_width);
+                          const auto by =
+                              bitmap->bitmap->nine_patch
+                                  ? map_axis(y - bitmap->rect.top, destination_height, bitmap->bitmap->height,
+                                             bitmap->bitmap->stretch_y)
+                                  : static_cast<std::int32_t>(static_cast<std::int64_t>(y - bitmap->rect.top) *
+                                                              bitmap->bitmap->height / destination_height);
+                          const auto offset =
+                              (static_cast<std::size_t>(by) * static_cast<std::size_t>(bitmap->bitmap->width) +
+                               static_cast<std::size_t>(bx)) *
+                              4U;
+                          const auto* src = bitmap->bitmap->rgba8.data() + offset;
+                          const auto alpha = static_cast<std::uint8_t>(
+                              (static_cast<std::uint32_t>(src[3]) * AlphaByte(bitmap->alpha) + 127U) / 255U);
+                          Blend(dst, src[0], src[1], src[2], alpha);
+                      });
         } else if (const auto* text = std::get_if<DrawText>(&command)) {
+            PaintTextShadow(frame, *text, clips.back());
             const auto& value = text->line_plan ? text->line_plan->text : text->text;
             const auto style = text->line_plan ? text->line_plan->style : text->style;
             const auto& fallback = text->line_plan ? text->line_plan->fallback_font : text->fallback_font;
@@ -386,10 +393,7 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
             const int bold = (style & 1U) ? 1 : 0;
             const int italic = (style & 2U) ? 2 : 0;
             const auto alpha = static_cast<std::uint8_t>(
-                (static_cast<std::uint32_t>(text->rgba & 0xffU) *
-                     AlphaByte(text->alpha) +
-                 127U) /
-                255U);
+                (static_cast<std::uint32_t>(text->rgba & 0xffU) * AlphaByte(text->alpha) + 127U) / 255U);
             std::int32_t column_index = 0;
             std::int32_t line_index = 0;
             for (std::size_t index = 0; index < value.size(); ++index) {
@@ -407,16 +411,20 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                     for (std::int32_t row = 0; row < glyph->height; ++row) {
                         const auto skew = italic ? std::max(0, (glyph->height - row) / 3) : 0;
                         for (std::int32_t col = 0; col < glyph->width; ++col) {
-                            const auto coverage = glyph->alpha[static_cast<std::size_t>(row) * static_cast<std::size_t>(glyph->width) +
-                                                               static_cast<std::size_t>(col)];
+                            const auto coverage =
+                                glyph->alpha[static_cast<std::size_t>(row) * static_cast<std::size_t>(glyph->width) +
+                                             static_cast<std::size_t>(col)];
                             if (!coverage) continue;
                             const auto x = origin_x + glyph->x + col + skew;
                             const auto y = text->y + line_index * 8 * text_metrics.scale + glyph->y + row;
-                            const auto a = static_cast<std::uint8_t>((static_cast<unsigned>(alpha) * coverage + 127U) / 255U);
+                            const auto a =
+                                static_cast<std::uint8_t>((static_cast<unsigned>(alpha) * coverage + 127U) / 255U);
                             PaintRect(frame, Rect{x, y, x + 1 + bold, y + 1}, clips.back(),
-                                [text, a](auto, auto, auto* dst) { Blend(dst,
-                                    static_cast<std::uint8_t>(text->rgba >> 24U), static_cast<std::uint8_t>(text->rgba >> 16U),
-                                    static_cast<std::uint8_t>(text->rgba >> 8U), a); });
+                                      [text, a](auto, auto, auto* dst) {
+                                          Blend(dst, static_cast<std::uint8_t>(text->rgba >> 24U),
+                                                static_cast<std::uint8_t>(text->rgba >> 16U),
+                                                static_cast<std::uint8_t>(text->rgba >> 8U), a);
+                                      });
                         }
                     }
                     continue;
@@ -427,27 +435,19 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
                     const auto row_bits = static_cast<unsigned>(glyph[static_cast<std::size_t>(row)]);
                     const auto styled_bits = bold ? (row_bits << 1U) | row_bits : row_bits;
                     for (std::int32_t column = 0; column < 5 + bold; ++column) {
-                        if ((styled_bits &
-                             (1U << static_cast<unsigned>(4 + bold - column))) == 0) {
+                        if ((styled_bits & (1U << static_cast<unsigned>(4 + bold - column))) == 0) {
                             continue;
                         }
                         const auto skew = italic ? (6 - row) / 3 : 0;
-                        const Rect pixel{
-                            origin_x + (column + skew) * text_metrics.scale,
-                            text->y + (line_index * 8 + row) * text_metrics.scale,
-                            origin_x + (column + skew + 1) * text_metrics.scale,
-                            text->y + (line_index * 8 + row + 1) * text_metrics.scale};
-                        PaintRect(frame, pixel, clips.back(),
-                                  [text, alpha](auto, auto, auto* dst) {
-                                      Blend(dst,
-                                            static_cast<std::uint8_t>(
-                                                text->rgba >> 24U),
-                                            static_cast<std::uint8_t>(
-                                                text->rgba >> 16U),
-                                            static_cast<std::uint8_t>(
-                                                text->rgba >> 8U),
-                                            alpha);
-                                  });
+                        const Rect pixel{origin_x + (column + skew) * text_metrics.scale,
+                                         text->y + (line_index * 8 + row) * text_metrics.scale,
+                                         origin_x + (column + skew + 1) * text_metrics.scale,
+                                         text->y + (line_index * 8 + row + 1) * text_metrics.scale};
+                        PaintRect(frame, pixel, clips.back(), [text, alpha](auto, auto, auto* dst) {
+                            Blend(dst, static_cast<std::uint8_t>(text->rgba >> 24U),
+                                  static_cast<std::uint8_t>(text->rgba >> 16U),
+                                  static_cast<std::uint8_t>(text->rgba >> 8U), alpha);
+                        });
                     }
                 }
             }
@@ -457,19 +457,19 @@ UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands,
     // Clear commands may erase earlier opaque pixels. Certify the final result.
     frame.fully_transparent = true;
     for (std::size_t offset = 3; offset < frame.rgba8.size(); offset += 4) {
-        if (frame.rgba8[offset] != 0) { frame.fully_transparent = false; break; }
+        if (frame.rgba8[offset] != 0) {
+            frame.fully_transparent = false;
+            break;
+        }
     }
     return frame;
 }
 
-const UiOverlayFrame& UiOverlayRenderer::Render(UiTree& tree,
-                                                const UiBitmapCache& bitmaps,
-                                                const UiMetrics metrics,
+const UiOverlayFrame& UiOverlayRenderer::Render(UiTree& tree, const UiBitmapCache& bitmaps, const UiMetrics metrics,
                                                 UiRenderPlane plane, bool force_rebuild) {
     const auto* root = tree.Get(tree.Root());
     const bool rebuild = force_rebuild || plane_ != plane || generation_ != tree.Generation() ||
-                         metrics_.width != metrics.width ||
-                         metrics_.height != metrics.height || root->draw_dirty;
+                         metrics_.width != metrics.width || metrics_.height != metrics.height || root->draw_dirty;
     if (rebuild) {
         cached_ = RasterizeUiOverlay(BuildUiRenderList(tree, bitmaps, plane), metrics);
         generation_ = tree.Generation();

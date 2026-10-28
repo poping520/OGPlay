@@ -9,7 +9,7 @@
       "rom_input_sha256": "23af4dcc308b124134c16da18edba3720e8d2910b75e63d4e03b20275e255bae",
       "smali_sha256": "827951740041f704891720b39197691e69a508c36525e0602d2fa85ec8d6f606",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "fab9084e4942002848b6bba6e576d501c59405c80c77ca1745e3f7d2d3e3645b",
+      "surface_sha256": "9c3988eaa3533c285c8982f4a32a03a13963f4eff378372df723158b13a6e2a5",
       "methods": [
         {
           "signature": "<clinit>()V",

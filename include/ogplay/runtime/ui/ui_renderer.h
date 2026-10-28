@@ -22,8 +22,7 @@ struct UiBitmap final {
     bool nine_patch{};
 };
 
-using UiBitmapCache =
-    std::unordered_map<std::uint32_t, std::shared_ptr<const UiBitmap>>;
+using UiBitmapCache = std::unordered_map<std::uint32_t, std::shared_ptr<const UiBitmap>>;
 
 struct DrawSolidRect final {
     Rect rect;
@@ -48,13 +47,20 @@ struct DrawText final {
     std::shared_ptr<const UiFallbackFont> fallback_font;
     // When present, all text/font/metrics come from this immutable plan.
     std::shared_ptr<const TextLinePlan> line_plan{};
+    TextShadow shadow{};
 };
 
-struct PushClip final { Rect rect; };
+struct PushClip final {
+    Rect rect;
+};
+
 struct PopClip final {};
-struct ClearSurfaceRect final { Rect rect; };
-using UiDrawCommand =
-    std::variant<DrawSolidRect, DrawBitmap, DrawText, PushClip, PopClip, ClearSurfaceRect>;
+
+struct ClearSurfaceRect final {
+    Rect rect;
+};
+
+using UiDrawCommand = std::variant<DrawSolidRect, DrawBitmap, DrawText, PushClip, PopClip, ClearSurfaceRect>;
 using UiRenderList = std::vector<UiDrawCommand>;
 
 struct UiOverlayFrame final {
@@ -67,18 +73,15 @@ struct UiOverlayFrame final {
 };
 
 enum class UiRenderPlane : std::uint8_t { all, normal, modal };
-[[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree,
-    const UiBitmapCache& bitmaps, UiRenderPlane plane = UiRenderPlane::all);
-[[nodiscard]] UiOverlayFrame RasterizeUiOverlay(
-    const UiRenderList& commands, UiMetrics metrics);
+[[nodiscard]] UiRenderList BuildUiRenderList(const UiTree& tree, const UiBitmapCache& bitmaps,
+                                             UiRenderPlane plane = UiRenderPlane::all);
+[[nodiscard]] UiOverlayFrame RasterizeUiOverlay(const UiRenderList& commands, UiMetrics metrics);
 
 class UiOverlayRenderer final {
 public:
-    [[nodiscard]] const UiOverlayFrame& Render(UiTree& tree,
-                                               const UiBitmapCache& bitmaps,
-                                               UiMetrics metrics,
-                                               UiRenderPlane plane = UiRenderPlane::all,
-                                               bool force_rebuild = false);
+    [[nodiscard]] const UiOverlayFrame& Render(UiTree& tree, const UiBitmapCache& bitmaps, UiMetrics metrics,
+                                               UiRenderPlane plane = UiRenderPlane::all, bool force_rebuild = false);
+
     [[nodiscard]] std::uint64_t BuildCount() const { return build_count_; }
 
 private:

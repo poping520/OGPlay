@@ -106,7 +106,7 @@ shaping/bidi 与补充平面明确失败，不读取宿主字体或任意应用�
   输出 `fully_transparent` 只在所有实际绘制后的 alpha 均为零时为 true，并随缓存重建；
   其他 producer 创建的帧默认 false，消费者不得从命令数量猜测透明性。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
-  内置 5x7 ASCII 大小写字形同时提供确定性 measure/raster，共用固定字体算法；空文本
+  内置 5x7 完整可打印 ASCII（0x20–0x7E）同时提供确定性 measure/raster，共用固定字体算法；空文本
   控件仍保留一行字体高度。wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
   resolved intrinsic 存于 UiNode（left/top/right/bottom）；measure 的内容宽为
@@ -184,3 +184,9 @@ epoch、原子替换快照，保留构建属性、target 与待布局工作；�
 冻结到 UiNode；本层只按绘制命令消费，不执行 Java 或重新测量。RasterizeUiOverlay 输出
 预乘 RGBA；调用方合成时须选择预乘 source-over，不能再次乘像素 alpha。当前按每个
 绘制相乘，没有离屏子树层，存在重叠子树的组不透明度差异。
+
+TextView 阴影由 UiNode 的 TextShadow 唯一保存，DrawText 携带同 epoch 值；同一 styled/fallback/
+line-plan 字形生成掩码，先画偏移阴影再画正文，不参与测量，最终沿现有 clip 裁剪。
+radius <= 0 不绘制；实际 radius 钳制到 32 px，采用 sigma=0.57735*radius+0.5 的归一化
+可分离高斯核（截断 3 sigma），分数偏移双线性采样。有限原始参数保留供 getter；非有限值
+或偏移绝对值超过 4096 px 明确失败。此服务不承诺 Skia 像素一致性。

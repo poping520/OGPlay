@@ -33,25 +33,25 @@ TEST_CASE("DVM-248 Surface hole follows paint order clipping and final transpare
     ui::LayoutUiTree(tree, {12, 8});
     ui::UiOverlayRenderer renderer;
     auto frame = renderer.Render(tree, {}, {12, 8});
-    CHECK(frame.rgba8[3] == 255); // black outside Surface
-    CHECK(frame.rgba8[2 * 4 + 3] == 0); // video hole
-    CHECK(frame.rgba8[4 * 4] == 255); // later label survives
+    CHECK(frame.rgba8[3] == 255);        // black outside Surface
+    CHECK(frame.rgba8[2 * 4 + 3] == 0);  // video hole
+    CHECK(frame.rgba8[4 * 4] == 255);    // later label survives
     CHECK(frame.rgba8[4 * 4 + 3] == 255);
     tree.Get(surface)->surface_layer = ui::SurfaceLayer::on_top;
     tree.MarkDrawDirty(surface);
     frame = renderer.Render(tree, {}, {12, 8});
-    CHECK(frame.rgba8[2 * 4 + 3] == 255); // no window hole for onTop
+    CHECK(frame.rgba8[2 * 4 + 3] == 255);  // no window hole for onTop
     tree.Get(surface)->surface_layer = ui::SurfaceLayer::media_overlay;
     tree.MarkDrawDirty(surface);
     tree.Get(tree.Root())->padding.left = 3;
     frame = renderer.Render(tree, {}, {12, 8});
-    CHECK(frame.rgba8[2 * 4 + 3] == 255); // ancestor clipping
+    CHECK(frame.rgba8[2 * 4 + 3] == 255);  // ancestor clipping
     CHECK(frame.rgba8[3 * 4 + 3] == 0);
     tree.SetVisibility(surface, ui::Visibility::Invisible);
     frame = renderer.Render(tree, {}, {12, 8});
     CHECK(frame.rgba8[3 * 4 + 3] == 255);
-    const auto cleared = ui::RasterizeUiOverlay({ui::DrawSolidRect{{0, 0, 8, 8}, 0xff0000ffU},
-        ui::ClearSurfaceRect{{0, 0, 8, 8}}}, {8, 8});
+    const auto cleared = ui::RasterizeUiOverlay(
+        {ui::DrawSolidRect{{0, 0, 8, 8}, 0xff0000ffU}, ui::ClearSurfaceRect{{0, 0, 8, 8}}}, {8, 8});
     CHECK(cleared.fully_transparent);
     CHECK(std::all_of(cleared.rgba8.begin(), cleared.rgba8.end(), [](auto byte) { return byte == 0; }));
 }
@@ -79,12 +79,16 @@ TEST_CASE("DVM-246 modal render plane separates Surface ordering and shares dirt
     ui::UiOverlayRenderer first, last;
     const bool dirty = tree.Get(tree.Root())->draw_dirty;
     const auto& before_surface = first.Render(tree, {}, {100, 100}, ui::UiRenderPlane::normal);
-    CHECK(before_surface.rgba8[0] == 255); CHECK(before_surface.rgba8[3] == 255);
+    CHECK(before_surface.rgba8[0] == 255);
+    CHECK(before_surface.rgba8[3] == 255);
     const auto& after_surface = last.Render(tree, {}, {100, 100}, ui::UiRenderPlane::modal, dirty);
-    CHECK(after_surface.rgba8[0] == 0); CHECK(after_surface.rgba8[3] == 136);
+    CHECK(after_surface.rgba8[0] == 0);
+    CHECK(after_surface.rgba8[3] == 136);
     const auto center = (50U * 100U + 50U) * 4U;
-    CHECK(after_surface.rgba8[center] == 255); CHECK(after_surface.rgba8[center + 3] == 255);
-    tree.Get(panel)->background_color = 0x00ff00ffU; tree.MarkDrawDirty(panel);
+    CHECK(after_surface.rgba8[center] == 255);
+    CHECK(after_surface.rgba8[center + 3] == 255);
+    tree.Get(panel)->background_color = 0x00ff00ffU;
+    tree.MarkDrawDirty(panel);
     const bool changed = tree.Get(tree.Root())->draw_dirty;
     static_cast<void>(first.Render(tree, {}, {100, 100}, ui::UiRenderPlane::normal));
     CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
@@ -124,8 +128,7 @@ TEST_CASE("DVM-235 trusted API19 fallback font renders distinct CJK glyphs") {
 
 namespace {
 
-[[nodiscard]] std::vector<std::uint8_t> Pixel(const ui::UiOverlayFrame& frame,
-                                              const std::uint32_t x,
+[[nodiscard]] std::vector<std::uint8_t> Pixel(const ui::UiOverlayFrame& frame, const std::uint32_t x,
                                               const std::uint32_t y) {
     const auto offset = (static_cast<std::size_t>(y) * frame.width + x) * 4U;
     return {frame.rgba8.begin() + static_cast<std::ptrdiff_t>(offset),
@@ -182,15 +185,13 @@ TEST_CASE("GONE layout mutation rebuilds cache and removes child pixels") {
     ui::LayoutUiTree(tree, {1, 1});
     ui::UiOverlayRenderer renderer;
     const ui::UiBitmapCache bitmaps;
-    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 ==
-          std::vector<std::uint8_t>{255, 255, 255, 255});
+    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 == std::vector<std::uint8_t>{255, 255, 255, 255});
     CHECK(renderer.BuildCount() == 1);
 
     tree.SetVisibility(child, ui::Visibility::Gone);
     ui::LayoutUiTree(tree, {1, 1});
     CHECK(tree.Get(tree.Root())->draw_dirty);
-    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 ==
-          std::vector<std::uint8_t>(4, 0));
+    CHECK(renderer.Render(tree, bitmaps, {1, 1}).rgba8 == std::vector<std::uint8_t>(4, 0));
     CHECK(renderer.BuildCount() == 2);
 }
 
@@ -212,17 +213,12 @@ TEST_CASE("UI overlay draws bitmap clips and document-order alpha") {
     auto bitmap = std::make_shared<ui::UiBitmap>();
     bitmap->width = 2;
     bitmap->height = 2;
-    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255,
-                     255, 255, 255, 255, 0, 0, 0, 255};
+    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255};
     const ui::UiBitmapCache bitmaps{{7, bitmap}};
-    const auto frame =
-        ui::RasterizeUiOverlay(ui::BuildUiRenderList(tree, bitmaps), {2, 2});
-    CHECK(Pixel(frame, 0, 0) ==
-          std::vector<std::uint8_t>{127, 0, 128, 255});
-    CHECK(Pixel(frame, 1, 0) ==
-          std::vector<std::uint8_t>{0, 255, 0, 255});
-    CHECK(Pixel(frame, 1, 1) ==
-          std::vector<std::uint8_t>{0, 0, 0, 255});
+    const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(tree, bitmaps), {2, 2});
+    CHECK(Pixel(frame, 0, 0) == std::vector<std::uint8_t>{127, 0, 128, 255});
+    CHECK(Pixel(frame, 1, 0) == std::vector<std::uint8_t>{0, 255, 0, 255});
+    CHECK(Pixel(frame, 1, 1) == std::vector<std::uint8_t>{0, 0, 0, 255});
 }
 
 TEST_CASE("UI overlay omits INVISIBLE and GONE nodes") {
@@ -238,16 +234,13 @@ TEST_CASE("UI overlay omits INVISIBLE and GONE nodes") {
     tree.SetVisibility(invisible, ui::Visibility::Invisible);
     tree.SetVisibility(gone, ui::Visibility::Gone);
     ui::LayoutUiTree(tree, {1, 1});
-    const auto frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(tree, {}), {1, 1});
+    const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(tree, {}), {1, 1});
     CHECK(frame.rgba8 == std::vector<std::uint8_t>(4, 0));
 }
 
 TEST_CASE("fixed UI font drives wrap-content measurement") {
-    CHECK(ui::MeasureFixedText(u"Hi", 8.0F) ==
-          ui::FixedTextMetrics{11, 7, 1});
-    CHECK(ui::MeasureFixedText(u"Hi", 16.0F) ==
-          ui::FixedTextMetrics{22, 14, 2});
+    CHECK(ui::MeasureFixedText(u"Hi", 8.0F) == ui::FixedTextMetrics{11, 7, 1});
+    CHECK(ui::MeasureFixedText(u"Hi", 16.0F) == ui::FixedTextMetrics{22, 14, 2});
     ui::UiTree tree;
     const auto text = tree.CreateNode(ui::UiClass::TextView);
     tree.Get(text)->text = u"HI";
@@ -261,12 +254,9 @@ TEST_CASE("fixed UI font drives wrap-content measurement") {
     ui::LayoutUiTree(tree, {30, 20});
     CHECK(tree.Get(text)->measured == ui::Size{7, 9});
 
-    CHECK(ui::MeasureFixedText(u"two\nlines", 8.0F) ==
-          ui::FixedTextMetrics{29, 15, 1});
-    CHECK(ui::WrapFixedText(u"one two", 8.0F, 0, 23, 4) ==
-          u"one\ntwo");
-    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F),
-                      "unsupported fixed-font glyph");
+    CHECK(ui::MeasureFixedText(u"two\nlines", 8.0F) == ui::FixedTextMetrics{29, 15, 1});
+    CHECK(ui::WrapFixedText(u"one two", 8.0F, 0, 23, 4) == u"one\ntwo");
+    CHECK_THROWS_WITH((void)ui::MeasureFixedText(u"中", 8.0F), "unsupported fixed-font glyph");
 }
 
 TEST_CASE("fixed UI font raster matches the exact HI golden") {
@@ -280,12 +270,10 @@ TEST_CASE("fixed UI font raster matches the exact HI golden") {
     tree.Get(text)->text_color = 0xff0000ffU;
     tree.Attach(tree.Root(), text);
     ui::LayoutUiTree(tree, {11, 7});
-    const auto frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(tree, {}), {11, 7});
+    const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(tree, {}), {11, 7});
 
-    constexpr std::array<std::string_view, 7> golden{
-        "10001001110", "10001000100", "10001000100", "11111000100",
-        "10001000100", "10001000100", "10001001110"};
+    constexpr std::array<std::string_view, 7> golden{"10001001110", "10001000100", "10001000100", "11111000100",
+                                                     "10001000100", "10001000100", "10001001110"};
     std::vector<std::uint8_t> expected(11U * 7U * 4U, 0U);
     for (std::size_t y = 0; y < golden.size(); ++y) {
         for (std::size_t x = 0; x < golden[y].size(); ++x) {
@@ -305,14 +293,10 @@ TEST_CASE("Button owns deterministic background padding and text content") {
     tree.Attach(tree.Root(), button);
     ui::LayoutUiTree(tree, {40, 20});
     CHECK(tree.Get(button)->measured == ui::Size{23, 15});
-    const auto frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(tree, {}), {40, 20});
-    CHECK(Pixel(frame, 0, 0) ==
-          std::vector<std::uint8_t>{64, 64, 64, 255});
-    CHECK(Pixel(frame, 6, 4) ==
-          std::vector<std::uint8_t>{64, 64, 64, 255});
-    CHECK(Pixel(frame, 7, 4) ==
-          std::vector<std::uint8_t>{255, 255, 255, 255});
+    const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(tree, {}), {40, 20});
+    CHECK(Pixel(frame, 0, 0) == std::vector<std::uint8_t>{64, 64, 64, 255});
+    CHECK(Pixel(frame, 6, 4) == std::vector<std::uint8_t>{64, 64, 64, 255});
+    CHECK(Pixel(frame, 7, 4) == std::vector<std::uint8_t>{255, 255, 255, 255});
 }
 
 TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
@@ -339,13 +323,10 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
         throw std::runtime_error("missing bitmap command");
     };
     CHECK(destination(ui::ImageScaleType::Center) == ui::Rect{1, 2, 3, 3});
-    CHECK(destination(ui::ImageScaleType::CenterInside) ==
-          ui::Rect{1, 2, 3, 3});
-    CHECK(destination(ui::ImageScaleType::FitCenter) ==
-          ui::Rect{0, 1, 4, 3});
+    CHECK(destination(ui::ImageScaleType::CenterInside) == ui::Rect{1, 2, 3, 3});
+    CHECK(destination(ui::ImageScaleType::FitCenter) == ui::Rect{0, 1, 4, 3});
     CHECK(destination(ui::ImageScaleType::FitXy) == ui::Rect{0, 0, 4, 4});
-    CHECK(destination(ui::ImageScaleType::CenterCrop) ==
-          ui::Rect{-1, 0, 7, 4});
+    CHECK(destination(ui::ImageScaleType::CenterCrop) == ui::Rect{-1, 0, 7, 4});
 
     ui::UiTree crop_tree;
     const auto crop = crop_tree.CreateNode(ui::UiClass::ImageView);
@@ -355,17 +336,12 @@ TEST_CASE("ImageView scale types produce exact destinations and crop golden") {
     crop_tree.Get(crop)->image_scale_type = ui::ImageScaleType::CenterCrop;
     crop_tree.Attach(crop_tree.Root(), crop);
     ui::LayoutUiTree(crop_tree, {4, 4});
-    const auto frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(crop_tree, bitmaps), {4, 4});
+    const auto frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(crop_tree, bitmaps), {4, 4});
     for (std::uint32_t y = 0; y < 4; ++y) {
-        CHECK(Pixel(frame, 0, y) ==
-              std::vector<std::uint8_t>{255, 0, 0, 255});
-        CHECK(Pixel(frame, 1, y) ==
-              std::vector<std::uint8_t>{255, 0, 0, 255});
-        CHECK(Pixel(frame, 2, y) ==
-              std::vector<std::uint8_t>{255, 0, 0, 255});
-        CHECK(Pixel(frame, 3, y) ==
-              std::vector<std::uint8_t>{0, 255, 0, 255});
+        CHECK(Pixel(frame, 0, y) == std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 1, y) == std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 2, y) == std::vector<std::uint8_t>{255, 0, 0, 255});
+        CHECK(Pixel(frame, 3, y) == std::vector<std::uint8_t>{0, 255, 0, 255});
     }
 }
 
@@ -382,8 +358,7 @@ TEST_CASE("compound drawables rasterize and inset the text band") {
     CHECK(tree.Get(button)->measured.width == 25);
 
     auto red = std::make_shared<const ui::UiBitmap>(
-        ui::UiBitmap{2, 2, {255, 0, 0, 255, 255, 0, 0, 255,
-                            255, 0, 0, 255, 255, 0, 0, 255}});
+        ui::UiBitmap{2, 2, {255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255}});
     const ui::UiBitmapCache bitmaps{{7, red}};
     ui::UiOverlayRenderer renderer;
     const auto& frame = renderer.Render(tree, bitmaps, {30, 20});
@@ -404,8 +379,7 @@ TEST_CASE("UI overlay preserves nine-patch fixed edges while stretching center")
     auto bitmap = std::make_shared<ui::UiBitmap>();
     bitmap->width = 3;
     bitmap->height = 1;
-    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255,
-                     0, 0, 255, 255};
+    bitmap->rgba8 = {255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255};
     bitmap->nine_patch = true;
     bitmap->stretch_x = {1, 2};
     bitmap->stretch_y = {0, 1};
@@ -422,12 +396,11 @@ TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
     const auto view = tree.CreateNode(ui::UiClass::TextView);
     auto* node = tree.Get(view);
     node->text = u"A";
-    node->compound_drawables = {{{1, 3, 19}, {2, 23, 2},
-                                 {3, 5, 11}, {4, 17, 4}}};
+    node->compound_drawables = {{{1, 3, 19}, {2, 23, 2}, {3, 5, 11}, {4, 17, 4}}};
     tree.Attach(tree.Root(), view);
     ui::LayoutUiTree(tree, {100, 100});
-    CHECK(node->measured.width == 31);  // max(text, top, bottom) + left + right
-    CHECK(node->measured.height == 25); // max(text, left, right) + top + bottom
+    CHECK(node->measured.width == 31);   // max(text, top, bottom) + left + right
+    CHECK(node->measured.height == 25);  // max(text, left, right) + top + bottom
     node->text.clear();
     tree.MarkLayoutDirty(view);
     ui::LayoutUiTree(tree, {100, 100});
@@ -436,12 +409,14 @@ TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
 
     ui::UiBitmapCache bitmaps;
     for (const auto& drawable : node->compound_drawables) {
-        bitmaps.emplace(drawable.resource_id, std::make_shared<const ui::UiBitmap>(
-            ui::UiBitmap{drawable.width, drawable.height,
+        bitmaps.emplace(
+            drawable.resource_id,
+            std::make_shared<const ui::UiBitmap>(ui::UiBitmap{
+                drawable.width, drawable.height,
                 std::vector<std::uint8_t>(static_cast<std::size_t>(drawable.width * drawable.height) * 4, 255)}));
     }
-    const std::array expected{ui::Rect{0, 2, 3, 21}, ui::Rect{3, 0, 26, 2},
-                              ui::Rect{26, 6, 31, 17}, ui::Rect{6, 21, 23, 25}};
+    const std::array expected{ui::Rect{0, 2, 3, 21}, ui::Rect{3, 0, 26, 2}, ui::Rect{26, 6, 31, 17},
+                              ui::Rect{6, 21, 23, 25}};
     std::size_t count{};
     for (const auto& command : ui::BuildUiRenderList(tree, bitmaps)) {
         if (const auto* bitmap = std::get_if<ui::DrawBitmap>(&command)) {
@@ -454,10 +429,9 @@ TEST_CASE("DVM-123 compound drawables measure all axes and empty text") {
 
 namespace {
 
-[[nodiscard]] std::shared_ptr<const ui::UiBitmap> SolidBitmap(
-    const std::int32_t width, const std::int32_t height,
-    const std::uint8_t red, const std::uint8_t green,
-    const std::uint8_t blue) {
+[[nodiscard]] std::shared_ptr<const ui::UiBitmap> SolidBitmap(const std::int32_t width, const std::int32_t height,
+                                                              const std::uint8_t red, const std::uint8_t green,
+                                                              const std::uint8_t blue) {
     auto bitmap = std::make_shared<ui::UiBitmap>();
     bitmap->width = width;
     bitmap->height = height;
@@ -477,8 +451,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     const std::vector<std::uint8_t> kRed{255, 0, 0, 255};
     const std::vector<std::uint8_t> kClear{0, 0, 0, 0};
     const ui::UiBitmapCache bitmaps{{9, SolidBitmap(6, 2, 255, 0, 0)}};
-    const auto make_padded_crop = [](const bool clip_children,
-                                     const bool clip_to_padding) {
+    const auto make_padded_crop = [](const bool clip_children, const bool clip_to_padding) {
         ui::UiTree tree;
         const auto container = tree.CreateNode(ui::UiClass::FrameLayout);
         auto* group = tree.Get(container);
@@ -502,22 +475,21 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
         return tree;
     };
 
-    const auto clipped = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(make_padded_crop(true, true), bitmaps), {6, 4});
+    const auto clipped = ui::RasterizeUiOverlay(ui::BuildUiRenderList(make_padded_crop(true, true), bitmaps), {6, 4});
     CHECK(Pixel(clipped, 0, 1) == kClear);
     CHECK(Pixel(clipped, 1, 1) == kRed);
     CHECK(Pixel(clipped, 2, 1) == kRed);
     CHECK(Pixel(clipped, 3, 1) == kClear);
 
-    const auto padding_only = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(make_padded_crop(false, true), bitmaps), {6, 4});
+    const auto padding_only =
+        ui::RasterizeUiOverlay(ui::BuildUiRenderList(make_padded_crop(false, true), bitmaps), {6, 4});
     CHECK(Pixel(padding_only, 0, 1) == kClear);
     CHECK(Pixel(padding_only, 1, 1) == kRed);
     CHECK(Pixel(padding_only, 3, 1) == kRed);
     CHECK(Pixel(padding_only, 5, 1) == kClear);
 
-    const auto unclipped = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(make_padded_crop(false, false), bitmaps), {6, 4});
+    const auto unclipped =
+        ui::RasterizeUiOverlay(ui::BuildUiRenderList(make_padded_crop(false, false), bitmaps), {6, 4});
     CHECK(Pixel(unclipped, 0, 1) == kRed);
     CHECK(Pixel(unclipped, 3, 1) == kRed);
     CHECK(Pixel(unclipped, 5, 1) == kRed);
@@ -544,8 +516,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     ui::LayoutUiTree(nested, {6, 4});
     CHECK(nested.Get(inner)->screen_frame == ui::Rect{1, 0, 5, 4});
     CHECK(nested.Get(nested_image)->screen_frame == ui::Rect{1, 0, 3, 2});
-    const auto nested_frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(nested, bitmaps), {6, 4});
+    const auto nested_frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(nested, bitmaps), {6, 4});
     CHECK(Pixel(nested_frame, 0, 0) == kClear);
     CHECK(Pixel(nested_frame, 1, 0) == kRed);
     CHECK(Pixel(nested_frame, 3, 0) == kRed);
@@ -581,8 +552,7 @@ TEST_CASE("ViewGroup clipChildren and clipToPadding change descendant pixels") {
     ui::LayoutUiTree(isolated, {8, 4});
     CHECK(isolated.Get(left)->screen_frame == ui::Rect{0, 0, 2, 2});
     CHECK(isolated.Get(right)->screen_frame == ui::Rect{4, 0, 6, 2});
-    const auto isolated_frame = ui::RasterizeUiOverlay(
-        ui::BuildUiRenderList(isolated, bitmaps), {8, 4});
+    const auto isolated_frame = ui::RasterizeUiOverlay(ui::BuildUiRenderList(isolated, bitmaps), {8, 4});
     CHECK(Pixel(isolated_frame, 2, 0) == kRed);
     CHECK(Pixel(isolated_frame, 6, 0) == kClear);
 
@@ -731,4 +701,109 @@ TEST_CASE("DVM-295 Java TextView compound plan uses final width and TextView sta
     const auto frame = ui::RasterizeUiOverlay(commands, {64, 32});
     const auto golden = ui::RasterizeUiOverlay({ui::DrawText{0, 0, u"HI\nHI", 0xffffffffU, 8}}, {64, 32});
     CHECK(frame.rgba8 == golden.rgba8);
+}
+
+TEST_CASE("DVM-340 all printable ASCII glyphs measure and rasterize") {
+    for (char16_t ch = 32; ch <= 126; ++ch) {
+        CAPTURE(static_cast<unsigned>(ch));
+        const std::u16string value(1, ch);
+        CHECK(ui::MeasureFixedText(value, 8).width > 0);
+        const auto frame = ui::RasterizeUiOverlay({ui::DrawText{0, 0, value, 0xffffffffU}}, {16, 16});
+        CHECK(frame.fully_transparent == (ch == u' '));
+    }
+    CHECK_THROWS(static_cast<void>(ui::MeasureFixedText(u"\t", 8)));
+    CHECK_THROWS(static_cast<void>(ui::MeasureFixedText(u"\x7f", 8)));
+}
+
+TEST_CASE("DVM-340 text shadow offsets blurs clips and preserves foreground and zero radius") {
+    ui::DrawText text{8, 8, u"H", 0xffffffffU};
+    const auto plain = ui::RasterizeUiOverlay({text}, {48, 32});
+    text.shadow = {0, 12, 0, 0xff0000ffU};
+    CHECK(ui::RasterizeUiOverlay({text}, {48, 32}).rgba8 == plain.rgba8);
+    text.shadow.radius = 2;
+    const auto shadow = ui::RasterizeUiOverlay({text}, {48, 32});
+    const auto at = [](int x, int y) { return static_cast<std::size_t>((y * 48 + x) * 4); };
+    CHECK(shadow.rgba8[at(20, 10)] > 0);
+    CHECK(shadow.rgba8[at(20, 10) + 1] == 0);
+    CHECK(shadow.rgba8[at(19, 10) + 3] > 0);  // blur beyond glyph mask
+    CHECK(shadow.rgba8[at(8, 10)] == 255);
+    CHECK(shadow.rgba8[at(8, 10) + 1] == 255);
+    text.shadow.radius = 1;
+    CHECK(ui::RasterizeUiOverlay({text}, {48, 32}).rgba8 != shadow.rgba8);
+    text.shadow.radius = 2;
+    text.shadow.dx = 0;
+    const auto overlap = ui::RasterizeUiOverlay({text}, {48, 32});
+    CHECK(overlap.rgba8[at(8, 10) + 1] == 255);  // body covers shadow
+    CHECK(overlap.rgba8 != shadow.rgba8);
+    text.shadow.radius = -1;
+    CHECK(ui::RasterizeUiOverlay({text}, {48, 32}).rgba8 == plain.rgba8);
+    text.shadow = {100, 12, 0, 0xff0000ffU};
+    const auto capped = ui::RasterizeUiOverlay({text}, {48, 32});
+    text.shadow.radius = 32;
+    CHECK(ui::RasterizeUiOverlay({text}, {48, 32}).rgba8 == capped.rgba8);
+    text.shadow = {2, 12.5F, -0.5F, 0xff0000ffU};
+    text.alpha = 0.5F;
+    const auto fractional = ui::RasterizeUiOverlay({text}, {48, 32});
+    CHECK(fractional.rgba8 != shadow.rgba8);
+    CHECK(fractional.rgba8[at(20, 10) + 3] > 0);
+    CHECK(fractional.rgba8[at(20, 10) + 3] <= 128);
+    const auto clipped = ui::RasterizeUiOverlay({ui::PushClip{{20, 9, 24, 14}}, text, ui::PopClip{}}, {48, 32});
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 48; ++x)
+            for (int c = 0; c < 4; ++c)
+                CHECK(clipped.rgba8[at(x, y) + static_cast<std::size_t>(c)] ==
+                      ((x >= 20 && x < 24 && y >= 9 && y < 14)
+                           ? fractional.rgba8[at(x, y) + static_cast<std::size_t>(c)]
+                           : 0));
+}
+
+TEST_CASE("DVM-340 shadow input dirties cached rendering without changing measurement") {
+    ui::UiTree tree;
+    const auto id = tree.CreateNode(ui::UiClass::TextView);
+    tree.Attach(tree.Root(), id);
+    auto& node = *tree.Get(id);
+    node.text = u"I'm";
+    ui::LayoutUiTree(tree, {64, 32});
+    const auto measured = node.measured;
+    ui::UiOverlayRenderer renderer;
+    const auto plain = renderer.Render(tree, {}, {64, 32}).rgba8;
+    node.text_shadow = {2, 3, 2, 0x000000ffU};
+    tree.MarkDrawDirty(id);
+    const auto shadow = renderer.Render(tree, {}, {64, 32}).rgba8;
+    CHECK(shadow != plain);
+    CHECK(renderer.BuildCount() == 2);
+    CHECK(node.measured == measured);
+}
+
+TEST_CASE("DVM-340 fallback shadow consumes the frozen styled multiline plan") {
+    const auto root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+    std::ifstream input(root / "data/android/19/fonts/DroidSansFallback.ttf", std::ios::binary);
+    REQUIRE(input.good());
+    const std::vector<char> raw{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    std::vector<std::byte> bytes(raw.size());
+    std::memcpy(bytes.data(), raw.data(), raw.size());
+    ui::TextLeafInput leaf;
+    leaf.text = u"王Hi 王Hi";
+    leaf.size_px = 16;
+    leaf.style = 3;
+    leaf.max_lines = 3;
+    leaf.fallback_font = std::make_shared<ui::UiFallbackFont>(bytes);
+    const auto measured = ui::MeasureTextLeaf(leaf, {ui::MeasureMode::AtMost, 64}, {});
+    REQUIRE(measured.line_plan->text.find(u'\n') != std::u16string::npos);
+    ui::DrawText planned{8, 8, u"\t", 0xffffffffU, 0};  // deliberately invalid non-plan inputs
+    planned.line_plan = measured.line_plan;
+    planned.shadow = {2, 8, 2, 0xff0000ffU};
+    ui::DrawText explicit_lines{8, 8, measured.line_plan->text, 0xffffffffU, 16, 1, 3, leaf.fallback_font};
+    explicit_lines.shadow = planned.shadow;
+    const auto with_shadow = ui::RasterizeUiOverlay({planned}, {128, 96});
+    CHECK(with_shadow.rgba8 == ui::RasterizeUiOverlay({explicit_lines}, {128, 96}).rgba8);
+    planned.shadow.radius = 0;
+    const auto plain = ui::RasterizeUiOverlay({planned}, {128, 96});
+    CHECK(with_shadow.rgba8 != plain.rgba8);
+    bool red_shadow = false;
+    for (std::size_t i = 0; i < plain.rgba8.size(); i += 4) {
+        if (plain.rgba8[i + 3] == 255) CHECK(with_shadow.rgba8[i + 1] == 255);
+        if (plain.rgba8[i + 3] == 0 && with_shadow.rgba8[i] > 0 && with_shadow.rgba8[i + 1] == 0) red_shadow = true;
+    }
+    CHECK(red_shadow);
 }

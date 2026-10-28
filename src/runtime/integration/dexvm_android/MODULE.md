@@ -594,6 +594,11 @@ setText/getText、字号、Typeface、ROM 颜色列表、gravity、singleLine/ma
 有限 plain text 的 onLayout/setFrame/RTL/drawable-state/padding 回调执行真实 View 父协议；RTL、Editor/状态 Drawable
 等未覆盖语义仍失败，ROM 原 TextView 方法不获实现信用。
 
+TextView.setShadowLayer/getShadowRadius/Dx/Dy/Color 以 UiNode.TextShadow 为唯一权威；
+按 API19 保存 radius/dx/dy/color，setter 只 invalidate，不重测。radius <= 0 关闭绘制，
+实际模糊 radius 上限 32 px 但 getter 保留原值；非有限值或 |dx/dy| > 4096 通过现有文本
+失败路径记账并抛 UnsupportedOperationException，失败前不修改状态。XML shadow* 仍不开放。
+
 ## JavaTraversal ImageView 叶输入与光栅
 
 JavaTraversal 配对保留 ImageView/ImageButton、八成员 ScaleType 及 Matrix 的完整 ROM 形状和

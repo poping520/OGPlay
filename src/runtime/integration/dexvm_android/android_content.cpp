@@ -1737,6 +1737,8 @@ constexpr std::int32_t kGetActivities = 0x00000001;
 constexpr std::int32_t kGetMetaData = 0x00000080;
 constexpr std::int32_t kGetDisabledComponents = 0x00000200;
 constexpr std::int32_t kGetPermissions = 0x00001000;
+// This flag only adds uninstalled or blocked packages, absent from the sealed single-APK inventory.
+constexpr std::int32_t kGetUninstalledPackages = 0x00002000;
 constexpr std::int32_t kPermissionGranted = 0;
 constexpr std::int32_t kPermissionDenied = -1;
 
@@ -1785,8 +1787,10 @@ void RequireCurrentPackage(const Context& context, const std::string_view packag
     }
 }
 
-void RequireFlags(const std::int32_t flags, const std::int32_t supported, const std::string_view method) {
+void RequireFlags(dx::IntrinsicContext& call, const std::int32_t flags, const std::int32_t supported,
+                  const std::string_view method, const std::string_view capability) {
     if ((flags & ~supported) != 0) {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                               std::string(method) + " flags are outside the bounded API19 " +
                                   "PackageManager surface: " + std::to_string(flags)};
@@ -1795,11 +1799,12 @@ void RequireFlags(const std::int32_t flags, const std::int32_t supported, const 
 
 void RequireComponentInfoQuery(dx::IntrinsicContext& call, const bool known, const std::int32_t flags,
                                const std::string_view capability, const std::string_view method) {
-    if (known && (flags & ~(kGetMetaData | kGetDisabledComponents)) == 0) return;
+    if (known && (flags & ~(kGetMetaData | kGetDisabledComponents | kGetUninstalledPackages)) == 0) return;
     if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented(capability, 0);
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                          std::string(method) + " requires current-package component facts and "
-                                                "flags 0, GET_META_DATA or GET_DISABLED_COMPONENTS"};
+                          std::string(method) +
+                              " requires current-package component facts and "
+                              "flags 0, GET_META_DATA, GET_DISABLED_COMPONENTS or GET_UNINSTALLED_PACKAGES"};
 }
 
 [[nodiscard]] std::pair<std::string, std::string>
@@ -2200,6 +2205,8 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
         .ConstantInt("GET_META_DATA", "I", kGetMetaData, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt("GET_DISABLED_COMPONENTS", "I", kGetDisabledComponents,
                      dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
+        .ConstantInt("GET_UNINSTALLED_PACKAGES", "I", kGetUninstalledPackages,
+                     dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt("GET_PERMISSIONS", "I", kGetPermissions, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt("PERMISSION_GRANTED", "I", kPermissionGranted, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
         .ConstantInt("PERMISSION_DENIED", "I", kPermissionDenied, dx::kAccPublic | dx::kAccStatic | dx::kAccFinal)
@@ -2234,11 +2241,11 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
         const auto flags = call.arguments[0].AsInt();
         if (!context->package_inventory_known || context->package_name.empty() ||
             context->package_resource_path.empty() || context->package_resource_path.front() != '/' ||
-            (flags & ~kGetMetaData) != 0) {
+            (flags & ~(kGetMetaData | kGetUninstalledPackages)) != 0) {
             if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.installed_applications", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
                                   "getInstalledApplications requires the sealed single-APK "
-                                  "installed inventory and flags 0 or GET_META_DATA"};
+                                  "installed inventory and flags 0, GET_META_DATA or GET_UNINSTALLED_PACKAGES"};
         }
         const auto list = NewQueryObject(call, "Ljava/util/ArrayList;");
         const auto list_root = call.vm.ProtectReferences(std::array{list});
@@ -2255,7 +2262,8 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                               const auto package = RequiredString(call, 0U, "packageName");
                               const auto flags = call.arguments[1].AsInt();
                               RequireCurrentPackage(context, package);
-                              RequireFlags(flags, kGetMetaData, "getApplicationInfo");
+                              RequireFlags(call, flags, kGetMetaData | kGetUninstalledPackages, "getApplicationInfo",
+                                           "dexvm.installed_applications");
                               return dx::VmValue::Ref(MakeApplicationInfo(call, context, (flags & kGetMetaData) != 0));
                           });
     builder.VirtualMethod(
@@ -2336,15 +2344,16 @@ Decl Declare_android_content_pm_PackageManager(const Context& context) {
                 throw dx::VmJavaThrow{"Landroid/content/pm/PackageManager$NameNotFoundException;", name};
             return dx::VmValue::Ref(MakePermissionInfo(call, context, *found, (flags & kGetMetaData) != 0));
         });
-    builder.VirtualMethod("getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
-                          [context](dx::IntrinsicContext& call) {
-                              const auto package = RequiredString(call, 0U, "packageName");
-                              const auto flags = call.arguments[1].AsInt();
-                              RequireCurrentPackage(context, package);
-                              RequireFlags(flags, kGetActivities | kGetMetaData | kGetPermissions, "getPackageInfo");
-                              return dx::VmValue::Ref(
-                                  MakePackageInfo(call, context, flags, PackageInfoKind::installed));
-                          });
+    builder.VirtualMethod(
+        "getPackageInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
+        [context](dx::IntrinsicContext& call) {
+            const auto package = RequiredString(call, 0U, "packageName");
+            const auto flags = call.arguments[1].AsInt();
+            RequireCurrentPackage(context, package);
+            RequireFlags(call, flags, kGetActivities | kGetMetaData | kGetPermissions | kGetUninstalledPackages,
+                         "getPackageInfo", "dexvm.package_info_activities");
+            return dx::VmValue::Ref(MakePackageInfo(call, context, flags, PackageInfoKind::installed));
+        });
     builder.VirtualMethod(
         "getPackageArchiveInfo", "(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;",
         [context](dx::IntrinsicContext& call) { return dx::VmValue::Ref(PackageArchiveInfo(call, context)); });

@@ -627,7 +627,7 @@ VmObjectRef OpenAttributeXml(ContainerVm& f, VmObjectRef owner, const std::vecto
 }
 }  // namespace
 
-TEST_CASE("DVM-289 XML attributes construct ROM containers and LayoutParams") {
+TEST_CASE("DVM-351 DVM-289 XML attributes construct ROM containers and LayoutParams") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
         f.context->ui_test_accessibility_disabled = true;
@@ -641,30 +641,34 @@ TEST_CASE("DVM-289 XML attributes construct ROM containers and LayoutParams") {
         id.type_name = "id";
         id.value_type = 16;
         f.context->arsc.entries.push_back(id);
-        const auto parser = OpenAttributeXml(
-            f, owner,
-            AttributeXml({{
-                {0x010100d0, 1, 0x7f030001},                       // id
-                {0x010100dc, 16, 1},                               // invisible
-                {0x010100ea, 18, 0},         {0x010100eb, 18, 0},  // group clip flags
-                {0x010100ed, 18, 0},         {0x010100ee, 16, 3},         {0x010100ef, 18, 0},
-                {0x010102ef, 18, 0},         {0x0101010a, 18, 1},         {0x01010200, 16, 0x33},
-                {0x0101042e, 18, 0},         {0x010102d4, 18, 1},         {0x01010329, 16, 3},
-                {0x0101032a, 5, 0x701},      {0x010101ff, 1, 0x7f030001}, {0x010100d5, 5, 0x501},  // padding 5dp
-                {0x0101013f, 5, 0x1f01},                                                           // minWidth 31dp
-                {0x01010140, 5, 0x1701},                                                           // minHeight 23dp
-                {0x010100c4, 16, 1},                                                               // vertical
-                {0x010100af, 16, 0x55},                                                            // gravity
-                {0x01010128, 4, 0x40800000},                                                       // weightSum 4
-                {0x01010126, 18, 0},  // baselineAligned false (verified against pinned IDs below)
-                {0x010100f4, 5, 0x2801},     {0x010100f5, 5, 0x1401},  // width/height 40x20
-                {0x010100f6, 5, 0x301},                                // margin 3
-                {0x010100b3, 16, 0x33},                                // layout gravity
-                {0x01010181, 4, 0x40000000}                            // layout weight 2
-            }}));
+        const auto parser =
+            OpenAttributeXml(f, owner,
+                             AttributeXml({{
+                                 {0x010100d0, 1, 0x7f030001},                       // id
+                                 {0x010100dc, 16, 1},                               // invisible
+                                 {0x010100ea, 18, 0},         {0x010100eb, 18, 0},  // group clip flags
+                                 {0x010100ed, 18, 0},         {0x010100ee, 16, 3},
+                                 {0x010100ef, 18, 0},         {0x010102ef, 18, 0},
+                                 {0x0101010a, 18, 1},         {0x01010200, 16, 0x33},
+                                 {0x0101042e, 18, 0},         {0x010102d4, 18, 1},
+                                 {0x01010329, 16, 3},         {0x0101032a, 5, 0x701},
+                                 {0x010101ff, 1, 0x7f030001}, {0x010100d5, 5, 0x501},  // padding 5dp
+                                 {0x0101013f, 5, 0x1f01},                              // minWidth 31dp
+                                 {0x01010140, 5, 0x1701},                              // minHeight 23dp
+                                 {0x010100c4, 16, 1},                                  // vertical
+                                 {0x010100af, 16, 0x55},                               // gravity
+                                 {0x01010128, 4, 0x40800000},                          // weightSum 4
+                                 {0x01010126, 18, 0},  // baselineAligned false (verified against pinned IDs below)
+                                 {0x010100f4, 5, 0x2801},     {0x010100f5, 5, 0x1401},  // width/height 40x20
+                                 {0x010100f6, 5, 0x301},                                // margin 3
+                                 {0x010100b3, 16, 0x33},                                // layout gravity
+                                 {0x0101017f, 5, 0x901},      {0x01010180, 5, 0xb01},
+                                 {0x01010181, 4, 0x40000000}  // layout weight 2
+                             }}));
         const auto roots = f.vm.ProtectReferences(std::array{owner, parser});
-        for (const auto* type : {"Landroid/view/View;", "Ltest/HierarchyGroup;", "Landroid/widget/FrameLayout;",
-                                 "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;"}) {
+        for (const auto* type :
+             {"Landroid/view/View;", "Ltest/HierarchyGroup;", "Landroid/widget/FrameLayout;",
+              "Landroid/widget/LinearLayout;", "Landroid/widget/RelativeLayout;", "Landroid/widget/AbsoluteLayout;"}) {
             INFO(std::string(type));
             const auto view = f.New(type, "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
                                     {VmValue::Ref(owner), VmValue::Ref(parser)});
@@ -677,6 +681,19 @@ TEST_CASE("DVM-289 XML attributes construct ROM containers and LayoutParams") {
             if (std::string_view(type) != "Landroid/view/View;") {
                 CHECK((JavaField(f, view, "mGroupFlags").bits & (0x1U | 0x2U | 0x40U | 0x4000U | 0x200000U)) == 0);
                 CHECK(JavaField(f, view, "mPersistentDrawingCache").bits == 3);
+            }
+            if (std::string_view(type) == "Landroid/widget/AbsoluteLayout;") {
+                const auto styled = f.New(type, "(Landroid/content/Context;Landroid/util/AttributeSet;I)V",
+                                          {VmValue::Ref(owner), VmValue::Ref(parser), VmValue::Int(0)});
+                CHECK(JavaField(f, styled, "mPaddingLeft").bits == 5);
+                const auto generated =
+                    f.On(view, "generateLayoutParams",
+                         "(Landroid/util/AttributeSet;)Landroid/view/ViewGroup$LayoutParams;", {VmValue::Ref(parser)})
+                        .ref;
+                CHECK(JavaField(f, generated, "width").bits == 40);
+                CHECK(JavaField(f, generated, "height").bits == 20);
+                CHECK(JavaField(f, generated, "x").bits == 9);
+                CHECK(JavaField(f, generated, "y").bits == 11);
             }
             if (std::string_view(type) == "Landroid/widget/FrameLayout;") {
                 CHECK(JavaField(f, view, "mMeasureAllChildren", "Z").bits == 1);
@@ -702,7 +719,7 @@ TEST_CASE("DVM-289 XML attributes construct ROM containers and LayoutParams") {
         for (const auto* type :
              {"Landroid/view/ViewGroup$LayoutParams;", "Landroid/view/ViewGroup$MarginLayoutParams;",
               "Landroid/widget/FrameLayout$LayoutParams;", "Landroid/widget/LinearLayout$LayoutParams;",
-              "Landroid/widget/RelativeLayout$LayoutParams;"}) {
+              "Landroid/widget/RelativeLayout$LayoutParams;", "Landroid/widget/AbsoluteLayout$LayoutParams;"}) {
             INFO(std::string(type));
             const auto lp = f.New(type, "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
                                   {VmValue::Ref(owner), VmValue::Ref(parser)});
@@ -713,7 +730,10 @@ TEST_CASE("DVM-289 XML attributes construct ROM containers and LayoutParams") {
                 CHECK(JavaField(f, lp, "gravity").bits == 0x33);
             if (std::string_view(type) == "Landroid/widget/LinearLayout$LayoutParams;")
                 CHECK(JavaField(f, lp, "weight", "F").bits == 0x40000000);
-            if (std::string_view(type) != "Landroid/view/ViewGroup$LayoutParams;") {
+            if (std::string_view(type) == "Landroid/widget/AbsoluteLayout$LayoutParams;") {
+                CHECK(JavaField(f, lp, "x").bits == 9);
+                CHECK(JavaField(f, lp, "y").bits == 11);
+            } else if (std::string_view(type) != "Landroid/view/ViewGroup$LayoutParams;") {
                 CHECK(JavaField(f, lp, "leftMargin").bits == 3);
                 CHECK(JavaField(f, lp, "bottomMargin").bits == 3);
             }

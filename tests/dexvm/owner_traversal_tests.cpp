@@ -818,7 +818,7 @@ TEST_CASE("DVM-314 ROM window observers merge floating listeners and dispatch on
     }
 }
 
-TEST_CASE("DVM-314 reviewed WebView construction retains explicit AbsoluteLayout measure boundary") {
+TEST_CASE("DVM-314 reviewed WebView construction retains its own explicit measure boundary") {
     using ogplay::test::container_traversal::ContainerVm;
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
@@ -1275,7 +1275,6 @@ TEST_CASE("DVM-318 DVM-321 late GLSurfaceView after NativeActivity takeSurface n
             CHECK(f.ledger.Unimplemented().empty());
         }
 }
-
 
 TEST_CASE("DVM-319 owner projection selects late producer before its first Surface callback") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -1852,6 +1851,104 @@ TEST_CASE("DVM-331 window focus reaches the Java window tree across Activity swi
         CHECK(events() == 5);
         static_cast<void>(lifecycle.Stop());
         CHECK(events() == 6);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-351 ROM AbsoluteLayout measurement parameters guest subclass and projection") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        f.context->activity = owner;
+        const auto parent = f.New("Ltest/AbsoluteContainer;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto field = [&](VmObjectRef object, const char* name) -> Slot& {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, "I");
+            REQUIRE(id);
+            return f.model.InstanceSlots(object)[f.linker.Field(*id).slot];
+        };
+        CHECK(field(parent, "marker").bits == 73);
+        f.On(parent, "setPadding", "(IIII)V", {VmValue::Int(3), VmValue::Int(5), VmValue::Int(7), VmValue::Int(11)});
+        f.On(parent, "setMinimumWidth", "(I)V", {VmValue::Int(70)});
+        f.On(parent, "setMinimumHeight", "(I)V", {VmValue::Int(60)});
+        const auto a = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto b = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto gone = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto params = [&](int w, int h, int x, int y) {
+            return f.New("Landroid/widget/AbsoluteLayout$LayoutParams;", "(IIII)V",
+                         {VmValue::Int(w), VmValue::Int(h), VmValue::Int(x), VmValue::Int(y)});
+        };
+        const auto add = [&](VmObjectRef child, VmObjectRef lp) {
+            f.On(parent, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+                 {VmValue::Ref(child), VmValue::Ref(lp)});
+        };
+        const auto ap = params(40, 20, 13, 17);
+        add(a, ap);
+        add(b, params(20, 10, 50, 8));
+        add(gone, params(500, 500, 900, 900));
+        f.On(gone, "setVisibility", "(I)V", {VmValue::Int(8)});
+        // max(13+40,50+20)+3+7=80; max(17+20,8+10)+5+11=53,
+        // then suggested minimum makes height 60. AT_MOST clips width with TOO_SMALL.
+        for (const auto mode : {0x40000000, static_cast<int>(0x80000000U), 0}) {
+            f.On(parent, "requestLayout", "()V");
+            f.On(parent, "measure", "(II)V", {VmValue::Int(mode | 75), VmValue::Int(mode | 90)});
+            CHECK(f.On(parent, "getMeasuredWidth", "()I").AsInt() == (mode == 0 ? 80 : 75));
+            CHECK(f.On(parent, "getMeasuredHeight", "()I").AsInt() == (mode == 0x40000000 ? 90 : 60));
+            CHECK(f.On(parent, "getMeasuredWidthAndState", "()I").AsInt() == (mode == static_cast<int>(0x80000000U)
+                                                                                  ? 0x0100004b
+                                                                              : mode == 0 ? 80
+                                                                                          : 75));
+        }
+        CHECK(
+            f.On(parent, "checkLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)Z", {VmValue::Ref(ap)}).AsInt() ==
+            1);
+        const auto generic =
+            f.New("Landroid/view/ViewGroup$LayoutParams;", "(II)V", {VmValue::Int(12), VmValue::Int(9)});
+        CHECK(f.On(parent, "checkLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)Z", {VmValue::Ref(generic)})
+                  .AsInt() == 0);
+        const auto converted = f.On(parent, "generateLayoutParams",
+                                    "(Landroid/view/ViewGroup$LayoutParams;)Landroid/view/ViewGroup$LayoutParams;",
+                                    {VmValue::Ref(generic)})
+                                   .ref;
+        CHECK(f.linker.Class(f.model.ObjectClass(converted)).descriptor ==
+              "Landroid/widget/AbsoluteLayout$LayoutParams;");
+        CHECK(field(converted, "width").bits == 12);
+        CHECK(field(converted, "height").bits == 9);
+        CHECK(field(converted, "x").bits == 0);
+        CHECK(field(converted, "y").bits == 0);
+        const auto c = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        add(c, generic);
+        const auto actual = f.On(c, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
+        CHECK(f.linker.Class(f.model.ObjectClass(actual)).descriptor == "Landroid/widget/AbsoluteLayout$LayoutParams;");
+        CHECK(field(actual, "width").bits == 12);
+        CHECK(field(actual, "height").bits == 9);
+        CHECK(field(actual, "x").bits == 0);
+        CHECK(field(actual, "y").bits == 0);
+        const auto defaults =
+            f.On(parent, "generateDefaultLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
+        CHECK(static_cast<int>(field(defaults, "width").bits) == -2);
+        CHECK(static_cast<int>(field(defaults, "height").bits) == -2);
+        CHECK(field(defaults, "x").bits == 0);
+        CHECK(field(defaults, "y").bits == 0);
+        CHECK(f.On(parent, "shouldDelayChildPressedState", "()Z").AsInt() == 0);
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(parent)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
+        const auto bounds = [&](VmObjectRef child, ui::Rect expected) {
+            const auto node = FindViewUiNode(*f.context, child.Value());
+            REQUIRE(node);
+            CHECK(f.context->ui_tree.PublishedProjection()->Get(*node)->frame == expected);
+            CHECK(f.On(child, "getLeft", "()I").AsInt() == expected.left);
+            CHECK(f.On(child, "getTop", "()I").AsInt() == expected.top);
+            CHECK(f.On(child, "getRight", "()I").AsInt() == expected.right);
+            CHECK(f.On(child, "getBottom", "()I").AsInt() == expected.bottom);
+        };
+        bounds(parent, {0, 0, 200, 140});
+        bounds(a, {16, 22, 56, 42});
+        bounds(b, {53, 13, 73, 23});
+        bounds(c, {3, 5, 15, 14});
+        CHECK(f.On(gone, "getRight", "()I").AsInt() == 0);
+        CHECK(f.On(gone, "count", "()I").AsInt() == 0);
         CHECK(f.ledger.Unimplemented().empty());
     }
 }

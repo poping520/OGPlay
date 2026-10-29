@@ -840,3 +840,19 @@
 .registers 2
     return-void
 .end method
+
+.class public Ltest/AbsoluteContainer;
+.super Landroid/widget/AbsoluteLayout;
+.field public marker:I
+.method public constructor <init>(Landroid/content/Context;)V
+.registers 3
+    invoke-direct {v1, v2}, Landroid/widget/AbsoluteLayout;-><init>(Landroid/content/Context;)V
+    const/16 v0, 73
+    iput v0, v1, Ltest/AbsoluteContainer;->marker:I
+    return-void
+.end method
+.method protected dispatchDraw(Landroid/graphics/Canvas;)V
+.registers 2
+    invoke-super {v0, v1}, Landroid/widget/AbsoluteLayout;->dispatchDraw(Landroid/graphics/Canvas;)V
+    return-void
+.end method

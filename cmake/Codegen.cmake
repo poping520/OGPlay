@@ -104,6 +104,7 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-text.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-group-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-frame-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-absolute-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-linear-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-relative-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-xml-sources.json"

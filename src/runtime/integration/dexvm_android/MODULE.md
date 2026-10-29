@@ -719,8 +719,9 @@ frontend 三入口共用此装配，显式注入平台无 accessibility 服务�
 宿主 Dialog 必须拥有独立 HostLayout 树；缺失时拒绝，不向 guest 构建树回落。
 `setClickable` 按原 setter 虚派 ROM `setFlags(II)V`，仅在真实 CLICKABLE 位改变时标投影
 绘制脏；下一 owner 屏障发布输入资格，不写几何、不改当前输入租约。
-AbsoluteLayout 构造调用受审 ViewGroup 父构造，WebView 经 Java setter 设置焦点能力；
-不承诺 AbsoluteLayout 的测量/布局或浏览器后端。
+AbsoluteLayout 及其 LayoutParams 的构造、参数转换、测量与布局执行固定 ROM Java；
+其 guest 子类沿同一构造准入，FrameLayout host kind 不决定 guest 几何。WebView 经 Java
+setter 设置焦点能力，自有 onMeasure 因缺浏览器后端记账失败，onLayout 继承 ROM。
 
 ## Owner 事件事务
 
@@ -769,7 +770,7 @@ mFloatingTreeObserver 才经 ROM merge/kill 转移并清空。首次遍历前 se
 一次派发；不按每个 View 重复派发。其他 observer 系统能力仍明确失败。
 setSystemUiVisibility adapter 写真实 Java 字段，ROM getter 读取；附着改变调用父
 recomputeViewAttributes adapter，managed 平台无系统栏/WMS，不造 callback 或 AttachInfo。
-WebView 仅准入已有父构造接缝，AbsoluteLayout 的测量/布局失败边界保留。
+WebView 经 ROM AbsoluteLayout 父构造；保留 WebView 自有 onMeasure 的浏览器后端失败边界。
 Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 changed；同代同值仍去重。
 
 有界主题中同 ROM ARSC 能绑定的任意类型引用均以真实 TYPE_REFERENCE/id 进入六槽；

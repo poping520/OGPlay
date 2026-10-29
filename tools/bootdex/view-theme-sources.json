@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/content/res/AssetManager;",
       "smali_sha256": "47689dc82057263e42334ad0ce079a2441ee3f70168258802eed7d3e924a1656",
       "fields": [
@@ -1615,7 +1615,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/content/res/Resources$Theme;",
       "smali_sha256": "7c34221999c9588e6dfc5f97efeb3136a6d8eba75f260d860bff6d09c8c6e2a8",
       "fields": [
@@ -1701,7 +1701,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/content/res/TypedArray;",
       "smali_sha256": "930e00f14c4e6e495f2ca572c42774bad9f8fac34714510eb3ec1ea8d20b5af2",
       "fields": [

@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView$1;",
       "smali_sha256": "a4bdc789458f1798e3336a6e3f707145f38f8976eb68c7611daf0ed79ea8b4a4",
       "methods": [
@@ -38,7 +38,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView$2;",
       "smali_sha256": "20eba04de5108afd055e169ae3692c3852772acc2e264a5303b36e86d9d6e0e7",
       "methods": [
@@ -70,7 +70,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView$3;",
       "smali_sha256": "d3711f06bde41131248f35620797e512a0839bdfeed20e1b21bc42202dd22db1",
       "methods": [
@@ -102,7 +102,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView$4;",
       "smali_sha256": "b69f4bfec6947c1d17be9e3de85efacc7424f9f52871cb034448b2041fb3eb16",
       "methods": [
@@ -218,7 +218,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView$MyWindow;",
       "smali_sha256": "82442481a3d2c4689922cfeab2deaa513f0a7f9889a08122585c4eb785e8fac5",
       "methods": [
@@ -286,7 +286,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-default.surface.json.gz",
-      "surface_sha256": "09e61dcd34e00764fe36d785474a23290120b85345a42cc2f1f2a5b38ac17a05",
+      "surface_sha256": "268ff0378f6dc87c4a9a09b465e48eeca5177d208e86db05d2133a53eac81c82",
       "owner": "Landroid/view/SurfaceView;",
       "smali_sha256": "9715827df06ed3569ca518ca9c08ba1baf552aa64deaa72a12c36b42e9b11a6e",
       "methods": [
@@ -339,19 +339,40 @@
           "signature": "dispatchDraw(Landroid/graphics/Canvas;)V",
           "flags": 4,
           "body_sha256": "e075469803fb91e8bc22d3d7d579ce4b7e88ba48fe1445c1d6091a200139517c",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "draw(Landroid/graphics/Canvas;)V",
           "flags": 1,
           "body_sha256": "a1b814cd8addf348381ae345e2a0f9dbd691affe57d8aa6eb45ddbe9b4acc8bc",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "gatherTransparentRegion(Landroid/graphics/Region;)Z",
           "flags": 1,
           "body_sha256": "4f5acd1fc1d30748c4adb3ea5f6c5219e8e594d295e27503cd1328d967ea2a28",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "getHolder()Landroid/view/SurfaceHolder;",
@@ -394,13 +415,27 @@
           "signature": "onAttachedToWindow()V",
           "flags": 4,
           "body_sha256": "6eb485afa9ff0960a1cf93e754941a50df5ba347d4fe140ddf1633b840dabbab",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "onDetachedFromWindow()V",
           "flags": 4,
           "body_sha256": "49abc9626a95da2660d90a9679924219fc8528ee14ca3334c8b9b7bbdbf12354",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "onMeasure(II)V",
@@ -414,11 +449,11 @@
           "body_sha256": "633d65796012a66ae2e58620f355eac992afe1cb7c83ee780dcfffad9fa2dbc3",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0162 / DVM-308 managed software parent callback, excludes WMS / Editor",
-            "inputs": "Actual receiver and lifecycle window event",
-            "outputs": "Exact View callback, cancellation and software invalidation",
-            "state_owner": "Java View; managed holder lifecycle stays integration-owned",
-            "failure_boundary": "No WMS updateWindow or Editor/IME; unsupported state fails under ADR-0147"
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
           }
         },
         {
@@ -438,19 +473,40 @@
           "signature": "setSecure(Z)V",
           "flags": 1,
           "body_sha256": "256e12937f373a9ba78fdf66d88275f5a145e1390c49f0cdf1fcc0bf41aafb7e",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "setVisibility(I)V",
           "flags": 1,
           "body_sha256": "9dbee2e58e0e843d452a27579959e3e500c6c835b6a26635d2548beae0c09498",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "setWindowType(I)V",
           "flags": 1,
           "body_sha256": "9fbfe9ef1f00f2802b9aac344da892d44dd92edc9785dcdbb58287de75676873",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-348 bounded SurfaceView visibility and ROM override reconciliation",
+            "inputs": "Actual receiver, unchanged arguments and existing managed window visibility",
+            "outputs": "ROM View visibility/layout; normal holder destruction transaction or deferred created/changed; bounded layer/opacity queries; unavailable parent Canvas/Region/security paths throw and record dexvm.surface_view_lifecycle",
+            "state_owner": "ROM mViewVisibility/mWindowVisibility/mRequestedVisible derive from View and existing owner/window facts; existing managed holder owns lifecycle and UiTree owns layer",
+            "failure_boundary": "No WMS/AttachInfo/Region or secure capture fabricated; layout/input/callback/worker contexts defer destruction to owner safe point"
+          }
         },
         {
           "signature": "setZOrderMediaOverlay(Z)V",

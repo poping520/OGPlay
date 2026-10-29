@@ -766,3 +766,237 @@ TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject u
         }
     }
 }
+
+TEST_CASE("DVM-348 SurfaceView visibility retires synchronously and recreates at owner safe point") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder, callback});
+        // Match the fixture's logical software framebuffer, as in DVM-339/347.
+        f.context->surface_width = 800;
+        f.context->surface_height = 480;
+        std::vector<int> events;
+        bool inside_set = false;
+        bool retired = false;
+        f.context->retire_native_surface = [&](VmObjectRef actual) {
+            CHECK(actual == holder);
+            CHECK(events.back() == 3);
+            retired = true;
+        };
+        SurfaceHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(1);
+            CHECK_FALSE(f.context->surface_buffer_queued.at(holder.Value()));
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext&) {
+            events.push_back(2);
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(3);
+            CHECK(inside_set);
+            CHECK_FALSE(retired);
+            CHECK(f.context->destroying_surface_holders.contains(holder.Value()));
+            // Surface identity survives the callback; new Canvas locks require
+            // active status and are already forbidden by the holder protocol.
+            const auto endpoint = f.On(holder, "getSurface", "()Landroid/view/Surface;").ref;
+            CHECK(f.On(endpoint, "isValid", "()Z").AsInt() == 1);
+            return VmValue::Void();
+        });
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        CHECK(events == std::vector<int>{1, 2});
+        for (auto hidden : {8, 4}) {
+            retired = false;
+            inside_set = true;
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(hidden)});
+            inside_set = false;
+            CHECK(Get(f, view, "getVisibility") == hidden);
+            CHECK(events.back() == 3);
+            CHECK(retired);
+            CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+            CHECK_FALSE(f.context->surface_pixels.contains(holder.Value()));
+            CHECK_FALSE(f.context->surface_buffer_queued.contains(holder.Value()));
+            CHECK_FALSE(f.context->surface_active_formats.contains(holder.Value()));
+            CHECK_FALSE(f.context->surface_callback_formats.contains(holder.Value()));
+            CHECK(f.OnOutcome(holder, "lockCanvas", "()Landroid/graphics/Canvas;").exception.IsValid());
+            const auto count = events.size();
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(hidden)});
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(events.size() == count);
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(0)});
+            CHECK(events.size() == count);
+            CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+            CHECK(f.On(view, "isLayoutRequested", "()Z").AsInt() == 1);
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(events[events.size() - 2] == 1);
+            CHECK(events.back() == 2);
+            CHECK(events.size() == count + 2);
+            const auto canvas = f.On(holder, "lockCanvas", "()Landroid/graphics/Canvas;").ref;
+            f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+            CHECK(f.context->surface_buffer_queued.at(holder.Value()));
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(0)});
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK(events.size() == count + 2);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        f.context->retire_native_surface = {};
+    }
+}
+
+TEST_CASE("DVM-348 visibility callback barriers and ancestor hiding preserve owner rules") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (int barrier : {0, 1, 2}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+            REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+            auto& flag = barrier == 0 ? f.context->surface_event_dispatching : f.context->ui_layout_dispatching;
+            if (barrier == 2)
+                f.context->input_presentation = std::make_shared<DexVmAndroidContext::PresentationSnapshot>();
+            else
+                flag = true;
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(8)});
+            CHECK(f.context->active_surface_holders.contains(holder.Value()));
+            flag = false;
+            f.context->ui_layout_dispatching = false;
+            f.context->input_presentation.reset();
+            REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+            CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        f.On(group, "addView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(group)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        f.On(group, "setVisibility", "(I)V", {VmValue::Int(4)});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(Get(f, view, "getVisibility") == 0);
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        f.On(group, "setVisibility", "(I)V", {VmValue::Int(0)});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(f.context->active_surface_holders.contains(holder.Value()));
+    }
+}
+
+TEST_CASE("DVM-348 SurfaceView ROM overrides expose bounded behavior and explicit gaps") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend, true);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+        f.On(view, "onAttachedToWindow", "()V");
+        CHECK(SurfaceTraversalPending(*f.context, *FindViewUiNode(*f.context, view.Value())));
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        f.On(holder, "setFormat", "(I)V", {VmValue::Int(-1)});
+        CHECK(f.On(view, "gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})})
+                  .AsInt() == 1);
+        f.On(holder, "setFormat", "(I)V", {VmValue::Int(-3)});
+        CHECK(f.On(view, "gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})})
+                  .AsInt() == 0);
+        f.On(view, "setSecure", "(Z)V", {VmValue::Int(0)});
+        for (const auto type : {1000, 1001, 1004}) {
+            f.On(view, "setWindowType", "(I)V", {VmValue::Int(type)});
+            CHECK(f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()))->surface_layer ==
+                  (type == 1000   ? ui::SurfaceLayer::on_top
+                   : type == 1001 ? ui::SurfaceLayer::media
+                                  : ui::SurfaceLayer::media_overlay));
+        }
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        f.On(view, "onWindowVisibilityChanged", "(I)V", {VmValue::Int(4)});
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        f.On(view, "onWindowVisibilityChanged", "(I)V", {VmValue::Int(0)});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(f.context->active_surface_holders.contains(holder.Value()));
+        f.On(view, "onDetachedFromWindow", "()V");
+        CHECK_FALSE(f.context->active_surface_holders.contains(holder.Value()));
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto hit_count = [&] {
+            for (const auto& gap : f.ledger.Unimplemented())
+                if (gap.id == "dexvm.surface_view_lifecycle") return gap.count;
+            return std::uint64_t{0};
+        };
+        const auto reject = [&](const char* name, const char* signature, std::vector<VmValue> args) {
+            const auto before = hit_count();
+            const auto outcome = f.OnOutcome(view, name, signature, std::move(args));
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(hit_count() == before + 1);
+            if (std::string_view(name) == "draw" || std::string_view(name) == "dispatchDraw")
+                CHECK(outcome.exception_message.find("Landroid/view/View;") != std::string::npos);
+            else
+                CHECK(f.linker.Class(outcome.exception_class).descriptor ==
+                      "Ljava/lang/UnsupportedOperationException;");
+        };
+        reject("setSecure", "(Z)V", {VmValue::Int(1)});
+        reject("setWindowType", "(I)V", {VmValue::Int(999)});
+        reject("draw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
+        reject("dispatchDraw", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(VmObjectRef{})});
+        f.On(view, "setWindowType", "(I)V", {VmValue::Int(1000)});
+        reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})});
+        f.On(view, "setWindowType", "(I)V", {VmValue::Int(1001)});
+        static_cast<void>(f.linker.ResolveDescriptor("Landroid/graphics/Region;"));
+        const auto region = f.vm.NewIntrinsicInstance("Landroid/graphics/Region;");
+        reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(region)});
+        f.On(view, "setWillNotDraw", "(Z)V", {VmValue::Int(0)});
+        reject("gatherTransparentRegion", "(Landroid/graphics/Region;)Z", {VmValue::Ref(VmObjectRef{})});
+    }
+}
+
+TEST_CASE("DVM-348 INVISIBLE retains View layout space while GONE removes it and subclasses inherit visibility") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner);
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto params = ogplay::runtime::android_intrinsics::NewAndroidLayoutParams(
+            f.vm, "Landroid/widget/FrameLayout$LayoutParams;", 50, 30);
+        f.On(group, "addView", "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V",
+             {VmValue::Ref(view), VmValue::Ref(params)});
+        for (auto visibility : {0, 4, 8, 0}) {
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(visibility)});
+            f.On(group, "measure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
+            CHECK(Get(f, group, "getMeasuredWidth") == (visibility == 8 ? 0 : 50));
+            CHECK(Get(f, group, "getMeasuredHeight") == (visibility == 8 ? 0 : 30));
+        }
+        const auto base = f.linker.ResolveDescriptor("Landroid/view/SurfaceView;");
+        const auto index = *f.linker.FindVtableIndex(base, "setVisibility", "(I)V");
+        for (auto name : {"Landroid/opengl/GLSurfaceView;", "Landroid/widget/VideoView;"}) {
+            const auto child = f.linker.ResolveDescriptor(name);
+            CHECK(f.linker.Class(child).vtable.at(index) == f.linker.Class(base).vtable.at(index));
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-348 hiding from created defers retirement and suppresses stale changed") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+        const auto callback = f.New("Ltest/ManagedSurfaceCallback;");
+        std::vector<int> events;
+        SurfaceHook(f, callback, "surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(1);
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(8)});
+            CHECK(f.context->active_surface_holders.contains(holder.Value()));
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceChanged", "(Landroid/view/SurfaceHolder;III)V", [&](IntrinsicContext&) {
+            events.push_back(2);
+            return VmValue::Void();
+        });
+        SurfaceHook(f, callback, "surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V", [&](IntrinsicContext&) {
+            events.push_back(3);
+            return VmValue::Void();
+        });
+        f.On(holder, "addCallback", "(Landroid/view/SurfaceHolder$Callback;)V", {VmValue::Ref(callback)});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+        CHECK(events == std::vector<int>{1});
+        REQUIRE_FALSE(PumpAndroidSurfaceEvents(f.vm, *f.context));
+        CHECK(events == std::vector<int>{1, 3});
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}

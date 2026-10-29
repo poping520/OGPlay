@@ -846,6 +846,20 @@ dx::IntrinsicHandler SurfaceViewInitHandler(const Context& context, const bool w
     };
 }
 
+bool RefreshSurfaceViewVisibility(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view,
+                                  std::optional<int> window_visibility) {
+    dx::IntrinsicContext call{vm, view, {}};
+    dx::IntrinsicCall fields(call);
+    const auto& binding = *context.surface_view_visibility_fields;
+    const bool window =
+        window_visibility.value_or(CallAndroidMethod(vm, view, "getWindowVisibility", "()I").AsInt()) == 0;
+    const bool visible = CallAndroidMethod(vm, view, "getVisibility", "()I").AsInt() == 0;
+    fields.SetInt(binding[0], window);
+    fields.SetInt(binding[1], visible);
+    fields.SetInt(binding[2], window && visible);
+    return window && visible;
+}
+
 bool SurfaceViewReadyForRendering(const DexVmAndroidContext& context, const dx::VmObjectRef view) {
     const auto node = FindViewUiNode(context, view.Value());
     const auto holder = context.surface_holders.find(view.Value());

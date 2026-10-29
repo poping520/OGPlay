@@ -15,6 +15,7 @@
 
 namespace {
 using namespace ogplay;
+
 std::string ReadCpuFile(runtime::VirtualFileSystem& fs, const std::string& path) {
     const auto fd = fs.Open(path, {.read = true});
     std::string text;
@@ -27,6 +28,59 @@ std::string ReadCpuFile(runtime::VirtualFileSystem& fs, const std::string& path)
     fs.Close(fd);
     return text;
 }
+}  // namespace
+
+TEST_CASE("BND-42 cpuinfo matches Linux 3.4 SMP format with 1 core") {
+    runtime::VirtualFileSystem fs;
+    runtime::GuestCpuEnvironment environment({1, 1000});
+    environment.Publish(fs);
+    const auto info = ReadCpuFile(fs, "/proc/cpuinfo");
+    CHECK(info == "Processor\t: ARMv7 Processor rev 0 (v7l)\n"
+                  "processor\t: 0\n"
+                  "BogoMIPS\t: 2000.00\n"
+                  "\n"
+                  "Features\t: half thumb fastmult vfp edsp neon vfpv3 tls \n"
+                  "CPU implementer\t: 0x41\n"
+                  "CPU architecture: 7\n"
+                  "CPU variant\t: 0x0\n"
+                  "CPU part\t: 0xc09\n"
+                  "CPU revision\t: 0\n"
+                  "\n"
+                  "Hardware\t: OGPlay virtual ARMv7\n"
+                  "Revision\t: 0000\n"
+                  "Serial\t\t: 0000000000000000\n");
+    CHECK(info.find("CPU part\t: 0xc09\n") != std::string::npos);
+    CHECK(info.find("CPU implementer\t: 0x41\n") != std::string::npos);
+    CHECK(info.find("BogoMIPS\t: 2000.00\n") != std::string::npos);
+    CHECK(info.find("Features\t: half thumb fastmult vfp edsp neon vfpv3 tls \n") != std::string::npos);
+}
+
+TEST_CASE("BND-42 cpuinfo matches Linux 3.4 SMP format with 2 cores") {
+    runtime::VirtualFileSystem fs;
+    runtime::GuestCpuEnvironment environment({2, 1500});
+    environment.Publish(fs);
+    const auto info = ReadCpuFile(fs, "/proc/cpuinfo");
+    CHECK(info == "Processor\t: ARMv7 Processor rev 0 (v7l)\n"
+                  "processor\t: 0\n"
+                  "BogoMIPS\t: 3000.00\n"
+                  "\n"
+                  "processor\t: 1\n"
+                  "BogoMIPS\t: 3000.00\n"
+                  "\n"
+                  "Features\t: half thumb fastmult vfp edsp neon vfpv3 tls \n"
+                  "CPU implementer\t: 0x41\n"
+                  "CPU architecture: 7\n"
+                  "CPU variant\t: 0x0\n"
+                  "CPU part\t: 0xc09\n"
+                  "CPU revision\t: 0\n"
+                  "\n"
+                  "Hardware\t: OGPlay virtual ARMv7\n"
+                  "Revision\t: 0000\n"
+                  "Serial\t\t: 0000000000000000\n");
+    CHECK(info.find("CPU part\t: 0xc09\n") != std::string::npos);
+    CHECK(info.find("CPU implementer\t: 0x41\n") != std::string::npos);
+    CHECK(info.find("BogoMIPS\t: 3000.00\n") != std::string::npos);
+    CHECK(info.find("Features\t: half thumb fastmult vfp edsp neon vfpv3 tls \n") != std::string::npos);
 }
 
 TEST_CASE("BND-42 CPU facts publish isolated readonly topology and fixed frequency") {
@@ -51,14 +105,18 @@ TEST_CASE("BND-42 CPU facts publish isolated readonly topology and fixed frequen
                   ReadCpuFile(fs, "/sys/devices/system/cpu/possible"));
             const auto entries = fs.ListDirectory("/sys/devices/system/cpu");
             CHECK(std::count_if(entries.begin(), entries.end(), [](const auto& entry) {
-                return entry.is_directory && entry.name.starts_with("cpu");
-            }) == cores);
-            CHECK_THROWS_AS(static_cast<void>(fs.Stat("/sys/devices/system/cpu/cpu" + std::to_string(cores))), runtime::VfsError);
+                      return entry.is_directory && entry.name.starts_with("cpu");
+                  }) == cores);
+            CHECK_THROWS_AS(static_cast<void>(fs.Stat("/sys/devices/system/cpu/cpu" + std::to_string(cores))),
+                            runtime::VfsError);
             CHECK_THROWS_AS(static_cast<void>(fs.Open("/proc/cpuinfo", {.write = true})), runtime::VfsError);
-            CHECK_THROWS_AS(static_cast<void>(fs.Open("/sys/devices/system/cpu/online", {.write = true})), runtime::VfsError);
+            CHECK_THROWS_AS(static_cast<void>(fs.Open("/sys/devices/system/cpu/online", {.write = true})),
+                            runtime::VfsError);
             runtime::VirtualFileSystem other_fs;
             runtime::GuestCpuEnvironment other({2, 800});
             other.Publish(other_fs);
+            CHECK(ReadCpuFile(other_fs, "/proc/cpuinfo").find("BogoMIPS\t: 1600.00\n") != std::string::npos);
+            CHECK(info.find("BogoMIPS\t: 3000.00\n") != std::string::npos);
             CHECK(ReadCpuFile(other_fs, "/sys/devices/system/cpu/online") == "0-1\n");
             CHECK(ReadCpuFile(other_fs, "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq") == "800000\n");
         }
@@ -87,14 +145,19 @@ TEST_CASE("BND-42 real API19 Bionic sysconf shares process CPU facts and retains
         REQUIRE(input.good());
         const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
         auto& image = images.emplace_back(bytes.size());
-        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
-        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+        std::transform(bytes.begin(), bytes.end(), image.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back(
+            {name, image,
+             memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
     }
     runtime::VirtualFileSystem fs;
     runtime::AndroidGuestProcessRequest request{19, modules, {}, 64, 36, 1000000, 1, &fs, {}};
     request.proc_facts.cpu = {4, 1500};
     SUBCASE("unrestricted") {}
-    SUBCASE("BND-43 execution limits") { request.proc_facts.cpu.execution = {true, 1}; }
+    SUBCASE("BND-43 execution limits") {
+        request.proc_facts.cpu.execution = {true, 1};
+    }
     auto process = runtime::AndroidGuestProcess::Start(request);
     const auto function = process->FindModuleExport(0, "sysconf");
     CHECK(process->Invoke({function, {96}}).return_value == 4);
@@ -111,7 +174,7 @@ TEST_CASE("BND-42 published VFP and NEON basic arithmetic executes on Dynarmic")
         memory::CheckedMemoryBus bus(memory);
         constexpr memory::GuestAddress code{0x10000};
         memory.Map({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
-        memory.Write32(code, neon ? 0xf2200840U : 0xee300a00U); // vadd.i32 q0,q0,q0 / vadd.f32 s0,s0,s0
+        memory.Write32(code, neon ? 0xf2200840U : 0xee300a00U);  // vadd.i32 q0,q0,q0 / vadd.f32 s0,s0,s0
         memory.Write32(code.Add(4), 0xef000000U);
         memory.Protect({code, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
         cpu::DynarmicCpu cpu(bus);
@@ -125,7 +188,8 @@ TEST_CASE("BND-42 published VFP and NEON basic arithmetic executes on Dynarmic")
         if (neon) {
             for (std::uint8_t lane = 0; lane < 4; ++lane)
                 CHECK(after.ExtendedRegisters()[lane] == (lane + 1U) * 2U);
-        } else CHECK(std::bit_cast<float>(after.ExtendedRegisters()[0]) == 3.0F);
+        } else
+            CHECK(std::bit_cast<float>(after.ExtendedRegisters()[0]) == 3.0F);
     }
 }
 
@@ -136,13 +200,13 @@ TEST_CASE("BND-42 sysconf shim returns topology and tailcalls ARM or Thumb libc"
         constexpr memory::GuestAddress base{0x10000000};
         memory.Map({base, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::write);
         if (thumb) {
-            memory.Write16(base, 0x3007); // adds r0, #7
-            memory.Write16(base.Add(2), 0x4770); // bx lr
+            memory.Write16(base, 0x3007);         // adds r0, #7
+            memory.Write16(base.Add(2), 0x4770);  // bx lr
         } else {
-            memory.Write32(base, 0xe2800007); // add r0, r0, #7
-            memory.Write32(base.Add(4), 0xe12fff1e); // bx lr
+            memory.Write32(base, 0xe2800007);         // add r0, r0, #7
+            memory.Write32(base.Add(4), 0xe12fff1e);  // bx lr
         }
-        memory.Write32(base.Add(0x100), 0xef000000); // return stop
+        memory.Write32(base.Add(0x100), 0xef000000);  // return stop
         memory.Protect({base, memory.PageSize()}, memory::PageProtection::read | memory::PageProtection::execute);
         loader::Elf32LinkModule libc;
         libc.name = "libc.so";
@@ -184,16 +248,18 @@ TEST_CASE("ARM tkill real API19 libc wrapper preserves syscall errno") {
         REQUIRE(input.good());
         const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
         auto& image = images.emplace_back(bytes.size());
-        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
-        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+        std::transform(bytes.begin(), bytes.end(), image.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back(
+            {name, image,
+             memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
     }
     runtime::VirtualFileSystem fs;
     auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});
     const auto tkill = process->FindModuleExport(0, "tkill");
     const auto error_pointer = process->FindModuleExport(0, "__errno");
     CHECK(process->Invoke({tkill, {1, 0}}).return_value == 0);
-    for (const auto& sample : {std::array<std::uint32_t, 3>{999, 0, 3},
-                               std::array<std::uint32_t, 3>{1, 65, 22}}) {
+    for (const auto& sample : {std::array<std::uint32_t, 3>{999, 0, 3}, std::array<std::uint32_t, 3>{1, 65, 22}}) {
         CHECK(process->Invoke({tkill, {sample[0], sample[1]}}).return_value == 0xffffffffU);
         const memory::GuestAddress address{process->Invoke({error_pointer, {}}).return_value};
         std::array<std::byte, 4> bytes{};
@@ -214,8 +280,11 @@ TEST_CASE("VFS-06 real API19 ARM libc reads HAL secure random and closes duplica
         REQUIRE(input.good());
         const std::vector<char> bytes{std::istreambuf_iterator<char>(input), {}};
         auto& image = images.emplace_back(bytes.size());
-        std::transform(bytes.begin(), bytes.end(), image.begin(), [](char value) { return static_cast<std::byte>(value); });
-        modules.push_back({name, image, memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
+        std::transform(bytes.begin(), bytes.end(), image.begin(),
+                       [](char value) { return static_cast<std::byte>(value); });
+        modules.push_back(
+            {name, image,
+             memory::GuestAddress{0x10000000U + static_cast<std::uint32_t>(modules.size()) * 0x10000000U}});
     }
     runtime::VirtualFileSystem fs;
     auto process = runtime::AndroidGuestProcess::Start({19, modules, {}, 64, 36, 1000000, 1, &fs, {}});

@@ -8,6 +8,7 @@
 - [ADR-0010 · pthread 保留 Bionic ABI，在 syscall 边界映射宿主线程](#adr-0010)
 - [ADR-0011 · 固定 4 KiB guest 页并分离宿主后备粒度](#adr-0011)
 - [ADR-0013 · Runtime 子模块边界与显式装配](#adr-0013)
+- [ADR-0080 · 进程统一拥有虚拟 CPU 查询事实](#adr-0080)
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
 - [ADR-0169 · API19 两级 UI 字体链与会话同源注入](#adr-0169)
 - [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
@@ -225,3 +226,47 @@ Paint、TextView 和文本输入共享 UI 覆盖判定，失败携带码点并�
 只支持独立 BMP，保留 shaping/combining/bidi、补充平面失败及整链128项缓存上限。
 不读取宿主或应用字体，不实现完整 Android 字体匹配、系统服务与排版。
 范围与验证见 [DVM-344](../tasks/dexvm/DVM-344.md)。
+
+<a id="adr-0080"></a>
+
+## ADR-0080：进程统一拥有虚拟 CPU 查询事实
+
+日期：2026-09-29。状态：接受。任务：[BND-42](../tasks/boundary/BND-42.md)。
+
+### 决策
+
+核数和标称主频在启动时冻结为 `GuestCpuConfig`，默认 1 核/1000 MHz。允许范围分别为
+1..32 和 1..10000；所有核心固定在线且同频。该参数表达 guest 的虚拟硬件配置，不映射
+宿主亲和性、线程配额、Clock 或执行速度。CPU 名称/指令标志不开放任意覆盖；Features
+只发布现有 Dynarmic ARMv7 的受支持子集，不复制真机 VFPv4 或厂商身份。
+
+integration 发布只读 `/proc/cpuinfo`、CPU sysfs 的 possible/present/online/offline、
+每核 online 与 cpufreq 的 min/max/current 标称 kHz。发布冲突明确失败，进程销毁撤销，
+旧 FD 保留原快照。已存在的 meminfo 不阻止 CPU 节点发布。
+
+API19 原版 Bionic 的在线核数查询依赖 `/proc/stat`。本阶段没有真实 CPU 时间统计，
+因此不生成虚假的零利用率文件。仅替换 libc 导出的 sysconf 符号位置，使用进程私有 RX
+A32 桥处理 `_SC_NPROCESSORS_CONF=96` 和 `_SC_NPROCESSORS_ONLN=97`；其他 selector
+保留参数、LR 和栈，BX 尾调用原版 ARM/Thumb sysconf，保留其返回值及 errno。
+桥进入同一 linker namespace，重定位/dlsym/soinfo 共用，不修改 ROM ELF 指令或固定偏移。
+libc 内部不经导出符号的私有调用不属于该覆写契约。
+
+DexVM bridge 从该进程注入 CoreIntrinsicServices，Runtime.availableProcessors 与
+Java Posix 的这两个 sysconf selector 共享核数；其他 Java selector 继续记账失败。
+CLI 与单游戏设置接入同一启动配置；全局设备预设仍保持数据层边界。
+
+### 验收边界
+
+覆盖配置范围、VFS 快照/隔离/只读/撤销、ARM 与 Thumb fallback、Java 与 GUI 传递，
+再复现同一 APK 首错。后续真实并行度、负载统计与速度控制需要独立设计及验证；
+CPU coprocessor 首错也不并入本工作单。
+
+### 修订 · 2026-10-29
+
+CPU 微架构身份属于不可变虚拟 CPU 模型，必须与 Dynarmic 实际支持的 Features 一致；
+当前采用 Cortex-A9 r0p0 的 MIDR（0x410fc090），Processor revision 与分解字段同源。
+这不代表具体真机；板级 Hardware 保持 OGPlay virtual ARMv7，Revision/Serial 使用内核
+无板级信息时的零值，不伪造厂商、板型或序列号。`/proc/cpuinfo` 按 Linux v3.4 ARM
+`c_show` 的 SMP 格式输出（单核亦保留 processor 组与空行、Features 尾空格）。
+BogoMIPS 按虚拟 delay loop 每周期一轮定义为 2 × frequency_mhz，非宿主采样或执行限速。
+CPU sysfs 与 sysconf 行为不变；不增加 nvmap 或 NV system clock。

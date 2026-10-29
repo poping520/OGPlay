@@ -2016,7 +2016,7 @@ note = "BND-41/ADR-0079：进程内 ARM legacy/RT 信号 action、mask、pending
 [runtime.guest_cpu_facts]
 status = "partial"
 test = "tests/runtime/guest_cpu_environment_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp; tests/dexvm/intrinsics_p1_tests.cpp#BND-42; tests/frontend/gui_launch_tests.cpp#BND-42"
-note = "BND-42/ADR-0080：进程统一冻结 1..32 核与 1..10000 MHz（默认 1 核/1000 MHz）；cpuinfo、CPU sysfs、sysconf 96/97、Java Runtime/Posix 核数一致，可由 CLI/单游戏设置配置；Features 为受支持 ARMv7 子集，不伪造真机身份。其他 Java selector 记账失败；/proc/stat、负载统计与全局设备预设未实现。执行配额见 cpu.execution_budget。"
+note = "BND-42/ADR-0080：冻结 1..32 核、1..10000 MHz（默认 1/1000）；cpuinfo、CPU sysfs、sysconf 96/97 与 Java 核数同源，可由 CLI/单游戏配置。cpuinfo 按 Linux 3.4 ARM SMP 格式，虚拟 Cortex-A9 r0p0 匹配既有 Features，BogoMIPS=2×MHz；板级 Revision/Serial 为零。其他 Java selector 明确失败；/proc/stat、负载统计及全局预设未实现。执行配额见 cpu.execution_budget。"
 
 [cpu.execution_budget]
 status = "complete"

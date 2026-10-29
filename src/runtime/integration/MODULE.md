@@ -25,7 +25,9 @@ thread owner join，不能依赖惰性 native context 是否存在来区分。
 这些 owner hooks 在调用静止后统一撤销，不使下层反向依赖 DexVM。
 
 `GuestCpuEnvironment` 由进程拥有并冻结 CPU 配置；在 VFS 发布可撤销只读 CPU 信息与
-sysfs 拓扑/标称频率。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
+sysfs 拓扑/标称频率。cpuinfo 遵循 Linux 3.4 ARM SMP 格式，微架构身份从不可变
+虚拟 Cortex-A9 模型派生并匹配 Dynarmic Features；BogoMIPS 为 2 × 标称 MHz，板级
+Revision/Serial 为无板级信息时的零值，不采样宿主。API19 `sysconf` 导出通过进程私有 RX guest 桥处理核数 selector
 96/97，其余参数保持原 ABI 尾调用原 libc。重定位、dlsym 与 linker 视图使用同一导出；
 不修改原 ELF 指令。DexVM bridge 从该进程取得核数，禁止另用宿主硬件事实。
 不支持统计负载、热插拔、调频控制或周期精确模拟，见 ADR-0080。

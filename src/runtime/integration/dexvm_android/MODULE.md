@@ -91,13 +91,14 @@ key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保
 | getPermissionInfo | 仅 Manifest 中 registered 的 `<permission>` 首个有效定义，0/GET_META_DATA；未知 group/重复后项不注册，仅请求/授予但未定义仍 NameNotFoundException |
 | queryBroadcastReceivers | flags=0、非空 action、同一 filter category 子集，无需 DEFAULT；排除禁用项，同组件首匹配、API19 稳定排序 |
 | resolveService | 非空 action，无 component/data/type/categories，0/GET_RESOLVED_FILTER；仅确定无候选时 null，投影不改匹配；潜在匹配/未知条件失败 |
-| bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务（ADR-0084） |
+| bindService/unbindService | 缺席查询沿原规则；主线程 BIND_AUTO_CREATE、component-only、当前 APK 启用的同进程服务；独立进程/isolated 返回 false，仍登记连接且可解绑，无回调（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)） |
 
 广播查询保留真实 ArrayList/ResolveInfo/ActivityInfo 及 priority/match/isDefault/filter label/icon；
 同名声明各自的过滤器与配置独立，跨声明按组件去重，首个匹配提供结果，不与按名查询的后项配置合并。
 permission/exported 不限制声明查询。外部包、selector/component/data/type、未解析潜在 data、
-未知 flags/缺 inventory 不伪装零匹配。服务查询不启动进程；正匹配 resolver/started service/跨进程
-服务未实现。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
+未知 flags/缺 inventory 不伪装零匹配。服务查询不启动进程；正匹配 resolver/同进程 started service
+未实现。独立进程/isolated 服务 start 返回 null、bind 返回 false，每次记账并限流 warn，
+PackageManager 保留清单事实（[ADR-0170](../../../../docs/adr/runtime.md#adr-0170)）。显式绑定在主 Looper 异步 construct/attach/onCreate/onBind 后交付原本地 Binder；
 同组件共享，末次解绑 onUnbind/onDestroy，排队后解绑取消回调，null onBind 无连接回调。
 连接早于 bind 结果登记、失败可解绑一次；Context 强边/session roots 保活连接/Intent/服务，退出清理；
 定向反射不解析无关签名。

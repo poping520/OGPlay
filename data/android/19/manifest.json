@@ -41,7 +41,7 @@
     "path": "framework/bootdex.jar",
     "generator": "tools/bootdex/build_bootdex.py",
     "recipe": "tools/bootdex/api19.json",
-    "recipe_sha256": "00b41f811dcc95e8668c969750798c5230286a6edd37c3e9cdf5db2361a5afe9",
+    "recipe_sha256": "7d8e2dc82e9c469e72958b5cc7fada43242e3e57092d55f4957a7534d992cb3f",
     "system_resources": {
       "table": "tools/bootdex/api19-system-resources.json",
       "table_sha256": "65768857b28b9ba572bd84eb89a33e223188bf0731ffb6fe80d4e701558b9ab3",
@@ -93,12 +93,12 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 11090167,
-    "sha256": "a80fc2545398bc62d85595383eed430e6c131aa6c747a07927de21d711965540",
+    "size": 11096848,
+    "sha256": "85b265c0ac37493423ab2abd93e77392977790501ebb47c3c0e20b9cd44fa170",
     "dex_entry": "classes.dex",
-    "dex_size": 6202700,
-    "dex_sha256": "55db50306c0aee8b433c8753cee2359fec0b9a1de3d1b743247d35dde8bffe3f",
-    "class_count": 3865,
+    "dex_size": 6209916,
+    "dex_sha256": "45da9d0f033f975b1714536e90505413b30092f753eac826cd0c1e2851be6d3a",
+    "class_count": 3867,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
@@ -106,17 +106,17 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "59e7d89113b36d79a1cab8031e149320682d660111f1e65ff88f6df6bef182f2",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "0b5dcdd722f400bd23b2c310da533ad816d0fcb2aaebe8d5737b9a1af9ec4af6"
+      "payload_sha256": "f7f6bac8dc8abba0514ee0c443a3034196a2b6f43fa209d7cc6b2754e2609d99"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "3d3327c46b9ce50f1b5a43ed7043030dfdcef49b929ea70b4d7c1b6ec75113a4",
+      "sha256": "aefc31aa58c27ce04d118c93980583a19c9e973d24a21c77136e427275dfa3bd",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "4bf1b9946a8e369d3c595bee5ab3f3cd932e3865a6ed63b559b39add8152703e",
+      "manifest_sha256": "ae223c1a841b77ded9ea8b2aa1964f9bcea736e67259c02bd36797204296eed1",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },

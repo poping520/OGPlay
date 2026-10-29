@@ -65,13 +65,14 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         core::Logger logger;
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                               "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so",
-                               "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+        for (const auto name :
+             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
+              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
             contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
             libraries.push_back({name, contents.back()});
         }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        test::BindBootDexArchive(*context);
         context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
         session::AndroidAppProcessRequest request;
         request.manifest = AppManifest("android.app.Activity");
@@ -127,8 +128,9 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
             return object;
         };
         const auto byte_array = [&](const std::vector<std::byte>& data) {
-            const auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
-                runtime::JniPrimitiveKind::byte, static_cast<runtime::JniSize>(data.size()));
+            const auto array =
+                vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                                             static_cast<runtime::JniSize>(data.size()));
             vm.Model().WriteByteRegion(array, 0, data);
             return array;
         };
@@ -152,7 +154,8 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         const auto other = construct(owner);
         const auto other_root = vm.ProtectReferences(std::array{other});
         const std::vector<std::byte> digits{std::byte{'1'}, std::byte{'2'}, std::byte{'3'},
-            std::byte{'4'}, std::byte{'5'}, std::byte{'6'}, std::byte{'7'}, std::byte{'8'}, std::byte{'9'}};
+                                            std::byte{'4'}, std::byte{'5'}, std::byte{'6'},
+                                            std::byte{'7'}, std::byte{'8'}, std::byte{'9'}};
         const auto input = byte_array(digits);
         const auto input_root = vm.ProtectReferences(std::array{input});
         CHECK(invoke(crc, "getValue", "()J").AsLong() == 0);
@@ -176,17 +179,19 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
 
         expect_exception(invoke_result(crc, "update", "([B)V", {VmValue::Ref(VmObjectRef{})}),
                          "Ljava/lang/NullPointerException;");
-        expect_exception(invoke_result(crc, "update", "([BII)V",
-            {VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)}), "Ljava/lang/NullPointerException;");
-        for (const auto& [offset, count] : std::array<std::pair<int, int>, 5>{
-                 {{-1, 1}, {0, -1}, {8, 2}, {10, 0}, {1, INT32_MAX}}}) {
+        expect_exception(
+            invoke_result(crc, "update", "([BII)V", {VmValue::Ref(VmObjectRef{}), VmValue::Int(0), VmValue::Int(0)}),
+            "Ljava/lang/NullPointerException;");
+        for (const auto& [offset, count] :
+             std::array<std::pair<int, int>, 5>{{{-1, 1}, {0, -1}, {8, 2}, {10, 0}, {1, INT32_MAX}}}) {
             expect_exception(invoke_result(crc, "update", "([BII)V",
-                {VmValue::Ref(input), VmValue::Int(offset), VmValue::Int(count)}),
-                "Ljava/lang/ArrayIndexOutOfBoundsException;");
+                                           {VmValue::Ref(input), VmValue::Int(offset), VmValue::Int(count)}),
+                             "Ljava/lang/ArrayIndexOutOfBoundsException;");
         }
         // Also exercise the native guard independently of the Java parameter checks.
         const auto native_failure = [&](VmObjectRef array, int offset, int count, const char* expected) {
-            const auto result = direct(owner, "updateImpl", "([BIIJ)J",
+            const auto result = direct(
+                owner, "updateImpl", "([BIIJ)J",
                 {VmValue::Ref(crc), VmValue::Ref(array), VmValue::Int(offset), VmValue::Int(count), VmValue::Long(0)});
             expect_exception(result, expected);
         };
@@ -200,7 +205,8 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         }
         // Independent host-zlib vector crosses three 4096-byte JNI chunks plus a tail.
         std::vector<std::byte> large(12289);
-        for (std::size_t i = 0; i < large.size(); ++i) large[i] = static_cast<std::byte>(i & 255U);
+        for (std::size_t i = 0; i < large.size(); ++i)
+            large[i] = static_cast<std::byte>(i & 255U);
         const auto large_input = byte_array(large);
         const auto large_root = vm.ProtectReferences(std::array{large_input});
         invoke(crc, "reset", "()V");
@@ -212,14 +218,15 @@ TEST_CASE("DVM-201 CRC32 uses BootDex state and real guest zlib on both backends
         const auto digest_root = vm.ProtectReferences(std::array{digest});
         const auto output = construct("Ljava/io/ByteArrayOutputStream;");
         const auto output_root = vm.ProtectReferences(std::array{output});
-        const auto stream = construct("Ljava/security/DigestOutputStream;",
-            "(Ljava/io/OutputStream;Ljava/security/MessageDigest;)V", {VmValue::Ref(output), VmValue::Ref(digest)});
+        const auto stream =
+            construct("Ljava/security/DigestOutputStream;", "(Ljava/io/OutputStream;Ljava/security/MessageDigest;)V",
+                      {VmValue::Ref(output), VmValue::Ref(digest)});
         const auto stream_root = vm.ProtectReferences(std::array{stream});
         invoke(stream, "write", "(I)V", {VmValue::Int('1')});
         invoke(stream, "write", "([BII)V", {VmValue::Ref(input), VmValue::Int(1), VmValue::Int(8)});
         const auto sum = invoke(digest, "digest", "()[B").ref;
         CHECK(vm.Model().ReadByteRegion(sum, 0, 4) ==
-            std::vector<std::byte>{std::byte{0xcb}, std::byte{0xf4}, std::byte{0x39}, std::byte{0x26}});
+              std::vector<std::byte>{std::byte{0xcb}, std::byte{0xf4}, std::byte{0x39}, std::byte{0x26}});
         const auto written = invoke(output, "toByteArray", "()[B").ref;
         CHECK(vm.Model().ReadByteRegion(written, 0, 9) == digits);
         invoke(digest, "reset", "()V");
@@ -238,13 +245,14 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         core::Logger logger;
         std::vector<std::vector<std::byte>> contents;
         std::vector<runtime::BionicModuleSource> libraries;
-        for (const auto name : {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so",
-                               "libcrypto.so", "libssl.so", "libgabi++.so", "libicui18n.so",
-                               "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+        for (const auto name :
+             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
+              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
             contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
             libraries.push_back({name, contents.back()});
         }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        test::BindBootDexArchive(*context);
         context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
         session::AndroidAppProcessRequest request;
         request.manifest = AppManifest("android.app.Activity");
@@ -301,8 +309,9 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
             return object;
         };
         const auto byte_array = [&](const std::vector<std::byte>& data) {
-            const auto array = vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"),
-                runtime::JniPrimitiveKind::byte, static_cast<runtime::JniSize>(data.size()));
+            const auto array =
+                vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                                             static_cast<runtime::JniSize>(data.size()));
             vm.Model().WriteByteRegion(array, 0, data);
             return array;
         };
@@ -313,8 +322,8 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
             REQUIRE(outcome.exception.IsValid());
             CHECK(linker.Class(outcome.exception_class).descriptor == type);
         };
-        for (const auto name : {"GZIPOutputStream", "GZIPInputStream", "DeflaterOutputStream",
-                                "InflaterInputStream", "Deflater", "Inflater"}) {
+        for (const auto name : {"GZIPOutputStream", "GZIPInputStream", "DeflaterOutputStream", "InflaterInputStream",
+                                "Deflater", "Inflater"}) {
             const auto type = linker.ResolveDescriptor(std::string("Ljava/util/zip/") + name + ";");
             linker.EnsureClassLinked(type);
             CHECK(linker.Class(type).is_boot_dex);
@@ -325,19 +334,18 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         const auto gzip_encode = [&](const std::vector<std::byte>& data) {
             const auto output = construct("Ljava/io/ByteArrayOutputStream;");
             const auto output_root = vm.ProtectReferences(std::array{output});
-            const auto gzip = construct("Ljava/util/zip/GZIPOutputStream;", "(Ljava/io/OutputStream;)V",
-                                        {VmValue::Ref(output)});
+            const auto gzip =
+                construct("Ljava/util/zip/GZIPOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(output)});
             const auto gzip_root = vm.ProtectReferences(std::array{gzip});
             const auto input = byte_array(data);
             const auto input_root = vm.ProtectReferences(std::array{input});
-            invoke(gzip, "write", "([BII)V", {VmValue::Ref(input), VmValue::Int(0),
-                                              VmValue::Int(static_cast<int>(data.size()))});
+            invoke(gzip, "write", "([BII)V",
+                   {VmValue::Ref(input), VmValue::Int(0), VmValue::Int(static_cast<int>(data.size()))});
             invoke(gzip, "flush", "()V");
             static_cast<void>(vm.CollectGarbage("gzip-live-stream"));
             invoke(gzip, "close", "()V");
-            invoke(gzip, "close", "()V"); // The application closes the stream twice.
-            expect_exception(invoke_result(gzip, "write", "(I)V", {VmValue::Int(1)}),
-                             "Ljava/io/IOException;");
+            invoke(gzip, "close", "()V");  // The application closes the stream twice.
+            expect_exception(invoke_result(gzip, "write", "(I)V", {VmValue::Int(1)}), "Ljava/io/IOException;");
             return bytes(invoke(output, "toByteArray", "()[B").ref);
         };
         const auto gzip_decode = [&](const std::vector<std::byte>& compressed, bool valid) {
@@ -345,23 +353,26 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
             const auto array_root = vm.ProtectReferences(std::array{array});
             const auto input = construct("Ljava/io/ByteArrayInputStream;", "([B)V", {VmValue::Ref(array)});
             const auto input_root = vm.ProtectReferences(std::array{input});
-            const auto gzip = construct("Ljava/util/zip/GZIPInputStream;", "(Ljava/io/InputStream;)V",
-                                        {VmValue::Ref(input)});
+            const auto gzip =
+                construct("Ljava/util/zip/GZIPInputStream;", "(Ljava/io/InputStream;)V", {VmValue::Ref(input)});
             const auto gzip_root = vm.ProtectReferences(std::array{gzip});
             const auto buffer = byte_array(std::vector<std::byte>(4096));
             const auto buffer_root = vm.ProtectReferences(std::array{buffer});
             std::vector<std::byte> result;
             bool failed = false, eof = false;
             for (int i = 0; i < 1000; ++i) {
-                const auto read = invoke_result(gzip, "read", "([BII)I",
-                    {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(4096)});
+                const auto read =
+                    invoke_result(gzip, "read", "([BII)I", {VmValue::Ref(buffer), VmValue::Int(0), VmValue::Int(4096)});
                 if (read.exception.IsValid()) {
                     CHECK(linker.IsAssignable(linker.ResolveDescriptor("Ljava/io/IOException;"), read.exception_class));
                     failed = true;
                     break;
                 }
                 const auto n = read.value.AsInt();
-                if (n == -1) { eof = true; break; }
+                if (n == -1) {
+                    eof = true;
+                    break;
+                }
                 REQUIRE(n > 0);
                 const auto chunk = vm.Model().ReadByteRegion(buffer, 0, n);
                 result.insert(result.end(), chunk.begin(), chunk.end());
@@ -375,20 +386,24 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         // Python's gzip.compress(mtime=0) provides an independent RFC1952 vector.
         const std::vector<std::byte> oracle = [] {
             std::vector<std::byte> result;
-            for (const auto b : {0x1f,0x8b,0x08,0x00,0x00,0x00,0x00,0x00,0x02,0xff,0x73,0x0c,
-                0xf0,0x34,0xb4,0x54,0x48,0xaf,0xca,0x2c,0x50,0x28,0xca,0x2f,0xcd,0x4b,0x51,
-                0x28,0x29,0xca,0x2c,0x00,0x00,0x8d,0x71,0xb8,0x3e,0x15,0x00,0x00,0x00})
+            for (const auto b : {0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x73, 0x0c, 0xf0, 0x34,
+                                 0xb4, 0x54, 0x48, 0xaf, 0xca, 0x2c, 0x50, 0x28, 0xca, 0x2f, 0xcd, 0x4b, 0x51, 0x28,
+                                 0x29, 0xca, 0x2c, 0x00, 0x00, 0x8d, 0x71, 0xb8, 0x3e, 0x15, 0x00, 0x00, 0x00})
                 result.push_back(static_cast<std::byte>(b));
             return result;
         }();
         const std::string text = "API19 gzip round trip";
         std::vector<std::byte> plain;
-        for (const char c : text) plain.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
+        for (const char c : text)
+            plain.push_back(static_cast<std::byte>(static_cast<unsigned char>(c)));
         CHECK(gzip_decode(oracle, true) == plain);
         CHECK(gzip_decode(gzip_encode({}), true).empty());
         std::vector<std::byte> large(131073);
         std::uint32_t random = 1;
-        for (auto& b : large) { random = random * 1664525U + 1013904223U; b = static_cast<std::byte>(random >> 24U); }
+        for (auto& b : large) {
+            random = random * 1664525U + 1013904223U;
+            b = static_cast<std::byte>(random >> 24U);
+        }
         const auto encoded = gzip_encode(large);
         REQUIRE(encoded.size() > 65536);
         CHECK(encoded[0] == std::byte{0x1f});
@@ -398,13 +413,13 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         const auto little32 = [&](std::size_t offset) {
             std::uint32_t value = 0;
             for (unsigned i = 0; i < 4; ++i)
-                value |= std::to_integer<std::uint32_t>(encoded[offset+i]) << (8U*i);
+                value |= std::to_integer<std::uint32_t>(encoded[offset + i]) << (8U * i);
             return value;
         };
-        const auto crc = little32(encoded.size()-8);
-        const auto size = little32(encoded.size()-4);
+        const auto crc = little32(encoded.size() - 8);
+        const auto size = little32(encoded.size() - 4);
         CHECK(size == large.size());
-        const auto compressed_size = static_cast<std::uint32_t>(encoded.size()-18);
+        const auto compressed_size = static_cast<std::uint32_t>(encoded.size() - 18);
         std::vector<std::byte> zip(31);
         Put32(zip, 0, 0x04034b50);
         Put16(zip, 8, 8);
@@ -413,7 +428,7 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         Put32(zip, 22, size);
         Put16(zip, 26, 1);
         zip[30] = std::byte{'x'};
-        zip.insert(zip.end(), encoded.begin()+10, encoded.end()-8);
+        zip.insert(zip.end(), encoded.begin() + 10, encoded.end() - 8);
         const loader::ApkArchive archive{{{"x", 0, 8, crc, compressed_size, size, 0}}};
         CHECK(loader::ReadApkEntry(zip, archive, "x") == large);
         CHECK(gzip_decode(encoded, true) == large);
@@ -475,32 +490,39 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         invoke(deflater, "setInput", "([B)V", {VmValue::Ref(dictionary)});
         invoke(deflater, "finish", "()V");
         const auto dictionary_count = invoke(deflater, "deflate", "([B)I", {VmValue::Ref(output)}).AsInt();
-        invoke(inflater, "setInput", "([BII)V", {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(dictionary_count)});
+        invoke(inflater, "setInput", "([BII)V",
+               {VmValue::Ref(output), VmValue::Int(0), VmValue::Int(dictionary_count)});
         CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == 0);
         CHECK(invoke(inflater, "needsDictionary", "()Z").AsInt() == 1);
         CHECK(invoke(inflater, "getAdler", "()I").AsInt() == invoke(deflater, "getAdler", "()I").AsInt());
         invoke(inflater, "setDictionary", "([B)V", {VmValue::Ref(dictionary)});
         CHECK(invoke(inflater, "inflate", "([B)I", {VmValue::Ref(decoded)}).AsInt() == static_cast<int>(plain.size()));
         CHECK(vm.Model().ReadByteRegion(decoded, 0, static_cast<int>(plain.size())) == plain);
-        const auto field = *linker.FindFieldRecursive(linker.ResolveDescriptor("Ljava/util/zip/Deflater;"), "streamHandle", "J");
+        const auto field =
+            *linker.FindFieldRecursive(linker.ResolveDescriptor("Ljava/util/zip/Deflater;"), "streamHandle", "J");
         const auto slots = vm.Model().InstanceSlots(deflater);
         const auto slot = linker.Field(field).slot;
-        const auto token = static_cast<std::int64_t>(std::uint64_t(slots[slot].bits) | (std::uint64_t(slots[slot+1].bits) << 32U));
+        const auto token =
+            static_cast<std::int64_t>(std::uint64_t(slots[slot].bits) | (std::uint64_t(slots[slot + 1].bits) << 32U));
         expect_exception(direct("Ljava/util/zip/Deflater;", "setInputImpl", "([BIIJ)V",
-            {VmValue::Ref(deflater), VmValue::Ref(input), VmValue::Int(1), VmValue::Int(INT32_MAX), VmValue::Long(token)}),
-            "Ljava/lang/ArrayIndexOutOfBoundsException;");
-        expect_exception(direct("Ljava/util/zip/Inflater;", "getAdlerImpl", "(J)I",
-            {VmValue::Ref(inflater), VmValue::Long(token)}), "Ljava/lang/IllegalStateException;");
+                                {VmValue::Ref(deflater), VmValue::Ref(input), VmValue::Int(1), VmValue::Int(INT32_MAX),
+                                 VmValue::Long(token)}),
+                         "Ljava/lang/ArrayIndexOutOfBoundsException;");
+        expect_exception(
+            direct("Ljava/util/zip/Inflater;", "getAdlerImpl", "(J)I", {VmValue::Ref(inflater), VmValue::Long(token)}),
+            "Ljava/lang/IllegalStateException;");
         expect_exception(direct("Ljava/util/zip/Inflater;", "setFileInputImpl", "(Ljava/io/FileDescriptor;JIJ)I",
-            {VmValue::Ref(inflater), VmValue::Ref(VmObjectRef{}), VmValue::Long(0), VmValue::Int(1), VmValue::Long(0)}),
-            "Ljava/lang/UnsupportedOperationException;");
+                                {VmValue::Ref(inflater), VmValue::Ref(VmObjectRef{}), VmValue::Long(0), VmValue::Int(1),
+                                 VmValue::Long(0)}),
+                         "Ljava/lang/NullPointerException;");
         invoke(deflater, "end", "()V");
         invoke(deflater, "end", "()V");
         invoke(inflater, "end", "()V");
         invoke(inflater, "end", "()V");
         expect_exception(invoke_result(deflater, "getAdler", "()I", {}), "Ljava/lang/IllegalStateException;");
-        expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
-            {VmValue::Ref(deflater), VmValue::Long(token)}), "Ljava/lang/IllegalStateException;");
+        expect_exception(
+            direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I", {VmValue::Ref(deflater), VmValue::Long(token)}),
+            "Ljava/lang/IllegalStateException;");
         static_cast<void>(vm.CollectGarbage("gzip-before-owner-test"));
         vm.RunFinalization();
         static_cast<void>(vm.CollectGarbage("gzip-before-owner-test-finalized"));
@@ -512,7 +534,8 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
             const auto abandoned = construct("Ljava/util/zip/Deflater;");
             const auto abandoned_root = vm.ProtectReferences(std::array{abandoned});
             const auto values = vm.Model().InstanceSlots(abandoned);
-            abandoned_token = static_cast<std::int64_t>(std::uint64_t(values[slot].bits) | (std::uint64_t(values[slot+1].bits) << 32U));
+            abandoned_token = static_cast<std::int64_t>(std::uint64_t(values[slot].bits) |
+                                                        (std::uint64_t(values[slot + 1].bits) << 32U));
             CHECK(vm.GuestNativeResourceCount() == baseline + 2);
         }
         static_cast<void>(vm.CollectGarbage("gzip-abandoned-owner"));
@@ -520,11 +543,12 @@ TEST_CASE("DVM-214 API19 gzip streams use guest zlib and release native state") 
         static_cast<void>(vm.CollectGarbage("gzip-abandoned-owner-finalized"));
         CHECK(vm.GuestNativeResourceCount() == baseline + 1);
         expect_exception(direct("Ljava/util/zip/Deflater;", "getAdlerImpl", "(J)I",
-            {VmValue::Ref(alive), VmValue::Long(abandoned_token)}), "Ljava/lang/IllegalStateException;");
+                                {VmValue::Ref(alive), VmValue::Long(abandoned_token)}),
+                         "Ljava/lang/IllegalStateException;");
         CHECK(invoke(alive, "getBytesRead", "()J").AsLong() == 0);
         vm.ReleaseGuestNativeResources(true);
         CHECK(vm.GuestNativeResourceCount() == 0);
-        invoke(alive, "end", "()V"); // Teardown writes API19's -1 sentinel, not zero.
+        invoke(alive, "end", "()V");  // Teardown writes API19's -1 sentinel, not zero.
         expect_exception(invoke_result(alive, "getAdler", "()I", {}), "Ljava/lang/IllegalStateException;");
     }
 }
@@ -548,6 +572,7 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
             libraries.push_back({name, contents.back()});
         }
         auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        test::BindBootDexArchive(*context);
         context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
         session::AndroidAppProcessRequest request;
         request.manifest = AppManifest("android.app.Activity");
@@ -665,5 +690,294 @@ TEST_CASE("ZipInputStream reads guest source bytes and dispatches entry operatio
         invoke(filezip, "close", "()V");
         CHECK(invoke_result(raw, "read", "()I", {}).exception.IsValid());
         CHECK(vm.GuestNativeResourceCount() == native_before);
+    }
+}
+
+TEST_CASE("DVM-350 ZipFile reads stored and deflated entries from guest VFS") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        CAPTURE(backend == InterpreterBackend::threaded ? "threaded" : "switch");
+        runtime::VirtualFileSystem filesystem;
+        core::CapabilityLedger ledger;
+        core::Logger logger;
+        std::vector<std::vector<std::byte>> contents;
+        std::vector<runtime::BionicModuleSource> libraries;
+        for (const auto name :
+             {"libc.so", "libm.so", "libdl.so", "libstdc++.so", "libz.so", "libcrypto.so", "libssl.so", "libgabi++.so",
+              "libicui18n.so", "libicuuc.so", "libstlport.so", "libogplay_jni.so"}) {
+            contents.push_back(ReadPayloadBytes(std::string("lib/") + name));
+            libraries.push_back({name, contents.back()});
+        }
+        auto context = std::make_shared<runtime::DexVmAndroidContext>();
+        test::BindBootDexArchive(*context);
+        context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{3}, std::byte{4}};
+        session::AndroidAppProcessRequest request;
+        request.manifest = AppManifest("android.app.Activity");
+        request.system_libraries = libraries;
+        // Existing minimal APK fixture; compression classes come only from BootDex.
+        request.dex_bytes = ReadDexFixture("crc32.dex");
+        request.icu_data = ReadPayloadBytes("icu/icudt51l.dat");
+        request.boot_dex_bytes = test::ReadBootDex();
+        request.context = context;
+        request.dexvm.interpreter.backend = backend;
+        request.surface_width = 64;
+        request.surface_height = 36;
+        request.maximum_ticks_per_call = UINT64_C(100000000);
+#if defined(_WIN32)
+        request.backend = {gles::AngleRenderer::d3d11, gles::AngleDevice::hardware};
+#elif defined(__APPLE__)
+        request.backend = {gles::AngleRenderer::metal, gles::AngleDevice::hardware};
+#else
+        request.backend = {gles::AngleRenderer::vulkan, gles::AngleDevice::hardware};
+#endif
+        request.filesystem = &filesystem;
+        request.ledger = &ledger;
+        request.logger = &logger;
+        auto app = session::AndroidAppProcess::Create(std::move(request));
+        auto& vm = app->DexVm().Vm();
+        auto& linker = vm.Linker();
+        const auto direct = [&](const char* owner, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments) {
+            const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, descriptor);
+            REQUIRE(method.has_value());
+            return vm.Call(*method, arguments);
+        };
+        const auto invoke_result = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                       std::vector<VmValue> arguments) {
+            const auto slot = linker.FindVtableIndex(vm.Model().ObjectClass(object), name, descriptor);
+            REQUIRE(slot.has_value());
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            return vm.Call(linker.Class(vm.Model().ObjectClass(object)).vtable[*slot], arguments);
+        };
+        const auto invoke = [&](VmObjectRef object, const char* name, const char* descriptor,
+                                std::vector<VmValue> arguments = {}) {
+            INFO((std::string{name} + descriptor));
+            const auto outcome = invoke_result(object, name, descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return outcome.value;
+        };
+        const auto construct = [&](const char* owner, const char* descriptor = "()V",
+                                   std::vector<VmValue> arguments = {}) {
+            const auto object = vm.NewIntrinsicInstance(owner);
+            const auto root = vm.ProtectReferences(std::array{object});
+            arguments.insert(arguments.begin(), VmValue::Ref(object));
+            const auto outcome = direct(owner, "<init>", descriptor, std::move(arguments));
+            REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
+            return object;
+        };
+        const auto byte_array = [&](const std::vector<std::byte>& data) {
+            const auto array =
+                vm.Model().NewPrimitiveArray(linker.ResolveDescriptor("[B"), runtime::JniPrimitiveKind::byte,
+                                             static_cast<runtime::JniSize>(data.size()));
+            vm.Model().WriteByteRegion(array, 0, data);
+            return array;
+        };
+        const auto expect_exception = [&](const VmCallOutcome& outcome, const char* type) {
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(linker.Class(outcome.exception_class).descriptor == type);
+        };
+
+        // Independent vector: Python zipfile.ZipFile(BytesIO(), 'w'); ZipInfo(date_time=(2020,1,1,0,0,0));
+        // writestr stored.txt=b'stored bytes' (ZIP_STORED), deflated.txt=b'deflated bytes '*50
+        // (ZIP_DEFLATED), folder/=b'' (ZIP_STORED).
+        const unsigned char vector_bytes[] = {
+            0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x50, 0x78, 0x77, 0xa6, 0x0f,
+            0x0c, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x64,
+            0x2e, 0x74, 0x78, 0x74, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x64, 0x20, 0x62, 0x79, 0x74, 0x65, 0x73, 0x50, 0x4b,
+            0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x21, 0x50, 0x85, 0x9f, 0x4e, 0x96, 0x18, 0x00,
+            0x00, 0x00, 0xee, 0x02, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x64, 0x65, 0x66, 0x6c, 0x61, 0x74, 0x65, 0x64,
+            0x2e, 0x74, 0x78, 0x74, 0x4b, 0x49, 0x4d, 0xcb, 0x49, 0x2c, 0x49, 0x4d, 0x51, 0x48, 0xaa, 0x2c, 0x49, 0x2d,
+            0x56, 0x48, 0x19, 0xe5, 0x8e, 0x72, 0x87, 0x2f, 0x17, 0x00, 0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x21, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x07, 0x00, 0x00, 0x00, 0x66, 0x6f, 0x6c, 0x64, 0x65, 0x72, 0x2f, 0x50, 0x4b, 0x01, 0x02, 0x14, 0x03, 0x14,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x50, 0x78, 0x77, 0xa6, 0x0f, 0x0c, 0x00, 0x00, 0x00, 0x0c,
+            0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00,
+            0x00, 0x00, 0x00, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x64, 0x2e, 0x74, 0x78, 0x74, 0x50, 0x4b, 0x01, 0x02, 0x14,
+            0x03, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x21, 0x50, 0x85, 0x9f, 0x4e, 0x96, 0x18, 0x00, 0x00,
+            0x00, 0xee, 0x02, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
+            0x01, 0x34, 0x00, 0x00, 0x00, 0x64, 0x65, 0x66, 0x6c, 0x61, 0x74, 0x65, 0x64, 0x2e, 0x74, 0x78, 0x74, 0x50,
+            0x4b, 0x01, 0x02, 0x14, 0x03, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0x50, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x80, 0x01, 0x76, 0x00, 0x00, 0x00, 0x66, 0x6f, 0x6c, 0x64, 0x65, 0x72, 0x2f, 0x50, 0x4b,
+            0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x03, 0x00, 0xa7, 0x00, 0x00, 0x00, 0x9b, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        };
+        std::vector<std::byte> archive;
+        for (const auto b : vector_bytes)
+            archive.push_back(static_cast<std::byte>(b));
+        filesystem.CreateDirectory("/sdcard");
+        filesystem.PutFile("/sdcard/oracle.zip", archive, true);
+        const auto zip = construct("Ljava/util/zip/ZipFile;", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(vm.NewStringUtf8("/sdcard/oracle.zip"))});
+        const auto zip_root = vm.ProtectReferences(std::array{zip});
+        CHECK(invoke(zip, "size", "()I").AsInt() == 3);
+        const auto entries = invoke(zip, "entries", "()Ljava/util/Enumeration;").ref;
+        const auto entries_root = vm.ProtectReferences(std::array{entries});
+        std::set<std::string> names;
+        while (invoke(entries, "hasMoreElements", "()Z").AsInt()) {
+            const auto entry = invoke(entries, "nextElement", "()Ljava/lang/Object;").ref;
+            names.insert(vm.StringUtf8(invoke(entry, "getName", "()Ljava/lang/String;").ref));
+        }
+        CHECK(names == std::set<std::string>{"stored.txt", "deflated.txt", "folder/"});
+        const auto get_entry = [&](VmObjectRef owner, const char* name) {
+            const auto entry = invoke(owner, "getEntry", "(Ljava/lang/String;)Ljava/util/zip/ZipEntry;",
+                                      {VmValue::Ref(vm.NewStringUtf8(name))})
+                                   .ref;
+            REQUIRE(entry.IsValid());
+            return entry;
+        };
+        const auto stored = get_entry(zip, "stored.txt");
+        const auto stored_root = vm.ProtectReferences(std::array{stored});
+        const auto deflated = get_entry(zip, "deflated.txt");
+        const auto deflated_root = vm.ProtectReferences(std::array{deflated});
+        const auto folder = get_entry(zip, "folder/");
+        CHECK(invoke(folder, "isDirectory", "()Z").AsInt() == 1);
+        CHECK(invoke(folder, "getSize", "()J").AsLong() == 0);
+        CHECK(invoke(folder, "getCrc", "()J").AsLong() == 0);
+        CHECK(invoke(stored, "isDirectory", "()Z").AsInt() == 0);
+        CHECK(invoke(stored, "getSize", "()J").AsLong() == 12);
+        CHECK(invoke(deflated, "getSize", "()J").AsLong() == 750);
+        CHECK(invoke(stored, "getCrc", "()J").AsLong() == 262567800);
+        CHECK(invoke(deflated, "getCrc", "()J").AsLong() == 2521735045);
+        const auto open = [&](VmObjectRef owner, VmObjectRef entry) {
+            return invoke(owner, "getInputStream", "(Ljava/util/zip/ZipEntry;)Ljava/io/InputStream;",
+                          {VmValue::Ref(entry)})
+                .ref;
+        };
+        const auto a = open(zip, stored);
+        const auto a_root = vm.ProtectReferences(std::array{a});
+        const auto b = open(zip, deflated);
+        const auto b_root = vm.ProtectReferences(std::array{b});
+        const std::string stored_text = "stored bytes";
+        std::string deflated_text;
+        for (int i = 0; i < 50; ++i)
+            deflated_text += "deflated bytes ";
+        // Alternate streams on the shared RAF; each must restore its own offset.
+        for (std::size_t i = 0; i < deflated_text.size(); ++i) {
+            if (i < stored_text.size()) CHECK(invoke(a, "read", "()I").AsInt() == stored_text[i]);
+            CHECK(invoke(b, "read", "()I").AsInt() == deflated_text[i]);
+        }
+        CHECK(invoke(a, "read", "()I").AsInt() == -1);
+        CHECK(invoke(b, "read", "()I").AsInt() == -1);
+        invoke(a, "close", "()V");
+        invoke(b, "close", "()V");
+        invoke(zip, "close", "()V");
+        CHECK(invoke_result(zip, "getInputStream", "(Ljava/util/zip/ZipEntry;)Ljava/io/InputStream;",
+                            {VmValue::Ref(stored)})
+                  .exception.IsValid());
+        // Successful deflate content and no missing-native ledger hits prove this path is enabled.
+        CHECK(ledger.Unimplemented().empty());
+
+        const auto out = construct("Ljava/io/FileOutputStream;", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(vm.NewStringUtf8("/sdcard/roundtrip.zip"))});
+        const auto out_root = vm.ProtectReferences(std::array{out});
+        const auto writer =
+            construct("Ljava/util/zip/ZipOutputStream;", "(Ljava/io/OutputStream;)V", {VmValue::Ref(out)});
+        const auto writer_root = vm.ProtectReferences(std::array{writer});
+        // Copy the vector's fixed DOS timestamp, avoiding lazy timezone resources in this ZIP resource check.
+        const auto entry = construct("Ljava/util/zip/ZipEntry;", "(Ljava/util/zip/ZipEntry;)V", {VmValue::Ref(stored)});
+        invoke(entry, "setMethod", "(I)V", {VmValue::Int(8)});
+        invoke(writer, "putNextEntry", "(Ljava/util/zip/ZipEntry;)V", {VmValue::Ref(entry)});
+        const std::vector<std::byte> payload{std::byte{'o'}, std::byte{'k'}, std::byte{0}, std::byte{255}};
+        invoke(writer, "write", "([B)V", {VmValue::Ref(byte_array(payload))});
+        invoke(writer, "close", "()V");
+        const auto file = construct("Ljava/io/File;", "(Ljava/lang/String;)V",
+                                    {VmValue::Ref(vm.NewStringUtf8("/sdcard/roundtrip.zip"))});
+        const auto round = construct("Ljava/util/zip/ZipFile;", "(Ljava/io/File;)V", {VmValue::Ref(file)});
+        const auto round_root = vm.ProtectReferences(std::array{round});
+        const auto input = open(round, get_entry(round, "stored.txt"));
+        const auto input_root = vm.ProtectReferences(std::array{input});
+        for (const auto value : payload)
+            CHECK(invoke(input, "read", "()I").AsInt() == std::to_integer<int>(value));
+        CHECK(invoke(input, "read", "()I").AsInt() == -1);
+        invoke(input, "close", "()V");
+        invoke(round, "close", "()V");
+
+        auto damaged = archive;
+        damaged.resize(damaged.size() - 24);
+        filesystem.PutFile("/sdcard/bad.zip", damaged, true);
+        const auto failed_open = [&](const char* path) {
+            const auto object = vm.NewIntrinsicInstance("Ljava/util/zip/ZipFile;");
+            const auto root = vm.ProtectReferences(std::array{object});
+            return direct("Ljava/util/zip/ZipFile;", "<init>", "(Ljava/lang/String;)V",
+                          {VmValue::Ref(object), VmValue::Ref(vm.NewStringUtf8(path))});
+        };
+        expect_exception(failed_open("/sdcard/bad.zip"), "Ljava/util/zip/ZipException;");
+        const auto missing = failed_open("/sdcard/missing.zip");
+        REQUIRE(missing.exception.IsValid());
+        CHECK(linker.IsAssignable(linker.ResolveDescriptor("Ljava/io/IOException;"), missing.exception_class));
+        // Error handling may retain a cached ROM regex Pattern and temporary parsing resources.
+        const auto native_before = vm.GuestNativeResourceCount();
+        const auto raf =
+            construct("Ljava/io/RandomAccessFile;", "(Ljava/lang/String;Ljava/lang/String;)V",
+                      {VmValue::Ref(vm.NewStringUtf8("/sdcard/oracle.zip")), VmValue::Ref(vm.NewStringUtf8("r"))});
+        const auto raf_root = vm.ProtectReferences(std::array{raf});
+        const auto fd = invoke(raf, "getFD", "()Ljava/io/FileDescriptor;").ref;
+        const auto fd_root = vm.ProtectReferences(std::array{fd});
+        invoke(raf, "close", "()V");
+        const auto inflater = construct("Ljava/util/zip/Inflater;");
+        const auto inflater_root = vm.ProtectReferences(std::array{inflater});
+        const auto file_input = [&](VmObjectRef descriptor, std::int64_t offset, int count) {
+            return invoke_result(inflater, "setFileInput", "(Ljava/io/FileDescriptor;JI)I",
+                                 {VmValue::Ref(descriptor), VmValue::Long(offset), VmValue::Int(count)});
+        };
+        expect_exception(file_input(fd, 0, 1), "Ljava/io/IOException;");
+        expect_exception(file_input(fd, 0, -1), "Ljava/lang/IllegalArgumentException;");
+        const auto raw = construct("Ljava/io/FileInputStream;", "(Ljava/lang/String;)V",
+                                   {VmValue::Ref(vm.NewStringUtf8("/sdcard/oracle.zip"))});
+        const auto raw_root = vm.ProtectReferences(std::array{raw});
+        const auto raw_fd = invoke(raw, "getFD", "()Ljava/io/FileDescriptor;").ref;
+        const auto raw_fd_root = vm.ProtectReferences(std::array{raw_fd});
+        expect_exception(file_input(raw_fd, -1, 1), "Ljava/io/IOException;");
+        const auto partial = file_input(raw_fd, static_cast<std::int64_t>(archive.size() - 2), 10);
+        REQUIRE(!partial.exception.IsValid());
+        CHECK(partial.value.AsInt() == 2);
+        CHECK(invoke(inflater, "getRemaining", "()I").AsInt() == 2);
+        invoke(raw, "close", "()V");
+        invoke(inflater, "end", "()V");
+        VmObjectRef retired_fd;
+        std::weak_ptr<IoRuntime::OpenFileDescription> retired_file;
+        {
+            const auto temporary = construct("Ljava/io/FileInputStream;", "(Ljava/lang/String;)V",
+                                             {VmValue::Ref(vm.NewStringUtf8("/sdcard/oracle.zip"))});
+            const auto temporary_root = vm.ProtectReferences(std::array{temporary});
+            retired_fd = invoke(temporary, "getFD", "()Ljava/io/FileDescriptor;").ref;
+            retired_file = vm.IO().FindDescriptor(retired_fd)->file;
+            invoke(temporary, "close", "()V");
+        }
+        {
+            const auto abandoned = construct("Ljava/util/zip/Inflater;");
+            const auto abandoned_root = vm.ProtectReferences(std::array{abandoned});
+            CHECK(vm.GuestNativeResourceCount() == native_before + 1);
+        }
+        static_cast<void>(vm.CollectGarbage("zipfile-closed"));
+        vm.RunFinalization();
+        static_cast<void>(vm.CollectGarbage("zipfile-finalized"));
+        // No surviving ZIP owner may retain a native token, including inherited stream state.
+        for (const auto owner : {"Ljava/util/zip/Inflater;", "Ljava/util/zip/Deflater;"}) {
+            const auto type = linker.ResolveDescriptor(owner);
+            const auto field = *linker.FindFieldRecursive(type, "streamHandle", "J");
+            const auto slot = linker.Field(field).slot;
+            std::vector<VmObjectRef> live;
+            vm.Model().VisitLiveObjects([&](VmObjectRef object) { live.push_back(object); });
+            for (const auto object : live) {
+                if (vm.Model().Kind(object) != VmObjectKind::vm_instance ||
+                    !linker.IsAssignable(type, vm.Model().ObjectClass(object)))
+                    continue;
+                const auto slots = vm.Model().InstanceSlots(object);
+                CHECK(slots[slot].bits == UINT32_MAX);
+                CHECK(slots[slot + 1].bits == UINT32_MAX);
+            }
+        }
+        // GC also releases temporary non-ZIP resources; require no growth plus closed ZIP tokens above.
+        CHECK(vm.GuestNativeResourceCount() <= native_before);
+        REQUIRE(vm.IO().FindDescriptor(raw_fd) != nullptr);
+        CHECK(vm.IO().FindDescriptor(raw_fd)->closed);
+        CHECK(vm.IO().FindDescriptor(raw_fd)->file->closed);
+        REQUIRE(vm.IO().FindDescriptor(fd) != nullptr);
+        CHECK(vm.IO().FindDescriptor(fd)->closed);
+        CHECK(vm.IO().FindDescriptor(retired_fd) == nullptr);
+        CHECK(retired_file.expired());
     }
 }

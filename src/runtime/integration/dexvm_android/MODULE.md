@@ -78,7 +78,7 @@ Runtime.nativeExit 共用不可返回 VM 退出协议，展开 Java 并终止 ex
 meta-data 的 value 解码 ARSC 类型（含 float→Bundle.putFloat），非 RIGID 不支持类型告警忽略，
 TYPE_NULL 缺 value/resource 仍失败；Manifest TYPE_STRING 转换失败保留 Bundle null string，
 key 仍必须存在，NUL/孤立 surrogate 保留 Java code units；resource 保留 ID，application/组件分别物化；selected-ABI 库
-在 `/data/app-lib` 只读挂 VFS。
+在 `/data/app-lib` 只读挂 VFS，`/data/data/<包名>/lib` 为其别名；nativeLibraryDir 仍为 `/data/app-lib`。
 
 | 查询 | 支持与失败边界 |
 | --- | --- |

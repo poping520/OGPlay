@@ -811,7 +811,7 @@ note = "APS-3 抽出 AndroidGuestProcess rootless create：仅以 API 19 system 
 [runtime.dynamic_native_library_loader]
 status = "complete"
 test = "tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "APS-10：Java load/native dlopen 共用拥有型 APK/系统源及进程 ELF 装载、构造器状态；按需装载所选 ABI 闭包，首次请求保留 guest 路径，VFS 不读宿主文件。装载可同线程重入、跨线程串行，依赖先初始化，失败禁止重跑构造器。native 不登记 ClassLoader/调用 JNI_OnLoad；Java 保持 loader 检查及一次 JNI 初始化。执行控制故障不降级 dlerror；保留进程生命周期模块及既有 dlsym 范围，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。"
+note = "Java load/native dlopen 共用 APK/系统源、进程 ELF 及构造器状态；所选 ABI 闭包按需装载，保留首次 guest 路径，不读宿主文件。装载可同线程重入、跨线程串行，依赖先初始化，失败禁止重跑构造器。native 不登记 ClassLoader/调用 JNI_OnLoad；Java 保持 loader 检查及一次 JNI 初始化。执行控制故障不降级 dlerror；保留进程生命周期模块及既有 dlsym 范围，不含真实 dlclose 卸载或动态 LD_LIBRARY_PATH。`/data/data/<包名>/lib` 别名先规范化，与 APK 库共用身份。"
 
 [runtime.application_startup]
 status = "complete"

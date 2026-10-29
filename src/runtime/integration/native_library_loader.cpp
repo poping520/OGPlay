@@ -26,8 +26,7 @@ namespace {
 constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
 
 [[nodiscard]] bool IsLibraryBasename(const std::string_view name) {
-    return !name.empty() && name.ends_with(".so") &&
-           name.find('/') == std::string_view::npos &&
+    return !name.empty() && name.ends_with(".so") && name.find('/') == std::string_view::npos &&
            name.find('\\') == std::string_view::npos;
 }
 
@@ -38,32 +37,27 @@ constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
     return value;
 }
 
-[[nodiscard]] std::string CanonicalGuestLibraryPath(
-    const std::string_view path) {
+[[nodiscard]] std::string CanonicalGuestLibraryPath(const std::string_view path) {
     if (path.empty() || path.front() != '/') {
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::invalid_request,
-            "System.load requires an absolute guest path");
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                     "System.load requires an absolute guest path");
     }
     std::string result;
     std::size_t cursor = 1;
     while (cursor <= path.size()) {
         const auto end = path.find('/', cursor);
-        const auto count =
-            (end == std::string_view::npos ? path.size() : end) - cursor;
+        const auto count = (end == std::string_view::npos ? path.size() : end) - cursor;
         const auto component = path.substr(cursor, count);
         if (component == "..") {
-            throw NativeLibraryLoadError(
-                NativeLibraryLoadErrorReason::invalid_request,
-                "System.load guest path traversal is forbidden");
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                         "System.load guest path traversal is forbidden");
         }
         if (!component.empty() && component != ".") {
             result.push_back('/');
             for (const auto character : component) {
                 if (character == '\0' || character == '\\') {
-                    throw NativeLibraryLoadError(
-                        NativeLibraryLoadErrorReason::invalid_request,
-                        "System.load guest path contains an invalid character");
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                                 "System.load guest path contains an invalid character");
                 }
                 result.push_back(FoldGuestAscii(character));
             }
@@ -72,52 +66,41 @@ constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
         cursor = end + 1U;
     }
     if (result.empty()) {
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::invalid_request,
-            "System.load guest path does not name a file");
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                     "System.load guest path does not name a file");
     }
     return result;
 }
 
-[[nodiscard]] std::vector<std::byte> ReadGuestLibraryImage(
-    VirtualFileSystem& filesystem, const std::string_view path) {
+[[nodiscard]] std::vector<std::byte> ReadGuestLibraryImage(VirtualFileSystem& filesystem, const std::string_view path) {
     VfsFileInfo info;
     try {
         info = filesystem.Stat(path);
     } catch (const VfsError& error) {
-        throw NativeLibraryLoadError(
-            error.ErrorNumber() == 2
-                ? NativeLibraryLoadErrorReason::library_not_found
-                : NativeLibraryLoadErrorReason::invalid_request,
-            "guest native library is unavailable: " + std::string(path) +
-                ": " + error.what());
+        throw NativeLibraryLoadError(error.ErrorNumber() == 2 ? NativeLibraryLoadErrorReason::library_not_found
+                                                              : NativeLibraryLoadErrorReason::invalid_request,
+                                     "guest native library is unavailable: " + std::string(path) + ": " + error.what());
     }
-    if (info.is_directory ||
-        info.size > std::numeric_limits<std::size_t>::max()) {
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::invalid_request,
-            "guest native library path is not a readable file: " +
-                std::string(path));
+    if (info.is_directory || info.size > std::numeric_limits<std::size_t>::max()) {
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                     "guest native library path is not a readable file: " + std::string(path));
     }
 
     std::int32_t descriptor{};
     try {
         descriptor = filesystem.Open(path, {.read = true});
     } catch (const VfsError& error) {
-        throw NativeLibraryLoadError(
-            error.ErrorNumber() == 2
-                ? NativeLibraryLoadErrorReason::library_not_found
-                : NativeLibraryLoadErrorReason::invalid_request,
-            "guest native library cannot be opened: " + std::string(path) +
-                ": " + error.what());
+        throw NativeLibraryLoadError(error.ErrorNumber() == 2 ? NativeLibraryLoadErrorReason::library_not_found
+                                                              : NativeLibraryLoadErrorReason::invalid_request,
+                                     "guest native library cannot be opened: " + std::string(path) + ": " +
+                                         error.what());
     }
 
     std::vector<std::byte> result(static_cast<std::size_t>(info.size));
     std::size_t offset{};
     try {
         while (offset < result.size()) {
-            const auto count = filesystem.Read(
-                descriptor, std::span{result}.subspan(offset));
+            const auto count = filesystem.Read(descriptor, std::span{result}.subspan(offset));
             if (count == 0U) break;
             offset += count;
         }
@@ -127,30 +110,23 @@ constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
             filesystem.Close(descriptor);
         } catch (const std::exception&) {
         }
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::link_failure,
-            "guest native library read failed: " + std::string(path) +
-                ": " + error.what());
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::link_failure,
+                                     "guest native library read failed: " + std::string(path) + ": " + error.what());
     }
     if (offset != result.size()) {
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::link_failure,
-            "guest native library was truncated while reading: " +
-                std::string(path));
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::link_failure,
+                                     "guest native library was truncated while reading: " + std::string(path));
     }
     return result;
 }
 
-[[nodiscard]] NativeLibraryLoadErrorReason ClassifyProcessFailure(
-    const std::string_view message) {
+[[nodiscard]] NativeLibraryLoadErrorReason ClassifyProcessFailure(const std::string_view message) {
     if (message.find("constructor") != std::string_view::npos ||
         message.find("guest invocation") != std::string_view::npos) {
         return NativeLibraryLoadErrorReason::constructor_failure;
     }
-    if (message.find("required ELF module is unavailable") !=
-            std::string_view::npos ||
-        message.find("strong ELF symbol is unresolved") !=
-            std::string_view::npos) {
+    if (message.find("required ELF module is unavailable") != std::string_view::npos ||
+        message.find("strong ELF symbol is unresolved") != std::string_view::npos) {
         return NativeLibraryLoadErrorReason::unresolved_dependency;
     }
     return NativeLibraryLoadErrorReason::link_failure;
@@ -158,8 +134,7 @@ constexpr std::string_view kSyntheticLibraryRoot = "/data/app-lib/";
 
 }  // namespace
 
-NativeLibraryLoadError::NativeLibraryLoadError(
-    const NativeLibraryLoadErrorReason reason, std::string message)
+NativeLibraryLoadError::NativeLibraryLoadError(const NativeLibraryLoadErrorReason reason, std::string message)
     : std::runtime_error(std::move(message)), reason_(reason) {}
 
 NativeLibraryLoadErrorReason NativeLibraryLoadError::Reason() const noexcept {
@@ -192,15 +167,12 @@ public:
     };
 
     [[nodiscard]] bool IsBoundary(const std::string_view name) const {
-        return boundary_api_.has_value() &&
-               IsAndroidBoundaryLibrary(*boundary_api_, name);
+        return boundary_api_.has_value() && IsAndroidBoundaryLibrary(*boundary_api_, name);
     }
 
-    [[nodiscard]] const OwnedSystemLibrary* FindSystemLibrary(
-        const std::string_view name) const {
-        const auto found = std::find_if(
-            system_libraries_.begin(), system_libraries_.end(),
-            [&](const auto& source) { return source.name == name; });
+    [[nodiscard]] const OwnedSystemLibrary* FindSystemLibrary(const std::string_view name) const {
+        const auto found = std::find_if(system_libraries_.begin(), system_libraries_.end(),
+                                        [&](const auto& source) { return source.name == name; });
         return found == system_libraries_.end() ? nullptr : &*found;
     }
 
@@ -211,15 +183,12 @@ public:
                 if (image.type != loader::Elf32ImageType::shared_object) {
                     continue;
                 }
-                const auto dynamic =
-                    loader::ReadElf32DynamicInfo(library.image, image);
-                if (!dynamic.soname.has_value() ||
-                    *dynamic.soname == library.soname ||
+                const auto dynamic = loader::ReadElf32DynamicInfo(library.image, image);
+                if (!dynamic.soname.has_value() || *dynamic.soname == library.soname ||
                     libraries_->FindSoname(*dynamic.soname) != nullptr) {
                     continue;
                 }
-                const auto [found, inserted] = apk_soname_aliases_.emplace(
-                    *dynamic.soname, &library);
+                const auto [found, inserted] = apk_soname_aliases_.emplace(*dynamic.soname, &library);
                 if (!inserted && found->second != &library) {
                     apk_soname_aliases_.erase(found);
                     ambiguous_apk_soname_aliases_.insert(*dynamic.soname);
@@ -232,129 +201,101 @@ public:
         }
     }
 
-    [[nodiscard]] const loader::ApkNativeLibrary* FindApkLibraryIdentity(
-        const std::string_view name) const {
-        if (const auto* exact = libraries_->FindSoname(name);
-            exact != nullptr) {
+    [[nodiscard]] const loader::ApkNativeLibrary* FindApkLibraryIdentity(const std::string_view name) const {
+        if (const auto* exact = libraries_->FindSoname(name); exact != nullptr) {
             return exact;
         }
         if (ambiguous_apk_soname_aliases_.contains(name)) {
-            throw NativeLibraryLoadError(
-                NativeLibraryLoadErrorReason::link_failure,
-                "APK ELF DT_SONAME alias is ambiguous: " +
-                    std::string(name));
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::link_failure,
+                                         "APK ELF DT_SONAME alias is ambiguous: " + std::string(name));
         }
         const auto alias = apk_soname_aliases_.find(name);
         return alias == apk_soname_aliases_.end() ? nullptr : alias->second;
     }
 
-    [[nodiscard]] std::vector<ClosureModule> Closure(
-        const ExplicitLibrary& root) const {
-        std::vector<ClosureModule> result{{
-            root.module_name, root.image, root.diagnostic_name,
-            root.require_soname_match}};
+    [[nodiscard]] std::vector<ClosureModule> Closure(const ExplicitLibrary& root) const {
+        std::vector<ClosureModule> result{
+            {root.module_name, root.image, root.diagnostic_name, root.require_soname_match}};
         std::set<std::string, std::less<>> selected{root.module_name};
         for (std::size_t index = 0; index < result.size(); ++index) {
             const auto library = result[index];
             try {
                 const auto image = loader::ParseElf32Arm(library.image);
                 if (image.type != loader::Elf32ImageType::shared_object) {
-                    throw NativeLibraryLoadError(
-                        NativeLibraryLoadErrorReason::malformed_elf,
-                        "native library is not ET_DYN: " +
-                            library.diagnostic_name);
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::malformed_elf,
+                                                 "native library is not ET_DYN: " + library.diagnostic_name);
                 }
-                const auto dynamic = loader::ReadElf32DynamicInfo(
-                    library.image, image);
-                if (library.require_soname_match &&
-                    dynamic.soname.has_value() &&
-                    *dynamic.soname != library.name) {
-                    throw NativeLibraryLoadError(
-                        NativeLibraryLoadErrorReason::soname_mismatch,
-                        "native dependency DT_SONAME disagrees with required identity: " +
-                            library.diagnostic_name);
+                const auto dynamic = loader::ReadElf32DynamicInfo(library.image, image);
+                if (library.require_soname_match && dynamic.soname.has_value() && *dynamic.soname != library.name) {
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::soname_mismatch,
+                                                 "native dependency DT_SONAME disagrees with required identity: " +
+                                                     library.diagnostic_name);
                 }
                 for (const auto& needed : dynamic.needed) {
-                    if (selected.contains(needed) ||
-                        (process_ && process_->HasLoadedModule(needed)) ||
+                    if (selected.contains(needed) || (process_ && process_->HasLoadedModule(needed)) ||
                         IsBoundary(needed)) {
                         continue;
                     }
                     const auto* dependency = FindApkLibraryIdentity(needed);
                     if (dependency != nullptr) {
                         if (selected.insert(dependency->soname).second) {
-                            result.push_back({dependency->soname,
-                                              dependency->image,
-                                              dependency->entry_name, false});
+                            result.push_back({dependency->soname, dependency->image, dependency->entry_name, false});
                         }
                         continue;
                     }
                     const auto* system = FindSystemLibrary(needed);
                     if (system != nullptr) {
                         selected.insert(needed);
-                        result.push_back({system->name, system->image,
-                                          system->name, true});
+                        result.push_back({system->name, system->image, system->name, true});
                     }
                 }
             } catch (const NativeLibraryLoadError&) {
                 throw;
             } catch (const std::exception& error) {
-                throw NativeLibraryLoadError(
-                    NativeLibraryLoadErrorReason::malformed_elf,
-                    "native ELF is malformed: " + library.diagnostic_name +
-                        ": " + error.what());
+                throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::malformed_elf,
+                                             "native ELF is malformed: " + library.diagnostic_name + ": " +
+                                                 error.what());
             }
         }
         return result;
     }
 
-    NativeLibrarySources(AndroidGuestProcess& process,
-         const loader::ApkSelectedNativeLibraries& libraries)
-        : process_(&process), inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())), selected_(inventory_, libraries.Abi()), libraries_(&selected_) {
+    NativeLibrarySources(AndroidGuestProcess& process, const loader::ApkSelectedNativeLibraries& libraries)
+        : process_(&process),
+          inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())),
+          selected_(inventory_, libraries.Abi()), libraries_(&selected_) {
         IndexApkSonameAliases();
     }
 
-    NativeLibrarySources(AndroidGuestProcess& process,
-         const loader::ApkSelectedNativeLibraries& libraries,
-         const BionicProfile& bionic,
-         const std::span<const BionicModuleSource> system_libraries)
+    NativeLibrarySources(AndroidGuestProcess& process, const loader::ApkSelectedNativeLibraries& libraries,
+                         const BionicProfile& bionic, const std::span<const BionicModuleSource> system_libraries)
         : NativeLibrarySources(&process, libraries, bionic, system_libraries) {}
 
-    NativeLibrarySources(AndroidGuestProcess* process,
-         const loader::ApkSelectedNativeLibraries& libraries,
-         const BionicProfile& bionic,
-         const std::span<const BionicModuleSource> system_libraries)
-        : process_(process), inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())), selected_(inventory_, libraries.Abi()), libraries_(&selected_),
-          boundary_api_(bionic.api) {
+    NativeLibrarySources(AndroidGuestProcess* process, const loader::ApkSelectedNativeLibraries& libraries,
+                         const BionicProfile& bionic, const std::span<const BionicModuleSource> system_libraries)
+        : process_(process),
+          inventory_(std::vector<loader::ApkNativeLibrary>(libraries.Libraries().begin(), libraries.Libraries().end())),
+          selected_(inventory_, libraries.Abi()), libraries_(&selected_), boundary_api_(bionic.api) {
         IndexApkSonameAliases();
         system_libraries_.reserve(system_libraries.size());
         for (const auto& source : system_libraries) {
             if (!IsLibraryBasename(source.name) || source.image.empty() ||
                 std::any_of(system_libraries_.begin(), system_libraries_.end(),
-                            [&](const auto& existing) {
-                                return existing.name == source.name;
-                            })) {
-                throw NativeLibraryLoadError(
-                    NativeLibraryLoadErrorReason::invalid_request,
-                    "dynamic Bionic system library source is invalid or duplicate: " +
-                        source.name);
+                            [&](const auto& existing) { return existing.name == source.name; })) {
+                throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                             "dynamic Bionic system library source is invalid or duplicate: " +
+                                                 source.name);
             }
             system_libraries_.push_back(
-                {source.name,
-                 std::vector<std::byte>(source.image.begin(),
-                                        source.image.end())});
+                {source.name, std::vector<std::byte>(source.image.begin(), source.image.end())});
         }
     }
 
-    ExplicitLibrary ResolveLibrary(
-        const std::string_view logical_name) const {
-        if (logical_name.empty() ||
-            logical_name.find('\0') != std::string_view::npos ||
-            logical_name.find('/') != std::string_view::npos ||
-            logical_name.find('\\') != std::string_view::npos) {
-            throw NativeLibraryLoadError(
-                NativeLibraryLoadErrorReason::invalid_request,
-                "native logical library name is invalid");
+    ExplicitLibrary ResolveLibrary(const std::string_view logical_name) const {
+        if (logical_name.empty() || logical_name.find('\0') != std::string_view::npos ||
+            logical_name.find('/') != std::string_view::npos || logical_name.find('\\') != std::string_view::npos) {
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                         "native logical library name is invalid");
         }
         const auto* library = libraries_->FindLogicalName(logical_name);
         if (library == nullptr) {
@@ -362,46 +303,74 @@ public:
             if (const auto* system = FindSystemLibrary(soname); system != nullptr) {
                 return {"/system/lib/" + soname, soname, system->image, "bundled " + soname, true, {}};
             }
-            throw NativeLibraryLoadError(
-                NativeLibraryLoadErrorReason::library_not_found,
-                "APK native logical library is unavailable: " +
-                    std::string(logical_name));
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::library_not_found,
+                                         "APK native logical library is unavailable: " + std::string(logical_name));
         }
-        return {NativeLibraryLoader::SyntheticGuestPath(library->soname), library->soname, library->image, library->entry_name, false, {}};
+        return {NativeLibraryLoader::SyntheticGuestPath(library->soname),
+                library->soname,
+                library->image,
+                library->entry_name,
+                false,
+                {}};
     }
 
-    ExplicitLibrary ResolvePath(
-        const std::string_view guest_path) const {
-        if (guest_path.starts_with(kSyntheticLibraryRoot)) {
-            const auto soname = guest_path.substr(kSyntheticLibraryRoot.size());
-            const auto* library =
-                IsLibraryBasename(soname) ? libraries_->FindSoname(soname)
-                                          : nullptr;
-            if (library == nullptr) {
-                throw NativeLibraryLoadError(
-                    NativeLibraryLoadErrorReason::library_not_found,
-                    "APK native guest path is unavailable: " +
-                        std::string(guest_path));
+    ExplicitLibrary ResolvePath(const std::string_view guest_path) const {
+        if (const auto* library = libraries_->FindEntryName(guest_path); library != nullptr) {
+            return {NativeLibraryLoader::SyntheticGuestPath(library->soname),
+                    library->soname,
+                    library->image,
+                    library->entry_name,
+                    false,
+                    {}};
+        }
+
+        auto canonical_path = CanonicalGuestLibraryPath(guest_path);
+        auto* filesystem = process_->Filesystem();
+        if (filesystem != nullptr) {
+            try {
+                canonical_path = filesystem->CanonicalPath(canonical_path);
+            } catch (const VfsError& error) {
+                throw NativeLibraryLoadError(error.ErrorNumber() == 2 ? NativeLibraryLoadErrorReason::library_not_found
+                                                                      : NativeLibraryLoadErrorReason::invalid_request,
+                                             "guest native library is unavailable: " + canonical_path + ": " +
+                                                 error.what());
             }
-            return {NativeLibraryLoader::SyntheticGuestPath(library->soname), library->soname, library->image, library->entry_name, false, {}};
         }
-
-        if (const auto* library = libraries_->FindEntryName(guest_path);
-            library != nullptr) {
-            return {NativeLibraryLoader::SyntheticGuestPath(library->soname), library->soname, library->image, library->entry_name, false, {}};
+        if (canonical_path.starts_with(kSyntheticLibraryRoot)) {
+            const auto soname = std::string_view(canonical_path).substr(kSyntheticLibraryRoot.size());
+            const loader::ApkNativeLibrary* library = nullptr;
+            if (IsLibraryBasename(soname)) {
+                for (const auto& candidate : libraries_->Libraries()) {
+                    if (candidate.abi != libraries_->Abi() ||
+                        CanonicalGuestLibraryPath(NativeLibraryLoader::SyntheticGuestPath(candidate.soname)) !=
+                            canonical_path)
+                        continue;
+                    if (library != nullptr) {
+                        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                                     "APK native guest path is ambiguous: " + canonical_path);
+                    }
+                    library = &candidate;
+                }
+            }
+            if (library == nullptr) {
+                throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::library_not_found,
+                                             "APK native guest path is unavailable: " + std::string(guest_path));
+            }
+            return {NativeLibraryLoader::SyntheticGuestPath(library->soname),
+                    library->soname,
+                    library->image,
+                    library->entry_name,
+                    false,
+                    {}};
         }
-
-        const auto canonical_path = CanonicalGuestLibraryPath(guest_path);
         if (canonical_path.starts_with("/system/lib/")) {
             if (const auto* system = FindSystemLibrary(canonical_path.substr(12)); system != nullptr) {
                 return {canonical_path, system->name, system->image, "bundled " + system->name, true, {}};
             }
         }
-        auto* filesystem = process_->Filesystem();
         if (filesystem == nullptr) {
-            throw NativeLibraryLoadError(
-                NativeLibraryLoadErrorReason::library_not_found,
-                "guest native library VFS is unavailable: " + canonical_path);
+            throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::library_not_found,
+                                         "guest native library VFS is unavailable: " + canonical_path);
         }
         auto image = std::make_shared<const std::vector<std::byte>>(ReadGuestLibraryImage(*filesystem, canonical_path));
         const auto separator = canonical_path.find_last_of('/');
@@ -409,9 +378,7 @@ public:
         return {canonical_path, module_name, *image, canonical_path, false, std::move(image)};
     }
 
-
-    AndroidGuestApplicationLoad LoadResolved(const ExplicitLibrary& library,
-                                             const std::uint64_t thread_id = 1U) const {
+    AndroidGuestApplicationLoad LoadResolved(const ExplicitLibrary& library, const std::uint64_t thread_id = 1U) const {
         const auto closure = Closure(library);
         std::vector<AndroidGuestApplicationModuleSource> sources;
         sources.reserve(closure.size());
@@ -421,14 +388,14 @@ public:
         return process_->LoadApplicationModules(library.module_name, sources, thread_id);
     }
 
-    AndroidGuestApplicationLoad LoadNative(const std::string_view path,
-                                           const std::uint64_t thread_id) const {
+    AndroidGuestApplicationLoad LoadNative(const std::string_view path, const std::uint64_t thread_id) const {
         if (path.find('/') != std::string_view::npos) {
             if (!path.starts_with('/') && !libraries_->FindEntryName(path)) {
                 auto* filesystem = process_->Filesystem();
                 const auto working = filesystem ? filesystem->WorkingDirectory() : std::nullopt;
-                if (!working) throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
-                    "relative dlopen path requires a guest working directory");
+                if (!working)
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                                 "relative dlopen path requires a guest working directory");
                 return LoadResolved(ResolvePath(*working + "/" + std::string(path)), thread_id);
             }
             return LoadResolved(ResolvePath(path), thread_id);
@@ -439,11 +406,17 @@ public:
         }
         if (const auto* library = FindApkLibraryIdentity(path)) {
             return LoadResolved({NativeLibraryLoader::SyntheticGuestPath(library->soname),
-                library->soname, library->image, library->entry_name, false, {}}, thread_id);
+                                 library->soname,
+                                 library->image,
+                                 library->entry_name,
+                                 false,
+                                 {}},
+                                thread_id);
         }
         if (const auto* system = FindSystemLibrary(path)) {
-            return LoadResolved({"/system/lib/" + std::string(path), system->name,
-                system->image, "bundled " + system->name, true, {}}, thread_id);
+            return LoadResolved(
+                {"/system/lib/" + std::string(path), system->name, system->image, "bundled " + system->name, true, {}},
+                thread_id);
         }
         for (const auto root : {"/data/app-lib/", "/vendor/lib/", "/system/lib/"}) {
             try {
@@ -467,17 +440,15 @@ private:
     std::set<std::string, std::less<>> ambiguous_apk_soname_aliases_;
 };
 
-std::vector<BionicOwnedModule> CollectApkNativeLibraryClosure(
-    const loader::ApkSelectedNativeLibraries& libraries,
-    const BionicProfile& bionic, const std::span<const BionicModuleSource> system_libraries,
-    const std::string_view root) {
+std::vector<BionicOwnedModule>
+CollectApkNativeLibraryClosure(const loader::ApkSelectedNativeLibraries& libraries, const BionicProfile& bionic,
+                               const std::span<const BionicModuleSource> system_libraries,
+                               const std::string_view root) {
     NativeLibrarySources sources(nullptr, libraries, bionic, system_libraries);
-    const auto closure = sources.Closure(sources.ResolvePath(
-        NativeLibraryLoader::SyntheticGuestPath(root)));
+    const auto closure = sources.Closure(sources.ResolvePath(NativeLibraryLoader::SyntheticGuestPath(root)));
     std::vector<BionicOwnedModule> result;
     for (const auto& source : closure) {
-        result.push_back({source.name, {source.image.begin(), source.image.end()},
-                          memory::GuestAddress{}});
+        result.push_back({source.name, {source.image.begin(), source.image.end()}, memory::GuestAddress{}});
     }
     return result;
 }
@@ -488,13 +459,15 @@ public:
         : process_(&process), sources_(std::make_shared<NativeLibrarySources>(process, libraries)) {
         InstallNativeSources();
     }
-    Impl(AndroidGuestProcess& process, const loader::ApkSelectedNativeLibraries& libraries,
-         const BionicProfile& bionic, const std::span<const BionicModuleSource> system_libraries,
-         core::Logger* logger)
-        : process_(&process), sources_(std::make_shared<NativeLibrarySources>(process, libraries, bionic, system_libraries)),
+
+    Impl(AndroidGuestProcess& process, const loader::ApkSelectedNativeLibraries& libraries, const BionicProfile& bionic,
+         const std::span<const BionicModuleSource> system_libraries, core::Logger* logger)
+        : process_(&process),
+          sources_(std::make_shared<NativeLibrarySources>(process, libraries, bionic, system_libraries)),
           logger_(logger) {
         InstallNativeSources();
     }
+
     std::optional<std::string> FindLibraryPath(const std::string_view name) const {
         try {
             return sources_->ResolveLibrary(name).canonical_path;
@@ -506,33 +479,38 @@ public:
             throw;
         }
     }
+
     NativeLibraryLoadResult LoadLibrary(const std::string_view name, const JavaClassLoaderToken loader) {
         return LoadResolved(sources_->ResolveLibrary(name), loader);
     }
+
     NativeLibraryLoadResult LoadPath(const std::string_view path, const JavaClassLoaderToken loader,
-                                    const NativeLibraryEntry mode) {
+                                     const NativeLibraryEntry mode) {
         return LoadResolved(sources_->ResolvePath(path), loader, mode);
     }
 
     std::optional<NativeLibrarySnapshot> TrySnapshot() const {
         std::unique_lock lock(mutex_, std::try_to_lock);
         if (!lock.owns_lock()) return std::nullopt;
-        NativeLibrarySnapshot result; result.total = records_.size();
+        NativeLibrarySnapshot result;
+        result.total = records_.size();
         for (const auto& [path, entry] : records_) {
             static_cast<void>(path);
             if (result.records.size() == 128) break;
             const auto bounded = [](const std::string& text) {
                 auto length = std::min<std::size_t>(text.size(), 512);
-                while (length < text.size() && length && (static_cast<unsigned char>(text[length]) & 0xc0) == 0x80) --length;
+                while (length < text.size() && length && (static_cast<unsigned char>(text[length]) & 0xc0) == 0x80)
+                    --length;
                 return text.substr(0, length);
             };
             const auto& record = entry.record;
             result.records.push_back({record.handle, bounded(record.canonical_path), bounded(record.soname),
-                record.class_loader, record.state, record.module_index, record.jni_version,
-                record.jni_on_load_calls, bounded(record.failure)});
+                                      record.class_loader, record.state, record.module_index, record.jni_version,
+                                      record.jni_on_load_calls, bounded(record.failure)});
         }
         return result;
     }
+
     std::vector<NativeLibraryRecord> Records() const {
         std::scoped_lock lock(mutex_);
         std::vector<NativeLibraryRecord> result;
@@ -549,27 +527,25 @@ private:
         NativeLibraryRecord record;
         bool jni_initialized{};
         std::thread::id loading_thread;
-        NativeLibraryLoadErrorReason failure_reason{
-            NativeLibraryLoadErrorReason::prior_failure};
+        NativeLibraryLoadErrorReason failure_reason{NativeLibraryLoadErrorReason::prior_failure};
     };
 
     using ExplicitLibrary = NativeLibrarySources::ExplicitLibrary;
-    void InstallNativeSources() {
-        process_->SetNativeLibraryLoadHandler([sources = sources_](const std::string_view path,
-                                                                 const std::uint64_t thread_id) {
-            try {
-                return sources->LoadNative(path, thread_id);
-            } catch (const NativeLibraryLoadError& error) {
-                throw loader::LinkError(error.what());
-            }
 
-        });
+    void InstallNativeSources() {
+        process_->SetNativeLibraryLoadHandler(
+            [sources = sources_](const std::string_view path, const std::uint64_t thread_id) {
+                try {
+                    return sources->LoadNative(path, thread_id);
+                } catch (const NativeLibraryLoadError& error) {
+                    throw loader::LinkError(error.what());
+                }
+            });
     }
 
-    [[nodiscard]] NativeLibraryLoadResult LoadResolved(
-        const ExplicitLibrary& library,
-        const JavaClassLoaderToken class_loader,
-        const NativeLibraryEntry mode = NativeLibraryEntry::java) {
+    [[nodiscard]] NativeLibraryLoadResult LoadResolved(const ExplicitLibrary& library,
+                                                       const JavaClassLoaderToken class_loader,
+                                                       const NativeLibraryEntry mode = NativeLibraryEntry::java) {
         const auto canonical_path = library.canonical_path;
         NativeLibraryHandle handle{};
         {
@@ -578,10 +554,10 @@ private:
             if (found != records_.end()) {
                 auto& entry = found->second;
                 if (entry.record.class_loader != class_loader) {
-                    throw NativeLibraryLoadError(
-                        NativeLibraryLoadErrorReason::cross_loader_conflict,
-                        "native library is already associated with another "
-                        "ClassLoader: " + canonical_path);
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::cross_loader_conflict,
+                                                 "native library is already associated with another "
+                                                 "ClassLoader: " +
+                                                     canonical_path);
                 }
                 if (entry.record.state == NativeLibraryLoadState::loading &&
                     entry.loading_thread == std::this_thread::get_id()) {
@@ -604,9 +580,8 @@ private:
             }
             if (handle == 0) {
                 if (next_handle_ == 0) {
-                    throw NativeLibraryLoadError(
-                        NativeLibraryLoadErrorReason::invalid_request,
-                        "native library handle space is exhausted");
+                    throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request,
+                                                 "native library handle space is exhausted");
                 }
                 handle = next_handle_++;
                 RegistryEntry entry;
@@ -627,13 +602,10 @@ private:
                     jni_version = process_->InitializeExplicitJniLibrary(library.module_name);
             } catch (const std::exception& error) {
                 const auto message = std::string_view(error.what());
-                const auto reason =
-                    message.find("unsupported JNI version") !=
-                            std::string_view::npos
-                        ? NativeLibraryLoadErrorReason::invalid_jni_version
-                        : NativeLibraryLoadErrorReason::jni_on_load_failure;
-                throw NativeLibraryLoadError(
-                    reason, error.what());
+                const auto reason = message.find("unsupported JNI version") != std::string_view::npos
+                                        ? NativeLibraryLoadErrorReason::invalid_jni_version
+                                        : NativeLibraryLoadErrorReason::jni_on_load_failure;
+                throw NativeLibraryLoadError(reason, error.what());
             }
 
             std::scoped_lock lock(mutex_);
@@ -647,21 +619,20 @@ private:
             condition_.notify_all();
             if (logger_ != nullptr) {
                 logger_->Write(
-                    core::LogLevel::info, "runtime.native_library",
-                    "explicit native load completed", {},
+                    core::LogLevel::info, "runtime.native_library", "explicit native load completed", {},
                     {{"sequence", handle},
                      {"soname", library.module_name},
-                     {"initialized_modules",
-                      static_cast<std::uint64_t>(
-                          application.initialized_modules.size())},
-                     {"jni_on_load_calls",
-                      static_cast<std::uint64_t>(
-                          jni_version.has_value() ? 1U : 0U)}},
+                     {"initialized_modules", static_cast<std::uint64_t>(application.initialized_modules.size())},
+                     {"jni_on_load_calls", static_cast<std::uint64_t>(jni_version.has_value() ? 1U : 0U)}},
                     {.mode = core::RateLimitMode::none});
             }
-            return {handle, canonical_path, application.root_module_index,
-                    std::move(application.initialized_modules), jni_version,
-                    false, false};
+            return {handle,
+                    canonical_path,
+                    application.root_module_index,
+                    std::move(application.initialized_modules),
+                    jni_version,
+                    false,
+                    false};
         } catch (const NativeLibraryLoadError& error) {
             Fail(canonical_path, error.Reason(), error.what());
             throw;
@@ -676,14 +647,12 @@ private:
         }
     }
 
-    [[nodiscard]] static NativeLibraryLoadResult ExistingResult(
-        const NativeLibraryRecord& record, const bool recursive) {
-        return {record.handle, record.canonical_path, record.module_index, {},
-                record.jni_version, true, recursive};
+    [[nodiscard]] static NativeLibraryLoadResult ExistingResult(const NativeLibraryRecord& record,
+                                                                const bool recursive) {
+        return {record.handle, record.canonical_path, record.module_index, {}, record.jni_version, true, recursive};
     }
 
-    void Fail(const std::string& canonical_path,
-              const NativeLibraryLoadErrorReason reason,
+    void Fail(const std::string& canonical_path, const NativeLibraryLoadErrorReason reason,
               const std::string_view message) {
         std::scoped_lock lock(mutex_);
         auto& entry = records_.at(canonical_path);
@@ -703,36 +672,31 @@ private:
     NativeLibraryHandle next_handle_{1};
 };
 
-NativeLibraryLoader::NativeLibraryLoader(
-    AndroidGuestProcess& process,
-    const loader::ApkSelectedNativeLibraries& libraries)
+NativeLibraryLoader::NativeLibraryLoader(AndroidGuestProcess& process,
+                                         const loader::ApkSelectedNativeLibraries& libraries)
     : impl_(std::make_unique<Impl>(process, libraries)) {}
 
-NativeLibraryLoader::NativeLibraryLoader(
-    AndroidGuestProcess& process,
-    const loader::ApkSelectedNativeLibraries& libraries,
-    const BionicProfile& bionic,
-    const std::span<const BionicModuleSource> system_libraries,
-    core::Logger* logger)
-    : impl_(std::make_unique<Impl>(process, libraries, bionic,
-                                   system_libraries, logger)) {}
+NativeLibraryLoader::NativeLibraryLoader(AndroidGuestProcess& process,
+                                         const loader::ApkSelectedNativeLibraries& libraries,
+                                         const BionicProfile& bionic,
+                                         const std::span<const BionicModuleSource> system_libraries,
+                                         core::Logger* logger)
+    : impl_(std::make_unique<Impl>(process, libraries, bionic, system_libraries, logger)) {}
 
 NativeLibraryLoader::~NativeLibraryLoader() = default;
 
-std::optional<std::string> NativeLibraryLoader::FindLibraryPath(
-    const std::string_view logical_name) const {
+std::optional<std::string> NativeLibraryLoader::FindLibraryPath(const std::string_view logical_name) const {
     return impl_->FindLibraryPath(logical_name);
 }
 
-NativeLibraryLoadResult NativeLibraryLoader::LoadLibrary(
-    const std::string_view logical_name,
-    const JavaClassLoaderToken class_loader) {
+NativeLibraryLoadResult NativeLibraryLoader::LoadLibrary(const std::string_view logical_name,
+                                                         const JavaClassLoaderToken class_loader) {
     return impl_->LoadLibrary(logical_name, class_loader);
 }
 
-NativeLibraryLoadResult NativeLibraryLoader::LoadPath(
-    const std::string_view guest_path,
-    const JavaClassLoaderToken class_loader, const NativeLibraryEntry entry) {
+NativeLibraryLoadResult NativeLibraryLoader::LoadPath(const std::string_view guest_path,
+                                                      const JavaClassLoaderToken class_loader,
+                                                      const NativeLibraryEntry entry) {
     return impl_->LoadPath(guest_path, class_loader, entry);
 }
 
@@ -740,12 +704,9 @@ std::vector<NativeLibraryRecord> NativeLibraryLoader::Records() const {
     return impl_->Records();
 }
 
-std::string NativeLibraryLoader::SyntheticGuestPath(
-    const std::string_view soname) {
+std::string NativeLibraryLoader::SyntheticGuestPath(const std::string_view soname) {
     if (!IsLibraryBasename(soname)) {
-        throw NativeLibraryLoadError(
-            NativeLibraryLoadErrorReason::invalid_request,
-            "native library soname is invalid");
+        throw NativeLibraryLoadError(NativeLibraryLoadErrorReason::invalid_request, "native library soname is invalid");
     }
     return std::string(kSyntheticLibraryRoot) + std::string(soname);
 }
@@ -753,5 +714,7 @@ std::string NativeLibraryLoader::SyntheticGuestPath(
 }  // namespace ogplay::runtime
 
 namespace ogplay::runtime {
-std::optional<NativeLibrarySnapshot> NativeLibraryLoader::TrySnapshot() const { return impl_->TrySnapshot(); }
+std::optional<NativeLibrarySnapshot> NativeLibraryLoader::TrySnapshot() const {
+    return impl_->TrySnapshot();
 }
+}  // namespace ogplay::runtime

@@ -26,10 +26,8 @@ namespace {
 }
 
 [[nodiscard]] bool IsAndroidId(const std::string_view value) {
-    return value.size() == 16U &&
-           std::ranges::all_of(value, [](const char character) {
-               return (character >= '0' && character <= '9') ||
-                      (character >= 'a' && character <= 'f');
+    return value.size() == 16U && std::ranges::all_of(value, [](const char character) {
+               return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
            });
 }
 
@@ -41,11 +39,11 @@ struct SystemModulePlan final {
 std::string_view ThreadStatusName(const runtime::dexvm::VmThreadStatus status) {
     using S = runtime::dexvm::VmThreadStatus;
     switch (status) {
-        case S::created: return "created";
-        case S::running: return "running";
-        case S::finished: return "finished";
-        case S::stopped: return "stopped";
-        case S::failed: return "failed";
+    case S::created: return "created";
+    case S::running: return "running";
+    case S::finished: return "finished";
+    case S::stopped: return "stopped";
+    case S::failed: return "failed";
     }
     return "unknown";
 }
@@ -53,21 +51,18 @@ std::string_view ThreadStatusName(const runtime::dexvm::VmThreadStatus status) {
 std::string_view WaitStateName(const runtime::dexvm::VmThreadWaitState state) {
     using S = runtime::dexvm::VmThreadWaitState;
     switch (state) {
-        case S::none: return "none";
-        case S::sleeping: return "sleeping";
-        case S::joining: return "joining";
-        case S::monitor: return "monitor";
+    case S::none: return "none";
+    case S::sleeping: return "sleeping";
+    case S::joining: return "joining";
+    case S::monitor: return "monitor";
     }
     return "unknown";
 }
 
-[[nodiscard]] SystemModulePlan BuildSystemModules(
-    const std::uint32_t api_level,
-    const std::span<const runtime::BionicModuleSource> sources) {
-    const auto libc = std::find_if(
-        sources.begin(), sources.end(), [](const auto& source) {
-            return source.name == "libc.so";
-        });
+[[nodiscard]] SystemModulePlan BuildSystemModules(const std::uint32_t api_level,
+                                                  const std::span<const runtime::BionicModuleSource> sources) {
+    const auto libc =
+        std::find_if(sources.begin(), sources.end(), [](const auto& source) { return source.name == "libc.so"; });
     if (libc == sources.end()) {
         Fail("Android app process requires the API 19 libc.so source");
     }
@@ -76,23 +71,22 @@ std::string_view WaitStateName(const runtime::dexvm::VmThreadWaitState state) {
     for (const auto& source : sources) {
         if (source.name != "libc.so") dependencies.push_back(source);
     }
-    auto modules = runtime::BuildBionicModuleSet(
-        runtime::SelectBionicProfile(api_level), "libc.so", libc->image,
-        dependencies);
+    auto modules =
+        runtime::BuildBionicModuleSet(runtime::SelectBionicProfile(api_level), "libc.so", libc->image, dependencies);
     auto inputs = modules.Inputs();
     return {std::move(modules), std::move(inputs)};
 }
 
 }  // namespace
 
-gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(
-    const loader::AndroidManifestFacts& manifest) {
+gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(const loader::AndroidManifestFacts& manifest) {
     using Family = gles::CompressedTextureFamily;
     auto selected = Family::all;
     for (const auto& extension : manifest.supported_gl_textures) {
         if (extension == "GL_OES_compressed_ETC1_RGB8_texture") continue;
-        const auto family = extension == "GL_AMD_compressed_ATC_texture" ? Family::atc :
-            extension == "GL_IMG_texture_compression_pvrtc" ? Family::pvrtc : Family::all;
+        const auto family = extension == "GL_AMD_compressed_ATC_texture"      ? Family::atc
+                            : extension == "GL_IMG_texture_compression_pvrtc" ? Family::pvrtc
+                                                                              : Family::all;
         if (family == Family::all || (selected != Family::all && selected != family)) return Family::all;
         selected = family;
     }
@@ -102,15 +96,11 @@ gles::CompressedTextureFamily ResolveManifestCompressedTextureFamily(
 class AndroidAppProcess::Impl final {
 public:
     explicit Impl(AndroidAppProcessRequest request)
-        : manifest(std::move(request.manifest)),
-          inventory(std::move(request.native_libraries)),
-          context(std::move(request.context)),
-          host(std::move(request.host)),
-          diagnostics(request.diagnostics) {
-        if (request.api_level != 19 || request.dex_bytes.empty() ||
-            !context || request.filesystem == nullptr ||
-            request.surface_width == 0 || request.surface_height == 0 ||
-            request.maximum_ticks_per_call == 0 || request.ledger == nullptr) {
+        : manifest(std::move(request.manifest)), inventory(std::move(request.native_libraries)),
+          context(std::move(request.context)), host(std::move(request.host)), diagnostics(request.diagnostics) {
+        if (request.api_level != 19 || request.dex_bytes.empty() || !context || request.filesystem == nullptr ||
+            request.surface_width == 0 || request.surface_height == 0 || request.maximum_ticks_per_call == 0 ||
+            request.ledger == nullptr) {
             Fail("Android app process request is incomplete");
         }
         if (!IsAndroidId(request.platform.android_id)) {
@@ -119,38 +109,28 @@ public:
         }
         state = AndroidAppProcessState::package_ready;
         if (!request.ui_primary_font.empty() || !request.ui_fallback_font.empty())
-            context->ui_tree.SetFallbackFont(std::make_shared<runtime::ui::UiFallbackFont>(request.ui_primary_font, request.ui_fallback_font));
+            context->ui_tree.SetFallbackFont(
+                std::make_shared<runtime::ui::UiFallbackFont>(request.ui_primary_font, request.ui_fallback_font));
         if (!request.tzdata.empty()) {
-            request.filesystem->PutFile("/system/usr/share/zoneinfo/tzdata",
-                                        request.tzdata, false);
+            request.filesystem->PutFile("/system/usr/share/zoneinfo/tzdata", request.tzdata, false);
         }
-        const auto guest_jni = std::find_if(
-            request.system_libraries.begin(), request.system_libraries.end(),
-            [](const auto& source) { return source.name == "libogplay_jni.so"; });
+        const auto guest_jni = std::find_if(request.system_libraries.begin(), request.system_libraries.end(),
+                                            [](const auto& source) { return source.name == "libogplay_jni.so"; });
         if (guest_jni != request.system_libraries.end()) {
-            if (request.icu_data.empty())
-                Fail("API 19 guest JNI requires the pinned ICU data");
-            request.filesystem->PutFile("/system/usr/icu/icudt51l.dat",
-                                        request.icu_data, false);
+            if (request.icu_data.empty()) Fail("API 19 guest JNI requires the pinned ICU data");
+            request.filesystem->PutFile("/system/usr/icu/icudt51l.dat", request.icu_data, false);
         }
         const auto launcher = loader::ResolveLauncherComponent(manifest);
-        launcher_descriptor = Descriptor(
-            launcher.activity_class);
-        launcher_component_name =
-            launcher.component_name;
+        launcher_descriptor = Descriptor(launcher.activity_class);
+        launcher_component_name = launcher.component_name;
         application_descriptor = Descriptor(manifest.application_class);
 
-        auto system = BuildSystemModules(request.api_level,
-                                         request.system_libraries);
-        auto guest_environment =
-            std::make_shared<const runtime::GuestProcessEnvironment>(
-                runtime::GuestProcessEnvironment::Api19(
-                    context->external_storage_root));
+        auto system = BuildSystemModules(request.api_level, request.system_libraries);
+        auto guest_environment = std::make_shared<const runtime::GuestProcessEnvironment>(
+            runtime::GuestProcessEnvironment::Api19(context->external_storage_root));
         const auto android_id = request.platform.android_id;
-        const auto strict_webview_errors =
-            request.platform.strict_webview_errors;
-        request.boundary_options.compressed_texture_family =
-            ResolveManifestCompressedTextureFamily(manifest);
+        const auto strict_webview_errors = request.platform.strict_webview_errors;
+        request.boundary_options.compressed_texture_family = ResolveManifestCompressedTextureFamily(manifest);
         if (request.logger != nullptr) {
             std::string declarations;
             for (const auto& extension : manifest.supported_gl_textures) {
@@ -159,32 +139,26 @@ public:
             }
             const auto family = request.boundary_options.compressed_texture_family;
             request.logger->Write(core::LogLevel::info, "session.app_process", "compressed texture policy", {},
-                {{"family", std::string(gles::CompressedTextureFamilyName(family))},
-                 {"source", family != gles::CompressedTextureFamily::all ? "manifest" : "default"},
-                 {"declared_extensions", declarations}}, {core::RateLimitMode::none});
+                                  {{"family", std::string(gles::CompressedTextureFamilyName(family))},
+                                   {"source", family != gles::CompressedTextureFamily::all ? "manifest" : "default"},
+                                   {"declared_extensions", declarations}},
+                                  {core::RateLimitMode::none});
         }
         request.boundary_options.logger = request.logger;
         if (!request.sound_resource_loader && context != nullptr) {
             const auto android_context = context;
-            request.sound_resource_loader =
-                [android_context](const audio::EncodedAudioSource& source) {
-                    return runtime::LoadEncodedAudioWindow(*android_context,
-                                                           source);
-                };
+            request.sound_resource_loader = [android_context](const audio::EncodedAudioSource& source) {
+                return runtime::LoadEncodedAudioWindow(*android_context, source);
+            };
         }
         auto native_process = runtime::AndroidGuestProcess::Start(
-            {request.api_level, system.inputs, request.backend,
-             request.surface_width, request.surface_height,
-             request.maximum_ticks_per_call, request.supersample_factor,
-             request.filesystem, std::move(request.progress), std::nullopt,
-             request.boundary_options,
-             std::move(request.sound_resource_loader),
-             std::move(request.guest_call_slice_observer),
-             std::move(request.platform), request.proc_facts,
-             request.diagnostics, std::move(guest_environment),
+            {request.api_level, system.inputs, request.backend, request.surface_width, request.surface_height,
+             request.maximum_ticks_per_call, request.supersample_factor, request.filesystem,
+             std::move(request.progress), std::nullopt, request.boundary_options,
+             std::move(request.sound_resource_loader), std::move(request.guest_call_slice_observer),
+             std::move(request.platform), request.proc_facts, request.diagnostics, std::move(guest_environment),
              request.guest_call_slice_observer_thread});
-        session = runtime::AndroidGuestCallSession::AdoptProcess(
-            std::move(native_process));
+        session = runtime::AndroidGuestCallSession::AdoptProcess(std::move(native_process));
         state = AndroidAppProcessState::native_process_ready;
 
         if (!inventory.Empty()) selected_abi = loader::ResolveApkProcessAbi(inventory);
@@ -193,15 +167,14 @@ public:
         if (request.filesystem) {
             for (const auto& library : selected->Libraries()) {
                 if (library.abi != selected->Abi()) continue;
-                request.filesystem->PutFile(
-                    runtime::NativeLibraryLoader::SyntheticGuestPath(library.soname),
-                    library.image, false);
+                request.filesystem->PutFile(runtime::NativeLibraryLoader::SyntheticGuestPath(library.soname),
+                                            library.image, false);
             }
         }
+        request.filesystem->AddPathAlias("/data/data/" + manifest.package + "/lib", "/data/app-lib");
         native_libraries = std::make_unique<runtime::NativeLibraryLoader>(
-            session->Process(), *selected,
-            runtime::SelectBionicProfile(request.api_level),
-            request.system_libraries, request.logger);
+            session->Process(), *selected, runtime::SelectBionicProfile(request.api_level), request.system_libraries,
+            request.logger);
         context->session = session.get();
         context->pcm_playback = &session->PcmPlayback();
         context->encoded_audio_playback = &session->SoundPoolMixer();
@@ -213,19 +186,15 @@ public:
         }
         const auto android_context = context;
         session->SetAuxiliaryAudioMix(
-            [android_context](const std::span<std::int64_t> accumulator,
-                              const std::uint32_t rate) {
-                static_cast<void>(runtime::MixVideoPcmIntoAccumulator(
-                    *android_context, accumulator, rate));
+            [android_context](const std::span<std::int64_t> accumulator, const std::uint32_t rate) {
+                static_cast<void>(runtime::MixVideoPcmIntoAccumulator(*android_context, accumulator, rate));
             });
         context->native_libraries = native_libraries.get();
         context->package_name = manifest.package;
         context->secure_settings.insert_or_assign("android_id", android_id);
-        context->package_resource_path =
-            "/data/app/" + manifest.package + "-1.apk";
+        context->package_resource_path = "/data/app/" + manifest.package + "-1.apk";
         if (!context->apk_bytes.empty()) {
-            request.filesystem->PutFile(context->package_resource_path,
-                                        context->apk_bytes, false);
+            request.filesystem->PutFile(context->package_resource_path, context->apk_bytes, false);
         }
         context->package_version_code = manifest.version_code;
         context->package_version_name = manifest.version_name.value_or("");
@@ -260,16 +229,22 @@ public:
         context->granted_permissions.insert(manifest.requested_permissions.begin(),
                                             manifest.requested_permissions.end());
         context->system_features.insert("android.hardware.touchscreen");
-        context->system_features.insert(
-            request.surface_width >= request.surface_height
-                ? "android.hardware.screen.landscape"
-                : "android.hardware.screen.portrait");
+        context->system_features.insert(request.surface_width >= request.surface_height
+                                            ? "android.hardware.screen.landscape"
+                                            : "android.hardware.screen.portrait");
         context->surface_width = request.surface_width;
         context->input_devices = {
-            {runtime::kAndroidKeyboardDeviceId, "OGPlay virtual keyboard", "ogplay:keyboard",
-             runtime::kAndroidKeyboardSource, 2, {}},
-            {runtime::kAndroidTouchDeviceId, "OGPlay mapped touch", "ogplay:touch",
-             runtime::kAndroidTouchSource, 0,
+            {runtime::kAndroidKeyboardDeviceId,
+             "OGPlay virtual keyboard",
+             "ogplay:keyboard",
+             runtime::kAndroidKeyboardSource,
+             2,
+             {}},
+            {runtime::kAndroidTouchDeviceId,
+             "OGPlay mapped touch",
+             "ogplay:touch",
+             runtime::kAndroidTouchSource,
+             0,
              {{0, runtime::kAndroidTouchSource, 0, static_cast<float>(request.surface_width - 1)},
               {1, runtime::kAndroidTouchSource, 0, static_cast<float>(request.surface_height - 1)},
               {2, runtime::kAndroidTouchSource, 0, 1}}}};
@@ -279,16 +254,13 @@ public:
 
         const auto catalog = runtime::AndroidIntrinsicCatalog(context);
         bridge = std::make_unique<runtime::DexVmGuestBridge>(
-            *session, std::move(request.dex_bytes), catalog, context,
-            *request.ledger, request.logger, request.dexvm,
+            *session, std::move(request.dex_bytes), catalog, context, *request.ledger, request.logger, request.dexvm,
             std::move(request.boot_dex_bytes), std::move(request.skeleton_bytes));
         if (guest_jni != request.system_libraries.end()) {
             try {
-                static_cast<void>(native_libraries->LoadLibrary(
-                    "ogplay_jni", context->application_class_loader_token));
+                static_cast<void>(native_libraries->LoadLibrary("ogplay_jni", context->application_class_loader_token));
             } catch (const runtime::NativeLibraryLoadError& error) {
-                Fail("API 19 guest JNI initialization failed: " +
-                     std::string(error.what()));
+                Fail("API 19 guest JNI initialization failed: " + std::string(error.what()));
             }
         }
         context->threads = &bridge->Threads();
@@ -300,31 +272,27 @@ public:
         bindings.bridge = bridge.get();
         bindings.context = context;
         session->SetFrameReadbackFilter({this, +[](void* owner) {
-            auto* self = static_cast<Impl*>(owner);
-            auto& lock = self->bridge->Vm().ExecutionLock();
-            if (!lock.TryAcquire()) return false;
-            try {
-                const bool covered = runtime::HasOpaqueFullscreenVideo(*self->context);
-                lock.Release();
-                return covered;
-            } catch (...) {
-                lock.Release();
-                throw;
-            }
-        }});
+                                             auto* self = static_cast<Impl*>(owner);
+                                             auto& lock = self->bridge->Vm().ExecutionLock();
+                                             if (!lock.TryAcquire()) return false;
+                                             try {
+                                                 const bool covered = runtime::HasOpaqueFullscreenVideo(*self->context);
+                                                 lock.Release();
+                                                 return covered;
+                                             } catch (...) {
+                                                 lock.Release();
+                                                 throw;
+                                             }
+                                         }});
         bindings.launcher_descriptor = launcher_descriptor;
         bindings.launcher_component_name = launcher_component_name;
         bindings.application_descriptor = application_descriptor;
         bindings.open_surface = [this] { session->OpenManagedSurface(); };
-        bindings.present_surface = [this] {
-            session->PresentManagedSurface();
-        };
+        bindings.present_surface = [this] { session->PresentManagedSurface(); };
         bindings.publish_video_frame = [this](std::vector<std::uint8_t> rgba8) {
             session->PublishSoftwareFrame(std::move(rgba8));
         };
-        bindings.interrupt_guest_waits = [this] {
-            static_cast<void>(session->InterruptBlockingWaits());
-        };
+        bindings.interrupt_guest_waits = [this] { static_cast<void>(session->InterruptBlockingWaits()); };
         bindings.before_guest_shutdown = std::move(host.before_guest_shutdown);
         bindings.finalize_guest = [this] {
             if (host.before_process_stop) host.before_process_stop();
@@ -341,50 +309,51 @@ public:
             std::exception_ptr failure;
             const auto guest_live = [this] {
                 return !session->NativeExitCode() && !bridge->Vm().ExitCode() &&
-                    !runtime::SessionExitRequested(*context);
+                       !runtime::SessionExitRequested(*context);
             };
             const auto deadline = session->CleanupDeadlineNs();
             const bool expired = deadline != 0 && hal::Clock::SteadyTimestampNs() >= deadline;
             try {
-                if (!expired && guest_live()) session->RunTeardownCleanup([this] {
-                    bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
-                        bridge->Vm().ReleaseGuestNativeResources(true);
+                if (!expired && guest_live())
+                    session->RunTeardownCleanup([this] {
+                        bridge->Vm().RunWithExecutionDeadline(
+                            session->CleanupDeadlineNs(), [this] { bridge->Vm().ReleaseGuestNativeResources(true); });
                     });
-                });
-            }
-            catch (const runtime::dexvm::VmJavaThrow& error) {
+            } catch (const runtime::dexvm::VmJavaThrow& error) {
                 failure = std::make_exception_ptr(runtime::AndroidGuestProcessError(
                     "native cleanup failed: " + error.descriptor + ": " + error.message));
-            } catch (...) { failure = std::current_exception(); }
+            } catch (...) {
+                failure = std::current_exception();
+            }
             try {
                 if (!expired && context->native_activity && guest_live())
                     session->RunTeardownCleanup([this] {
-                        bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(), [this] {
-                            context->native_activity->Release();
-                        });
+                        bridge->Vm().RunWithExecutionDeadline(session->CleanupDeadlineNs(),
+                                                              [this] { context->native_activity->Release(); });
                     });
-            } catch (...) { if (!failure) failure = std::current_exception(); }
+            } catch (...) {
+                if (!failure) failure = std::current_exception();
+            }
             // This owner terminates a process, rather than unloading its DSOs.
             // Cancellation/join cannot satisfy a DSO destructor's application
             // shutdown protocol; Android process termination does not run fini.
-            try { session->Stop(runtime::GuestFinalizationPolicy::forbidden); }
-            catch (...) { if (!failure) failure = std::current_exception(); }
+            try {
+                session->Stop(runtime::GuestFinalizationPolicy::forbidden);
+            } catch (...) {
+                if (!failure) failure = std::current_exception();
+            }
             if (failure) std::rethrow_exception(failure);
         };
         bindings.close_surface = [this] {
             session->SetFrameReadbackFilter({});
             session->CloseManagedSurface();
         };
-        bindings.flush_persistent_state =
-            std::move(host.flush_persistent_state);
-        bindings.release_surface_currency = [this] {
-            session->ReleaseManagedSurfaceFromCallingThread();
-        };
+        bindings.flush_persistent_state = std::move(host.flush_persistent_state);
+        bindings.release_surface_currency = [this] { session->ReleaseManagedSurfaceFromCallingThread(); };
         bindings.diagnostics = request.diagnostics;
         bindings.logger = request.logger;
         bindings.pump_host_events = std::move(host.pump_host_events);
-        lifecycle =
-            std::make_unique<DexActivityLifecycle>(std::move(bindings));
+        lifecycle = std::make_unique<DexActivityLifecycle>(std::move(bindings));
         BindDiagnostics();
         state = AndroidAppProcessState::dex_vm_ready;
     }
@@ -403,16 +372,15 @@ public:
         if (!diagnostics) return;
         diagnostics->SetNativeMethodResolver([this](const std::uint64_t id) {
             try {
-                const auto& method = bridge->Linker().Method(
-                    runtime::dexvm::VmMethodId(static_cast<std::uint32_t>(id)));
+                const auto& method =
+                    bridge->Linker().Method(runtime::dexvm::VmMethodId(static_cast<std::uint32_t>(id)));
                 const auto& owner = bridge->Linker().Class(method.owner);
                 return owner.descriptor + "." + method.name + method.descriptor;
             } catch (...) {
                 return std::string{};
             }
         });
-        diagnostics->SetDexVmProvider([this]()
-            -> std::optional<runtime::debug::DiagnosticDexVmSnapshot> {
+        diagnostics->SetDexVmProvider([this]() -> std::optional<runtime::debug::DiagnosticDexVmSnapshot> {
             const auto trace = bridge->Vm().TryTrace(128U);
             const auto stacks = bridge->Vm().TryStackSnapshot();
             const auto threads = bridge->Threads().TrySnapshot();
@@ -420,66 +388,50 @@ public:
             runtime::debug::DiagnosticDexVmSnapshot result;
             result.events.reserve(trace->size());
             for (const auto& event : *trace) {
-                result.events.push_back(
-                    {event.sequence, event.context_token, event.tick,
-                     event.dex_pc,
-                     std::string(runtime::dexvm::DexVmTraceKindName(event.kind)),
-                     event.class_descriptor + "." + event.method_name +
-                         event.method_descriptor});
+                result.events.push_back({event.sequence, event.context_token, event.tick, event.dex_pc,
+                                         std::string(runtime::dexvm::DexVmTraceKindName(event.kind)),
+                                         event.class_descriptor + "." + event.method_name + event.method_descriptor});
             }
-            std::unordered_map<std::uint64_t,
-                               const runtime::dexvm::DexVmThreadStack*>
-                stack_by_context;
+            std::unordered_map<std::uint64_t, const runtime::dexvm::DexVmThreadStack*> stack_by_context;
             for (const auto& stack : *stacks) {
                 stack_by_context.emplace(stack.context_token, &stack);
             }
             result.threads.reserve(threads->size());
             for (const auto& thread : *threads) {
-                runtime::debug::DiagnosticJavaThread diagnostic{
-                    thread.id, thread.context_token, thread.name,
-                    std::string(ThreadStatusName(thread.status)),
-                    std::string(WaitStateName(thread.wait_state))};
-                if (const auto found = stack_by_context.find(
-                        thread.context_token);
-                    found != stack_by_context.end()) {
+                runtime::debug::DiagnosticJavaThread diagnostic{thread.id, thread.context_token, thread.name,
+                                                                std::string(ThreadStatusName(thread.status)),
+                                                                std::string(WaitStateName(thread.wait_state))};
+                if (const auto found = stack_by_context.find(thread.context_token); found != stack_by_context.end()) {
                     diagnostic.ticks = found->second->ticks;
-                    diagnostic.pending_exception =
-                        found->second->pending_exception;
+                    diagnostic.pending_exception = found->second->pending_exception;
                     diagnostic.frames.reserve(found->second->frames.size());
                     for (const auto& frame : found->second->frames) {
                         diagnostic.frames.push_back(
-                            {frame.class_descriptor + "." +
-                                 frame.method_name + frame.method_descriptor,
-                             frame.dex_pc});
+                            {frame.class_descriptor + "." + frame.method_name + frame.method_descriptor, frame.dex_pc});
                     }
                 }
                 result.threads.push_back(std::move(diagnostic));
             }
             return result;
         });
-        diagnostics->SetMonitorProvider([this]()
-            -> std::optional<std::vector<runtime::debug::DiagnosticMonitor>> {
+        diagnostics->SetMonitorProvider([this]() -> std::optional<std::vector<runtime::debug::DiagnosticMonitor>> {
             const auto monitors = bridge->Vm().Monitors().TrySnapshotAll();
             if (!monitors) return std::nullopt;
             std::vector<runtime::debug::DiagnosticMonitor> result;
             result.reserve(monitors->size());
             for (const auto& monitor : *monitors) {
-                result.push_back({monitor.object, monitor.owner,
-                                  monitor.recursion, monitor.entry_waiters,
-                                  monitor.notify_wait_set});
+                result.push_back(
+                    {monitor.object, monitor.owner, monitor.recursion, monitor.entry_waiters, monitor.notify_wait_set});
             }
             return result;
         });
-        diagnostics->SetPacerProvider([this]()
-            -> std::optional<runtime::debug::DiagnosticPacer> {
+        diagnostics->SetPacerProvider([this]() -> std::optional<runtime::debug::DiagnosticPacer> {
             const auto pacer = runtime::TryEglSwapPacerSnapshot(*context);
             if (!pacer) return std::nullopt;
-            return runtime::debug::DiagnosticPacer{
-                pacer->attached, pacer->driver_blocked, pacer->shutdown,
-                pacer->surface_retired, pacer->generation};
+            return runtime::debug::DiagnosticPacer{pacer->attached, pacer->driver_blocked, pacer->shutdown,
+                                                   pacer->surface_retired, pacer->generation};
         });
-        diagnostics->SetGlesProvider([this]()
-            -> std::optional<std::vector<runtime::debug::DiagnosticGlesEvent>> {
+        diagnostics->SetGlesProvider([this]() -> std::optional<std::vector<runtime::debug::DiagnosticGlesEvent>> {
             const auto trace = session->Process().TryGlesTrace(128U);
             if (!trace) return std::nullopt;
             std::vector<runtime::debug::DiagnosticGlesEvent> result;
@@ -487,12 +439,10 @@ public:
             for (const auto& event : *trace) {
                 const auto argument = [&event](const char* name) {
                     const auto found = event.arguments.find(name);
-                    return found == event.arguments.end()
-                        ? 0U
-                        : static_cast<std::uint32_t>(std::stoul(found->second));
+                    return found == event.arguments.end() ? 0U : static_cast<std::uint32_t>(std::stoul(found->second));
                 };
-                result.push_back({event.call, argument("r0"), argument("r1"),
-                                  argument("r2"), argument("r3"), event.error});
+                result.push_back(
+                    {event.call, argument("r0"), argument("r1"), argument("r2"), argument("r3"), event.error});
             }
             return result;
         });
@@ -515,23 +465,17 @@ public:
     AndroidAppProcessState state{AndroidAppProcessState::created};
 };
 
-std::unique_ptr<AndroidAppProcess> AndroidAppProcess::Create(
-    AndroidAppProcessRequest request) {
+std::unique_ptr<AndroidAppProcess> AndroidAppProcess::Create(AndroidAppProcessRequest request) {
     try {
-        return std::unique_ptr<AndroidAppProcess>(
-            new AndroidAppProcess(
-                std::make_unique<Impl>(std::move(request))));
+        return std::unique_ptr<AndroidAppProcess>(new AndroidAppProcess(std::make_unique<Impl>(std::move(request))));
     } catch (const AndroidAppProcessError&) {
         throw;
     } catch (const std::exception& error) {
-        throw AndroidAppProcessError(
-            "Android app process prepare failed: " +
-            std::string(error.what()));
+        throw AndroidAppProcessError("Android app process prepare failed: " + std::string(error.what()));
     }
 }
 
-AndroidAppProcess::AndroidAppProcess(std::unique_ptr<Impl> impl) noexcept
-    : impl_(std::move(impl)) {}
+AndroidAppProcess::AndroidAppProcess(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
 
 AndroidAppProcess::~AndroidAppProcess() {
     if (!impl_ || impl_->state == AndroidAppProcessState::stopped) return;
@@ -546,8 +490,7 @@ void AndroidAppProcess::StartApplication() {
         Fail("Application startup requires DexVmReady state");
     }
     try {
-        static_cast<void>(StartDexApplication(
-            *impl_->bridge, impl_->context, impl_->application_descriptor));
+        static_cast<void>(StartDexApplication(*impl_->bridge, impl_->context, impl_->application_descriptor));
     } catch (...) {
         if (!impl_->bridge->Vm().ExitCode().has_value()) throw;
         static_cast<void>(Stop());
@@ -557,14 +500,14 @@ void AndroidAppProcess::StartApplication() {
 }
 
 LifecycleFrameState AndroidAppProcess::StartLauncherActivity() {
-    if (impl_->state == AndroidAppProcessState::stopped &&
-        impl_->bridge->Vm().ExitCode().has_value()) return impl_->lifecycle->State();
+    if (impl_->state == AndroidAppProcessState::stopped && impl_->bridge->Vm().ExitCode().has_value())
+        return impl_->lifecycle->State();
     if (impl_->state != AndroidAppProcessState::application_started) {
         Fail("launcher startup requires ApplicationStarted state");
     }
     const auto result = impl_->lifecycle->Start();
-    impl_->state = impl_->bridge->Vm().ExitCode().has_value()
-        ? AndroidAppProcessState::stopped : AndroidAppProcessState::activity_resumed;
+    impl_->state = impl_->bridge->Vm().ExitCode().has_value() ? AndroidAppProcessState::stopped
+                                                              : AndroidAppProcessState::activity_resumed;
     return result;
 }
 
@@ -582,8 +525,7 @@ LifecycleFrameState AndroidAppProcess::Stop(const DexProcessStopReason reason) {
         impl_->state = AndroidAppProcessState::stopped;
         return result;
     } catch (...) {
-        if (!env.IsThreadAttached(1))
-            impl_->state = AndroidAppProcessState::stopped;
+        if (!env.IsThreadAttached(1)) impl_->state = AndroidAppProcessState::stopped;
         throw;
     }
 }
@@ -592,8 +534,7 @@ AndroidAppProcessState AndroidAppProcess::State() const noexcept {
     return impl_->state;
 }
 
-std::optional<loader::AndroidArmAbi> AndroidAppProcess::SelectedAbi() const
-    noexcept {
+std::optional<loader::AndroidArmAbi> AndroidAppProcess::SelectedAbi() const noexcept {
     return impl_->selected_abi;
 }
 
@@ -613,8 +554,7 @@ runtime::NativeLibraryLoader* AndroidAppProcess::NativeLibraries() noexcept {
     return impl_->native_libraries.get();
 }
 
-const std::shared_ptr<runtime::DexVmAndroidContext>&
-AndroidAppProcess::Context() const noexcept {
+const std::shared_ptr<runtime::DexVmAndroidContext>& AndroidAppProcess::Context() const noexcept {
     return impl_->context;
 }
 

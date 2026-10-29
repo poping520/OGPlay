@@ -112,6 +112,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
   经 load bias 重定位的 `PT_ARM_EXIDX` 地址与 8-byte 表项数；初始和动态模块共用 linker 锁。
 - libdl handle 表归 process。dlopen 复用已装载 basename/SONAME 身份；首次装载保留请求路径，
   `/data/app-lib/` 使用所选 ABI APK，`/system/lib/` 使用 bundled 源，其他路径只走 guest VFS。
+  `/data/data/<包名>/lib` 是 `/data/app-lib` 的 VFS 别名（无 APK 原生库时也建立）；
+  显式绝对路径先校验并解析 VFS 别名，再判定来源，别名与 APK 库共用模块身份及一次 JNI 初始化。
   普通库名查显式 APK/系统来源及 guest `/data/app-lib/`、`/vendor/lib/`、`/system/lib/`；不读宿主
   环境或实现动态 LD_LIBRARY_PATH。nullptr 为 RTLD_DEFAULT，
   libhgl.so 映射 sealed libGLESv2.so；dlsym 先查 handle scope，boundary 可回退 LookupAny，

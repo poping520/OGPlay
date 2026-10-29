@@ -64,14 +64,11 @@ TEST_CASE("native library path lookup is side effect free and returns loadable A
         Library("liba.so", AppElf({"liba.so", "", std::nullopt})),
         std::move(other_abi),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     auto system_image = AppElf({"liba.so", "", std::nullopt});
     auto bundled_image = AppElf({"libbundled.so", "", std::nullopt});
-    const runtime::BionicModuleSource system[]{
-        {"liba.so", system_image}, {"libbundled.so", bundled_image}};
-    runtime::NativeLibraryLoader libraries(
-        *fixture.process, selected, runtime::SelectBionicProfile(19), system);
+    const runtime::BionicModuleSource system[]{{"liba.so", system_image}, {"libbundled.so", bundled_image}};
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), system);
     const auto count = fixture.process->ApplicationModuleCount();
     const auto apk_path = libraries.FindLibraryPath("a");
     const auto system_path = libraries.FindLibraryPath("bundled");
@@ -92,10 +89,10 @@ TEST_CASE("native library path lookup is side effect free and returns loadable A
         const auto records_before = libraries.Records().size();
         const auto scratch = access.allocate(static_cast<std::uint32_t>(path.size() + 1U));
         std::vector<std::byte> bytes(path.size() + 1U);
-        for (std::size_t i = 0; i < path.size(); ++i) bytes[i] = static_cast<std::byte>(path[i]);
+        for (std::size_t i = 0; i < path.size(); ++i)
+            bytes[i] = static_cast<std::byte>(path[i]);
         access.write(scratch, bytes);
-        runtime::A32GuestCallFrame frame{
-            *provider.Lookup("libdl.so", "dlopen"), {scratch.Value(), 1U, 0U, 0U}, {}};
+        runtime::A32GuestCallFrame frame{*provider.Lookup("libdl.so", "dlopen"), {scratch.Value(), 1U, 0U, 0U}, {}};
         CHECK(fixture.process->Invoke(frame).return_value != 0U);
         access.release(scratch, static_cast<std::uint32_t>(bytes.size()));
         CHECK(libraries.Records().size() == records_before);
@@ -111,26 +108,24 @@ TEST_CASE("native library loader appends dependency constructors and one explici
         Library("libb.so", AppElf({"libb.so", "", 0x00010004U})),
         Library("libplain.so", AppElf({"libplain.so", "", std::nullopt})),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader libraries(*fixture.process, selected);
 
     const auto first = libraries.LoadLibrary("a", 7U);
-    CHECK(first.initialized_modules ==
-          std::vector<std::string>{"libb.so", "liba.so"});
+    CHECK(first.initialized_modules == std::vector<std::string>{"libb.so", "liba.so"});
     CHECK(first.jni_version == 0x00010006U);
     CHECK(fixture.process->ApplicationModuleCount() == 2U);
     CHECK(fixture.process->HasLoadedModule("liba.so"));
     CHECK(fixture.process->HasLoadedModule("libb.so"));
 
-    const auto repeated = libraries.LoadPath(
-        runtime::NativeLibraryLoader::SyntheticGuestPath("liba.so"), 7U);
+    const auto repeated = libraries.LoadPath(runtime::NativeLibraryLoader::SyntheticGuestPath("liba.so"), 7U);
     CHECK(repeated.handle == first.handle);
     CHECK(repeated.already_loaded);
     CHECK_FALSE(repeated.recursive);
     CHECK(repeated.initialized_modules.empty());
     const auto registry_snapshot = libraries.TrySnapshot();
-    REQUIRE(registry_snapshot); CHECK(registry_snapshot->total == libraries.Records().size());
+    REQUIRE(registry_snapshot);
+    CHECK(registry_snapshot->total == libraries.Records().size());
     auto records = libraries.Records();
     REQUIRE(records.size() == 1U);
     CHECK(records[0].jni_on_load_calls == 1U);
@@ -147,11 +142,10 @@ TEST_CASE("native library loader appends dependency constructors and one explici
     records = libraries.Records();
     REQUIRE(records.size() == 3U);
     CHECK(records[2].jni_on_load_calls == 0U);
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(libraries.LoadLibrary("a", 8U)),
-        "native library is already associated with another ClassLoader: "
-        "/data/app-lib/liba.so",
-        runtime::NativeLibraryLoadError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(libraries.LoadLibrary("a", 8U)),
+                         "native library is already associated with another ClassLoader: "
+                         "/data/app-lib/liba.so",
+                         runtime::NativeLibraryLoadError);
 
     fixture.process->Stop();
     CHECK_FALSE(fixture.process->Running());
@@ -161,21 +155,17 @@ TEST_CASE("native library loader appends dependency constructors and one explici
 TEST_CASE("native library loader resolves Bionic dependencies after rootless startup") {
     using namespace ogplay;
     FixtureProcess fixture;
-    auto application = AppElf(
-        {"libusesystem.so", "libstdc++.so", runtime::kJniVersion1_6});
+    auto application = AppElf({"libusesystem.so", "libstdc++.so", runtime::kJniVersion1_6});
     auto libstdcpp = AppElf({"libstdc++.so", "", std::nullopt});
     loader::ApkNativeLibraryInventory inventory{{
         Library("libusesystem.so", application),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     const runtime::BionicModuleSource system[]{{"libstdc++.so", libstdcpp}};
-    runtime::NativeLibraryLoader libraries(
-        *fixture.process, selected, runtime::SelectBionicProfile(19), system);
+    runtime::NativeLibraryLoader libraries(*fixture.process, selected, runtime::SelectBionicProfile(19), system);
 
     const auto loaded = libraries.LoadLibrary("usesystem", 7U);
-    CHECK(loaded.initialized_modules ==
-          std::vector<std::string>{"libstdc++.so", "libusesystem.so"});
+    CHECK(loaded.initialized_modules == std::vector<std::string>{"libstdc++.so", "libusesystem.so"});
     CHECK(fixture.process->HasLoadedModule("libstdc++.so"));
     CHECK(fixture.process->HasLoadedModule("libusesystem.so"));
     CHECK(loaded.jni_version == runtime::kJniVersion1_6);
@@ -185,23 +175,16 @@ TEST_CASE("native library loader resolves APK modules by inventory or ELF SONAME
     using namespace ogplay;
     FixtureProcess fixture;
     loader::ApkNativeLibraryInventory inventory{{
-        Library("libconsumer-alias.so",
-                AppElf({"libconsumer-alias.so", "Tales.final.so",
-                        std::nullopt})),
-        Library("libconsumer-inventory.so",
-                AppElf({"libconsumer-inventory.so", "libTales.final.so",
-                        std::nullopt})),
-        Library("libTales.final.so",
-                AppElf({"Tales.final.so", "", std::nullopt})),
+        Library("libconsumer-alias.so", AppElf({"libconsumer-alias.so", "Tales.final.so", std::nullopt})),
+        Library("libconsumer-inventory.so", AppElf({"libconsumer-inventory.so", "libTales.final.so", std::nullopt})),
+        Library("libTales.final.so", AppElf({"Tales.final.so", "", std::nullopt})),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader libraries(*fixture.process, selected);
 
     SUBCASE("explicit load keeps the inventory identity") {
         const auto loaded = libraries.LoadLibrary("Tales.final", 3U);
-        CHECK(loaded.initialized_modules ==
-              std::vector<std::string>{"libTales.final.so"});
+        CHECK(loaded.initialized_modules == std::vector<std::string>{"libTales.final.so"});
         REQUIRE(libraries.Records().size() == 1U);
         CHECK(libraries.Records()[0].soname == "libTales.final.so");
         CHECK(fixture.process->HasLoadedModule("libTales.final.so"));
@@ -210,17 +193,13 @@ TEST_CASE("native library loader resolves APK modules by inventory or ELF SONAME
 
     SUBCASE("DT_NEEDED resolves the ELF SONAME alias") {
         const auto loaded = libraries.LoadLibrary("consumer-alias", 3U);
-        CHECK(loaded.initialized_modules ==
-              std::vector<std::string>{"libTales.final.so",
-                                       "libconsumer-alias.so"});
+        CHECK(loaded.initialized_modules == std::vector<std::string>{"libTales.final.so", "libconsumer-alias.so"});
         CHECK(fixture.process->ApplicationModuleCount() == 2U);
     }
 
     SUBCASE("DT_NEEDED resolves the inventory basename") {
         const auto loaded = libraries.LoadLibrary("consumer-inventory", 3U);
-        CHECK(loaded.initialized_modules ==
-              std::vector<std::string>{"libTales.final.so",
-                                       "libconsumer-inventory.so"});
+        CHECK(loaded.initialized_modules == std::vector<std::string>{"libTales.final.so", "libconsumer-inventory.so"});
         CHECK(fixture.process->ApplicationModuleCount() == 2U);
     }
 }
@@ -231,30 +210,24 @@ TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures
     std::vector<std::byte> malformed(4, std::byte{});
     loader::ApkNativeLibraryInventory inventory{{
         Library("libbad.so", std::move(malformed)),
-        Library("libmissing.so",
-                AppElf({"libmissing.so", "libabsent.so", std::nullopt})),
-        Library("libversion.so",
-                AppElf({"libversion.so", "", 0x00090009U})),
-        Library("libalias.so",
-                AppElf({"libother.so", "", std::nullopt})),
+        Library("libmissing.so", AppElf({"libmissing.so", "libabsent.so", std::nullopt})),
+        Library("libversion.so", AppElf({"libversion.so", "", 0x00090009U})),
+        Library("libalias.so", AppElf({"libother.so", "", std::nullopt})),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader libraries(*fixture.process, selected);
 
     try {
         static_cast<void>(libraries.LoadLibrary("bad", 3U));
         FAIL("malformed ELF load unexpectedly succeeded");
     } catch (const runtime::NativeLibraryLoadError& error) {
-        CHECK(error.Reason() ==
-              runtime::NativeLibraryLoadErrorReason::malformed_elf);
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::malformed_elf);
     }
     try {
         static_cast<void>(libraries.LoadLibrary("missing", 3U));
         FAIL("unresolved dependency load unexpectedly succeeded");
     } catch (const runtime::NativeLibraryLoadError& error) {
-        CHECK(error.Reason() ==
-              runtime::NativeLibraryLoadErrorReason::unresolved_dependency);
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::unresolved_dependency);
         const auto first_message = std::string(error.what());
         try {
             static_cast<void>(libraries.LoadLibrary("missing", 3U));
@@ -268,74 +241,69 @@ TEST_CASE("native library loader keeps malformed unresolved and bad JNI failures
         static_cast<void>(libraries.LoadLibrary("version", 3U));
         FAIL("invalid JNI version unexpectedly succeeded");
     } catch (const runtime::NativeLibraryLoadError& error) {
-        CHECK(error.Reason() ==
-              runtime::NativeLibraryLoadErrorReason::invalid_jni_version);
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::invalid_jni_version);
     }
     const auto alias = libraries.LoadLibrary("alias", 3U);
-    CHECK(alias.initialized_modules ==
-          std::vector<std::string>{"libalias.so"});
+    CHECK(alias.initialized_modules == std::vector<std::string>{"libalias.so"});
     CHECK(fixture.process->HasLoadedModule("libalias.so"));
     CHECK(fixture.process->HasLoadedModule("libother.so"));
-    CHECK_THROWS_AS(
-        static_cast<void>(libraries.LoadPath("C:/host/libbad.so", 3U)),
-        runtime::NativeLibraryLoadError);
+    CHECK_THROWS_AS(static_cast<void>(libraries.LoadPath("C:/host/libbad.so", 3U)), runtime::NativeLibraryLoadError);
     CHECK(libraries.Records().size() == 4U);
 }
 
 TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     using namespace ogplay;
+    auto backend = runtime::dexvm::InterpreterBackend::switch_dispatch;
+    SUBCASE("switch interpreter") {
+        backend = runtime::dexvm::InterpreterBackend::switch_dispatch;
+    }
+    SUBCASE("threaded interpreter") {
+        backend = runtime::dexvm::InterpreterBackend::threaded;
+    }
     auto libc = LibcElf();
-    auto a = AppElf(
-        {"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
+    auto a = AppElf({"liba.so", "libc.so", runtime::kJniVersion1_6, true, true});
     auto b = AppElf({"libb.so", "", runtime::kJniVersion1_4});
-    auto path = AppElf({"libpath.so", "", runtime::kJniVersion1_4});
+    auto path = AppElf({"libPath.so", "", runtime::kJniVersion1_4});
     auto vfs = AppElf({"libvfs.so", "", runtime::kJniVersion1_6});
     auto bundled = AppElf({"libbundled.so", "", std::nullopt});
     std::array module_inputs{
-        loader::Elf32ModuleInput{"liba.so", a,
-                                 memory::GuestAddress{0x20000000U}},
-        loader::Elf32ModuleInput{"libc.so", libc,
-                                 memory::GuestAddress{0x10000000U}},
+        loader::Elf32ModuleInput{"liba.so", a, memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc, memory::GuestAddress{0x10000000U}},
     };
     runtime::VirtualFileSystem filesystem;
     filesystem.PutFile("/data/data/fixture/files/libvfs.so", vfs, false);
+    filesystem.AddPathAlias("/data/data/fixture/lib", "/data/app-lib");
     auto session = runtime::AndroidGuestCallSession::Start(
-        {19, "liba.so", module_inputs, {}, 64, 36, UINT64_C(200000),
-         1, &filesystem, {}});
+        {19, "liba.so", module_inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}});
     loader::ApkNativeLibraryInventory inventory{{
         Library("liba.so", a),
         Library("libb.so", b),
-        Library("libpath.so", path),
+        Library("libPath.so", path),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     const runtime::BionicModuleSource system[]{{"libbundled.so", bundled}};
-    runtime::NativeLibraryLoader libraries(
-        session->Process(), selected, runtime::SelectBionicProfile(19), system);
+    runtime::NativeLibraryLoader libraries(session->Process(), selected, runtime::SelectBionicProfile(19), system);
     auto context = std::make_shared<runtime::DexVmAndroidContext>();
+    test::BindBootDexArchive(*context);
     context->session = session.get();
     context->native_libraries = &libraries;
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
     auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
-        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-        nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
+        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger, nullptr,
+        runtime::DexVmBridgeConfig{.interpreter = {.backend = backend}}, test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto aps5_class = bridge->Linker().FindClass("Lfixture/Aps5;");
     REQUIRE(aps5_class.has_value());
-    const auto method = [&](const std::string_view name,
-                            const std::string_view descriptor) {
-        const auto found = bridge->Linker().FindDirectMethod(
-            *aps5_class, std::string(name), std::string(descriptor));
+    const auto method = [&](const std::string_view name, const std::string_view descriptor) {
+        const auto found = bridge->Linker().FindDirectMethod(*aps5_class, std::string(name), std::string(descriptor));
         REQUIRE(found.has_value());
         return *found;
     };
-    const auto expect_link_error = [
-        &](const runtime::dexvm::VmCallOutcome& outcome) {
+    const auto expect_link_error = [&](const runtime::dexvm::VmCallOutcome& outcome) {
         REQUIRE(outcome.exception.IsValid());
-        CHECK(bridge->Linker().Class(outcome.exception_class).descriptor ==
-              "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK(bridge->Linker().Class(outcome.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
     };
 
     const auto nested = bridge->Vm().Call(method("start", "()V"), {});
@@ -348,41 +316,56 @@ TEST_CASE("DexVM System load APIs support nested JNI OnLoad Java reentry") {
     CHECK(records[1].jni_on_load_calls == 1U);
 
     const auto load_path = method("loadPath", "(Ljava/lang/String;)V");
-    const auto call_with_string = [&](const runtime::dexvm::VmMethodId target,
-                                      const std::string& value) {
-        const std::array arguments{runtime::dexvm::VmValue::Ref(
-            bridge->Vm().NewStringUtf8(value))};
+    const auto call_with_string = [&](const runtime::dexvm::VmMethodId target, const std::string& value) {
+        const std::array arguments{runtime::dexvm::VmValue::Ref(bridge->Vm().NewStringUtf8(value))};
         return bridge->Vm().Call(target, arguments);
     };
-    const auto resolved_path = libraries.FindLibraryPath("path");
+    const auto alias_result = call_with_string(load_path, "/data/data/fixture/lib/libPath.so");
+    REQUIRE_MESSAGE(!alias_result.exception.IsValid(), alias_result.exception_message);
+    const auto mixed_case = call_with_string(load_path, "/DATA/DATA/FIXTURE/LIB/LIBPATH.SO");
+    REQUIRE_MESSAGE(!mixed_case.exception.IsValid(), mixed_case.exception_message);
+    const auto logical_result = call_with_string(method("loadLibrary", "(Ljava/lang/String;)V"), "Path");
+    REQUIRE_MESSAGE(!logical_result.exception.IsValid(), logical_result.exception_message);
+    records = libraries.Records();
+    const auto alias_found = std::ranges::find(records, "libPath.so", &runtime::NativeLibraryRecord::soname);
+    REQUIRE(alias_found != records.end());
+    const auto alias_record = *alias_found;
+    CHECK(alias_record.canonical_path == "/data/app-lib/libPath.so");
+    CHECK(libraries.LoadLibrary("Path", alias_record.class_loader).handle == alias_record.handle);
+    const auto resolved_path = libraries.FindLibraryPath("Path");
     REQUIRE(resolved_path.has_value());
     const auto path_result = call_with_string(load_path, *resolved_path);
-    REQUIRE_MESSAGE(!path_result.exception.IsValid(),
-                    path_result.exception_message);
+    REQUIRE_MESSAGE(!path_result.exception.IsValid(), path_result.exception_message);
 
-    const auto vfs_result = call_with_string(
-        load_path, "/data/data/fixture/files/./LIBVFS.so");
-    REQUIRE_MESSAGE(!vfs_result.exception.IsValid(),
-                    vfs_result.exception_message);
-    const auto vfs_repeated = call_with_string(
-        load_path, "/data/data/fixture/files/libvfs.so");
-    REQUIRE_MESSAGE(!vfs_repeated.exception.IsValid(),
-                    vfs_repeated.exception_message);
+    const auto vfs_result = call_with_string(load_path, "/data/data/fixture/files/./LIBVFS.so");
+    REQUIRE_MESSAGE(!vfs_result.exception.IsValid(), vfs_result.exception_message);
+    const auto vfs_repeated = call_with_string(load_path, "/data/data/fixture/files/libvfs.so");
+    REQUIRE_MESSAGE(!vfs_repeated.exception.IsValid(), vfs_repeated.exception_message);
 
-    const auto load_library =
-        method("loadLibrary", "(Ljava/lang/String;)V");
+    const auto load_library = method("loadLibrary", "(Ljava/lang/String;)V");
     expect_link_error(call_with_string(load_library, "missing"));
-    expect_link_error(call_with_string(
-        load_path, "/data/local/tmp/libmissing.so"));
+    expect_link_error(call_with_string(load_path, "/data/data/fixture/lib/libmissing.so"));
+    expect_link_error(call_with_string(load_path, "/data/data/fixture/lib/../lib/libPath.so"));
+    try {
+        static_cast<void>(libraries.LoadPath("/data/data/fixture/lib/libmissing.so", 0U));
+        FAIL("missing alias library must fail");
+    } catch (const runtime::NativeLibraryLoadError& error) {
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::library_not_found);
+    }
+    try {
+        static_cast<void>(libraries.LoadPath("/data/data/fixture/lib/../lib/libPath.so", 0U));
+        FAIL("alias traversal must fail");
+    } catch (const runtime::NativeLibraryLoadError& error) {
+        CHECK(error.Reason() == runtime::NativeLibraryLoadErrorReason::invalid_request);
+    }
+    expect_link_error(call_with_string(load_path, "/data/local/tmp/libmissing.so"));
 
     records = libraries.Records();
     REQUIRE(records.size() == 4U);
-    CHECK(records[0].jni_on_load_calls == 1U);
-    CHECK(records[1].jni_on_load_calls == 1U);
-    CHECK(records[2].soname == "libpath.so");
-    CHECK(records[2].jni_on_load_calls == 1U);
-    CHECK(records[3].canonical_path ==
-          "/data/data/fixture/files/libvfs.so");
+    for (const auto& record : records)
+        CHECK(record.jni_on_load_calls == 1U);
+    CHECK(std::ranges::count(records, "libPath.so", &runtime::NativeLibraryRecord::soname) == 1);
+    CHECK(records[3].canonical_path == "/data/data/fixture/files/libvfs.so");
     CHECK(records[3].soname == "libvfs.so");
     CHECK(records[3].jni_on_load_calls == 1U);
 
@@ -406,8 +389,7 @@ TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class i
     using namespace runtime::dexvm;
     auto libc = LibcElf();
     auto root = AppElf({"libroot.so", "libc.so", kJniVersion1_6});
-    const std::array native_code{0xe92d4080U, 0xe3a070e0U,
-                                 0xef000000U, 0xe8bd8080U};
+    const std::array native_code{0xe92d4080U, 0xe3a070e0U, 0xef000000U, 0xe8bd8080U};
     for (std::size_t i = 0; i < native_code.size(); ++i)
         Put32(root, 0x1080U + i * 4U, native_code[i]);
     const std::array inputs{
@@ -424,8 +406,7 @@ TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class i
     DexVmGuestBridge* active_bridge{};
     AndroidGuestCallSession* active_session{};
     JniObjectIdentity owner_identity{};
-    AndroidGuestCallSessionRequest request{
-        19, "libroot.so", inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}};
+    AndroidGuestCallSessionRequest request{19, "libroot.so", inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}};
     request.guest_call_slice_observer_thread = std::this_thread::get_id();
     request.guest_call_slice_observer = [&](std::uint64_t) {
         if (!armed.exchange(false)) return;
@@ -443,12 +424,13 @@ TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class i
     const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     NativeLibraryLoader libraries(session->Process(), selected);
     auto context = std::make_shared<DexVmAndroidContext>();
+    test::BindBootDexArchive(*context);
     context->session = session.get();
     context->native_libraries = &libraries;
     core::CapabilityLedger ledger;
-    auto bridge = std::make_unique<DexVmGuestBridge>(
-        *session, ReadDexFixture("aps5.dex"), AndroidIntrinsicCatalog(context),
-        context, ledger, nullptr, DexVmBridgeConfig{}, test::ReadBootDex());
+    auto bridge =
+        std::make_unique<DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), AndroidIntrinsicCatalog(context),
+                                           context, ledger, nullptr, DexVmBridgeConfig{}, test::ReadBootDex());
     active_bridge = bridge.get();
     context->threads = &bridge->Threads();
     auto& vm = bridge->Vm();
@@ -470,16 +452,15 @@ TEST_CASE("System loadLibrary releases VM lock for concurrent native JNI class i
     const auto name_ref = session->Environment().PublishLocalObject(5U, bridge->Model().ToIdentity(name));
     // A broken lock order must fail within a bound instead of hanging the suite.
     std::thread watchdog([&] {
-        if (done.wait_for(std::chrono::seconds(10)) != std::future_status::ready)
-            std::abort();
+        if (done.wait_for(std::chrono::seconds(10)) != std::future_status::ready) std::abort();
     });
     auto worker = std::async(std::launch::async, [&] {
         native_ready.wait();
         VmExecutionLockScope lock(vm.ExecutionLock());
         worker_entered.set_value();
         const std::array<JniValue, 1> arguments{name_ref};
-        static_cast<void>(session->Invocations().InvokeStatic(
-            5U, *system, *load, arguments, JniArgumentSource::value_array));
+        static_cast<void>(
+            session->Invocations().InvokeStatic(5U, *system, *load, arguments, JniArgumentSource::value_array));
         CHECK(vm.ExecutionLock().HeldByCurrentThread());
         CHECK_FALSE(session->Environment().ExceptionCheck(5U));
     });
@@ -508,14 +489,16 @@ TEST_CASE("native load failures restore recursive VM execution ownership") {
     };
     IntrinsicContext call{vm, VmObjectRef{}, arguments};
     bool released = false;
-    vm.ExecutionLock().SetBlockingObserver(&released,
-        [](void* state, std::thread::id, bool blocked) noexcept {
-            if (blocked) *static_cast<bool*>(state) = true;
-        });
+    vm.ExecutionLock().SetBlockingObserver(&released, [](void* state, std::thread::id, bool blocked) noexcept {
+        if (blocked) *static_cast<bool*>(state) = true;
+    });
+
     struct ClearObserver final {
         VmExecutionLock& lock;
+
         ~ClearObserver() { lock.SetBlockingObserver(nullptr, nullptr); }
     } clear{vm.ExecutionLock()};
+
     CHECK_THROWS_AS(android_intrinsics::PlatformSystemLoadHandler(fixture.context)(call), VmJavaThrow);
     CHECK(released);
     CHECK(vm.ExecutionLock().HeldByCurrentThread());
@@ -530,63 +513,52 @@ TEST_CASE("native load failures restore recursive VM execution ownership") {
 TEST_CASE("DexVM preserves failure from a resolved RegisterNatives target") {
     using namespace ogplay;
     auto libc = LibcElf();
-    auto root = AppElf(
-        {"libroot.so", "libc.so", runtime::kJniVersion1_6});
+    auto root = AppElf({"libroot.so", "libc.so", runtime::kJniVersion1_6});
     std::array module_inputs{
-        loader::Elf32ModuleInput{"libroot.so", root,
-                                 memory::GuestAddress{0x20000000U}},
-        loader::Elf32ModuleInput{"libc.so", libc,
-                                 memory::GuestAddress{0x10000000U}},
+        loader::Elf32ModuleInput{"libroot.so", root, memory::GuestAddress{0x20000000U}},
+        loader::Elf32ModuleInput{"libc.so", libc, memory::GuestAddress{0x10000000U}},
     };
     runtime::VirtualFileSystem filesystem;
     auto session = runtime::AndroidGuestCallSession::Start(
-        {19, "libroot.so", module_inputs, {}, 64, 36,
-         UINT64_C(200000), 1, &filesystem, {}});
+        {19, "libroot.so", module_inputs, {}, 64, 36, UINT64_C(200000), 1, &filesystem, {}});
     loader::ApkNativeLibraryInventory inventory{{
         Library("libroot.so", root),
     }};
-    const auto selected = loader::SelectApkNativeLibraries(
-        inventory, loader::AndroidArmAbi::armeabi_v7a);
+    const auto selected = loader::SelectApkNativeLibraries(inventory, loader::AndroidArmAbi::armeabi_v7a);
     runtime::NativeLibraryLoader libraries(session->Process(), selected);
     auto context = std::make_shared<runtime::DexVmAndroidContext>();
     context->session = session.get();
     context->native_libraries = &libraries;
     core::CapabilityLedger ledger;
     auto catalog = runtime::AndroidIntrinsicCatalog(context);
-    auto bridge = std::make_unique<runtime::DexVmGuestBridge>(
-        *session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
-        nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
+    auto bridge =
+        std::make_unique<runtime::DexVmGuestBridge>(*session, ReadDexFixture("aps5.dex"), catalog, context, ledger,
+                                                    nullptr, runtime::DexVmBridgeConfig{}, test::ReadBootDex());
     context->threads = &bridge->Threads();
 
     const auto owner = bridge->Linker().FindClass("Lfixture/Aps5;");
     REQUIRE(owner.has_value());
-    const auto method = bridge->Linker().FindDirectMethod(
-        *owner, "fail", "()V");
+    const auto method = bridge->Linker().FindDirectMethod(*owner, "fail", "()V");
     REQUIRE(method.has_value());
     const auto identity = bridge->RegisteredClassIdentity(*owner);
     REQUIRE(identity.has_value());
-    const std::array methods{runtime::JniNativeMethod{
-        "fail", "()V", memory::GuestAddress{0xdeadbee0U}}};
+    const std::array methods{runtime::JniNativeMethod{"fail", "()V", memory::GuestAddress{0xdeadbee0U}}};
     session->Natives().RegisterNatives(*identity, methods);
-    REQUIRE(session->Natives().Resolve(*identity, "fail", "()V")
-                .has_value());
+    REQUIRE(session->Natives().Resolve(*identity, "fail", "()V").has_value());
 
     try {
         static_cast<void>(bridge->Vm().Call(*method, {}));
         FAIL("faulting registered native unexpectedly returned");
     } catch (const runtime::AndroidGuestProcessError& error) {
         const std::string message = error.what();
-        CHECK(message.find("registered JNI native invocation failed") !=
-              std::string::npos);
+        CHECK(message.find("registered JNI native invocation failed") != std::string::npos);
         CHECK(message.find("class=fixture/Aps5") != std::string::npos);
         CHECK(message.find("method=fail") != std::string::npos);
         CHECK(message.find("descriptor=()V") != std::string::npos);
         CHECK(message.find("guest_thread=1") != std::string::npos);
         CHECK(message.find("pc=0xdeadbee0") != std::string::npos);
         CHECK(message.find("reason=memory_fault(4)") != std::string::npos);
-        CHECK(message.find(
-                  "native method has no registered mapping or export") ==
-              std::string::npos);
+        CHECK(message.find("native method has no registered mapping or export") == std::string::npos);
     }
 
     bridge.reset();

@@ -55,12 +55,9 @@
 using namespace ogplay::test::native_library;
 
 TEST_CASE("DexVM bridge publishes the guest VFS working directory") {
-    ApplicationProcess application{
-        ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
-        "/data/game"};
+    ApplicationProcess application{ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch, "/data/game"};
 
-    CHECK(application.bridge->Vm().GetSystemProperty("user.dir") ==
-          "/data/game");
+    CHECK(application.bridge->Vm().GetSystemProperty("user.dir") == "/data/game");
 }
 
 TEST_CASE("Android app process installs the default encoded audio loader") {
@@ -73,12 +70,10 @@ TEST_CASE("minimal Application startup preserves order identity and native loads
 
     SUBCASE("framework default is a stable process root") {
         ApplicationProcess fixture;
-        CHECK(fixture.session->Environment().GlobalReferenceCount() ==
-              fixture.globals_before_bridge);
-        const auto first = session::StartDexApplication(
-            *fixture.bridge, fixture.context, "Landroid/app/Application;");
-        const auto repeated = session::StartDexApplication(
-            *fixture.bridge, fixture.context, "Landroid/app/Application;");
+        CHECK(fixture.session->Environment().GlobalReferenceCount() == fixture.globals_before_bridge);
+        const auto first = session::StartDexApplication(*fixture.bridge, fixture.context, "Landroid/app/Application;");
+        const auto repeated =
+            session::StartDexApplication(*fixture.bridge, fixture.context, "Landroid/app/Application;");
         CHECK(first == repeated);
         CHECK(fixture.context->application == first);
         CHECK(fixture.context->application_base_context.IsValid());
@@ -86,27 +81,21 @@ TEST_CASE("minimal Application startup preserves order identity and native loads
 
     SUBCASE("custom startup observes clinit construct attach onCreate order") {
         ApplicationProcess fixture;
-        const auto application = session::StartDexApplication(
-            *fixture.bridge, fixture.context,
-            "Lfixture/CustomApplication;");
+        const auto application =
+            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/CustomApplication;");
         CHECK(application.IsValid());
-        CHECK(fixture.CallStaticInt("Lfixture/CustomApplication;",
-                                    "getStage") == 4);
-        CHECK(session::StartDexApplication(
-                  *fixture.bridge, fixture.context,
-                  "Lfixture/CustomApplication;") == application);
-        CHECK_THROWS_AS(
-            static_cast<void>(session::StartDexApplication(
-                *fixture.bridge, fixture.context,
-                "Landroid/app/Application;")),
-            session::DexActivityLifecycleError);
+        CHECK(fixture.CallStaticInt("Lfixture/CustomApplication;", "getStage") == 4);
+        CHECK(session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/CustomApplication;") ==
+              application);
+        CHECK_THROWS_AS(static_cast<void>(session::StartDexApplication(*fixture.bridge, fixture.context,
+                                                                       "Landroid/app/Application;")),
+                        session::DexActivityLifecycleError);
     }
 
     SUBCASE("clinit may load the first native library") {
         ApplicationProcess fixture;
-        static_cast<void>(session::StartDexApplication(
-            *fixture.bridge, fixture.context,
-            "Lfixture/ClinitLoadingApplication;"));
+        static_cast<void>(
+            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/ClinitLoadingApplication;"));
         const auto records = fixture.libraries->Records();
         REQUIRE(records.size() == 1U);
         CHECK(records[0].soname == "liba.so");
@@ -115,9 +104,8 @@ TEST_CASE("minimal Application startup preserves order identity and native loads
 
     SUBCASE("onCreate may load the first native library") {
         ApplicationProcess fixture;
-        static_cast<void>(session::StartDexApplication(
-            *fixture.bridge, fixture.context,
-            "Lfixture/OnCreateLoadingApplication;"));
+        static_cast<void>(
+            session::StartDexApplication(*fixture.bridge, fixture.context, "Lfixture/OnCreateLoadingApplication;"));
         const auto records = fixture.libraries->Records();
         REQUIRE(records.size() == 1U);
         CHECK(records[0].soname == "liba.so");
@@ -137,51 +125,62 @@ TEST_CASE("Application failure prevents launcher construction and surface effect
     bindings.open_surface = [&] { opened = true; };
     session::DexActivityLifecycle lifecycle(std::move(bindings));
 
-    CHECK_THROWS_WITH_AS(
-        static_cast<void>(lifecycle.Start()),
-        doctest::Contains(
-            "Application onCreate failed: uncaught Java exception\n"
-            "  exception: Ljava/lang/RuntimeException;\n"
-            "  message: application failed\n"
-            "  stack trace:\n"
-            "    at Lfixture/ThrowingApplication;.onCreate (pc 7)"),
-        session::DexActivityLifecycleError);
+    CHECK_THROWS_WITH_AS(static_cast<void>(lifecycle.Start()),
+                         doctest::Contains("Application onCreate failed: uncaught Java exception\n"
+                                           "  exception: Ljava/lang/RuntimeException;\n"
+                                           "  message: application failed\n"
+                                           "  stack trace:\n"
+                                           "    at Lfixture/ThrowingApplication;.onCreate (pc 7)"),
+                         session::DexActivityLifecycleError);
     CHECK_FALSE(opened);
     CHECK_FALSE(fixture.context->application.IsValid());
     CHECK_FALSE(fixture.context->activity.IsValid());
-    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;",
-                                "getInstances") == 0);
+    CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getInstances") == 0);
 }
 
 TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app ELF") {
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity");
-    CHECK(fixture.app->State() ==
-          session::AndroidAppProcessState::dex_vm_ready);
-    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
-    CHECK(fixture.app->Context()->package_resource_path ==
-          "/data/app/fixture-1.apk");
-    CHECK(fixture.app->Context()->secure_settings.at("android_id") ==
-          "0123456789abcdef");
-    const auto apk = fixture.filesystem.Open(
-        fixture.app->Context()->package_resource_path, {.read = true});
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::dex_vm_ready);
+    CHECK_FALSE(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
+    const auto direct_library = "/data/app-lib/liba.so";
+    const auto alias_library = "/data/data/fixture/lib/liba.so";
+    CHECK(fixture.filesystem.CanonicalPath(alias_library) == direct_library);
+    CHECK(fixture.filesystem.Stat(alias_library).size == fixture.native_a.size());
+    CHECK_FALSE(fixture.filesystem.Stat(alias_library).writable);
+    for (const auto path : {direct_library, alias_library}) {
+        const auto descriptor = fixture.filesystem.Open(path, {.read = true});
+        std::vector<std::byte> contents(fixture.native_a.size());
+        CHECK(fixture.filesystem.Read(descriptor, contents) == contents.size());
+        CHECK(contents == fixture.native_a);
+        CHECK_THROWS_AS(fixture.filesystem.Truncate(descriptor, 0), runtime::VfsError);
+        fixture.filesystem.Close(descriptor);
+        CHECK_THROWS_AS(static_cast<void>(fixture.filesystem.Open(path, {.write = true})), runtime::VfsError);
+        CHECK_THROWS_AS(static_cast<void>(fixture.filesystem.Open(path, {.write = true, .truncate = true})),
+                        runtime::VfsError);
+        CHECK_THROWS_AS(fixture.filesystem.RemoveFile(path), runtime::VfsError);
+    }
+    // Existing VFS limits: prefix aliases are absent from parent enumeration,
+    // and without a persistent sandbox the native library root permits create.
+    const auto children = fixture.filesystem.ListDirectory("/data/data/fixture");
+    CHECK(std::ranges::none_of(children, [](const auto& entry) { return entry.name == "lib"; }));
+    const auto created = fixture.filesystem.Open("/data/data/fixture/lib/new.bin", {.write = true, .create = true});
+    fixture.filesystem.Close(created);
+    CHECK(fixture.filesystem.Stat("/data/app-lib/new.bin").size == 0U);
+    CHECK(fixture.app->Context()->package_resource_path == "/data/app/fixture-1.apk");
+    CHECK(fixture.app->Context()->secure_settings.at("android_id") == "0123456789abcdef");
+    const auto apk = fixture.filesystem.Open(fixture.app->Context()->package_resource_path, {.read = true});
     std::array<std::byte, 4> apk_magic{};
     CHECK(fixture.filesystem.Read(apk, apk_magic) == apk_magic.size());
-    CHECK(apk_magic == std::array{
-                           std::byte{0x50}, std::byte{0x4b},
-                           std::byte{0x03}, std::byte{0x04}});
+    CHECK(apk_magic == std::array{std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}});
     CHECK_THROWS_AS(
-        static_cast<void>(fixture.filesystem.Open(
-            fixture.app->Context()->package_resource_path, {.write = true})),
+        static_cast<void>(fixture.filesystem.Open(fixture.app->Context()->package_resource_path, {.write = true})),
         runtime::VfsError);
-    CHECK_THROWS_AS(
-        static_cast<void>(fixture.app->StartLauncherActivity()),
-        session::AndroidAppProcessError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.app->StartLauncherActivity()), session::AndroidAppProcessError);
 
     fixture.app->StartApplication();
-    CHECK(fixture.app->State() ==
-          session::AndroidAppProcessState::application_started);
-    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::application_started);
+    CHECK_FALSE(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
     const auto started = fixture.app->StartLauncherActivity();
     CHECK(started.state == session::LifecycleRunState::running);
     CHECK(fixture.CallStaticInt("Lfixture/LauncherActivity;", "getStage") == 3);
@@ -191,8 +190,7 @@ TEST_CASE("AndroidAppProcess starts a manifest launcher without preloading app E
     const auto stopped = fixture.app->Stop();
     CHECK(stopped.state == session::LifecycleRunState::stopped);
     CHECK_FALSE(fixture.app->NativeProcess().Running());
-    CHECK(fixture.app->State() ==
-          session::AndroidAppProcessState::stopped);
+    CHECK(fixture.app->State() == session::AndroidAppProcessState::stopped);
 }
 
 TEST_CASE("Android app process registers the last Activity theme and preserves alias snapshots") {
@@ -224,6 +222,7 @@ TEST_CASE("Android app process registers the last Activity theme and preserves a
     request.dex_bytes = ReadDexFixture("application.dex");
     request.boot_dex_bytes = test::ReadBootDex();
     request.context = std::make_shared<runtime::DexVmAndroidContext>();
+    test::BindBootDexArchive(*request.context);
     request.platform.android_id = "0123456789abcdef";
     request.filesystem = &filesystem;
     request.ledger = &ledger;
@@ -239,12 +238,14 @@ TEST_CASE("AndroidAppProcess supports a pure Java APK without a Profile or ABI")
     using namespace ogplay;
     OrchestratedApp fixture("fixture.LauncherActivity", true, false);
     CHECK_FALSE(fixture.app->SelectedAbi().has_value());
+    CHECK(fixture.filesystem.CanonicalPath("/data/data/fixture/lib/libmissing.so") == "/data/app-lib/libmissing.so");
     REQUIRE(fixture.app->NativeLibraries() != nullptr);
-    CHECK(fixture.app->NativeLibraries()->Records().empty());
+    const auto records = fixture.app->NativeLibraries()->Records();
+    CHECK(std::ranges::all_of(records, [](const auto& record) { return record.soname == "libogplay_jni.so"; }));
     fixture.app->StartApplication();
     const auto started = fixture.app->StartLauncherActivity();
     CHECK(started.state == session::LifecycleRunState::running);
-    CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+    CHECK_FALSE(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
     static_cast<void>(fixture.app->Stop());
 }
 
@@ -254,31 +255,34 @@ TEST_CASE("AndroidAppProcess keeps Activity native loads Java-driven") {
     SUBCASE("Activity clinit loads after Application") {
         OrchestratedApp fixture("fixture.ClinitLoadingActivity");
         fixture.app->StartApplication();
-        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+        CHECK_FALSE(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
         static_cast<void>(fixture.app->StartLauncherActivity());
         REQUIRE(fixture.app->NativeLibraries() != nullptr);
-        const auto records = fixture.app->NativeLibraries()->Records();
+        auto records = fixture.app->NativeLibraries()->Records();
+        std::erase_if(records, [](const auto& record) { return record.soname == "libogplay_jni.so"; });
         REQUIRE(records.size() == 1U);
         CHECK(records[0].soname == "liba.so");
         CHECK(records[0].jni_on_load_calls == 1U);
-        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 1U);
+        CHECK(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
     }
 
     SUBCASE("Activity onCreate loads after construction") {
         OrchestratedApp fixture("fixture.OnCreateLoadingActivity");
         fixture.app->StartApplication();
-        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 0U);
+        CHECK_FALSE(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
         static_cast<void>(fixture.app->StartLauncherActivity());
         REQUIRE(fixture.app->NativeLibraries() != nullptr);
-        CHECK(fixture.app->NativeLibraries()->Records().size() == 1U);
-        CHECK(fixture.app->NativeProcess().ApplicationModuleCount() == 1U);
+        auto records = fixture.app->NativeLibraries()->Records();
+        std::erase_if(records, [](const auto& record) { return record.soname == "libogplay_jni.so"; });
+        REQUIRE(records.size() == 1U);
+        CHECK(records[0].soname == "liba.so");
+        CHECK(fixture.app->NativeProcess().HasLoadedModule("liba.so"));
     }
 }
 
 TEST_CASE("AndroidAppProcess rejects a manifest without a launcher") {
-    CHECK_THROWS_AS(
-        static_cast<void>(OrchestratedApp("fixture.LauncherActivity", false)),
-        ogplay::session::AndroidAppProcessError);
+    CHECK_THROWS_AS(static_cast<void>(OrchestratedApp("fixture.LauncherActivity", false)),
+                    ogplay::session::AndroidAppProcessError);
 }
 
 TEST_CASE("run-apk delegates application startup and never selects an ELF root") {
@@ -306,42 +310,34 @@ TEST_CASE("run-apk delegates application startup and never selects an ELF root")
 TEST_CASE("DVM-107 manifest launcher alias retains its component identity") {
     using namespace ogplay;
     using namespace runtime::dexvm;
-    OrchestratedApp fixture("fixture.LauncherActivity", true, false,
-                            "fixture.StartAlias");
+    OrchestratedApp fixture("fixture.LauncherActivity", true, false, "fixture.StartAlias");
     fixture.app->StartApplication();
-    REQUIRE(fixture.app->StartLauncherActivity().state ==
-            session::LifecycleRunState::running);
+    REQUIRE(fixture.app->StartLauncherActivity().state == session::LifecycleRunState::running);
     auto& bridge = fixture.app->DexVm();
     const auto activity = fixture.context->activity;
-    CHECK(bridge.Linker().Class(bridge.Model().ObjectClass(activity)).descriptor ==
-          "Lfixture/LauncherActivity;");
-    const auto invoke = [&](VmObjectRef receiver, const char* name,
-                            const char* signature) {
+    CHECK(bridge.Linker().Class(bridge.Model().ObjectClass(activity)).descriptor == "Lfixture/LauncherActivity;");
+    const auto invoke = [&](VmObjectRef receiver, const char* name, const char* signature) {
         const auto type = bridge.Model().ObjectClass(receiver);
         const auto slot = bridge.Linker().FindVtableIndex(type, name, signature);
         REQUIRE(slot.has_value());
-        const auto result = bridge.Vm().Call(bridge.Linker().Class(type).vtable[*slot],
-                                             std::array{VmValue::Ref(receiver)});
+        const auto result =
+            bridge.Vm().Call(bridge.Linker().Class(type).vtable[*slot], std::array{VmValue::Ref(receiver)});
         REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
         return result.value.ref;
     };
-    CHECK(bridge.Vm().StringUtf8(invoke(activity, "getLocalClassName",
-                                        "()Ljava/lang/String;")) == "StartAlias");
-    const auto component =
-        invoke(activity, "getComponentName", "()Landroid/content/ComponentName;");
-    CHECK(bridge.Vm().StringUtf8(
-              invoke(component, "getClassName", "()Ljava/lang/String;")) ==
-          "fixture.StartAlias");
+    CHECK(bridge.Vm().StringUtf8(invoke(activity, "getLocalClassName", "()Ljava/lang/String;")) == "StartAlias");
+    const auto component = invoke(activity, "getComponentName", "()Landroid/content/ComponentName;");
+    CHECK(bridge.Vm().StringUtf8(invoke(component, "getClassName", "()Ljava/lang/String;")) == "fixture.StartAlias");
     const auto intent = invoke(activity, "getIntent", "()Landroid/content/Intent;");
-    CHECK(invoke(intent, "getComponent", "()Landroid/content/ComponentName;") ==
-          component);
+    CHECK(invoke(intent, "getComponent", "()Landroid/content/ComponentName;") == component);
     CHECK(fixture.app->Stop().state == session::LifecycleRunState::stopped);
 }
 
 TEST_CASE("DVM-112 AndroidAppProcess installs sealed service discovery facts") {
     for (const bool enabled : {false, true}) {
         OrchestratedApp f("fixture.LauncherActivity", true, false, {},
-            {{"fixture.LocalService", false, {{{"fixture.SERVICE"}, {"fixture.CATEGORY"}, true}}}}, enabled);
+                          {{"fixture.LocalService", false, {{{"fixture.SERVICE"}, {"fixture.CATEGORY"}, true}}}},
+                          enabled);
         const auto context = f.app->Context();
         CHECK(context->service_inventory_known);
         CHECK(context->application_enabled == enabled);
@@ -377,9 +373,17 @@ TEST_CASE("BND54 CPU texture declarations resolve vendor family without a Profil
 
 TEST_CASE("BND54 APK texture declarations choose a vendor family without a Profile") {
     using namespace ogplay;
-    OrchestratedApp fixture{"fixture.MainActivity", true, false, {}, {}, true,
-        runtime::dexvm::InterpreterBackend::switch_dispatch, "android.app.Application", {}, {64, 36},
-        {"GL_AMD_compressed_ATC_texture"}};
+    OrchestratedApp fixture{"fixture.MainActivity",
+                            true,
+                            false,
+                            {},
+                            {},
+                            true,
+                            runtime::dexvm::InterpreterBackend::switch_dispatch,
+                            "android.app.Application",
+                            {},
+                            {64, 36},
+                            {"GL_AMD_compressed_ATC_texture"}};
     REQUIRE(fixture.context->session != nullptr);
     fixture.context->session->OpenManagedSurface();
     const auto extensions = fixture.context->session->ManagedGlString(0x1F03);

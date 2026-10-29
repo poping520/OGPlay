@@ -1621,7 +1621,7 @@ note = "DVM-303: bounded local VFS/file/APK video, transport/volume, eight insta
 [dexvm.surface_view_lifecycle]
 status = "partial"
 test = "tests/session/profile_entry_scope_tests.cpp; tests/dexvm/egl_facade_tests.cpp#SurfaceView null-attribute constructors; tests/dexvm/egl_facade_tests.cpp#SurfaceHolder frame; tests/dexvm/surfaceview_traversal_tests.cpp"
-note = "保留ROM shape、onMeasure/isFixedSize与非正请求−1。DVM-339：View holder独立buffer；owner安全点按buffer尺寸交付changed；稳定Rect遵循4.4窗口frame，同尺寸去重，addCallback不补created；window holder不变。完整WMS/updateWindow、系统SurfaceFlinger未启用；GPU/窗口切换/游戏E2E待外验。"
+note = "DVM-348：保留ROM测量/固定尺寸，View父调用维护visibility/layout；普通owner隐藏在返回前经既有事务destroyed，显示在下个安全点created/changed；遍历/回调/输入/worker延后。沿用祖先可见性和DVM-339独立buffer/稳定Rect。managed attach/detach及三类层序可用；null Region有限opaque查询。父View Canvas绘制、非空Region、自绘/onTop gathering、安全显示及其他窗口类型明确失败记账。无WMS/系统SurfaceFlinger；游戏/跨平台未完整验收。"
 
 [dexvm.surface_video_layers]
 status = "partial"

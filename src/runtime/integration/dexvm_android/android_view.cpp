@@ -1439,6 +1439,28 @@ namespace ogplay::runtime::android_intrinsics {
 
 Decl Declare_android_view_SurfaceView(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/SurfaceView;", "Landroid/view/View;");
+    const auto window_visible = builder.BoundInstanceField("mWindowVisibility", "Z", 0);
+    const auto view_visible = builder.BoundInstanceField("mViewVisibility", "Z", 0);
+    const auto requested_visible = builder.BoundInstanceField("mRequestedVisible", "Z", 0);
+    context->surface_view_visibility_fields = std::array{window_visible, view_visible, requested_visible};
+    const auto parent_call = [](dx::IntrinsicContext& call, const char* name, const char* descriptor) {
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto index = call.vm.Linker().FindVtableIndex(type, name, descriptor);
+        auto args = std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)};
+        args.insert(args.end(), call.arguments.begin(), call.arguments.end());
+        const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable.at(*index), args);
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    };
+    const auto visibility = [context, requested_visible](dx::IntrinsicContext& call,
+                                                         std::optional<int> window = std::nullopt) {
+        const bool previous = dx::IntrinsicCall(call).GetInt(requested_visible) != 0;
+        const bool requested = RefreshSurfaceViewVisibility(call.vm, *context, call.receiver, window);
+        if (previous != requested) static_cast<void>(CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V"));
+        ReconcileSurfaceViewVisibility(call.vm, *context, call.receiver, requested);
+    };
     {
         const auto width = builder.BoundInstanceField("mRequestedWidth", "I", 0);
         const auto height = builder.BoundInstanceField("mRequestedHeight", "I", 0);
@@ -1447,34 +1469,31 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
         for (const auto descriptor :
              {"(Landroid/content/Context;)V", "(Landroid/content/Context;Landroid/util/AttributeSet;)V",
               "(Landroid/content/Context;Landroid/util/AttributeSet;I)V"}) {
-            builder.Constructor(descriptor, [context, width, height, descriptor](dx::IntrinsicContext& call) {
-                const auto parent = call.vm.Linker().FindDirectMethod(
-                    call.vm.Linker().ResolveDescriptor("Landroid/view/View;"), "<init>", descriptor);
-                auto args = std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)};
-                args.insert(args.end(), call.arguments.begin(), call.arguments.end());
-                const auto result = call.vm.Call(*parent, args);
-                if (result.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
-                dx::IntrinsicCall fields(call);
-                fields.SetInt(width, -1);
-                fields.SetInt(height, -1);
-                static_cast<void>(SurfaceHolderForView(call.vm, *context, call.receiver));
-                static_cast<void>(
-                    CallAndroidMethod(call.vm, call.receiver, "setWillNotDraw", "(Z)V", {dx::VmValue::Int(1)}));
-                return dx::VmValue::Void();
-            });
+            builder.Constructor(
+                descriptor, [context, width, height, descriptor, view_visible](dx::IntrinsicContext& call) {
+                    const auto parent = call.vm.Linker().FindDirectMethod(
+                        call.vm.Linker().ResolveDescriptor("Landroid/view/View;"), "<init>", descriptor);
+                    auto args = std::vector<dx::VmValue>{dx::VmValue::Ref(call.receiver)};
+                    args.insert(args.end(), call.arguments.begin(), call.arguments.end());
+                    const auto result = call.vm.Call(*parent, args);
+                    if (result.exception.IsValid())
+                        throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
+                                              result.exception_message, result.exception};
+                    dx::IntrinsicCall fields(call);
+                    fields.SetInt(width, -1);
+                    fields.SetInt(height, -1);
+                    fields.SetInt(view_visible, 1);
+                    static_cast<void>(SurfaceHolderForView(call.vm, *context, call.receiver));
+                    static_cast<void>(
+                        CallAndroidMethod(call.vm, call.receiver, "setWillNotDraw", "(Z)V", {dx::VmValue::Int(1)}));
+                    return dx::VmValue::Void();
+                });
         }
         builder.OverrideMethod(
             "onWindowVisibilityChanged", "(I)V",
-            [](dx::IntrinsicContext& call) {
-                const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
-                const auto index = call.vm.Linker().FindVtableIndex(type, "onWindowVisibilityChanged", "(I)V");
-                const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable.at(*index),
-                                                 std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
-                if (result.exception.IsValid())
-                    throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                          result.exception_message, result.exception};
+            [parent_call, visibility](dx::IntrinsicContext& call) {
+                parent_call(call, "onWindowVisibilityChanged", "(I)V");
+                visibility(call, call.arguments[0].AsInt());
                 return dx::VmValue::Void();
             },
             dx::kAccProtected);
@@ -1494,6 +1513,78 @@ Decl Declare_android_view_SurfaceView(const Context& context) {
             },
             dx::kAccProtected);
     }
+    builder.OverrideMethod("setVisibility", "(I)V", [parent_call, visibility](dx::IntrinsicContext& call) {
+        parent_call(call, "setVisibility", "(I)V");
+        visibility(call);
+        return dx::VmValue::Void();
+    });
+    builder.OverrideMethod(
+        "onAttachedToWindow", "()V",
+        [context, visibility](dx::IntrinsicContext& call) {
+            // Managed attachment/observer merging replaces View AttachInfo and WMS.
+            if (const auto node = FindViewUiNode(*context, call.receiver.Value()))
+                static_cast<void>(AttachSurfaceViewSubtree(call.vm, *context, *node));
+            visibility(call);
+            return dx::VmValue::Void();
+        },
+        dx::kAccProtected);
+    builder.OverrideMethod(
+        "onDetachedFromWindow", "()V",
+        [context, requested_visible](dx::IntrinsicContext& call) {
+            dx::IntrinsicCall(call).SetInt(requested_visible, 0);
+            ReconcileSurfaceViewVisibility(call.vm, *context, call.receiver, false);
+            return dx::VmValue::Void();
+        },
+        dx::kAccProtected);
+    for (const auto* name : {"draw", "dispatchDraw"}) {
+        builder.OverrideMethod(
+            name, "(Landroid/graphics/Canvas;)V",
+            [parent_call, name](dx::IntrinsicContext& call) {
+                // Hole composition already belongs to the managed compositor. The
+                // parent Java Canvas drawing protocol is still unavailable.
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
+                return parent_call(call, name, "(Landroid/graphics/Canvas;)V");
+            },
+            std::string_view(name) == "draw" ? dx::kAccPublic : dx::kAccProtected);
+    }
+    builder.OverrideMethod(
+        "gatherTransparentRegion", "(Landroid/graphics/Region;)Z", [context](dx::IntrinsicContext& call) {
+            const auto node = FindViewUiNode(*context, call.receiver.Value());
+            const bool skip = CallAndroidMethod(call.vm, call.receiver, "willNotDraw", "()Z").AsInt() != 0;
+            if (call.arguments[0].ref.IsValid() || !skip || !node ||
+                context->ui_tree.Get(*node)->surface_layer == ui::SurfaceLayer::on_top) {
+                if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
+                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                      "SurfaceView Region/parent gathering is unavailable"};
+            }
+            const auto holder = SurfaceHolderForView(call.vm, *context, call.receiver);
+            const auto format = context->surface_requested_formats.find(holder.Value());
+            return dx::VmValue::Int(
+                !AndroidPixelFormatHasAlpha(format == context->surface_requested_formats.end() ? 1 : format->second));
+        });
+    builder.VirtualMethod("setSecure", "(Z)V", [](dx::IntrinsicContext& call) {
+        if (call.arguments[0].AsInt()) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "Secure Surface display/capture exclusion is unavailable"};
+        }
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("setWindowType", "(I)V", [context](dx::IntrinsicContext& call) {
+        const auto type = call.arguments[0].AsInt();
+        if (type != 1000 && type != 1001 && type != 1004) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_view_lifecycle", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                  "SurfaceView window type is unavailable"};
+        }
+        const auto node = FindViewUiNode(*context, call.receiver.Value());
+        if (!node) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "SurfaceView has no UI node"};
+        context->ui_tree.Get(*node)->surface_layer = type == 1000   ? ui::SurfaceLayer::on_top
+                                                     : type == 1004 ? ui::SurfaceLayer::media_overlay
+                                                                    : ui::SurfaceLayer::media;
+        context->ui_tree.MarkDrawDirty(*node);
+        return dx::VmValue::Void();
+    });
     builder.VirtualMethod("getHolder", "()Landroid/view/SurfaceHolder;", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(SurfaceHolderForView(call.vm, *context, call.receiver));
     });

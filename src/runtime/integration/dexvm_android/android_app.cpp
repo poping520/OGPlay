@@ -831,6 +831,10 @@ bool SurfaceOwnerCurrent(dexvm::Interpreter& vm, DexVmAndroidContext& context,
     const auto projection = context.ui_tree.PublishedProjection();
     const auto node = FindViewUiNode(context, identity.view.Value());
     if (!projection || !node || !projection->Get(*node) || !projection->IsVisible(*node)) return false;
+    if (context.surface_view_visibility_fields) {
+        dexvm::IntrinsicContext call{vm, identity.view, {}};
+        if (!dexvm::IntrinsicCall(call).GetInt((*context.surface_view_visibility_fields)[2])) return false;
+    }
     identity.revision = context.ui_content_revision;
     return IsAndroidUiOwnerCurrent(vm, context, identity, false);
 }
@@ -1229,6 +1233,32 @@ void SetWindowSurfaceCallback(dexvm::Interpreter& vm, DexVmAndroidContext& conte
     }
 }
 
+void ReconcileSurfaceViewVisibility(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view,
+                                    const bool visible) {
+    if (const auto node = FindViewUiNode(context, view.Value())) context.surface_traversal_pending.insert(*node);
+    // ROM updateWindow destroys synchronously. Reentrant layout/Surface/input
+    // leases and worker calls defer to the next owner safe point instead.
+    if (visible || context.surface_event_dispatching || context.ui_layout_dispatching || context.input_presentation ||
+        vm.CurrentContextToken() != 1U || context.ui_java_owner_thread != std::this_thread::get_id())
+        return;
+    const auto found = context.surface_holders.find(view.Value());
+    if (found == context.surface_holders.end() || !context.active_surface_holders.contains(found->second.Value()))
+        return;
+    const auto holder = found->second;
+    const auto roots = vm.ProtectReferences(std::array{view, holder});
+    context.surface_event_dispatching = true;
+
+    struct Reset {
+        bool& flag;
+
+        ~Reset() { flag = false; }
+    } reset{context.surface_event_dispatching};
+
+    if (const auto error =
+            DispatchHolderCallbacks(vm, context, std::array{holder.Value()}, SurfaceHolderPhase::destroyed))
+        throw dexvm::VmJavaThrow{"Ljava/lang/IllegalStateException;", *error};
+}
+
 std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexVmAndroidContext& context) {
     if (!context.managed_host_surface_open || context.surface_event_dispatching || context.input_presentation ||
         context.ui_layout_dispatching)
@@ -1255,6 +1285,7 @@ std::optional<std::string> PumpAndroidSurfaceEvents(dexvm::Interpreter& vm, DexV
     std::vector<std::uint32_t> holders, retired;
     std::map<std::uint32_t, DexVmAndroidContext::UiOwnerIdentity> identities;
     for (const auto& [view, holder] : context.surface_holders) {
+        android_intrinsics::RefreshSurfaceViewVisibility(vm, context, dexvm::VmObjectRef{view});
         const auto identity = CaptureAndroidUiOwner(vm, context, dexvm::VmObjectRef{view});
         if (SurfaceOwnerCurrent(vm, context, identity)) {
             holders.push_back(holder.Value());

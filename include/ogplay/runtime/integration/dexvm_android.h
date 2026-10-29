@@ -1184,6 +1184,8 @@ struct DexVmAndroidContext final {
     std::optional<dexvm::IntrinsicFieldHandle> surface_holder_frame_field;
     std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_width_field;
     std::optional<dexvm::IntrinsicFieldHandle> surface_view_requested_height_field;
+    // ROM booleans; window visibility is refreshed from the existing owner/window authority.
+    std::optional<std::array<dexvm::IntrinsicFieldHandle, 3>> surface_view_visibility_fields;
     // Weak window identities; counters survive schedule invalidation, never root guest objects.
     std::map<dexvm::VmObjectRef, std::map<std::string, std::uint64_t>> ui_traversal_diagnostics;
 
@@ -1520,6 +1522,10 @@ void SetWindowInputCallback(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::Vm
 void DispatchWindowInputQueue(dexvm::Interpreter&, DexVmAndroidContext&, bool created);
 
 enum class SurfaceHolderPhase : std::uint8_t { created, changed, destroyed };
+
+// Retires only this holder, through the normal destruction transaction. Unsafe
+// callback/layout/input or non-owner contexts leave retirement to the owner pump.
+void ReconcileSurfaceViewVisibility(dexvm::Interpreter&, DexVmAndroidContext&, dexvm::VmObjectRef, bool visible);
 
 // SurfaceHolder callbacks follow size delivery; failures return a rendered guest message.
 [[nodiscard]] std::optional<std::string>

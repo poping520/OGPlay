@@ -371,6 +371,15 @@ buffer，各非正轴回到 View frame；window holder 保留窗口尺寸。每�
 SurfaceView 保留完整 ROM shape，onMeasure/isFixedSize 执行 ROM；三构造受审调用对应 View
 构造并初始化请求为 −1、setWillNotDraw(true)，getHolder 继续返回真实 managed holder。setFrame
 仅精确调用 ROM View 父协议，不执行 WMS updateWindow；WMS 相关字段/方法保留 failure。
+SurfaceView setVisibility 先精确调用 ROM View，再维护派生的窗口/View/requested 可见性，
+requested 变化调用 requestLayout 并登记既有 holder 对账。窗口事实来自现有 owner/window；
+普通 owner 隐藏在返回前走原 DispatchHolderCallbacks/DestroyScope 销毁，显示等下一个安全点
+created→changed。layout/Surface 回调/input lease/worker 中延后销毁，避免重入；祖先隐藏的
+现有 IsVisible/mount 判定不变。managed attach/detach 复用该协议，不开放 View AttachInfo/WMS。
+draw/dispatchDraw 委托父 View，当前父 Java Canvas 协议仍失败并记账；gatherTransparentRegion
+仅支持 media/overlay+willNotDraw+null Region 的格式 opaque 返回；Region 写入、自绘/onTop
+父 gathering 记账失败。setWindowType 仅映射既有 PANEL/MEDIA/MEDIA_OVERLAY，其他类型失败；
+setSecure(true) 因无安全显示/截屏排除而记账失败，false 无保护请求。
 holder 接缝把非正宿主请求（0 表示从布局）规范为 ROM −1；先校验双轴再原子写 Java 请求，
 改变时真实 requestLayout。setSizeFromLayout 恢复两轴 −1。ROM onMeasure 保留读取请求的
 原版行为；View frame 与 buffer 几何分别发布，回调前更新真实 Rect。

@@ -26,3 +26,31 @@
   `Should raise coproc exception here`，进程退出 `0xC0000409`。GC 直接读取 `/proc/stat`
   的警告仍存在（未经过 sysconf）；不宣称解决该统计入口或通过游戏验收。
 - 证据：`.local/cpu-facts-{build-final,test-build,tests,cli-tests,webui-check,webui-build,startup}.log`。
+
+## 修订 · 2026-10-29：API19 cpuinfo 完整格式
+
+- `.local` 未发现内核源码，核对上游 [Linux v3.4 ARM setup.c 的 c_show](https://github.com/torvalds/linux/blob/v3.4/arch/arm/kernel/setup.c#L988-L1044)，
+  按 SMP 分支输出（含单核 processor/BogoMIPS 组、Features 尾空格、制表符及空行）。
+- `GuestCpuEnvironment` 的不可变虚拟 Cortex-A9 r0p0 模型统一提供 MIDR、架构、
+  Processor/platform、既有 Dynarmic Features 与虚拟 Hardware；variant/revision 固定为零。
+  板级 Revision/Serial 使用内核无板级信息时的零值。BogoMIPS 按虚拟 delay loop
+  每周期一轮及内核 `lpj × HZ / 500000` 公式得到 `2 × MHz`，不采样宿主。
+  sysfs/sysconf 行为不变，不实现 nvmap 或 NV system clock。
+- macOS Release `ogplay-cli`、`ogplay_tests` 构建通过；定向 14 用例/285 断言通过，
+  包含 1 核/2 核 cpuinfo 全文逐字节比较、不同频率、CPU 字段、既有 Features、
+  只读拓扑、真实 API19 sysconf 与进程 proc 发布。账本检查通过（433 条）。
+  命令：`build/release/ogplay_tests --source-file='*guest_cpu_environment_tests.cpp,*android_guest_call_session_tests.cpp' --test-case='*BND-42*,Android guest proc*,legacy Android guest call session delegates process ownership'`。
+- GTA3 在 `build/release` 沿用 `./ogplay-cli library run com.rockstar.gta3`，临时 MCP
+  端口 15972；EULA 已接受，无需重复点击。原线程 2 读 `0x8` 不再出现，进入
+  `PlayMovieInWindow` / `movieViewCreated surfaceCreated firsttime`；下一首错为
+  `Canvas.drawColor(int, PorterDuff.Mode)` 未实现，位于 `WarMedia$11.surfaceCreated`（pc 17），
+  退出 1，未修。EGL NV system clock 提示仍在；MCP 设置内容及原文件存在状态精确恢复。
+  此为 reached-fault 证据，不是 title gate。
+- 证据：`.local/gta3-cpuinfo/` 的 `build.log`、`focused-tests.log`、
+  `capabilities-check.log`、`gta3.log`、`gta3-result.json`、`settings-restored.json`。
+- 九个场景各跑一次，6/9 通过，无新增失败；与 `.local/gta3-dialog-visibility/` 基线
+  比较，全部 status/firstFailure 一致，三项失败的相关原始日志行也完全一致：
+  Tales 退出读 `0x315f0001`，Dead Trigger teardown cleanup wall-time budget exhausted，
+  PVZ `stopService` 未实现。TML、Lili、Wild Blood、Dungeon Hunter、Asphalt 5、Angry Birds 通过。
+  证据见 `scenarios-cpuinfo/`、`scenarios-cpuinfo-summary.json`、`scenario-comparison.json`；
+  未跑全量测试，未进行正式 title gate 或 Windows 验收。

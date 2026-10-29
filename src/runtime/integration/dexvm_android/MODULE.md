@@ -180,7 +180,7 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
   资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
-  换算；ColorDrawable 仅宿主 color 为值 owner，未启用的 mPaint/mState 访问明确失败。
+  换算；ColorDrawable 仍按成员来源表组合，未准入的 mPaint/mState 访问明确失败。
   默认背景另允许封存同 ROM edit_text selector 与 ninepatch，DrawableContainer/StateListDrawable/
   NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
@@ -251,6 +251,10 @@ VM 主 guest context 的状态表装配绑定唯一宿主 owner，不由首个 V
 OwnerTick 开始一个逻辑 tick；BeforeInput 是同 tick 读屏障，不消费第二 pass 的延期。
 每个稳定窗口根独立保存请求、延期/watchdog 与最近成功身份/metrics；clean 复用完整快照，
 不调用 measure/layout、不推进 epoch。纯绘制变化只重新冻结投影，不调用 measure/layout。
+View.setBackgroundColor、invalidateDrawable、verifyDrawable 执行 ROM；既有 invalidate 接缝标脏。
+owner 投影保留 ROM skin 路径，ColorDrawable（含子类）每次虚派 getColor 读取已含 Drawable alpha
+的 ARGB，背景 alpha 为1；零 alpha 或 null 清空背景。其他非空 Drawable 不绘制，记账
+`dexvm.view_background_draw` 并以 first_and_count 发出 `ui.background.unreviewed` warn（含类描述符）。
 OwnerTick/BeforeInput/BeforePresent/BeforeSurfaceCallbacks 的 ResolveOnly 与 ResolveAndNotifySizes
 在 owner guest token、绑定宿主线程与 VM 锁下执行根
 EXACTLY managed viewport measure→layout。requestLayout 沿真实 Java parent 虚派传播，首轮仅剩余 FORCE_LAYOUT、仍连到当前根且祖先非 GONE 的请求触发本帧

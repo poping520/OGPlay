@@ -125,8 +125,8 @@ note = "DVM-346：独立HostLayout modal经共同快照原子发布，render/inp
 
 [dexvm.drawable_resource]
 status = "partial"
-test = "tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "app Resources.getDrawable支持封存ROM系统标量颜色的ColorDrawable；系统颜色XML/未知/unsupported及getSystem drawable仍失败，既有受审ROM皮肤保留。默认配对同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与选中像素在现有叶 bitmap 平面冻结；guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 明确失败。DVM-327 同 ROM ColorStateList 经原版 XML 路径构造，不回退 APK。"
+test = "tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
+note = "app Resources.getDrawable 支持封存 ROM 系统标量颜色；系统颜色 XML/未知及 getSystem drawable 仍失败。同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与叶 bitmap 冻结；ColorStateList 按 ROM XML 构造，不回退 APK。View 背景 ColorDrawable 按 ROM getColor 投影；其他未审查背景记账不绘制。guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 未支持。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -2172,3 +2172,8 @@ test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_t
 status = "partial"
 note = "DVM-337：API19 ROM ValueAnimator/ObjectAnimator/PVH 沿主 Looper Choreographer 推进；四个 PVH native 使用稳定方法 ID、虚派及异常传播，缺方法供反射回退。View Java alpha 唯一事实，祖先乘积投影只失效绘制；透明应用窗口像素合成、不透明窗口覆盖。无离屏组不透明度、XML 动画、ViewPropertyAnimator、LayoutTransition/postOnAnimation；跨平台未验。"
 test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/compose_bootdex.py check"
+
+[dexvm.view_background_draw]
+status = "partial"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-352"
+note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记录未实现与限流 warn，不绘制、不抛异常；不支持任意 Drawable.draw。"

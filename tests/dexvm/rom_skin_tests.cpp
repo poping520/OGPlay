@@ -402,3 +402,101 @@ TEST_CASE("API19 View drawable state retains ROM skin state selection") {
         CHECK(f.ledger.Unimplemented().empty());
     }
 }
+
+TEST_CASE("DVM-352 ROM background color mutation invalidates and projects Java color on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        const auto tick = [&] {
+            return EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                            AndroidUiTraversalPhase::ResolveOnly);
+        };
+        const auto background = [&] {
+            return f.On(view, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+        };
+        const auto set_color = [&](std::uint32_t color) {
+            f.On(view, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(color))});
+        };
+        REQUIRE_FALSE(background().IsValid());
+        set_color(0xff000000U);
+        const auto color = background();
+        REQUIRE(color.IsValid());
+        CHECK(f.linker.Class(f.model.ObjectClass(color)).descriptor == "Landroid/graphics/drawable/ColorDrawable;");
+        CHECK(static_cast<std::uint32_t>(f.On(color, "getColor", "()I").AsInt()) == 0xff000000U);
+        REQUIRE(tick());
+        const auto node = *FindViewUiNode(*f.context, view.Value());
+        const auto projected = [&]() -> const ui::UiNode& { return *f.context->ui_tree.Get(node); };
+        CHECK(projected().background_color == 0xff000000U);
+        CHECK(projected().background_resource_id == 0);
+        CHECK(projected().background_alpha == 1.0F);
+        CHECK(f.ledger.Unimplemented().empty());
+        REQUIRE_FALSE(tick());
+        const auto invalidations = [&] {
+            int count = 0;
+            for (const auto& event : f.vm.Trace("", 10000))
+                if (event.method_name == "invalidateDrawable") ++count;
+            return count;
+        };
+        const auto before = invalidations();
+        set_color(0x80ff0000U);
+        CHECK(background() == color);
+        CHECK(invalidations() > before);
+        CHECK(static_cast<std::uint32_t>(f.On(color, "getColor", "()I").AsInt()) == 0x80ff0000U);
+        REQUIRE(tick());
+        CHECK(projected().background_color == 0x80ff0000U);
+        CHECK(projected().background_alpha == 1.0F);
+        set_color(0);
+        REQUIRE(tick());
+        CHECK_FALSE(projected().background_color);
+        CHECK(projected().background_resource_id == 0);
+        set_color(0xff123456U);
+        REQUIRE(tick());
+        f.On(view, "setBackground", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(tick());
+        CHECK_FALSE(projected().background_color);
+        CHECK(projected().background_resource_id == 0);
+        for (const auto visibility : {4, 8}) {
+            f.On(view, "setVisibility", "(I)V", {VmValue::Int(visibility)});
+            const auto calls = invalidations();
+            set_color(0xff000000U);
+            CHECK(invalidations() > calls);
+            CHECK(f.On(background(), "isVisible", "()Z").AsInt() == 0);
+            f.On(view, "setBackground", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(VmObjectRef{})});
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-352 unreviewed background projection clears old color and records the drawing gap") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto image = f.New("Landroid/graphics/drawable/BitmapDrawable;");
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, image});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        f.On(view, "setBackgroundColor", "(I)V", {VmValue::Int(-1)});
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        // Isolate projection from BitmapDrawable.getOpacity, which is outside
+        // the reviewed setter surface (as in the drawable-state theme above).
+        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mBackground",
+                                                       "Landroid/graphics/drawable/Drawable;");
+        REQUIRE(field);
+        f.model.InstanceSlots(view)[f.linker.Field(*field).slot] = {image.Value(), SlotTag::ref};
+        f.On(view, "invalidate", "()V");
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly));
+        const auto& projected = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
+        CHECK_FALSE(projected.background_color);
+        CHECK(projected.background_resource_id == 0);
+        CHECK(projected.background_alpha == 1.0F);
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.view_background_draw");
+        CHECK(hits.front().count == 1);
+    }
+}

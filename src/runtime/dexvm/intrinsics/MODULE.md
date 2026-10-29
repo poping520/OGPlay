@@ -128,8 +128,11 @@
   read/write 必须虚派子类，不能要求任意 guest 流存在宿主资源状态。
   ObjectStreamClass 仅保留六个受检反射原语；ObjectOutputStream.getFieldL、Proxy 生成和
   VMStack 除 getClasses 外的四个 native 明确失败。宿主资源不因迁入对象流自动可序列化。
-- ZIP 的 archive/entry/cursor/close 只用 ZipRuntime，ZIP32/inflate/CRC 复用严格 loader；
-  FilterInputStream 持源强引用，close 幂等关闭源，mark/reset 明确不支持。
+- ZIP32 的 ZipFile/ZipEntry/ZipInputStream 及流算法、条目状态和关闭协议归 API19 BootDex。
+  ZipFile 只访问 guest VFS 普通文件；Inflater 文件输入复用 Posix 的 IoRuntime 描述符与共享
+  offset，循环读取到请求长度或 EOF，通过 VM 调用 setInputImpl 将实际字节交给 guest zlib。
+  负长度明确失败，快照受 Java byte[] 长度与 VM 堆预算约束，IO 失败带 errno 抛 IOException。
+  不支持 ZIP64、OPEN_DELETE、宿主路径或 JarFile 签名校验。
   独立 Checksum/CRC32 公开行为与状态归原版 BootDex；CRC32 两个私有实例 native
   按原声明准入统一 guest JNI，计算使用 guest libz，不新增宿主校验算法或状态。
 - Buffer/Charset 的 handler 只做类型/异常边界；cursor/backing/view/字节序交 NioRuntime。

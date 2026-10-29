@@ -318,3 +318,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-277 · View ROM 形状与首批 Java 状态（VD-J1）](DVM-277.md)
 
 - [DVM-349 · 独立进程 Service 按不可解析回答](DVM-349.md)
+
+- [DVM-350 · ZipFile 读取 guest VFS ZIP32](DVM-350.md)

@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | EULA 已接受，Surface 可见性生命周期通过，到达 Tap To Continue 标题画面 | PlayMovieInWindow 命中 `View.toString()` 未实现（pc25）；影片解码画面未验；NV clock 提示仍在 | [BND-42](../tasks/boundary/BND-42.md)、[DVM-348](../tasks/dexvm/DVM-348.md) |
-| GTASA | macOS | lib 目录别名已生效，libcleo 加载且 JNI_OnLoad 一次，进入 Activity onCreate | `GetPackageName` 调用 getInstalledApplications 参数超出支持范围（UnsupportedOperationException，pc 6）；未验游戏画面 | [DVM-349](../tasks/dexvm/DVM-349.md) |
+| GTASA | macOS | 首启 ZIP 解压成功，7 个脚本/文本落入 external，进入原 Activity；libcleo JNI_OnLoad 一次 | `GetPackageName` 调用 getInstalledApplications 参数超出支持范围（UnsupportedOperationException，pc 6）；未验游戏画面 | [DVM-349](../tasks/dexvm/DVM-349.md)、[DVM-350](../tasks/dexvm/DVM-350.md) |
 
 ## 未闭合问题
 

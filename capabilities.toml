@@ -1340,8 +1340,8 @@ note = "DVM-122 将 crypto/ICU 统一为 libogplay_jni.so 和单一 JNI_OnLoad�
 
 [dexvm.zip_byte_streams]
 status = "partial"
-test = "tests/runtime/guest_zlib_tests.cpp#DVM-214; tools/bootdex/compose_bootdex.py check; tools.bootdex_builder_self_test; tools.android_payload_current"
-note = "DVM-214：API19 GZIP/Deflater/Inflater 的公开算法与状态归 BootDex；受审数组 native 经统一 guest JNI 到既有 libz。逻辑 token、输入快照、有界输出 scratch 与 GC/teardown 释放；文件描述符输入记账抛 UOE。ZipFile.RAFStream 仅作原版类型依赖，不包含 ZipFile、Adler32 或完整 ZIP/JAR；macOS 双解释器标准/大数组、独立解码、损坏流、字典/reset、token/GC/teardown 定向验证通过，Windows/Linux 实跑未验收。"
+test = "tests/runtime/guest_zlib_tests.cpp#DVM-350; tests/runtime/guest_zlib_tests.cpp#DVM-214; tools/bootdex/compose_bootdex.py check; tools.bootdex_builder_self_test; tools.android_payload_current"
+note = "DVM-214/350：API19 GZIP、Deflater/Inflater、ZipEntry/ZipInputStream/ZipFile 算法及状态归 BootDex；数组 native 经 guest JNI 到 libz。ZipFile 支持 guest VFS ZIP32 stored/deflated 读取，FD 输入复用 IoRuntime，实际短读快照交 guest zlib；token 与 IO 资源按关闭/GC 回收。不支持 ZIP64、OPEN_DELETE、宿主路径、JarFile 签名校验；跨平台实跑未验收。"
 
 [dexvm.crc32]
 status = "complete"

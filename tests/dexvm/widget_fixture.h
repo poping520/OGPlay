@@ -5,7 +5,6 @@
 #include "boot_dex.h"
 // Widget state, resolved UiTree geometry and listener dispatch integration.
 
-
 #include <array>
 #include <algorithm>
 #include <iterator>
@@ -39,11 +38,10 @@ namespace ogplay::test::widget {
 
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
-[[nodiscard]] ogplay::loader::BinaryXmlAttribute AndroidAttribute(
-    std::string name, const std::uint8_t type, const std::uint32_t data);
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute AndroidAttribute(std::string name, const std::uint8_t type,
+                                                                  const std::uint32_t data);
 
-[[nodiscard]] ogplay::loader::BinaryXmlAttribute StyleAttribute(
-    const std::uint8_t type, const std::uint32_t data);
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute StyleAttribute(const std::uint8_t type, const std::uint32_t data);
 
 struct ClickVm final {
     ogplay::core::CapabilityLedger ledger;
@@ -66,6 +64,7 @@ struct ClickVm final {
     std::vector<std::string> dialog_events;
     std::function<void(IntrinsicContext&)> dialog_click_hook;
     std::function<void(IntrinsicContext&)> dialog_prepare_hook;
+    std::function<void(IntrinsicContext&)> dialog_on_create_hook;
     bool dialog_key_consumed{};
     std::int32_t removal_layout_requests{};
     std::int32_t bring_front_requests{};
@@ -92,15 +91,11 @@ struct ClickVm final {
 
     explicit ClickVm(const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
                      bool attach_activity = true);
-    VmValue CallOn(const VmObjectRef receiver, const std::string& name,
-                   const std::string& descriptor,
+    VmValue CallOn(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
                    std::vector<VmValue> arguments = {});
     VmObjectRef NewTextDialog(VmObjectRef owner, VmObjectRef listener, bool cancelable = true);
-    VmValue CallDirect(const VmObjectRef receiver,
-                       const std::string& class_descriptor,
-                       const std::string& name,
-                       const std::string& descriptor,
-                       std::vector<VmValue> arguments = {});
+    VmValue CallDirect(const VmObjectRef receiver, const std::string& class_descriptor, const std::string& name,
+                       const std::string& descriptor, std::vector<VmValue> arguments = {});
     [[nodiscard]] VmObjectRef NewListener();
     [[nodiscard]] std::int32_t CallStaticInt(const std::string& name);
     void SetTouchResult(const bool handled);
@@ -110,9 +105,7 @@ struct ClickVm final {
     void ResetTouchView(const bool handled);
     [[nodiscard]] std::int32_t TouchViewValue(const char* name);
 
-    [[nodiscard]] std::optional<std::string> Click(const float x,
-                                                   const float y);
+    [[nodiscard]] std::optional<std::string> Click(const float x, const float y);
 };
 
-
-} // namespace ogplay::test::widget
+}  // namespace ogplay::test::widget

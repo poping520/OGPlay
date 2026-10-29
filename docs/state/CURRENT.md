@@ -25,7 +25,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
-| GTA3 | macOS | 无 buffer Surface 已可发布首帧，MCP 截图可用 | 仍仅一帧纯黑；EULA/©不可见、Accept未验；疑似冻结modal可见性未失效，未修 | [DVM-345](../tasks/dexvm/DVM-345.md)、[DVM-344](../tasks/dexvm/DVM-344.md) |
+| GTA3 | macOS | EULA（含©）可见，MCP 已点击 Accept，进入 EGL 初始化 | EGL NV system clock 入口不可用后 guest 线程2读0x8（PC 0x308e065e）；未修 | [DVM-346](../tasks/dexvm/DVM-346.md) |
 
 ## 未闭合问题
 

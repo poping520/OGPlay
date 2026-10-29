@@ -37,12 +37,10 @@
 namespace ogplay::test::widget {
 
 [[nodiscard]] std::vector<std::uint8_t> ReadFixture(const std::string& name) {
-    const std::string path =
-        std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
+    const std::string path = std::string(OGPLAY_DEXVM_FIXTURE_DIR) + "/" + name;
     std::ifstream stream(path, std::ios::binary);
     REQUIRE_MESSAGE(stream.good(), "missing fixture: ", path);
-    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
-                                     std::istreambuf_iterator<char>());
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 [[nodiscard]] ogplay::video::VideoPlayerFactory FakeFactory() {
@@ -56,8 +54,8 @@ namespace ogplay::test::widget {
     };
 }
 
-[[nodiscard]] ogplay::loader::BinaryXmlAttribute AndroidAttribute(
-    std::string name, const std::uint8_t type, const std::uint32_t data) {
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute AndroidAttribute(std::string name, const std::uint8_t type,
+                                                                  const std::uint32_t data) {
     return ogplay::loader::BinaryXmlAttribute{
         .namespace_uri = "http://schemas.android.com/apk/res/android",
         .name = std::move(name),
@@ -66,243 +64,238 @@ namespace ogplay::test::widget {
     };
 }
 
-[[nodiscard]] ogplay::loader::BinaryXmlAttribute StyleAttribute(
-    const std::uint8_t type, const std::uint32_t data) {
-    return ogplay::loader::BinaryXmlAttribute{
-        .name = "style", .value_type = type, .data = data};
+[[nodiscard]] ogplay::loader::BinaryXmlAttribute StyleAttribute(const std::uint8_t type, const std::uint32_t data) {
+    return ogplay::loader::BinaryXmlAttribute{.name = "style", .value_type = type, .data = data};
 }
 
 ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
-    : context(std::make_shared<DexVmAndroidContext>()),
-      runtime(
-          [this, backend] {
-              ogplay::test::BindBootDexArchive(*context);
-              std::vector<IntrinsicClassDecl> catalog;
-              auto android = AndroidIntrinsicCatalog(context);
-              for (auto& owner : android)
-                  for (auto& method : owner.methods) {
-                      if (owner.descriptor == "Landroid/view/View;" && method.name == "onFinishInflate") {
-                          method.implementation = [this](IntrinsicContext& call) {
-                              const auto node = *FindViewUiNode(*context, call.receiver.Value());
-                              inflater_finish_ids.push_back(context->ui_tree.Get(node)->android_id);
-                              CHECK_FALSE(context->ui_tree.Get(node)->parent.has_value());
-                              static_cast<void>(call.vm.CollectGarbage("inflater-finish"));
-                              if (inflater_finish_hook) inflater_finish_hook(call);
-                              return VmValue::Void();
-                          };
-                      }
+    : context(std::make_shared<DexVmAndroidContext>()), runtime([this, backend] {
+          ogplay::test::BindBootDexArchive(*context);
+          std::vector<IntrinsicClassDecl> catalog;
+          auto android = AndroidIntrinsicCatalog(context);
+          for (auto& owner : android)
+              for (auto& method : owner.methods) {
+                  if (owner.descriptor == "Landroid/view/View;" && method.name == "onFinishInflate") {
+                      method.implementation = [this](IntrinsicContext& call) {
+                          const auto node = *FindViewUiNode(*context, call.receiver.Value());
+                          inflater_finish_ids.push_back(context->ui_tree.Get(node)->android_id);
+                          CHECK_FALSE(context->ui_tree.Get(node)->parent.has_value());
+                          static_cast<void>(call.vm.CollectGarbage("inflater-finish"));
+                          if (inflater_finish_hook) inflater_finish_hook(call);
+                          return VmValue::Void();
+                      };
                   }
-              catalog = std::move(android);
-              std::vector<IntrinsicClassDecl> touch_probes;
-              auto activity_probe = IntrinsicClassBuilder::Class("LTouchActivityProbe;", "Landroid/app/Activity;");
-              activity_probe.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
-                  ++touch_dispatch_events; return VmValue::Int(1);
-              });
-              touch_probes.push_back(std::move(activity_probe).Build());
-              auto fallback_probe = IntrinsicClassBuilder::Class("LTouchFallbackProbe;", "Landroid/app/Activity;");
-              fallback_probe.OverrideMethod("onUserInteraction", "()V", [this](IntrinsicContext&) {
-                  ++user_interactions; return VmValue::Void();
-              });
-              fallback_probe.OverrideMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
-                  ++activity_touch_events; return VmValue::Int(1);
-              });
-              touch_probes.push_back(std::move(fallback_probe).Build());
-              auto group_probe = IntrinsicClassBuilder::Class("LTouchGroupProbe;", "Landroid/widget/FrameLayout;");
-              group_probe.OverrideMethod("onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
-                  ++intercept_events; return VmValue::Int(intercept_touches);
-              });
-              touch_probes.push_back(std::move(group_probe).Build());
-              catalog.insert(catalog.end(), touch_probes.begin(), touch_probes.end());
-              auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
-              content_view.OverrideMethod("onTouchEvent",
-                               "(Landroid/view/MotionEvent;)Z",
-                      [this](IntrinsicContext&) {
-                          ++content_view_events;
-                          return VmValue::Int(content_view_handled ? 1 : 0);
-                      });
-              std::vector<IntrinsicClassDecl> test_catalog;
-              test_catalog.push_back(std::move(content_view).Build());
-              auto key_view = IntrinsicClassBuilder::Class(
-                  "LTestKeyView;", "Landroid/view/View;");
-              key_view.OverrideMethod(
-                  "onKeyDown", "(ILandroid/view/KeyEvent;)Z",
-                  [this](IntrinsicContext& call) {
-                      ++key_down_events;
-                      last_key_code = call.arguments[0].AsInt();
-                      return VmValue::Int(1);
-                  });
-              key_view.OverrideMethod(
-                  "onKeyUp", "(ILandroid/view/KeyEvent;)Z",
-                  [this](IntrinsicContext& call) {
-                      ++key_up_events;
-                      last_key_code = call.arguments[0].AsInt();
-                      return VmValue::Int(1);
-                  });
-              key_view.OverrideMethod(
-                  "onKeyMultiple", "(IILandroid/view/KeyEvent;)Z",
-                  [this](IntrinsicContext& call) {
-                      ++key_multiple_events;
-                      last_key_code = call.arguments[0].AsInt();
-                      return VmValue::Int(call.arguments[1].AsInt() == 0);
-                  });
-              test_catalog.push_back(std::move(key_view).Build());
-              auto system_ui_listener = IntrinsicClassBuilder::Class(
-                  "LSystemUiVisibilityListener;", "Ljava/lang/Object;",
-                  {"Landroid/view/View$OnSystemUiVisibilityChangeListener;"});
-              system_ui_listener.VirtualMethod(
-                  "onSystemUiVisibilityChange", "(I)V",
-                  [this](IntrinsicContext&) {
-                      ++system_ui_visibility_events;
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(
-                  std::move(system_ui_listener).Build());
-              auto text_watcher = IntrinsicClassBuilder::Class(
-                  "LRecordingTextWatcher;", "Ljava/lang/Object;",
-                  {"Landroid/text/TextWatcher;"});
-              text_watcher.VirtualMethod(
-                  "beforeTextChanged", "(Ljava/lang/CharSequence;III)V",
-                  [this](IntrinsicContext& call) {
-                      text_events.emplace_back("before");
-                      last_text_range = {call.arguments[1].AsInt(),
-                                         call.arguments[2].AsInt(),
-                                         call.arguments[3].AsInt()};
-                      return VmValue::Void();
-                  });
-              text_watcher.VirtualMethod(
-                  "onTextChanged", "(Ljava/lang/CharSequence;III)V",
-                  [this](IntrinsicContext& call) {
-                      text_events.emplace_back("on");
-                      last_text_range = {call.arguments[1].AsInt(),
-                                         call.arguments[2].AsInt(),
-                                         call.arguments[3].AsInt()};
-                      return VmValue::Void();
-                  });
-              text_watcher.VirtualMethod(
-                  "afterTextChanged", "(Landroid/text/Editable;)V",
-                  [this](IntrinsicContext&) {
-                      text_events.emplace_back("after");
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(text_watcher).Build());
-              auto removal_probe = IntrinsicClassBuilder::Class(
-                  "LRemovalLayoutProbe;", "Landroid/widget/LinearLayout;");
-              removal_probe.OverrideMethod("requestLayout", "()V",
-                  [this](IntrinsicContext&) {
-                      ++removal_layout_requests;
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(removal_probe).Build());
-              auto bring_probe = IntrinsicClassBuilder::Class(
-                  "LBringFrontProbe;", "Landroid/widget/FrameLayout;");
-              bring_probe.OverrideMethod("bringChildToFront", "(Landroid/view/View;)V",
-                  [this](IntrinsicContext&) {
-                      ++bring_front_requests;
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(bring_probe).Build());
-              auto remove_all_probe = IntrinsicClassBuilder::Class(
-                  "LRemoveAllProbe;", "Landroid/widget/FrameLayout;");
-              remove_all_probe.OverrideMethod("removeAllViewsInLayout", "()V",
-                  [this](IntrinsicContext&) {
-                      ++remove_all_in_layout_requests;
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(remove_all_probe).Build());
-              auto image_context = IntrinsicClassBuilder::Class(
-                  "LImageContextProbe;", "Landroid/content/Context;");
-              image_context.OverrideMethod("getResources", "()Landroid/content/res/Resources;",
-                  [this](IntrinsicContext& call) {
-                      ++image_resource_queries;
-                      static_cast<void>(call.vm.CollectGarbage("image-resource-delegate"));
-                      if (image_delegate_exception.IsValid())
-                          throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "resource delegate", image_delegate_exception};
-                      return VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/content/res/Resources;"));
-                  });
-              test_catalog.push_back(std::move(image_context).Build());
-              auto image_probe = IntrinsicClassBuilder::Class(
-                  "LImageDrawableProbe;", "Landroid/widget/ImageView;");
-              const auto observed = image_probe.BoundInstanceField(
-                  "observed", "Landroid/graphics/drawable/Drawable;", kAccPublic);
-              image_probe.OverrideMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V",
-                  [this, observed](IntrinsicContext& call) {
-                      IntrinsicCall(call).SetRef(observed, call.arguments[0].ref);
-                      static_cast<void>(call.vm.CollectGarbage("image-delegate"));
-                      if (image_delegate_exception.IsValid())
-                          throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "image delegate", image_delegate_exception};
-                      const auto parent = call.vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
-                      const auto index = *call.vm.Linker().FindVtableIndex(parent, "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V");
-                      const auto result = call.vm.Call(call.vm.Linker().Class(parent).vtable[index],
-                          std::array{VmValue::Ref(call.receiver), call.arguments[0]});
-                      REQUIRE_FALSE(result.exception.IsValid());
-                      return result.value;
-                  });
-              test_catalog.push_back(std::move(image_probe).Build());
-              auto content_activity = IntrinsicClassBuilder::Class(
-                  "LContentActivityProbe;", "Landroid/app/Activity;");
-              content_activity.OverrideMethod("onContentChanged", "()V",
-                  [this](IntrinsicContext& call) {
-                      ++content_change_events;
-                      static_cast<void>(call.vm.CollectGarbage("window-content-callback"));
-                      if (content_change_hook) content_change_hook(call);
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(content_activity).Build());
-              auto content_surface = IntrinsicClassBuilder::Class(
-                  "LContentSurfaceCallback;", "Ljava/lang/Object;", {"Landroid/view/SurfaceHolder$Callback;"});
-              content_surface.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V",
-                  [this](IntrinsicContext&) { ++content_surface_creates; return VmValue::Void(); });
-              content_surface.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V",
-                  [](IntrinsicContext&) { return VmValue::Void(); });
-              content_surface.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V",
-                  [this](IntrinsicContext&) {
-                      ++content_surface_destroys;
-                      if (content_surface_destroy_hook) content_surface_destroy_hook();
-                      return VmValue::Void();
-                  });
-              test_catalog.push_back(std::move(content_surface).Build());
-              auto managed = IntrinsicClassBuilder::Class("LManagedDialogActivity;", "Landroid/app/Activity;");
-              const auto supplied = managed.BoundInstanceField("supplied", "Landroid/app/Dialog;", kAccPrivate);
-              const auto prepared = managed.BoundInstanceField("lastArgs", "Landroid/os/Bundle;", kAccPublic);
-              managed.VirtualMethod("supply", "(Landroid/app/Dialog;)V", [supplied](IntrinsicContext& call) {
-                  IntrinsicCall(call).SetRef(supplied, call.arguments[0].ref); return VmValue::Void();
-              });
-              managed.OverrideMethod("onCreateDialog", "(I)Landroid/app/Dialog;", [this, supplied](IntrinsicContext& call) {
-                  ++dialog_creates; return VmValue::Ref(IntrinsicCall(call).GetRef(supplied));
-              }, kAccProtected);
-              managed.OverrideMethod("onPrepareDialog", "(ILandroid/app/Dialog;Landroid/os/Bundle;)V",
-                  [this, prepared](IntrinsicContext& call) {
-                      ++dialog_prepares; IntrinsicCall(call).SetRef(prepared, call.arguments[2].ref);
-                      if (dialog_prepare_hook) dialog_prepare_hook(call);
-                      const auto type = call.vm.Model().ObjectClass(call.arguments[1].ref);
-                      const auto index = *call.vm.Linker().FindVtableIndex(type, "setOwnerActivity", "(Landroid/app/Activity;)V");
-                      const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable[index],
-                          std::array{call.arguments[1], VmValue::Ref(call.receiver)});
-                      REQUIRE_FALSE(result.exception.IsValid()); return VmValue::Void();
-                  }, kAccProtected);
-              test_catalog.push_back(std::move(managed).Build());
-              auto observer = IntrinsicClassBuilder::Class("LDialogObserver;", "Ljava/lang/Object;",
-                  {"Landroid/content/DialogInterface$OnClickListener;", "Landroid/content/DialogInterface$OnCancelListener;",
-                   "Landroid/content/DialogInterface$OnDismissListener;", "Landroid/content/DialogInterface$OnShowListener;",
-                   "Landroid/content/DialogInterface$OnKeyListener;"});
-              observer.VirtualMethod("onClick", "(Landroid/content/DialogInterface;I)V", [this](IntrinsicContext& call) {
-                  dialog_events.push_back("click:" + std::to_string(call.arguments[1].AsInt()));
-                  if (dialog_click_hook) dialog_click_hook(call); return VmValue::Void();
-              });
-              for (const auto name : {"onCancel", "onDismiss", "onShow"}) {
-                  observer.VirtualMethod(name, "(Landroid/content/DialogInterface;)V", [this, name](IntrinsicContext&) {
-                      dialog_events.push_back(name); return VmValue::Void();
-                  });
               }
-              observer.VirtualMethod("onKey", "(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z", [this](IntrinsicContext&) {
-                  return VmValue::Int(dialog_key_consumed ? 1 : 0);
+          catalog = std::move(android);
+          std::vector<IntrinsicClassDecl> touch_probes;
+          auto activity_probe = IntrinsicClassBuilder::Class("LTouchActivityProbe;", "Landroid/app/Activity;");
+          activity_probe.OverrideMethod("dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z",
+                                        [this](IntrinsicContext&) {
+                                            ++touch_dispatch_events;
+                                            return VmValue::Int(1);
+                                        });
+          touch_probes.push_back(std::move(activity_probe).Build());
+          auto fallback_probe = IntrinsicClassBuilder::Class("LTouchFallbackProbe;", "Landroid/app/Activity;");
+          fallback_probe.OverrideMethod("onUserInteraction", "()V", [this](IntrinsicContext&) {
+              ++user_interactions;
+              return VmValue::Void();
+          });
+          fallback_probe.OverrideMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
+              ++activity_touch_events;
+              return VmValue::Int(1);
+          });
+          touch_probes.push_back(std::move(fallback_probe).Build());
+          auto group_probe = IntrinsicClassBuilder::Class("LTouchGroupProbe;", "Landroid/widget/FrameLayout;");
+          group_probe.OverrideMethod("onInterceptTouchEvent", "(Landroid/view/MotionEvent;)Z",
+                                     [this](IntrinsicContext&) {
+                                         ++intercept_events;
+                                         return VmValue::Int(intercept_touches);
+                                     });
+          touch_probes.push_back(std::move(group_probe).Build());
+          catalog.insert(catalog.end(), touch_probes.begin(), touch_probes.end());
+          auto content_view = IntrinsicClassBuilder::Class("LTestContentView;", "Landroid/view/View;");
+          content_view.OverrideMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [this](IntrinsicContext&) {
+              ++content_view_events;
+              return VmValue::Int(content_view_handled ? 1 : 0);
+          });
+          std::vector<IntrinsicClassDecl> test_catalog;
+          test_catalog.push_back(std::move(content_view).Build());
+          auto key_view = IntrinsicClassBuilder::Class("LTestKeyView;", "Landroid/view/View;");
+          key_view.OverrideMethod("onKeyDown", "(ILandroid/view/KeyEvent;)Z", [this](IntrinsicContext& call) {
+              ++key_down_events;
+              last_key_code = call.arguments[0].AsInt();
+              return VmValue::Int(1);
+          });
+          key_view.OverrideMethod("onKeyUp", "(ILandroid/view/KeyEvent;)Z", [this](IntrinsicContext& call) {
+              ++key_up_events;
+              last_key_code = call.arguments[0].AsInt();
+              return VmValue::Int(1);
+          });
+          key_view.OverrideMethod("onKeyMultiple", "(IILandroid/view/KeyEvent;)Z", [this](IntrinsicContext& call) {
+              ++key_multiple_events;
+              last_key_code = call.arguments[0].AsInt();
+              return VmValue::Int(call.arguments[1].AsInt() == 0);
+          });
+          test_catalog.push_back(std::move(key_view).Build());
+          auto system_ui_listener =
+              IntrinsicClassBuilder::Class("LSystemUiVisibilityListener;", "Ljava/lang/Object;",
+                                           {"Landroid/view/View$OnSystemUiVisibilityChangeListener;"});
+          system_ui_listener.VirtualMethod("onSystemUiVisibilityChange", "(I)V", [this](IntrinsicContext&) {
+              ++system_ui_visibility_events;
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(system_ui_listener).Build());
+          auto text_watcher = IntrinsicClassBuilder::Class("LRecordingTextWatcher;", "Ljava/lang/Object;",
+                                                           {"Landroid/text/TextWatcher;"});
+          text_watcher.VirtualMethod(
+              "beforeTextChanged", "(Ljava/lang/CharSequence;III)V", [this](IntrinsicContext& call) {
+                  text_events.emplace_back("before");
+                  last_text_range = {call.arguments[1].AsInt(), call.arguments[2].AsInt(), call.arguments[3].AsInt()};
+                  return VmValue::Void();
               });
-              test_catalog.push_back(std::move(observer).Build());
-              catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
-              return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
-                  context, ledger, logger, std::move(catalog), ReadFixture("widgetclick.dex"),
-                  InterpreterConfig{.backend = backend}, false, &vfs);
-          }()),
+          text_watcher.VirtualMethod("onTextChanged", "(Ljava/lang/CharSequence;III)V", [this](IntrinsicContext& call) {
+              text_events.emplace_back("on");
+              last_text_range = {call.arguments[1].AsInt(), call.arguments[2].AsInt(), call.arguments[3].AsInt()};
+              return VmValue::Void();
+          });
+          text_watcher.VirtualMethod("afterTextChanged", "(Landroid/text/Editable;)V", [this](IntrinsicContext&) {
+              text_events.emplace_back("after");
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(text_watcher).Build());
+          auto removal_probe = IntrinsicClassBuilder::Class("LRemovalLayoutProbe;", "Landroid/widget/LinearLayout;");
+          removal_probe.OverrideMethod("requestLayout", "()V", [this](IntrinsicContext&) {
+              ++removal_layout_requests;
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(removal_probe).Build());
+          auto bring_probe = IntrinsicClassBuilder::Class("LBringFrontProbe;", "Landroid/widget/FrameLayout;");
+          bring_probe.OverrideMethod("bringChildToFront", "(Landroid/view/View;)V", [this](IntrinsicContext&) {
+              ++bring_front_requests;
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(bring_probe).Build());
+          auto remove_all_probe = IntrinsicClassBuilder::Class("LRemoveAllProbe;", "Landroid/widget/FrameLayout;");
+          remove_all_probe.OverrideMethod("removeAllViewsInLayout", "()V", [this](IntrinsicContext&) {
+              ++remove_all_in_layout_requests;
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(remove_all_probe).Build());
+          auto image_context = IntrinsicClassBuilder::Class("LImageContextProbe;", "Landroid/content/Context;");
+          image_context.OverrideMethod(
+              "getResources", "()Landroid/content/res/Resources;", [this](IntrinsicContext& call) {
+                  ++image_resource_queries;
+                  static_cast<void>(call.vm.CollectGarbage("image-resource-delegate"));
+                  if (image_delegate_exception.IsValid())
+                      throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "resource delegate",
+                                        image_delegate_exception};
+                  return VmValue::Ref(call.vm.NewIntrinsicInstance("Landroid/content/res/Resources;"));
+              });
+          test_catalog.push_back(std::move(image_context).Build());
+          auto image_probe = IntrinsicClassBuilder::Class("LImageDrawableProbe;", "Landroid/widget/ImageView;");
+          const auto observed =
+              image_probe.BoundInstanceField("observed", "Landroid/graphics/drawable/Drawable;", kAccPublic);
+          image_probe.OverrideMethod(
+              "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", [this, observed](IntrinsicContext& call) {
+                  IntrinsicCall(call).SetRef(observed, call.arguments[0].ref);
+                  static_cast<void>(call.vm.CollectGarbage("image-delegate"));
+                  if (image_delegate_exception.IsValid())
+                      throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "image delegate",
+                                        image_delegate_exception};
+                  const auto parent = call.vm.Linker().ResolveDescriptor("Landroid/widget/ImageView;");
+                  const auto index = *call.vm.Linker().FindVtableIndex(parent, "setImageDrawable",
+                                                                       "(Landroid/graphics/drawable/Drawable;)V");
+                  const auto result = call.vm.Call(call.vm.Linker().Class(parent).vtable[index],
+                                                   std::array{VmValue::Ref(call.receiver), call.arguments[0]});
+                  REQUIRE_FALSE(result.exception.IsValid());
+                  return result.value;
+              });
+          test_catalog.push_back(std::move(image_probe).Build());
+          auto content_activity = IntrinsicClassBuilder::Class("LContentActivityProbe;", "Landroid/app/Activity;");
+          content_activity.OverrideMethod("onContentChanged", "()V", [this](IntrinsicContext& call) {
+              ++content_change_events;
+              static_cast<void>(call.vm.CollectGarbage("window-content-callback"));
+              if (content_change_hook) content_change_hook(call);
+              return VmValue::Void();
+          });
+          test_catalog.push_back(std::move(content_activity).Build());
+          auto content_surface = IntrinsicClassBuilder::Class("LContentSurfaceCallback;", "Ljava/lang/Object;",
+                                                              {"Landroid/view/SurfaceHolder$Callback;"});
+          content_surface.VirtualMethod("surfaceCreated", "(Landroid/view/SurfaceHolder;)V", [this](IntrinsicContext&) {
+              ++content_surface_creates;
+              return VmValue::Void();
+          });
+          content_surface.VirtualMethod("surfaceChanged", "(Landroid/view/SurfaceHolder;III)V",
+                                        [](IntrinsicContext&) { return VmValue::Void(); });
+          content_surface.VirtualMethod("surfaceDestroyed", "(Landroid/view/SurfaceHolder;)V",
+                                        [this](IntrinsicContext&) {
+                                            ++content_surface_destroys;
+                                            if (content_surface_destroy_hook) content_surface_destroy_hook();
+                                            return VmValue::Void();
+                                        });
+          test_catalog.push_back(std::move(content_surface).Build());
+          auto managed = IntrinsicClassBuilder::Class("LManagedDialogActivity;", "Landroid/app/Activity;");
+          managed.OverrideMethod(
+              "onCreate", "(Landroid/os/Bundle;)V",
+              [this](IntrinsicContext& call) {
+                  if (dialog_on_create_hook) dialog_on_create_hook(call);
+                  return VmValue::Void();
+              },
+              kAccProtected);
+          const auto supplied = managed.BoundInstanceField("supplied", "Landroid/app/Dialog;", kAccPrivate);
+          const auto prepared = managed.BoundInstanceField("lastArgs", "Landroid/os/Bundle;", kAccPublic);
+          managed.VirtualMethod("supply", "(Landroid/app/Dialog;)V", [supplied](IntrinsicContext& call) {
+              IntrinsicCall(call).SetRef(supplied, call.arguments[0].ref);
+              return VmValue::Void();
+          });
+          managed.OverrideMethod(
+              "onCreateDialog", "(I)Landroid/app/Dialog;",
+              [this, supplied](IntrinsicContext& call) {
+                  ++dialog_creates;
+                  return VmValue::Ref(IntrinsicCall(call).GetRef(supplied));
+              },
+              kAccProtected);
+          managed.OverrideMethod(
+              "onPrepareDialog", "(ILandroid/app/Dialog;Landroid/os/Bundle;)V",
+              [this, prepared](IntrinsicContext& call) {
+                  ++dialog_prepares;
+                  IntrinsicCall(call).SetRef(prepared, call.arguments[2].ref);
+                  if (dialog_prepare_hook) dialog_prepare_hook(call);
+                  const auto type = call.vm.Model().ObjectClass(call.arguments[1].ref);
+                  const auto index =
+                      *call.vm.Linker().FindVtableIndex(type, "setOwnerActivity", "(Landroid/app/Activity;)V");
+                  const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable[index],
+                                                   std::array{call.arguments[1], VmValue::Ref(call.receiver)});
+                  REQUIRE_FALSE(result.exception.IsValid());
+                  return VmValue::Void();
+              },
+              kAccProtected);
+          test_catalog.push_back(std::move(managed).Build());
+          auto observer = IntrinsicClassBuilder::Class("LDialogObserver;", "Ljava/lang/Object;",
+                                                       {"Landroid/content/DialogInterface$OnClickListener;",
+                                                        "Landroid/content/DialogInterface$OnCancelListener;",
+                                                        "Landroid/content/DialogInterface$OnDismissListener;",
+                                                        "Landroid/content/DialogInterface$OnShowListener;",
+                                                        "Landroid/content/DialogInterface$OnKeyListener;"});
+          observer.VirtualMethod("onClick", "(Landroid/content/DialogInterface;I)V", [this](IntrinsicContext& call) {
+              dialog_events.push_back("click:" + std::to_string(call.arguments[1].AsInt()));
+              if (dialog_click_hook) dialog_click_hook(call);
+              return VmValue::Void();
+          });
+          for (const auto name : {"onCancel", "onDismiss", "onShow"}) {
+              observer.VirtualMethod(name, "(Landroid/content/DialogInterface;)V", [this, name](IntrinsicContext&) {
+                  dialog_events.push_back(name);
+                  return VmValue::Void();
+              });
+          }
+          observer.VirtualMethod("onKey", "(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z",
+                                 [this](IntrinsicContext&) { return VmValue::Int(dialog_key_consumed ? 1 : 0); });
+          test_catalog.push_back(std::move(observer).Build());
+          catalog.insert(catalog.end(), test_catalog.begin(), test_catalog.end());
+          return std::make_unique<ogplay::test::container_traversal::AndroidTestRuntime>(
+              context, ledger, logger, std::move(catalog), ReadFixture("widgetclick.dex"),
+              InterpreterConfig{.backend = backend}, false, &vfs);
+      }()),
       model(runtime->bridge->Model()), linker(runtime->bridge->Linker()), interpreter(runtime->bridge->Vm()) {
     interpreter.Monitors().SetTimeSource([state = context] { return state->uptime_millis.load(); });
     context->surface_width = 100U;
@@ -317,26 +310,17 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
     const auto prepared = interpreter.Call(*prepare, {});
     REQUIRE_MESSAGE(!prepared.exception.IsValid(), prepared.exception_message);
     context->video_source_player_factory =
-        [factory = FakeFactory()](
-            std::shared_ptr<const ogplay::video::VideoDataSource>) {
-            return factory({});
-        };
+        [factory = FakeFactory()](std::shared_ptr<const ogplay::video::VideoDataSource>) { return factory({}); };
     interpreter.SetLogger(&logger);
     context->ui_test_accessibility_disabled = true;
-    vfs.MountHostDirectory(
-        "/sdcard",
-        std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
+    vfs.MountHostDirectory("/sdcard", std::filesystem::path{OGPLAY_SOURCE_DIR} / "tests/fixtures/video");
 
-    video_view =
-        interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
+    video_view = interpreter.NewIntrinsicInstance("Landroid/widget/VideoView;");
     activity = interpreter.NewIntrinsicInstance("Landroid/app/Activity;");
     if (attach_activity) ogplay::test::AttachViewTestContext(interpreter, activity);
-    const auto bar = interpreter.NewIntrinsicInstance(
-        "Landroid/widget/LinearLayout;");
-    skip_button = interpreter.NewIntrinsicInstance(
-        "Landroid/widget/ImageButton;");
-    other_button = interpreter.NewIntrinsicInstance(
-        "Landroid/widget/ImageButton;");
+    const auto bar = interpreter.NewIntrinsicInstance("Landroid/widget/LinearLayout;");
+    skip_button = interpreter.NewIntrinsicInstance("Landroid/widget/ImageButton;");
+    other_button = interpreter.NewIntrinsicInstance("Landroid/widget/ImageButton;");
 
     if (!attach_activity) return;
     context->activity = activity;
@@ -365,9 +349,8 @@ ClickVm::ClickVm(const InterpreterBackend backend, const bool attach_activity)
                                                AndroidUiTraversalPhase::ResolveOnly));
 }
 
-VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name,
-               const std::string& descriptor,
-               std::vector<VmValue> arguments) {
+VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name, const std::string& descriptor,
+                        std::vector<VmValue> arguments) {
     const auto activity_type = linker.ResolveDescriptor("Landroid/app/Activity;");
     if (linker.IsAssignable(activity_type, model.ObjectClass(receiver)) && context->activity == receiver &&
         (context->activity_stack.empty() || context->activity_stack.back().object != receiver)) {
@@ -404,41 +387,47 @@ VmValue ClickVm::CallOn(const VmObjectRef receiver, const std::string& name,
         static_cast<void>(EnsureAndroidUiTraversal(interpreter, *context, AndroidUiTraversalReason::OwnerTick,
                                                    AndroidUiTraversalPhase::ResolveOnly));
     const auto receiver_class = model.ObjectClass(receiver);
-    const auto index =
-        linker.FindVtableIndex(receiver_class, name, descriptor);
+    const auto index = linker.FindVtableIndex(receiver_class, name, descriptor);
     REQUIRE_MESSAGE(index.has_value(), name);
     arguments.insert(arguments.begin(), VmValue::Ref(receiver));
-    const auto outcome = interpreter.Call(
-        linker.Class(receiver_class).vtable[*index], arguments);
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    outcome.exception_message);
+    const auto outcome = interpreter.Call(linker.Class(receiver_class).vtable[*index], arguments);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return outcome.value;
 }
 
 VmObjectRef ClickVm::NewTextDialog(VmObjectRef owner, VmObjectRef listener, bool cancelable) {
-    context->surface_width = 800; context->surface_height = 480; context->activity = owner;
+    context->surface_width = 800;
+    context->surface_height = 480;
+    context->activity = owner;
     const auto builder = interpreter.NewIntrinsicInstance("Landroid/app/AlertDialog$Builder;");
     const auto roots = interpreter.ProtectReferences(std::array{builder, owner, listener});
-    CallDirect(builder, "Landroid/app/AlertDialog$Builder;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-    CallOn(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(interpreter.NewStringUtf8("Saved title"))});
-    CallOn(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(interpreter.NewStringUtf8("A real message"))});
-    CallOn(builder, "setNeutralButton", "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
+    CallDirect(builder, "Landroid/app/AlertDialog$Builder;", "<init>", "(Landroid/content/Context;)V",
+               {VmValue::Ref(owner)});
+    CallOn(builder, "setTitle", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
+           {VmValue::Ref(interpreter.NewStringUtf8("Saved title"))});
+    CallOn(builder, "setMessage", "(Ljava/lang/CharSequence;)Landroid/app/AlertDialog$Builder;",
+           {VmValue::Ref(interpreter.NewStringUtf8("A real message"))});
+    CallOn(
+        builder, "setNeutralButton",
+        "(Ljava/lang/CharSequence;Landroid/content/DialogInterface$OnClickListener;)Landroid/app/AlertDialog$Builder;",
         {VmValue::Ref(interpreter.NewStringUtf8("OK")), VmValue::Ref(listener)});
     CallOn(builder, "setCancelable", "(Z)Landroid/app/AlertDialog$Builder;", {VmValue::Int(cancelable ? 1 : 0)});
-    CallOn(builder, "setOnCancelListener", "(Landroid/content/DialogInterface$OnCancelListener;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(listener)});
-    CallOn(builder, "setOnDismissListener", "(Landroid/content/DialogInterface$OnDismissListener;)Landroid/app/AlertDialog$Builder;", {VmValue::Ref(listener)});
+    CallOn(builder, "setOnCancelListener",
+           "(Landroid/content/DialogInterface$OnCancelListener;)Landroid/app/AlertDialog$Builder;",
+           {VmValue::Ref(listener)});
+    CallOn(builder, "setOnDismissListener",
+           "(Landroid/content/DialogInterface$OnDismissListener;)Landroid/app/AlertDialog$Builder;",
+           {VmValue::Ref(listener)});
     const auto dialog = CallOn(builder, "create", "()Landroid/app/AlertDialog;").ref;
     const auto dialog_root = interpreter.ProtectReferences(std::array{dialog});
-    CallOn(dialog, "setOnShowListener", "(Landroid/content/DialogInterface$OnShowListener;)V", {VmValue::Ref(listener)});
+    CallOn(dialog, "setOnShowListener", "(Landroid/content/DialogInterface$OnShowListener;)V",
+           {VmValue::Ref(listener)});
     CallOn(dialog, "setOnKeyListener", "(Landroid/content/DialogInterface$OnKeyListener;)V", {VmValue::Ref(listener)});
     return dialog;
 }
 
-VmValue ClickVm::CallDirect(const VmObjectRef receiver,
-                   const std::string& class_descriptor,
-                   const std::string& name,
-                   const std::string& descriptor,
-                   std::vector<VmValue> arguments) {
+VmValue ClickVm::CallDirect(const VmObjectRef receiver, const std::string& class_descriptor, const std::string& name,
+                            const std::string& descriptor, std::vector<VmValue> arguments) {
     if (name == "<init>" && descriptor.starts_with("(Landroid/content/Context;") && !arguments.empty()) {
         ogplay::test::AttachViewTestContext(interpreter, arguments.front().ref);
     }
@@ -448,13 +437,11 @@ VmValue ClickVm::CallDirect(const VmObjectRef receiver,
         const auto initialized = interpreter.EnsureClassInitialized(*java_class);
         REQUIRE_MESSAGE(!initialized.exception.IsValid(), initialized.exception_message);
     }
-    const auto method =
-        linker.FindDirectMethod(*java_class, name, descriptor);
+    const auto method = linker.FindDirectMethod(*java_class, name, descriptor);
     REQUIRE_MESSAGE(method.has_value(), name);
     arguments.insert(arguments.begin(), VmValue::Ref(receiver));
     const auto outcome = interpreter.Call(*method, arguments);
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    outcome.exception_message);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return outcome.value;
 }
 
@@ -462,17 +449,12 @@ VmObjectRef ClickVm::NewListener() {
     const auto java_class = linker.FindClass("LSkipListener;");
     REQUIRE(java_class.has_value());
     const auto clinit = interpreter.EnsureClassInitialized(*java_class);
-    REQUIRE_MESSAGE(!clinit.exception.IsValid(),
-                    clinit.exception_message);
-    const auto init =
-        linker.FindDirectMethod(*java_class, "<init>", "()V");
+    REQUIRE_MESSAGE(!clinit.exception.IsValid(), clinit.exception_message);
+    const auto init = linker.FindDirectMethod(*java_class, "<init>", "()V");
     REQUIRE(init.has_value());
-    const auto listener = model.NewInstance(
-        *java_class, linker.Class(*java_class).instance_slots);
-    const auto outcome = interpreter.Call(
-        *init, std::vector<VmValue>{VmValue::Ref(listener)});
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    outcome.exception_message);
+    const auto listener = model.NewInstance(*java_class, linker.Class(*java_class).instance_slots);
+    const auto outcome = interpreter.Call(*init, std::vector<VmValue>{VmValue::Ref(listener)});
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return listener;
 }
 
@@ -482,32 +464,26 @@ std::int32_t ClickVm::CallStaticInt(const std::string& name) {
     const auto method = linker.FindDirectMethod(*java_class, name, "()I");
     REQUIRE(method.has_value());
     const auto outcome = interpreter.Call(*method, {});
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    outcome.exception_message);
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
     return outcome.value.AsInt();
 }
 
 void ClickVm::SetTouchResult(const bool handled) {
     const auto java_class = linker.FindClass("LSkipListener;");
     REQUIRE(java_class.has_value());
-    const auto method = linker.FindDirectMethod(*java_class,
-        "setTouchResult", "(I)V");
+    const auto method = linker.FindDirectMethod(*java_class, "setTouchResult", "(I)V");
     REQUIRE(method.has_value());
-    const auto outcome = interpreter.Call(*method,
-        std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
+    const auto outcome = interpreter.Call(*method, std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
     REQUIRE_FALSE(outcome.exception.IsValid());
 }
 
 void ClickVm::BindTarget(const VmObjectRef view) {
     const auto java_class = linker.FindClass("LSkipListener;");
     REQUIRE(java_class.has_value());
-    const auto method = linker.FindDirectMethod(
-        *java_class, "bind", "(Landroid/widget/VideoView;)V");
+    const auto method = linker.FindDirectMethod(*java_class, "bind", "(Landroid/widget/VideoView;)V");
     REQUIRE(method.has_value());
-    const auto outcome = interpreter.Call(
-        *method, std::vector<VmValue>{VmValue::Ref(view)});
-    REQUIRE_MESSAGE(!outcome.exception.IsValid(),
-                    outcome.exception_message);
+    const auto outcome = interpreter.Call(*method, std::vector<VmValue>{VmValue::Ref(view)});
+    REQUIRE_MESSAGE(!outcome.exception.IsValid(), outcome.exception_message);
 }
 
 VmObjectRef ClickVm::NewTouchView() {
@@ -515,22 +491,17 @@ VmObjectRef ClickVm::NewTouchView() {
     REQUIRE(java_class.has_value());
     const auto initialized = interpreter.EnsureClassInitialized(*java_class);
     REQUIRE_FALSE(initialized.exception.IsValid());
-    const auto view = model.NewInstance(
-        *java_class, linker.Class(*java_class).instance_slots);
-    CallDirect(view, "LTouchView;", "<init>",
-               "(Landroid/content/Context;)V",
-               {VmValue::Ref(activity)});
+    const auto view = model.NewInstance(*java_class, linker.Class(*java_class).instance_slots);
+    CallDirect(view, "LTouchView;", "<init>", "(Landroid/content/Context;)V", {VmValue::Ref(activity)});
     return view;
 }
 
 void ClickVm::ResetTouchView(const bool handled) {
     const auto java_class = linker.FindClass("LTouchView;");
     REQUIRE(java_class.has_value());
-    const auto method = linker.FindDirectMethod(
-        *java_class, "reset", "(I)V");
+    const auto method = linker.FindDirectMethod(*java_class, "reset", "(I)V");
     REQUIRE(method.has_value());
-    const auto outcome = interpreter.Call(
-        *method, std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
+    const auto outcome = interpreter.Call(*method, std::vector<VmValue>{VmValue::Int(handled ? 1 : 0)});
     REQUIRE_FALSE(outcome.exception.IsValid());
 }
 
@@ -544,8 +515,7 @@ std::int32_t ClickVm::TouchViewValue(const char* name) {
     return outcome.value.AsInt();
 }
 
-std::optional<std::string> ClickVm::Click(const float x,
-                                               const float y) {
+std::optional<std::string> ClickVm::Click(const float x, const float y) {
     const auto hit = FindClickableViewAt(interpreter, *context, x, y);
     if (!hit.has_value()) return std::nullopt;
     const auto error = InvokeViewOnClick(interpreter, *context, *hit);
@@ -553,4 +523,4 @@ std::optional<std::string> ClickVm::Click(const float x,
     return "clicked";
 }
 
-} // namespace ogplay::test::widget
+}  // namespace ogplay::test::widget

@@ -381,7 +381,9 @@ TEST_CASE("DVM-246 ARM JNI Dialog preserves Surface owner focus modal pixels and
              {VmValue::Ref(vm.NewStringUtf8("fixture")), VmValue::Ref(vm.NewStringUtf8("fixture.ResultChild"))});
         call(owner, "startActivity", "(Landroid/content/Intent;)V", {VmValue::Ref(intent)});
         static_cast<void>(lifecycle.StepFrame());
-        CHECK_FALSE(modal_tree().IsVisible(modal_root));
+        CHECK(modal_tree().IsVisible(modal_root));  // HostLayout never carries owner visibility.
+        REQUIRE(runtime::AcquireAndroidPresentation(*f.context));
+        CHECK(runtime::AcquireAndroidPresentation(*f.context)->modal_stack.empty());
         CHECK_FALSE(runtime::HasAndroidModalDialog(*f.context));
         call(f.context->activity, "finish", "()V");
         static_cast<void>(lifecycle.StepFrame());

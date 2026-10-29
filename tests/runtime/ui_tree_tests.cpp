@@ -67,8 +67,7 @@ TEST_CASE("UI tree preserves hierarchy order and attached id lookup") {
     tree.Attach(parent, first, 0);
 
     REQUIRE(tree.Get(parent) != nullptr);
-    CHECK(tree.Get(parent)->children ==
-          std::vector<ui::UiNodeId>{first, second});
+    CHECK(tree.Get(parent)->children == std::vector<ui::UiNodeId>{first, second});
     CHECK(tree.FindByAndroidId(100) == first);
     CHECK(tree.FindByAndroidId(200) == second);
 
@@ -88,29 +87,28 @@ TEST_CASE("UI tree brings a child to front without detaching it") {
     const auto outsider = tree.CreateNode(ui::UiClass::View);
     tree.Get(first)->focusable = true;
     tree.SetAndroidId(first, 5);
-    tree.SetAndroidId(third, 5); // duplicate id: lookup follows child order
+    tree.SetAndroidId(third, 5);  // duplicate id: lookup follows child order
     tree.Attach(tree.Root(), parent);
-    for (const auto child : {first, second, third}) tree.Attach(parent, child);
+    for (const auto child : {first, second, third})
+        tree.Attach(parent, child);
     REQUIRE(tree.RequestFocus(first, false));
     CHECK(tree.FindByAndroidId(5) == first);
     tree.ClearLayoutDirty();
     tree.ClearDrawDirty();
 
     REQUIRE(tree.BringChildToFront(parent, first));
-    CHECK(tree.Get(parent)->children ==
-          std::vector<ui::UiNodeId>{second, third, first});
+    CHECK(tree.Get(parent)->children == std::vector<ui::UiNodeId>{second, third, first});
     CHECK(tree.Get(first)->parent == parent);
     CHECK(tree.IsAttached(first));
     CHECK(tree.Focused() == first);
     CHECK(tree.FindByAndroidId(5) == third);
     CHECK(tree.Get(tree.Root())->draw_dirty);
-    CHECK_FALSE(tree.Get(tree.Root())->layout_dirty); // caller requests layout
+    CHECK_FALSE(tree.Get(tree.Root())->layout_dirty);  // caller requests layout
 
     tree.ClearDrawDirty();
     CHECK_FALSE(tree.BringChildToFront(parent, outsider));
     CHECK_FALSE(tree.BringChildToFront(tree.Root(), first));
-    CHECK(tree.Get(parent)->children ==
-          std::vector<ui::UiNodeId>{second, third, first});
+    CHECK(tree.Get(parent)->children == std::vector<ui::UiNodeId>{second, third, first});
     CHECK_FALSE(tree.Get(tree.Root())->draw_dirty);
 }
 
@@ -182,12 +180,9 @@ TEST_CASE("UI tree rejects invalid hierarchy mutations") {
     const auto child = tree.CreateNode(ui::UiClass::View);
     tree.Attach(tree.Root(), parent);
     tree.Attach(parent, child);
-    CHECK_THROWS_WITH(tree.Attach(child, parent),
-                      "UI tree child is already attached");
-    CHECK_THROWS_WITH(tree.Attach(parent, tree.Root()),
-                      "UI tree attachment would create a cycle");
-    CHECK_THROWS_WITH(tree.Detach(tree.Root()),
-                      "UI content root cannot be detached");
+    CHECK_THROWS_WITH(tree.Attach(child, parent), "UI tree child is already attached");
+    CHECK_THROWS_WITH(tree.Attach(parent, tree.Root()), "UI tree attachment would create a cycle");
+    CHECK_THROWS_WITH(tree.Detach(tree.Root()), "UI content root cannot be detached");
 }
 
 TEST_CASE("FrameLayout resolves fullscreen bottom center and overlap geometry") {
@@ -357,8 +352,7 @@ TEST_CASE("horizontal LinearLayout distributes weighted zero-width children") {
 
     tree.Get(first)->layout.weight = -1.0F;
     tree.MarkLayoutDirty(first);
-    CHECK_THROWS_WITH(ui::LayoutUiTree(tree, {100, 20}),
-                      "LinearLayout child weight must be finite and non-negative");
+    CHECK_THROWS_WITH(ui::LayoutUiTree(tree, {100, 20}), "LinearLayout child weight must be finite and non-negative");
 }
 
 TEST_CASE("RelativeLayout resolves parent center and sibling edge rules") {
@@ -427,14 +421,12 @@ TEST_CASE("RelativeLayout resolves dependencies independent of document order") 
 
 TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
     ui::UiTree missing{nullptr};
-    const auto missing_parent =
-        missing.CreateNode(ui::UiClass::RelativeLayout);
+    const auto missing_parent = missing.CreateNode(ui::UiClass::RelativeLayout);
     const auto missing_child = missing.CreateNode(ui::UiClass::View);
     missing.Get(missing_child)->layout.relative.below = 404;
     missing.Attach(missing_parent, missing_child);
     missing.Attach(missing.Root(), missing_parent);
-    CHECK_THROWS_WITH(ui::LayoutUiTree(missing, {20, 20}),
-                      "RelativeLayout rule references a missing sibling id");
+    CHECK_THROWS_WITH(ui::LayoutUiTree(missing, {20, 20}), "RelativeLayout rule references a missing sibling id");
 
     ui::UiTree cycle{nullptr};
     const auto cycle_parent = cycle.CreateNode(ui::UiClass::RelativeLayout);
@@ -447,10 +439,8 @@ TEST_CASE("RelativeLayout fails deterministically on missing refs and cycles") {
     cycle.Attach(cycle_parent, first);
     cycle.Attach(cycle_parent, second);
     cycle.Attach(cycle.Root(), cycle_parent);
-    CHECK_THROWS_WITH(ui::LayoutUiTree(cycle, {20, 20}),
-                      "RelativeLayout vertical dependency cycle");
+    CHECK_THROWS_WITH(ui::LayoutUiTree(cycle, {20, 20}), "RelativeLayout vertical dependency cycle");
 }
-
 
 TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget") {
     using namespace ogplay::runtime::ui;
@@ -459,7 +449,8 @@ TEST_CASE("DVM-247 detached subtree attachment enforces the total depth budget")
     auto root = leaf;
     for (std::size_t depth = 1; depth < UiTree::kMaxDepth; ++depth) {
         const auto parent = tree.CreateNode(UiClass::FrameLayout);
-        tree.Attach(parent, root); root = parent;
+        tree.Attach(parent, root);
+        root = parent;
     }
     CHECK_THROWS_WITH(tree.Attach(tree.Root(), root), "UI tree depth limit exceeded");
     CHECK_FALSE(tree.Get(root)->parent.has_value());
@@ -852,4 +843,68 @@ TEST_CASE("DVM-301 XY projection rejects overflow and old batches atomically") {
     CHECK(next->Get(f.leaf)->screen_frame == ui::Rect{13, 22, 55, 38});
     CHECK(old->Get(f.leaf)->screen_frame == ui::Rect{2, 22, 44, 38});
     CHECK(next->ProjectionEpoch() == old->ProjectionEpoch() + 1);
+}
+
+TEST_CASE("DVM-346 UI owner mutations advance the frozen-tree reuse key") {
+    ui::UiTree tree{nullptr};
+    const auto changed = [&](auto action) {
+        const auto before = tree.ModificationCount();
+        action();
+        CHECK(tree.ModificationCount() > before);
+        const ui::UiTree copy(tree);
+        CHECK(copy.ModificationCount() == tree.ModificationCount());
+    };
+    ui::UiNodeId button, other;
+    changed([&] { button = tree.CreateNode(ui::UiClass::Button); });
+    changed([&] { tree.Get(button)->focusable = true; });
+    changed([&] { tree.Attach(tree.Root(), button); });
+    changed([&] { tree.SetAndroidId(button, 42); });
+    changed([&] { tree.SetVisibility(button, ui::Visibility::Invisible); });
+    changed([&] { tree.SetVisibility(button, ui::Visibility::Visible); });
+    changed([&] { tree.SetEnabled(button, false); });
+    changed([&] { tree.SetEnabled(button, true); });
+    changed([&] { tree.SetClickable(button, false); });
+    changed([&] { tree.SetPressed(button, true); });
+    changed([&] { tree.SetPressed(button, false); });
+    changed([&] { tree.SetWindowVisible(tree.Root(), false); });
+    changed([&] { tree.SetWindowVisible(tree.Root(), true); });
+    changed([&] { REQUIRE(tree.RequestFocus(button, false)); });
+    const auto focused = tree.ModificationCount();
+    REQUIRE(tree.RequestFocus(button, false));
+    CHECK(tree.ModificationCount() == focused);
+    changed([&] { tree.ClearFocus(button); });
+    changed([&] { tree.MarkLayoutDirty(button); });
+    changed([&] { tree.MarkDrawDirty(button); });
+    changed([&] { tree.SetFallbackFont(nullptr); });
+    changed([&] { ui::LayoutUiTree(tree, {800, 480}); });
+    changed([&] { other = tree.CreateNode(ui::UiClass::View); });
+    changed([&] { tree.Attach(tree.Root(), other); });
+    changed([&] { REQUIRE(tree.BringChildToFront(tree.Root(), button)); });
+    changed([&] { tree.Detach(button, ui::DetachLayoutPolicy::preserve_layout); });
+    changed([&] { tree.DestroySubtree(button); });
+    const auto before_read = tree.ModificationCount();
+    const auto& read = std::as_const(tree);
+    CHECK(read.Get(other));
+    CHECK(read.IsVisible(other));
+    CHECK(tree.ModificationCount() == before_read);
+    changed([&] { tree.Reset(); });
+
+    ui::UiTree projected{ui::UiGeometryOwner::ExternalProjection, nullptr};
+    auto revision = projected.ModificationCount();
+    const ui::UiProjectionTarget target{projected.Root(), 1, 1, 1, {800, 480}};
+    projected.SetProjectionTarget(target);
+    CHECK(projected.ModificationCount() > revision);
+    revision = projected.ModificationCount();
+    projected.CommitProjection(
+        {target, 1, {{.id = projected.Root(), .frame = {0, 0, 800, 480}, .measured = {800, 480}}}, true});
+    CHECK(projected.ModificationCount() > revision);
+    CHECK(projected.PublishedProjection()->ModificationCount() == projected.ModificationCount());
+    const auto retired = projected.CreateNode(ui::UiClass::View);
+    revision = projected.ModificationCount();
+    projected.RetireProjectedIdentity(retired);
+    CHECK(projected.ModificationCount() > revision);
+    revision = projected.ModificationCount();
+    projected.CommitProjection({target, 2, {}, false});
+    CHECK(projected.ModificationCount() > revision);
+    CHECK(projected.PublishedProjection()->ModificationCount() == projected.ModificationCount());
 }

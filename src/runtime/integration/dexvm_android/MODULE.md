@@ -380,7 +380,9 @@ SurfaceView(Context,null) 复用 View 初始化，null Context NPE、非空 Attr
 setZOrderOnTop 后调用覆盖前调用；compositor 即时消费，不承诺 WMS 重建/任意 GLES 多层。
 View.bringToFront 虚派 UiTree 父 ViewParent.bringChildToFront，合成 root 按 ViewRootImpl 空操作；
 ViewGroup.bringChildToFront 忽略非子节点/null，移至末尾后虚派 requestLayout/invalidate。
-setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；Canvas/Bitmap 为 ARGB。lockCanvas 仅接受 active
+setKeepScreenOn(false) 无需宿主动作；true 仅在宿主窗口报告已阻止显示休眠时成功，否则记账拒绝；Canvas/Bitmap 为非预乘 ARGB。Canvas 纯色填充在预乘空间按 API19 Skia 的18种 PorterDuff 模式计算，
+再回写非预乘像素；drawColor(int)、drawARGB、drawRGB 使用 SRC_OVER，null Mode 抛 NPE。
+纯色填充不受 clip 约束，clipRect/save/restore 尚未实现。lockCanvas 仅接受 active
 holder，backing/getWidth/Height/clip 与 dirty 扩展区使用 buffer 尺寸，完整重绘；post 通过有界
 holder 像素快照合成到 View frame。窗口 holder 仍发布原软件基帧。
 
@@ -868,8 +870,9 @@ View setAlpha/getAlpha/ensureTransformationInfo/onSetAlpha/hasOverlappingRenderi
 mTransformationInfo.mAlpha 是唯一事实，PFLAG_ALPHA_SET 尊重子类自绘；mDisplayList 恒 null，
 软件 invalidate 仅 draw dirty，无 measure/layout。非 alpha 几何变换继续拒绝。投影节点保存自身
 与祖先有效 alpha 的乘积，绘制按命令相乘；未实现离屏层，存在“重叠子树的组不透明度差异”。
-软件光栅平面是预乘 RGBA，呈现合成不得二次乘 alpha；应用子窗口 TRANSLUCENT/TRANSPARENT
-按像素 alpha source-over，下层贡献保留；其他格式按不透明平面覆盖下层（未绘区域为黑）。
+软件光栅平面是预乘 RGBA，呈现合成不得二次乘 alpha；应用子窗口与 holder 共用 API19 PixelFormat.formatHasAlpha 判定
+（含 TRANSLUCENT/TRANSPARENT 及已知含 alpha 具体格式），按像素 alpha source-over，
+下层贡献保留；不透明格式按平面覆盖下层（未绘区域为黑）。
 不开放 LayoutTransition、ViewGroup transition、View.postOnAnimation、ViewPropertyAnimator 或
 AnimatorInflater XML；硬件 display list、非主 Looper 动画帧与跨平台行为未验。
 
@@ -891,3 +894,12 @@ DVM-346：宿主 modal 的可见性只由 Dialog 与 owner 的状态推导，Hos
 UiTree 修改计数。计数单调递增、复制保留、溢出明确失败；可变 Get 是 owner 修改入口，
 在交出属性指针前登记修改，指针不得跨发布保留；只读消费使用 const Get。
 结构、属性、布局结果、焦点及窗口事实的修改均进入计数，dirty 消费本身不改变呈现结果。
+
+
+SurfaceHolder.setFormat 保存逐 holder 请求，created/changed 应用到 active 格式并交付 changed；
+同尺寸格式改变也交付，销毁不丢请求，holder 退役清除。支持 OPAQUE(-1)、TRANSLUCENT(-3)、
+TRANSPARENT(-2) 与 RGBA_8888/RGBX_8888/RGB_888/RGB_565/RGBA_5551/RGBA_4444 的 RGBA8 表示；其他格式记账抛 IAE；保留 RGBA8 通道精度，不模拟 packed 存储或低位深量化。
+完整 dirty 区内容按 Surface 协议未定义，此实现取确定初值：透明格式0、不透明格式黑。
+格式 alpha 判定与 application window 共用 PixelFormat 规则；共同快照冻结 alpha 属性，
+透明 holder 按非预乘像素 alpha source-over 合成，不透明强制 alpha=255，保留 View alpha 与层序。
+不改变 holder queue 事实、视频解码或 SurfaceView 开孔规则。

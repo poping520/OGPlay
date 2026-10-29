@@ -1275,7 +1275,11 @@ dx::IntrinsicHandler LockCanvasHandler(const Context& context) {
         const auto size = ManagedSurfaceBufferSize(call.vm, *context, call.receiver);
         state.width = static_cast<std::uint32_t>(size.width);
         state.height = static_cast<std::uint32_t>(size.height);
-        state.argb.assign(static_cast<std::size_t>(state.width) * state.height, 0xff000000U);
+        const auto format = context->surface_active_formats.find(call.receiver.Value());
+        const bool alpha =
+            format != context->surface_active_formats.end() && AndroidPixelFormatHasAlpha(format->second);
+        // Surface contents in the complete dirty region are undefined; choose deterministic initial pixels.
+        state.argb.assign(static_cast<std::size_t>(state.width) * state.height, alpha ? 0U : 0xff000000U);
         if (!call.arguments.empty() && call.arguments[0].ref.IsValid()) {
             // Every lock currently redraws the complete buffer; advertise the expanded dirty region.
             static_cast<void>(CallAndroidMethod(call.vm, call.arguments[0].ref, "set", "(IIII)V",
@@ -1315,6 +1319,10 @@ dx::IntrinsicHandler UnlockCanvasAndPostHandler(const Context& context) {
             context->surface_buffer_queued[call.receiver.Value()] = true;
         }
         if (call.receiver == context->window_surface_holder) {
+            const auto format = context->surface_active_formats.find(call.receiver.Value());
+            if (format == context->surface_active_formats.end() || !AndroidPixelFormatHasAlpha(format->second))
+                for (std::size_t i = 3; i < rgba8.size(); i += 4)
+                    rgba8[i] = 255;
             context->session->PublishSoftwareFrame(std::move(rgba8));
             return dx::VmValue::Void();
         }
@@ -1387,7 +1395,7 @@ Decl Declare_android_view_SurfaceHolder_Impl(const Context& context) {
     builder.FinalMethod("removeCallback", "(Landroid/view/SurfaceHolder$Callback;)V",
                         SurfaceHolderRemoveCallbackHandler(context));
     builder.FinalMethod("setType", "(I)V", SurfaceHolderSetTypeHandler());
-    builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler());
+    builder.FinalMethod("setFormat", "(I)V", SurfaceHolderSetFormatHandler(context));
     builder.FinalMethod("getSurface", "()Landroid/view/Surface;", HolderGetSurface(context));
     AddCanvasMethods(builder, context);
     return std::move(builder).Build();

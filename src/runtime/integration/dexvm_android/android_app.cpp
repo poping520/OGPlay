@@ -995,6 +995,10 @@ std::optional<std::string> DispatchHolderCallbacks(
             context.surface_callback_sizes.erase(holder_handle);
             // AOSP sets mSurfaceCreated before invoking callbacks.
             context.active_surface_holders.insert(holder_handle);
+            const auto requested = context.surface_requested_formats.find(holder_handle);
+            context.surface_active_formats[holder_handle] =
+                requested == context.surface_requested_formats.end() ? 1 : requested->second;
+            context.surface_callback_formats.erase(holder_handle);
             {
                 std::scoped_lock lock(context.surface_pixels_mutex);
                 context.surface_buffer_queued[holder_handle] = false;
@@ -1014,6 +1018,8 @@ std::optional<std::string> DispatchHolderCallbacks(
         } else if (phase == SurfaceHolderPhase::destroyed) {
             if (context.active_surface_holders.erase(holder_handle) == 0U) continue;
             context.surface_owner_identities.erase(holder_handle);
+            context.surface_active_formats.erase(holder_handle);
+            context.surface_callback_formats.erase(holder_handle);
             DetachAndroidMediaSurface(context, holder_handle);
             context.surface_callback_sizes.erase(holder_handle);
             // AOSP clears mSurfaceCreated before invoking callbacks.
@@ -1068,11 +1074,18 @@ std::optional<std::string> DispatchHolderCallbacks(
                                                   static_cast<std::uint32_t>(size.width),
                                                   static_cast<std::uint32_t>(size.height));
                 if (phase == SurfaceHolderPhase::changed) {
-                    extra = {dx::VmValue::Int(1), dx::VmValue::Int(size.width), dx::VmValue::Int(size.height)};
+                    const auto requested = context.surface_requested_formats.find(holder_handle);
+                    const auto format = requested == context.surface_requested_formats.end() ? 1 : requested->second;
+                    context.surface_active_formats[holder_handle] = format;
+                    extra = {dx::VmValue::Int(format), dx::VmValue::Int(size.width), dx::VmValue::Int(size.height)};
                     const auto dimensions =
                         std::pair{static_cast<std::uint32_t>(size.width), static_cast<std::uint32_t>(size.height)};
                     const auto previous = context.surface_callback_sizes.find(holder_handle);
-                    if (previous != context.surface_callback_sizes.end() && previous->second == dimensions) continue;
+                    if (previous != context.surface_callback_sizes.end() && previous->second == dimensions &&
+                        context.surface_callback_formats.contains(holder_handle) &&
+                        context.surface_callback_formats.at(holder_handle) == format)
+                        continue;
+                    context.surface_callback_formats[holder_handle] = format;
                     context.surface_callback_sizes[holder_handle] = dimensions;
                 }
                 android_intrinsics::PublishSurfaceHolderFrame(vm, context, dx::VmObjectRef(holder_handle));
@@ -1395,6 +1408,9 @@ std::optional<std::string> RetireSurfaceHolderGeneration(dexvm::Interpreter& vm,
     context.window_input_queue = dexvm::VmObjectRef{};
     context.holder_surfaces.clear();
     context.surface_callbacks.clear();
+    context.surface_requested_formats.clear();
+    context.surface_active_formats.clear();
+    context.surface_callback_formats.clear();
     context.surface_holders.clear();
     context.active_surface_holders.clear();
     {

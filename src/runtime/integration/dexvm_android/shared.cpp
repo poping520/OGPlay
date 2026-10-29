@@ -767,11 +767,21 @@ dx::IntrinsicHandler SurfaceHolderRemoveCallbackHandler(const Context& context) 
     });
 }
 
-dx::IntrinsicHandler SurfaceHolderSetFormatHandler() {
-    return dx::IntrinsicHandler([](dx::IntrinsicContext&) {
-        // Pixel format is fixed by the managed RGBA8 EGL surface.
+dx::IntrinsicHandler SurfaceHolderSetFormatHandler(const Context& context) {
+    return [context](dx::IntrinsicContext& call) {
+        const auto format = call.arguments[0].AsInt();
+        // Color formats promoted to the existing RGBA8 backing: RGBA_8888,
+        // RGBX_8888, RGB_888, RGB_565, RGBA_5551 and RGBA_4444, plus opacity selectors.
+        // This selects alpha semantics; it does not expose packed native storage or
+        // reduce the existing producer's channel precision. Mask/planar formats need adapters.
+        if (format != -1 && format != -2 && format != -3 && format != 1 && format != 2 && format != 3 && format != 4 &&
+            format != 6 && format != 7) {
+            if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.surface_video_layers", 0);
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "unsupported Surface pixel format"};
+        }
+        context->surface_requested_formats[call.receiver.Value()] = format;
         return dx::VmValue::Void();
-    });
+    };
 }
 
 dx::IntrinsicHandler SurfaceHolderSetTypeHandler() {

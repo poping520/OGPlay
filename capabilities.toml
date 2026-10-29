@@ -1571,7 +1571,7 @@ note = "DVM-185/188 在 WebView facade 按 API 19 提供可覆盖 destroy()：�
 [dexvm.package_info_activities]
 status = "complete"
 test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-180; tests/dexvm/android_component_services_tests.cpp#DVM-195; tests/loader/apk_manifest_tests.cpp#DVM-180; tests/loader/apk_manifest_tests.cpp#DVM-195; architecture.dexvm_intrinsic_layout"
-note = "DVM-180/195：当前包 getActivityInfo 支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS；getPackageInfo 支持 GET_ACTIVITIES/GET_META_DATA/GET_PERMISSIONS 组合，activities 来自 Manifest 并保留顺序与 alias 身份，默认过滤禁用组件。requestedPermissions 只是声明列表；未知 flags 明确失败。不提供完整 PackageManager 或组件启动。"
+note = "DVM-180/195：当前包 getActivityInfo 支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）；getPackageInfo 支持 GET_ACTIVITIES/META_DATA/PERMISSIONS/UNINSTALLED_PACKAGES 组合，activities 来自 Manifest，保留顺序与 alias 身份，默认过滤禁用组件。requestedPermissions 为声明；未知 flags 失败。无完整 PackageManager 或组件启动。"
 
 [dexvm.package_archive_info]
 status = "partial"
@@ -1581,7 +1581,7 @@ note = "DVM-213：只读当前封存 APK，guest VFS 规范路径及来源验证
 [dexvm.installed_applications]
 status = "partial"
 test = "tests/dexvm/android_package_metadata_tests.cpp#DVM-240; tests/runtime/jni_android_platform_tests.cpp#DVM-240; tests/dexvm/android_package_metadata_tests.cpp#PackageManager archive queries"
-note = "DVM-240/ADR-0119：session 封存单包安装清单；getInstalledApplications 支持 0/GET_META_DATA，ApplicationInfo 与 Context 共用 Manifest、真实 guest APK 路径、UID 与元数据，补齐 FLAG_INSTALLED，禁用应用 enabled=false。缺清单或未知 flags 记账抛 UOE。无外部包、宿主应用扫描、共享库或 PMS/Binder。"
+note = "DVM-240/ADR-0119：session 封存单包安装清单；getInstalledApplications 支持 0/GET_META_DATA/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果），ApplicationInfo 与 Context 共用 Manifest、真实 guest APK 路径、UID 与元数据，补齐 FLAG_INSTALLED，禁用应用 enabled=false。缺清单或未知 flags 记账抛 UOE。无外部包、宿主应用扫描、共享库或 PMS/Binder。"
 
 [dexvm.context_file_stream_path]
 status = "complete"
@@ -1951,12 +1951,12 @@ note = "DVM-193：queryBroadcastReceivers 仅查当前 APK，支持非空 action
 [dexvm.receiver_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-190/269：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo，同名声明取后项；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS 与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
+note = "DVM-190/269：Manifest receiver 经 session 注入，只按当前包完整 ComponentName 回答 getReceiverInfo，同名声明取后项；支持 0、GET_META_DATA、GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）与 application/component 禁用过滤，返回 BootDex ActivityInfo 并分离 receiver/application 元数据。未知 flags 与缺少 inventory 记账失败；不含外部包、广播投递或系统包服务。"
 
 [dexvm.service_info]
 status = "partial"
 test = "tests/loader/apk_manifest_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp"
-note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、元数据与 flags；getServiceInfo 只按当前包完整 ComponentName 查询，同名声明取后项，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS 与禁用过滤。未知 flags 或缺清单记账失败；不启动独立进程，不含 Binder 与系统包服务。"
+note = "DVM-191：Manifest service 保存名称、启用、exported、process、permission、元数据与 flags；getServiceInfo 只按当前包完整 ComponentName 查询，同名声明取后项，支持 0/GET_META_DATA/GET_DISABLED_COMPONENTS/GET_UNINSTALLED_PACKAGES（单包清单下不改变结果）与禁用过滤。未知 flags 或缺清单记账失败；不启动独立进程，不含 Binder 与系统包服务。"
 
 [dexvm.permission_info]
 status = "partial"

@@ -23,24 +23,24 @@ struct TemporaryRoot final {
     std::filesystem::path path;
 
     explicit TemporaryRoot(const std::string& name)
-        : path(std::filesystem::temp_directory_path() /
-               ("ogplay-vfs-sandbox-" + name)) {
+        : path(std::filesystem::temp_directory_path() / ("ogplay-vfs-sandbox-" + name)) {
         std::error_code error;
         std::filesystem::remove_all(path, error);
         std::filesystem::create_directories(path, error);
         REQUIRE_FALSE(error);
     }
+
     ~TemporaryRoot() {
         std::error_code error;
         std::filesystem::remove_all(path, error);
     }
+
     TemporaryRoot(const TemporaryRoot&) = delete;
     TemporaryRoot& operator=(const TemporaryRoot&) = delete;
 };
 
 constexpr const char* kPackage = "com.example.game";
-const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
-                                              "/sdcard"};
+const std::vector<std::string> kWritableRoots{"/data/data/com.example.game", "/sdcard"};
 
 [[nodiscard]] std::vector<std::byte> Bytes(const std::string_view text) {
     std::vector<std::byte> out;
@@ -51,18 +51,14 @@ const std::vector<std::string> kWritableRoots{"/data/data/com.example.game",
     return out;
 }
 
-void WriteThrough(VirtualFileSystem& vfs, const std::string_view path,
-                  const std::string_view text) {
-    const auto descriptor =
-        vfs.Open(path, {.read = true, .write = true, .create = true,
-                        .truncate = true});
+void WriteThrough(VirtualFileSystem& vfs, const std::string_view path, const std::string_view text) {
+    const auto descriptor = vfs.Open(path, {.read = true, .write = true, .create = true, .truncate = true});
     const auto bytes = Bytes(text);
     CHECK(vfs.Write(descriptor, bytes) == bytes.size());
     vfs.Close(descriptor);  // close is a flush point
 }
 
-[[nodiscard]] std::string ReadAll(VirtualFileSystem& vfs,
-                                  const std::string_view path) {
+[[nodiscard]] std::string ReadAll(VirtualFileSystem& vfs, const std::string_view path) {
     const auto descriptor = vfs.Open(path, {.read = true});
     std::array<std::byte, 256> buffer{};
     const auto count = vfs.Read(descriptor, buffer);
@@ -133,9 +129,12 @@ TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts")
     vfs.AttachSandbox(*store, kWritableRoots);
     vfs.AddPathAlias("/storage/emulated/0", "/sdcard");
     const auto original = vfs.StatVfs("/sdcard");
-    CHECK(original.values[0] == 4096); CHECK(original.values[2] == 8);
-    CHECK(original.values[3] == 8); CHECK(original.values[4] == 8);
-    CHECK(original.values[5] == 8); CHECK(original.values[6] == 8);
+    CHECK(original.values[0] == 4096);
+    CHECK(original.values[2] == 8);
+    CHECK(original.values[3] == 8);
+    CHECK(original.values[4] == 8);
+    CHECK(original.values[5] == 8);
+    CHECK(original.values[6] == 8);
     CHECK(original.values[10] == SandboxStore::MaximumEncodedNameBytes());
     CHECK(vfs.StatVfs("/storage/emulated/0").values == original.values);
     CHECK(vfs.StatVfs("/data/data/com.example.game").values[8] == original.values[8]);
@@ -144,7 +143,7 @@ TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts")
     const auto fd = vfs.Open("/sdcard/state", {.read = true, .write = true, .create = true});
     const std::vector<std::byte> contents(4097);
     CHECK(vfs.Write(fd, contents) == contents.size());
-    CHECK(store->UsedBytes() == 0); // Still unflushed, but fully charged.
+    CHECK(store->UsedBytes() == 0);  // Still unflushed, but fully charged.
     CHECK(vfs.StatVfs("/sdcard/state").values[3] == 6);
     CHECK(vfs.StatVfs("/sdcard").values[6] == 7);
     vfs.Flush(fd);
@@ -154,7 +153,7 @@ TEST_CASE("DVM-243 sandbox statvfs shares alias identity and dirty quota facts")
     CHECK(vfs.StatVfs("/sdcard").values[3] == 7);
     vfs.RemoveFile("/sdcard/state");
     CHECK(vfs.StatVfs("/sdcard").values == original.values);
-    vfs.Close(fd); // Orphan close must not resurrect the quota charge.
+    vfs.Close(fd);  // Orphan close must not resurrect the quota charge.
     CHECK(vfs.StatVfs("/sdcard").values == original.values);
     vfs.CreateDirectory("/sdcard/folder");
     CHECK(vfs.StatVfs("/sdcard").values[6] == 7);
@@ -173,18 +172,16 @@ TEST_CASE("VFS sandbox preserves mixed-case package roots across reload and dele
     const TemporaryRoot root("mixed-package");
     constexpr auto package = "com.example.MixedGame";
     const std::vector<std::string> roots{"/data/data/com.example.MixedGame", "/sdcard"};
-    const std::array paths{
-        "/data/data/com.example.MixedGame/files/state.dat",
-        "/sdcard/Android/data/com.example.MixedGame/files/state.dat",
-        "/sdcard/Android/obb/com.example.MixedGame/main.obb"};
+    const std::array paths{"/data/data/com.example.MixedGame/files/state.dat",
+                           "/sdcard/Android/data/com.example.MixedGame/files/state.dat",
+                           "/sdcard/Android/obb/com.example.MixedGame/main.obb"};
     {
         auto store = SandboxStore::Open(root.path, package, package);
         VirtualFileSystem vfs;
         vfs.AttachSandbox(*store, roots);
         for (const auto* path : paths) {
             const auto parent = std::string(path).substr(0, std::string(path).rfind('/'));
-            const auto directory = parent.ends_with("/files")
-                ? parent.substr(0, parent.rfind('/')) : parent;
+            const auto directory = parent.ends_with("/files") ? parent.substr(0, parent.rfind('/')) : parent;
             if (ErrnoOf([&] { static_cast<void>(vfs.Stat(directory)); }) != 0) {
                 // Attached sdcard roots include implicit ancestors; create the
                 // missing package directory below Android/data or Android/obb.
@@ -194,8 +191,7 @@ TEST_CASE("VFS sandbox preserves mixed-case package roots across reload and dele
                     auto end = directory.find('/', cursor);
                     if (end == std::string::npos) end = directory.size();
                     current = directory.substr(0, end);
-                    if (ErrnoOf([&] { static_cast<void>(vfs.Stat(current)); }) != 0)
-                        vfs.CreateDirectory(current);
+                    if (ErrnoOf([&] { static_cast<void>(vfs.Stat(current)); }) != 0) vfs.CreateDirectory(current);
                     cursor = end + 1;
                 }
             }
@@ -257,20 +253,16 @@ TEST_CASE("VFS sandbox keeps guest writes across two sessions") {
     CHECK(ReadAll(vfs, "/data/data/com.example.game/files/prefs.bin") == "ok");
     CHECK(vfs.Stat("/sdcard/game/saves/slot0.sav").size == 11);
     CHECK(vfs.Stat("/sdcard/game/saves").is_directory);
-    CHECK(vfs.Stat("/sdcard/game/saves/slot0.sav").source ==
-          VfsSource::sandbox);
-    CHECK(vfs.ListDirectory("/sdcard/game") ==
-          std::vector<VfsDirectoryEntry>{{"saves", true}});
+    CHECK(vfs.Stat("/sdcard/game/saves/slot0.sav").source == VfsSource::sandbox);
+    CHECK(vfs.ListDirectory("/sdcard/game") == std::vector<VfsDirectoryEntry>{{"saves", true}});
 }
 
 TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
     const TemporaryRoot root("overlay");
-    const std::array base{std::byte{'b'}, std::byte{'a'}, std::byte{'s'},
-                          std::byte{'e'}};
-    const std::vector<VfsMountEntry> entries{
-        {"keep.dat", {base.begin(), base.end()}},
-        {"shadowed.dat", {base.begin(), base.end()}},
-        {"deleted.dat", {base.begin(), base.end()}}};
+    const std::array base{std::byte{'b'}, std::byte{'a'}, std::byte{'s'}, std::byte{'e'}};
+    const std::vector<VfsMountEntry> entries{{"keep.dat", {base.begin(), base.end()}},
+                                             {"shadowed.dat", {base.begin(), base.end()}},
+                                             {"deleted.dat", {base.begin(), base.end()}}};
 
     {
         auto store = SandboxStore::Open(root.path, kPackage, kPackage);
@@ -282,9 +274,7 @@ TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
         WriteThrough(vfs, "/sdcard/data/shadowed.dat", "overlay");
         vfs.RemoveFile("/sdcard/data/deleted.dat");
         // Deleting the overlay copy must not resurrect the base file.
-        CHECK(ErrnoOf([&] {
-                  static_cast<void>(vfs.Stat("/sdcard/data/deleted.dat"));
-              }) == 2);
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/data/deleted.dat")); }) == 2);
         vfs.FlushAll();
     }
 
@@ -297,13 +287,10 @@ TEST_CASE("VFS sandbox overlays and tombstones a read-only base layer") {
 
     CHECK(ReadAll(vfs, "/sdcard/data/keep.dat") == "base");
     CHECK(ReadAll(vfs, "/sdcard/data/shadowed.dat") == "overlay");
-    CHECK(ErrnoOf([&] {
-              static_cast<void>(vfs.Stat("/sdcard/data/deleted.dat"));
-          }) == 2);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/data/deleted.dat")); }) == 2);
     // A tombstoned path must not show up in enumeration either.
     CHECK(vfs.ListDirectory("/sdcard/data") ==
-          std::vector<VfsDirectoryEntry>{{"keep.dat", false},
-                                         {"shadowed.dat", false}});
+          std::vector<VfsDirectoryEntry>{{"keep.dat", false}, {"shadowed.dat", false}});
 }
 
 TEST_CASE("VFS sandbox deletion never resurrects a previously shadowed base file") {
@@ -331,10 +318,46 @@ TEST_CASE("VFS sandbox deletion never resurrects a previously shadowed base file
     VirtualFileSystem vfs;
     vfs.Mount(VfsSource::external, "/sdcard/data", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
-    CHECK(ErrnoOf([&] {
-              static_cast<void>(vfs.Stat("/sdcard/data/save.dat"));
-          }) == 2);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat("/sdcard/data/save.dat")); }) == 2);
     CHECK(vfs.ListDirectory("/sdcard/data").empty());
+}
+
+TEST_CASE("VFS sandbox reopens after rmdir of a directory whose files were deleted") {
+    const TemporaryRoot root("rmdir-after-unlink");
+    const std::string files = "/data/data/com.example.game/files";
+    const std::string unpack = files + "/unpack";
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        vfs.CreateDirectory(files);
+        vfs.CreateDirectory(unpack);
+        WriteThrough(vfs, unpack + "/a.dat", "a");
+        WriteThrough(vfs, unpack + "/b.dat", "b");
+        WriteThrough(vfs, files + "/keep.dat", "keep");
+        vfs.RemoveFile(unpack + "/a.dat");
+        vfs.RemoveFile(unpack + "/b.dat");
+        vfs.RemoveDirectory(unpack);
+    }
+    {
+        auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+        VirtualFileSystem vfs;
+        vfs.AttachSandbox(*store, kWritableRoots);
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat(unpack)); }) == 2);
+        CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat(unpack + "/a.dat")); }) == 2);
+        const auto listed = vfs.ListDirectory(files);
+        REQUIRE(listed.size() == 1);
+        CHECK(listed.front().name == "keep.dat");
+        CHECK(ReadAll(vfs, files + "/keep.dat") == "keep");
+        // The same flow runs again on the next launch.
+        vfs.CreateDirectory(unpack);
+        WriteThrough(vfs, unpack + "/a.dat", "again");
+    }
+    auto store = SandboxStore::Open(root.path, kPackage, kPackage);
+    VirtualFileSystem vfs;
+    vfs.AttachSandbox(*store, kWritableRoots);
+    CHECK(ReadAll(vfs, unpack + "/a.dat") == "again");
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Stat(unpack + "/b.dat")); }) == 2);
 }
 
 TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists read-only create") {
@@ -349,18 +372,15 @@ TEST_CASE("VFS sandbox recreate clears a tombstone before close and persists rea
         vfs.AttachSandbox(*store, kWritableRoots);
         vfs.RemoveFile("/sdcard/data/save.dat");
 
-        const auto descriptor = vfs.Open(
-            "/sdcard/data/save.dat", {.read = true, .create = true});
+        const auto descriptor = vfs.Open("/sdcard/data/save.dat", {.read = true, .create = true});
         CHECK(vfs.Stat("/sdcard/data/save.dat").size == 0);
-        CHECK(vfs.ListDirectory("/sdcard/data") ==
-              std::vector<VfsDirectoryEntry>{{"save.dat", false}});
+        CHECK(vfs.ListDirectory("/sdcard/data") == std::vector<VfsDirectoryEntry>{{"save.dat", false}});
         // A second delete must see the recreated node rather than the stale
         // in-memory tombstone.
         vfs.RemoveFile("/sdcard/data/save.dat");
         vfs.Close(descriptor);
 
-        const auto recreated = vfs.Open(
-            "/sdcard/data/save.dat", {.read = true, .create = true});
+        const auto recreated = vfs.Open("/sdcard/data/save.dat", {.read = true, .create = true});
         vfs.Close(recreated);
     }
 
@@ -377,20 +397,14 @@ TEST_CASE("VFS sandbox refuses writes outside the writable namespace") {
     auto store = SandboxStore::Open(root.path, kPackage, kPackage);
     VirtualFileSystem vfs;
     const std::array base{std::byte{'x'}};
-    const std::vector<VfsMountEntry> entries{
-        {"asset.bin", {base.begin(), base.end()}}};
+    const std::vector<VfsMountEntry> entries{{"asset.bin", {base.begin(), base.end()}}};
     vfs.Mount(VfsSource::apk, "/apk", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
 
-    CHECK(ErrnoOf([&] {
-              static_cast<void>(vfs.Open(
-                  "/etc/passwd", {.write = true, .create = true}));
-          }) == 13);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Open("/etc/passwd", {.write = true, .create = true})); }) == 13);
     CHECK(ErrnoOf([&] { vfs.CreateDirectory("/etc/evil"); }) == 13);
     // The read-only base layer stays exactly as read-only as before.
-    CHECK(ErrnoOf([&] {
-              static_cast<void>(vfs.Open("/apk/asset.bin", {.write = true}));
-          }) == 13);
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Open("/apk/asset.bin", {.write = true})); }) == 13);
     CHECK(ReadAll(vfs, "/apk/asset.bin") == "x");
 }
 
@@ -400,8 +414,7 @@ TEST_CASE("VFS sandbox flushes at close and fsync but not before") {
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
 
-    const auto descriptor = vfs.Open(
-        "/sdcard/save.dat", {.read = true, .write = true, .create = true});
+    const auto descriptor = vfs.Open("/sdcard/save.dat", {.read = true, .write = true, .create = true});
     const auto first = Bytes("one");
     CHECK(vfs.Write(descriptor, first) == first.size());
     // Nothing reached the host yet: the write is still an in-memory node.
@@ -429,15 +442,12 @@ TEST_CASE("VFS sandbox quota includes dirty bytes before close") {
     VirtualFileSystem vfs;
     vfs.AttachSandbox(*store, kWritableRoots);
 
-    const auto first = vfs.Open(
-        "/sdcard/first", {.write = true, .create = true});
+    const auto first = vfs.Open("/sdcard/first", {.write = true, .create = true});
     CHECK(vfs.Write(first, Bytes("1234")) == 4);
     CHECK(store->UsedBytes() == 0);  // still dirty, but already quota-visible
 
-    const auto second = vfs.Open(
-        "/sdcard/second", {.write = true, .create = true});
-    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Write(second, Bytes("xx"))); }) ==
-          28);
+    const auto second = vfs.Open("/sdcard/second", {.write = true, .create = true});
+    CHECK(ErrnoOf([&] { static_cast<void>(vfs.Write(second, Bytes("xx"))); }) == 28);
     vfs.Close(second);  // the empty creation itself is still valid
     vfs.Close(first);
     CHECK(store->UsedBytes() == 4);
@@ -452,8 +462,7 @@ TEST_CASE("VFS sandbox does not rewrite a clean write-opened base file") {
     vfs.Mount(VfsSource::external, "/sdcard", entries);
     vfs.AttachSandbox(*store, kWritableRoots);
 
-    const auto descriptor =
-        vfs.Open("/sdcard/save.dat", {.read = true, .write = true});
+    const auto descriptor = vfs.Open("/sdcard/save.dat", {.read = true, .write = true});
     vfs.Close(descriptor);
     CHECK(store->Entries().empty());
     CHECK(vfs.Stat("/sdcard/save.dat").source == VfsSource::external);
@@ -489,8 +498,7 @@ TEST_CASE("VFS rename over an open target orphans the replaced node") {
 
     // The victim stays open across the rename, exactly the descriptor a
     // game still holds while rotating save slots.
-    const auto held = vfs.Open("/sdcard/victim.sav", {.read = true,
-                                                      .write = true});
+    const auto held = vfs.Open("/sdcard/victim.sav", {.read = true, .write = true});
     vfs.Rename("/sdcard/source.sav", "/sdcard/victim.sav");
     CHECK(ReadAll(vfs, "/sdcard/victim.sav") == "fresh");
 
@@ -521,10 +529,10 @@ TEST_CASE("VFS refuses a second sandbox attachment") {
     CHECK(ErrnoOf([&] { vfs.AttachSandbox(*second, {}); }) == 17);
 }
 
-
 TEST_CASE("VFS-08 append respects dirty quota and persists across reopen") {
     const TemporaryRoot root("append-quota");
-    SandboxConfig config; config.byte_quota = 6;
+    SandboxConfig config;
+    config.byte_quota = 6;
     {
         auto store = SandboxStore::Open(root.path, kPackage, kPackage, config);
         VirtualFileSystem vfs;
@@ -539,7 +547,9 @@ TEST_CASE("VFS-08 append respects dirty quota and persists across reopen") {
         CHECK(vfs.Seek(duplicate, 0, VfsSeekWhence::current) == 0);
         CHECK(vfs.Stat("/sdcard/log").generation == generation);
         CHECK(ReadAll(vfs, "/sdcard/log") == "abcdef");
-        vfs.Flush(writer); vfs.Close(writer); vfs.Close(duplicate);
+        vfs.Flush(writer);
+        vfs.Close(writer);
+        vfs.Close(duplicate);
         CHECK(store->UsedBytes() == 6);
     }
     {

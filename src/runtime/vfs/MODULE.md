@@ -109,7 +109,9 @@ package/meta/安装目录保留原始拼写，根内文件名保留既有宿主�
 - 其他 `/sdcard/...` → `sdcard/...`
 
 专用根优先；其他包的 external/obb 路径仍落本实例通用 sdcard。反向枚举若发现两个宿主
-位置映射同一 guest 节点或大小写折叠后同一节点则拒绝。文件名转义、ASCII case-fold、越界拒绝、tmp 原子替换、
+位置映射同一 guest 节点或大小写折叠后同一节点则拒绝；唯一例外是已删除目录：tombstone 只按精确路径
+生效，rmdir 时子 tombstone 必须保留，宿主目录作为其容器与同名目录 tombstone 并存，装载读为一个已删除
+目录，容器内出现非 tombstone 条目则拒绝。WriteTombstone 对仍含活动子项的目录返回 ENOTEMPTY。文件名转义、ASCII case-fold、越界拒绝、tmp 原子替换、
 tombstone、256 MiB/65536 活动项配额继续保留。close/fsync/pause/shutdown 落文件内容；
 mkdir/unlink/rmdir/rename 立即落元数据。unlink/覆盖后的存活句柄不得复活旧路径。
 

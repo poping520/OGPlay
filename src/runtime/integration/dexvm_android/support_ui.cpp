@@ -808,6 +808,10 @@ void RetireViewUiSubtree(DexVmAndroidContext& context, const ui::UiNodeId node) 
                 const auto key = holder->second.Value();
                 DetachAndroidMediaSurface(context, key);
                 context.surface_callbacks.erase(key);
+                context.surface_requested_formats.erase(key);
+                context.surface_active_formats.erase(key);
+                context.surface_callback_formats.erase(key);
+
                 context.holder_surfaces.erase(key);
                 if (context.retire_native_surface) context.retire_native_surface(dexvm::VmObjectRef(key));
                 context.active_surface_holders.erase(key);
@@ -2287,6 +2291,12 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
                     }
                     next->scaled_surface_frames.insert(*id);
                 }
+                if (state.media_player) {
+                    const auto holder = context.surface_holders.at(state.display_view.Value());
+                    const auto format = context.surface_active_formats.find(holder.Value());
+                    if (format != context.surface_active_formats.end() && AndroidPixelFormatHasAlpha(format->second))
+                        next->alpha_surface_frames.insert(*id);
+                }
                 next->video_frames.emplace(*id, std::move(pixels));
                 break;
             }
@@ -2302,6 +2312,9 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             if (!id) continue;
             for (const auto& partition : next->guest_window_epoch_refs) {
                 if (!partition->Get(*id) || !partition->IsAttached(*id) || !partition->IsVisible(*id)) continue;
+                const auto format = context.surface_active_formats.find(holder.Value());
+                if (format != context.surface_active_formats.end() && AndroidPixelFormatHasAlpha(format->second))
+                    next->alpha_surface_frames.insert(*id);
                 if (!next->video_frames.emplace(*id, pixels->second).second)
                     throw std::runtime_error("Surface has competing producers");
                 next->scaled_surface_frames.insert(*id);
@@ -2345,7 +2358,9 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
         return true;
     }();
     const auto same_video = [&] {
-        if (!previous || previous->video_frames.size() != next->video_frames.size()) return false;
+        if (!previous || previous->video_frames.size() != next->video_frames.size() ||
+            previous->alpha_surface_frames != next->alpha_surface_frames)
+            return false;
         for (const auto& [id, frame] : next->video_frames) {
             const auto old = previous->video_frames.find(id);
             if (old == previous->video_frames.end() || old->second.width != frame.width ||

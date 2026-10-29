@@ -353,6 +353,10 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
              context->gl_surface_config_specs.erase(key);
              context->surface_holders.erase(key);
              context->surface_callbacks.erase(key);
+             context->surface_requested_formats.erase(key);
+             context->surface_active_formats.erase(key);
+             context->surface_callback_formats.erase(key);
+
              if (context->retire_native_surface) context->retire_native_surface(dx::VmObjectRef(key));
              context->active_surface_holders.erase(key);
              {

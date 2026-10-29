@@ -211,7 +211,7 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObje
 [[nodiscard]] dx::IntrinsicHandler PrefsUnsupportedHandler(std::string category);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderAddCallbackHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderRemoveCallbackHandler(const Context& context);
-[[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetFormatHandler();
+[[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetFormatHandler(const Context& context);
 [[nodiscard]] dx::IntrinsicHandler SurfaceHolderSetTypeHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyEmptyStringHandler();
 [[nodiscard]] dx::IntrinsicHandler TelephonyFalseHandler();

@@ -678,3 +678,91 @@ TEST_CASE("DVM-339 software Canvas uses buffer dimensions and stretches across t
         CHECK(f.OnOutcome(holder, "lockCanvas", "()Landroid/graphics/Canvas;").exception.IsValid());
     }
 }
+
+TEST_CASE("DVM-347 holder formats preserve a transparent top Canvas and reject unsupported formats") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto format : {-3, -2, -1, 1, 2, 3, 4, 6, 7}) {
+            ContainerVm f(backend);
+            const auto owner = Owner(f), view = Surface(f, owner), holder = Holder(f, view);
+            const auto roots = f.vm.ProtectReferences(std::array{owner, view, holder});
+            f.context->surface_width = 800;
+            f.context->surface_height = 480;
+            f.On(view, "setZOrderOnTop", "(Z)V", {VmValue::Int(1)});
+            f.On(holder, "setFormat", "(I)V", {VmValue::Int(format)});
+            Size(f, holder, 1, 1);
+            f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+            const auto clear = f.Static("Landroid/graphics/PorterDuff$Mode;", "valueOf",
+                                        "(Ljava/lang/String;)Landroid/graphics/PorterDuff$Mode;",
+                                        {VmValue::Ref(f.vm.NewStringUtf8("CLEAR"))})
+                                   .ref;
+            const auto keep_clear = f.vm.ProtectReferences(std::array{clear});
+            for (int lifetime = 0; lifetime < 2; ++lifetime) {
+                REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::created));
+                REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
+                CHECK(f.context->surface_active_formats.at(holder.Value()) == format);
+                const auto canvas = f.On(holder, "lockCanvas", "()Landroid/graphics/Canvas;").ref;
+                const bool alpha = AndroidPixelFormatHasAlpha(format);
+                CHECK(f.context->canvases.at(canvas.Value()).argb[0] == (alpha ? 0U : 0xff000000U));
+                f.On(canvas, "drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V",
+                     {VmValue::Int(0), VmValue::Ref(clear)});
+                f.On(holder, "unlockCanvasAndPost", "(Landroid/graphics/Canvas;)V", {VmValue::Ref(canvas)});
+                RefreshAndroidSurfaceFrames(*f.context);
+                static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                           AndroidUiTraversalPhase::ResolveOnly));
+                REQUIRE(PublishAndroidPresentation(*f.context));
+                const auto snapshot = AcquireAndroidPresentation(*f.context);
+                std::vector<std::uint8_t> pixels(800U * 480U * 4U);
+                for (std::size_t i = 0; i < pixels.size(); i += 4) {
+                    pixels[i] = 20;
+                    pixels[i + 1] = 40;
+                    pixels[i + 2] = 60;
+                    pixels[i + 3] = 255;
+                }
+                const auto lower = pixels;
+                ComposeVideoViews(*snapshot, pixels, 800, 480, true);
+                if (alpha) CHECK(pixels == lower);
+                CHECK(pixels[0] == (alpha ? 20 : 0));
+                CHECK(pixels[1] == (alpha ? 40 : 0));
+                CHECK(pixels[2] == (alpha ? 60 : 0));
+                CHECK(pixels[3] == 255);
+                // Transparent source pixels still blend when View alpha also applies.
+                auto half = std::make_shared<ui::UiTree>(*snapshot->guest_window_epoch_refs[0]);
+                half->Get(*FindViewUiNode(*f.context, view.Value()))->alpha = 0.5F;
+                auto faded = *snapshot;
+                faded.guest_window_epoch_refs = {half};
+                ComposeVideoViews(faded, pixels, 800, 480, true);
+                CHECK(pixels[0] == (alpha ? 20 : 0));
+                auto partial = *snapshot;
+                auto& frame = partial.video_frames.at(*FindViewUiNode(*f.context, view.Value()));
+                frame.rgba8 = {200, 100, 50, 128};
+                for (std::size_t i = 0; i < pixels.size(); i += 4) {
+                    pixels[i] = 20;
+                    pixels[i + 1] = 40;
+                    pixels[i + 2] = 60;
+                    pixels[i + 3] = 255;
+                }
+                ComposeVideoViews(partial, pixels, 800, 480, true);
+                CHECK(pixels[0] == (alpha ? 110 : 200));
+                CHECK(pixels[1] == (alpha ? 70 : 100));
+                CHECK(pixels[2] == (alpha ? 55 : 50));
+                CHECK(pixels[3] == 255);
+                const auto alternate = alpha ? -1 : -3;
+                f.On(holder, "setFormat", "(I)V", {VmValue::Int(alternate)});
+                CHECK(f.context->surface_active_formats.at(holder.Value()) == format);
+                REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::changed));
+                CHECK(f.context->surface_active_formats.at(holder.Value()) == alternate);
+                CHECK(f.context->surface_callback_formats.at(holder.Value()) == alternate);
+                // Request survives a new Surface, even without another changed callback.
+                f.On(holder, "setFormat", "(I)V", {VmValue::Int(format)});
+                REQUIRE_FALSE(DispatchSurfaceHolderCallbacks(f.vm, *f.context, SurfaceHolderPhase::destroyed));
+            }
+            CHECK(f.ledger.Unimplemented().empty());
+            const auto unsupported = f.OnOutcome(holder, "setFormat", "(I)V", {VmValue::Int(99)});
+            REQUIRE(unsupported.exception.IsValid());
+            CHECK(f.linker.Class(unsupported.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+            CHECK(std::ranges::any_of(f.ledger.Unimplemented(),
+                                      [](const auto& gap) { return gap.id == "dexvm.surface_video_layers"; }));
+            CHECK(f.context->surface_requested_formats.at(holder.Value()) == format);
+        }
+    }
+}

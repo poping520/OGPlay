@@ -548,6 +548,63 @@ Decl Declare_android_graphics_BitmapFactory(const Context& context, const Decode
 
 namespace ogplay::runtime::android_intrinsics {
 
+namespace {
+// AOSP android-4.4_r1 external/skia/src/core/SkXfermode.cpp and
+// include/core/SkColorPriv.h; framework SkPorterDuff maps MULTIPLY to MODULATE.
+// CanvasState.argb is straight ARGB, so convert to premultiplied bytes for
+// Skia's integer operations, then unpremultiply for the existing pixel consumers.
+std::uint32_t BlendCanvasColor(std::uint32_t color, std::uint32_t destination, int mode) {
+    if (mode == 0) return 0;
+    if (mode == 2) return destination;
+    const auto mul = [](int x, int y) { return (x * y + 127) / 255; };
+    const int sa = static_cast<int>(color >> 24), da = static_cast<int>(destination >> 24);
+    const auto channel = [&](int sc, int dc, bool alpha) {
+        switch (mode) {
+        case 1: return sc;
+        case 3: return sc + ((dc * (256 - sa)) >> 8);
+        case 4: return dc + ((sc * (256 - da)) >> 8);
+        case 5: return (sc * (da + 1)) >> 8;
+        case 6: return (dc * (sa + 1)) >> 8;
+        case 7: return (sc * (256 - da)) >> 8;
+        case 8: return (dc * (256 - sa)) >> 8;
+        case 9: return alpha ? da : mul(sc, da) + mul(dc, 255 - sa);
+        case 10: return alpha ? sa : mul(sc, 255 - da) + mul(dc, sa);
+        case 11: return alpha ? sa + da - 2 * mul(sa, da) : mul(sc, 255 - da) + mul(dc, 255 - sa);
+        case 12: return alpha ? sa + da - mul(sa, da) : sc + dc - (std::max(sc * da, dc * sa) + 127) / 255;
+        case 13: return alpha ? sa + da - mul(sa, da) : sc + dc - (std::min(sc * da, dc * sa) + 127) / 255;
+        case 14: return mul(sc, dc);
+        case 15: return sc + dc - mul(sc, dc);
+        case 16: return std::min(255, sc + dc);
+        case 17: {
+            if (alpha) return sa + da - mul(sa, da);
+            const int blend = 2 * dc <= da ? 2 * sc * dc : sa * da - 2 * (da - dc) * (sa - sc);
+            return std::clamp((blend + sc * (255 - da) + dc * (255 - sa) + 127) / 255, 0, 255);
+        }
+        default: throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "invalid PorterDuff Mode.nativeInt"};
+        }
+    };
+    const int a = channel(sa, da, true);
+    std::uint32_t result = static_cast<std::uint32_t>(a) << 24;
+    for (const auto shift : {16, 8, 0}) {
+        const int sc = mul(static_cast<int>((color >> shift) & 255U), sa);
+        const int dc = mul(static_cast<int>((destination >> shift) & 255U), da);
+        const int value = channel(sc, dc, false);
+        result |= static_cast<std::uint32_t>(a ? std::clamp((value * 255 + a / 2) / a, 0, 255) : 0) << shift;
+    }
+    return result;
+}
+
+dx::VmValue FillCanvasColor(const Context& context, dx::IntrinsicContext& call, std::uint32_t color, int mode) {
+    const auto found = context->canvases.find(call.receiver.Value());
+    if (found == context->canvases.end() || !found->second.locked)
+        throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
+    // Pure color fills are not constrained by clip: clipRect/save/restore remain unimplemented.
+    for (auto& pixel : found->second.argb)
+        pixel = BlendCanvasColor(color, pixel, mode);
+    return dx::VmValue::Void();
+}
+}  // namespace
+
 Decl Declare_android_graphics_Canvas(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Canvas;", "Ljava/lang/Object;");
     for (const bool width : {true, false}) {
@@ -575,14 +632,24 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
         return dx::VmValue::Ref(rect);
     });
     builder.VirtualMethod("drawColor", "(I)V", [context](dx::IntrinsicContext& call) {
-        const auto found = context->canvases.find(call.receiver.Value());
-        if (found == context->canvases.end() || !found->second.locked) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Canvas is not locked"};
-        }
-        std::fill(found->second.argb.begin(), found->second.argb.end(),
-                  static_cast<std::uint32_t>(call.arguments[0].AsInt()));
-        return dx::VmValue::Void();
+        return FillCanvasColor(context, call, static_cast<std::uint32_t>(call.arguments[0].AsInt()), 3);
     });
+    builder.VirtualMethod("drawColor", "(ILandroid/graphics/PorterDuff$Mode;)V", [context](dx::IntrinsicContext& call) {
+        const auto mode = call.arguments[1].ref;
+        if (!mode.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "PorterDuff mode is null"};
+        return FillCanvasColor(context, call, static_cast<std::uint32_t>(call.arguments[0].AsInt()),
+                               ReadIntField(call.vm, mode, "nativeInt"));
+    });
+    for (const bool argb : {false, true}) {
+        builder.VirtualMethod(
+            argb ? "drawARGB" : "drawRGB", argb ? "(IIII)V" : "(III)V", [context, argb](dx::IntrinsicContext& call) {
+                const std::size_t first = argb ? 1 : 0;
+                auto color = argb ? (static_cast<std::uint32_t>(call.arguments[0].AsInt()) & 255U) << 24 : 0xff000000U;
+                for (std::size_t i = 0; i < 3; ++i)
+                    color |= (static_cast<std::uint32_t>(call.arguments[first + i].AsInt()) & 255U) << (16 - i * 8);
+                return FillCanvasColor(context, call, color, 3);
+            });
+    }
     builder.VirtualMethod(
         "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V", [context](dx::IntrinsicContext& call) {
             const auto canvas = context->canvases.find(call.receiver.Value());
@@ -847,7 +914,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                     text = c.vm.Model().StringRegion(ref, start, static_cast<JniSize>(end - start));
                 // Paint remains single-line; use the same glyph coverage as TextView.
                 try {
-                    for (const auto unit : text) ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
+                    for (const auto unit : text)
+                        ui::RequireTextGlyph(unit, context->ui_tree.FallbackFont().get());
                 } catch (const std::runtime_error& error) {
                     UnsupportedPaint(c, error.what());
                 }

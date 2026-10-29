@@ -969,9 +969,10 @@ std::optional<std::string> PumpAndroidAudioTracks(dexvm::Interpreter& vm, DexVmA
 }
 
 namespace {
-template <typename FindFrame, typename ScaleFrame>
+template <typename FindFrame, typename ScaleFrame, typename AlphaFrame>
 void ComposeFrozenVideo(const ui::UiTree& tree, const FindFrame& find_frame, const ScaleFrame& stretch,
-                        std::vector<std::uint8_t>& canvas, std::uint32_t width, std::uint32_t height, bool on_top) {
+                        const AlphaFrame& has_alpha, std::vector<std::uint8_t>& canvas, std::uint32_t width,
+                        std::uint32_t height, bool on_top) {
     const auto intersect = [](ui::Rect a, const ui::Rect b) {
         return ui::Rect{std::max(a.left, b.left), std::max(a.top, b.top), std::min(a.right, b.right),
                         std::min(a.bottom, b.bottom)};
@@ -1002,7 +1003,8 @@ void ComposeFrozenVideo(const ui::UiTree& tree, const FindFrame& find_frame, con
                     const auto image_left = bounds.left + (rect_width - image_width) / 2;
                     const auto image_top = bounds.top + (rect_height - image_height) / 2;
                     const auto visible = intersect(clip, bounds);
-                    if (alpha == 1.0F && visible.right > visible.left && visible.bottom > visible.top) {
+                    if (!has_alpha(id) && alpha == 1.0F && visible.right > visible.left &&
+                        visible.bottom > visible.top) {
                         // Resolve each column once, then reuse identical source
                         // rows. Integer nearest-neighbour pixels remain exact.
                         constexpr auto black = std::numeric_limits<std::size_t>::max();
@@ -1060,19 +1062,22 @@ void ComposeFrozenVideo(const ui::UiTree& tree, const FindFrame& find_frame, con
                                                     static_cast<std::uint64_t>(image_height);
                                     source = static_cast<std::size_t>((sy * frame.width + sx) * 4U);
                                 }
-                                if (alpha == 1.0F) {
-                                    if (in_image) {
-                                        std::copy_n(frame.rgba8.data() + source, 3U, canvas.data() + target);
-                                    } else {
-                                        canvas[target] = canvas[target + 1U] = canvas[target + 2U] = 0;
-                                    }
-                                } else
-                                    for (std::size_t channel = 0; channel < 3U; ++channel) {
-                                        const auto value = in_image ? frame.rgba8[source + channel] : 0;
-                                        canvas[target + channel] = static_cast<std::uint8_t>(
-                                            std::lround(value * alpha + canvas[target + channel] * (1.0F - alpha)));
-                                    }
-                                canvas[target + 3U] = 255U;
+                                const float source_alpha =
+                                    alpha *
+                                    (has_alpha(id) ? (in_image ? frame.rgba8[source + 3U] / 255.0F : 0.0F) : 1.0F);
+                                const float destination_alpha = canvas[target + 3U] / 255.0F;
+                                const float output_alpha = source_alpha + destination_alpha * (1.0F - source_alpha);
+                                for (std::size_t channel = 0; channel < 3U; ++channel) {
+                                    const auto value = in_image ? frame.rgba8[source + channel] : 0;
+                                    canvas[target + channel] =
+                                        output_alpha == 0.0F
+                                            ? 0
+                                            : static_cast<std::uint8_t>(std::lround(
+                                                  (value * source_alpha + canvas[target + channel] * destination_alpha *
+                                                                              (1.0F - source_alpha)) /
+                                                  output_alpha));
+                                }
+                                canvas[target + 3U] = static_cast<std::uint8_t>(std::lround(output_alpha * 255.0F));
                             }
                         }
                     }
@@ -1114,7 +1119,8 @@ void ComposeVideoViews(const DexVmAndroidContext::PresentationSnapshot& presenta
                 const auto found = presentation.video_frames.find(id);
                 return found == presentation.video_frames.end() ? nullptr : &found->second;
             },
-            [&](ui::UiNodeId id) { return presentation.scaled_surface_frames.contains(id); }, canvas, width, height,
+            [&](ui::UiNodeId id) { return presentation.scaled_surface_frames.contains(id); },
+            [&](ui::UiNodeId id) { return presentation.alpha_surface_frames.contains(id); }, canvas, width, height,
             on_top);
 }
 

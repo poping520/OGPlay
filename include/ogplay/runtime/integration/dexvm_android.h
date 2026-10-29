@@ -50,6 +50,11 @@ class EncodedAudioDataSource;
 }  // namespace ogplay::audio
 
 namespace ogplay::runtime {
+// Shared application-window/holder alpha rule (PixelFormat.formatHasAlpha, API19).
+[[nodiscard]] constexpr bool AndroidPixelFormatHasAlpha(std::int32_t format) {
+    return format == -3 || format == -2 || format == 1 || format == 6 || format == 7 || format == 8 || format == 10;
+}
+
 class BitmapPixels;
 class AndroidAssetManagerSource;
 struct AndroidBoundaryInput;
@@ -488,6 +493,7 @@ struct DexVmAndroidContext final {
         ui::UiBitmapCache bitmaps;
         std::map<ui::UiNodeId, video::VideoFrame> video_frames;
         std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> scaled_surface_frames;
+        std::unordered_set<ui::UiNodeId, ui::UiNodeIdHash> alpha_surface_frames;
 
         struct ModalSnapshot final {
             dexvm::VmObjectRef dialog, owner;
@@ -699,6 +705,10 @@ struct DexVmAndroidContext final {
     // An entry belongs to one created lifetime; missing/retired holders cannot be revived.
     std::unordered_map<std::uint32_t, bool> surface_buffer_queued;
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> holder_surfaces;
+    // Requested format survives Surface lifetimes; active format is frozen at creation/change.
+    std::unordered_map<std::uint32_t, std::int32_t> surface_requested_formats;
+    std::unordered_map<std::uint32_t, std::int32_t> surface_active_formats;
+    std::unordered_map<std::uint32_t, std::int32_t> surface_callback_formats;
     std::int32_t window_format{1};
     std::unordered_set<std::uint32_t> active_surface_holders;
     std::unordered_set<std::uint32_t> destroying_surface_holders;
@@ -839,7 +849,7 @@ struct DexVmAndroidContext final {
     std::unordered_map<std::uint32_t, dexvm::VmObjectRef> bitmap_lock_roots;
 
     // SurfaceHolder software rendering owns a Canvas only while locked. The
-    // Canvas buffer uses Android ARGB words and is converted to boundary RGBA
+    // Canvas buffer uses straight (not premultiplied) Android ARGB words and is converted to boundary RGBA
     // exactly once by unlockCanvasAndPost.
     struct CanvasState final {
         std::uint32_t holder{};

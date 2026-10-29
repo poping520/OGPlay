@@ -838,7 +838,7 @@ runtime::AndroidBoundaryFrame ComposeAndroidPresentationFrame(runtime::DexVmAndr
                                                 {snapshot->viewport.width, snapshot->viewport.height});
             const auto window = std::find_if(snapshot->application_windows.begin(), snapshot->application_windows.end(),
                                              [&](const auto& w) { return w.projection == tree; });
-            if (window != snapshot->application_windows.end() && window->format != -3 && window->format != -2) {
+            if (window != snapshot->application_windows.end() && !runtime::AndroidPixelFormatHasAlpha(window->format)) {
                 // Opaque windows cover the lower partition, including undrawn pixels.
                 for (std::size_t i = 3; i < pixels.rgba8.size(); i += 4)
                     pixels.rgba8[i] = 255;

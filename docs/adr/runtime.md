@@ -12,6 +12,7 @@
 - [ADR-0079 · 进程内 ARM guest 信号投递](#adr-0079)
 - [ADR-0169 · API19 两级 UI 字体链与会话同源注入](#adr-0169)
 - [ADR-0168 · 从连接拓扑发布本地接口查询视图](#adr-0168)
+- [ADR-0170 · 仅托管默认进程，独立进程服务按不可解析回答](#adr-0170)
 
 <a id="adr-0001"></a>
 
@@ -270,3 +271,30 @@ CPU 微架构身份属于不可变虚拟 CPU 模型，必须与 Dynarmic 实际�
 `c_show` 的 SMP 格式输出（单核亦保留 processor 组与空行、Features 尾空格）。
 BogoMIPS 按虚拟 delay loop 每周期一轮定义为 2 × frequency_mhz，非宿主采样或执行限速。
 CPU sysfs 与 sysconf 行为不变；不增加 nvmap 或 NV system clock。
+
+<a id="adr-0170"></a>
+
+## ADR-0170 · 仅托管默认进程，独立进程服务按不可解析回答
+
+- 状态：Accepted
+- 日期：2026-10-29
+
+### 背景
+
+APK 可声明独立进程或 isolated Service；拉起这些进程及其 Messenger/Binder IPC
+超出进程级兼容层范围。调用方可能忽略 start/bind 失败，直接抛 UOE 会中断默认进程。
+
+### 决定
+
+仅托管应用默认进程。当前包显式目标的应用及服务均启用时，若服务 process 不同于
+应用进程（应用未指定时为包名），或带 FLAG_ISOLATED_PROCESS（0x0002），按不可解析回答。
+沿 API19 ActiveServices.retrieveServiceLocked 返回 null 的通道：startService 返回 null，
+bindService 返回 false；后者仍先登记 dispatcher，允许正常解绑，不构造服务、不发连接或断开回调。
+每次命中记账 dexvm.service_resolution，并以 runtime.service.secondary_process
+结构化 warn 记录 api/component/process，采用 first_and_count 限流。
+PackageManager 查询保留清单事实；不改变其他组件或扩展同进程 started 生命周期。
+
+### 后果
+
+PackageManager 能查到、AMS 不可托管的视图差异是有意为之。依赖独立进程功能的游戏
+会失去该功能，但记账可查；不引入独立 guest 进程、Binder IPC 或游戏专属 quirk。

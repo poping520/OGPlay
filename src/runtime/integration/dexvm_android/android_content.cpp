@@ -29,6 +29,37 @@ namespace {
     throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", reason};
 }
 
+struct ExplicitServiceTarget {
+    const loader::AndroidManifestServiceComponent* declaration = nullptr;
+    bool hostable = true;
+};
+
+ExplicitServiceTarget ResolveExplicitService(dx::Interpreter& vm, const Context& context, dx::VmObjectRef intent) {
+    if (!context->service_inventory_known || !intent.IsValid()) return {};
+    const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
+    if (!component.IsValid()) return {};
+    const auto package = vm.StringUtf8(CallAndroidMethod(vm, component, "getPackageName", "()Ljava/lang/String;").ref);
+    if (package != context->package_name) return {};
+    const auto name = vm.StringUtf8(CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref);
+    const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
+                                    [&](const auto& service) { return service.name == name; });
+    if (found == context->service_components.rend()) return {};
+    const auto& process =
+        context->application_process_name.empty() ? context->package_name : context->application_process_name;
+    return {&*found, (found->flags & 0x0002U) == 0 && (found->process_name.empty() || found->process_name == process)};
+}
+
+void RecordSecondaryProcessService(dx::Interpreter& vm, const std::string_view api,
+                                   const loader::AndroidManifestServiceComponent& service) {
+    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.service_resolution", 0);
+    if (auto* logger = vm.Log()) {
+        logger->Write(core::LogLevel::warn, "runtime.service.secondary_process",
+                      "service cannot be hosted in the application process", {},
+                      {{"api", std::string(api)}, {"component", service.name}, {"process", service.process_name}},
+                      {.mode = core::RateLimitMode::first_and_count});
+    }
+}
+
 void UnbindLocalService(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef owner,
                         dx::VmObjectRef connection) {
     const auto binding = std::find_if(context.local_service_bindings.begin(), context.local_service_bindings.end(),
@@ -65,8 +96,7 @@ std::optional<bool> BindLocalService(dx::IntrinsicContext& call, const Context& 
     const auto component = CallAndroidMethod(vm, intent, "getComponent", "()Landroid/content/ComponentName;").ref;
     if (!component.IsValid()) return std::nullopt;
     if (context->local_services_stopping) UnsupportedLocalService(vm, "service bind during teardown");
-    if (!context->service_inventory_known || vm.CurrentContextToken() != 1 || call.arguments[2].AsInt() != 1)
-        UnsupportedLocalService(vm, "local bind requires inventory, main thread and BIND_AUTO_CREATE");
+    if (!context->service_inventory_known) UnsupportedLocalService(vm, "service inventory is unavailable");
     for (const auto& [name, signature] :
          {std::pair{"getAction", "()Ljava/lang/String;"}, std::pair{"getData", "()Landroid/net/Uri;"},
           std::pair{"getType", "()Ljava/lang/String;"}, std::pair{"getCategories", "()Ljava/util/Set;"},
@@ -77,14 +107,14 @@ std::optional<bool> BindLocalService(dx::IntrinsicContext& call, const Context& 
     const auto name = vm.StringUtf8(CallAndroidMethod(vm, component, "getClassName", "()Ljava/lang/String;").ref);
     if (package != context->package_name)
         UnsupportedLocalService(vm, "external explicit service binding is unsupported");
-    const auto found = std::find_if(context->service_components.rbegin(), context->service_components.rend(),
-                                    [&](const auto& s) { return s.name == name; });
-    if (!context->application_enabled || found == context->service_components.rend() || !found->enabled) return false;
-    const auto process =
-        context->application_process_name.empty() ? context->package_name : context->application_process_name;
-    // API19 ServiceInfo.FLAG_ISOLATED_PROCESS creates a separate UID/process.
-    if ((found->flags & 0x0002U) != 0 || (!found->process_name.empty() && found->process_name != process))
-        UnsupportedLocalService(vm, "remote service process is unsupported");
+    const auto target = ResolveExplicitService(vm, context, intent);
+    if (!context->application_enabled || !target.declaration || !target.declaration->enabled) return false;
+    if (!target.hostable) {
+        RecordSecondaryProcessService(vm, "bindService", *target.declaration);
+        return false;
+    }
+    if (vm.CurrentContextToken() != 1 || call.arguments[2].AsInt() != 1)
+        UnsupportedLocalService(vm, "local bind requires main thread and BIND_AUTO_CREATE");
     for (const auto& b : context->local_service_bindings) {
         if (b.owner == call.receiver && b.connection == connection) {
             if (b.name != name) UnsupportedLocalService(vm, "one connection cannot bind multiple components");
@@ -1550,7 +1580,13 @@ Decl Declare_android_content_Context(const Context& context) {
         return dx::VmValue::Ref(SingleFileArray(call, ContextDirectory(call, context, path, "context_obb_directory")));
     });
     builder.VirtualMethod("startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;",
-                          [](dx::IntrinsicContext& call) {
+                          [context](dx::IntrinsicContext& call) {
+                              const auto target = ResolveExplicitService(call.vm, context, call.arguments[0].ref);
+                              if (context->application_enabled && target.declaration && target.declaration->enabled &&
+                                  !target.hostable) {
+                                  RecordSecondaryProcessService(call.vm, "startService", *target.declaration);
+                                  return dx::VmValue::Ref(dx::VmObjectRef{});
+                              }
                               GuestLog(call, core::LogLevel::debug,
                                        "startService answered null: no services on this "
                                        "platform");

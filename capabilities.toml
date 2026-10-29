@@ -1900,8 +1900,8 @@ note = "DVM-110/111/ADR-0041：ScheduledThreadPoolExecutor、FutureTask、Execut
 
 [dexvm.layout_params]
 status = "partial"
-test = "tests/dexvm/framelayout_traversal_tests.cpp; tests/dexvm/linearlayout_traversal_tests.cpp; tests/dexvm/relativelayout_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-289"
-note = "DVM-331：LayoutParams/父链与几何归 ROM Java，属性经真实 TypedArray；integration 仅从已成功遍历收集投影，不将旧 C++ LayoutParams 解析用作 guest 几何回落。"
+test = "tests/dexvm/framelayout_traversal_tests.cpp; tests/dexvm/linearlayout_traversal_tests.cpp; tests/dexvm/relativelayout_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/owner_traversal_tests.cpp#DVM-351"
+note = "DVM-331/351：AbsoluteLayout/FrameLayout/RelativeLayout 的 LayoutParams、父链与几何归 ROM Java，属性经真实 TypedArray；integration 仅从已成功遍历收集投影，不将旧 C++ LayoutParams 解析用作 guest 几何回落。"
 
 [dexvm.display_values_bootdex]
 status = "complete"

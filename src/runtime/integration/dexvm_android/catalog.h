@@ -177,8 +177,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_webkit_WebView(const Context& context);
 [[nodiscard]] Decl Declare_android_webkit_WebView_DisabledLoadCallback(const Context& context);
 [[nodiscard]] Decl Declare_android_webkit_WebViewClient(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context);
-[[nodiscard]] Decl Declare_android_widget_AbsoluteLayout(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_Button(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_EditText(const Context& context);
 [[nodiscard]] Decl Declare_android_widget_FrameLayout(const Context& context);

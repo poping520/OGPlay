@@ -20,11 +20,11 @@ dexvm::CoreIntrinsicServices AndroidCoreIntrinsicServices(const std::shared_ptr<
         if (context->vfs) environment->Publish(*context->vfs);
         context->network_environment = std::move(environment);
     }
-    services.network_interfaces = [context](dexvm::Interpreter& vm)
-        -> const std::vector<GuestNetworkInterface>& {
+    services.network_interfaces = [context](dexvm::Interpreter& vm) -> const std::vector<GuestNetworkInterface>& {
         if (!context->offline_connectivity || context->network_policy.enabled || !context->network_environment) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.connectivity_offline", 0);
-            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "guest interface topology is unavailable"};
+            throw dexvm::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
+                                     "guest interface topology is unavailable"};
         }
         return context->network_environment->Interfaces();
     };
@@ -270,8 +270,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_webkit_WebView(context),
         Declare_android_webkit_WebView_DisabledLoadCallback(context),
         Declare_android_webkit_WebViewClient(context),
-        Declare_android_widget_AbsoluteLayout_LayoutParams(context),
-        Declare_android_widget_AbsoluteLayout(context),
         Declare_android_widget_Button(context),
         Declare_android_widget_EditText(context),
         Declare_android_widget_FrameLayout(context),

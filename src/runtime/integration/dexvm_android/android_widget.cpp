@@ -1,6 +1,5 @@
 // DVM-80: API-family translation unit. Physical consolidation only.
 
-// ---- migrated from android_widget_AbsoluteLayout_LayoutParams.cpp ----
 #include "catalog.h"
 #include <array>
 #include <bit>
@@ -17,76 +16,6 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {
 Decl ExperimentalImageView(const Context& context);
 }
-}  // namespace ogplay::runtime::android_intrinsics
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_widget_AbsoluteLayout_LayoutParams(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout$LayoutParams;",
-                                                    "Landroid/view/ViewGroup$LayoutParams;");
-    const auto x = builder.BoundInstanceField("x", "I");
-    const auto y = builder.BoundInstanceField("y", "I");
-    builder.Constructor("(IIII)V", [x, y](dx::IntrinsicContext& c) {
-        const auto target = c.vm.Linker().FindDirectMethod(
-            c.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup$LayoutParams;"), "<init>", "(II)V");
-        const auto result =
-            c.vm.Call(*target, std::array{dx::VmValue::Ref(c.receiver), c.arguments[0], c.arguments[1]});
-        if (result.exception.IsValid())
-            throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-        dx::IntrinsicCall(c).SetInt(x, c.arguments[2].AsInt());
-        dx::IntrinsicCall(c).SetInt(y, c.arguments[3].AsInt());
-        return dx::VmValue::Void();
-    });
-    // AOSP 4.4 ROM line 213.
-    builder.Constructor(
-        "(Landroid/view/ViewGroup$LayoutParams;)V",
-        [](dx::IntrinsicContext& c) {
-            const auto target =
-                c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup$LayoutParams;"),
-                                               "<init>", "(Landroid/view/ViewGroup$LayoutParams;)V");
-            const auto result =
-                c.vm.Call(*target, std::vector<dx::VmValue>{dx::VmValue::Ref(c.receiver), c.arguments[0]});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{c.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                      result.exception};
-            return result.value;
-        },
-        dx::kAccPublic);
-
-    return std::move(builder).Build();
-}
-
-}  // namespace ogplay::runtime::android_intrinsics
-
-// ---- migrated from android_widget_AbsoluteLayout.cpp ----
-#include "catalog.h"
-
-namespace ogplay::runtime::android_intrinsics {
-
-Decl Declare_android_widget_AbsoluteLayout(const Context& context) {
-    static_cast<void>(context);
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/widget/AbsoluteLayout;", "Landroid/view/ViewGroup;");
-    builder.Constructor("(Landroid/content/Context;)V", [](dx::IntrinsicContext& call) {
-        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/ViewGroup;");
-        const auto constructor = call.vm.Linker().FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
-        if (!constructor) throw std::logic_error("ViewGroup constructor is missing");
-        const auto result = call.vm.Call(*constructor, std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
-        if (result.exception.IsValid())
-            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
-                                  result.exception};
-        return result.value;
-    });
-    {
-        // Retain these containers' own ROM failure boundary instead of inheriting
-        // the experimental View/FrameLayout algorithms through a missing overlay.
-        builder.UnimplementedOverride("onMeasure", "(II)V", dx::kAccProtected);
-        builder.UnimplementedOverride("onLayout", "(ZIIII)V", dx::kAccProtected);
-    }
-    return std::move(builder).Build();
-}
-
 }  // namespace ogplay::runtime::android_intrinsics
 
 // ---- migrated from android_widget_Button.cpp ----

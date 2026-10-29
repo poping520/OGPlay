@@ -884,3 +884,10 @@ DVM-344：会话主树保存注入的 API19 Roboto-Regular → DroidSansFallback
 CreateHostUiTree 从同一来源建立 Dialog HostLayout；投影和模态复制保持资源身份。
 Paint、TextView 构造/setText 与 EditText 实际输入复用 UI 的 RequireTextGlyph 覆盖判定，
 各接缝保留原记账/Java 异常转换；宿主 raster 的缺字也报告码点。
+
+
+DVM-346：宿主 modal 的可见性只由 Dialog 与 owner 的状态推导，HostLayout 根始终可见；
+快照筛选、输入、焦点与捕获清理共用该推导。冻结树复用必须匹配 partition、revision 与
+UiTree 修改计数。计数单调递增、复制保留、溢出明确失败；可变 Get 是 owner 修改入口，
+在交出属性指针前登记修改，指针不得跨发布保留；只读消费使用 const Get。
+结构、属性、布局结果、焦点及窗口事实的修改均进入计数，dirty 消费本身不改变呈现结果。

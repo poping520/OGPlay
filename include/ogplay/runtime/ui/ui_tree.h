@@ -201,6 +201,7 @@ struct UiNode final {
     bool modal_layer{};  // Direct content-root child rendered above Surface/video planes.
     bool enabled{true};
     bool clickable{};
+    bool pressed{};
     bool focusable{};
     bool focusable_in_touch_mode{};
     bool scroll_container{};
@@ -261,6 +262,7 @@ public:
 
     explicit UiTree(std::shared_ptr<const UiFallbackFont> font)
         : UiTree(UiGeometryOwner::HostLayout, std::move(font)) {}
+
     UiTree(UiGeometryOwner owner, std::shared_ptr<const UiFallbackFont> font);
 
     [[nodiscard]] UiGeometryOwner GeometryOwner() const { return geometry_owner_; }
@@ -290,6 +292,8 @@ public:
 
     [[nodiscard]] std::size_t Size() const { return nodes_.size(); }
 
+    [[nodiscard]] std::uint64_t ModificationCount() const { return modification_count_; }
+
     UiNodeId CreateNode(UiClass kind);
     void Attach(UiNodeId parent, UiNodeId child, std::optional<std::size_t> index = std::nullopt);
     void Detach(UiNodeId child, DetachLayoutPolicy layout = DetachLayoutPolicy::request_layout);
@@ -301,6 +305,8 @@ public:
     void RetireProjectedIdentity(UiNodeId node);
     void Reset();
 
+    // Mutable owner access reserves a modification before exposing node properties.
+    // Do not retain this pointer across a publication; readers use const Get.
     [[nodiscard]] UiNode* Get(UiNodeId id);
     [[nodiscard]] const UiNode* Get(UiNodeId id) const;
     [[nodiscard]] bool IsAttached(UiNodeId id) const;
@@ -319,12 +325,16 @@ public:
     [[nodiscard]] bool IsVisible(UiNodeId node) const;
     void SetEnabled(UiNodeId node, bool enabled);
     void SetClickable(UiNodeId node, bool clickable);
+    void SetPressed(UiNodeId node, bool pressed);
     void MarkLayoutDirty(UiNodeId node);
     void MarkDrawDirty(UiNodeId node);
     void ClearLayoutDirty();
     void ClearDrawDirty();
 
 private:
+    void RecordModification();
+    std::uint64_t modification_count_{};
+
     using NodeMap = std::unordered_map<UiNodeId, UiNode, UiNodeIdHash>;
 
     [[nodiscard]] UiNode& Require(UiNodeId id);

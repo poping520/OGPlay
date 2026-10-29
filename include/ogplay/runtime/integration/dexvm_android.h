@@ -499,6 +499,25 @@ struct DexVmAndroidContext final {
         std::vector<ModalSnapshot> modal_stack;
     };
 
+    enum class PresentationRejectReason : std::uint8_t {
+        none,
+        input_lease,
+        missing_guest,
+        pending_metrics_without_snapshot,
+        active_window,
+        application_window_metrics,
+        background_window_metrics,
+        producer_pixels,
+        modal_tree,
+        modal_viewport,
+        modal_density,
+        pending_metrics_without_modal,
+        pending_metrics_unchanged,
+        count
+    };
+    PresentationRejectReason presentation_last_reject{};
+    std::array<std::uint64_t, static_cast<std::size_t>(PresentationRejectReason::count)> presentation_reject_counts{};
+
     // Owner builds partitions; render/input acquire only this immutable sequence.
     std::shared_ptr<const PresentationSnapshot> presentation_snapshot;
     std::shared_ptr<const PresentationSnapshot> input_presentation;  // Owner-scoped event lease.
@@ -1295,7 +1314,18 @@ struct AndroidAudioTrackDiagnosticSnapshot final {
 struct AndroidUiSnapshot final {
     std::uint64_t generation{}, nodes{}, layout_dirty{}, draw_dirty{};
     std::optional<std::uint64_t> focus;
+    std::string presentation_last_reject;
+    std::map<std::string, std::uint64_t> presentation_reject_counts;
+
+    struct Modal final {
+        std::uint64_t partition{}, revision{}, live_modifications{}, frozen_modifications{};
+        bool visible{}, owner_visible{}, live_root_visible{}, frozen_root_visible{};
+    };
+
+    std::vector<Modal> modals;
 };
+
+void SnapshotAndroidPresentationDiagnostics(const DexVmAndroidContext& context, AndroidUiSnapshot& result);
 
 struct AndroidVideoSnapshot final {
     std::uint64_t receiver{};

@@ -1314,6 +1314,7 @@ std::optional<AndroidUiSnapshot> TrySnapshotAndroidUi(dexvm::Interpreter& vm, co
             result.draw_dirty += root->draw_dirty;
         }
     }
+    SnapshotAndroidPresentationDiagnostics(context, result);
     return result;
 }
 

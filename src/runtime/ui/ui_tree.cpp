@@ -43,6 +43,12 @@ bool ContainsPoint(const Rect rect, const std::int32_t x, const std::int32_t y) 
 
 }  // namespace
 
+void UiTree::RecordModification() {
+    if (modification_count_ == std::numeric_limits<std::uint64_t>::max())
+        throw std::overflow_error("UI tree modification counter exhausted");
+    ++modification_count_;
+}
+
 void UiTree::SetProjectionTarget(const UiProjectionTarget& target) {
     if (geometry_owner_ != UiGeometryOwner::ExternalProjection || target.root != root_ ||
         target.window_generation == 0 || target.metrics.width < 0 || target.metrics.height < 0)
@@ -56,6 +62,7 @@ void UiTree::SetProjectionTarget(const UiProjectionTarget& target) {
                (target.metrics.width != old.metrics.width || target.metrics.height != old.metrics.height)))))
             throw std::runtime_error("Stale UI projection target");
     }
+    RecordModification();
     projection_target_ = target;
 }
 
@@ -72,6 +79,8 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
             throw std::runtime_error("Window visibility requires matching complete geometry");
         UiTree candidate(*previous);
         candidate.published_projection_.reset();
+        candidate.modification_count_ = modification_count_;
+        candidate.RecordModification();
         candidate.Require(root_).window_visible = *projection.window_visible;
         candidate.Require(root_).draw_dirty = true;
         candidate.projection_epoch_ = projection.epoch;
@@ -80,6 +89,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
         // and pending Java layout work for the normal owner barrier.
         Require(root_).window_visible = *projection.window_visible;
         Require(root_).draw_dirty = true;
+        modification_count_ = candidate.modification_count_;
         projection_epoch_ = projection.epoch;
         std::atomic_store(&published_projection_, std::move(snapshot));
         return;
@@ -168,6 +178,7 @@ void UiTree::CommitProjection(const UiGeometryProjection& projection) {
     candidate.projection_epoch_ = projection.epoch;
     candidate.projection_snapshot_ = true;
     auto snapshot = std::make_shared<const UiTree>(candidate);
+    modification_count_ = candidate.modification_count_;
     nodes_.swap(candidate.nodes_);
     id_index_.swap(candidate.id_index_);
     focused_ = candidate.focused_;
@@ -193,6 +204,7 @@ UiNodeId UiTree::CreateNode(const UiClass kind) {
     if (nodes_.size() >= kMaxNodes || next_node_ == std::numeric_limits<std::uint32_t>::max()) {
         throw std::runtime_error("UI tree node limit exceeded");
     }
+    RecordModification();
     const UiNodeId id{(static_cast<std::uint64_t>(generation_) << 32U) | ++next_node_};
     auto [created, inserted] = nodes_.emplace(id, UiNode{.id = id, .kind = kind});
     static_cast<void>(inserted);
@@ -245,6 +257,7 @@ void UiTree::Attach(const UiNodeId parent, const UiNodeId child, const std::opti
     if (position > parent_node.children.size()) {
         throw std::runtime_error("UI tree child index is out of range");
     }
+    RecordModification();
     child_node.parent = parent;
     parent_node.children.insert(parent_node.children.begin() + static_cast<std::ptrdiff_t>(position), child);
     if (IsAttached(parent)) RebuildIndex();
@@ -265,6 +278,7 @@ void UiTree::Detach(const UiNodeId child, const DetachLayoutPolicy layout) {
     if (found == siblings.end()) {
         throw std::runtime_error("UI tree hierarchy is inconsistent");
     }
+    RecordModification();
     const bool was_attached = IsAttached(child);
     if (focused_.has_value() && HasFocus(child)) focused_.reset();
     siblings.erase(found);
@@ -280,6 +294,7 @@ bool UiTree::BringChildToFront(const UiNodeId parent, const UiNodeId child) {
     static_cast<void>(Require(child));
     const auto found = std::find(siblings.begin(), siblings.end(), child);
     if (found == siblings.end()) return false;
+    RecordModification();
     std::rotate(found, found + 1, siblings.end());
     if (IsAttached(parent)) RebuildIndex();
     MarkAncestors(parent, false, true);
@@ -291,6 +306,7 @@ void UiTree::DestroySubtree(const UiNodeId node) {
         throw std::runtime_error("UI content root cannot be destroyed");
     }
     static_cast<void>(Require(node));
+    RecordModification();
     Detach(node);
     std::vector<UiNodeId> pending{node};
     while (!pending.empty()) {
@@ -306,6 +322,7 @@ void UiTree::RetireProjectedIdentity(const UiNodeId id) {
     if (geometry_owner_ != UiGeometryOwner::ExternalProjection || id == root_)
         throw std::runtime_error("Invalid projected identity retirement");
     if (!nodes_.contains(id)) return;
+    RecordModification();
     // Only the construction cache is retired. The last immutable epoch stays
     // valid until a later complete Java projection replaces it.
     for (auto& [_, node] : nodes_) {
@@ -320,6 +337,7 @@ void UiTree::Reset() {
     if (generation_ == std::numeric_limits<std::uint32_t>::max()) {
         throw std::runtime_error("UI tree generation limit exceeded");
     }
+    RecordModification();
     projection_target_.reset();
     projection_epoch_ = 0;
     std::atomic_store(&published_projection_, std::shared_ptr<const UiTree>{});
@@ -333,6 +351,7 @@ void UiTree::Reset() {
 
 UiNode* UiTree::Get(const UiNodeId id) {
     const auto found = nodes_.find(id);
+    if (found != nodes_.end()) RecordModification();
     return found == nodes_.end() ? nullptr : &found->second;
 }
 
@@ -352,6 +371,7 @@ void UiTree::SetAndroidId(const UiNodeId node, const std::int32_t android_id) {
     auto& target = Require(node);
     if (target.android_id == android_id) return;
     const bool attached = IsAttached(node);
+    RecordModification();
     target.android_id = android_id;
     if (attached) RebuildIndex();
 }
@@ -362,6 +382,7 @@ void UiTree::SetVisibility(const UiNodeId node, const Visibility visibility) {
     auto& target = Require(node);
     if (target.visibility == visibility) return;
     const bool changes_layout = target.visibility == Visibility::Gone || visibility == Visibility::Gone;
+    RecordModification();
     target.visibility = visibility;
     if (visibility != Visibility::Visible && focused_.has_value() && HasFocus(node)) {
         focused_.reset();
@@ -372,6 +393,7 @@ void UiTree::SetVisibility(const UiNodeId node, const Visibility visibility) {
 void UiTree::SetEnabled(const UiNodeId node, const bool enabled) {
     auto& target = Require(node);
     if (target.enabled == enabled) return;
+    RecordModification();
     target.enabled = enabled;
     if (!enabled && focused_.has_value() && HasFocus(node)) focused_.reset();
     MarkAncestors(node, false, true);
@@ -380,16 +402,18 @@ void UiTree::SetEnabled(const UiNodeId node, const bool enabled) {
 void UiTree::SetWindowVisible(const UiNodeId node, const bool visible) {
     auto& target = Require(node);
     if (target.window_visible == visible) return;
+    RecordModification();
     target.window_visible = visible;
     if (!visible && focused_.has_value() && HasFocus(node)) focused_.reset();
     MarkAncestors(node, false, true);
 }
 
 void UiTree::SetFallbackFont(std::shared_ptr<const UiFallbackFont> font) {
+    RecordModification();
     fallback_font_ = std::move(font);
     for (auto& [_, node] : nodes_)
         node.fallback_font = fallback_font_;
-    MarkLayoutDirty(root_);
+    MarkAncestors(root_, true, true);
 }
 
 bool UiTree::IsVisible(const UiNodeId node) const {
@@ -429,24 +453,41 @@ bool UiTree::RequestFocus(const UiNodeId node, const bool touch_mode) {
             return false;
         }
     }
+    if (focused_ != node) RecordModification();
     focused_ = node;
     return true;
 }
 
 void UiTree::ClearFocus(const UiNodeId node) {
     static_cast<void>(Require(node));
-    if (focused_ == node) focused_.reset();
+    if (focused_ == node) {
+        RecordModification();
+        focused_.reset();
+    }
 }
 
 void UiTree::SetClickable(const UiNodeId node, const bool clickable) {
-    Require(node).clickable = clickable;
+    auto& target = Require(node);
+    if (target.clickable == clickable) return;
+    RecordModification();
+    target.clickable = clickable;
+}
+
+void UiTree::SetPressed(const UiNodeId node, const bool pressed) {
+    auto& target = Require(node);
+    if (target.pressed == pressed) return;
+    RecordModification();
+    target.pressed = pressed;
+    MarkAncestors(node, false, true);
 }
 
 void UiTree::MarkLayoutDirty(const UiNodeId node) {
+    RecordModification();
     MarkAncestors(node, true, true);
 }
 
 void UiTree::MarkDrawDirty(const UiNodeId node) {
+    RecordModification();
     MarkAncestors(node, false, true);
 }
 

@@ -2092,11 +2092,6 @@ ui::UiTree& DialogTree(DexVmAndroidContext&, const Modal& modal) {
     return *modal.host_tree;
 }
 
-const ui::UiTree& DialogTree(const DexVmAndroidContext&, const Modal& modal) {
-    if (!modal.host_tree) throw std::logic_error("Dialog requires an isolated HostLayout tree");
-    return *modal.host_tree;
-}
-
 bool DialogOwnerVisible(const DexVmAndroidContext& context, const dexvm::VmObjectRef owner) {
     if (context.process_stopping) return false;
     if (context.activity.IsValid() && context.activity != owner) return false;
@@ -2106,15 +2101,18 @@ bool DialogOwnerVisible(const DexVmAndroidContext& context, const dexvm::VmObjec
     return found != context.activity_stack.end() && found->visible;
 }
 
+bool DialogVisible(const DexVmAndroidContext& context, const Modal& modal) {
+    return modal.visible && DialogOwnerVisible(context, modal.owner);
+}
+
 Modal* TopDialog(DexVmAndroidContext& context) {
     for (auto item = context.dialog_presentations.rbegin(); item != context.dialog_presentations.rend(); ++item)
-        if (item->visible && DialogOwnerVisible(context, item->owner) &&
-            DialogTree(context, *item).IsVisible(item->root))
-            return &*item;
+        if (DialogVisible(context, *item)) return &*item;
     return nullptr;
 }
 
 void FocusModal(DexVmAndroidContext& context, const Modal& modal) {
+    if (!DialogVisible(context, modal)) return;
     auto& tree = DialogTree(context, modal);
     const auto focused = tree.Focused();
     for (const auto node : modal.buttons)
@@ -2127,6 +2125,10 @@ void FocusModal(DexVmAndroidContext& context, const Modal& modal) {
 }
 
 void ClearModalCapture(DexVmAndroidContext& context) {
+    if (context.dialog_pressed_button && context.dialog_capture)
+        for (const auto& modal : context.dialog_presentations)
+            if (modal.partition == context.dialog_capture->partition)
+                modal.host_tree->SetPressed(*context.dialog_pressed_button, false);
     context.dialog_pointer_tail |= context.dialog_pointer_active;
     context.dialog_key_tails.insert(context.dialog_keys_down.begin(), context.dialog_keys_down.end());
     context.dialog_capture.reset();
@@ -2152,12 +2154,58 @@ AcquireAndroidPresentation(const DexVmAndroidContext& context) {
     return std::atomic_load(&context.presentation_snapshot);
 }
 
+void SnapshotAndroidPresentationDiagnostics(const DexVmAndroidContext& context, AndroidUiSnapshot& result) {
+    constexpr std::array names{"none",
+                               "input_lease",
+                               "missing_guest",
+                               "pending_metrics_without_snapshot",
+                               "active_window",
+                               "application_window_metrics",
+                               "background_window_metrics",
+                               "producer_pixels",
+                               "modal_tree",
+                               "modal_viewport",
+                               "modal_density",
+                               "pending_metrics_without_modal",
+                               "pending_metrics_unchanged"};
+    static_assert(names.size() == static_cast<std::size_t>(DexVmAndroidContext::PresentationRejectReason::count));
+    result.presentation_last_reject = names.at(static_cast<std::size_t>(context.presentation_last_reject));
+    for (std::size_t i = 1; i < names.size(); ++i)
+        result.presentation_reject_counts.emplace(names[i], context.presentation_reject_counts[i]);
+    const auto snapshot = AcquireAndroidPresentation(context);
+    for (const auto& modal : context.dialog_presentations) {
+        AndroidUiSnapshot::Modal row;
+        row.partition = modal.partition;
+        row.revision = modal.revision;
+        row.visible = modal.visible;
+        row.owner_visible = DialogOwnerVisible(context, modal.owner);
+        row.live_root_visible = modal.host_tree && modal.host_tree->IsVisible(modal.root);
+        if (modal.host_tree) row.live_modifications = modal.host_tree->ModificationCount();
+        if (snapshot)
+            for (const auto& frozen : snapshot->modal_stack)
+                if (frozen.partition == modal.partition) {
+                    row.frozen_root_visible = frozen.tree->IsVisible(modal.root);
+                    row.frozen_modifications = frozen.tree->ModificationCount();
+                }
+        result.modals.push_back(row);
+    }
+}
+
 bool PublishAndroidPresentation(DexVmAndroidContext& context) {
     if (context.ui_java_owner_thread != std::this_thread::get_id())
         throw std::logic_error("Presentation publication requires Java owner thread");
-    if (context.input_presentation) return false;
+    using Reason = DexVmAndroidContext::PresentationRejectReason;
+    const auto reject = [&](Reason reason) {
+        context.presentation_last_reject = reason;
+        auto& count = context.presentation_reject_counts[static_cast<std::size_t>(reason)];
+        if (count == std::numeric_limits<std::uint64_t>::max())
+            throw std::overflow_error("Presentation rejection counter exhausted");
+        ++count;
+        return false;
+    };
+    if (context.input_presentation) return reject(Reason::input_lease);
     auto guest = context.ui_tree.PublishedProjection();
-    if (!guest || !guest->ProjectionTarget()) return false;
+    if (!guest || !guest->ProjectionTarget()) return reject(Reason::missing_guest);
     const auto previous = AcquireAndroidPresentation(context);
     auto viewport = ui::Size{guest->ProjectionTarget()->metrics.width, guest->ProjectionTarget()->metrics.height};
     const bool pending_metrics =
@@ -2165,7 +2213,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
         context.ui_layout_metrics != ui::Size{static_cast<std::int32_t>(context.surface_width),
                                               static_cast<std::int32_t>(context.surface_height)};
     if (pending_metrics) {
-        if (!previous) return false;
+        if (!previous) return reject(Reason::pending_metrics_without_snapshot);
         // Visibility/retirement can still remove old partitions at the old complete metrics.
         // Newly built geometry must wait for the matching guest epoch.
         guest = previous->main_window;
@@ -2176,7 +2224,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
                                      [&](const auto& record) { return record.object == context.activity; });
     if (active != context.activity_stack.end() &&
         (!active->window_root || !guest->Get(*active->window_root) || !guest->IsAttached(*active->window_root)))
-        return false;
+        return reject(Reason::active_window);
     const auto& target = *guest->ProjectionTarget();
     using Snapshot = DexVmAndroidContext::PresentationSnapshot;
     auto next = std::make_shared<Snapshot>();
@@ -2192,14 +2240,14 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             if (!window->projection || !window->projection->ProjectionTarget() ||
                 (window->projection->ProjectionTarget()->metrics.width != target.metrics.width ||
                  window->projection->ProjectionTarget()->metrics.height != target.metrics.height))
-                return false;
+                return reject(Reason::application_window_metrics);
             next->application_windows.push_back(
                 {window->root, window->owner, window->generation, window->flags, window->format, window->projection});
             next->guest_window_epoch_refs.push_back(window->projection);
         }
         return true;
     };
-    if (!add_windows(context.activity)) return false;
+    if (!add_windows(context.activity)) return false;  // add_windows records the reason.
     next->guest_window_epoch_refs.push_back(guest);
     // Explicit main_window serves Activity input; attached windows precede it in
     // descending Z order. Composition visits all partitions in reverse order.
@@ -2209,7 +2257,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
         if (!partition || !partition->ProjectionTarget() ||
             partition->ProjectionTarget()->metrics.width != target.metrics.width ||
             partition->ProjectionTarget()->metrics.height != target.metrics.height)
-            return false;
+            return reject(Reason::background_window_metrics);
         if (!add_windows(record->object)) return false;
         next->guest_window_epoch_refs.push_back(partition);
     }
@@ -2268,21 +2316,24 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
             static_cast<void>(object);
             const auto* node = partition->Get(id);
             if (node && partition->IsAttached(id) && node->surface_has_frame != next->video_frames.contains(id))
-                return false;
+                return reject(Reason::producer_pixels);
         }
     }
     next->metrics_revision = target.metrics_revision;
     next->viewport = viewport;
     for (const auto& modal : context.dialog_presentations) {
-        if (!modal.visible || !DialogOwnerVisible(context, modal.owner)) continue;
-        if (!modal.host_tree || modal.viewport != viewport || (!pending_metrics && modal.density != context.ui_density))
-            return false;
+        if (!DialogVisible(context, modal)) continue;
+        if (!modal.host_tree) return reject(Reason::modal_tree);
+        if (modal.viewport != viewport) return reject(Reason::modal_viewport);
+        if (!pending_metrics && modal.density != context.ui_density) return reject(Reason::modal_density);
         // Published host trees never share mutable focus/visibility with builders.
         std::shared_ptr<const ui::UiTree> frozen;
         if (previous)
             for (const auto& old : previous->modal_stack)
-                if (old.partition == modal.partition && old.revision == modal.revision) frozen = old.tree;
-        if (!frozen && pending_metrics) return false;
+                if (old.partition == modal.partition && old.revision == modal.revision &&
+                    old.tree->ModificationCount() == modal.host_tree->ModificationCount())
+                    frozen = old.tree;
+        if (!frozen && pending_metrics) return reject(Reason::pending_metrics_without_modal);
         if (!frozen) frozen = std::make_shared<const ui::UiTree>(*modal.host_tree);
         next->modal_stack.push_back({modal.dialog, modal.owner, modal.partition, modal.generation, modal.revision,
                                      std::move(frozen), modal.buttons});
@@ -2312,7 +2363,7 @@ bool PublishAndroidPresentation(DexVmAndroidContext& context) {
                        return a.root == b.root && a.generation == b.generation && a.flags == b.flags &&
                               a.format == b.format;
                    }))
-        return !pending_metrics;
+        return pending_metrics ? reject(Reason::pending_metrics_unchanged) : true;
     const auto max = std::numeric_limits<std::uint64_t>::max();
     if ((previous && previous->presentation_epoch == max) || (!same_modals && context.dialog_host_revision == max))
         throw std::overflow_error("Presentation sequence exhausted");
@@ -2343,6 +2394,8 @@ void ResizeAndroidDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context) 
                 throw std::runtime_error("Dialog viewport is unavailable or too small");
             modal.host_tree = std::make_shared<ui::UiTree>(*modal.host_tree);
             auto& tree = *modal.host_tree;
+            for (const auto button : modal.buttons)
+                if (button) tree.SetPressed(*button, false);
             auto* panel = tree.Get(modal.panel);
             panel->layout.width.px = std::min(static_cast<std::int32_t>(480 * density), viewport.width - 32);
             const auto padding = static_cast<std::int32_t>(12 * density);
@@ -2382,9 +2435,7 @@ void ResizeAndroidDialogs(dexvm::Interpreter& vm, DexVmAndroidContext& context) 
 
 bool HasAndroidModalDialog(const DexVmAndroidContext& context) {
     for (const auto& modal : context.dialog_presentations)
-        if (modal.visible && DialogOwnerVisible(context, modal.owner) &&
-            DialogTree(context, modal).IsVisible(modal.root))
-            return true;
+        if (DialogVisible(context, modal)) return true;
     return false;
 }
 
@@ -2422,9 +2473,6 @@ void SynchronizeAndroidDialogs(DexVmAndroidContext& context) {
         if (alive) return false;
         return true;
     });
-    for (const auto& modal : context.dialog_presentations)
-        DialogTree(context, modal)
-            .SetWindowVisible(modal.root, modal.visible && DialogOwnerVisible(context, modal.owner));
     const auto* top = TopDialog(context);
     if (top) FocusModal(context, *top);
     if (context.dialog_capture && (!top || top->partition != context.dialog_capture->partition ||
@@ -2450,11 +2498,6 @@ void SetAndroidDialogVisible(DexVmAndroidContext& context, const dx::VmObjectRef
     for (auto& modal : context.dialog_presentations)
         if (modal.dialog == dialog) {
             modal.visible = visible;
-            DialogTree(context, modal)
-                .SetWindowVisible(modal.root, visible && DialogOwnerVisible(context, modal.owner));
-            if (!visible) {
-                context.dialog_pressed_button.reset();
-            }
         }
     if (const auto* top = TopDialog(context)) FocusModal(context, *top);
     ClearModalCapture(context);
@@ -2653,8 +2696,6 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         } else
             context->dialog_presentations.push_back(modal);
         context->dialog_host_revision = modal.revision;
-        context->dialog_pressed_button.reset();
-        tree.SetWindowVisible(root, DialogOwnerVisible(*context, owner));
         FocusModal(*context, modal);
         ClearModalCapture(*context);
         PublishAndroidPresentation(*context);
@@ -2760,8 +2801,10 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
             for (const auto button : top->buttons)
                 if (button && contains(*button)) {
                     context.dialog_pressed_button = button;
-                    if (auto* modal = TopDialog(context))
+                    if (auto* modal = TopDialog(context)) {
+                        modal->host_tree->SetPressed(*button, true);
                         static_cast<void>(modal->host_tree->RequestFocus(*button, true));
+                    }
                     break;
                 }
         } else if (action == 1) {
@@ -2782,6 +2825,7 @@ bool DispatchAndroidDialogInput(dexvm::Interpreter& vm, DexVmAndroidContext& con
                     }
             }
         } else if (action == 2 && context.dialog_pressed_button && !contains(*context.dialog_pressed_button)) {
+            if (auto* modal = TopDialog(context)) modal->host_tree->SetPressed(*context.dialog_pressed_button, false);
             context.dialog_pressed_button.reset();
         } else if (action == 3) {
             ClearModalCapture(context);

@@ -120,8 +120,8 @@ note = "LUI-14、DVM-149：include/merge 展开与 override，深度/环检测�
 
 [runtime.ui_dialog_presentation]
 status = "partial"
-test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-345; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
-note = "DVM-246/304/305：JavaTraversal独立HostLayout modal与guest投影引用经共同快照原子发布，render/input同源，三按钮/Back/焦点/owner退役与有界resize；失败保留旧快照，纯modal不遍历guest。DVM-345：活跃Surface逐holder记录created以来真实queue；全部未出帧或像素已冻结时，modal变化独立出帧，未出帧开孔黑底。已queue无保留像素不覆盖producer；停绘可消除弹窗。Windows/title gate未验。主题/items/custom content/完整Window未支持。"
+test = "tests/dexvm/dialog_host_layout_tests.cpp#DVM-305; tests/dexvm/widget_window_dialog_tests.cpp#DVM-246; tests/dexvm/widget_window_dialog_tests.cpp#DVM-346; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-246; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-339; tests/runtime/activity_window_lifecycle_tests.cpp#DVM-345; tests/runtime/ui_renderer_tests.cpp#DVM-246; tools.android_payload_current"
+note = "DVM-346：独立HostLayout modal经共同快照原子发布，render/input同源；可见性仅由Dialog与owner推导，冻结复用匹配partition/revision/树修改计数，焦点/按下态进入新epoch；拒绝原因及计数可查Dashboard。三按钮/Back/owner退役/有界resize；失败保留旧快照。DVM-345逐holder记录真实queue，全部未出帧或像素已冻结时modal独立出帧，已queue无像素不覆盖producer。主题/items/custom content/完整Window、Windows/title gate未验。"
 
 [dexvm.drawable_resource]
 status = "partial"

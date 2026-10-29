@@ -304,7 +304,11 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             entry.clip_to_padding = (flags & 2) != 0;
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
-        if (prepare_render && visibility != ui::Visibility::Gone) {
+        if (prepare_render) {
+            auto& target = *context.ui_tree.Get(*node);
+            target.background_color.reset();
+            target.background_resource_id = 0;
+            target.background_alpha = 1.0F;
             const auto background = fields.GetRef((*context.view_java_input_fields)[1]);
             const auto skin = context.ui_drawables.find(background.Value());
             if (skin != context.ui_drawables.end() && skin->second.rom_skin) {
@@ -323,10 +327,23 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                 // Freeze the selected immutable leaf into the existing bitmap plane.
                 // Java remains the owner of selector state and all View geometry.
                 context.ui_bitmaps[leaf->second.resource_id] = leaf->second.leaf_pixels;
-                auto& target = *context.ui_tree.Get(*node);
-                target.background_color.reset();
                 target.background_resource_id = leaf->second.resource_id;
                 target.background_alpha = state.alpha / 255.0F;
+            } else if (background.IsValid()) {
+                const auto type = vm.Model().ObjectClass(background);
+                if (vm.Linker().IsAssignable(vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"),
+                                             type)) {
+                    const auto color = static_cast<std::uint32_t>(
+                        android_intrinsics::CallAndroidMethod(vm, background, "getColor", "()I").AsInt());
+                    if ((color >> 24U) != 0) target.background_color = color;
+                } else {
+                    if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_background_draw", 0);
+                    if (auto* logger = vm.Log())
+                        logger->Write(core::LogLevel::warn, "ui.background.unreviewed",
+                                      "unreviewed View background Drawable", {},
+                                      {{"drawable", vm.Linker().Class(type).descriptor}},
+                                      {.mode = core::RateLimitMode::first_and_count});
+                }
             }
         }
         if (prepare_render && (kind == ui::UiClass::ImageView || kind == ui::UiClass::ImageButton))

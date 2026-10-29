@@ -29,6 +29,7 @@ Asphalt 5（pilot title）删除 profile 全部 `native_call` 与 `[[java.class]
 
 | WU | 一句话目标 | 状态 |
 | --- | --- | --- |
+| [DVM-352](DVM-352.md) | ROM View 背景设色、失效回调与 ColorDrawable 投影 | 部分实现；ROM 闭包及颜色格式待修正 |
 | [DVM-351](DVM-351.md) | ROM AbsoluteLayout 与参数、JavaTraversal 准入 | 定向/基础场景通过；原APK被沙盒重复路径阻塞 |
 | [DVM-343](DVM-343.md) | 离线拓扑的 guest 网络接口视图 | 有界验证完成 |
 | [DVM-342](DVM-342.md) | AOSP ROM 基线统一与 Locale 原版 Java | 已实现；全量既有失败及门禁缺口见任务单 |

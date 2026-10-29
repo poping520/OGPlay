@@ -36,26 +36,23 @@ constexpr std::string_view kTemporarySuffix = ".__ogplay_tmp__";
     std::string folded;
     folded.reserve(path.size());
     for (const auto character : path) {
-        folded.push_back(character >= 'A' && character <= 'Z'
-                             ? static_cast<char>(character - 'A' + 'a')
-                             : character);
+        folded.push_back(character >= 'A' && character <= 'Z' ? static_cast<char>(character - 'A' + 'a') : character);
     }
     return folded;
 }
 
 template <typename Integer>
-[[nodiscard]] Integer ParseMetaInteger(const std::string& text,
-                                       const std::string_view key) {
+[[nodiscard]] Integer ParseMetaInteger(const std::string& text, const std::string_view key) {
     Integer value{};
     const auto* first = text.data();
     const auto* last = first + text.size();
     const auto parsed = std::from_chars(first, last, value);
     if (parsed.ec != std::errc{} || parsed.ptr != last) {
-        throw VfsError(kEinval, "sandbox meta.toml has a malformed " +
-                                    std::string(key));
+        throw VfsError(kEinval, "sandbox meta.toml has a malformed " + std::string(key));
     }
     return value;
 }
+
 constexpr std::string_view kMetaName = "meta.toml";
 constexpr int kCurrentMetaSchema = 3;
 // Host limits vary; this keeps the escaped form comfortably inside the
@@ -64,40 +61,35 @@ constexpr std::size_t kMaximumSegmentLength = 200;
 
 [[nodiscard]] bool IsReservedDeviceName(const std::string_view segment) {
     static constexpr std::array<std::string_view, 22> kReserved{
-        "con",  "prn",  "aux",  "nul",  "com1", "com2", "com3", "com4",
-        "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3",
-        "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
+        "con",  "prn",  "aux",  "nul",  "com1", "com2", "com3", "com4", "com5", "com6", "com7",
+        "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"};
     const auto dot = segment.find('.');
     const auto stem = segment.substr(0, dot);
     std::string folded;
     folded.reserve(stem.size());
     for (const auto character : stem) {
-        folded.push_back(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(character))));
+        folded.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
     }
-    return std::find(kReserved.begin(), kReserved.end(), folded) !=
-           kReserved.end();
+    return std::find(kReserved.begin(), kReserved.end(), folded) != kReserved.end();
 }
 
 [[nodiscard]] bool NeedsEscape(const char character) {
     const auto value = static_cast<unsigned char>(character);
     if (value < 0x20 || value == 0x7f) return true;
     switch (character) {
-        case '<':
-        case '>':
-        case ':':
-        case '"':
-        case '|':
-        case '?':
-        case '*':
-        case '\\':
-        case '/':
-        // '%' is the escape marker itself, so it must always be escaped for
-        // the translation to be reversible.
-        case '%':
-            return true;
-        default:
-            return false;
+    case '<':
+    case '>':
+    case ':':
+    case '"':
+    case '|':
+    case '?':
+    case '*':
+    case '\\':
+    case '/':
+    // '%' is the escape marker itself, so it must always be escaped for
+    // the translation to be reversible.
+    case '%': return true;
+    default: return false;
     }
 }
 
@@ -119,16 +111,13 @@ void AppendEscaped(std::string& out, const char character) {
 [[nodiscard]] bool IsAndroidId(const std::string_view value) {
     if (value.size() != 16U) return false;
     return std::ranges::all_of(value, [](const char character) {
-        return (character >= '0' && character <= '9') ||
-               (character >= 'a' && character <= 'f');
+        return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
     });
 }
 
-[[nodiscard]] std::string AndroidIdFromEntropy(
-    const std::span<const std::byte> entropy) {
+[[nodiscard]] std::string AndroidIdFromEntropy(const std::span<const std::byte> entropy) {
     if (entropy.size() != 8U) {
-        throw VfsError(kEinval,
-                       "ANDROID_ID entropy must contain exactly 8 bytes");
+        throw VfsError(kEinval, "ANDROID_ID entropy must contain exactly 8 bytes");
     }
     static constexpr std::string_view kHex = "0123456789abcdef";
     std::string value;
@@ -141,8 +130,7 @@ void AppendEscaped(std::string& out, const char character) {
     return value;
 }
 
-[[nodiscard]] std::vector<std::string> SplitGuestPath(
-    const std::string_view path) {
+[[nodiscard]] std::vector<std::string> SplitGuestPath(const std::string_view path) {
     if (path.empty() || path.front() != '/') {
         throw VfsError(kEnotdir, "sandbox path must be absolute");
     }
@@ -150,8 +138,7 @@ void AppendEscaped(std::string& out, const char character) {
     std::size_t cursor = 1;
     while (cursor <= path.size()) {
         const auto end = path.find('/', cursor);
-        const auto count =
-            (end == std::string_view::npos ? path.size() : end) - cursor;
+        const auto count = (end == std::string_view::npos ? path.size() : end) - cursor;
         const auto segment = path.substr(cursor, count);
         if (segment == "..") {
             throw VfsError(kEinval, "sandbox path traversal is forbidden");
@@ -168,8 +155,7 @@ void AppendEscaped(std::string& out, const char character) {
     return segments;
 }
 
-[[nodiscard]] std::string JoinGuestPath(
-    const std::span<const std::string> segments) {
+[[nodiscard]] std::string JoinGuestPath(const std::span<const std::string> segments) {
     std::string path;
     for (const auto& segment : segments) {
         path.push_back('/');
@@ -180,8 +166,7 @@ void AppendEscaped(std::string& out, const char character) {
 
 void RequireNoReservedSuffix(const std::string_view path) {
     if (path.ends_with(kTombstoneSuffix) || path.ends_with(kTemporarySuffix)) {
-        throw VfsError(kEinval,
-                       "sandbox reserved suffix is not a usable guest path");
+        throw VfsError(kEinval, "sandbox reserved suffix is not a usable guest path");
     }
 }
 
@@ -209,6 +194,9 @@ public:
     std::string android_id;
     // Guest path -> entry, ordered so enumeration is deterministic.
     std::map<std::string, SandboxEntry, std::less<>> entries;
+    // Deleted directories whose host directory still holds child tombstones;
+    // only used while loading.
+    std::vector<std::string> tombstone_containers;
 
     [[nodiscard]] bool IsSemanticRoot(const std::string_view canonical_path) const {
         return std::ranges::find(semantic_roots, canonical_path) != semantic_roots.end();
@@ -221,23 +209,25 @@ public:
         const auto matches = [&](const std::initializer_list<std::string_view> prefix) {
             if (segments.size() < prefix.size()) return false;
             return std::equal(prefix.begin(), prefix.end(), segments.begin(),
-                [](const auto expected, const auto& actual) {
-                    return FoldGuestPath(expected) == FoldGuestPath(actual);
-                });
+                              [](const auto expected, const auto& actual) {
+                                  return FoldGuestPath(expected) == FoldGuestPath(actual);
+                              });
         };
         std::size_t root_size{};
-        if (matches({"data", "data", package})) root_size = 3;
-        else if (matches({"sdcard", "android", "data", package}) ||
-                 matches({"sdcard", "android", "obb", package})) root_size = 4;
-        else if (matches({"sdcard"})) root_size = 1;
-        else throw VfsError(kEinval, "sandbox path is outside its semantic roots");
+        if (matches({"data", "data", package}))
+            root_size = 3;
+        else if (matches({"sdcard", "android", "data", package}) || matches({"sdcard", "android", "obb", package}))
+            root_size = 4;
+        else if (matches({"sdcard"}))
+            root_size = 1;
+        else
+            throw VfsError(kEinval, "sandbox path is outside its semantic roots");
         for (std::size_t i = 0; i < root_size; ++i)
             segments[i] = FoldGuestPath(segments[i]);
         return JoinGuestPath(segments);
     }
 
-    [[nodiscard]] std::filesystem::path HostPathFor(
-        const std::string_view guest_path, const bool tombstone) const {
+    [[nodiscard]] std::filesystem::path HostPathFor(const std::string_view guest_path, const bool tombstone) const {
         const auto segments = SplitGuestPath(CanonicalGuestPath(guest_path));
         std::filesystem::path host;
         std::size_t begin{};
@@ -270,30 +260,22 @@ public:
                 name.append(kTombstoneSuffix);
             }
             if (name.size() > kMaximumSegmentLength) {
-                throw VfsError(kEnametoolong,
-                               "sandbox host name is too long: " +
-                                   std::string(guest_path));
+                throw VfsError(kEnametoolong, "sandbox host name is too long: " + std::string(guest_path));
             }
             host /= name;
         }
         return host;
     }
 
-    void RequireQuota(const std::uint64_t added_bytes,
-                      const std::uint64_t removed_bytes,
-                      const bool adds_entry) const {
+    void RequireQuota(const std::uint64_t added_bytes, const std::uint64_t removed_bytes, const bool adds_entry) const {
         const auto projected = used_bytes - removed_bytes + added_bytes;
         if (projected > config.byte_quota) {
-            throw VfsError(kEnospc,
-                           "sandbox byte quota exhausted for " + package);
+            throw VfsError(kEnospc, "sandbox byte quota exhausted for " + package);
         }
         const auto active_entries = static_cast<std::uint64_t>(
-            std::count_if(entries.begin(), entries.end(), [](const auto& item) {
-                return !item.second.is_tombstone;
-            }));
+            std::count_if(entries.begin(), entries.end(), [](const auto& item) { return !item.second.is_tombstone; }));
         if (adds_entry && active_entries >= config.maximum_files) {
-            throw VfsError(kEnospc,
-                           "sandbox file count limit reached for " + package);
+            throw VfsError(kEnospc, "sandbox file count limit reached for " + package);
         }
     }
 
@@ -305,8 +287,7 @@ public:
         }
     }
 
-    void LoadRoot(const std::string_view root_name,
-                  const std::string_view guest_prefix,
+    void LoadRoot(const std::string_view root_name, const std::string_view guest_prefix,
                   std::map<std::string, std::string, std::less<>>& folded_paths) {
         overlay = directory / root_name;
         std::error_code error;
@@ -319,9 +300,7 @@ public:
             const auto status = iterator->symlink_status(error);
             if (error) throw VfsError(kEio, "cannot inspect a sandbox entry");
             if (std::filesystem::is_symlink(status)) {
-                throw VfsError(kEinval,
-                               "sandbox contains a symbolic link: " +
-                                   host.string());
+                throw VfsError(kEinval, "sandbox contains a symbolic link: " + host.string());
             }
             const auto relative = host.lexically_relative(overlay);
             if (relative.empty() || relative.is_absolute()) {
@@ -332,10 +311,8 @@ public:
                 segments.push_back(part.string());
             }
             auto& last = segments.back();
-            const bool temporary =
-                std::string_view(last).ends_with(kTemporarySuffix);
-            const bool tombstone =
-                std::string_view(last).ends_with(kTombstoneSuffix);
+            const bool temporary = std::string_view(last).ends_with(kTemporarySuffix);
+            const bool tombstone = std::string_view(last).ends_with(kTombstoneSuffix);
             if (temporary) {
                 temporaries.push_back(host);
                 iterator.increment(error);
@@ -354,11 +331,9 @@ public:
             guest_path = CanonicalGuestPath(guest_path);
             const auto folded = FoldGuestPath(guest_path);
             if (const auto conflict = folded_paths.find(folded);
-                conflict != folded_paths.end() &&
-                conflict->second != guest_path) {
-                throw VfsError(kEexist,
-                               "sandbox has an ASCII case-folding conflict: " +
-                                   conflict->second + " and " + guest_path);
+                conflict != folded_paths.end() && conflict->second != guest_path) {
+                throw VfsError(kEexist, "sandbox has an ASCII case-folding conflict: " + conflict->second + " and " +
+                                            guest_path);
             }
             folded_paths.insert_or_assign(folded, guest_path);
             SandboxEntry entry;
@@ -366,24 +341,31 @@ public:
             entry.is_directory = std::filesystem::is_directory(status);
             entry.is_tombstone = tombstone;
             if (entry.is_directory && tombstone) {
-                throw VfsError(kEinval,
-                               "sandbox tombstone must not be a directory");
+                throw VfsError(kEinval, "sandbox tombstone must not be a directory");
             }
             if (!entry.is_directory && !std::filesystem::is_regular_file(status)) {
-                throw VfsError(kEinval,
-                               "sandbox contains a special file: " +
-                                   host.string());
+                throw VfsError(kEinval, "sandbox contains a special file: " + host.string());
             }
             if (!entry.is_directory && !tombstone) {
                 entry.size = HostFileSize(host);
                 used_bytes += entry.size;
             }
-            if (!entries.emplace(guest_path, std::move(entry)).second) {
-                // Two host names decoding to one guest path can only happen
-                // if somebody edited the sandbox by hand.
-                throw VfsError(kEexist,
-                               "sandbox has a duplicate guest path: " +
-                                   guest_path);
+            const auto [existing, inserted] = entries.emplace(guest_path, entry);
+            if (!inserted) {
+                // A deleted directory keeps its host directory while it still
+                // holds child tombstones: tombstones are exact-path, so they
+                // must survive to keep base-layer children hidden. The
+                // directory tombstone wins; Load() checks the subtree.
+                if (existing->second.is_directory != entry.is_directory &&
+                    existing->second.is_tombstone != entry.is_tombstone) {
+                    existing->second.is_directory = false;
+                    existing->second.is_tombstone = true;
+                    tombstone_containers.push_back(guest_path);
+                } else {
+                    // Any other pair of host names decoding to one guest path
+                    // can only happen if somebody edited the sandbox by hand.
+                    throw VfsError(kEexist, "sandbox has a duplicate guest path: " + guest_path);
+                }
             }
             iterator.increment(error);
             if (error) throw VfsError(kEio, "cannot walk the sandbox");
@@ -402,21 +384,44 @@ public:
         LoadRoot("external", "/sdcard/android/data/" + package, folded_paths);
         LoadRoot("obb", "/sdcard/android/obb/" + package, folded_paths);
         LoadRoot("sdcard", "/sdcard", folded_paths);
+        for (const auto& container : tombstone_containers) {
+            if (const auto live = FindLiveDescendant(container)) {
+                throw VfsError(kEexist, "sandbox deleted directory still holds a live "
+                                        "entry: " +
+                                            *live);
+            }
+        }
+        tombstone_containers.clear();
+    }
+
+    [[nodiscard]] bool HasDescendant(const std::string_view path) const {
+        auto prefix = std::string(path);
+        prefix.push_back('/');
+        const auto it = entries.lower_bound(prefix);
+        return it != entries.end() && it->first.starts_with(prefix);
+    }
+
+    // First non-tombstone entry below a directory path, if any.
+    [[nodiscard]] std::optional<std::string> FindLiveDescendant(const std::string_view path) const {
+        auto prefix = std::string(path);
+        prefix.push_back('/');
+        for (auto it = entries.lower_bound(prefix); it != entries.end() && it->first.starts_with(prefix); ++it) {
+            if (!it->second.is_tombstone) return it->first;
+        }
+        return std::nullopt;
     }
 
     void LoadMeta() {
         const auto path = directory / kMetaName;
         std::error_code error;
-        if (!std::filesystem::exists(path, error))
-            throw VfsError(kEinval, "existing sandbox has no meta.toml");
+        if (!std::filesystem::exists(path, error)) throw VfsError(kEinval, "existing sandbox has no meta.toml");
         std::ifstream input(path);
         if (!input) throw VfsError(kEio, "cannot read the sandbox meta.toml");
         std::string line;
         std::uint32_t schema = 0;
         std::string stored_package;
         while (std::getline(input, line)) {
-            while (!line.empty() &&
-                   (line.back() == '\r' || line.back() == ' ')) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
                 line.pop_back();
             }
             if (line.empty() || line.front() == '#') continue;
@@ -427,14 +432,15 @@ public:
             auto key = line.substr(0, equals);
             auto value = line.substr(equals + 1);
             const auto trim = [](std::string& text) {
-                while (!text.empty() && text.front() == ' ') text.erase(0, 1);
-                while (!text.empty() && text.back() == ' ') text.pop_back();
+                while (!text.empty() && text.front() == ' ')
+                    text.erase(0, 1);
+                while (!text.empty() && text.back() == ' ')
+                    text.pop_back();
             };
             trim(key);
             trim(value);
             const auto unquote = [](std::string text) {
-                if (text.size() >= 2 && text.front() == '"' &&
-                    text.back() == '"') {
+                if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
                     return text.substr(1, text.size() - 2);
                 }
                 return text;
@@ -450,23 +456,19 @@ public:
             } else {
                 // No guessing at migrations: an unknown key means this
                 // directory was written by something else.
-                throw VfsError(kEinval,
-                               "sandbox meta.toml has an unknown key: " + key);
+                throw VfsError(kEinval, "sandbox meta.toml has an unknown key: " + key);
             }
         }
         if (schema != kCurrentMetaSchema) {
-            throw VfsError(kEinval,
-                           "sandbox meta.toml schema is not supported; back "
-                           "up and clear " + directory.string());
+            throw VfsError(kEinval, "sandbox meta.toml schema is not supported; back "
+                                    "up and clear " +
+                                        directory.string());
         }
         if (stored_package != package) {
-            throw VfsError(kEinval,
-                           "sandbox meta.toml belongs to " + stored_package +
-                               ", not " + package);
+            throw VfsError(kEinval, "sandbox meta.toml belongs to " + stored_package + ", not " + package);
         }
         if (!android_id.empty() && !IsAndroidId(android_id)) {
-            throw VfsError(kEinval,
-                           "sandbox meta.toml has a malformed android_id");
+            throw VfsError(kEinval, "sandbox meta.toml has a malformed android_id");
         }
     }
 
@@ -491,8 +493,7 @@ public:
             if (!output) {
                 throw VfsError(kEio, "cannot write the sandbox meta.toml");
             }
-            output.write(text.data(),
-                         static_cast<std::streamsize>(text.size()));
+            output.write(text.data(), static_cast<std::streamsize>(text.size()));
             if (!output) {
                 throw VfsError(kEio, "cannot write the sandbox meta.toml");
             }
@@ -506,55 +507,46 @@ public:
     }
 };
 
-SandboxStore::SandboxStore(std::unique_ptr<Impl> impl) noexcept
-    : impl_(std::move(impl)) {}
+SandboxStore::SandboxStore(std::unique_ptr<Impl> impl) noexcept : impl_(std::move(impl)) {}
+
 SandboxStore::~SandboxStore() = default;
 
-std::unique_ptr<SandboxStore> SandboxStore::Open(
-    const std::filesystem::path& root, const std::string_view installation_id,
-    const std::string_view package,
-    const SandboxConfig config) {
+std::unique_ptr<SandboxStore> SandboxStore::Open(const std::filesystem::path& root,
+                                                 const std::string_view installation_id, const std::string_view package,
+                                                 const SandboxConfig config) {
     return OpenInternal(root, installation_id, package, config, false);
 }
 
-std::unique_ptr<SandboxStore> SandboxStore::Create(
-    const std::filesystem::path& root, const std::string_view installation_id,
-    const std::string_view package,
-    const SandboxConfig config) {
+std::unique_ptr<SandboxStore> SandboxStore::Create(const std::filesystem::path& root,
+                                                   const std::string_view installation_id,
+                                                   const std::string_view package, const SandboxConfig config) {
     return OpenInternal(root, installation_id, package, config, true);
 }
 
-std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
-    const std::filesystem::path& root, const std::string_view installation_id,
-    const std::string_view package, const SandboxConfig config,
-    const bool require_new) {
+std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(const std::filesystem::path& root,
+                                                         const std::string_view installation_id,
+                                                         const std::string_view package, const SandboxConfig config,
+                                                         const bool require_new) {
     if (package.empty()) {
         throw VfsError(kEinval, "sandbox package name is empty");
     }
     for (const auto character : package) {
         const auto value = static_cast<unsigned char>(character);
-        const bool allowed = (value >= 'a' && value <= 'z') ||
-                             (value >= 'A' && value <= 'Z') ||
-                             (value >= '0' && value <= '9') ||
-                             character == '.' || character == '_';
+        const bool allowed = (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+                             (value >= '0' && value <= '9') || character == '.' || character == '_';
         if (!allowed) {
-            throw VfsError(kEinval,
-                           "sandbox package name has an unusable character");
+            throw VfsError(kEinval, "sandbox package name has an unusable character");
         }
     }
     if (package.front() == '.' || package.ends_with('.')) {
         throw VfsError(kEinval, "sandbox package name is malformed");
     }
     const auto valid_id = installation_id == package ||
-        (installation_id.starts_with(package) &&
-         installation_id.size() > package.size() + 1U &&
-         installation_id[package.size()] == '-' &&
-         installation_id[package.size() + 1U] >= '2' &&
-         installation_id[package.size() + 1U] <= '9' &&
-         std::ranges::all_of(installation_id.substr(package.size() + 1U),
-                             [](const char value) {
-                                 return value >= '0' && value <= '9';
-                             }));
+                          (installation_id.starts_with(package) && installation_id.size() > package.size() + 1U &&
+                           installation_id[package.size()] == '-' && installation_id[package.size() + 1U] >= '2' &&
+                           installation_id[package.size() + 1U] <= '9' &&
+                           std::ranges::all_of(installation_id.substr(package.size() + 1U),
+                                               [](const char value) { return value >= '0' && value <= '9'; }));
     if (!valid_id) {
         throw VfsError(kEinval, "sandbox installation id does not match package");
     }
@@ -566,9 +558,8 @@ std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
     impl->installation_id = std::string(installation_id);
     impl->package = std::string(package);
     const auto folded_package = FoldGuestPath(package);
-    impl->semantic_roots = {"/data/data/" + folded_package,
-        "/sdcard/android/data/" + folded_package,
-        "/sdcard/android/obb/" + folded_package, "/sdcard"};
+    impl->semantic_roots = {"/data/data/" + folded_package, "/sdcard/android/data/" + folded_package,
+                            "/sdcard/android/obb/" + folded_package, "/sdcard"};
     impl->config = config;
     std::error_code error;
     const auto existed = std::filesystem::exists(impl->directory, error);
@@ -598,10 +589,9 @@ std::unique_ptr<SandboxStore> SandboxStore::OpenInternal(
         }
     } else {
         impl->LoadMeta();
-        static constexpr std::array<std::string_view, 5> kAllowed{
-            "meta.toml", "internal", "external", "obb", "sdcard"};
-        for (std::filesystem::directory_iterator it(impl->directory, error), end;
-             !error && it != end; it.increment(error)) {
+        static constexpr std::array<std::string_view, 5> kAllowed{"meta.toml", "internal", "external", "obb", "sdcard"};
+        for (std::filesystem::directory_iterator it(impl->directory, error), end; !error && it != end;
+             it.increment(error)) {
             const auto name = it->path().filename().string();
             if (std::find(kAllowed.begin(), kAllowed.end(), name) == kAllowed.end()) {
                 throw VfsError(kEinval, "sandbox contains an unknown or legacy root: " + name);
@@ -637,10 +627,8 @@ std::string SandboxStore::EscapeSegment(const std::string_view segment) {
     for (std::size_t index = 0; index < segment.size(); ++index) {
         const auto character = segment[index];
         const bool trailing = index + 1 == segment.size();
-        const bool trailing_problem =
-            trailing && (character == '.' || character == ' ');
-        if (NeedsEscape(character) || trailing_problem ||
-            (reserved && index == 0)) {
+        const bool trailing_problem = trailing && (character == '.' || character == ' ');
+        if (NeedsEscape(character) || trailing_problem || (reserved && index == 0)) {
             AppendEscaped(escaped, character);
         } else {
             escaped.push_back(character);
@@ -674,45 +662,37 @@ std::string SandboxStore::UnescapeSegment(const std::string_view segment) {
 std::vector<SandboxEntry> SandboxStore::Entries() const {
     std::vector<SandboxEntry> snapshot;
     snapshot.reserve(impl_->entries.size());
-    for (const auto& [_, entry] : impl_->entries) snapshot.push_back(entry);
+    for (const auto& [_, entry] : impl_->entries)
+        snapshot.push_back(entry);
     return snapshot;
 }
 
-std::vector<std::byte> SandboxStore::ReadFile(
-    const std::string_view raw_guest_path) const {
+std::vector<std::byte> SandboxStore::ReadFile(const std::string_view raw_guest_path) const {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     const auto found = impl_->entries.find(guest_path);
-    if (found == impl_->entries.end() || found->second.is_directory ||
-        found->second.is_tombstone) {
+    if (found == impl_->entries.end() || found->second.is_directory || found->second.is_tombstone) {
         throw VfsError(kEnoent, "sandbox file not found");
     }
     const auto host = impl_->HostPathFor(guest_path, false);
     std::ifstream input(host, std::ios::binary);
     if (!input) throw VfsError(kEio, "cannot open a sandbox file");
-    std::vector<std::byte> contents(
-        static_cast<std::size_t>(found->second.size));
+    std::vector<std::byte> contents(static_cast<std::size_t>(found->second.size));
     if (!contents.empty()) {
-        input.read(reinterpret_cast<char*>(contents.data()),
-                   static_cast<std::streamsize>(contents.size()));
+        input.read(reinterpret_cast<char*>(contents.data()), static_cast<std::streamsize>(contents.size()));
     }
     if (!input) throw VfsError(kEio, "a sandbox file was truncated");
     return contents;
 }
 
-void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path,
-                                   const std::span<const std::byte> contents) {
+void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path, const std::span<const std::byte> contents) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_directory) {
         throw VfsError(kEinval, "sandbox path is a directory");
     }
-    const auto removed = existing == impl_->entries.end()
-                             ? 0
-                             : existing->second.size;
-    impl_->RequireQuota(contents.size(), removed,
-                        existing == impl_->entries.end() ||
-                            existing->second.is_tombstone);
+    const auto removed = existing == impl_->entries.end() ? 0 : existing->second.size;
+    impl_->RequireQuota(contents.size(), removed, existing == impl_->entries.end() || existing->second.is_tombstone);
 
     const auto target = impl_->HostPathFor(guest_path, false);
     impl_->CreateParentDirectories(target);
@@ -722,8 +702,7 @@ void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path,
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
         if (!output) throw VfsError(kEio, "cannot write a sandbox file");
         if (!contents.empty()) {
-            output.write(reinterpret_cast<const char*>(contents.data()),
-                         static_cast<std::streamsize>(contents.size()));
+            output.write(reinterpret_cast<const char*>(contents.data()), static_cast<std::streamsize>(contents.size()));
         }
         if (!output) throw VfsError(kEio, "cannot write a sandbox file");
     }
@@ -747,12 +726,17 @@ void SandboxStore::WriteFileAtomic(const std::string_view raw_guest_path,
 
 void SandboxStore::WriteTombstone(const std::string_view raw_guest_path) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
-    if (impl_->IsSemanticRoot(guest_path))
-        throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
+    if (impl_->IsSemanticRoot(guest_path)) throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
     RequireNoReservedSuffix(guest_path);
     const auto existing = impl_->entries.find(guest_path);
     if (existing != impl_->entries.end() && existing->second.is_tombstone) {
         return;
+    }
+    // A base-layer directory has no entry of its own but may still hold
+    // child tombstones, so look at the subtree rather than the entry kind.
+    const bool has_children = impl_->HasDescendant(guest_path);
+    if (has_children && impl_->FindLiveDescendant(guest_path)) {
+        throw VfsError(kEnotempty, "sandbox directory is not empty");
     }
     // Deletion must remain possible at the file limit. Tombstones do not
     // consume the active-entry quota.
@@ -764,9 +748,18 @@ void SandboxStore::WriteTombstone(const std::string_view raw_guest_path) {
         if (!output) throw VfsError(kEio, "cannot write a sandbox tombstone");
     }
     std::error_code error;
-    // The overlay file, if any, goes away with the same call: the guest
-    // asked for this path to be gone.
-    std::filesystem::remove(impl_->HostPathFor(guest_path, false), error);
+    // The overlay node, if any, goes away with the same call: the guest
+    // asked for this path to be gone. A directory that still holds child
+    // tombstones stays as their container; they keep base-layer children
+    // hidden and Load() reads the pair as one deleted directory.
+    if (!has_children) {
+        std::filesystem::remove(impl_->HostPathFor(guest_path, false), error);
+        if (error) {
+            std::error_code rollback;
+            std::filesystem::remove(target, rollback);
+            throw VfsError(kEio, "cannot remove a sandbox path");
+        }
+    }
     if (existing != impl_->entries.end()) {
         impl_->used_bytes -= existing->second.size;
     }
@@ -791,9 +784,7 @@ void SandboxStore::CreateDirectory(const std::string_view raw_guest_path) {
         if (existing->second.is_directory) return;
         throw VfsError(kEexist, "sandbox path already holds a file");
     }
-    impl_->RequireQuota(0, 0,
-                        existing == impl_->entries.end() ||
-                            existing->second.is_tombstone);
+    impl_->RequireQuota(0, 0, existing == impl_->entries.end() || existing->second.is_tombstone);
     const auto target = impl_->HostPathFor(guest_path, false);
     std::error_code error;
     std::filesystem::create_directories(target, error);
@@ -808,8 +799,7 @@ void SandboxStore::CreateDirectory(const std::string_view raw_guest_path) {
 
 void SandboxStore::Remove(const std::string_view raw_guest_path) {
     const auto guest_path = impl_->CanonicalGuestPath(raw_guest_path);
-    if (impl_->IsSemanticRoot(guest_path))
-        throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
+    if (impl_->IsSemanticRoot(guest_path)) throw VfsError(kEbusy, "sandbox semantic root cannot be removed");
     const auto found = impl_->entries.find(guest_path);
     if (found == impl_->entries.end()) {
         throw VfsError(kEnoent, "sandbox path not found");
@@ -818,13 +808,11 @@ void SandboxStore::Remove(const std::string_view raw_guest_path) {
         auto prefix = std::string(guest_path);
         prefix.push_back('/');
         const auto child = impl_->entries.upper_bound(guest_path);
-        if (child != impl_->entries.end() &&
-            child->first.starts_with(prefix)) {
+        if (child != impl_->entries.end() && child->first.starts_with(prefix)) {
             throw VfsError(kEnotempty, "sandbox directory is not empty");
         }
     }
-    const auto host =
-        impl_->HostPathFor(guest_path, found->second.is_tombstone);
+    const auto host = impl_->HostPathFor(guest_path, found->second.is_tombstone);
     std::error_code error;
     std::filesystem::remove(host, error);
     if (error) throw VfsError(kEio, "cannot remove a sandbox path");
@@ -832,28 +820,46 @@ void SandboxStore::Remove(const std::string_view raw_guest_path) {
     impl_->entries.erase(found);
 }
 
-std::uint64_t SandboxStore::UsedBytes() const { return impl_->used_bytes; }
+std::uint64_t SandboxStore::UsedBytes() const {
+    return impl_->used_bytes;
+}
+
 std::span<const std::string> SandboxStore::SemanticRoots() const {
     return impl_->semantic_roots;
 }
+
 std::span<const std::string> SandboxStore::RecreatedSemanticRoots() const {
     return impl_->recreated_semantic_roots;
 }
+
 std::uint64_t SandboxStore::FileCount() const {
     return static_cast<std::uint64_t>(impl_->entries.size());
 }
+
 std::uint64_t SandboxStore::QuotaBytes() const {
     return impl_->config.byte_quota;
 }
-std::uint64_t SandboxStore::EntryQuota() const { return impl_->config.maximum_files; }
-std::uint64_t SandboxStore::MaximumEncodedNameBytes() { return kMaximumSegmentLength; }
-const std::string& SandboxStore::Package() const { return impl_->package; }
+
+std::uint64_t SandboxStore::EntryQuota() const {
+    return impl_->config.maximum_files;
+}
+
+std::uint64_t SandboxStore::MaximumEncodedNameBytes() {
+    return kMaximumSegmentLength;
+}
+
+const std::string& SandboxStore::Package() const {
+    return impl_->package;
+}
+
 const std::string& SandboxStore::InstallationId() const {
     return impl_->installation_id;
 }
+
 const std::filesystem::path& SandboxStore::Directory() const {
     return impl_->directory;
 }
+
 std::uint64_t SandboxStore::TemporaryFilesRemoved() const {
     return impl_->temporaries_removed;
 }
@@ -864,8 +870,7 @@ void SandboxStore::RecordVersionCode(const std::uint32_t version_code) {
     impl_->WriteMeta();
 }
 
-std::string SandboxStore::EnsureAndroidId(
-    const std::span<const std::byte> entropy) {
+std::string SandboxStore::EnsureAndroidId(const std::span<const std::byte> entropy) {
     if (!impl_->android_id.empty()) return impl_->android_id;
     impl_->android_id = AndroidIdFromEntropy(entropy);
     impl_->WriteMeta();

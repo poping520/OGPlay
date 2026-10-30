@@ -1382,7 +1382,10 @@ namespace {
 }
 
 void FlushPendingViewActions(dx::Interpreter& vm, DexVmAndroidContext& context) {
-    if (context.ui_tree.Get(context.ui_tree.Root())->children.empty()) return;
+    const bool attached = std::ranges::any_of(context.ui_window_schedules, [&](const auto& entry) {
+        return ManagedViewWindowRoot(vm, context, entry.first).IsValid();
+    });
+    if (!attached) return;
 
     const auto shared = std::shared_ptr<DexVmAndroidContext>(&context, [](DexVmAndroidContext*) {});
     const auto looper = EnsureMainLooper(vm, shared);
@@ -1408,8 +1411,7 @@ bool PostViewRunnable(dx::IntrinsicContext& call, const Context& context, const 
     if (!runnable.IsValid()) {
         throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "runnable == null"};
     }
-    const auto node = FindViewUiNode(*context, view.Value());
-    if (node.has_value() && context->ui_tree.IsAttached(*node)) {
+    if (ManagedViewWindowRoot(call.vm, *context, view).IsValid()) {
         const auto looper = EnsureMainLooper(call, context);
         const auto handler = EnsureViewRootHandler(call.vm, context);
         return EnqueueHandlerWork(context, looper, handler, runnable, dx::VmObjectRef{}, 0, true,

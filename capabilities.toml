@@ -1670,8 +1670,8 @@ note = "ROM API19 Choreographer 队列/单例/帧回调；DisplayEventReceiver �
 
 [dexvm.android_scheduler]
 status = "complete"
-test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
-note = "DVM-268：Looper/Handler/Message 与有界 AsyncTask 共用 session scheduler；原版 CountDownTimer 经 Handler，Timer/TimerTask 经 Thread/monitor，共用统一 Clock，状态归 BootDex，无任务侧表。Clock 起于确定性 60 秒 boot-age；主 Looper 在 lifecycle 安全点泵送，View.post/runOnUiThread 复用主队列。不模拟 suspend、Binder MessageQueue 与 AsyncTask 并行策略。"
+test = "tests/dexvm/scheduler_tests.cpp; tests/dexvm/scheduler_tests.cpp#DVM-135; tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_monitor_tests.cpp; tests/session/lifecycle_tests.cpp"
+note = "DVM-357：Looper/Handler/Message/有界 AsyncTask 共用调度器与 Clock（60秒 boot-age）。CountDownTimer、Timer/TimerTask 状态归 Java。主队列在 lifecycle 安全点泵送。View.post/postDelayed 沿 Java 父链判附着，复用单一主 Handler；detached 按 guest 线程暂存、转入起算。Runnable 为 GC 根，shutdown 清空；runOnUiThread 共用主队列。无 suspend、Binder 队列、AsyncTask 并行策略。"
 
 [dexvm.android_value_services]
 status = "complete"

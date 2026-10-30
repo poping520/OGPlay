@@ -123,6 +123,9 @@ dx::VmObjectRef OpenStream(dx::IntrinsicContext& call, const Context& context, s
 [[nodiscard]] bool EnqueueHandlerWork(const Context& context, dx::VmObjectRef looper, dx::VmObjectRef handler,
                                       dx::VmObjectRef payload, dx::VmObjectRef token, std::int32_t what, bool runnable,
                                       std::int64_t deadline_millis, bool front = false);
+// Resolve attachment from Java parents and a live managed window generation.
+[[nodiscard]] dx::VmObjectRef ManagedViewWindowRoot(dx::Interpreter& vm, DexVmAndroidContext& context,
+                                                    dx::VmObjectRef view);
 [[nodiscard]] bool PostViewRunnable(dx::IntrinsicContext& call, const Context& context, dx::VmObjectRef view,
                                     dx::VmObjectRef runnable, std::int64_t delay_millis);
 

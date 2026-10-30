@@ -791,6 +791,20 @@
       "outputs": "void only when Drawable or mAttachInfo is null",
       "state_owner": "Java fields; no callback or scheduler shadow state",
       "failure_boundary": "non-null AttachInfo with non-null Drawable explicitly fails; no Choreographer emulation"
+    },
+    "post(Ljava/lang/Runnable;)Z": {
+      "reason": "DVM-357: restore API19 View posting through the existing managed-window scheduler without AttachInfo or ViewRootImpl.",
+      "inputs": "Receiver, non-null Runnable, optional delay; Java mParent chain and live managed window generation; unified Clock uptime.",
+      "outputs": "Boolean enqueue result; asynchronous Runnable execution on main Looper; null Runnable throws NPE, negative delay clamps to zero.",
+      "state_owner": "Java owns hierarchy; session scheduler owns the single ViewRoot Handler and scheduled GC roots. Detached actions are guest-thread pending roots, delay starts at safe-point transfer.",
+      "failure_boundary": "No AttachInfo/ViewRootImpl/RunQueue construction, extra queues, threads or Timer. Shutdown rejects and clears work; removeCallbacks/postOnAnimation/postInvalidateDelayed remain unsupported."
+    },
+    "postDelayed(Ljava/lang/Runnable;J)Z": {
+      "reason": "DVM-357: restore API19 View posting through the existing managed-window scheduler without AttachInfo or ViewRootImpl.",
+      "inputs": "Receiver, non-null Runnable, optional delay; Java mParent chain and live managed window generation; unified Clock uptime.",
+      "outputs": "Boolean enqueue result; asynchronous Runnable execution on main Looper; null Runnable throws NPE, negative delay clamps to zero.",
+      "state_owner": "Java owns hierarchy; session scheduler owns the single ViewRoot Handler and scheduled GC roots. Detached actions are guest-thread pending roots, delay starts at safe-point transfer.",
+      "failure_boundary": "No AttachInfo/ViewRootImpl/RunQueue construction, extra queues, threads or Timer. Shutdown rejects and clears work; removeCallbacks/postOnAnimation/postInvalidateDelayed remain unsupported."
     }
   },
   "surface": "tools/bootdex/window-background.surface.json.gz",

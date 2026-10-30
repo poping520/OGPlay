@@ -71,7 +71,6 @@ Decl Declare_android_view_InputQueue(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Matrix(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Paint(const Context& context);
 [[nodiscard]] std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context);
-[[nodiscard]] Decl Declare_android_graphics_RectF(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_PointF(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Path(const Context& context);
 [[nodiscard]] Decl Declare_android_graphics_Path_Direction(const Context& context);

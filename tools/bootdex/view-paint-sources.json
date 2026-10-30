@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
+      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -52,7 +52,15 @@
           "signature": "ascent()F",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "breakText(Ljava/lang/CharSequence;IIZF[F)I",
@@ -82,7 +90,15 @@
           "signature": "descent()F",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "finalize()V",
@@ -151,13 +167,21 @@
           "signature": "getFontMetrics()Landroid/graphics/Paint$FontMetrics;",
           "flags": 1,
           "body_sha256": "ecf9f36a9da4e029d7668eb0dd4a32611287af61fcbb9eac87ef5fd6c1e90d53",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getFontMetrics(Landroid/graphics/Paint$FontMetrics;)F",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "getFontMetricsInt()Landroid/graphics/Paint$FontMetricsInt;",
@@ -247,13 +271,27 @@
           "signature": "getTextBounds(Ljava/lang/String;IILandroid/graphics/Rect;)V",
           "flags": 1,
           "body_sha256": "ccce8c94659722b99e0b71568a9010ce8e9abb45741f9a6cf4b8a3c96a64ed01",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "getTextBounds([CIILandroid/graphics/Rect;)V",
           "flags": 1,
           "body_sha256": "651c24b5e4e6837d0a1f8495b0e16b43f52a28a202b9c5011ad396f9518d2f96",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "getTextGlyphs(Ljava/lang/String;IIIII[C)I",
@@ -1330,7 +1368,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
+      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -1348,9 +1386,9 @@
           "review": {
             "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
             "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
-            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
-            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
-            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels; DVM-362 constructs stable Java mTextPaint and empty mFilters, updates current text/hint color fields",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields; PaintMeasureState size and Java Paint.mTypeface own text style; UiNode stores its projection",
+            "failure_boundary": "Editor/IME, link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1361,9 +1399,9 @@
           "review": {
             "reason": "DVM-327 ADR-0161 ROM stateful text colors and existing bounded text owner",
             "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values",
-            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels",
-            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields",
-            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels; DVM-362 constructs stable Java mTextPaint and empty mFilters, updates current text/hint color fields",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields; PaintMeasureState size and Java Paint.mTypeface own text style; UiNode stores its projection",
+            "failure_boundary": "Editor/IME, link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1374,9 +1412,9 @@
           "review": {
             "reason": "DVM-328 ADR-0160/0161 typed same-ROM references and ROM constructor identity reads",
             "inputs": "ROM ColorStateList identity and original View drawable states; same-ROM theme/XML values; real TypedArray.getResourceId for handle/cursor/suggestion layout",
-            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels; original five Java resource ID fields, no target content load",
-            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields; resource IDs live only in original Java integer fields",
-            "failure_boundary": "Editor/IME, hint or link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
+            "outputs": "retained Java mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor; real ordered color selection into existing leaf pixels; original five Java resource ID fields, no target content load; DVM-362 constructs stable Java mTextPaint and empty mFilters, updates current text/hint color fields",
+            "state_owner": "ROM ColorStateList and original Java fields own color identity/state; UiNode only derived selected RGBA; existing GC traces Java fields; resource IDs live only in original Java integer fields; PaintMeasureState size and Java Paint.mTypeface own text style; UiNode stores its projection",
+            "failure_boundary": "Editor/IME, link layout, unsupported text/compound/skin requests still fail with ADR-0147; no full TextView stack"
           }
         },
         {
@@ -1792,20 +1830,13 @@
           "signature": "getCurrentHintTextColor()I",
           "flags": 17,
           "body_sha256": "921dc0fed2e456c5b3f5be7a8198bf2be74e4a8ec41b0969a177c861c5193052",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getCurrentTextColor()I",
           "flags": 17,
           "body_sha256": "f1acab87da2642687cf4ecd60f522d85cb2a239f67628c28ac60a6153d615532",
-          "source": "overlay",
-          "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
-          }
+          "source": "rom"
         },
         {
           "signature": "getCustomSelectionActionModeCallback()Landroid/view/ActionMode$Callback;",
@@ -1883,7 +1914,7 @@
           "signature": "getFilters()[Landroid/text/InputFilter;",
           "flags": 1,
           "body_sha256": "d554e7085fb9b7d0d0178ddccff4df4cdb6c5d0b67d0c193c748758ae3ef27b9",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getFocusedRect(Landroid/graphics/Rect;)V",
@@ -1920,7 +1951,7 @@
           "signature": "getHint()Ljava/lang/CharSequence;",
           "flags": 1,
           "body_sha256": "9c9aa19383f8e59b80e68e65ac2d196e8fb3e9b338c03acc4cb3228b3a0542ea",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getHintLayout()Landroid/text/Layout;",
@@ -1980,7 +2011,14 @@
           "signature": "getInputType()I",
           "flags": 1,
           "body_sha256": "eae5c031e71f3bd4b0bec7e13d9cf62e681b411c67c9f7133c00e43ae0b6dc26",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "getInterestingRect(Landroid/graphics/Rect;I)V",
@@ -2161,7 +2199,7 @@
           "signature": "getPaint()Landroid/text/TextPaint;",
           "flags": 1,
           "body_sha256": "536946d35aa9f44767361230ac4e77b3781e8da2132139d0bc995cf4af4ba9c1",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getPaintFlags()I",
@@ -2357,11 +2395,11 @@
           "body_sha256": "5fdd7faa6e2401344f7b6bd242c6c7f6a5bcae4f5fe24654f1ffd40adf10071d",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -2424,11 +2462,11 @@
           "body_sha256": "cab160698b3ce7d5c3e20c65fd565b34b95027a4380fac77655dc6b6f8e0d85e",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -3226,7 +3264,14 @@
           "signature": "setFilters([Landroid/text/InputFilter;)V",
           "flags": 1,
           "body_sha256": "7159a83aa909de3f82c80479ac4002f3915cefbc9b25679430cf221d841a6ed3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "setFrame(IIII)Z",
@@ -3276,13 +3321,20 @@
           "signature": "setHint(I)V",
           "flags": 17,
           "body_sha256": "e4efca416dadf933f9df14125332a85cc94dc929f9a0f1016ebb8e4b2185b899",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setHint(Ljava/lang/CharSequence;)V",
           "flags": 17,
           "body_sha256": "3012b7ab01d0262c5723337f8277803c737046ef4a1f6bcc250ffd83999e8594",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "setHintTextColor(I)V",
@@ -3337,7 +3389,14 @@
           "signature": "setInputType(I)V",
           "flags": 1,
           "body_sha256": "24d5b1fd321b5d8002c9bb49e3d800caee23c82fabe93cea54bb38f16295a8a2",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-362 bounded text state and fixed glyph measurements",
+            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
+            "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
+            "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
+          }
         },
         {
           "signature": "setInputType(IZ)V",
@@ -3622,10 +3681,10 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
+            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities; Java mFilters in array order with ROM EMPTY_SPANNED destination",
+            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate; actual virtual InputFilter.filter calls with non-null replacement passed onward",
             "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "failure_boundary": "no Layout/Editor, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
           }
         },
         {
@@ -3635,8 +3694,8 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
-            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
+            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE; Java mFilters in array order with ROM EMPTY_SPANNED destination",
+            "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate; actual virtual InputFilter.filter calls with non-null replacement passed onward",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
           }
@@ -3721,11 +3780,11 @@
           "body_sha256": "01ea5d4ef77073022c3426667373c8c705aafb60f7b0a3eaccbc50c3bd880b26",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -3734,11 +3793,11 @@
           "body_sha256": "3a42a1a02f090583d5bd7306df66300439a5d066b1c407f10e54c4f7d1dbdf14",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -3753,11 +3812,11 @@
           "body_sha256": "69ba4c111dcf2f2e900b37fd2a998f59907c062864a92dc24d5172107c87b67b",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -3766,11 +3825,11 @@
           "body_sha256": "1c19d6432f4370d2f77e7839de4793a030b2eff6e8b567516018677f5adb20c8",
           "source": "overlay",
           "review": {
-            "reason": "ADR-0161 / DVM-295 bounded TextView leaf measurement and owner tick raster",
-            "inputs": "host plain text/style and actual Java compound padding/suggested minimum plus API19 MeasureSpecs; resource bitmap identities",
-            "outputs": "pure fixed-cell line plan, size and baseline; true virtual setMeasuredDimension; setter requestLayout/invalidate",
-            "state_owner": "host input owned by View adapter; Java geometry untouched; complete immutable projection epoch owns style and line plan",
-            "failure_boundary": "no Layout/Editor/TextPaint, RTL, spans, shaping, stateful colors or unknown glyphs; unsupported members retain ADR-0147 failure; callback adapters execute actual View superclass protocol"
+            "reason": "DVM-362 TextView writes through its stable TextPaint and reads the same state",
+            "inputs": "constructed TextView; admitted Typeface style 0..3 and finite 1..128px size; dimension units px/dp/sp",
+            "outputs": "Paint state and synchronized UiNode size/style projection; setters clear measurement cache and requestLayout/invalidate; getters read Paint",
+            "state_owner": "Java mTextPaint and Paint.mTypeface; per-Paint size state; UiNode is a projection with no independent mutation path",
+            "failure_boundary": "unsupported size/typeface/glyph fails and ledger; direct owned Paint size/typeface/flags mutation rejected; no shaping, Layout or Editor"
           }
         },
         {
@@ -4090,13 +4149,13 @@
         {
           "signature": "mCurHintTextColor:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
           "signature": "mCurTextColor:I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4156,7 +4215,7 @@
         {
           "signature": "mFilters:[Landroid/text/InputFilter;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4198,7 +4257,7 @@
         {
           "signature": "mHint:Ljava/lang/CharSequence;",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4474,7 +4533,7 @@
         {
           "signature": "mTextPaint:Landroid/text/TextPaint;",
           "flags": 18,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -4521,7 +4580,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
+      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4805,7 +4864,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "9358bb57d3b4a9070590c592a5c9846c8b6d29984b1af910753c959c507611d9",
+      "surface_sha256": "1a668a547152c395d2002120bbc61a63da89a720ee4d57d1ab9fa3b6fc79b58f",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

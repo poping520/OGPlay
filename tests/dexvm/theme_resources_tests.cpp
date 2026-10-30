@@ -1261,10 +1261,26 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 CHECK(pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
                 CHECK(f.ledger.Unimplemented().empty());
             }
+            const auto gaps_before = f.ledger.Unimplemented();
             const auto result =
                 f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
                             {VmValue::Int(0x7f030001 + i), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
             INFO(i, result.exception_message, f.vm.DescribeThrowableCauses(result.exception));
+            if (i == 3) {
+                REQUIRE_FALSE(result.exception.IsValid());
+                const auto bg = f.On(result.value.ref, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+                REQUIRE(bg.IsValid());
+                CHECK(f.linker.Class(f.model.ObjectClass(bg)).descriptor ==
+                      "Landroid/graphics/drawable/StateListDrawable;");
+                CHECK(f.context->ui_drawables.at(bg.Value()).resource_id == 0x01080004);
+                const auto gaps_after = f.ledger.Unimplemented();
+                REQUIRE(gaps_after.size() == gaps_before.size());
+                for (std::size_t n = 0; n < gaps_before.size(); ++n) {
+                    CHECK(gaps_after[n].id == gaps_before[n].id);
+                    CHECK(gaps_after[n].count == gaps_before[n].count);
+                }
+                continue;
+            }
             if (i >= 2) {
                 REQUIRE(result.exception.IsValid());
                 const auto wrapper = f.vm.DiagnosticThrowableCause(result.exception);
@@ -1273,9 +1289,6 @@ TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve 
                 REQUIRE(target.IsValid());
                 CHECK(f.linker.Class(f.model.ObjectClass(target)).descriptor ==
                       "Ljava/lang/UnsupportedOperationException;");
-                if (i == 3)
-                    CHECK(f.vm.StringUtf8(f.vm.ThrowableMessage(target)) ==
-                          "requested drawable attribute is unsupported");
                 REQUIRE_FALSE(f.ledger.Unimplemented().empty());
                 if (i == 2) {
                     // Admission/loading succeeds; the pre-existing getOpacity boundary
@@ -1929,7 +1942,7 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
         CHECK(base.text_style == 2);
         CHECK(base.gravity == 0x33);
         CHECK(base.max_lines == 0x7fffffff);
-        const auto face = f.context->view_adapter_references.at(plain.Value()).text_typeface;
+        const auto face = f.On(plain, "getTypeface", "()Landroid/graphics/Typeface;").ref;
         REQUIRE(face.IsValid());
         CHECK(f.On(face, "getStyle", "()I").AsInt() == 2);
         f.context->arsc.entries.push_back({});
@@ -2002,7 +2015,7 @@ TEST_CASE("DVM-294 TextView constructors consume real theme and XML on both back
             REQUIRE(field != cls.own_instance_fields.end());
             CHECK(f.linker.Field(*field).is_unimplemented);
         }
-        CHECK(f.OnOutcome(view, "getPaint", "()Landroid/text/TextPaint;").exception.IsValid());
+        CHECK(f.On(view, "getPaint", "()Landroid/text/TextPaint;").ref.IsValid());
         CHECK(f.model.StringValue(f.On(view, "getText", "()Ljava/lang/CharSequence;").ref) == u"Plain text");
         f.On(view, "onMeasure", "(II)V", {VmValue::Int(0), VmValue::Int(0)});
         CHECK(f.On(view, "getMeasuredWidth", "()I").AsInt() > 0);

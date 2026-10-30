@@ -260,8 +260,7 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
             CHECK(f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == before);
         }
         for (const auto& [name, sig] :
-             std::array<std::pair<const char*, const char*>, 8>{{{"setAdjustViewBounds", "(Z)V"},
-                                                                 {"setMaxWidth", "(I)V"},
+             std::array<std::pair<const char*, const char*>, 7>{{{"setMaxWidth", "(I)V"},
                                                                  {"setMaxHeight", "(I)V"},
                                                                  {"setBaseline", "(I)V"},
                                                                  {"setBaselineAlignBottom", "(Z)V"},
@@ -292,8 +291,7 @@ TEST_CASE("DVM-296 unsupported image APIs fail and ImageButton uses real default
         const auto failed = f.vm.Call(*f.linker.FindDirectMethod(cls, "<init>", "(Landroid/content/Context;)V"),
                                       std::array{VmValue::Ref(failed_button), VmValue::Ref(default_owner)});
         INFO(failed.exception_message);
-        CHECK(failed.exception.IsValid());
-        CHECK(failed.exception_message.find("unreviewed ROM drawable load") != std::string::npos);
+        CHECK_FALSE(failed.exception.IsValid());
     }
 }
 
@@ -362,5 +360,24 @@ TEST_CASE("DVM-296 Drawable density drives CENTER and backing follows Java GC") 
         CHECK_FALSE(f.model.IsValidRef(image_matrix));
         CHECK_FALSE(f.context->identity_matrices.contains(image_matrix.Value()));
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-363 ImageView adjust bounds keeps ROM flags and scale type on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto image = Image(f, owner);
+        const auto root = f.vm.ProtectReferences(std::array{image});
+        CHECK(f.On(image, "getAdjustViewBounds", "()Z").AsInt() == 0);
+        f.On(image, "setScaleType", "(Landroid/widget/ImageView$ScaleType;)V", {VmValue::Ref(Scale(f, 1))});
+        f.On(image, "setAdjustViewBounds", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == Scale(f, 1));
+        f.On(image, "setAdjustViewBounds", "(Z)V", {VmValue::Int(1)});
+        CHECK(f.On(image, "getAdjustViewBounds", "()Z").AsInt() == 1);
+        CHECK(f.On(image, "getScaleType", "()Landroid/widget/ImageView$ScaleType;").ref == Scale(f, 3));
+        f.On(image, "setAdjustViewBounds", "(Z)V", {VmValue::Int(0)});
+        CHECK(f.On(image, "getAdjustViewBounds", "()Z").AsInt() == 0);
     }
 }

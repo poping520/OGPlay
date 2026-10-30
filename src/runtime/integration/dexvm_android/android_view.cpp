@@ -2211,7 +2211,8 @@ Decl Declare_android_view_View(const Context& context) {
                     if (!CallAndroidMethod(call.vm, background, "isStateful", "()Z").AsInt())
                         return dx::VmValue::Void();
                     const auto state = context->ui_drawables.find(background.Value());
-                    if (state != context->ui_drawables.end() && state->second.rom_skin) {
+                    if (state != context->ui_drawables.end() &&
+                        (state->second.rom_skin || state->second.selector_state)) {
                         const auto states = CallAndroidMethod(call.vm, call.receiver, "getDrawableState", "()[I").ref;
                         static_cast<void>(
                             CallAndroidMethod(call.vm, background, "setState", "([I)Z", {dx::VmValue::Ref(states)}));

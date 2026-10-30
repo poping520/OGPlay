@@ -336,3 +336,5 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-360 · Paint FILTER_BITMAP/DITHER 状态位](DVM-360.md)
 
 - [DVM-361 · TextView 横向滚动状态](DVM-361.md)
+- [DVM-362 · TextView 文字状态与固定字体度量](DVM-362.md)
+- [DVM-363 · ImageButton 默认背景与 View 配置杂项](DVM-363.md)

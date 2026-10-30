@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/DrawableContainer;",
       "smali_sha256": "36e1b54bd56dca432d453c5e4b60f53672992e9faf7b2403526fab4438370e42",
       "methods": [
@@ -399,7 +399,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/StateListDrawable;",
       "smali_sha256": "4713b48c679cf15c15d791dad458196efe60f48217a167c4ddc31fb2cab5ed00",
       "methods": [
@@ -409,11 +409,11 @@
           "body_sha256": "c6d0113605a3085feeda81163384f143e030b5c8931bdf76292657d0bfff9c70",
           "source": "overlay",
           "review": {
-            "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
-            "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
-            "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-            "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
-            "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
           }
         },
         {
@@ -432,25 +432,53 @@
           "signature": "addState([ILandroid/graphics/drawable/Drawable;)V",
           "flags": 1,
           "body_sha256": "c2a59ed07db07bba3d071c5c73eaf1e2196b4f83d35156eab1264079a5be671d",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
+          }
         },
         {
           "signature": "getStateCount()I",
           "flags": 1,
           "body_sha256": "b6c1a0f1cfd6660fa5aafe16eff998b294d3429d934b3ff3d3ee0de973305d5d",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
+          }
         },
         {
           "signature": "getStateDrawable(I)Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "6992dfe72ae6b4efbe6eee776df13f6145d7b78fc69b496dd1e2f498da7fe4b0",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
+          }
         },
         {
           "signature": "getStateDrawableIndex([I)I",
           "flags": 1,
           "body_sha256": "20cf25e757d0ee76b9a6a4916ebba9771ba807cd4f01b41caaf8c2b57a838f3d",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
+          }
         },
         {
           "signature": "getStateListState()Landroid/graphics/drawable/StateListDrawable$StateListState;",
@@ -462,7 +490,14 @@
           "signature": "getStateSet(I)[I",
           "flags": 1,
           "body_sha256": "2ed36022aac08d78f1e4b9dee81610f49c177996549a9130d92deec7294399e4",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-363 ROM constructor audit rejects DrawableContainer.<init>; extend existing bounded selector backing without DrawableContainerState stack",
+            "inputs": "original int[] state identity and Drawable references; null Drawable ignored; StateSet matching executes ROM",
+            "outputs": "ordered selector entries, real current child, count and state queries; no draw support",
+            "state_owner": "existing per-object UiDrawableState with traced state arrays and child references; original Drawable base fields; no duplicate Java container state",
+            "failure_boundary": "runtime selectors remain unreviewed backgrounds recorded without rendering; no transitions, animation, ConstantState cloning, Canvas or full DrawableContainer"
+          }
         },
         {
           "signature": "inflate(Landroid/content/res/Resources;Lorg/xmlpull/v1/XmlPullParser;Landroid/util/AttributeSet;)V",
@@ -562,7 +597,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable;",
       "smali_sha256": "fc189612255501987bc397f5412c66f16784d8709f3cdb680e0bcd94b6e4e391",
       "methods": [
@@ -936,7 +971,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/DrawableContainer$1;",
       "smali_sha256": "b047de47518cd8eef076fe6b19c076069fada8baec4ddc3810695c5ad1ea8288",
       "methods": [
@@ -968,7 +1003,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
       "smali_sha256": "9c54834cc0d13a4ee9d22ff9e7b6f80ec384ccc259e0f9f87ad947d73b9289c9",
       "methods": [
@@ -1072,7 +1107,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
+      "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb",
       "owner": "Landroid/graphics/drawable/StateListDrawable$StateListState;",
       "smali_sha256": "3120d38add389c34572db67bb9f90ba167e5c27a5dba0e2e5e03a71265aa9454",
       "methods": [

@@ -83,6 +83,13 @@ public:
     };
 
     [[nodiscard]] const RomColor* Color(std::uint32_t id) const;
+
+    // Identity only, from the same pinned ROM ARSC; this grants no content-load support.
+    struct ResourceIdentity final {
+        std::string package, type, entry;
+    };
+
+    [[nodiscard]] std::optional<ResourceIdentity> Identity(std::uint32_t id, const loader::ArscTable& table) const;
     void Shutdown();
 
     [[nodiscard]] std::size_t LiveThemes() const { return themes_.size(); }
@@ -115,6 +122,7 @@ private:
     std::vector<RomDrawable> rom_drawables_;
     std::map<std::uint32_t, RomColor> rom_colors_;
     std::map<std::uint32_t, ThemeValue> rom_configuration_;
+    std::map<std::uint32_t, ResourceIdentity> resource_names_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

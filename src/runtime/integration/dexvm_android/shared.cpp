@@ -2061,3 +2061,17 @@ void DispatchAndroidDisplayFrame(dexvm::Interpreter& vm, DexVmAndroidContext& co
     if (const auto error = PumpJavaThreads(vm, context)) throw std::runtime_error(*error);
 }
 }  // namespace ogplay::runtime
+
+namespace ogplay::runtime::android_intrinsics {
+std::u16string ReadAndroidTextDisplay(dx::Interpreter& vm, DexVmAndroidContext& context, dx::VmObjectRef view) {
+    const auto node = *FindViewUiNode(context, view.Value());
+    const auto& text = context.ui_tree.Get(node)->text;
+    if (text.empty()) {
+        const auto hint = CallAndroidMethod(vm, view, "getHint", "()Ljava/lang/CharSequence;").ref;
+        return hint.IsValid() ? vm.Model().StringValue(hint) : u"";
+    }
+    const auto type = context.view_adapter_references.at(view.Value()).text_input_type & 0xfff;
+    if (type == 0x81 || type == 0xe1 || type == 0x12) return std::u16string(text.size(), u'\u2022');
+    return text;
+}
+}  // namespace ogplay::runtime::android_intrinsics

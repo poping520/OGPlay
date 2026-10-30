@@ -907,6 +907,7 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         builder.VirtualMethod("getFlags", "()I",
                               [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags); });
         builder.VirtualMethod("setFlags", "(I)V", [state, flags](dx::IntrinsicContext& c) {
+            if (state(c).text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
             state(c).flags = flags(c, c.arguments[0].AsInt());
             return dx::VmValue::Void();
         });
@@ -914,12 +915,14 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                             [state](dx::IntrinsicContext& c) { return dx::VmValue::Int(state(c).flags & 1); });
         builder.VirtualMethod("setAntiAlias", "(Z)V", [state](dx::IntrinsicContext& c) {
             auto& value = state(c);
+            if (value.text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
             value.flags = (value.flags & ~1) | (c.arguments[0].AsInt() != 0);
             return dx::VmValue::Void();
         });
         for (const auto [name, bit] : {std::pair{"setFilterBitmap", 0x02}, std::pair{"setDither", 0x04}}) {
             builder.VirtualMethod(name, "(Z)V", [state, bit](dx::IntrinsicContext& c) {
                 auto& value = state(c);
+                if (value.text_view_owned) UnsupportedPaint(c, "TextView Paint flags are fixed");
                 value.flags = (value.flags & ~bit) | (c.arguments[0].AsInt() != 0 ? bit : 0);
                 return dx::VmValue::Void();
             });
@@ -930,6 +933,7 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             const auto size = c.arguments[0].AsFloat();
             if (!std::isfinite(size) || size < 1 || size > 128)
                 UnsupportedPaint(c, "Paint text size outside 1..128 px");
+            if (state(c).text_view_owned) UnsupportedPaint(c, "TextView Paint text size requires TextView.setTextSize");
             state(c).text_size = size;
             return dx::VmValue::Void();
         });
@@ -939,7 +943,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         });
         builder.VirtualMethod("setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
                               [face, state](dx::IntrinsicContext& c) {
-                                  static_cast<void>(state(c));
+                                  if (state(c).text_view_owned)
+                                      UnsupportedPaint(c, "TextView Paint typeface requires TextView.setTypeface");
                                   const auto ref = c.arguments[0].ref;
                                   if (ref.IsValid()) static_cast<void>(CallAndroidMethod(c.vm, ref, "getStyle", "()I"));
                                   dx::IntrinsicCall(c).SetRef(face, ref);
@@ -952,7 +957,7 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                 if (!ref.IsValid())
                     throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "text cannot be null"};
                 std::int32_t length{};
-                const bool chars = kind == 2;
+                const bool chars = kind == 2 || kind == 5;
                 if (chars)
                     length = c.vm.Model().ArrayLength(ref);
                 else if (kind == 3)
@@ -997,6 +1002,17 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                 } catch (const std::runtime_error& error) {
                     UnsupportedPaint(c, error.what());
                 }
+                if (kind >= 4) {
+                    const auto rect = c.arguments[3].ref;
+                    if (!rect.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "bounds rect"};
+                    const auto metrics = ui::MeasureFixedText(text, value.text_size, static_cast<std::uint32_t>(style),
+                                                              context->ui_tree.FallbackFont().get());
+                    const auto top = text.empty() ? 0 : -7 * metrics.scale;
+                    const auto bottom = text.empty() ? 0 : top + metrics.height;
+                    return CallAndroidMethod(c.vm, rect, "set", "(IIII)V",
+                                             {dx::VmValue::Int(0), dx::VmValue::Int(top),
+                                              dx::VmValue::Int(metrics.width), dx::VmValue::Int(bottom)});
+                }
                 ++value.measurements;
                 value.last_text = text;
                 value.last_width = width;
@@ -1007,6 +1023,36 @@ Decl Declare_android_graphics_Paint(const Context& context) {
         builder.VirtualMethod("measureText", "(Ljava/lang/String;II)F", measure(1));
         builder.VirtualMethod("measureText", "([CII)F", measure(2));
         builder.VirtualMethod("measureText", "(Ljava/lang/CharSequence;II)F", measure(3));
+        const auto font_metrics = [context, state](dx::IntrinsicContext& c) {
+            // The fixed raster cell has seven rows, baseline at its bottom and no descender.
+            // Non-ASCII fallback is rasterized into this same cell by the UI font service.
+            const auto metrics =
+                ui::MeasureFixedText(u"M", state(c).text_size, 0, context->ui_tree.FallbackFont().get());
+            const auto ascent = -static_cast<float>(metrics.height);
+            if (!c.arguments.empty() && c.arguments[0].ref.IsValid()) {
+                const auto object = c.arguments[0].ref;
+                for (const auto name : {"top", "ascent", "descent", "bottom", "leading"}) {
+                    const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(object), name, "F");
+                    if (!field)
+                        throw dx::DexVmError(dx::DexVmErrorReason::internal_invariant, "FontMetrics field missing");
+                    const auto value =
+                        std::string_view(name) == "top" || std::string_view(name) == "ascent" ? ascent : 0.F;
+                    c.vm.Model().InstanceSlots(object)[c.vm.Linker().Field(*field).slot] = {
+                        dx::VmValue::Float(value).cat1, dx::SlotTag::cat1};
+                }
+            }
+            return dx::VmValue::Float(static_cast<float>(metrics.height));
+        };
+        builder.VirtualMethod("getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F", font_metrics);
+        builder.VirtualMethod("ascent", "()F", [font_metrics](dx::IntrinsicContext& c) {
+            return dx::VmValue::Float(-font_metrics(c).AsFloat());
+        });
+        builder.VirtualMethod("descent", "()F", [state](dx::IntrinsicContext& c) {
+            static_cast<void>(state(c));
+            return dx::VmValue::Float(0.F);
+        });
+        builder.VirtualMethod("getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V", measure(4));
+        builder.VirtualMethod("getTextBounds", "([CIILandroid/graphics/Rect;)V", measure(5));
         return std::move(builder).Build();
     }
 }
@@ -1425,7 +1471,7 @@ namespace ogplay::runtime::android_intrinsics {
 namespace {
 DexVmAndroidContext::UiDrawableState& Skin(dx::IntrinsicContext& call, const Context& context) {
     const auto it = context->ui_drawables.find(call.receiver.Value());
-    if (it == context->ui_drawables.end() || !it->second.rom_skin)
+    if (it == context->ui_drawables.end() || (!it->second.rom_skin && !it->second.selector_state))
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "ROM skin backing unavailable"};
     return it->second;
 }
@@ -1571,7 +1617,61 @@ Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context)
     });
     b.Constructor("()V", [context](dx::IntrinsicContext& c) {
         SkinInit(c, context);
+        auto& state = context->ui_drawables.at(c.receiver.Value());
+        state.rom_skin = false;
+        state.selector_state = true;
+        state.skin_width = state.skin_height = -1;
         return dx::VmValue::Void();
+    });
+    const auto state_set = [context](dx::IntrinsicContext& c, std::int32_t index) {
+        auto& state = Skin(c, context);
+        if (index < 0 || static_cast<std::size_t>(index) >= state.skin_children.size())
+            throw dx::VmJavaThrow{"Ljava/lang/ArrayIndexOutOfBoundsException;", "selector state index"};
+        return state.skin_state_arrays[static_cast<std::size_t>(index)];
+    };
+    const auto state_index = [context, state_set](dx::IntrinsicContext& c, dx::VmObjectRef states) {
+        const auto matcher = c.vm.Linker().FindDirectMethod(c.vm.Linker().ResolveDescriptor("Landroid/util/StateSet;"),
+                                                            "stateSetMatches", "([I[I)Z");
+        const auto count = Skin(c, context).skin_children.size();
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto set = state_set(c, static_cast<std::int32_t>(i));
+            const auto matched = c.vm.Call(*matcher, std::array{dx::VmValue::Ref(set), dx::VmValue::Ref(states)});
+            if (matched.exception.IsValid())
+                throw dx::VmJavaThrow{c.vm.Linker().Class(matched.exception_class).descriptor,
+                                      matched.exception_message, matched.exception};
+            if (matched.value.AsInt()) return static_cast<std::int32_t>(i);
+        }
+        return -1;
+    };
+    b.VirtualMethod("addState", "([ILandroid/graphics/drawable/Drawable;)V", [context](dx::IntrinsicContext& c) {
+        const auto child = c.arguments[1].ref;
+        if (!child.IsValid()) return dx::VmValue::Void();
+        auto& state = Skin(c, context);
+        // Keep the caller's actual int[] identity, including API19 zero terminators.
+        state.skin_children.push_back(child);
+        state.skin_state_arrays.resize(state.skin_children.size());
+        state.skin_state_arrays.back() = c.arguments[0].ref;
+        static_cast<void>(CallAndroidMethod(c.vm, child, "setCallback",
+                                            "(Landroid/graphics/drawable/Drawable$Callback;)V",
+                                            {dx::VmValue::Ref(c.receiver)}));
+        const auto states = CallAndroidMethod(c.vm, c.receiver, "getState", "()[I").ref;
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "onStateChange", "([I)Z", {dx::VmValue::Ref(states)}));
+        return dx::VmValue::Void();
+    });
+    b.VirtualMethod("getStateCount", "()I", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(static_cast<std::int32_t>(Skin(c, context).skin_children.size()));
+    });
+    b.VirtualMethod("getStateSet", "(I)[I", [state_set](dx::IntrinsicContext& c) {
+        return dx::VmValue::Ref(state_set(c, c.arguments[0].AsInt()));
+    });
+    b.VirtualMethod("getStateDrawable", "(I)Landroid/graphics/drawable/Drawable;",
+                    [context, state_set](dx::IntrinsicContext& c) {
+                        const auto index = c.arguments[0].AsInt();
+                        static_cast<void>(state_set(c, index));
+                        return dx::VmValue::Ref(Skin(c, context).skin_children[static_cast<std::size_t>(index)]);
+                    });
+    b.VirtualMethod("getStateDrawableIndex", "([I)I", [state_index](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(state_index(c, c.arguments[0].ref));
     });
     b.VirtualMethod("setLayoutDirection", "(I)V", [context](dx::IntrinsicContext& c) {
         const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;");
@@ -1591,24 +1691,15 @@ Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context)
     });
     b.VirtualMethod(
         "onStateChange", "([I)Z",
-        [context](dx::IntrinsicContext& c) {
+        [context, state_index](dx::IntrinsicContext& c) {
             auto& s = Skin(c, context);
-            std::vector<std::int32_t> states;
-            const auto array = c.arguments[0].ref;
-            if (array.IsValid())
-                for (std::int32_t i = 0; i < c.vm.Model().ArrayLength(array); ++i)
-                    states.push_back(static_cast<std::int32_t>(c.vm.Model().GetPrimitiveElement(array, i)));
-            std::int32_t selected = -1;
-            for (std::size_t i = 0; i < s.skin_states.size(); ++i) {
-                const bool match =
-                    std::all_of(s.skin_states[i].begin(), s.skin_states[i].end(), [&](std::int32_t state) {
-                        const bool present = std::find(states.begin(), states.end(), std::abs(state)) != states.end();
-                        return state > 0 ? present : !present;
-                    });
-                if (match) {
-                    selected = static_cast<std::int32_t>(i);
-                    break;
-                }
+            auto selected = state_index(c, c.arguments[0].ref);
+            if (selected < 0) {
+                const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/util/StateSet;");
+                const auto field = c.vm.Linker().FindFieldRecursive(klass, "WILD_CARD", "[I");
+                const dx::VmObjectRef wildcard{
+                    c.vm.Linker().Class(klass).static_storage[c.vm.Linker().Field(*field).slot]};
+                selected = state_index(c, wildcard);
             }
             const bool changed = selected != s.skin_current;
             s.skin_current = selected;

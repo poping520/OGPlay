@@ -126,7 +126,7 @@ note = "DVM-346：独立HostLayout modal经共同快照原子发布，render/inp
 [dexvm.drawable_resource]
 status = "partial"
 test = "tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "XML drawable 属性与 loadDrawable 共用纯色、APK PNG/JPEG、封存 ROM skin 准入；未封存 ROM 提前失败。edit_text 与四个 scrollbar thumb 支持加载、padding/密度测量和叶像素冻结；颜色 XML 归 ROM。app getDrawable 支持 ROM 标量颜色；系统颜色 XML/未知及 getSystem drawable 失败。View 颜色背景由 ROM 投影，位图背景 inflate 仍在 getOpacity 明确失败，其他未审背景记账不绘制。guest draw、应用 XML、其他皮肤及动画未支持。"
+note = "DVM-363：XML 属性/loadDrawable 共用纯色、APK PNG/JPEG、同 ROM edit_text/btn_default 闭包及四个 scrollbar thumb；支持 padding/密度测量和叶像素冻结。运行时 selector 保留状态数组与子对象，ROM StateSet 顺序匹配，背景记账不绘制。应用标量颜色、ROM 颜色 XML 已支持；未封存皮肤、应用 drawable XML、动画/过渡、ConstantState clone 与 guest draw 未支持。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -1545,8 +1545,8 @@ note = "DVM-184 在 View facade 按 API 19 绑定 protected mContext，public fi
 
 [dexvm.view_focus_configuration]
 status = "partial"
-test = "tests/dexvm/android_webview_tests.cpp#View focus and WebView configuration; tests/dexvm/viewgroup_traversal_tests.cpp"
-note = "DVM-331：焦点执行 ROM View/ViewGroup 路径，Java flags/父链/mFocused 为权威；宿主只投影。AbsoluteLayout 有界父构造初始化真实 ViewGroup；WebView 设置 Java 可聚焦位。滚动条开关未选，调用明确失败；完整方向搜索/系统焦点未实现。"
+test = "tests/dexvm/android_webview_tests.cpp#View focus and WebView configuration; tests/dexvm/viewgroup_traversal_tests.cpp; tests/dexvm/android_view_state_tests.cpp#DVM-363"
+note = "DVM-331/363：焦点执行 ROM View/ViewGroup 路径，Java flags/父链/mFocused 为权威；宿主只投影。四方向 nextFocus ID、sound effects 与横向 scrollbar 开关执行 ROM；纵向开关仍失败。View.toString 原格式与资源名查询已接通，缺名沿 ROM 捕获 NotFoundException。完整方向搜索/系统焦点未实现。"
 
 [dexvm.input_method_sessions]
 status = "partial"
@@ -2001,7 +2001,7 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 [dexvm.bounded_theme]
 status = "partial"
 test = "tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "ADR-0160/0161：默认配对同 ROM ARSC 任意类型引用按真实 id 投影，不按属性白名单、内容加载延至消费者调用。取 id 不给加载信用，未支持目标记账失败；真实缺名/冲突拒绝。支持 ROM format/字符串 cookie2、ColorStateList、edit_text 闭包及四个 scrollbar thumb 的 NinePatch 加载/缩放；未封存皮肤仍拒绝，DVM-355 ROM scrollbar 初始化与 padding/RTL 闭包通过，可见滚动条只记账不绘制。"
+note = "ADR-0160/0161：默认配对同 ROM ARSC 任意类型引用按真实 id 投影，不按属性白名单、内容加载延至消费者调用。取 id 不给加载信用，未支持目标记账失败；真实缺名/冲突拒绝。支持 ROM format/字符串 cookie2、ColorStateList、edit_text/btn_default 闭包及四个 scrollbar thumb 的 NinePatch 加载/缩放；未封存皮肤仍拒绝，DVM-355 ROM scrollbar 初始化与 padding/RTL 闭包通过，可见滚动条只记账不绘制。"
 
 [runtime.guest_proc_maps]
 status = "partial"
@@ -2156,16 +2156,16 @@ note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、
 [dexvm.paint_measure]
 status = "partial"
 test = "tests/dexvm/paint_measure_tests.cpp; tests/dexvm/rom_skin_tests.cpp#DVM-355"
-note = "DVM-293：默认配对的实例 Paint flags/antiAlias/filterBitmap/dither（位集0x507）、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定 ASCII 字表与 API19 字体链覆盖的独立 BMP；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
+note = "DVM-293/362：实例 Paint flags（0x507）、1..128px 字号、Typeface、1024单位 measureText/bounds 和 FontMetrics 复用固定字体服务；七行格子 baseline=7×scale、descent=0。TextPaint 继承同源度量，TextView 所属 Paint 直接改字号/字体/flags 记账拒绝。仅 ASCII 与 API19 字体链独立 BMP；完整 shaping、绘制、Layout/Editor 失败。"
 
 [dexvm.text_constructor]
 status = "partial"
 test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-327; tests/dexvm/edittext_traversal_tests.cpp#DVM-326; tests/dexvm/theme_resources_tests.cpp#DVM-294; tests/dexvm/textview_traversal_tests.cpp; tests/dexvm/button_traversal_tests.cpp; tests/dexvm/edittext_traversal_tests.cpp"
-note = "默认配对 TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；DVM-361 Java 横向滚动位控制不折行，保留显式换行，singleLine 同步该位；无滚动偏移/marquee；Button/EditText 保持 ROM 薄构造和默认 style。DVM-327 ROM 状态色与 edit_text 背景叶冻结；IME show/hide/restart 经真实焦点检查，无候选返回 false，需要 InputConnection 明确失败。完整 Editor/IME/Layout、RTL/shaping 失败。"
+note = "TextView 真实主题构造、有界文本/叶测量与冻结 line-plan；DVM-362 每实例稳定 TextPaint，setter 写穿，hint 空文显示、状态色、inputType 单行/密码掩码、真实 Java InputFilter 顺序派发。DVM-361 singleLine 同步 Java 横向滚动位，无滚动偏移/marquee。Button/EditText 保留 ROM 薄构造及皮肤；无完整 Editor/IME/Layout、KeyListener、键盘、Spanned、RTL/shaping。"
 
 [dexvm.image_leaf]
 status = "partial"
-note = "DVM-296：默认配对ImageView/ImageButton完整ROM形状与clinit、真实主题构造及纯叶测量adapter；Java持图片身份/scale/alpha，五种scale、bitmap版本与纯色填充同epoch冻结。默认系统皮肤、其余scale、matrix/tint/adjust/max/baseline/crop非中性请求明确失败；生产"
+note = "DVM-296/363：ImageView/ImageButton 完整 ROM 形状、clinit、真实主题构造与纯叶测量 adapter；Java 拥有图片/scale/alpha，五种 scale、bitmap 版本与纯色同 epoch 冻结。btn_default 默认背景已封存，adjustViewBounds 和 drawable-state 合并执行 ROM。其他皮肤、其余 scale、matrix/tint/max/baseline/crop 非中性请求失败。"
 test = "tests/dexvm/imageview_traversal_tests.cpp; tests/dexvm/theme_resources_tests.cpp#DVM-296"
 
 [dexvm.property_animation]

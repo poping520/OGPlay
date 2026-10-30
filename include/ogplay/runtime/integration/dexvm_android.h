@@ -1043,16 +1043,17 @@ struct DexVmAndroidContext final {
     // Traced from the owning View and swept with it, including detached Views.
     struct ViewAdapterReferences final {
         dexvm::VmObjectRef window_owner, focus_listener, system_ui_listener;
-        // Text/style live in UiNode. Keep the distinct constructor line policy
+        // Text lives in UiNode; size/style are projections of its TextPaint.
+        // Keep the distinct constructor line policy
         // and owner-traced identities here; no Java text/layout mirror.
         bool text_single_line{};
+        std::int32_t text_input_type{};
         // Bounded edit service; no second text buffer or ROM Editor/spans.
         dexvm::VmObjectRef text_editable{}, text_movement{};
         std::int32_t selection_start{}, selection_end{};
         std::optional<ui::LeafMeasureResult> text_measure;
         std::unordered_map<std::int32_t, ui::LeafMeasureResult> text_measure_cache;
         std::uint64_t text_revision{};
-        dexvm::VmObjectRef text_typeface{};
         std::array<dexvm::VmObjectRef, 4> text_compounds{dexvm::VmObjectRef{}, dexvm::VmObjectRef{},
                                                          dexvm::VmObjectRef{}, dexvm::VmObjectRef{}};
     };
@@ -1072,10 +1073,11 @@ struct DexVmAndroidContext final {
         std::uint64_t bitmap_revision{};
         std::shared_ptr<const ui::UiBitmap> leaf_pixels;
         bool rom_skin{};
+        bool selector_state{};
         std::array<std::int32_t, 4> skin_padding{}, skin_optical{};
         std::int32_t skin_width{-1}, skin_height{-1};
         std::vector<dexvm::VmObjectRef> skin_children;
-        std::vector<std::vector<std::int32_t>> skin_states;
+        std::vector<dexvm::VmObjectRef> skin_state_arrays;
         std::int32_t skin_current{-1};
     };
 
@@ -1091,7 +1093,8 @@ struct DexVmAndroidContext final {
 
     struct PaintMeasureState final {
         std::int32_t flags{0x500};  // API19 DEV_KERN_TEXT | EMBEDDED_BITMAP_TEXT.
-        float text_size{12.0F};     // API19 SkPaint default.
+        bool text_view_owned{};
+        float text_size{12.0F};  // API19 SkPaint default.
         std::uint64_t measurements{};
         std::u16string last_text;
         float last_width{};

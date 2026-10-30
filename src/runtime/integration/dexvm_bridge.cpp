@@ -317,7 +317,6 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
                  visit_ref(found->second.window_owner);
                  visit_ref(found->second.focus_listener);
                  visit_ref(found->second.system_ui_listener);
-                 visit_ref(found->second.text_typeface);
                  visit_ref(found->second.text_editable);
                  visit_ref(found->second.text_movement);
                  for (const auto ref : found->second.text_compounds)
@@ -329,6 +328,8 @@ void RegisterAndroidOwnerAttachedStateTable(dx::Interpreter& vm, const std::shar
 
              if (const auto state = context->ui_drawables.find(key); state != context->ui_drawables.end()) {
                  visit_ref(state->second.bitmap);
+                 for (const auto array : state->second.skin_state_arrays)
+                     visit_ref(array);
                  for (const auto child : state->second.skin_children)
                      visit_ref(child);
              }

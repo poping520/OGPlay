@@ -213,6 +213,21 @@ void ThemeResources::Load(std::string_view projection) {
             throw std::runtime_error("invalid/duplicate ROM resource type");
         resource_types.emplace(name, id);
     }
+    std::map<std::uint32_t, ResourceIdentity> resource_names;
+    const auto identity_rows = Member(root, "resource_names");
+    if (!identity_rows.IsArray() || identity_rows.Size() > 8192)
+        throw std::runtime_error("invalid ROM resource identity bounds");
+    for (std::size_t i = 0; i < identity_rows.Size(); ++i) {
+        const auto row = *identity_rows.Element(i);
+        const auto id = Number(Member(row, "resource_id"));
+        const auto type = Text(Member(row, "resource_type"));
+        const auto entry = Text(Member(row, "name"));
+        const auto found = resource_types.find(type);
+        if ((id >> 24U) != 1 || entry.empty() || found == resource_types.end() ||
+            ((id >> 16U) & 255U) != found->second || Number(Member(row, "type_id")) != found->second ||
+            !resource_names.emplace(id, ResourceIdentity{"android", type, entry}).second)
+            throw std::runtime_error("invalid/duplicate ROM resource identity");
+    }
     std::set<std::uint32_t> reference_ids;
     const auto references = Member(root, "projected_references");
     if (!references.IsArray() || references.Size() > 8192)
@@ -302,6 +317,7 @@ void ThemeResources::Load(std::string_view projection) {
     projection_ = std::move(projected);
     registered_names_ = std::move(names);
     unregistered_ = std::move(rejected);
+    resource_names_ = std::move(resource_names);
     loaded_ = true;
 }
 
@@ -661,5 +677,23 @@ void ThemeResources::Shutdown() {
     select_ = {};
     validate_file_ = {};
     stopped_ = true;
+}
+}  // namespace ogplay::runtime
+
+namespace ogplay::runtime {
+std::optional<ThemeResources::ResourceIdentity> ThemeResources::Identity(std::uint32_t id,
+                                                                         const loader::ArscTable& table) const {
+    if (!loaded_ || stopped_) throw std::runtime_error("theme resources unavailable");
+    if ((id >> 24U) == 1) {
+        const auto found = resource_names_.find(id);
+        if (found != resource_names_.end()) return found->second;
+        return std::nullopt;
+    }
+    if ((id >> 24U) != table.package_id) return std::nullopt;
+    // Names identify the resource independently of its selected value configuration.
+    const auto* entry = table.FindById(id);
+    if (!entry || entry->type_name.empty() || entry->entry_name.empty() || table.package_name.empty())
+        return std::nullopt;
+    return ResourceIdentity{table.package_name, entry->type_name, entry->entry_name};
 }
 }  // namespace ogplay::runtime

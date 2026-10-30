@@ -266,6 +266,8 @@ Android API 的详细行为以 [dexvm_android](dexvm_android/MODULE.md)为准；
 - View↔UiNode 一一绑定，identity/listener 由 integration 持有，几何/命中只读唯一 UiTree。
   XML inflation 用通用 registry，未知结构明确失败；LayoutParams/Bundle/Configuration、
   framework 值类等普通状态与算法归 BootDex，当前具体支持面见 [Android 子模块](dexvm_android/MODULE.md)。
+- ThemeResources.Identity 统一查询当前 APK ARSC 与同 ROM 封存名称表，只返回包/类型/条目身份；
+  与值配置选择、引用解析及内容加载分离，缺失返回空，由 Resources 抛 NotFoundException。
 - SurfaceHolder 按 view 保持身份与 active generation；callback 去重、null 拒绝，按事件
   快照向全部注册者分发，缺方法明确失败。attach/detach 驱动对应事件，不新建像素 owner。
   EGL policy setter 只保留受 GC 追踪的策略身份，未支持行为不越权调用；render mode 不创建

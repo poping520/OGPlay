@@ -153,7 +153,7 @@ def view_configuration_values():
 
 
 def drawable_closure():
-    """Reviewed EditText closure and the four exact same-ROM scrollbar thumbs."""
+    """Reviewed EditText, btn_default and four exact same-ROM scrollbar thumb closures."""
     with zipfile.ZipFile(ROOT / rom.APK) as archive:
         _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
         by_id = {row['id']: row for row in rows}
@@ -171,7 +171,10 @@ def drawable_closure():
             variants = matches[0]['configurations']
             if len(variants) != 1 or not variants[0]['path'].endswith('.9.png'):
                 raise ValueError('scrollbar thumb requires one ninepatch leaf: ' + name)
-        pending, result = [root['id'], *thumbs.values()], []
+        button, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'btn_default']
+        if button['id'] != 0x01080004:
+            raise ValueError('btn_default ROM name/ID mismatch')
+        pending, result = [root['id'], button['id'], *thumbs.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -537,6 +540,7 @@ def generate(negative_rom_id=False):
                     counts=dict(counts), attribute_count=len(attrs),
                     rom_colors=colors, rom_drawables=drawable_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
+                    resource_names=sorted(references.values(), key=lambda r: r['resource_id']),
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
     return canonical(document)
 

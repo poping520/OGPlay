@@ -407,6 +407,12 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
             const auto& refs = context.view_adapter_references.at(view.Value());
             const auto cached = refs.text_measure_cache.find(entry.measured.width);
             auto& text = *context.ui_tree.Get(*node);
+            if (text.text.empty())
+                text.text_color = AndroidColorToRgba(static_cast<std::uint32_t>(
+                    android_intrinsics::CallAndroidMethod(vm, view, "getCurrentHintTextColor", "()I").AsInt()));
+            else
+                text.text_color = AndroidColorToRgba(static_cast<std::uint32_t>(
+                    android_intrinsics::CallAndroidMethod(vm, view, "getCurrentTextColor", "()I").AsInt()));
             if (cached != refs.text_measure_cache.end() && cached->second.line_plan) {
                 text.text_line_plan = cached->second.line_plan;
             } else {
@@ -420,7 +426,7 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                 // calling super. Prepare only its raster plan on the owner,
                 // after Java layout; do not call the adapter or write geometry.
                 ui::TextLeafInput input;
-                input.text = text.text;
+                input.text = android_intrinsics::ReadAndroidTextDisplay(vm, context, view);
                 input.size_px = text.text_size_px;
                 input.style = text.text_style;
                 input.fallback_font = text.fallback_font;

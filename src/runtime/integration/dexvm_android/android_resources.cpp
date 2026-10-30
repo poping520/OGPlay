@@ -1493,6 +1493,20 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                                                 {dx::VmValue::Ref(locale)}));
             return dx::VmValue::Ref(instance);
         });
+    for (const auto [name, component] : {std::pair{"getResourcePackageName", 0}, std::pair{"getResourceTypeName", 1},
+                                         std::pair{"getResourceEntryName", 2}}) {
+        builder.VirtualMethod(name, "(I)Ljava/lang/String;", [context, component](dx::IntrinsicContext& call) {
+            ThemeLoad(call, context);
+            const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+            const auto identity = context->theme_resources.Identity(id, context->arsc);
+            if (!identity || (IsSystemResources(context, call.receiver) && (id >> 24U) != 1))
+                throw dx::VmJavaThrow{"Landroid/content/res/Resources$NotFoundException;",
+                                      "resource identity not found"};
+            return dx::VmValue::Ref(call.vm.NewStringUtf8(component == 0   ? identity->package
+                                                          : component == 1 ? identity->type
+                                                                           : identity->entry));
+        });
+    }
     builder.VirtualMethod(
         "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
         [context](dx::IntrinsicContext& call) {
@@ -1729,12 +1743,22 @@ dx::VmObjectRef MakeRomSkin(dx::IntrinsicContext& call, const Context& context, 
                               out.exception};
     // Do not retain unordered-map references across recursive allocations.
     context->ui_drawables.at(object.Value()).resource_id = id;
+    context->ui_drawables.at(object.Value()).rom_skin = true;
     if (selector) {
         for (const auto& item : resource->items) {
             const auto child = MakeRomSkin(call, context, item.drawable);
+            const auto child_root = call.vm.ProtectReferences(std::array{child});
+            const auto states =
+                call.vm.Model().NewPrimitiveArray(call.vm.Linker().ResolveDescriptor("[I"), JniPrimitiveKind::integer,
+                                                  static_cast<JniSize>(item.states.size()));
+            const auto states_root = call.vm.ProtectReferences(std::array{states});
+            for (std::size_t i = 0; i < item.states.size(); ++i)
+                call.vm.Model().SetPrimitiveElement(states, static_cast<JniSize>(i),
+                                                    static_cast<std::uint32_t>(item.states[i]));
+            static_cast<void>(CallAndroidMethod(call.vm, object, "addState",
+                                                "([ILandroid/graphics/drawable/Drawable;)V",
+                                                {dx::VmValue::Ref(states), dx::VmValue::Ref(child)}));
             auto& state = context->ui_drawables.at(object.Value());
-            state.skin_children.push_back(child);
-            state.skin_states.push_back(item.states);
             const auto padding = context->ui_drawables.at(child.Value()).skin_padding;
             for (std::size_t i = 0; i < 4; ++i)
                 state.skin_padding[i] = std::max(state.skin_padding[i], padding[i]);

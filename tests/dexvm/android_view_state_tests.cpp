@@ -1,3 +1,5 @@
+#include "container_traversal_fixture.h"
+#include <regex>
 #include "ogplay/runtime/integration/bitmap_pixels.h"
 #include "ogplay/runtime/boundary/android_boundary_hle.h"
 #include "boot_dex.h"
@@ -919,5 +921,70 @@ TEST_CASE("DVM-331 unselected Legacy View APIs fail explicitly without mutating 
         CHECK(f.On(view, "isClickable", "()Z").AsInt() == before);
         CHECK(f.ledger.Unimplemented().size() == 3);
         CHECK_FALSE(f.context->ui_tree.PublishedProjection());
+    }
+}
+
+TEST_CASE("DVM-363 View flags focus ids and ROM toString resolve actual resource identities") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ogplay::test::container_traversal::ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        const auto owner = f.New("Landroid/app/Activity;");
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto view = f.New("Landroid/view/View;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto root = f.vm.ProtectReferences(std::array{view});
+        for (const auto direction : {"Left", "Up", "Down", "Right"}) {
+            const auto setter = std::string("setNextFocus") + direction + "Id";
+            const auto getter = std::string("getNextFocus") + direction + "Id";
+            for (int id : {123, -1, 456}) {
+                f.On(view, setter.c_str(), "(I)V", {VmValue::Int(id)});
+                CHECK(f.On(view, getter.c_str(), "()I").AsInt() == id);
+            }
+        }
+        for (bool enabled : {false, true, false}) {
+            f.On(view, "setSoundEffectsEnabled", "(Z)V", {VmValue::Int(enabled)});
+            CHECK(f.On(view, "isSoundEffectsEnabled", "()Z").AsInt() == enabled);
+            f.On(view, "setHorizontalScrollBarEnabled", "(Z)V", {VmValue::Int(enabled)});
+            CHECK(f.On(view, "isHorizontalScrollBarEnabled", "()Z").AsInt() == enabled);
+        }
+        f.On(view, "layout", "(IIII)V", {VmValue::Int(1), VmValue::Int(2), VmValue::Int(30), VmValue::Int(40)});
+        const auto identity =
+            f.Static("Ljava/lang/System;", "identityHashCode", "(Ljava/lang/Object;)I", {VmValue::Ref(view)});
+        const auto hex = f.model.StringValue(
+            f.Static("Ljava/lang/Integer;", "toHexString", "(I)Ljava/lang/String;", {identity}).ref);
+        const auto inspect = [&] { return f.vm.StringUtf8(f.On(view, "toString", "()Ljava/lang/String;").ref); };
+        const auto plain = inspect();
+        CHECK(plain.starts_with("android.view.View{" + f.vm.StringUtf8(f.model.NewString(hex)) + " "));
+        CHECK(std::regex_match(
+            plain,
+            std::regex(
+                R"(android\.view\.View\{[0-9a-f]+ [VIG.][F.][E.][D.][H.][V.][C.][L.] [R.][F.][S.][pP.][H.][A.][I.][D.] 1,2-30,40\})")));
+        f.context->arsc.package_id = 0x7f;
+        f.context->arsc.package_name = "fixture";
+        ogplay::loader::ArscEntry entry;
+        entry.resource_id = 0x7f0a0042;
+        entry.type_name = "id";
+        entry.entry_name = "player";
+        f.context->arsc.entries.push_back(entry);
+        const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+        for (const auto [id, suffix] :
+             {std::pair{0x7f0a0042, " #7f0a0042 app:id/player}"},
+              std::pair{0x01020002, " #1020002 android:id/content}"}, std::pair{0x7f0a0999, " #7f0a0999}"},
+              std::pair{0x0102ffff, " #102ffff}"}, std::pair{0, " #0}"}}) {
+            f.On(view, "setId", "(I)V", {VmValue::Int(id)});
+            CHECK(inspect().ends_with(suffix));
+        }
+        CHECK(f.vm.StringUtf8(
+                  f.On(resources, "getResourcePackageName", "(I)Ljava/lang/String;", {VmValue::Int(0x7f0a0042)}).ref) ==
+              "fixture");
+        CHECK(f.vm.StringUtf8(
+                  f.On(resources, "getResourcePackageName", "(I)Ljava/lang/String;", {VmValue::Int(0x01020002)}).ref) ==
+              "android");
+        for (const auto name : {"getResourcePackageName", "getResourceTypeName", "getResourceEntryName"}) {
+            const auto missing = f.OnOutcome(resources, name, "(I)Ljava/lang/String;", {VmValue::Int(0x0102ffff)});
+            REQUIRE(missing.exception.IsValid());
+            CHECK(f.linker.Class(missing.exception_class).descriptor ==
+                  "Landroid/content/res/Resources$NotFoundException;");
+        }
+        CHECK(f.ledger.Unimplemented().empty());
     }
 }

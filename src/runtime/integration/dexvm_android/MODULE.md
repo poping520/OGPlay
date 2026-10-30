@@ -145,6 +145,10 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   AssetManager.openXmlResourceParser 两重载为 APK-only 等价入口：cookie=0/1、res/ 原字节，
   执行 ROM byte-slice 构造/newParser/close，不接通 openXmlAssetNative 或系统 XML。
   ROM XmlBlock/inflater 的有界接入见下文。
+- Resources 名称查询通过 ThemeResources.Identity 读取 APK ARSC 或封存同 ROM 身份表，
+  不解析值引用、不受值配置选择限制，不授予内容加载支持；缺名抛 NotFoundException。
+  View.toString 保留 ROM 格式及捕获路径；焦点方向 ID、声音/横向 scrollbar flags 归 ROM 字段，
+  ImageView adjustViewBounds 与 drawable-state 合并执行 ROM，不引入宿主状态副本。
 - JavaTraversal 的 ThemeResources 独占 theme 状态，ThemeToken 为无指针、不复用的
   32 位强类型 ID；VM 锁串行访问。封存 BootDex 独立 theme-projection entry，严格 schema 1/
   API19/values 与大小、数量边界；固定源码/ROM 哈希、名→ID、styleable 数组与 ADR-0077
@@ -183,11 +187,14 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
   资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
   换算；ColorDrawable 状态由 Java 字段拥有，投影虚派 getColor，Java Canvas draw 不准入。
-  皮肤封存范围为同 ROM edit_text selector/ninepatch 闭包加四个 scrollbar thumb
+  皮肤封存范围为同 ROM edit_text、btn_default selector/ninepatch 闭包加四个 scrollbar thumb
   （classic 横/竖、Holo 深/浅）；thumb 复用密度缩放、npTc 与 NinePatchDrawable 加载，
   不开放其他系统皮肤。DrawableContainer/StateListDrawable/
   NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
+  运行时 StateListDrawable 复用同一状态 backing，保留 int[] 与子 Drawable 身份并由 owner trace；
+  ROM StateSet 做顺序匹配，支持零终止/负状态和 wildcard 回退；View 可更新其状态，
+  运行时 selector 无皮肤绘制信用，背景只记账不绘制。
   不支持任意 inflateFromXml、动画/过渡或 guest 皮肤 draw。edit_text 选中叶的 ninepatch
   divisions/像素按密度缩放后进入既有 ui_bitmaps 平面，与 View 几何及颜色共同冻结；
   不可变 leaf_pixels 由 Java Drawable 身份拥有，发布快照仅持有不可变像素；mBitmap 为 Java 强边，
@@ -607,10 +614,12 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 
 固定 JavaTraversal 配对中，ROM TextView clinit 原样执行 Paint 默认构造、antiAlias 与测量。
 Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
-measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
+measureText 重载及同源 bounds/FontMetrics/ascent/descent；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
 测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
 固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、1024单位、1..128px、flags位集0x507以外明确失败并记账；
-完整 shaping、Paint 绘制与 TextPaint/Layout/Editor 保持 failure。
+完整 shaping、Paint 绘制与 Layout/Editor 保持 failure。
+FontMetrics 使用固定七行格子：top/ascent=-7×scale，descent/bottom/leading=0，无下伸部，不等价 Skia。
+TextPaint 继承 Paint 的同源 bounds，不另设度量口径。
 FILTER_BITMAP(0x02)/DITHER(0x04) setter 仅修改各自位，查询执行 ROM Java/getFlags overlay。
 现有 Canvas.drawBitmap(Bitmap,FF,Paint) 将坐标向下取整后仅做整数对齐的 1:1 像素拷贝，
 FILTER_BITMAP/DITHER/AA 位不改变结果；将来新增缩放或采样绘制时必须消费 FILTER_BITMAP 位，不得忽略。
@@ -620,18 +629,23 @@ FILTER_BITMAP/DITHER/AA 位不改变结果；将来新增缩放或采样绘制�
 
 ADR-0161：仅配对 JavaTraversal 的三个 TextView 构造为受审 adapter，精确调用 ROM View
 属性构造与 Theme/TypedArray；默认 defStyleAttr、appearance/style/theme 优先级真实消费。
-UiNode 的文本、字号、字体样式、gravity、行策略及四绝对位图槽是单一文本输入；
+UiNode 的文本、gravity、行策略及四绝对位图槽是单一文本输入；字号/字体样式是 TextPaint 的投影。
+每 View 的 Java mTextPaint 身份稳定，字号归 PaintMeasureState、Typeface 归 Paint.mTypeface；
+TextView setter 写穿并清测量缓存，getter 读取 Paint；直接改所属 Paint 的字号/字体/flags 记账拒绝。
 颜色身份归 Java 字段，UiNode 仅持派生 RGBA；
-View adapter 状态另存独立 singleLine 位，并保活 Typeface/Drawable 身份及其不可变 backing，随 View trace/sweep。
+View adapter 状态另存独立 singleLine 位，并保活 Drawable 身份及其不可变 backing，随 View trace/sweep。
 mHorizontallyScrolling 由 Java 字段唯一拥有，getter 执行 ROM；setter 值变化才清测量缓存并请求布局/失效。
 setSingleLine 同时设置该字段；测量和光栅计划都传独立 no_wrap，只有 singleLine 转换换行为空格。
-不实现滚动偏移或 marquee。不写 mText/mLayout/mEditor，不开放 getPaint singleton。
+不实现滚动偏移或 marquee。不写 mText/mLayout/mEditor。
+mHint/mFilters 归 Java，getter 及资源 hint setter 执行 ROM；setText 按序真实虚派 InputFilter，null filters 抛 IAE。
+输入类型归有界 adapter（无 Editor），经 setSingleLine 同步行策略，密码变体显示 U+2022；
+空正文时测量及光栅计划选择 hint 与当前 hint 色。无 KeyListener、IME 选项或数字/邮箱键盘。
 ROM 状态色的 TextView 消费：mTextColor/mHintTextColor/mLinkTextColor/mHighlightColor 保存
 真实 Java 值；getTextColors 保持列表身份，hint/link/highlight getter 执行 ROM。
 getCurrentTextColor 与叶 RGBA 按真实 getDrawableState→ROM getColorForState 派生，
 drawableStateChanged 先执行 View 协议再刷新颜色；GC 通过 Java 字段保活列表。
 View 背景按 ROM isStateful 跳过非有状态背景；仅 ROM 皮肤可更新状态，其他有状态背景明确失败。
-颜色变化仅失效绘制，不改变测量几何。hint/link 的布局与 Editor 能力仍未开放。
+颜色变化仅失效绘制，不改变测量几何。link 的布局与 Editor 能力仍未开放。
 
 未知/不支持请求明确失败；全部解析与校验后才发布宿主文本输入，inflater仍原子替换整树。
 
@@ -806,7 +820,7 @@ Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 change
 不按属性名白名单发放、不预先解析目标内容。资源类型编号与 ID type 段一致，输入锁定
 同 ROM framework-res.apk 并交叉核对共享 R 常量；真实缺名、冲突仍拒绝。
 TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检查加载支持，未支持
-目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text 闭包及四个 scrollbar thumb；
+目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text/btn_default 闭包及四个 scrollbar thumb；
 scrollbar 初始化与状态对象边界见上文；未封存资源保持关闭即失败。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，

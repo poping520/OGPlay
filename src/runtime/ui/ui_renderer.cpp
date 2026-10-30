@@ -110,8 +110,9 @@ void AppendNode(const UiTree& tree, const UiNodeId id, const UiBitmapCache& bitm
             out.emplace_back(DrawBitmap{ImageDestination(node, source), image, node.alpha * node.image_alpha});
         }
     }
-    if (!node.text.empty() || std::any_of(node.compound_drawables.begin(), node.compound_drawables.end(),
-                                          [](const CompoundDrawable& drawable) { return drawable.resource_id != 0; })) {
+    if (!node.text.empty() || (node.text_line_plan && !node.text_line_plan->text.empty()) ||
+        std::any_of(node.compound_drawables.begin(), node.compound_drawables.end(),
+                    [](const CompoundDrawable& drawable) { return drawable.resource_id != 0; })) {
         auto rendered_text = node.text;
         const auto content =
             Rect{node.screen_frame.left + node.padding.left, node.screen_frame.top + node.padding.top,

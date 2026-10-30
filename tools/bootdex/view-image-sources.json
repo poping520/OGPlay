@@ -179,7 +179,7 @@
           "signature": "onCreateDrawableState(I)[I",
           "flags": 1,
           "body_sha256": "26e3f2dc184e62cbf59ec13df5a46b946266f3bfca7382fc1263b583e634fd7b",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "onDetachedFromWindow()V",
@@ -265,7 +265,7 @@
           "signature": "setAdjustViewBounds(Z)V",
           "flags": 1,
           "body_sha256": "ccc9b7921cf1c2d376e877963f1c1a2cd95473c940e1028bbbe4c6084797a347",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "setAlpha(I)V",
@@ -574,7 +574,7 @@
         {
           "signature": "mMergeState:Z",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {
@@ -592,7 +592,7 @@
         {
           "signature": "mState:[I",
           "flags": 2,
-          "source": "failure",
+          "source": "rom",
           "initialization": "vm-zero-before-selected-constructor/rom-clinit"
         },
         {

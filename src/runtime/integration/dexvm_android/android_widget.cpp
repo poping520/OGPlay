@@ -803,6 +803,9 @@ Decl ExperimentalTextView(const Context& context) {
         builder.BoundInstanceField("mHintTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto link_colors =
         builder.BoundInstanceField("mLinkTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
+    const auto paint_field = builder.BoundInstanceField("mTextPaint", "Landroid/text/TextPaint;", dx::kAccPrivate);
+    const auto hint_field = builder.BoundInstanceField("mHint", "Ljava/lang/CharSequence;", dx::kAccPrivate);
+    const auto filters_field = builder.BoundInstanceField("mFilters", "[Landroid/text/InputFilter;", dx::kAccPrivate);
     const auto horizontal = builder.BoundInstanceField("mHorizontallyScrolling", "Z", dx::kAccPrivate);
     const auto highlight = builder.BoundInstanceField("mHighlightColor", "I", dx::kAccPrivate);
     const std::array resource_fields{builder.BoundInstanceField("mTextSelectHandleLeftRes", "I", 0),
@@ -810,7 +813,10 @@ Decl ExperimentalTextView(const Context& context) {
                                      builder.BoundInstanceField("mTextSelectHandleRes", "I", 0),
                                      builder.BoundInstanceField("mCursorDrawableRes", "I", 0),
                                      builder.BoundInstanceField("mTextEditSuggestionItemLayout", "I", 0)};
-    const auto update_color = [context, text_colors](dx::IntrinsicContext& c) {
+    const auto current_color = builder.BoundInstanceField("mCurTextColor", "I", dx::kAccPrivate);
+    const auto current_hint = builder.BoundInstanceField("mCurHintTextColor", "I", dx::kAccPrivate);
+    const auto update_color = [context, text_colors, hint_colors, current_color,
+                               current_hint](dx::IntrinsicContext& c) {
         const auto colors = dx::IntrinsicCall(c).GetRef(text_colors);
         if (!colors.IsValid()) return;
         const auto roots = c.vm.ProtectReferences(std::array{colors});
@@ -818,6 +824,12 @@ Decl ExperimentalTextView(const Context& context) {
         const auto color = CallAndroidMethod(c.vm, colors, "getColorForState", "([II)I",
                                              {dx::VmValue::Ref(states), dx::VmValue::Int(0)})
                                .AsInt();
+        dx::IntrinsicCall(c).SetInt(current_color, color);
+        const auto hints = dx::IntrinsicCall(c).GetRef(hint_colors);
+        if (hints.IsValid())
+            dx::IntrinsicCall(c).SetInt(current_hint, CallAndroidMethod(c.vm, hints, "getColorForState", "([II)I",
+                                                                        {dx::VmValue::Ref(states), dx::VmValue::Int(0)})
+                                                          .AsInt());
         const auto node = TextNode(c, context);
         context->ui_tree.Get(node)->text_color = AndroidColorToRgba(static_cast<std::uint32_t>(color));
         context->ui_tree.MarkDrawDirty(node);
@@ -844,7 +856,8 @@ Decl ExperimentalTextView(const Context& context) {
     builder.Constructor("(Landroid/content/Context;Landroid/util/AttributeSet;I)V", [context, text_colors, hint_colors,
                                                                                      link_colors, highlight,
                                                                                      resource_fields, update_color,
-                                                                                     horizontal](
+                                                                                     horizontal, paint_field,
+                                                                                     filters_field](
                                                                                         dx::IntrinsicContext& c) {
         auto& vm = c.vm;
         const auto owner = c.arguments[0].ref, attrs = c.arguments[1].ref;
@@ -1129,7 +1142,29 @@ Decl ExperimentalTextView(const Context& context) {
         auto& refs = context->view_adapter_references[c.receiver.Value()];
         refs.text_single_line = single;
         dx::IntrinsicCall(c).SetInt(horizontal, single);
-        refs.text_typeface = face;
+        const auto paint_type = vm.Linker().ResolveDescriptor("Landroid/text/TextPaint;");
+        const auto paint_init = vm.EnsureClassInitialized(paint_type);
+        if (paint_init.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(paint_init.exception_class).descriptor,
+                                  paint_init.exception_message, paint_init.exception};
+        const auto paint = vm.NewIntrinsicInstance("Landroid/text/TextPaint;");
+        const auto paint_root = vm.ProtectReferences(std::array{paint});
+        const auto paint_result =
+            vm.Call(*vm.Linker().FindDirectMethod(paint_type, "<init>", "()V"), std::array{dx::VmValue::Ref(paint)});
+        if (paint_result.exception.IsValid())
+            throw dx::VmJavaThrow{vm.Linker().Class(paint_result.exception_class).descriptor,
+                                  paint_result.exception_message, paint_result.exception};
+        dx::IntrinsicCall(c).SetRef(paint_field, paint);
+        static_cast<void>(
+            CallAndroidMethod(vm, paint, "setTextSize", "(F)V", {dx::VmValue::Float(state->text_size_px)}));
+        static_cast<void>(CallAndroidMethod(vm, paint, "setTypeface",
+                                            "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+                                            {dx::VmValue::Ref(face)}));
+        static_cast<void>(CallAndroidMethod(vm, paint, "setAntiAlias", "(Z)V", {dx::VmValue::Int(1)}));
+        context->paint_measure_states.at(paint.Value()).text_view_owned = true;
+        dx::IntrinsicCall(c).SetRef(
+            filters_field, vm.Model().NewObjectArray(vm.Linker().ResolveDescriptor("[Landroid/text/InputFilter;"),
+                                                     vm.Linker().ResolveDescriptor("Landroid/text/InputFilter;"), 0));
         refs.text_compounds = compound_refs;
         if (editing) {
             if (!CallAndroidMethod(vm, c.receiver, "getDefaultEditable", "()Z").AsInt())
@@ -1183,8 +1218,86 @@ Decl ExperimentalTextView(const Context& context) {
             TextInputFailure(c.vm, e.what());
         }
     };
+    const auto filtered = [filters_field](dx::IntrinsicContext& c) {
+        auto text = c.arguments[0].ref;
+        if (!text.IsValid()) text = c.vm.Model().NewString(u"");
+        const auto source_root = c.vm.ProtectReferences(std::array{text});
+        const auto holder = c.vm.Model().NewObjectArray(c.vm.Linker().ResolveDescriptor("[Ljava/lang/Object;"),
+                                                        c.vm.Linker().ResolveDescriptor("Ljava/lang/Object;"), 1);
+        const auto root = c.vm.ProtectReferences(std::array{holder, text});
+        const auto filters = dx::IntrinsicCall(c).GetRef(filters_field);
+        const auto filter_root = c.vm.ProtectReferences(std::array{filters});
+        const auto klass = c.vm.Linker().ResolveDescriptor("Landroid/widget/TextView;");
+        const auto empty_field = c.vm.Linker().FindFieldRecursive(klass, "EMPTY_SPANNED", "Landroid/text/Spanned;");
+        const dx::VmObjectRef empty{c.vm.Linker().Class(klass).static_storage[c.vm.Linker().Field(*empty_field).slot]};
+        for (JniSize i = 0; i < c.vm.Model().ArrayLength(filters); ++i) {
+            const auto filter = c.vm.Model().GetObjectElement(filters, i);
+            const auto out =
+                CallAndroidMethod(c.vm, filter, "filter",
+                                  "(Ljava/lang/CharSequence;IILandroid/text/Spanned;II)Ljava/lang/CharSequence;",
+                                  {dx::VmValue::Ref(text), dx::VmValue::Int(0),
+                                   CallAndroidMethod(c.vm, text, "length", "()I"), dx::VmValue::Ref(empty),
+                                   dx::VmValue::Int(0), dx::VmValue::Int(0)})
+                    .ref;
+            if (out.IsValid()) {
+                text = out;
+                c.vm.Model().SetObjectElement(holder, 0, text);
+            }
+        }
+        if (c.vm.Linker().Class(c.vm.Model().ObjectClass(text)).descriptor != "Ljava/lang/String;")
+            TextInputFailure(c.vm, "plain String required after filters");
+        return c.vm.Model().StringValue(text);
+    };
     builder.FinalMethod(
-        "setText", "(Ljava/lang/CharSequence;)V", [context, changed, validate](dx::IntrinsicContext& c) {
+        "setHint", "(Ljava/lang/CharSequence;)V", [context, hint_field, changed, validate](dx::IntrinsicContext& c) {
+            const auto hint = c.arguments[0].ref;
+            if (hint.IsValid() &&
+                c.vm.Linker().Class(c.vm.Model().ObjectClass(hint)).descriptor != "Ljava/lang/String;")
+                TextInputFailure(c.vm, "plain String hint required");
+            const auto& n = *context->ui_tree.Get(TextNode(c, context));
+            validate(c, n, hint.IsValid() ? c.vm.Model().StringValue(hint) : u"", n.text_size_px, n.text_style);
+            dx::IntrinsicCall(c).SetRef(hint_field, hint);
+            return changed(c);
+        });
+    builder.VirtualMethod("setFilters", "([Landroid/text/InputFilter;)V", [filters_field](dx::IntrinsicContext& c) {
+        if (!c.arguments[0].ref.IsValid())
+            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "filters cannot be null"};
+        dx::IntrinsicCall(c).SetRef(filters_field, c.arguments[0].ref);
+        return dx::VmValue::Void();
+    });
+    builder.VirtualMethod("getInputType", "()I", [context](dx::IntrinsicContext& c) {
+        return dx::VmValue::Int(context->view_adapter_references.at(c.receiver.Value()).text_input_type);
+    });
+    builder.VirtualMethod("setInputType", "(I)V", [context, changed](dx::IntrinsicContext& c) {
+        const auto type = c.arguments[0].AsInt();
+        const auto variation = type & 0xfff;
+        const auto old = context->view_adapter_references.at(c.receiver.Value()).text_input_type & 0xfff;
+        const bool password = variation == 0x81 || variation == 0xe1 || variation == 0x12;
+        if (password) {
+            try {
+                ui::RequireTextGlyph(u'\u2022', context->ui_tree.FallbackFont().get());
+            } catch (const std::runtime_error& e) {
+                TextInputFailure(c.vm, e.what());
+            }
+        }
+        if (password || variation == 0x91 || old == 0x81 || old == 0xe1 || old == 0x12 || old == 0x91) {
+            const auto family = c.vm.NewStringUtf8(password || variation == 0x91 ? "monospace" : "sans-serif");
+            const auto family_root = c.vm.ProtectReferences(std::array{family});
+            const auto face = TextStatic(c.vm, "Landroid/graphics/Typeface;", "create",
+                                         "(Ljava/lang/String;I)Landroid/graphics/Typeface;",
+                                         {dx::VmValue::Ref(family), dx::VmValue::Int(0)})
+                                  .ref;
+            const auto face_root = c.vm.ProtectReferences(std::array{face});
+            static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "setTypeface", "(Landroid/graphics/Typeface;)V",
+                                                {dx::VmValue::Ref(face)}));
+        }
+        context->view_adapter_references.at(c.receiver.Value()).text_input_type = type;
+        static_cast<void>(CallAndroidMethod(c.vm, c.receiver, "setSingleLine", "(Z)V",
+                                            {dx::VmValue::Int((type & 0x2000f) != 0x20001)}));
+        return changed(c);
+    });
+    builder.FinalMethod(
+        "setText", "(Ljava/lang/CharSequence;)V", [context, changed, validate, filtered](dx::IntrinsicContext& c) {
             if (UiClassForObject(c.vm, c.receiver) == ui::UiClass::EditText) {
                 const auto type = TextStatic(c.vm, "Landroid/widget/TextView$BufferType;", "valueOf",
                                              "(Ljava/lang/String;)Landroid/widget/TextView$BufferType;",
@@ -1197,14 +1310,14 @@ Decl ExperimentalTextView(const Context& context) {
             const auto ref = c.arguments[0].ref;
             if (ref.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(ref)).descriptor != "Ljava/lang/String;")
                 TextInputFailure(c.vm, "plain String required");
-            auto text = ref.IsValid() ? c.vm.Model().StringValue(ref) : std::u16string{};
+            auto text = filtered(c);
             auto& n = *context->ui_tree.Get(TextNode(c, context));
             validate(c, n, text, n.text_size_px, n.text_style);
             n.text = std::move(text);
             return changed(c);
         });
     builder.VirtualMethod("setText", "(Ljava/lang/CharSequence;Landroid/widget/TextView$BufferType;)V",
-                          [context, validate](dx::IntrinsicContext& c) {
+                          [context, validate, filtered](dx::IntrinsicContext& c) {
                               if (UiClassForObject(c.vm, c.receiver) != ui::UiClass::EditText ||
                                   !c.arguments[1].ref.IsValid() ||
                                   CallAndroidMethod(c.vm, c.arguments[1].ref, "ordinal", "()I").AsInt() != 2)
@@ -1213,7 +1326,7 @@ Decl ExperimentalTextView(const Context& context) {
                               if (text.IsValid() && c.vm.Linker().Class(c.vm.Model().ObjectClass(text)).descriptor !=
                                                         "Ljava/lang/String;")
                                   TextInputFailure(c.vm, "plain String required");
-                              const auto value = text.IsValid() ? c.vm.Model().StringValue(text) : std::u16string{};
+                              const auto value = filtered(c);
                               const auto& n = *context->ui_tree.Get(TextNode(c, context));
                               validate(c, n, value, n.text_size_px, n.text_style);
                               static_cast<void>(ApplyTextEdit(c.vm, *context, c.receiver, 0,
@@ -1273,13 +1386,13 @@ Decl ExperimentalTextView(const Context& context) {
         const auto rgba = context->ui_tree.Get(TextNode(c, context))->text_shadow.rgba;
         return dx::VmValue::Int(static_cast<std::int32_t>((rgba >> 8U) | (rgba << 24U)));
     });
-    builder.VirtualMethod("getTextSize", "()F", [context](dx::IntrinsicContext& c) {
-        return dx::VmValue::Float(context->ui_tree.Get(TextNode(c, context))->text_size_px);
+    builder.VirtualMethod("getTextSize", "()F", [context, paint_field](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, dx::IntrinsicCall(c).GetRef(paint_field), "getTextSize", "()F");
     });
     builder.VirtualMethod("setTextSize", "(F)V", [](dx::IntrinsicContext& c) {
         return CallAndroidMethod(c.vm, c.receiver, "setTextSize", "(IF)V", {dx::VmValue::Int(2), c.arguments[0]});
     });
-    builder.VirtualMethod("setTextSize", "(IF)V", [context, changed, validate](dx::IntrinsicContext& c) {
+    builder.VirtualMethod("setTextSize", "(IF)V", [context, changed, validate, paint_field](dx::IntrinsicContext& c) {
         const auto unit = c.arguments[0].AsInt();
         if (unit < 0 || unit > 2) TextInputFailure(c.vm, "unsupported dimension unit");
         const auto size = c.arguments[1].AsFloat() * (unit == 0   ? 1.F
@@ -1287,16 +1400,21 @@ Decl ExperimentalTextView(const Context& context) {
                                                                   : context->ui_scaled_density);
         auto& n = *context->ui_tree.Get(TextNode(c, context));
         validate(c, n, n.text, size, n.text_style);
+        context->paint_measure_states.at(dx::IntrinsicCall(c).GetRef(paint_field).Value()).text_size = size;
         n.text_size_px = size;
         return changed(c);
     });
     builder.VirtualMethod(
-        "setTypeface", "(Landroid/graphics/Typeface;)V", [context, changed, validate](dx::IntrinsicContext& c) {
+        "setTypeface", "(Landroid/graphics/Typeface;)V",
+        [context, changed, validate, paint_field](dx::IntrinsicContext& c) {
             const auto ref = c.arguments[0].ref;
             const auto style = ref.IsValid() ? CallAndroidMethod(c.vm, ref, "getStyle", "()I").AsInt() : 0;
             auto& n = *context->ui_tree.Get(TextNode(c, context));
             validate(c, n, n.text, n.text_size_px, static_cast<std::uint32_t>(style));
-            context->view_adapter_references.at(c.receiver.Value()).text_typeface = ref;
+            const auto paint = dx::IntrinsicCall(c).GetRef(paint_field);
+            const auto field = c.vm.Linker().FindFieldRecursive(c.vm.Model().ObjectClass(paint), "mTypeface",
+                                                                "Landroid/graphics/Typeface;");
+            c.vm.Model().InstanceSlots(paint)[c.vm.Linker().Field(*field).slot] = {ref.Value(), dx::SlotTag::ref};
             n.text_style = static_cast<std::uint32_t>(style);
             return changed(c);
         });
@@ -1311,8 +1429,9 @@ Decl ExperimentalTextView(const Context& context) {
         return CallAndroidMethod(c.vm, c.receiver, "setTypeface", "(Landroid/graphics/Typeface;)V",
                                  {dx::VmValue::Ref(ref)});
     });
-    builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [context](dx::IntrinsicContext& c) {
-        return dx::VmValue::Ref(context->view_adapter_references.at(c.receiver.Value()).text_typeface);
+    builder.VirtualMethod("getTypeface", "()Landroid/graphics/Typeface;", [paint_field](dx::IntrinsicContext& c) {
+        return CallAndroidMethod(c.vm, dx::IntrinsicCall(c).GetRef(paint_field), "getTypeface",
+                                 "()Landroid/graphics/Typeface;");
     });
     builder.VirtualMethod("setTextColor", "(I)V", [](dx::IntrinsicContext& c) {
         const auto list = TextStatic(c.vm, "Landroid/content/res/ColorStateList;", "valueOf",
@@ -1331,10 +1450,6 @@ Decl ExperimentalTextView(const Context& context) {
                               update_color(c);
                               return CallAndroidMethod(c.vm, c.receiver, "invalidate", "()V");
                           });
-    builder.FinalMethod("getCurrentTextColor", "()I", [context](dx::IntrinsicContext& c) {
-        const auto rgba = context->ui_tree.Get(TextNode(c, context))->text_color;
-        return dx::VmValue::Int(static_cast<std::int32_t>((rgba >> 8U) | (rgba << 24U)));
-    });
     builder.FinalMethod(
         "getTextColors", "()Landroid/content/res/ColorStateList;",
         [text_colors](dx::IntrinsicContext& c) { return dx::VmValue::Ref(dx::IntrinsicCall(c).GetRef(text_colors)); });
@@ -1439,7 +1554,7 @@ Decl ExperimentalTextView(const Context& context) {
         const auto revision = context->view_adapter_references.at(c.receiver.Value()).text_revision;
         const auto& n = *context->ui_tree.Get(TextNode(c, context));
         ui::TextLeafInput input;
-        input.text = n.text;
+        input.text = ReadAndroidTextDisplay(c.vm, *context, c.receiver);
         if (context->view_adapter_references.at(c.receiver.Value()).text_single_line)
             std::replace(input.text.begin(), input.text.end(), u'\n', u' ');
         input.size_px = n.text_size_px;

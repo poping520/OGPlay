@@ -352,3 +352,58 @@ TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on 
         }
     }
 }
+
+TEST_CASE("DVM-362 Paint and TextPaint bounds share fixed glyph widths on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        for (const auto type : {"Landroid/graphics/Paint;", "Landroid/text/TextPaint;"}) {
+            const auto paint = f.New(type);
+            const auto rect = f.New("Landroid/graphics/Rect;");
+            const auto string = f.model.NewString(u"xHIy");
+            const auto chars =
+                f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[C"), JniPrimitiveKind::character, 4);
+            const auto roots = f.vm.ProtectReferences(std::array{paint, rect, string, chars});
+            for (int i = 0; i < 4; ++i)
+                f.model.SetPrimitiveElement(chars, i, u"xHIy"[i]);
+            for (const float size : {8.F, 16.F, 24.F}) {
+                f.On(paint, "setTextSize", "(F)V", {VmValue::Float(size)});
+                const auto fm = f.On(paint, "getFontMetrics", "()Landroid/graphics/Paint$FontMetrics;").ref;
+                const auto fm_root = f.vm.ProtectReferences(std::array{fm});
+                const auto metric = [&](const char* name) {
+                    const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(fm), name, "F");
+                    REQUIRE(field);
+                    return std::bit_cast<float>(f.model.InstanceSlots(fm)[f.linker.Field(*field).slot].bits);
+                };
+                const auto line = ui::MeasureFixedText(u"M", size, 0);
+                CHECK(metric("ascent") < 0);
+                CHECK(metric("descent") >= 0);
+                CHECK(metric("descent") - metric("ascent") == line.height);
+                CHECK(-metric("ascent") == 7 * line.scale);
+                CHECK(metric("top") == metric("ascent"));
+                CHECK(metric("bottom") == metric("descent"));
+                CHECK(metric("leading") == 0);
+                CHECK(f.On(paint, "ascent", "()F").AsFloat() == metric("ascent"));
+                CHECK(f.On(paint, "descent", "()F").AsFloat() == metric("descent"));
+                CHECK(f.On(paint, "getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F", {VmValue::Ref(fm)})
+                          .AsFloat() == line.height);
+                CHECK(f.On(paint, "getFontMetrics", "(Landroid/graphics/Paint$FontMetrics;)F",
+                           {VmValue::Ref(VmObjectRef{})})
+                          .AsFloat() == line.height);
+                const auto width = f.On(paint, "measureText", "(Ljava/lang/String;II)F",
+                                        {VmValue::Ref(string), VmValue::Int(1), VmValue::Int(3)})
+                                       .AsFloat();
+                for (bool array : {false, true}) {
+                    f.On(paint, "getTextBounds",
+                         array ? "([CIILandroid/graphics/Rect;)V" : "(Ljava/lang/String;IILandroid/graphics/Rect;)V",
+                         {VmValue::Ref(array ? chars : string), VmValue::Int(1), VmValue::Int(array ? 2 : 3),
+                          VmValue::Ref(rect)});
+                    CHECK(f.On(rect, "width", "()I").AsInt() == width);
+                    CHECK(f.On(rect, "height", "()I").AsInt() == ui::MeasureFixedText(u"HI", size, 0).height);
+                }
+            }
+            CHECK(f.OnOutcome(paint, "getTextBounds", "(Ljava/lang/String;IILandroid/graphics/Rect;)V",
+                              {VmValue::Ref(string), VmValue::Int(-1), VmValue::Int(3), VmValue::Ref(rect)})
+                      .exception.IsValid());
+        }
+    }
+}

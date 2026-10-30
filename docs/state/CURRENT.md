@@ -25,8 +25,8 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | Asphalt 5 1.1.3 | macOS | 语言选择界面 | 无 Profile 场景 600 帧退出 0；交互未验 | [DVM-19](../tasks/dexvm/DVM-19.md)、[WU5](../tasks/diagnostics/DIAG-6.md) |
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
-| GTA3 | macOS | EULA 已接受，Surface 可见性生命周期通过，到达 Tap To Continue 标题画面 | PlayMovieInWindow 命中 `View.toString()` 未实现（pc25）；影片解码画面未验；NV clock 提示仍在 | [BND-42](../tasks/boundary/BND-42.md)、[DVM-348](../tasks/dexvm/DVM-348.md) |
-| GTASA | macOS | TextView 横向滚动状态通过 | TextView.getPaint() 未实现，andLabel.setAutoResize pc14；FPS未验 | [DVM-361](../tasks/dexvm/DVM-361.md) |
+| GTA3 | macOS | Tap To Continue 标题；PlayMovieInWindow 的 View.toString 已通过 | 本次 90 秒未见新 Java 首错；影片解码画面未验，NV clock 提示仍在 | [DVM-363](../tasks/dexvm/DVM-363.md) |
+| GTASA | macOS | ImageButton 默认背景及 View 配置通过 | Spinner(Context) 未实现，andDropDownList.createView；FPS未验 | [DVM-363](../tasks/dexvm/DVM-363.md) |
 
 ## 未闭合问题
 

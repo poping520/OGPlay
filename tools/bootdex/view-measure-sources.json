@@ -54,6 +54,10 @@
     "getMeasuredWidthAndState()I",
     "getMinimumHeight()I",
     "getMinimumWidth()I",
+    "getNextFocusDownId()I",
+    "getNextFocusLeftId()I",
+    "getNextFocusRightId()I",
+    "getNextFocusUpId()I",
     "getOnFocusChangeListener()Landroid/view/View$OnFocusChangeListener;",
     "getOpticalInsets()Landroid/graphics/Insets;",
     "getOverScrollMode()I",
@@ -115,6 +119,7 @@
     "isPaddingResolved()Z",
     "isPressed()Z",
     "isRtlCompatibilityMode()Z",
+    "isSoundEffectsEnabled()Z",
     "isTextAlignmentInherited()Z",
     "isTextAlignmentResolved()Z",
     "isTextDirectionInherited()Z",
@@ -173,11 +178,16 @@
     "setFocusable(Z)V",
     "setFocusableInTouchMode(Z)V",
     "setFrame(IIII)Z",
+    "setHorizontalScrollBarEnabled(Z)V",
     "setId(I)V",
     "setLayoutDirection(I)V",
     "setLayoutParams(Landroid/view/ViewGroup$LayoutParams;)V",
     "setLongClickable(Z)V",
     "setMeasuredDimension(II)V",
+    "setNextFocusDownId(I)V",
+    "setNextFocusLeftId(I)V",
+    "setNextFocusRightId(I)V",
+    "setNextFocusUpId(I)V",
     "setOnClickListener(Landroid/view/View$OnClickListener;)V",
     "setOnCreateContextMenuListener(Landroid/view/View$OnCreateContextMenuListener;)V",
     "setOnDragListener(Landroid/view/View$OnDragListener;)V",
@@ -194,9 +204,11 @@
     "setPressed(Z)V",
     "setRight(I)V",
     "setScrollContainer(Z)V",
+    "setSoundEffectsEnabled(Z)V",
     "setVisibility(I)V",
     "setWillNotDraw(Z)V",
     "sizeChange(IIII)V",
+    "toString()Ljava/lang/String;",
     "unFocus()V",
     "verifyDrawable(Landroid/graphics/drawable/Drawable;)Z",
     "willNotDraw()Z"
@@ -691,7 +703,7 @@
       "reason": "DVM-326 ADR-0161 same-ROM bounded default skin state and padding",
       "inputs": "hash-locked ROM selector ordered states, decoded ninepatch PNG and npTc padding; runtime density",
       "outputs": "ROM-shaped Drawable identity, selected child, scaled padding and dimensions; no draw credit",
-      "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement",
+      "state_owner": "ROM Drawable base fields; per-object adapter backing and traced children; GC retirement; DVM-363 bounded runtime selector state can update its selected child without draw credit",
       "failure_boundary": "only sealed edit_text closure; unreviewed XML/animation/transition/custom drawing fails with ADR-0147; no full drawable stack"
     },
     "onCancelPendingInputEvents()V": {
@@ -808,5 +820,5 @@
     }
   },
   "surface": "tools/bootdex/window-background.surface.json.gz",
-  "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727"
+  "surface_sha256": "21399ed9954e9d0a5956398cb1921f1e92d3a9ca062d28fd3b5dd36b1101e7cb"
 }

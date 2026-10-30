@@ -1,5 +1,7 @@
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
+#include "ogplay/runtime/ui/ui_fallback_font.h"
+#include <filesystem>
 #include <algorithm>
 
 using ogplay::test::container_traversal::ContainerVm;
@@ -281,5 +283,130 @@ TEST_CASE("DVM-361 TextView horizontal scrolling preserves newlines on both back
                            draw->line_plan->text == (horizontal ? u"HI HI HI\nHI HI HI" : u"HI HI\nHI\nHI HI\nHI")));
         }
         CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-362 TextView Paint hint input and real Java filters on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto font_root =
+            std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() / "data/android/19/fonts";
+        const auto font_bytes = [&](const char* name) {
+            std::ifstream stream(font_root / name, std::ios::binary);
+            REQUIRE(stream.good());
+            const std::vector<char> raw{std::istreambuf_iterator<char>(stream), {}};
+            std::vector<std::byte> bytes(raw.size());
+            std::memcpy(bytes.data(), raw.data(), raw.size());
+            return bytes;
+        };
+        f.context->ui_tree.SetFallbackFont(std::make_shared<ui::UiFallbackFont>(font_bytes("Roboto-Regular.ttf"),
+                                                                                font_bytes("DroidSansFallback.ttf")));
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto text = Text(f, owner);
+        const auto root = f.vm.ProtectReferences(std::array{text});
+        const auto paint = f.On(text, "getPaint", "()Landroid/text/TextPaint;").ref;
+        CHECK(f.On(text, "getPaint", "()Landroid/text/TextPaint;").ref == paint);
+        for (float size : {8.F, 16.F, 24.F}) {
+            f.On(text, "setTextSize", "(IF)V", {VmValue::Int(0), VmValue::Float(size)});
+            CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == size);
+            CHECK(f.On(text, "getTextSize", "()F").AsFloat() == size);
+        }
+        const auto face =
+            f.Static("Landroid/graphics/Typeface;", "create", "(Ljava/lang/String;I)Landroid/graphics/Typeface;",
+                     {VmValue::Ref(f.vm.NewStringUtf8("monospace")), VmValue::Int(1)})
+                .ref;
+        const auto face_root = f.vm.ProtectReferences(std::array{face});
+        f.On(text, "setTypeface", "(Landroid/graphics/Typeface;)V", {VmValue::Ref(face)});
+        CHECK(f.On(paint, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
+        CHECK(f.On(text, "getTypeface", "()Landroid/graphics/Typeface;").ref == face);
+        const auto rejected = f.OnOutcome(paint, "setTextSize", "(F)V", {VmValue::Float(32)});
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(f.On(paint, "getTextSize", "()F").AsFloat() == 24);
+        CHECK(f.OnOutcome(paint, "setTypeface", "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;",
+                          {VmValue::Ref(VmObjectRef{})})
+                  .exception.IsValid());
+        f.On(text, "setTextSize", "(IF)V", {VmValue::Int(0), VmValue::Float(8)});
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u""))});
+        const auto hint = f.model.NewString(u"WATERMARK");
+        f.On(text, "setHint", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(hint)});
+        CHECK(f.On(text, "getHint", "()Ljava/lang/CharSequence;").ref == hint);
+        Measure(f, text, 0, 0);
+        const auto hint_width = f.On(text, "getMeasuredWidth", "()I").AsInt();
+        CHECK(f.context->view_adapter_references.at(text.Value()).text_measure->line_plan->text == u"WATERMARK");
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"HI"))});
+        Measure(f, text, 0, 0);
+        CHECK(f.On(text, "getMeasuredWidth", "()I").AsInt() < hint_width);
+        CHECK(f.context->view_adapter_references.at(text.Value()).text_measure->line_plan->text == u"HI");
+        f.On(text, "setInputType", "(I)V", {VmValue::Int(129)});
+        CHECK(f.On(text, "getInputType", "()I").AsInt() == 129);
+        CHECK(f.On(text, "getHorizontallyScrolling", "()Z").AsInt() != 0);
+        Measure(f, text, 0, 0);
+        CHECK(f.context->view_adapter_references.at(text.Value()).text_measure->line_plan->text == u"\u2022\u2022");
+        CHECK(f.model.StringValue(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref) == u"HI");
+        const auto group = f.New("Landroid/widget/FrameLayout;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto group_root = f.vm.ProtectReferences(std::array{group});
+        const auto custom_view = Text(f, owner, "Ltest/TextMeasureOverride;");
+        f.On(group, "addView", "(Landroid/view/View;II)V", {VmValue::Ref(text), VmValue::Int(200), VmValue::Int(-2)});
+        f.On(group, "addView", "(Landroid/view/View;II)V",
+             {VmValue::Ref(custom_view), VmValue::Int(200), VmValue::Int(-2)});
+        f.context->content_view = group;
+        ++f.context->ui_content_revision;
+        for (const auto view : {text, custom_view}) {
+            f.On(view, "setHint", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"HINT"))});
+            f.On(view, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u""))});
+        }
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 100}));
+        std::size_t hint_draws = 0;
+        for (const auto& command : ui::BuildUiRenderList(*f.context->ui_tree.PublishedProjection(), {}))
+            if (const auto* draw = std::get_if<ui::DrawText>(&command)) {
+                CHECK(draw->line_plan->text == u"HINT");
+                ++hint_draws;
+            }
+        CHECK(hint_draws == 2);
+        for (const auto view : {text, custom_view}) {
+            const auto node = f.context->ui_tree.PublishedProjection()->Get(*FindViewUiNode(*f.context, view.Value()));
+            CHECK(node->text_line_plan->text == u"HINT");
+            const auto argb = static_cast<std::uint32_t>(f.On(view, "getCurrentHintTextColor", "()I").AsInt());
+            CHECK(node->text_color == ((argb << 8U) | (argb >> 24U)));
+            f.On(view, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"ABC"))});
+            f.On(view, "setInputType", "(I)V", {VmValue::Int(129)});
+        }
+        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                         AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 100}));
+        for (const auto view : {text, custom_view})
+            CHECK(f.context->ui_tree.PublishedProjection()
+                      ->Get(*FindViewUiNode(*f.context, view.Value()))
+                      ->text_line_plan->text == u"\u2022\u2022\u2022");
+        for (int type : {2, 524321, 528385, 0x20001}) {
+            f.On(text, "setInputType", "(I)V", {VmValue::Int(type)});
+            CHECK(f.On(text, "getInputType", "()I").AsInt() == type);
+            CHECK(f.On(text, "getHorizontallyScrolling", "()Z").AsInt() == (type != 0x20001));
+        }
+        const auto filters = f.model.NewObjectArray(f.linker.ResolveDescriptor("[Landroid/text/InputFilter;"),
+                                                    f.linker.ResolveDescriptor("Landroid/text/InputFilter;"), 2);
+        const auto filter_root = f.vm.ProtectReferences(std::array{filters});
+        const auto length = f.New("Landroid/text/InputFilter$LengthFilter;", "(I)V", {VmValue::Int(3)});
+        f.model.SetObjectElement(filters, 0, length);
+        const auto custom = f.New("Ltest/OrderedInputFilter;");
+        f.model.SetObjectElement(filters, 1, custom);
+        f.On(text, "setFilters", "([Landroid/text/InputFilter;)V", {VmValue::Ref(filters)});
+        CHECK(f.On(text, "getFilters", "()[Landroid/text/InputFilter;").ref == filters);
+        f.On(text, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"123456"))});
+        CHECK(f.model.StringValue(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref) == u"OK");
+        CHECK(f.On(custom, "calls", "()I").AsInt() == 1);
+        const auto edit = Text(f, owner, "Landroid/widget/EditText;");
+        const auto edit_root = f.vm.ProtectReferences(std::array{edit});
+        f.On(edit, "setFilters", "([Landroid/text/InputFilter;)V", {VmValue::Ref(filters)});
+        f.On(edit, "setText", "(Ljava/lang/CharSequence;)V", {VmValue::Ref(f.model.NewString(u"abcdef"))});
+        const auto editable = f.On(edit, "getText", "()Landroid/text/Editable;").ref;
+        CHECK(f.model.StringValue(f.On(editable, "toString", "()Ljava/lang/String;").ref) == u"OK");
+        CHECK(f.On(custom, "calls", "()I").AsInt() == 2);
+        const auto bad =
+            f.OnOutcome(text, "setFilters", "([Landroid/text/InputFilter;)V", {VmValue::Ref(VmObjectRef{})});
+        REQUIRE(bad.exception.IsValid());
+        CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
     }
 }

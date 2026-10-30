@@ -5,6 +5,7 @@
 #include "ogplay/runtime/boundary/sensor_directory.h"
 
 #include "ogplay/core/logger.h"
+#include "ogplay/hal/clock.h"
 
 #include <deque>
 
@@ -125,6 +126,11 @@ struct AndroidPlatformServices final {
 [[nodiscard]] std::shared_ptr<struct DexVmAndroidContext> AssembleAndroidContext(std::vector<std::byte> boot_archive,
                                                                                  AndroidPlatformServices platform);
 
+// Java colors are ARGB; UiTree and solid draw commands consume RGBA.
+[[nodiscard]] constexpr std::uint32_t AndroidColorToRgba(std::uint32_t argb) {
+    return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
+}
+
 struct DexVmAndroidContext final {
     explicit DexVmAndroidContext(AndroidUiTraversalOwner owner = AndroidUiTraversalOwner::JavaTraversal,
                                  AndroidPlatformServices platform = {})
@@ -242,6 +248,7 @@ struct DexVmAndroidContext final {
     bool activity_inventory_known{};
     bool receiver_inventory_known{};
     bool application_enabled{true};
+    bool application_large_heap{false};
     std::vector<loader::AndroidManifestActivityComponent> activity_components;
     std::vector<loader::AndroidManifestServiceComponent> service_components;
     std::vector<loader::AndroidManifestReceiverComponent> receiver_components;
@@ -307,6 +314,10 @@ struct DexVmAndroidContext final {
     std::string external_storage_root{"/sdcard"};
 
     // Deterministic time published by the lifecycle driver (unified Clock).
+    // Source can be replaced with RealtimeClock(NowFunction) by deterministic tests.
+    std::shared_ptr<hal::Clock> stall_clock = std::make_shared<hal::RealtimeClock>(1000);
+    dexvm::VmMonitorTable* clock_monitors{};
+    std::thread::id clock_driver = std::this_thread::get_id();
     std::atomic<std::int64_t> uptime_millis{kDefaultAndroidDeviceUptimeMillis};
     // System.exit(): the guest asked for the process, not an activity.
     std::atomic<bool> exit_requested{false};
@@ -1048,7 +1059,6 @@ struct DexVmAndroidContext final {
 
     struct UiDrawableState final {
         std::uint32_t resource_id{};
-        std::optional<std::uint32_t> color;
         std::uint8_t alpha{255};
         ui::Rect bounds;
         std::optional<ui::UiNodeId> callback_node;
@@ -1264,6 +1274,7 @@ void WriteAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& contex
 // Installs/removes the generic VmExecutionLock blocking observer for the
 // lifecycle thread. The observer filters by the registered host thread id;
 // a GLThread's own blocking release never changes driver state.
+void AttachAndroidClockObserver(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
 void AttachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
 void DetachEglSwapPacer(DexVmAndroidContext& context, dexvm::VmExecutionLock& execution_lock);
 void AdvanceEglSwapPacer(DexVmAndroidContext& context);

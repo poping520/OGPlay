@@ -932,6 +932,7 @@
 
 .class public Lfixture/ExitHook;
 .super Ljava/lang/Thread;
+.field public static observed:Ljava/lang/String;
 .method public constructor <init>()V
 .registers 1
     invoke-direct {v0}, Ljava/lang/Thread;-><init>()V
@@ -944,6 +945,9 @@
     const-string v0, "shutdown.hook"
     const-string v1, "done"
     invoke-static {v0, v1}, Ljava/lang/System;->setProperty(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+    invoke-static {v0}, Ljava/lang/System;->getProperty(Ljava/lang/String;)Ljava/lang/String;
+    move-result-object v0
+    sput-object v0, Lfixture/ExitHook;->observed:Ljava/lang/String;
     return-void
 .end method
 
@@ -1916,4 +1920,24 @@
 .registers 2
     invoke-super {v0, v1}, Landroid/view/View;->setAlpha(F)V
     return-void
+.end method
+
+.class public Lfixture/HeapApplication;
+.super Landroid/app/Application;
+.field public static constructorMax:J
+.method public constructor <init>()V
+.registers 3
+    invoke-direct {v2}, Landroid/app/Application;-><init>()V
+    invoke-static {}, Ljava/lang/Runtime;->getRuntime()Ljava/lang/Runtime;
+    move-result-object v0
+    invoke-virtual {v0}, Ljava/lang/Runtime;->maxMemory()J
+    move-result-wide v0
+    sput-wide v0, Lfixture/HeapApplication;->constructorMax:J
+    return-void
+.end method
+.method public static allocateProbe()[B
+.registers 1
+    const v0, 101711872
+    new-array v0, v0, [B
+    return-object v0
 .end method

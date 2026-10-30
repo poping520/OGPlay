@@ -31,11 +31,9 @@ struct AppElfOptions final {
     bool call_aps5_callback{};
 };
 
-void Put16(std::vector<std::byte>& bytes, const std::size_t offset,
-           const std::uint16_t value);
+void Put16(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint16_t value);
 
-void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
-           const std::uint32_t value);
+void Put32(std::vector<std::byte>& bytes, const std::size_t offset, const std::uint32_t value);
 
 [[nodiscard]] std::vector<std::byte> LibcElf();
 [[nodiscard]] std::vector<std::byte> NativeActivityElf();
@@ -44,33 +42,26 @@ void Put32(std::vector<std::byte>& bytes, const std::size_t offset,
 
 [[nodiscard]] std::vector<std::byte> AppElf(const AppElfOptions& options);
 
-[[nodiscard]] ogplay::loader::ApkNativeLibrary Library(
-    std::string soname, std::vector<std::byte> image);
+[[nodiscard]] ogplay::loader::ApkNativeLibrary Library(std::string soname, std::vector<std::byte> image);
 
-[[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(
-    const std::string& name);
+[[nodiscard]] std::vector<std::uint8_t> ReadDexFixture(const std::string& name);
 
-[[nodiscard]] std::vector<std::byte> ReadPayloadBytes(
-    const std::string& relative);
+[[nodiscard]] std::vector<std::byte> ReadPayloadBytes(const std::string& relative);
 
-[[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(
-    const std::string& activity, const bool has_launcher = true);
+[[nodiscard]] ogplay::loader::AndroidManifestFacts AppManifest(const std::string& activity,
+                                                               const bool has_launcher = true);
 
 struct FixtureProcess final {
     std::vector<std::byte> libc{LibcElf()};
-    ogplay::loader::Elf32ModuleInput libc_input{
-        "libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
+    ogplay::loader::Elf32ModuleInput libc_input{"libc.so", libc, ogplay::memory::GuestAddress{0x10000000U}};
     ogplay::runtime::VirtualFileSystem filesystem;
-    std::unique_ptr<ogplay::runtime::AndroidGuestProcess> process{
-        ogplay::runtime::AndroidGuestProcess::Start(
-            {19, std::span{&libc_input, 1}, {}, 64, 36,
-             UINT64_C(100000), 1, &filesystem, {}})};
+    std::unique_ptr<ogplay::runtime::AndroidGuestProcess> process{ogplay::runtime::AndroidGuestProcess::Start(
+        {19, std::span{&libc_input, 1}, {}, 64, 36, UINT64_C(100000), 1, &filesystem, {}})};
 };
 
 struct ApplicationProcess final {
     std::vector<std::byte> libc{LibcElf()};
-    std::vector<std::byte> native_a{
-        AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
+    std::vector<std::byte> native_a{AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
     ogplay::runtime::VirtualFileSystem filesystem;
     std::unique_ptr<ogplay::runtime::AndroidGuestCallSession> session;
     std::unique_ptr<ogplay::loader::ApkNativeLibraryInventory> inventory;
@@ -82,24 +73,21 @@ struct ApplicationProcess final {
     std::size_t globals_before_bridge{};
     ogplay::core::Logger logger;
 
-    explicit ApplicationProcess(
-        ogplay::runtime::dexvm::InterpreterBackend backend =
-            ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
-        const std::optional<std::string_view> working_directory = std::nullopt,
-        const std::string& dex_fixture = "application.dex",
-        const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {},
-        std::vector<std::uint8_t> skeleton = {});
+    explicit ApplicationProcess(ogplay::runtime::dexvm::InterpreterBackend backend =
+                                    ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+                                const std::optional<std::string_view> working_directory = std::nullopt,
+                                const std::string& dex_fixture = "application.dex",
+                                const ogplay::runtime::dexvm::JavaObjectModelConfig heap = {},
+                                std::vector<std::uint8_t> skeleton = {});
 
     ~ApplicationProcess();
 
-    [[nodiscard]] std::int32_t CallStaticInt(
-        const std::string& owner, const std::string& name);
+    [[nodiscard]] std::int32_t CallStaticInt(const std::string& owner, const std::string& name);
 };
 
 struct OrchestratedApp final {
     std::vector<std::byte> libc{LibcElf()};
-    std::vector<std::byte> native_a{
-        AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
+    std::vector<std::byte> native_a{AppElf({"liba.so", "libc.so", ogplay::runtime::kJniVersion1_6})};
     ogplay::runtime::VirtualFileSystem filesystem;
     std::shared_ptr<ogplay::runtime::DexVmAndroidContext> context{
         std::make_shared<ogplay::runtime::DexVmAndroidContext>()};
@@ -107,22 +95,18 @@ struct OrchestratedApp final {
     ogplay::core::Logger logger;
     std::unique_ptr<ogplay::session::AndroidAppProcess> app;
 
-    explicit OrchestratedApp(const std::string& activity,
-                             const bool has_launcher = true,
-                             const bool with_native = true,
+    explicit OrchestratedApp(const std::string& activity, const bool has_launcher = true, const bool with_native = true,
                              const std::string& launcher_alias = {},
                              const std::vector<ogplay::loader::AndroidManifestServiceComponent>& services = {},
                              const bool application_enabled = true,
-                             const ogplay::runtime::dexvm::InterpreterBackend
-                                 interpreter_backend =
-                                     ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
+                             const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend =
+                                 ogplay::runtime::dexvm::InterpreterBackend::switch_dispatch,
                              const std::string& application_class = "android.app.Application",
                              std::function<void()> pump_host_events = {},
                              ogplay::runtime::ui::UiMetrics viewport = {64, 36},
-                             std::vector<std::string> gl_textures = {});
+                             std::vector<std::string> gl_textures = {}, bool large_heap = false);
 
-    [[nodiscard]] std::int32_t CallStaticInt(
-        const std::string& owner, const std::string& name);
+    [[nodiscard]] std::int32_t CallStaticInt(const std::string& owner, const std::string& name);
 };
 
-} // namespace ogplay::test::native_library
+}  // namespace ogplay::test::native_library

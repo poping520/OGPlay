@@ -429,7 +429,15 @@ TEST_CASE("DVM-352 ROM background color mutation invalidates and projects Java c
         REQUIRE(tick());
         const auto node = *FindViewUiNode(*f.context, view.Value());
         const auto projected = [&]() -> const ui::UiNode& { return *f.context->ui_tree.Get(node); };
-        CHECK(projected().background_color == 0xff000000U);
+        const auto pixel = [&] {
+            const auto image =
+                ui::RasterizeUiOverlay(ui::BuildUiRenderList(*f.context->ui_tree.PublishedProjection(), {}),
+                                       {static_cast<std::int32_t>(f.context->surface_width),
+                                        static_cast<std::int32_t>(f.context->surface_height)});
+            return std::array<std::uint8_t, 4>{image.rgba8[0], image.rgba8[1], image.rgba8[2], image.rgba8[3]};
+        };
+        CHECK(projected().background_color == 0x000000ffU);
+        CHECK(pixel() == std::array<std::uint8_t, 4>{0, 0, 0, 255});
         CHECK(projected().background_resource_id == 0);
         CHECK(projected().background_alpha == 1.0F);
         CHECK(f.ledger.Unimplemented().empty());
@@ -445,17 +453,20 @@ TEST_CASE("DVM-352 ROM background color mutation invalidates and projects Java c
         CHECK(background() == color);
         CHECK(invalidations() > before);
         CHECK(static_cast<std::uint32_t>(f.On(color, "getColor", "()I").AsInt()) == 0x80ff0000U);
-        REQUIRE(tick());
-        CHECK(projected().background_color == 0x80ff0000U);
+        static_cast<void>(tick());
+        CHECK(projected().background_color == 0xff000080U);
+        // Raster output uses premultiplied source-over channels on a transparent plane.
+        CHECK(pixel() == std::array<std::uint8_t, 4>{128, 0, 0, 128});
         CHECK(projected().background_alpha == 1.0F);
         set_color(0);
-        REQUIRE(tick());
+        static_cast<void>(tick());
+        CHECK(pixel() == std::array<std::uint8_t, 4>{0, 0, 0, 0});
         CHECK_FALSE(projected().background_color);
         CHECK(projected().background_resource_id == 0);
         set_color(0xff123456U);
-        REQUIRE(tick());
+        static_cast<void>(tick());
         f.On(view, "setBackground", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(VmObjectRef{})});
-        REQUIRE(tick());
+        static_cast<void>(tick());
         CHECK_FALSE(projected().background_color);
         CHECK(projected().background_resource_id == 0);
         for (const auto visibility : {4, 8}) {
@@ -475,21 +486,16 @@ TEST_CASE("DVM-352 unreviewed background projection clears old color and records
         ContainerVm f(backend);
         const auto owner = Owner(f);
         const auto view = f.New("Ltest/MeasuredLeaf;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
-        const auto image = f.New("Landroid/graphics/drawable/BitmapDrawable;");
+        const auto image = f.New("Ltest/UnreviewedBackground;");
         const auto roots = f.vm.ProtectReferences(std::array{owner, view, image});
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
         f.On(view, "setBackgroundColor", "(I)V", {VmValue::Int(-1)});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly));
-        // Isolate projection from BitmapDrawable.getOpacity, which is outside
-        // the reviewed setter surface (as in the drawable-state theme above).
-        const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mBackground",
-                                                       "Landroid/graphics/drawable/Drawable;");
-        REQUIRE(field);
-        f.model.InstanceSlots(view)[f.linker.Field(*field).slot] = {image.Value(), SlotTag::ref};
+        f.On(view, "setBackground", "(Landroid/graphics/drawable/Drawable;)V", {VmValue::Ref(image)});
         f.On(view, "invalidate", "()V");
-        REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
-                                         AndroidUiTraversalPhase::ResolveOnly));
+        static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                   AndroidUiTraversalPhase::ResolveOnly));
         const auto& projected = *f.context->ui_tree.Get(*FindViewUiNode(*f.context, view.Value()));
         CHECK_FALSE(projected.background_color);
         CHECK(projected.background_resource_id == 0);
@@ -498,5 +504,44 @@ TEST_CASE("DVM-352 unreviewed background projection clears old color and records
         REQUIRE(hits.size() == 1);
         CHECK(hits.front().id == "dexvm.view_background_draw");
         CHECK(hits.front().count == 1);
+    }
+}
+
+TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state methods") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend, true);
+        for (const auto* owner : {"BitmapDrawable", "PaintDrawable", "ShapeDrawable", "DrawableContainer",
+                                  "NinePatchDrawable", "GradientDrawable", "LayerDrawable", "StateListDrawable"}) {
+            const auto descriptor = std::string("Landroid/graphics/drawable/") + owner + ";";
+            const auto type = f.linker.ResolveDescriptor(descriptor);
+            // No constructor is needed to establish virtual dispatch/failure admission.
+            const auto object = f.vm.NewIntrinsicInstance(descriptor);
+            const auto roots = f.vm.ProtectReferences(std::array{object});
+            for (const auto& [name, signature] : std::array{
+                     std::pair{"mutate", "()Landroid/graphics/drawable/Drawable;"},
+                     std::pair{"getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;"},
+                     std::pair{"getAlpha", "()I"}, std::pair{"setAlpha", "(I)V"}, std::pair{"getOpacity", "()I"}}) {
+                const auto slot = f.linker.FindVtableIndex(type, name, signature);
+                REQUIRE(slot);
+                const auto& target = f.linker.Method(f.linker.Class(type).vtable[*slot]);
+                CHECK(f.linker.Class(target.owner).descriptor != "Landroid/graphics/drawable/Drawable;");
+                // Skin opacity is implemented against decoded backing; all state mutators above are rejected.
+                if (std::string_view(name) == "getOpacity" &&
+                    (std::string_view(owner) == "DrawableContainer" || std::string_view(owner) == "NinePatchDrawable" ||
+                     std::string_view(owner) == "StateListDrawable"))
+                    continue;
+                const auto result = f.OnOutcome(object, name, signature,
+                                                std::string_view(name) == "setAlpha" ? std::vector{VmValue::Int(128)}
+                                                                                     : std::vector<VmValue>{});
+                REQUIRE(result.exception.IsValid());
+                const bool skeleton_only = std::string_view(owner) == "ShapeDrawable" ||
+                                           std::string_view(owner) == "GradientDrawable" ||
+                                           std::string_view(owner) == "LayerDrawable";
+                CHECK(
+                    f.linker.Class(result.exception_class).descriptor ==
+                    (skeleton_only ? "Ljava/lang/UnsatisfiedLinkError;" : "Ljava/lang/UnsupportedOperationException;"));
+            }
+        }
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

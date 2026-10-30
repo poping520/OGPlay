@@ -322,3 +322,7 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-349 · 独立进程 Service 按不可解析回答](DVM-349.md)
 
 - [DVM-350 · ZipFile 读取 guest VFS ZIP32](DVM-350.md)
+
+- [DVM-353 · 生命周期停摆期间统一时钟按真实流速推进](DVM-353.md)
+
+- [DVM-354 · API19 1 GiB 设备堆档位与 largeHeap](DVM-354.md)

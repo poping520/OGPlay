@@ -709,7 +709,7 @@ Decl Declare_android_graphics_drawable_Drawable(const Context& context) {
     const auto dimension = [context](const bool width) {
         return dx::IntrinsicHandler([context, width](dx::IntrinsicContext& call) {
             const auto found = context->ui_drawables.find(call.receiver.Value());
-            if (found == context->ui_drawables.end() || found->second.color) return dx::VmValue::Int(-1);
+            if (found == context->ui_drawables.end() || !found->second.bitmap_drawable) return dx::VmValue::Int(-1);
             if (found->second.bitmap.IsValid()) {
                 const auto bitmap = context->bitmaps.find(found->second.bitmap.Value());
                 if (bitmap == context->bitmaps.end() || bitmap->second.recycled)
@@ -740,6 +740,16 @@ Decl Declare_android_graphics_drawable_PaintDrawable(const Context& context) {
     static_cast<void>(context);
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/PaintDrawable;",
                                                     "Landroid/graphics/drawable/Drawable;");
+    // PaintDrawable inherits AOSP ShapeDrawable's state overrides.
+    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
+    };
+    builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
+    builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
+    builder.OverrideMethod("getAlpha", "()I", reject_state);
+    builder.OverrideMethod("setAlpha", "(I)V", reject_state);
+    builder.OverrideMethod("getOpacity", "()I", reject_state);
     builder.Constructor("(I)V", GraphicsNoopHandler());
     builder.VirtualMethod("setCornerRadius", "(F)V", GraphicsNoopHandler());
     return std::move(builder).Build();
@@ -1412,6 +1422,15 @@ Decl Declare_android_graphics_PorterDuff(const Context& context) {
 Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/BitmapDrawable;",
                                                     "Landroid/graphics/drawable/Drawable;");
+    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
+    };
+    builder.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
+    builder.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
+    builder.OverrideMethod("getAlpha", "()I", reject_state);
+    builder.OverrideMethod("setAlpha", "(I)V", reject_state);
+    builder.OverrideMethod("getOpacity", "()I", reject_state);
 
     const auto bitmap_ctor = [context](const std::size_t index) {
         return dx::IntrinsicHandler([context, index](dx::IntrinsicContext& call) {
@@ -1464,51 +1483,6 @@ Decl Declare_android_graphics_drawable_BitmapDrawable(const Context& context) {
         .Constructor("(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V", bitmap_ctor(1));
     builder.FinalMethod("getBitmap", "()Landroid/graphics/Bitmap;", [](dx::IntrinsicContext& call) {
         return dx::VmValue::Ref(dx::VmObjectRef(call.vm.Model().InstanceSlots(call.receiver)[0].bits));
-    });
-    return std::move(builder).Build();
-}
-
-Decl Declare_android_graphics_drawable_ColorDrawable(const Context& context) {
-    auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/ColorDrawable;",
-                                                    "Landroid/graphics/drawable/Drawable;");
-
-    builder.Constructor("()V", [context](dx::IntrinsicContext& call) {
-        {
-            const auto ctor = call.vm.Linker().FindDirectMethod(
-                call.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/Drawable;"), "<init>", "()V");
-            const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
-            if (result.exception.IsValid())
-                throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                      result.exception_message, result.exception};
-        }
-        context->ui_drawables[call.receiver.Value()].color = 0;
-        return dx::VmValue::Void();
-    });
-    const auto set = [context](dx::IntrinsicContext& call) {
-        context->ui_drawables[call.receiver.Value()].color = call.arguments[0].cat1;
-
-        return dx::VmValue::Void();
-    };
-    builder
-        .Constructor("(I)V",
-                     [context](dx::IntrinsicContext& call) {
-                         {
-                             const auto ctor = call.vm.Linker().FindDirectMethod(
-                                 call.vm.Model().ObjectClass(call.receiver), "<init>", "()V");
-                             const auto result = call.vm.Call(*ctor, std::array{dx::VmValue::Ref(call.receiver)});
-                             if (result.exception.IsValid())
-                                 throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor,
-                                                       result.exception_message, result.exception};
-                         }
-                         return CallAndroidMethod(call.vm, call.receiver, "setColor", "(I)V", {call.arguments[0]});
-                     })
-        .VirtualMethod("setColor", "(I)V", set);
-    builder.VirtualMethod("getColor", "()I", [context](dx::IntrinsicContext& call) {
-        return dx::VmValue::Int(static_cast<std::int32_t>(*context->ui_drawables.at(call.receiver.Value()).color));
-    });
-    builder.VirtualMethod("getOpacity", "()I", [context](dx::IntrinsicContext& call) {
-        const auto alpha = context->ui_drawables.at(call.receiver.Value()).color.value() >> 24U;
-        return dx::VmValue::Int(alpha == 255U ? -1 : alpha == 0U ? -2 : -3);
     });
     return std::move(builder).Build();
 }
@@ -1670,6 +1644,14 @@ Decl Declare_android_graphics_drawable_DrawableContainer(const Context& context)
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/DrawableContainer;",
                                               "Landroid/graphics/drawable/Drawable;",
                                               {"Landroid/graphics/drawable/Drawable$Callback;"});
+    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
+    };
+    b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
+    b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
+    b.OverrideMethod("getAlpha", "()I", reject_state);
+    b.OverrideMethod("setAlpha", "(I)V", reject_state);
     AddSkinQueries(b, context, true);
     b.VirtualMethod("setVisible", "(ZZ)Z", [context](dx::IntrinsicContext& c) {
         // A virtual base method is resolved explicitly to preserve its ROM field protocol.
@@ -1701,6 +1683,14 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
         SkinInit(c, context);
         return dx::VmValue::Void();
     });
+    const auto reject_state = [](dx::IntrinsicContext& call) -> dx::VmValue {
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "Drawable state is not admitted"};
+    };
+    b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", reject_state);
+    b.OverrideMethod("getConstantState", "()Landroid/graphics/drawable/Drawable$ConstantState;", reject_state);
+    b.OverrideMethod("getAlpha", "()I", reject_state);
+    b.OverrideMethod("setAlpha", "(I)V", reject_state);
     AddSkinQueries(b, context, false);
     return std::move(b).Build();
 }
@@ -1708,6 +1698,10 @@ Decl Declare_android_graphics_drawable_NinePatchDrawable(const Context& context)
 Decl Declare_android_graphics_drawable_StateListDrawable(const Context& context) {
     auto b = dx::IntrinsicClassBuilder::Class("Landroid/graphics/drawable/StateListDrawable;",
                                               "Landroid/graphics/drawable/DrawableContainer;");
+    b.OverrideMethod("mutate", "()Landroid/graphics/drawable/Drawable;", [](dx::IntrinsicContext& c) -> dx::VmValue {
+        if (auto* ledger = c.vm.Ledger()) ledger->RecordUnimplemented("dexvm.drawable_resource", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "StateListDrawable.mutate is not admitted"};
+    });
     b.Constructor("()V", [context](dx::IntrinsicContext& c) {
         SkinInit(c, context);
         return dx::VmValue::Void();

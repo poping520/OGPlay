@@ -37,14 +37,12 @@ constexpr std::uint8_t kStringType = 0x03;
 constexpr std::uint8_t kReferenceType = 0x01;
 constexpr std::uint8_t kIntegerHexType = 0x11;
 constexpr std::uint8_t kIntegerBooleanType = 0x12;
-constexpr std::string_view kAndroidNamespace =
-    "http://schemas.android.com/apk/res/android";
+constexpr std::string_view kAndroidNamespace = "http://schemas.android.com/apk/res/android";
 constexpr std::string_view kMainAction = "android.intent.action.MAIN";
-constexpr std::string_view kLauncherCategory =
-    "android.intent.category.LAUNCHER";
+constexpr std::string_view kLauncherCategory = "android.intent.category.LAUNCHER";
 
-void RequireRange(const std::span<const std::byte> bytes, const std::size_t offset,
-                  const std::size_t size, const std::string_view what) {
+void RequireRange(const std::span<const std::byte> bytes, const std::size_t offset, const std::size_t size,
+                  const std::string_view what) {
     if (!core::RangeFits(bytes, offset, size)) {
         throw std::runtime_error(std::string(what) + " is outside binary AndroidManifest");
     }
@@ -66,11 +64,9 @@ struct Chunk final {
     std::uint32_t size{};
 };
 
-Chunk ReadChunk(const std::span<const std::byte> bytes, const std::size_t offset,
-                const std::string_view what) {
+Chunk ReadChunk(const std::span<const std::byte> bytes, const std::size_t offset, const std::string_view what) {
     RequireRange(bytes, offset, 8, what);
-    const Chunk chunk{Read16(bytes, offset), Read16(bytes, offset + 2),
-                      Read32(bytes, offset + 4)};
+    const Chunk chunk{Read16(bytes, offset), Read16(bytes, offset + 2), Read32(bytes, offset + 4)};
     if (chunk.header_size < 8 || chunk.size < chunk.header_size || ((chunk.header_size | chunk.size) & 3U) != 0U) {
         throw std::runtime_error(std::string(what) + " has an invalid chunk header");
     }
@@ -78,18 +74,15 @@ Chunk ReadChunk(const std::span<const std::byte> bytes, const std::size_t offset
     return chunk;
 }
 
-std::size_t ReadLength8(const std::span<const std::byte> bytes, std::size_t& cursor,
-                        const std::size_t end) {
+std::size_t ReadLength8(const std::span<const std::byte> bytes, std::size_t& cursor, const std::size_t end) {
     if (cursor >= end) throw std::runtime_error("binary XML UTF-8 length is truncated");
     const auto first = std::to_integer<std::uint8_t>(bytes[cursor++]);
     if ((first & 0x80U) == 0) return first;
     if (cursor >= end) throw std::runtime_error("binary XML UTF-8 length is truncated");
-    return (static_cast<std::size_t>(first & 0x7fU) << 8U) |
-           std::to_integer<std::uint8_t>(bytes[cursor++]);
+    return (static_cast<std::size_t>(first & 0x7fU) << 8U) | std::to_integer<std::uint8_t>(bytes[cursor++]);
 }
 
-std::size_t ReadLength16(const std::span<const std::byte> bytes, std::size_t& cursor,
-                         const std::size_t end) {
+std::size_t ReadLength16(const std::span<const std::byte> bytes, std::size_t& cursor, const std::size_t end) {
     if (cursor > end || end - cursor < 2) {
         throw std::runtime_error("binary XML UTF-16 length is truncated");
     }
@@ -115,8 +108,7 @@ void AppendManifestUnit(std::string& output, const std::uint16_t unit) {
     }
 }
 
-std::string ReadUtf8String(const std::span<const std::byte> bytes, std::size_t cursor,
-                           const std::size_t end) {
+std::string ReadUtf8String(const std::span<const std::byte> bytes, std::size_t cursor, const std::size_t end) {
     const auto expected_utf16 = ReadLength8(bytes, cursor, end);
     const auto byte_length = ReadLength8(bytes, cursor, end);
     if (cursor > end || byte_length >= end - cursor) {
@@ -148,8 +140,7 @@ std::string ReadUtf8String(const std::span<const std::byte> bytes, std::size_t c
     return result;
 }
 
-std::string ReadUtf16String(const std::span<const std::byte> bytes, std::size_t cursor,
-                            const std::size_t end) {
+std::string ReadUtf16String(const std::span<const std::byte> bytes, std::size_t cursor, const std::size_t end) {
     const auto length = ReadLength16(bytes, cursor, end);
     if (length > (end - cursor) / 2U || length == (end - cursor) / 2U) {
         throw std::runtime_error("binary XML UTF-16 string is truncated");
@@ -222,12 +213,11 @@ ManifestStrings ReadStringPool(const std::span<const std::byte> bytes, const std
         throw std::runtime_error("binary XML string pool count is invalid");
     }
     const auto table_bytes = (count + style_count) * 4U;
-    if (table_bytes > chunk.size - chunk.header_size ||
-        strings_start < chunk.header_size + table_bytes || strings_start >= chunk.size) {
+    if (table_bytes > chunk.size - chunk.header_size || strings_start < chunk.header_size + table_bytes ||
+        strings_start >= chunk.size) {
         throw std::runtime_error("binary XML string pool offsets are invalid");
     }
-    const auto strings_end = styles_start == 0 ? static_cast<std::size_t>(chunk.size)
-                                                : styles_start;
+    const auto strings_end = styles_start == 0 ? static_cast<std::size_t>(chunk.size) : styles_start;
     if (strings_end <= strings_start || strings_end > chunk.size) {
         throw std::runtime_error("binary XML string pool data range is invalid");
     }
@@ -284,6 +274,7 @@ std::uint32_t ManifestAttributeId(const std::string_view name) {
                                                                {"isolatedProcess", 0x010103a9U},
                                                                {"label", 0x01010001U},
                                                                {"launchMode", 0x0101001dU},
+                                                               {"largeHeap", 0x0101035aU},
                                                                {"maxSdkVersion", 0x01010271U},
                                                                {"minSdkVersion", 0x0101020cU},
                                                                {"name", 0x01010003U},
@@ -330,8 +321,7 @@ std::vector<Attribute> ReadAttributes(const std::span<const std::byte> bytes, co
     const auto attribute_size = static_cast<std::size_t>(Read16(bytes, extension + 10));
     const auto attribute_count = static_cast<std::size_t>(Read16(bytes, extension + 12));
     const auto extension_size = static_cast<std::size_t>(chunk.size - chunk.header_size);
-    if (attribute_start < 20 || attribute_size < 20 ||
-        attribute_start > extension_size ||
+    if (attribute_start < 20 || attribute_size < 20 || attribute_start > extension_size ||
         attribute_count > (extension_size - attribute_start) / attribute_size) {
         throw std::runtime_error("binary XML attribute table is invalid");
     }
@@ -359,8 +349,7 @@ std::vector<Attribute> ReadAttributes(const std::span<const std::byte> bytes, co
     return result;
 }
 
-const Attribute* FindAttribute(const std::vector<Attribute>& attributes,
-                               const std::string_view name,
+const Attribute* FindAttribute(const std::vector<Attribute>& attributes, const std::string_view name,
                                const std::optional<std::string_view> namespace_uri) {
     const Attribute* result{};
     const auto expected_id = namespace_uri == kAndroidNamespace ? ManifestAttributeId(name) : 0U;
@@ -547,20 +536,18 @@ std::optional<AndroidManifestMetaDataValue> ReadMetaDataValue(const Attribute& a
 
 }  // namespace
 
-AndroidManifestStartupError::AndroidManifestStartupError(
-    const AndroidManifestStartupErrorReason reason, std::string message)
+AndroidManifestStartupError::AndroidManifestStartupError(const AndroidManifestStartupErrorReason reason,
+                                                         std::string message)
     : std::runtime_error(std::move(message)), reason_(reason) {}
 
 AndroidManifestStartupErrorReason AndroidManifestStartupError::Reason() const noexcept {
     return reason_;
 }
 
-std::string NormalizeAndroidManifestClassName(const std::string_view package,
-                                              const std::string_view class_name) {
+std::string NormalizeAndroidManifestClassName(const std::string_view package, const std::string_view class_name) {
     if (class_name.empty()) {
-        throw AndroidManifestStartupError(
-            AndroidManifestStartupErrorReason::invalid_class_name,
-            "binary AndroidManifest contains an empty class name");
+        throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::invalid_class_name,
+                                          "binary AndroidManifest contains an empty class name");
     }
     if (class_name.front() == '.') return std::string(package) + std::string(class_name);
     if (class_name.find('.') == std::string_view::npos) {
@@ -569,15 +556,12 @@ std::string NormalizeAndroidManifestClassName(const std::string_view package,
     if (class_name.front() >= 'a' && class_name.front() <= 'z') {
         return std::string(class_name);
     }
-    throw AndroidManifestStartupError(
-        AndroidManifestStartupErrorReason::invalid_class_name,
-        "binary AndroidManifest contains invalid class name " +
-            std::string(class_name));
+    throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::invalid_class_name,
+                                      "binary AndroidManifest contains invalid class name " + std::string(class_name));
 }
 
 namespace {
-std::string ManifestProcessName(const std::string_view package,
-                                const std::string_view declared,
+std::string ManifestProcessName(const std::string_view package, const std::string_view declared,
                                 const std::string_view fallback) {
     if (declared.empty()) return std::string(fallback);
     const bool private_process = declared.front() == ':';
@@ -585,11 +569,9 @@ std::string ManifestProcessName(const std::string_view package,
     bool segment_start = true;
     bool has_separator = false;
     for (const char character : name) {
-        if ((character >= 'a' && character <= 'z') ||
-            (character >= 'A' && character <= 'Z')) {
+        if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')) {
             segment_start = false;
-        } else if (!segment_start &&
-                   ((character >= '0' && character <= '9') || character == '_')) {
+        } else if (!segment_start && ((character >= '0' && character <= '9') || character == '_')) {
             continue;
         } else if (character == '.') {
             has_separator = true;
@@ -605,52 +587,46 @@ std::string ManifestProcessName(const std::string_view package,
 }
 }  // namespace
 
-const AndroidManifestActivityComponent* FindAndroidManifestActivityComponent(
-    const std::span<const AndroidManifestActivityComponent> components,
-    const std::string_view name) {
+const AndroidManifestActivityComponent*
+FindAndroidManifestActivityComponent(const std::span<const AndroidManifestActivityComponent> components,
+                                     const std::string_view name) {
     for (auto index = components.size(); index != 0; --index) {
         if (components[index - 1].name == name) return &components[index - 1];
     }
     return nullptr;
 }
 
-AndroidManifestLauncherComponent ResolveLauncherComponent(
-    const AndroidManifestFacts& facts) {
-    const auto has_value = [](const std::vector<std::string>& values,
-                              const std::string_view expected) {
+AndroidManifestLauncherComponent ResolveLauncherComponent(const AndroidManifestFacts& facts) {
+    const auto has_value = [](const std::vector<std::string>& values, const std::string_view expected) {
         return std::find(values.begin(), values.end(), expected) != values.end();
     };
     for (const auto& component : facts.activity_components) {
         if (!component.enabled) continue;
-        const auto launcher = std::any_of(
-            component.intent_filters.begin(), component.intent_filters.end(),
-            [&](const AndroidManifestIntentFilter& filter) {
-                return has_value(filter.actions, kMainAction) &&
-                       has_value(filter.categories, kLauncherCategory);
-            });
+        const auto launcher = std::any_of(component.intent_filters.begin(), component.intent_filters.end(),
+                                          [&](const AndroidManifestIntentFilter& filter) {
+                                              return has_value(filter.actions, kMainAction) &&
+                                                     has_value(filter.categories, kLauncherCategory);
+                                          });
         if (!launcher) continue;
 
-        const auto* registered = FindAndroidManifestActivityComponent(
-            facts.activity_components, component.name);
+        const auto* registered = FindAndroidManifestActivityComponent(facts.activity_components, component.name);
         if (!registered->enabled) continue;
 
         if (registered->kind == AndroidManifestComponentKind::activity) {
             return {registered->name, registered->name, false};
         }
-        const auto target = std::find_if(
-            facts.activity_components.begin(), facts.activity_components.end(),
-            [&](const AndroidManifestActivityComponent& candidate) {
-                return candidate.kind == AndroidManifestComponentKind::activity &&
-                       registered->target_activity.has_value() &&
-                       candidate.name == *registered->target_activity;
-            });
+        const auto target = std::find_if(facts.activity_components.begin(), facts.activity_components.end(),
+                                         [&](const AndroidManifestActivityComponent& candidate) {
+                                             return candidate.kind == AndroidManifestComponentKind::activity &&
+                                                    registered->target_activity.has_value() &&
+                                                    candidate.name == *registered->target_activity;
+                                         });
         if (target != facts.activity_components.end()) {
             return {registered->name, target->name, true};
         }
     }
-    throw AndroidManifestStartupError(
-        AndroidManifestStartupErrorReason::no_launcher,
-        "binary AndroidManifest has no enabled MAIN/LAUNCHER activity");
+    throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::no_launcher,
+                                      "binary AndroidManifest has no enabled MAIN/LAUNCHER activity");
 }
 
 AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte> bytes,
@@ -744,27 +720,24 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             const auto attributes = ReadAttributes(document, cursor, chunk, strings, resources, resource_map);
             const auto namespace_index = Read32(bytes, cursor + chunk.header_size);
             if (namespace_index != kNoIndex) {
-                static_cast<void>(StringAt(strings, namespace_index,
-                                           "binary XML element namespace"));
+                static_cast<void>(StringAt(strings, namespace_index, "binary XML element namespace"));
             }
-            const auto name = StringAt(strings, Read32(bytes, cursor + chunk.header_size + 4),
-                                       "binary XML element name");
+            const auto name =
+                StringAt(strings, Read32(bytes, cursor + chunk.header_size + 4), "binary XML element name");
             if (elements.empty()) {
                 if (saw_manifest || name != "manifest") {
                     throw std::runtime_error("binary AndroidManifest root element is invalid");
                 }
                 saw_manifest = true;
                 const auto* package = FindAttribute(attributes, "package", std::nullopt);
-                const auto* version_code =
-                    FindAttribute(attributes, "versionCode", kAndroidNamespace);
+                const auto* version_code = FindAttribute(attributes, "versionCode", kAndroidNamespace);
                 if (package == nullptr) {
                     throw std::runtime_error("binary AndroidManifest is missing package");
                 }
                 facts.package = ReadNonResourceStringAttribute(*package, strings, "package");
                 facts.application_process_name = facts.package;
                 if (version_code) facts.version_code = ReadIntegerAttribute(*version_code, "versionCode", strings);
-                if (const auto* version_name =
-                        FindAttribute(attributes, "versionName", kAndroidNamespace)) {
+                if (const auto* version_name = FindAttribute(attributes, "versionName", kAndroidNamespace)) {
                     facts.version_name = ReadOptionalStringAttribute(*version_name, strings);
                 }
             } else if (name == "application" && elements.size() == 1) {
@@ -776,44 +749,34 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     continue;
                 }
                 saw_application = true;
+                if (const auto* large_heap = FindAttribute(attributes, "largeHeap", kAndroidNamespace))
+                    facts.application_large_heap = ReadBooleanAttribute(*large_heap, "application largeHeap", strings);
                 if (const auto* affinity = FindAttribute(attributes, "taskAffinity", kAndroidNamespace))
                     application_task_affinity = ReadOptionalStringAttribute(*affinity, strings);
-                if (const auto* enabled =
-                        FindAttribute(attributes, "enabled", kAndroidNamespace)) {
+                if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     facts.application_enabled = ReadBooleanAttribute(*enabled, "application enabled", strings, true);
                 }
-                if (const auto* process =
-                        FindAttribute(attributes, "process", kAndroidNamespace)) {
+                if (const auto* process = FindAttribute(attributes, "process", kAndroidNamespace)) {
                     facts.application_process_name = ManifestProcessName(
-                        facts.package,
-                        ReadStringAttribute(*process, strings, "application process"),
-                        facts.package);
+                        facts.package, ReadStringAttribute(*process, strings, "application process"), facts.package);
                 }
-                if (const auto* permission =
-                        FindAttribute(attributes, "permission", kAndroidNamespace)) {
-                    const auto value = ReadStringAttribute(
-                        *permission, strings, "application permission");
+                if (const auto* permission = FindAttribute(attributes, "permission", kAndroidNamespace)) {
+                    const auto value = ReadStringAttribute(*permission, strings, "application permission");
                     if (!value.empty()) facts.application_permission = value;
                 }
                 if (const auto* theme = FindAttribute(attributes, "theme", kAndroidNamespace))
                     facts.application_theme = ReadReferenceAttribute(*theme, "application theme");
-                if (const auto* icon =
-                        FindAttribute(attributes, "icon", kAndroidNamespace)) {
-                    facts.application_icon =
-                        ReadReferenceAttribute(*icon, "application icon");
+                if (const auto* icon = FindAttribute(attributes, "icon", kAndroidNamespace)) {
+                    facts.application_icon = ReadReferenceAttribute(*icon, "application icon");
                 }
-                if (const auto* label =
-                        FindAttribute(attributes, "label", kAndroidNamespace)) {
+                if (const auto* label = FindAttribute(attributes, "label", kAndroidNamespace)) {
                     if (label->data_type == kReferenceType) {
-                        facts.application_label =
-                            ReadReferenceAttribute(*label, "application label");
+                        facts.application_label = ReadReferenceAttribute(*label, "application label");
                     } else {
-                        facts.application_label = ReadStringAttribute(
-                            *label, strings, "application label");
+                        facts.application_label = ReadStringAttribute(*label, strings, "application label");
                     }
                 }
-                if (const auto* application_name =
-                        FindAttribute(attributes, "name", kAndroidNamespace)) {
+                if (const auto* application_name = FindAttribute(attributes, "name", kAndroidNamespace)) {
                     if (const auto value = ReadOptionalStringAttribute(*application_name, strings))
                         facts.application_class = NormalizeAndroidManifestClassName(facts.package, *value);
                 }
@@ -821,30 +784,22 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                        ((elements.size() == 2 && elements[1] == "application") ||
                         (elements.size() == 3 && current_component &&
                          (elements[2] == "activity" || elements[2] == "activity-alias")) ||
-                        (elements.size() == 3 && elements[2] == "receiver" &&
-                         current_receiver.has_value()) ||
-                        (elements.size() == 3 && elements[2] == "service" &&
-                         current_service.has_value()) ||
-                        (elements.size() == 2 && elements[1] == "permission" &&
-                         current_permission.has_value()))) {
-                auto& meta_data = current_component
-                    ? facts.activity_components[*current_component].meta_data
-                    : current_receiver
-                    ? facts.receiver_components[*current_receiver].meta_data
-                    : current_service
-                        ? facts.service_components[*current_service].meta_data
-                        : current_permission
-                            ? facts.defined_permissions[*current_permission].meta_data
-                            : facts.application_meta_data;
-                const auto owner = current_component ? "activity" : current_receiver ? "receiver"
-                    : current_service ? "service"
-                    : current_permission ? "permission" : "application";
-                const auto* metadata_name =
-                    FindAttribute(attributes, "name", kAndroidNamespace);
-                const auto* metadata_value =
-                    FindAttribute(attributes, "value", kAndroidNamespace);
-                const auto* metadata_resource =
-                    FindAttribute(attributes, "resource", kAndroidNamespace);
+                        (elements.size() == 3 && elements[2] == "receiver" && current_receiver.has_value()) ||
+                        (elements.size() == 3 && elements[2] == "service" && current_service.has_value()) ||
+                        (elements.size() == 2 && elements[1] == "permission" && current_permission.has_value()))) {
+                auto& meta_data = current_component    ? facts.activity_components[*current_component].meta_data
+                                  : current_receiver   ? facts.receiver_components[*current_receiver].meta_data
+                                  : current_service    ? facts.service_components[*current_service].meta_data
+                                  : current_permission ? facts.defined_permissions[*current_permission].meta_data
+                                                       : facts.application_meta_data;
+                const auto owner = current_component    ? "activity"
+                                   : current_receiver   ? "receiver"
+                                   : current_service    ? "service"
+                                   : current_permission ? "permission"
+                                                        : "application";
+                const auto* metadata_name = FindAttribute(attributes, "name", kAndroidNamespace);
+                const auto* metadata_value = FindAttribute(attributes, "value", kAndroidNamespace);
+                const auto* metadata_resource = FindAttribute(attributes, "resource", kAndroidNamespace);
                 if (metadata_name == nullptr)
                     throw std::runtime_error("binary AndroidManifest meta-data requires name");
                 const auto decoded = ReadOptionalStringAttribute(*metadata_name, strings);
@@ -868,29 +823,23 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     else
                         existing->value = std::move(*value);
                 }
-            } else if ((name == "activity" || name == "activity-alias") &&
-                       elements.size() == 2 && elements[1] == "application") {
-                const auto* component_name =
-                    FindAttribute(attributes, "name", kAndroidNamespace);
+            } else if ((name == "activity" || name == "activity-alias") && elements.size() == 2 &&
+                       elements[1] == "application") {
+                const auto* component_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 if (component_name == nullptr) {
-                    throw AndroidManifestStartupError(
-                        AndroidManifestStartupErrorReason::missing_component_name,
-                        "binary AndroidManifest " + name +
-                            " does not specify android:name");
+                    throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::missing_component_name,
+                                                      "binary AndroidManifest " + name +
+                                                          " does not specify android:name");
                 }
                 AndroidManifestActivityComponent component;
-                component.kind = name == "activity"
-                                     ? AndroidManifestComponentKind::activity
-                                     : AndroidManifestComponentKind::activity_alias;
+                component.kind = name == "activity" ? AndroidManifestComponentKind::activity
+                                                    : AndroidManifestComponentKind::activity_alias;
                 component.name = NormalizeAndroidManifestClassName(
-                    facts.package,
-                    ReadStringAttribute(*component_name, strings, name + " name"));
-                if (const auto* enabled =
-                        FindAttribute(attributes, "enabled", kAndroidNamespace)) {
+                    facts.package, ReadStringAttribute(*component_name, strings, name + " name"));
+                if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     component.enabled = ReadBooleanAttribute(*enabled, name + " enabled", strings, true);
                 }
-                if (const auto* exported =
-                        FindAttribute(attributes, "exported", kAndroidNamespace)) {
+                if (const auto* exported = FindAttribute(attributes, "exported", kAndroidNamespace)) {
                     if (ResolveAttribute(*exported, strings).type != 0U)
                         component.exported = ReadBooleanAttribute(*exported, name + " exported", strings);
                 }
@@ -906,31 +855,25 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         component.theme = ReadReferenceAttribute(*theme, "activity theme");
                 }
                 if (component.kind == AndroidManifestComponentKind::activity_alias) {
-                    const auto* target =
-                        FindAttribute(attributes, "targetActivity", kAndroidNamespace);
+                    const auto* target = FindAttribute(attributes, "targetActivity", kAndroidNamespace);
                     if (target == nullptr) {
-                        throw AndroidManifestStartupError(
-                            AndroidManifestStartupErrorReason::missing_alias_target,
-                            "binary AndroidManifest activity-alias does not specify "
-                            "android:targetActivity");
+                        throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::missing_alias_target,
+                                                          "binary AndroidManifest activity-alias does not specify "
+                                                          "android:targetActivity");
                     }
                     component.target_activity = NormalizeAndroidManifestClassName(
-                        facts.package,
-                        ReadStringAttribute(*target, strings,
-                                            "activity-alias targetActivity"));
-                    const auto target_activity = std::find_if(
-                        facts.activity_components.begin(),
-                        facts.activity_components.end(),
-                        [&](const AndroidManifestActivityComponent& candidate) {
-                            return candidate.kind == AndroidManifestComponentKind::activity &&
-                                   candidate.name == *component.target_activity;
-                        });
+                        facts.package, ReadStringAttribute(*target, strings, "activity-alias targetActivity"));
+                    const auto target_activity =
+                        std::find_if(facts.activity_components.begin(), facts.activity_components.end(),
+                                     [&](const AndroidManifestActivityComponent& candidate) {
+                                         return candidate.kind == AndroidManifestComponentKind::activity &&
+                                                candidate.name == *component.target_activity;
+                                     });
                     if (target_activity == facts.activity_components.end()) {
-                        throw AndroidManifestStartupError(
-                            AndroidManifestStartupErrorReason::alias_target_not_found,
-                            "binary AndroidManifest activity-alias target " +
-                                *component.target_activity +
-                                " was not declared before the alias");
+                        throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::alias_target_not_found,
+                                                          "binary AndroidManifest activity-alias target " +
+                                                              *component.target_activity +
+                                                              " was not declared before the alias");
                     }
                     component.theme = target_activity->theme;
                     component.launch_mode = target_activity->launch_mode;
@@ -939,13 +882,11 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 facts.activity_components.push_back(std::move(component));
                 current_component = facts.activity_components.size() - 1U;
                 current_intent_filter.reset();
-            } else if (name == "service" && elements.size() == 2 &&
-                       elements[1] == "application") {
+            } else if (name == "service" && elements.size() == 2 && elements[1] == "application") {
                 const auto* service_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 if (service_name == nullptr) {
-                    throw AndroidManifestStartupError(
-                        AndroidManifestStartupErrorReason::missing_component_name,
-                        "binary AndroidManifest service does not specify android:name");
+                    throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::missing_component_name,
+                                                      "binary AndroidManifest service does not specify android:name");
                 }
                 AndroidManifestServiceComponent service;
                 service.name = NormalizeAndroidManifestClassName(
@@ -959,9 +900,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 }
                 service.process_name = facts.application_process_name;
                 if (const auto* process = FindAttribute(attributes, "process", kAndroidNamespace)) {
-                    service.process_name = ManifestProcessName(
-                        facts.package, ReadStringAttribute(*process, strings, "service process"),
-                        facts.application_process_name);
+                    service.process_name =
+                        ManifestProcessName(facts.package, ReadStringAttribute(*process, strings, "service process"),
+                                            facts.application_process_name);
                 }
                 service.permission = facts.application_permission;
                 if (const auto* permission = FindAttribute(attributes, "permission", kAndroidNamespace)) {
@@ -969,8 +910,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                         service.permission = value->empty() ? std::nullopt : value;
                 }
                 for (const auto& [attribute, bit] :
-                     {std::pair{"stopWithTask", 0x00000001U},
-                      std::pair{"isolatedProcess", 0x00000002U},
+                     {std::pair{"stopWithTask", 0x00000001U}, std::pair{"isolatedProcess", 0x00000002U},
                       std::pair{"singleUser", 0x40000000U}}) {
                     if (const auto* value = FindAttribute(attributes, attribute, kAndroidNamespace);
                         value != nullptr && ReadBooleanAttribute(*value, attribute, strings)) {
@@ -981,18 +921,15 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 facts.service_components.push_back(std::move(service));
                 current_service = facts.service_components.size() - 1U;
                 current_intent_filter.reset();
-            } else if (name == "receiver" && elements.size() == 2 &&
-                       elements[1] == "application") {
+            } else if (name == "receiver" && elements.size() == 2 && elements[1] == "application") {
                 const auto* receiver_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 if (receiver_name == nullptr) {
-                    throw AndroidManifestStartupError(
-                        AndroidManifestStartupErrorReason::missing_component_name,
-                        "binary AndroidManifest receiver does not specify android:name");
+                    throw AndroidManifestStartupError(AndroidManifestStartupErrorReason::missing_component_name,
+                                                      "binary AndroidManifest receiver does not specify android:name");
                 }
                 AndroidManifestReceiverComponent receiver;
                 receiver.name = NormalizeAndroidManifestClassName(
-                    facts.package,
-                    ReadStringAttribute(*receiver_name, strings, "receiver name"));
+                    facts.package, ReadStringAttribute(*receiver_name, strings, "receiver name"));
                 if (const auto* enabled = FindAttribute(attributes, "enabled", kAndroidNamespace)) {
                     receiver.enabled = ReadBooleanAttribute(*enabled, "receiver enabled", strings, true);
                 }
@@ -1002,9 +939,9 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 }
                 receiver.process_name = facts.application_process_name;
                 if (const auto* process = FindAttribute(attributes, "process", kAndroidNamespace)) {
-                    receiver.process_name = ManifestProcessName(
-                        facts.package, ReadStringAttribute(*process, strings, "receiver process"),
-                        facts.application_process_name);
+                    receiver.process_name =
+                        ManifestProcessName(facts.package, ReadStringAttribute(*process, strings, "receiver process"),
+                                            facts.application_process_name);
                 }
                 receiver.permission = facts.application_permission;
                 if (const auto* permission = FindAttribute(attributes, "permission", kAndroidNamespace)) {
@@ -1016,42 +953,37 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 current_intent_filter.reset();
             } else if (name == "intent-filter" && (current_component || current_service || current_receiver) &&
                        elements.size() == 3 &&
-                       (elements.back() == "activity" ||
-                        elements.back() == "activity-alias" || elements.back() == "service" ||
-                        elements.back() == "receiver")) {
+                       (elements.back() == "activity" || elements.back() == "activity-alias" ||
+                        elements.back() == "service" || elements.back() == "receiver")) {
                 current_intent_filter.emplace();
                 if (const auto* priority = FindAttribute(attributes, "priority", kAndroidNamespace)) {
                     current_intent_filter->priority = std::bit_cast<std::int32_t>(
                         ReadIntegerAttribute(*priority, "intent-filter priority", strings, true));
                 }
                 if (const auto* label = FindAttribute(attributes, "label", kAndroidNamespace)) {
-                    current_intent_filter->label = label->data_type == kReferenceType
-                        ? AndroidManifestLabel{ReadReferenceAttribute(*label, "intent-filter label")}
-                        : AndroidManifestLabel{ReadStringAttribute(*label, strings, "intent-filter label")};
+                    current_intent_filter->label =
+                        label->data_type == kReferenceType
+                            ? AndroidManifestLabel{ReadReferenceAttribute(*label, "intent-filter label")}
+                            : AndroidManifestLabel{ReadStringAttribute(*label, strings, "intent-filter label")};
                 }
                 if (const auto* icon = FindAttribute(attributes, "icon", kAndroidNamespace)) {
                     current_intent_filter->icon = ReadReferenceAttribute(*icon, "intent-filter icon");
                 }
             } else if (name == "action" && (current_component || current_service || current_receiver) &&
-                       current_intent_filter.has_value() &&
-                       elements.size() == 4 &&
+                       current_intent_filter.has_value() && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
-                if (const auto* action_name =
-                        FindAttribute(attributes, "name", kAndroidNamespace)) {
-                    current_intent_filter->actions.push_back(ReadStringAttribute(
-                        *action_name, strings, "action name"));
+                if (const auto* action_name = FindAttribute(attributes, "name", kAndroidNamespace)) {
+                    current_intent_filter->actions.push_back(ReadStringAttribute(*action_name, strings, "action name"));
                 }
             } else if (name == "category" && (current_component || current_service || current_receiver) &&
-                       current_intent_filter.has_value() &&
-                       elements.size() == 4 &&
+                       current_intent_filter.has_value() && elements.size() == 4 &&
                        elements.back() == "intent-filter") {
-                if (const auto* category_name =
-                        FindAttribute(attributes, "name", kAndroidNamespace)) {
-                    current_intent_filter->categories.push_back(ReadStringAttribute(
-                        *category_name, strings, "category name"));
+                if (const auto* category_name = FindAttribute(attributes, "name", kAndroidNamespace)) {
+                    current_intent_filter->categories.push_back(
+                        ReadStringAttribute(*category_name, strings, "category name"));
                 }
-            } else if (name == "data" && current_intent_filter &&
-                       elements.size() == 4 && elements.back() == "intent-filter") {
+            } else if (name == "data" && current_intent_filter && elements.size() == 4 &&
+                       elements.back() == "intent-filter") {
                 current_intent_filter->has_data = true;
             } else if (elements.size() == 1 && name == "uses-sdk") {
                 const auto read_sdk = [&](const Attribute& attribute) {
@@ -1073,15 +1005,13 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                 permission_groups.insert(NormalizeAndroidManifestClassName(
                     facts.package, ReadStringAttribute(*group_name, strings, "permission-group name")));
             } else if (elements.size() == 1 && name == "permission") {
-                const auto* permission_name =
-                    FindAttribute(attributes, "name", kAndroidNamespace);
+                const auto* permission_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 if (permission_name == nullptr) {
                     throw std::runtime_error("binary AndroidManifest permission has no name");
                 }
                 AndroidManifestPermissionDefinition definition;
                 definition.name = NormalizeAndroidManifestClassName(
-                    facts.package,
-                    ReadStringAttribute(*permission_name, strings, "permission name"));
+                    facts.package, ReadStringAttribute(*permission_name, strings, "permission name"));
                 definition.package_name = facts.package;
                 if (const auto* level = FindAttribute(attributes, "protectionLevel", kAndroidNamespace)) {
                     definition.protection_level =
@@ -1117,8 +1047,7 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
                     facts.supported_gl_textures.push_back(*texture);
                 }
             } else if (elements.size() == 1 && name == "uses-permission") {
-                const auto* permission_name =
-                    FindAttribute(attributes, "name", kAndroidNamespace);
+                const auto* permission_name = FindAttribute(attributes, "name", kAndroidNamespace);
                 const auto* permission = permission_name && permission_name->data_type == kStringType
                                              ? strings.Get(permission_name->data)
                                              : nullptr;
@@ -1149,17 +1078,14 @@ AndroidManifestFacts ParseAndroidBinaryManifest(const std::span<const std::byte>
             // API19 tracks depth, not matching end-tag names.
             const auto& name = elements.back();
             if (name == "intent-filter" && elements.size() == 4 &&
-                (current_component || current_service || current_receiver) &&
-                current_intent_filter.has_value()) {
-                auto& filters = current_receiver
-                    ? facts.receiver_components[*current_receiver].intent_filters
-                    : current_service
-                        ? facts.service_components[*current_service].intent_filters
-                        : facts.activity_components[*current_component].intent_filters;
+                (current_component || current_service || current_receiver) && current_intent_filter.has_value()) {
+                auto& filters = current_receiver  ? facts.receiver_components[*current_receiver].intent_filters
+                                : current_service ? facts.service_components[*current_service].intent_filters
+                                                  : facts.activity_components[*current_component].intent_filters;
                 filters.push_back(std::move(*current_intent_filter));
                 current_intent_filter.reset();
-            } else if ((name == "activity" || name == "activity-alias") &&
-                       elements.size() == 3 && current_component.has_value()) {
+            } else if ((name == "activity" || name == "activity-alias") && elements.size() == 3 &&
+                       current_component.has_value()) {
                 auto& component = facts.activity_components[*current_component];
                 if (!component.exported.has_value()) {
                     component.exported = !component.intent_filters.empty();

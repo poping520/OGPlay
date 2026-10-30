@@ -40,7 +40,7 @@ Dex activity 每帧在 guest 回调前泵送主 Looper，到帧尾只通过
 - `TitleProfileCatalog::LoadDirectory`：稳定加载目录，校验非法及交叠身份；已删除旧的
   单根库 exact adapter，前端只投影 profile id 与 quirk。
 - `StartDexApplication` / `DexActivityLifecycle`：先按
-  resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
+  largeHeap 时 VMRuntime.clearGrowthLimit→resolve→`<clinit>`→construct→attach base Context→虚派 `onCreate` 建立稳定的 process
   Application root，再实例化入口 Activity 并解释执行 onCreate/onStart/onResume、
   renderer surface/frame、输入、suspend/resume 与 surfaceDestroyed/onStop；实例 finish 执行 onDestroy；
   空 Activity 可继续消息泵和 Clock，finish 后由既有退出协议收尾；onCreate 内 finish

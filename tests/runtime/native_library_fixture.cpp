@@ -407,7 +407,8 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
                                  const bool application_enabled,
                                  const ogplay::runtime::dexvm::InterpreterBackend interpreter_backend,
                                  const std::string& application_class, std::function<void()> pump_host_events,
-                                 ogplay::runtime::ui::UiMetrics viewport, std::vector<std::string> gl_textures) {
+                                 ogplay::runtime::ui::UiMetrics viewport, std::vector<std::string> gl_textures,
+                                 bool large_heap) {
     if (activity == "android.app.NativeActivity" || activity == "fixture.NativeTakeoverActivity")
         native_a = NativeActivityElf();
     context->apk_bytes = {std::byte{0x50}, std::byte{0x4b}, std::byte{0x03}, std::byte{0x04}};
@@ -451,6 +452,7 @@ OrchestratedApp::OrchestratedApp(const std::string& activity, const bool has_lau
     request.manifest.application_class = application_class;
     request.manifest.service_components = services;
     request.manifest.application_enabled = application_enabled;
+    request.manifest.application_large_heap = large_heap;
     if (!launcher_alias.empty()) {
         auto filters = request.manifest.activity_components.front().intent_filters;
         request.manifest.activity_components.front().intent_filters.clear();

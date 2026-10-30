@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/DrawableContainer;",
       "smali_sha256": "36e1b54bd56dca432d453c5e4b60f53672992e9faf7b2403526fab4438370e42",
       "methods": [
@@ -32,7 +32,14 @@
           "signature": "getAlpha()I",
           "flags": 1,
           "body_sha256": "5d1e9891477d3ab7f864f6e3f576b6dc28e44fdfe9c6f58db67635f1049eb70c",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getChangingConfigurations()I",
@@ -44,7 +51,14 @@
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
           "flags": 1,
           "body_sha256": "5db23116f2c083cc1af238f0111cceaa4f5da7f4daa2c1341c1044e9e63506fc",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getCurrent()Landroid/graphics/drawable/Drawable;",
@@ -178,7 +192,14 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "f39bc47117b9ee6b7a5c256d075f4a49aa3c60e06a87d39b8bffa6ba0c7566dc",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "needsMirroring()Z",
@@ -220,7 +241,14 @@
           "signature": "setAlpha(I)V",
           "flags": 1,
           "body_sha256": "8d723ba3511c4e97ba286922b82c9c727d9c6249c8174730bd73a6ca08ba63fe",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "setAutoMirrored(Z)V",
@@ -371,7 +399,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/StateListDrawable;",
       "smali_sha256": "4713b48c679cf15c15d791dad458196efe60f48217a167c4ddc31fb2cab5ed00",
       "methods": [
@@ -459,7 +487,14 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "8642d08d5c5ffdd8395bdc700d41c3ceb4c8e2bd1d3838af349f881ebf340fb3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "onStateChange([I)Z",
@@ -527,7 +562,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable;",
       "smali_sha256": "fc189612255501987bc397f5412c66f16784d8709f3cdb680e0bcd94b6e4e391",
       "methods": [
@@ -602,7 +637,14 @@
           "signature": "getAlpha()I",
           "flags": 1,
           "body_sha256": "6ea5ec305cf6db2a58dd3e768bfbea987545bb1218f1c6071917a02dfa99496f",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getChangingConfigurations()I",
@@ -614,7 +656,14 @@
           "signature": "getConstantState()Landroid/graphics/drawable/Drawable$ConstantState;",
           "flags": 1,
           "body_sha256": "aa6d2d90017144f4ac2ed6d9c926254312cf8b30f6c44fd48201ea51c8221bfc",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "getIntrinsicHeight()I",
@@ -735,7 +784,14 @@
           "signature": "mutate()Landroid/graphics/drawable/Drawable;",
           "flags": 1,
           "body_sha256": "4512b6f91d0de297cfce461099315c35b83cbe7fe41f392c48bf7c901fe08306",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "needsMirroring()Z",
@@ -753,7 +809,14 @@
           "signature": "setAlpha(I)V",
           "flags": 1,
           "body_sha256": "feff643248bd22e1e2415525d55ec014e01d29340b5986fe45a25322742a77b3",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-352 explicit rejection prevents silent base Drawable state inheritance",
+            "inputs": "receiver and original API19 arguments",
+            "outputs": "ledger hit and UnsupportedOperationException",
+            "state_owner": "no state created or changed",
+            "failure_boundary": "unadmitted Drawable state operations always fail; no native implementation"
+          }
         },
         {
           "signature": "setAutoMirrored(Z)V",
@@ -873,7 +936,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/DrawableContainer$1;",
       "smali_sha256": "b047de47518cd8eef076fe6b19c076069fada8baec4ddc3810695c5ad1ea8288",
       "methods": [
@@ -905,7 +968,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/NinePatchDrawable$NinePatchState;",
       "smali_sha256": "9c54834cc0d13a4ee9d22ff9e7b6f80ec384ccc259e0f9f87ad947d73b9289c9",
       "methods": [
@@ -1009,7 +1072,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/window-background.surface.json.gz",
-      "surface_sha256": "944bce9448b73d36d56499c96a6dad519e54f8c90ef97bba33e02bd1ec386b53",
+      "surface_sha256": "906fe6f273c363c176577ff32ef9c231fdeff173fb8424f1b7ff29e9d28c8727",
       "owner": "Landroid/graphics/drawable/StateListDrawable$StateListState;",
       "smali_sha256": "3120d38add389c34572db67bb9f90ba167e5c27a5dba0e2e5e03a71265aa9454",
       "methods": [

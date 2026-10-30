@@ -479,10 +479,6 @@ ui::UiNodeId TextNode(dx::IntrinsicContext& call, const Context& context) {
     return EnsureViewUiNode(*context, call.receiver, UiClassForObject(call.vm, call.receiver));
 }
 
-std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
-    return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
-}
-
 }  // namespace
 
 namespace {
@@ -670,12 +666,13 @@ Decl ExperimentalImageView(const Context& context) {
     builder.VirtualMethod("setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V", [=](dx::IntrinsicContext& c) {
         const auto value = c.arguments[0].ref;
         if (value.IsValid()) {
-            const auto& type = c.vm.Linker().Class(c.vm.Model().ObjectClass(value)).descriptor;
+            const auto type = c.vm.Model().ObjectClass(value);
+            const bool is_color = c.vm.Linker().IsAssignable(
+                c.vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), type);
             const auto found = context->ui_drawables.find(value.Value());
-            if (found == context->ui_drawables.end() || (type != "Landroid/graphics/drawable/BitmapDrawable;" &&
-                                                         type != "Landroid/graphics/drawable/ColorDrawable;"))
+            if (!is_color && (found == context->ui_drawables.end() || !found->second.bitmap_drawable))
                 ImageFailure(c.vm, "unreviewed Drawable");
-            const auto source = found->second.bitmap_drawable
+            const auto source = !is_color && found->second.bitmap_drawable
                                     ? CallAndroidMethod(c.vm, value, "getBitmap", "()Landroid/graphics/Bitmap;").ref
                                     : dx::VmObjectRef{};
             if (source.IsValid()) {

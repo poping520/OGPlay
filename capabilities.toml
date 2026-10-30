@@ -1415,8 +1415,8 @@ note = "DVM-8/49/61/71/74：统一 VmObjectRef 句柄空间；session 拥有的 
 
 [dexvm.gc]
 status = "partial"
-test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current"
-note = "DVM-258/WU7-4：精确 STW、三层堆；Runtime/ActivityManager/VMRuntime 共用真实堆查询、利用率与 native 压力记账。Weak/Soft/Phantom 清理入队；原版 FinalizerReference/Daemons 执行、复活仅一次、异常吞掉，runFinalization 等当前批次，10 秒 watchdog 请求 guest exit(2)。finalizersOnExit、长时 gate 未支持/验收。"
+test = "tests/dexvm/gc_tests.cpp; tests/dexvm/android_context_services_tests.cpp; tests/dexvm/android_intent_uri_tests.cpp; tests/dexvm/android_parcel_bundle_tests.cpp; tests/dexvm/android_resources_bitmap_tests.cpp; tests/dexvm/android_view_state_tests.cpp; tests/dexvm/android_pending_notifications_tests.cpp; tests/dexvm/android_value_tests.cpp; tests/dexvm/android_logging_tests.cpp; tests/dexvm/android_component_services_tests.cpp; tests/dexvm/android_package_metadata_tests.cpp; tests/dexvm/android_text_drawable_tests.cpp; tests/dexvm/android_preferences_tests.cpp; tests/dexvm/android_webview_tests.cpp; tests/dexvm/android_input_values_tests.cpp; tests/dexvm/android_wifi_locks_tests.cpp; tests/dexvm/scheduler_tests.cpp; tests/dexvm/audio_track_tests.cpp; tools.title_profiles_current; tools.scenarios_current; tests/runtime/application_startup_tests.cpp#DVM-354; tests/loader/apk_manifest_tests.cpp#DVM-354"
+note = "DVM-258/353/354：精确 STW、三层堆；API19 1 GiB 档位 8/96/256 MiB，largeHeap 在 Application 前放开至 256；普通 memory class 保持 96。Weak/Soft/Phantom 清理入队；原版 FinalizerReference/Daemons 执行、一次复活、吞异常，runFinalization 等当前批次；10 秒 watchdog 按停摆真实流速判定并请求 exit(2)。finalizersOnExit、长时 gate 未验收。"
 
 [dexvm.interpreter_core]
 status = "complete"
@@ -1446,12 +1446,12 @@ note = "DVM-52/76/131：在 VmExecutionLock 安全点给出全部 execution cont
 [dexvm.threads]
 status = "complete"
 test = "tests/dexvm/intrinsic_contract_tests.cpp; tests/dexvm/core_catalog_tests.cpp; tests/dexvm/throwable_contract_tests.cpp; tests/dexvm/interpreter_tests.cpp; tests/dexvm/interpreter_backend_tests.cpp; tests/dexvm/interpreter_diagnostics_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/runtime/guest_thread_runner_tests.cpp; tests/runtime/android_guest_call_session_tests.cpp"
-note = "DVM-28/48/50/89/234：guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 context loader、handler、bounded group/State、park/interrupt；ThreadGroup 按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root sleep/join/park 可随统一 Clock 快进。"
+note = "guest/host 线程及 execution context 1:1，子线程独立 A32 CPU/栈、TLS/JNI attach。Thread 含 loader、handler、group/State、park/interrupt；ThreadGroup 按 parent/default/stderr 分派，APK 无 handler 工作线程保持致命出口。VM 单写锁串行、FIFO 准入、1024 tick 轮转；root/worker sleep/join/park 按停摆真实流速补时。 DVM-353：停摆补时受注入真实流逝时间节流（ADR-0171）。"
 
 [dexvm.monitors]
 status = "complete"
 test = "tests/dexvm/vm_monitor_tests.cpp; tests/dexvm/thread_intrinsic_tests.cpp; tests/dexvm/vm_thread_tests.cpp; tests/runtime/jni_environment_tests.cpp"
-note = "DVM-29/48/50/234：session monitor 表管理 owner、重入与 wait-set；JNI MonitorEnter/Exit 与 synchronized 方法共用同一表，jclass 与 Class 对象同一身份；timed wait 使用统一 Clock，根上下文可快进，notify/interrupt 可先赢。生命周期 scope 超时以 Java 无法捕获的内部故障展开，不伪造通知。"
+note = "DVM-29/48/50/234：session monitor 表管理 owner、重入与 wait-set；JNI MonitorEnter/Exit 与 synchronized 方法共用同一表，jclass 与 Class 对象同一身份；timed wait 使用统一 Clock，停摆期间按真实流速补时，notify/interrupt 可先赢。生命周期 scope 超时以 Java 无法捕获的内部故障展开，不伪造通知。 DVM-353：停摆补时受注入真实流逝时间节流（ADR-0171）。"
 
 [dexvm.exceptions]
 status = "complete"

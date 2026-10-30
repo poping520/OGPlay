@@ -425,3 +425,63 @@ TEST_CASE("DVM-264 application binding publishes tmpdir before Application class
         CHECK(vm.GetSystemProperty("user.dir") == "/data/game");
     }
 }
+
+TEST_CASE("DVM-354 API19 heap classes and largeHeap are applied before Application construction") {
+    using namespace ogplay;
+    using namespace runtime::dexvm;
+    constexpr std::int64_t mib = 1024 * 1024;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool large : {false, true}) {
+            OrchestratedApp fixture("fixture.LauncherActivity", true, false, "", {}, true, backend,
+                                    "fixture.HeapApplication", {}, {64, 36}, {}, large);
+            fixture.app->StartApplication();
+            auto& vm = fixture.app->DexVm().Vm();
+            auto& linker = vm.Linker();
+            const auto call = [&](const char* owner, const char* name, const char* signature,
+                                  std::vector<VmValue> args = {}) {
+                const auto type = linker.ResolveDescriptor(owner);
+                const auto method = linker.FindDirectMethod(type, name, signature);
+                REQUIRE(method);
+                const auto result = vm.Call(*method, args);
+                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                return result.value;
+            };
+            const auto on = [&](VmObjectRef object, const char* name, const char* signature) {
+                const auto type = vm.Model().ObjectClass(object);
+                const auto slot = linker.FindVtableIndex(type, name, signature);
+                REQUIRE(slot);
+                const auto result = vm.Call(linker.Class(type).vtable[*slot], std::array{VmValue::Ref(object)});
+                REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
+                return result.value;
+            };
+            CHECK(call("Landroid/app/ActivityManager;", "staticGetMemoryClass", "()I").AsInt() == 96);
+            CHECK(call("Landroid/app/ActivityManager;", "staticGetLargeMemoryClass", "()I").AsInt() == 256);
+            const auto runtime = call("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;").ref;
+            CHECK(on(runtime, "maxMemory", "()J").AsLong() == (large ? 256 : 96) * mib);
+            const auto application = fixture.app->Context()->application;
+            const auto info = on(application, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;").ref;
+            const auto flags = linker.FindFieldRecursive(vm.Model().ObjectClass(info), "flags", "I");
+            REQUIRE(flags);
+            CHECK(((vm.Model().InstanceSlots(info)[linker.Field(*flags).slot].bits & 0x00100000U) != 0) == large);
+            const auto app_type = linker.ResolveDescriptor("Lfixture/HeapApplication;");
+            const auto measured = linker.FindFieldRecursive(app_type, "constructorMax", "J");
+            REQUIRE(measured);
+            const auto& storage = linker.Class(app_type).static_storage;
+            const auto index = linker.Field(*measured).slot;
+            const auto bytes =
+                static_cast<std::uint64_t>(storage[index]) | (static_cast<std::uint64_t>(storage[index + 1]) << 32U);
+            CHECK(bytes == static_cast<std::uint64_t>((large ? 256 : 96) * mib));
+            const auto allocate = linker.FindDirectMethod(app_type, "allocateProbe", "()[B");
+            REQUIRE(allocate);
+            const auto allocation = vm.Call(*allocate, {});
+            if (large) {
+                REQUIRE_FALSE(allocation.exception.IsValid());
+                CHECK(vm.Model().IsValidRef(allocation.value.ref));
+            } else {
+                REQUIRE(allocation.exception.IsValid());
+                CHECK(linker.Class(allocation.exception_class).descriptor == "Ljava/lang/OutOfMemoryError;");
+            }
+            static_cast<void>(fixture.app->Stop());
+        }
+    }
+}

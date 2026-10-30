@@ -42,8 +42,7 @@ TEST_CASE("DVM-214 native ZIP admission placeholders do not require BootDex meta
     DexClassLinker linker;
     std::vector<IntrinsicClassDecl> catalog;
     catalog.push_back(std::move(IntrinsicClassBuilder::RootClass("Ljava/lang/Object;")).Build());
-    for (const auto owner : {"Lorg/ogplay/zip/NativeZip;", "Ljava/util/zip/Deflater;",
-                             "Ljava/util/zip/Inflater;"}) {
+    for (const auto owner : {"Lorg/ogplay/zip/NativeZip;", "Ljava/util/zip/Deflater;", "Ljava/util/zip/Inflater;"}) {
         auto builder = IntrinsicClassBuilder::Class(owner);
         builder.AdmitBootNativeMethods();
         catalog.push_back(std::move(builder).Build());
@@ -64,57 +63,50 @@ struct GcVm final {
     JavaObjectModel model{strings, arrays};
     DexClassLinker linker;
     ogplay::core::CapabilityLedger ledger;
-    std::shared_ptr<std::uint32_t> destructor_calls =
-        std::make_shared<std::uint32_t>(0);
+    std::shared_ptr<std::uint32_t> destructor_calls = std::make_shared<std::uint32_t>(0);
     Interpreter vm;
 
     GcVm(const std::vector<IntrinsicClassDecl>& extras = {},
          const InterpreterBackend backend = InterpreterBackend::switch_dispatch,
          NativeMethodBridge* native_bridge = nullptr)
-        : vm([this, &extras]() -> DexClassLinker& {
-                 auto catalog = CoreIntrinsicCatalog();
-                 auto builder =
-                     IntrinsicClassBuilder::Class("Lgc/RootBox;");
-                 builder.InstanceField("child", "Ljava/lang/Object;");
-                 builder.StaticField("root", "Ljava/lang/Object;");
-                 catalog.push_back(std::move(builder).Build());
-                 auto host =
-                     IntrinsicClassBuilder::Class("Lgc/HostBox;");
-                 host.HostStateDestructor(
-                     [calls = destructor_calls](std::uint64_t state) {
-                         CHECK(state == 99);
-                         ++*calls;
-                     });
-                 catalog.push_back(std::move(host).Build());
-                 linker.RegisterIntrinsics(catalog);
-                 linker.RegisterIntrinsics(extras);
-                 ogplay::test::RegisterBootDex(linker);
-                 linker.Link();
-                 return linker;
-             }(),
-             model, native_bridge, ledger, InterpreterConfig{.backend = backend}) {}
+        : vm(
+              [this, &extras]() -> DexClassLinker& {
+                  auto catalog = CoreIntrinsicCatalog();
+                  auto builder = IntrinsicClassBuilder::Class("Lgc/RootBox;");
+                  builder.InstanceField("child", "Ljava/lang/Object;");
+                  builder.StaticField("root", "Ljava/lang/Object;");
+                  catalog.push_back(std::move(builder).Build());
+                  auto host = IntrinsicClassBuilder::Class("Lgc/HostBox;");
+                  host.HostStateDestructor([calls = destructor_calls](std::uint64_t state) {
+                      CHECK(state == 99);
+                      ++*calls;
+                  });
+                  catalog.push_back(std::move(host).Build());
+                  linker.RegisterIntrinsics(catalog);
+                  linker.RegisterIntrinsics(extras);
+                  ogplay::test::RegisterBootDex(linker);
+                  linker.Link();
+                  return linker;
+              }(),
+              model, native_bridge, ledger, InterpreterConfig{.backend = backend}) {}
 };
 
 TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roots") {
     GcVm fixture;
     const auto static_root = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.SetIntrinsicStaticRef("Lgc/RootBox;", "root",
-                                    "Ljava/lang/Object;", static_root);
+    fixture.vm.SetIntrinsicStaticRef("Lgc/RootBox;", "root", "Ljava/lang/Object;", static_root);
     const auto intern_root = fixture.model.InternString(u"permanent");
     const auto jni_root = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto session_root = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.SetGcIntegration({
-        [identity = fixture.model.ToIdentity(jni_root)](const auto& visit) {
-            visit(identity);
-        },
-        {},
-        [session_root](const VmRootVisitor& visit) { visit(session_root); }});
+    fixture.vm.SetGcIntegration(
+        {[identity = fixture.model.ToIdentity(jni_root)](const auto& visit) { visit(identity); },
+         {},
+         [session_root](const VmRootVisitor& visit) { visit(session_root); }});
 
     std::set<std::uint32_t> roots;
-    fixture.vm.VisitRoots(
-        [&](const VmObjectRef ref) {
-            if (ref.IsValid()) roots.insert(ref.Value());
-        });
+    fixture.vm.VisitRoots([&](const VmObjectRef ref) {
+        if (ref.IsValid()) roots.insert(ref.Value());
+    });
 
     CHECK(roots.contains(static_root.Value()));
     CHECK(roots.contains(intern_root.Value()));
@@ -122,8 +114,7 @@ TEST_CASE("DexVM GC root surface enumerates permanent static JNI and session roo
     CHECK(roots.contains(session_root.Value()));
     const auto root_box = fixture.linker.FindClass("Lgc/RootBox;");
     REQUIRE(root_box.has_value());
-    CHECK(fixture.linker.Class(*root_box).static_ref_slots ==
-          std::vector<std::uint16_t>{0});
+    CHECK(fixture.linker.Class(*root_box).static_ref_slots == std::vector<std::uint16_t>{0});
     CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() > 0);
 }
 
@@ -138,9 +129,7 @@ TEST_CASE("JNI GC roots include local and global but exclude weak global") {
     static_cast<void>(references.NewWeakGlobal(weak));
 
     std::vector<JniObjectIdentity> roots;
-    references.VisitRoots([&](const JniObjectIdentity value) {
-        roots.push_back(value);
-    });
+    references.VisitRoots([&](const JniObjectIdentity value) { roots.push_back(value); });
     CHECK(std::ranges::find(roots, local) != roots.end());
     CHECK(std::ranges::find(roots, global) != roots.end());
     CHECK(std::ranges::find(roots, weak) == roots.end());
@@ -150,21 +139,21 @@ TEST_CASE("DexVM marker traces exact object edges and intrinsic side tables") {
     GcVm fixture;
     const auto root = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto field_child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.model.InstanceSlots(root)[0] =
-        Slot{field_child.Value(), SlotTag::ref};
+    fixture.model.InstanceSlots(root)[0] = Slot{field_child.Value(), SlotTag::ref};
     const auto array_class = fixture.linker.ResolveDescriptor("[Ljava/lang/Object;");
     const auto object_class = fixture.linker.FindClass("Ljava/lang/Object;");
     REQUIRE(object_class.has_value());
     const auto array = fixture.model.NewObjectArray(array_class, *object_class, 1);
     fixture.model.SetObjectElement(array, 0, root);
     const auto side_child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.RegisterIntrinsicStateTable({
-        "marker-edge", [root, side_child](VmObjectRef owner, const VmRootVisitor& visit) {
-            if (owner == root) visit(side_child);
-        }, [](VmObjectRef) {}, {}});
+    fixture.vm.RegisterIntrinsicStateTable({"marker-edge",
+                                            [root, side_child](VmObjectRef owner, const VmRootVisitor& visit) {
+                                                if (owner == root) visit(side_child);
+                                            },
+                                            [](VmObjectRef) {},
+                                            {}});
     const auto garbage = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [array](const VmRootVisitor& visit) { visit(array); }});
+    fixture.vm.SetGcIntegration({{}, {}, [array](const VmRootVisitor& visit) { visit(array); }});
 
     const auto marked = fixture.vm.MarkReachable();
     CHECK(marked.IsMarked(array));
@@ -179,21 +168,19 @@ TEST_CASE("DexVM marker traces exact object edges and intrinsic side tables") {
 TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     GcVm fixture;
     const auto initial_tables = fixture.vm.RegisteredIntrinsicSideTableCount();
-    auto state = std::make_shared<
-        std::unordered_map<std::uint32_t, VmObjectRef>>();
-    fixture.vm.RegisterIntrinsicStateTable({
-        "gc-test-state",
-        [state](const VmObjectRef owner, const VmRootVisitor& visit) {
-            const auto found = state->find(owner.Value());
-            if (found != state->end()) visit(found->second);
-        },
-        [state](const VmObjectRef owner) { state->erase(owner.Value()); },
-        [state](const VmObjectRef source, const VmObjectRef clone) {
-            const auto found = state->find(source.Value());
-            if (found != state->end()) {
-                (*state)[clone.Value()] = found->second;
-            }
-        }});
+    auto state = std::make_shared<std::unordered_map<std::uint32_t, VmObjectRef>>();
+    fixture.vm.RegisterIntrinsicStateTable({"gc-test-state",
+                                            [state](const VmObjectRef owner, const VmRootVisitor& visit) {
+                                                const auto found = state->find(owner.Value());
+                                                if (found != state->end()) visit(found->second);
+                                            },
+                                            [state](const VmObjectRef owner) { state->erase(owner.Value()); },
+                                            [state](const VmObjectRef source, const VmObjectRef clone) {
+                                                const auto found = state->find(source.Value());
+                                                if (found != state->end()) {
+                                                    (*state)[clone.Value()] = found->second;
+                                                }
+                                            }});
     CHECK(fixture.vm.RegisteredIntrinsicSideTableCount() == initial_tables + 1);
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
@@ -202,13 +189,10 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     const auto garbage_zip = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     fixture.vm.IO().SetInput(garbage_io, {{std::byte{0x2a}}, 0, false});
     fixture.vm.ZIP().Open(
-        garbage_zip,
-        {std::byte{0x50}, std::byte{0x4b}, std::byte{0x05}, std::byte{0x06},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}, std::byte{0}, std::byte{0},
-         std::byte{0}, std::byte{0}});
+        garbage_zip, {std::byte{0x50}, std::byte{0x4b}, std::byte{0x05}, std::byte{0x06}, std::byte{0}, std::byte{0},
+                      std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0}, std::byte{0},
+                      std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0}, std::byte{0},
+                      std::byte{0},    std::byte{0},    std::byte{0},    std::byte{0}});
     (*state)[owner.Value()] = child;
     const auto source_hash = fixture.model.IdentityHashCode(owner);
     const auto clone = fixture.vm.CloneObject(owner);
@@ -217,8 +201,7 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
     REQUIRE(state->contains(clone.Value()));
     CHECK(state->at(clone.Value()) == child);
 
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
+    fixture.vm.SetGcIntegration({{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
     const auto marked = fixture.vm.MarkReachable();
     CHECK(marked.IsMarked(owner));
     CHECK(marked.IsMarked(child));
@@ -233,19 +216,17 @@ TEST_CASE("DexVM intrinsic state tables register trace sweep and clone hooks") {
 
 TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse") {
     GcVm fixture;
-    OwnedStateTable<VmObjectRef> states(
-        "gc-owned-state", OwnedStateTracePolicy::trace_guest_references,
-        OwnedStateClonePolicy::do_not_clone,
-        [](const VmObjectRef& child, const VmRootVisitor& visit) {
-            if (child.IsValid()) visit(child);
-        });
+    OwnedStateTable<VmObjectRef> states("gc-owned-state", OwnedStateTracePolicy::trace_guest_references,
+                                        OwnedStateClonePolicy::do_not_clone,
+                                        [](const VmObjectRef& child, const VmRootVisitor& visit) {
+                                            if (child.IsValid()) visit(child);
+                                        });
     fixture.vm.RegisterIntrinsicStateTable(states.Hooks());
 
     const auto owner = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     const auto child = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     states.InsertOrAssign(owner, child);
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
+    fixture.vm.SetGcIntegration({{}, {}, [owner](const VmRootVisitor& visit) { visit(owner); }});
     const auto alive = fixture.vm.MarkReachable();
     CHECK(alive.IsMarked(owner));
     CHECK(alive.IsMarked(child));
@@ -256,15 +237,12 @@ TEST_CASE("OwnedStateTable traces children sweeps owners and refuses stale reuse
     CHECK(states.Size() == 0);
 
     const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
-    const bool reused_old_handle = reused.Value() == owner.Value() ||
-                                   reused.Value() == child.Value();
+    const bool reused_old_handle = reused.Value() == owner.Value() || reused.Value() == child.Value();
     CHECK(reused_old_handle);
     CHECK_FALSE(states.Contains(reused));
 
-    CHECK_THROWS_AS(
-        (OwnedStateTable<VmObjectRef>(
-            "missing-trace", OwnedStateTracePolicy::trace_guest_references)),
-        DexVmError);
+    CHECK_THROWS_AS((OwnedStateTable<VmObjectRef>("missing-trace", OwnedStateTracePolicy::trace_guest_references)),
+                    DexVmError);
 }
 
 TEST_CASE("DexVM and JNI share one object array identity and element store") {
@@ -274,15 +252,13 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
     JniPrimitiveArrayStore primitives{primitives_payload};
     JniClassRegistry jni_classes;
     const auto jni_object = jni_classes.RegisterClass({"java/lang/Object"});
-    const auto jni_box = jni_classes.RegisterClass(
-        {"gc/Box", std::string{"java/lang/Object"}});
+    const auto jni_box = jni_classes.RegisterClass({"gc/Box", std::string{"java/lang/Object"}});
     JniGuestObjectRegistry objects(jni_classes);
     auto& object_arrays = objects.ObjectArrays();
 
     DexClassLinker linker;
     auto catalog = CoreIntrinsicCatalog();
-    catalog.push_back(
-        std::move(IntrinsicClassBuilder::Class("Lgc/Box;")).Build());
+    catalog.push_back(std::move(IntrinsicClassBuilder::Class("Lgc/Box;")).Build());
     linker.RegisterIntrinsics(catalog);
     ogplay::test::RegisterBootDex(linker);
     linker.Link();
@@ -300,8 +276,7 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
     };
     JavaObjectModel model(
         strings, primitives, {},
-        {&object_arrays, publish_class, resolve_class, {},
-         [&](const JniObjectIdentity element_class) {
+        {&object_arrays, publish_class, resolve_class, {}, [&](const JniObjectIdentity element_class) {
              return std::pair{dex_array, resolve_class(element_class)};
          }});
 
@@ -316,8 +291,7 @@ TEST_CASE("DexVM and JNI share one object array identity and element store") {
     CHECK(object_arrays.Get(identity, 0)->object == model.ToIdentity(element));
 
     const auto imported_identity = object_arrays.New(jni_box, 1);
-    object_arrays.Set(imported_identity, 0,
-                      JniObjectValue{model.ToIdentity(element), jni_box});
+    object_arrays.Set(imported_identity, 0, JniObjectValue{model.ToIdentity(element), jni_box});
     const auto imported = model.FromIdentity(imported_identity);
     CHECK(model.Kind(imported) == VmObjectKind::object_array);
     CHECK(model.ObjectClass(imported) == dex_array);
@@ -330,15 +304,13 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     const auto dead = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     fixture.model.InstanceSlots(dead)[0] = {survivor.Value(), SlotTag::ref};
     const auto dead_string = fixture.model.NewString(u"dead");
-    const auto dead_string_hash =
-        fixture.model.IdentityHashCode(dead_string);
+    const auto dead_string_hash = fixture.model.IdentityHashCode(dead_string);
     const auto string_identity = fixture.model.ToIdentity(dead_string);
     const auto before = fixture.model.AllocatedBytes();
     std::vector<JniObjectIdentity> weak_clears;
-    fixture.vm.SetGcIntegration({
-        {},
-        [&](const JniObjectIdentity identity) { weak_clears.push_back(identity); },
-        [survivor](const VmRootVisitor& visit) { visit(survivor); }});
+    fixture.vm.SetGcIntegration({{},
+                                 [&](const JniObjectIdentity identity) { weak_clears.push_back(identity); },
+                                 [survivor](const VmRootVisitor& visit) { visit(survivor); }});
 
     const auto first = fixture.vm.CollectGarbage();
     CHECK(first.freed_objects == 2);
@@ -346,19 +318,17 @@ TEST_CASE("DexVM sweeper releases stores reuses handles and is idempotent") {
     CHECK(fixture.model.AllocatedBytes() == before - 80);
     CHECK_FALSE(fixture.model.IsValidRef(dead));
     CHECK_THROWS_AS(static_cast<void>(fixture.model.Kind(dead)), DexVmError);
-    CHECK_THROWS_AS(static_cast<void>(fixture.strings.Length(string_identity)),
-                    JniStringError);
+    CHECK_THROWS_AS(static_cast<void>(fixture.strings.Length(string_identity)), JniStringError);
     CHECK(std::ranges::find(weak_clears, string_identity) != weak_clears.end());
 
     const auto reused = fixture.vm.NewIntrinsicInstance("Lgc/RootBox;");
     CHECK(reused == dead_string);
     CHECK(fixture.model.IdentityHashCode(reused) != dead_string_hash);
     CHECK(fixture.model.InstanceSlots(reused)[0].bits == 0);
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [survivor, reused](const VmRootVisitor& visit) {
-             visit(survivor);
-             visit(reused);
-         }});
+    fixture.vm.SetGcIntegration({{}, {}, [survivor, reused](const VmRootVisitor& visit) {
+                                     visit(survivor);
+                                     visit(reused);
+                                 }});
     const auto second = fixture.vm.CollectGarbage();
     CHECK(second.freed_objects == 0);
     CHECK(second.freed_bytes == 0);
@@ -370,8 +340,7 @@ TEST_CASE("DexVM host state destructor runs exactly once only after death") {
     REQUIRE(host_class.has_value());
     const auto live = fixture.model.NewHostBacked(*host_class, 99);
     static_cast<void>(fixture.model.NewHostBacked(*host_class, 99));
-    fixture.vm.SetGcIntegration(
-        {{}, {}, [live](const VmRootVisitor& visit) { visit(live); }});
+    fixture.vm.SetGcIntegration({{}, {}, [live](const VmRootVisitor& visit) { visit(live); }});
 
     const auto first = fixture.vm.CollectGarbage();
     CHECK(first.freed_objects == 1);
@@ -410,8 +379,10 @@ TEST_CASE("DVM-108 field owned native resources follow mutation aliases and retr
     const auto cleanup = *f.linker.FindDirectMethod(type, "cleanup", "(J)V");
     const auto different = *f.linker.FindDirectMethod(type, "different", "(J)V");
     const auto invalid = *f.linker.FindDirectMethod(type, "invalid", "()V");
-    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "bad", "I"), cleanup), DexVmError);
-    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "global", "J"), cleanup), DexVmError);
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "bad", "I"), cleanup),
+                    DexVmError);
+    CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(*f.linker.FindFieldRecursive(type, "global", "J"), cleanup),
+                    DexVmError);
     CHECK_THROWS_AS(f.vm.TrackGuestNativeResourceField(field, invalid), DexVmError);
     f.vm.TrackGuestNativeResourceField(field, cleanup);
     f.vm.TrackGuestNativeResourceField(field, cleanup);
@@ -469,7 +440,8 @@ TEST_CASE("DVM-109 soft references retain caches until pressure and interned str
     const auto roots = f.vm.ProtectReferences(std::array{soft, queue});
     static_cast<void>(f.vm.CollectGarbage("ordinary"));
     CHECK(f.model.IsValidRef(value));
-    const auto referent = f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Ljava/lang/ref/Reference;"), "referent", "Ljava/lang/Object;");
+    const auto referent = f.linker.FindFieldRecursive(f.linker.ResolveDescriptor("Ljava/lang/ref/Reference;"),
+                                                      "referent", "Ljava/lang/Object;");
     REQUIRE(referent);
     CHECK(f.model.InstanceSlots(soft)[f.linker.Field(*referent).slot].bits == value.Value());
     static_cast<void>(f.vm.CollectGarbage("pressure", true));
@@ -477,7 +449,8 @@ TEST_CASE("DVM-109 soft references retain caches until pressure and interned str
     CHECK(f.model.InstanceSlots(soft)[f.linker.Field(*referent).slot].bits == 0);
     const auto poll_slot = f.linker.FindVtableIndex(f.model.ObjectClass(queue), "poll", "()Ljava/lang/ref/Reference;");
     REQUIRE(poll_slot);
-    const auto polled = f.vm.Call(f.linker.Class(f.model.ObjectClass(queue)).vtable[*poll_slot], std::array{VmValue::Ref(queue)});
+    const auto polled =
+        f.vm.Call(f.linker.Class(f.model.ObjectClass(queue)).vtable[*poll_slot], std::array{VmValue::Ref(queue)});
     REQUIRE(!polled.exception.IsValid());
     CHECK(polled.value.ref == soft);
     const auto one = f.model.NewString(u"dvm109-weak-intern-😀");
@@ -493,7 +466,7 @@ TEST_CASE("DVM-109 soft references retain caches until pressure and interned str
     CHECK_FALSE(f.model.IsValidRef(two));
     const auto fresh = f.model.NewString(u"dvm109-weak-intern-😀");
     CHECK(f.model.InternString(fresh) == fresh);
-    CHECK(f.model.InternString(u"dvm109-weak-intern-😀") == fresh); // Literal promotion.
+    CHECK(f.model.InternString(u"dvm109-weak-intern-😀") == fresh);  // Literal promotion.
     static_cast<void>(f.vm.CollectGarbage());
     CHECK(f.model.IsValidRef(fresh));
 }
@@ -507,7 +480,7 @@ TEST_CASE("WU7-3 System.gc clears weak interns while retaining literals in both 
         const auto weak = f.vm.NewIntrinsicInstance("Ljava/lang/ref/WeakReference;");
         const auto root = f.vm.ProtectReferences(std::array{weak});
         const auto ctor = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/lang/ref/WeakReference;"),
-            "<init>", "(Ljava/lang/Object;)V");
+                                                    "<init>", "(Ljava/lang/Object;)V");
         REQUIRE(ctor.has_value());
         REQUIRE_FALSE(f.vm.Call(*ctor, std::array{VmValue::Ref(weak), VmValue::Ref(value)}).exception.IsValid());
         const auto gc = f.linker.FindDirectMethod(f.linker.ResolveDescriptor("Ljava/lang/System;"), "gc", "()V");
@@ -528,14 +501,16 @@ TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on bot
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         GcVm f({}, backend);
         VmThreadRuntime threads(f.vm);
-        const auto stat = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+        const auto stat = [&](const char* owner, const char* name, const char* signature,
+                              std::vector<VmValue> args = {}) {
             const auto method = f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner), name, signature);
             REQUIRE(method);
             const auto result = f.vm.Call(*method, args);
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
-        const auto on = [&](VmObjectRef receiver, const char* name, const char* signature, std::vector<VmValue> args = {}) {
+        const auto on = [&](VmObjectRef receiver, const char* name, const char* signature,
+                            std::vector<VmValue> args = {}) {
             const auto type = f.model.ObjectClass(receiver);
             const auto slot = f.linker.FindVtableIndex(type, name, signature);
             REQUIRE(slot);
@@ -547,7 +522,8 @@ TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on bot
         const auto runtime = stat("Ljava/lang/Runtime;", "getRuntime", "()Ljava/lang/Runtime;").ref;
         const auto root = f.vm.ProtectReferences(std::array{runtime});
         CHECK(on(runtime, "maxMemory", "()J").AsLong() == static_cast<std::int64_t>(f.model.HeapGrowthLimitBytes()));
-        CHECK(on(runtime, "totalMemory", "()J").AsLong() - on(runtime, "freeMemory", "()J").AsLong() == static_cast<std::int64_t>(f.model.AllocatedBytes()));
+        CHECK(on(runtime, "totalMemory", "()J").AsLong() - on(runtime, "freeMemory", "()J").AsLong() ==
+              static_cast<std::int64_t>(f.model.AllocatedBytes()));
         const auto before = on(runtime, "freeMemory", "()J").AsLong();
         const auto bytes = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[B"), JniPrimitiveKind::byte, 4096);
         CHECK(on(runtime, "freeMemory", "()J").AsLong() < before);
@@ -555,12 +531,14 @@ TEST_CASE("WU7-4 heap queries and VMRuntime share live heap configuration on bot
         const auto specific = stat("Ldalvik/system/VMRuntime;", "getRuntime", "()Ldalvik/system/VMRuntime;").ref;
         CHECK(stat("Ldalvik/system/VMRuntime;", "getRuntime", "()Ldalvik/system/VMRuntime;").ref == specific);
         CHECK(on(specific, "getTargetHeapUtilization", "()F").AsFloat() == doctest::Approx(0.75));
-        CHECK(on(specific, "setTargetHeapUtilization", "(F)F", {VmValue::Float(0.6F)}).AsFloat() == doctest::Approx(0.75));
+        CHECK(on(specific, "setTargetHeapUtilization", "(F)F", {VmValue::Float(0.6F)}).AsFloat() ==
+              doctest::Approx(0.75));
         CHECK(on(specific, "getTargetHeapUtilization", "()F").AsFloat() == doctest::Approx(614.0 / 1024.0));
         CHECK(f.model.TargetHeapUtilization() == doctest::Approx(614.0 / 1024.0));
         const auto setter = f.linker.FindVtableIndex(f.model.ObjectClass(specific), "setTargetHeapUtilization", "(F)F");
         REQUIRE(setter);
-        const auto invalid = f.vm.Call(f.linker.Class(f.model.ObjectClass(specific)).vtable[*setter], std::array{VmValue::Ref(specific), VmValue::Float(0.0F)});
+        const auto invalid = f.vm.Call(f.linker.Class(f.model.ObjectClass(specific)).vtable[*setter],
+                                       std::array{VmValue::Ref(specific), VmValue::Float(0.0F)});
         REQUIRE(invalid.exception.IsValid());
         CHECK(f.linker.Class(invalid.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
         on(specific, "registerNativeAllocation", "(I)V", {VmValue::Int(4096)});
@@ -581,18 +559,23 @@ TEST_CASE("WU7-4 finalizer daemon preserves resurrection swallows exceptions and
         auto worker = std::make_shared<std::atomic<bool>>(false);
         auto declaration = IntrinsicClassBuilder::Class("Lgc/Finalizable;");
         declaration.StaticField("resurrected", "Ljava/lang/Object;");
-        declaration.OverrideMethod("finalize", "()V", [calls, worker](IntrinsicContext& c) -> VmValue {
-            ++*calls;
-            *worker = c.vm.Threads().CurrentThreadObject().IsValid() && c.vm.Threads().ThreadId(c.vm.Threads().CurrentThreadObject()) != 1;
-            const auto type = c.vm.Model().ObjectClass(c.receiver);
-            const auto field = c.vm.Linker().FindFieldRecursive(type, "resurrected", "Ljava/lang/Object;");
-            REQUIRE(field);
-            c.vm.Linker().MutableClass(type).static_storage[c.vm.Linker().Field(*field).slot] = c.receiver.Value();
-            throw VmJavaThrow{"Ljava/lang/RuntimeException;", "finalizer test exception"};
-        }, kAccProtected);
+        declaration.OverrideMethod(
+            "finalize", "()V",
+            [calls, worker](IntrinsicContext& c) -> VmValue {
+                ++*calls;
+                *worker = c.vm.Threads().CurrentThreadObject().IsValid() &&
+                          c.vm.Threads().ThreadId(c.vm.Threads().CurrentThreadObject()) != 1;
+                const auto type = c.vm.Model().ObjectClass(c.receiver);
+                const auto field = c.vm.Linker().FindFieldRecursive(type, "resurrected", "Ljava/lang/Object;");
+                REQUIRE(field);
+                c.vm.Linker().MutableClass(type).static_storage[c.vm.Linker().Field(*field).slot] = c.receiver.Value();
+                throw VmJavaThrow{"Ljava/lang/RuntimeException;", "finalizer test exception"};
+            },
+            kAccProtected);
         GcVm f({std::move(declaration).Build()}, backend);
         VmThreadRuntime threads(f.vm);
-        f.vm.Monitors().SetTimeSource([] { return static_cast<std::int64_t>(ogplay::hal::Clock::SteadyTimestampNs() / 1000000U); });
+        f.vm.Monitors().SetTimeSource(
+            [] { return static_cast<std::int64_t>(ogplay::hal::Clock::SteadyTimestampNs() / 1000000U); });
         const auto object = f.vm.NewIntrinsicInstance("Lgc/Finalizable;");
         const auto identity = f.model.ToIdentity(object);
         static_cast<void>(f.vm.CollectGarbage("finalizable-unreachable"));
@@ -635,11 +618,13 @@ TEST_CASE("WU7-4 weak soft and phantom queues distinguish pressure and finalizer
             REQUIRE_MESSAGE(!result.exception.IsValid(), result.exception_message);
             return result.value;
         };
-        for (const auto* owner : {"Ljava/lang/ref/WeakReference;", "Ljava/lang/ref/SoftReference;", "Ljava/lang/ref/PhantomReference;"}) {
+        for (const auto* owner :
+             {"Ljava/lang/ref/WeakReference;", "Ljava/lang/ref/SoftReference;", "Ljava/lang/ref/PhantomReference;"}) {
             const auto queue = make("Ljava/lang/ref/ReferenceQueue;", "()V");
             const auto qr = f.vm.ProtectReferences(std::array{queue});
             const auto value = f.vm.NewIntrinsicInstance("Lgc/RootBox;");
-            const auto reference = make(owner, "(Ljava/lang/Object;Ljava/lang/ref/ReferenceQueue;)V", {VmValue::Ref(value), VmValue::Ref(queue)});
+            const auto reference = make(owner, "(Ljava/lang/Object;Ljava/lang/ref/ReferenceQueue;)V",
+                                        {VmValue::Ref(value), VmValue::Ref(queue)});
             const auto root = f.vm.ProtectReferences(std::array{reference});
             if (std::string_view(owner).find("Phantom") != std::string_view::npos)
                 CHECK_FALSE(invoke(reference, "get", "()Ljava/lang/Object;").ref.IsValid());
@@ -696,6 +681,7 @@ TEST_CASE("WU7-4 native close claims its owner before reentrant collection and r
         int calls{};
         bool nested_cleanup{true};
         bool reject{};
+
         VmValue Invoke(const LinkedMethod&, VmObjectRef, std::span<const VmValue>) override {
             ++calls;
             if (reject) throw VmJavaThrow{"Ljava/lang/IllegalStateException;", "close rejected"};
@@ -707,6 +693,7 @@ TEST_CASE("WU7-4 native close claims its owner before reentrant collection and r
             return VmValue::Void();
         }
     };
+
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         Bridge bridge;
         auto declaration = IntrinsicClassBuilder::Class("Lgc/CloseOwner;");
@@ -717,7 +704,8 @@ TEST_CASE("WU7-4 native close claims its owner before reentrant collection and r
         const auto type = f.linker.ResolveDescriptor("Lgc/CloseOwner;");
         const auto field = f.linker.FindFieldRecursive(type, "peer", "J");
         const auto cleanup = f.linker.FindDirectMethod(type, "release", "(J)V");
-        REQUIRE(field); REQUIRE(cleanup);
+        REQUIRE(field);
+        REQUIRE(cleanup);
         f.vm.TrackGuestNativeResourceField(*field, *cleanup);
         const auto owner = f.vm.NewIntrinsicInstance("Lgc/CloseOwner;");
         const auto root = f.vm.ProtectReferences(std::array{owner});
@@ -825,4 +813,66 @@ TEST_CASE("DVM-260 direct String pins survive GC until final cross-kind release"
     f.strings.Release(id, 0, JniStringAccessKind::critical);
     static_cast<void>(f.vm.CollectGarbage());
     CHECK_FALSE(f.strings.Contains(id));
+}
+
+TEST_CASE("DVM-353 ROM finalizer watchdog measures injected real time during a driver stall") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const bool timeout : {false, true}) {
+            std::atomic<bool> entered{}, release{}, completed{};
+            auto declaration = IntrinsicClassBuilder::Class("Lgc/PacedFinalizable;");
+            declaration.OverrideMethod(
+                "finalize", "()V",
+                [&](IntrinsicContext& c) {
+                    const auto depth = c.vm.ExecutionLock().ReleaseForBlocking();
+                    entered = true;
+                    while (!release.load())
+                        std::this_thread::yield();
+                    c.vm.ExecutionLock().ReacquireAfterBlocking(depth);
+                    completed = true;
+                    return VmValue::Void();
+                },
+                kAccProtected);
+            GcVm f({std::move(declaration).Build()}, backend);
+            VmThreadRuntime threads(f.vm);
+            std::atomic<std::int64_t> real{}, uptime{};
+            ogplay::hal::RealtimeClock clock(
+                1000, [&] { return ogplay::hal::RealtimeClock::TimePoint{} + std::chrono::milliseconds(real.load()); });
+            auto& monitors = f.vm.Monitors();
+            monitors.SetTimeSource([&] { return uptime.load(); });
+            monitors.SetRealtimeSource([&] { return static_cast<std::int64_t>(clock.Ticks()); });
+            monitors.SetClockAdvance([&](std::int64_t delta) { uptime += delta; });
+            monitors.ObserveClockDriverBlocking(true);
+            static_cast<void>(f.vm.NewIntrinsicInstance("Lgc/PacedFinalizable;"));
+            static_cast<void>(f.vm.CollectGarbage("paced-finalizer"));
+            const auto await = [](auto predicate) {
+                for (int i = 0; i < 3000; ++i) {
+                    if (predicate()) return true;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                return false;
+            };
+            CHECK(await([&] { return entered.load(); }));
+            CHECK(await([&] {
+                const auto snapshot = threads.Snapshot();
+                return std::ranges::any_of(snapshot, [](const auto& t) {
+                    return t.name == "FinalizerWatchdogDaemon" && t.wait_state == VmThreadWaitState::sleeping;
+                });
+            }));
+            real = 3000;
+            CHECK(await([&] { return uptime.load() == 3000; }));
+            CHECK_FALSE(f.vm.ExitCode().has_value());
+            CHECK_FALSE(completed.load());
+            if (timeout) {
+                real = 10001;
+                CHECK(await([&] { return f.vm.ExitCode().has_value(); }));
+                CHECK(f.vm.ExitCode() == 2);
+            }
+            release = true;
+            if (!timeout) {
+                CHECK(await([&] { return completed.load(); }));
+                CHECK_FALSE(f.vm.ExitCode().has_value());
+            }
+            threads.Shutdown();
+        }
+    }
 }

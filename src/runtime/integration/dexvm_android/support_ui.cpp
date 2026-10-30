@@ -335,7 +335,7 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
                                              type)) {
                     const auto color = static_cast<std::uint32_t>(
                         android_intrinsics::CallAndroidMethod(vm, background, "getColor", "()I").AsInt());
-                    if ((color >> 24U) != 0) target.background_color = color;
+                    if ((color >> 24U) != 0) target.background_color = AndroidColorToRgba(color);
                 } else {
                     if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_background_draw", 0);
                     if (auto* logger = vm.Log())
@@ -944,10 +944,6 @@ constexpr std::uint8_t kTypeString = 0x03;
 constexpr std::uint8_t kTypeFirstColor = 0x1c;
 constexpr std::uint8_t kTypeLastColor = 0x1f;
 
-[[nodiscard]] std::uint32_t AndroidColorToRgba(const std::uint32_t argb) {
-    return ((argb & 0x00ffffffU) << 8U) | (argb >> 24U);
-}
-
 }  // namespace
 
 const loader::ArscEntry* SelectUiResourceEntry(const DexVmAndroidContext& context, std::uint32_t resource_id) {
@@ -1304,14 +1300,15 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
     std::optional<std::uint32_t> color;
     ui::Size intrinsic{};
     if (drawable.IsValid()) {
-        const auto& descriptor = vm.Linker().Class(vm.Model().ObjectClass(drawable)).descriptor;
+        const auto drawable_type = vm.Model().ObjectClass(drawable);
+        const bool is_color = vm.Linker().IsAssignable(
+            vm.Linker().ResolveDescriptor("Landroid/graphics/drawable/ColorDrawable;"), drawable_type);
         const auto found = context.ui_drawables.find(drawable.Value());
-        if (found == context.ui_drawables.end() || (descriptor != "Landroid/graphics/drawable/BitmapDrawable;" &&
-                                                    descriptor != "Landroid/graphics/drawable/ColorDrawable;")) {
+        if (!is_color && (found == context.ui_drawables.end() || !found->second.bitmap_drawable)) {
             if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.image_leaf", 0);
             throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unreviewed image Drawable"};
         }
-        auto& state = found->second;
+        auto& state = context.ui_drawables[drawable.Value()];
         const auto source = state.bitmap_drawable
                                 ? CallAndroidMethod(vm, drawable, "getBitmap", "()Landroid/graphics/Bitmap;").ref
                                 : dx::VmObjectRef{};
@@ -1339,8 +1336,9 @@ void ProjectAndroidImage(dx::Interpreter& vm, DexVmAndroidContext& context, dx::
                 }
                 image = state.image_projection;
             }
-        } else if (state.color)
-            color = (*state.color << 8U) | (*state.color >> 24U);
+        } else if (is_color)
+            color = AndroidColorToRgba(
+                static_cast<std::uint32_t>(CallAndroidMethod(vm, drawable, "getColor", "()I").AsInt()));
         else if (!state.bitmap_drawable)
             throw std::logic_error("missing image backing");
         intrinsic = {CallAndroidMethod(vm, drawable, "getIntrinsicWidth", "()I").AsInt(),
@@ -2658,7 +2656,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
         overlay->modal_layer = true;
         overlay->layout.width.mode = ui::SizeMode::MatchParent;
         overlay->layout.height.mode = ui::SizeMode::MatchParent;
-        overlay->background_color = 0x00000088U;
+        overlay->background_color = AndroidColorToRgba(0x88000000U);
         tree.Attach(tree.Root(), root);
         const auto panel = tree.CreateNode(ui::UiClass::LinearLayout);
         modal.panel = panel;
@@ -2671,7 +2669,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
                                                             static_cast<std::int32_t>(context->surface_width) - 32)};
         body->layout.height.mode = ui::SizeMode::WrapContent;
         body->layout.layout_gravity = 0x11;
-        body->background_color = 0xffffffffU;
+        body->background_color = AndroidColorToRgba(0xffffffffU);
         const auto padding = static_cast<std::int32_t>(12 * density);
         body->padding = {padding, padding, padding, padding};
         tree.Attach(root, panel);
@@ -2704,7 +2702,7 @@ void ShowAndroidDialog(dx::IntrinsicContext& call, const Context& context, dx::I
                 node->text = button_labels[i];
                 node->text_size_px = 14 * density;
                 node->text_color = 0x000000ffU;
-                node->background_color = 0xddddddffU;
+                node->background_color = AndroidColorToRgba(0xffddddddU);
                 node->padding = {padding, padding / 2, padding, padding / 2};
                 node->focusable = true;
                 node->focusable_in_touch_mode = true;

@@ -16,6 +16,7 @@
 namespace ogplay::loader {
 
 using AndroidManifestLabel = std::variant<std::uint32_t, std::string>;
+
 struct AndroidManifestMetaDataValueReference final {
     std::uint32_t resource_id{};
 };
@@ -74,8 +75,7 @@ struct AndroidManifestServiceComponent final {
     std::uint32_t flags{};
 };
 
-[[nodiscard]] inline bool AndroidManifestServiceExported(
-    const AndroidManifestServiceComponent& component) {
+[[nodiscard]] inline bool AndroidManifestServiceExported(const AndroidManifestServiceComponent& component) {
     return component.exported.value_or(!component.intent_filters.empty());
 }
 
@@ -89,8 +89,7 @@ struct AndroidManifestReceiverComponent final {
     std::vector<AndroidManifestMetaData> meta_data;
 };
 
-[[nodiscard]] inline bool AndroidManifestReceiverExported(
-    const AndroidManifestReceiverComponent& component) {
+[[nodiscard]] inline bool AndroidManifestReceiverExported(const AndroidManifestReceiverComponent& component) {
     return component.exported.value_or(!component.intent_filters.empty());
 }
 
@@ -111,8 +110,7 @@ struct AndroidManifestActivityComponent final {
     std::optional<std::string> task_affinity;
 };
 
-[[nodiscard]] inline bool AndroidManifestActivityExported(
-    const AndroidManifestActivityComponent& component) {
+[[nodiscard]] inline bool AndroidManifestActivityExported(const AndroidManifestActivityComponent& component) {
     return component.exported.value_or(!component.intent_filters.empty());
 }
 
@@ -134,8 +132,7 @@ enum class AndroidManifestStartupErrorReason : std::uint8_t {
 
 class AndroidManifestStartupError final : public std::runtime_error {
 public:
-    AndroidManifestStartupError(AndroidManifestStartupErrorReason reason,
-                                std::string message);
+    AndroidManifestStartupError(AndroidManifestStartupErrorReason reason, std::string message);
     [[nodiscard]] AndroidManifestStartupErrorReason Reason() const noexcept;
 
 private:
@@ -174,6 +171,7 @@ struct AndroidManifestFacts final {
     std::vector<std::string> requested_permissions;
     std::vector<AndroidManifestPermissionDefinition> defined_permissions;
     bool application_enabled{true};
+    bool application_large_heap{false};
     std::vector<AndroidManifestServiceComponent> service_components;
     std::vector<AndroidManifestReceiverComponent> receiver_components;
     // Top-level supports-gl-texture android:name, in first-declaration order.
@@ -181,15 +179,13 @@ struct AndroidManifestFacts final {
     std::vector<std::string> diagnostics;
 };
 
-[[nodiscard]] std::string NormalizeAndroidManifestClassName(
-    std::string_view package, std::string_view class_name);
+[[nodiscard]] std::string NormalizeAndroidManifestClassName(std::string_view package, std::string_view class_name);
 // API 19's component-name registry keeps the last declaration; the declaration
 // list and its independent intent-filters remain in document order.
-[[nodiscard]] const AndroidManifestActivityComponent* FindAndroidManifestActivityComponent(
-    std::span<const AndroidManifestActivityComponent> components,
-    std::string_view name);
-[[nodiscard]] AndroidManifestLauncherComponent ResolveLauncherComponent(
-    const AndroidManifestFacts& facts);
+[[nodiscard]] const AndroidManifestActivityComponent*
+FindAndroidManifestActivityComponent(std::span<const AndroidManifestActivityComponent> components,
+                                     std::string_view name);
+[[nodiscard]] AndroidManifestLauncherComponent ResolveLauncherComponent(const AndroidManifestFacts& facts);
 
 [[nodiscard]] AndroidManifestFacts ParseAndroidBinaryManifest(std::span<const std::byte> bytes,
                                                               const AndroidManifestResourceResolver& resources = {});

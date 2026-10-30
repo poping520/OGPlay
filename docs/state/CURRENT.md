@@ -26,7 +26,7 @@ JavaTraversal默认；九场景与Legacy持平（DVM-331）。
 | PVZ | macOS | TermsActivity 首帧 | 退出 onDestroy 的 `stopService` 未实现；交互未验 | [DVM-205](../tasks/dexvm/DVM-205.md) |
 | Angry Birds 2.3.0 | macOS | 5000 呈现帧，退出 clean | onDestroy 拒绝已修；无下一失败，画面未验收 | [DVM-186](../tasks/dexvm/DVM-186.md)、[WU7-1a](../tasks/diagnostics/DIAG-7.md) |
 | GTA3 | macOS | EULA 已接受，Surface 可见性生命周期通过，到达 Tap To Continue 标题画面 | PlayMovieInWindow 命中 `View.toString()` 未实现（pc25）；影片解码画面未验；NV clock 提示仍在 | [BND-42](../tasks/boundary/BND-42.md)、[DVM-348](../tasks/dexvm/DVM-348.md) |
-| GTASA | macOS | 首启 ZIP 解压成功，7 个脚本/文本落入 external，进入原 Activity；libcleo JNI_OnLoad 一次 | 沙盒已删除目录与子 tombstone 并存可重开；ContainerLayout 构造通过，下一首错 setActivity 缺 `View.setBackgroundColor(I)V` | [DVM-349](../tasks/dexvm/DVM-349.md)、[DVM-350](../tasks/dexvm/DVM-350.md)、[DVM-351](../tasks/dexvm/DVM-351.md) |
+| GTASA | macOS | HAL 后到 andView 构造；探测约 48 MiB，本次无 finalizer 超时 | `View.initializeScrollbars(TypedArray)` 未实现（View 构造 pc1366）；呈现/FPS/背景未验 | [DVM-352](../tasks/dexvm/DVM-352.md)、[DVM-353](../tasks/dexvm/DVM-353.md)、[DVM-354](../tasks/dexvm/DVM-354.md) |
 
 ## 未闭合问题
 

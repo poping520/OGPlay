@@ -167,7 +167,6 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         Declare_android_graphics_drawable_Drawable(context),
         Declare_android_graphics_drawable_PaintDrawable(context),
         Declare_android_graphics_drawable_BitmapDrawable(context),
-        Declare_android_graphics_drawable_ColorDrawable(context),
         Declare_android_hardware_LocalSensorManager(context),
         Declare_android_hardware_LegacySensorManager(context),
         Declare_android_nfc_NfcAdapter(context),

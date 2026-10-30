@@ -1770,8 +1770,7 @@ TEST_CASE("DVM-330 presentation cache follows immutable planes and producer fram
         CHECK(present(31).rgba8[0] == 31);
         CHECK(cache.snapshot == producer);
         CHECK(cache.normal.front() == empty);
-        const auto node = *FindViewUiNode(*f.context, view.Value());
-        f.context->ui_tree.Get(node)->background_color = 0xff0000ffU;
+        f.On(view, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xffff0000U))});
         f.On(view, "invalidate", "()V");
         tick();
         CHECK(present(0).rgba8[0] == 255);

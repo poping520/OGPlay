@@ -126,7 +126,7 @@ note = "DVM-346：独立HostLayout modal经共同快照原子发布，render/inp
 [dexvm.drawable_resource]
 status = "partial"
 test = "tests/dexvm/theme_resources_tests.cpp#API19 app drawable; tests/dexvm/rom_skin_tests.cpp#DVM-326; tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/theme_resources_tests.cpp#DVM-292; tests/dexvm/widget_click_tests.cpp; tests/dexvm/widget_hierarchy_tests.cpp; tests/dexvm/widget_resources_tests.cpp; tests/dexvm/widget_focus_input_tests.cpp; tests/dexvm/widget_window_dialog_tests.cpp; tests/runtime/application_startup_tests.cpp; tests/runtime/native_library_loader_tests.cpp; tests/runtime/jni_bridge_framework_tests.cpp; tests/runtime/jni_bridge_objects_tests.cpp; tests/runtime/jni_bridge_threads_tests.cpp; tests/runtime/activity_window_lifecycle_tests.cpp; tests/runtime/jni_android_platform_tests.cpp; tests/runtime/guest_native_values_tests.cpp; tests/runtime/activity_task_stack_tests.cpp; tests/runtime/guest_zlib_tests.cpp; tests/runtime/guest_crypto_bks_tests.cpp; tests/runtime/guest_crypto_certificates_tests.cpp; tests/runtime/application_exit_tests.cpp; tests/runtime/native_activity_process_tests.cpp; tests/runtime/native_dlopen_tests.cpp"
-note = "app Resources.getDrawable 支持封存 ROM 系统标量颜色；系统颜色 XML/未知及 getSystem drawable 仍失败。同 ROM edit_text selector/ninepatch 支持状态、padding/密度测量与叶 bitmap 冻结；ColorStateList 按 ROM XML 构造，不回退 APK。View 背景 ColorDrawable 按 ROM getColor 投影；其他未审查背景记账不绘制。guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 未支持。"
+note = "app Resources.getDrawable 支持封存 ROM 系统标量颜色；系统颜色 XML/未知及 getSystem drawable 仍失败。同 ROM edit_text selector/ninepatch 与四个 scrollbar thumb 支持加载、padding/密度测量与叶 bitmap 冻结；ColorStateList 按 ROM XML 构造，不回退 APK。View 背景 ColorDrawable 按 ROM getColor 投影；其他未审查背景记账不绘制。guest draw、其他皮肤、动画/过渡、任意 XML/custom draw 未支持。"
 
 [runtime.ui_multi_title_convergence]
 status = "complete"
@@ -2000,8 +2000,8 @@ note = "API19 core.jar 提供完整 XML Pull 接口/工厂与 KXml，原版工�
 
 [dexvm.bounded_theme]
 status = "partial"
-test = "tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "ADR-0160/0161：默认配对同 ROM ARSC 任意类型引用按真实 id 投影，不按属性白名单、内容加载延至消费者调用。取 id 不给加载信用，未支持目标记账失败；真实缺名/冲突拒绝。既有 ROM format/字符串 cookie2、ColorStateList 与 edit_text 范围保持。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/edittext_traversal_tests.cpp#DVM-328; tests/dexvm/rom_skin_tests.cpp#DVM-327; tests/dexvm/rom_skin_tests.cpp#DVM-326; tools/bootdex/theme_projection.py --self-test; tests/dexvm/theme_resources_tests.cpp#DVM-325; tests/dexvm/theme_resources_tests.cpp#DVM-288; tests/dexvm/theme_resources_tests.cpp#DVM-289; tests/dexvm/theme_resources_tests.cpp#DVM-292; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "ADR-0160/0161：默认配对同 ROM ARSC 任意类型引用按真实 id 投影，不按属性白名单、内容加载延至消费者调用。取 id 不给加载信用，未支持目标记账失败；真实缺名/冲突拒绝。支持 ROM format/字符串 cookie2、ColorStateList、edit_text 闭包及四个 scrollbar thumb 的 NinePatch 加载/缩放；未封存皮肤仍拒绝，DVM-355 ROM scrollbar 初始化与 padding/RTL 闭包通过，可见滚动条只记账不绘制。"
 
 [runtime.guest_proc_maps]
 status = "partial"
@@ -2150,12 +2150,12 @@ test = "tests/dexvm/owner_traversal_tests.cpp#DVM-330; tests/dexvm/owner_travers
 
 [dexvm.scroll_constructor]
 status = "partial"
-test = "tests/dexvm/scrollview_constructor_tests.cpp; tests/dexvm/scrollview_traversal_tests.cpp; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
-note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、metrics和ROM OverScroller；默认EdgeEffect仅idle，激活/draw失败。双轴ROM测量/单child/layout/clamp及水平初次RTL/forceLeftGravity，Java位置唯一，owner delta与同epoch XY投影/clip/CANCEL。scrollbar Drawable、SavedState、focus滚动和fling/smoothScroll失败；"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-355; tests/dexvm/scrollview_constructor_tests.cpp; tests/dexvm/scrollview_traversal_tests.cpp; tools/bootdex/compose_bootdex.py check --view-measure-test-output build/release/dexvm_fixtures/view-measure.jar"
+note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、metrics和ROM OverScroller；默认EdgeEffect仅idle，激活/draw失败。双轴ROM测量/单child/layout/clamp及水平初次RTL/forceLeftGravity，Java位置唯一，owner delta与同epoch XY投影/clip/CANCEL。DVM-355 默认 scrollbar 构造/ROM padding 与淡出支持；可见滚动条仅记账，SavedState、focus滚动和fling/smoothScroll失败；"
 
 [dexvm.paint_measure]
 status = "partial"
-test = "tests/dexvm/paint_measure_tests.cpp"
+test = "tests/dexvm/paint_measure_tests.cpp; tests/dexvm/rom_skin_tests.cpp#DVM-355"
 note = "DVM-293：默认配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定 ASCII 字表与 API19 字体链覆盖的独立 BMP；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
 
 [dexvm.text_constructor]
@@ -2175,5 +2175,5 @@ test = "tests/runtime/property_animation_tests.cpp#DVM-337; tools/bootdex/compos
 
 [dexvm.view_background_draw]
 status = "partial"
-test = "tests/dexvm/rom_skin_tests.cpp#DVM-352"
-note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记录未实现与限流 warn，不绘制、不抛异常；不支持任意 Drawable.draw。"
+test = "tests/dexvm/rom_skin_tests.cpp#DVM-352; tests/dexvm/rom_skin_tests.cpp#DVM-355"
+note = "View 背景支持受审 ROM skin 与 ColorDrawable（含子类）；颜色每次由 ROM getColor 读取，透明/null 清空。其他非空 Drawable 记录未实现与限流 warn，不绘制、不抛异常；DVM-355 可见 scrollbar 记账但不绘制；ROM cache 淡出经 Handler/统一时钟。Paint 追踪 shader/xfermode，含状态的 Canvas 绘制明确失败；不支持任意 Drawable.draw。"

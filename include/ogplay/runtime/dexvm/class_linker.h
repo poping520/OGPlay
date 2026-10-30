@@ -244,6 +244,8 @@ struct LinkedMethod final {
     std::optional<loader::DexMethodCode> code;
     IntrinsicHandler implementation;
     std::string adapter_review;
+    // Reviewed instance input seam; the ROM constructor body remains authoritative.
+    IntrinsicHandler constructor_inputs;
     bool prechecked{};
     std::shared_ptr<FastCode> fast_code;
     std::optional<std::uint32_t> dex_method_index;

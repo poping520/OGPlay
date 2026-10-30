@@ -1134,7 +1134,7 @@
           "signature": "getBoolean(I)Z",
           "flags": 1,
           "body_sha256": "da1b9e7e6f3ee941f0653afb79824b5d67af1b2f2293a26f930dbf5294ef2e6c",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getCachedColorStateList(J)Landroid/content/res/ColorStateList;",
@@ -1201,7 +1201,7 @@
           "signature": "getDimensionPixelSize(I)I",
           "flags": 1,
           "body_sha256": "947643b654748056e1e3b3d7701f4d99762f43009aba5a7806b03b365109db17",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "getDisplayMetrics()Landroid/util/DisplayMetrics;",

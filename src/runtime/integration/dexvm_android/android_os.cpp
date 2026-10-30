@@ -211,7 +211,9 @@ Decl Declare_android_os_SystemProperties(const Context&) {
     builder.StaticMethod(
         "native_get", "(Ljava/lang/String;)Ljava/lang/String;",
         [](dx::IntrinsicContext& call) {
-            return MakeString(call, std::string(BuildProperty(call.vm.StringUtf8(call.arguments[0].ref))));
+            const auto key = call.vm.StringUtf8(call.arguments[0].ref);
+            if (key == "qemu.hw.mainkeys") return MakeString(call, call.vm.GetSystemProperty(key).value_or(""));
+            return MakeString(call, std::string(BuildProperty(key)));
         },
         flags);
     builder.StaticMethod(
@@ -1732,6 +1734,47 @@ namespace ogplay::runtime {
 
 void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context) {
     if (context == nullptr) return;
+    android_intrinsics::RegisterGraphicsStateTables(vm, context);
+    const auto configuration = vm.Linker().ResolveDescriptor("Landroid/view/ViewConfiguration;");
+    const auto constructor = vm.Linker().FindDirectMethod(configuration, "<init>", "(Landroid/content/Context;)V");
+    if (!constructor) throw std::runtime_error("ROM ViewConfiguration constructor unavailable");
+    vm.Linker().MutableMethod(*constructor).constructor_inputs = [](dexvm::IntrinsicContext& call) {
+        using namespace android_intrinsics;
+        const auto resources =
+            CallAndroidMethod(call.vm, call.arguments[0].ref, "getResources", "()Landroid/content/res/Resources;").ref;
+        const auto mode =
+            CallAndroidMethod(call.vm, resources, "getInteger", "(I)I", {dexvm::VmValue::Int(0x010e0049)}).AsInt();
+        bool menu = mode == 1;
+        if (mode != 1 && mode != 2) {
+            bool navigation =
+                CallAndroidMethod(call.vm, resources, "getBoolean", "(I)Z", {dexvm::VmValue::Int(0x01110044)})
+                    .AsInt() != 0;
+            const auto key = call.vm.NewStringUtf8("qemu.hw.mainkeys");
+            const auto roots = call.vm.ProtectReferences(std::array{key, resources, call.receiver});
+            const auto owner = call.vm.Linker().ResolveDescriptor("Landroid/os/SystemProperties;");
+            const auto get = call.vm.Linker().FindDirectMethod(owner, "get", "(Ljava/lang/String;)Ljava/lang/String;");
+            if (!get) throw std::runtime_error("SystemProperties.get unavailable");
+            const auto value = call.vm.Call(*get, std::array{dexvm::VmValue::Ref(key)});
+            if (value.exception.IsValid())
+                throw dexvm::VmJavaThrow{call.vm.Linker().Class(value.exception_class).descriptor,
+                                         value.exception_message, value.exception};
+            const auto text = call.vm.StringUtf8(value.value.ref);
+            if (text == "1") navigation = false;
+            if (text == "0") navigation = true;
+            menu = !navigation;
+        }
+        const auto type = call.vm.Model().ObjectClass(call.receiver);
+        const auto menu_field = call.vm.Linker().FindFieldRecursive(type, "sHasPermanentMenuKey", "Z");
+        const auto set_field = call.vm.Linker().FindFieldRecursive(type, "sHasPermanentMenuKeySet", "Z");
+        if (!menu_field || !set_field) throw std::runtime_error("ViewConfiguration menu fields unavailable");
+        for (const auto [field, value] : {std::pair{*menu_field, menu}, {*set_field, true}}) {
+            call.vm.RequireImplementedField(field);
+            const auto& info = call.vm.Linker().Field(field);
+            if (info.is_static) throw std::runtime_error("ViewConfiguration input must be an instance field");
+            call.vm.Model().InstanceSlots(call.receiver)[info.slot] = {value ? 1U : 0U, dexvm::SlotTag::cat1};
+        }
+        return dexvm::VmValue::Void();
+    };
     {
         if (vm.CurrentContextToken() != 1U ||
             (context->ui_java_owner_thread && context->ui_java_owner_thread != std::this_thread::get_id()))
@@ -1740,6 +1783,7 @@ void RegisterAndroidValueStateTables(dexvm::Interpreter& vm, const std::shared_p
         vm.RegisterIntrinsicStateTable({"android.java-view-binding",
                                         [](dexvm::VmObjectRef, const dexvm::VmRootVisitor&) {},
                                         [context](dexvm::VmObjectRef object) {
+                                            context->scrollbar_fade_deadlines.erase(object.Value());
                                             context->ui_window_schedules.erase(object);
                                             context->ui_traversal_diagnostics.erase(object);
                                             for (auto& [_, state] : context->ui_window_schedules)

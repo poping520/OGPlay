@@ -41,6 +41,57 @@ ui::Size ReadAndroidViewMinimum(dexvm::Interpreter& vm, DexVmAndroidContext& con
 }
 
 namespace {
+void ProjectScrollbarState(dexvm::Interpreter& vm, DexVmAndroidContext& context, dexvm::VmObjectRef view, bool visible,
+                           std::int32_t flags) {
+    const auto slot = [&](dexvm::VmObjectRef object, const char* name, const char* type) -> dexvm::Slot& {
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(object), name, type);
+        if (!field) throw std::runtime_error("ROM scrollbar projection field missing");
+        vm.RequireImplementedField(*field);
+        return vm.Model().InstanceSlots(object)[vm.Linker().Field(*field).slot];
+    };
+    const auto cache = dexvm::VmObjectRef{slot(view, "mScrollCache", "Landroid/view/View$ScrollabilityCache;").bits};
+    if (!cache.IsValid()) return;
+    const auto roots = vm.ProtectReferences(std::array{view, cache});
+    auto state = slot(cache, "state", "I").bits;
+    if (state == 1 && slot(cache, "fadeScrollBars", "Z").bits) {
+        const auto field = vm.Linker().FindFieldRecursive(vm.Model().ObjectClass(cache), "fadeStartTime", "J");
+        const auto first = vm.Linker().Field(*field).slot;
+        const auto slots = vm.Model().InstanceSlots(cache);
+        const auto deadline =
+            static_cast<std::int64_t>(slots[first].bits | (static_cast<std::uint64_t>(slots[first + 1].bits) << 32));
+        const auto found = context.scrollbar_fade_deadlines.find(view.Value());
+        if (found == context.scrollbar_fade_deadlines.end() || found->second != deadline) {
+            const auto shared = std::shared_ptr<DexVmAndroidContext>(&context, [](DexVmAndroidContext*) {});
+            if (context.view_root_handler.IsValid())
+                android_intrinsics::RemoveHandlerWork(shared, context.view_root_handler, std::nullopt, cache, true,
+                                                      dexvm::VmObjectRef{}, false);
+            dexvm::IntrinsicContext call{vm, view, {}};
+            if (!android_intrinsics::PostViewRunnable(
+                    call, shared, view, cache, std::max<std::int64_t>(0, deadline - context.uptime_millis.load())))
+                throw std::runtime_error("scrollbar fade scheduling rejected");
+            context.scrollbar_fade_deadlines[view.Value()] = deadline;
+        }
+    }
+    if (state == 2) {
+        const auto interpolator =
+            dexvm::VmObjectRef{slot(cache, "scrollBarInterpolator", "Landroid/graphics/Interpolator;").bits};
+        const auto result = android_intrinsics::CallAndroidMethod(
+                                vm, interpolator, "timeToValues", "(I[F)Landroid/graphics/Interpolator$Result;",
+                                {dexvm::VmValue::Int(static_cast<std::int32_t>(context.uptime_millis.load())),
+                                 dexvm::VmValue::Ref(dexvm::VmObjectRef{})})
+                                .ref;
+        if (android_intrinsics::CallAndroidMethod(vm, result, "ordinal", "()I").AsInt() == 2) {
+            slot(cache, "state", "I") = {0, dexvm::SlotTag::cat1};
+            context.scrollbar_fade_deadlines.erase(view.Value());
+            state = 0;
+        } else {
+            static_cast<void>(android_intrinsics::CallAndroidMethod(vm, view, "postInvalidateOnAnimation", "()V"));
+        }
+    }
+    if (visible && (flags & 0x300) && state != 0)
+        if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.view_scrollbar_draw", 0);
+}
+
 void ProjectViewLayoutInputs(dexvm::Interpreter& vm, DexVmAndroidContext& context, const dexvm::VmObjectRef view) {
     const auto node = FindViewUiNode(context, view.Value());
     if (!node) return;
@@ -305,6 +356,8 @@ ui::UiGeometryProjection CollectAndroidRootProjection(dexvm::Interpreter& vm, De
         }
         const auto kind = context.ui_tree.Get(*node)->kind;
         if (prepare_render) {
+            ProjectScrollbarState(vm, context, view, visibility == ui::Visibility::Visible && entry.alpha > 0,
+                                  view_flags);
             auto& target = *context.ui_tree.Get(*node);
             target.background_color.reset();
             target.background_resource_id = 0;

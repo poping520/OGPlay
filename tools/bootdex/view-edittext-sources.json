@@ -36,7 +36,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -61,7 +61,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -92,7 +92,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -111,7 +111,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -124,7 +124,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"

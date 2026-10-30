@@ -37,6 +37,9 @@ struct GraphicsStateStore final {
     std::map<Handle, Interpolation> interpolators;
     std::map<Handle, Gradient> gradients;
     std::map<Handle, int> xfermodes;
+    // LightingColorFilter: Skia filter handle -> (mul, add); HWUI handle -> Skia handle.
+    std::map<Handle, std::pair<std::int32_t, std::int32_t>> lighting_filters;
+    std::map<Handle, Handle> lighting_filter_views;
 
     Handle New() {
         if (next == std::numeric_limits<std::uint32_t>::max())
@@ -295,6 +298,42 @@ std::vector<Decl> Declare_android_graphics_StateObjects(const Context& context) 
         },
         native_static);
     result.push_back(std::move(base).Build());
+    // API19 LightingColorFilter keeps a Skia filter and an HWUI view of it. Only
+    // the parameters are retained; no color arithmetic or drawing consumes them.
+    auto lighting =
+        dx::IntrinsicClassBuilder::Class("Landroid/graphics/LightingColorFilter;", "Landroid/graphics/ColorFilter;");
+    lighting.StaticMethod(
+        "native_CreateLightingFilter", "(II)I",
+        [store](dx::IntrinsicContext& c) {
+            const auto id = store->New();
+            store->lighting_filters.emplace(id, std::pair{c.arguments[0].AsInt(), c.arguments[1].AsInt()});
+            return dx::VmValue::Int(static_cast<int>(id.value));
+        },
+        native_static);
+    lighting.StaticMethod(
+        "nCreateLightingFilter", "(III)I",
+        [store](dx::IntrinsicContext& c) {
+            const auto source = Id(c.arguments[0]);
+            const auto found = store->lighting_filters.find(source);
+            if (found == store->lighting_filters.end() ||
+                found->second != std::pair{c.arguments[1].AsInt(), c.arguments[2].AsInt()})
+                Invalid("LightingColorFilter native filter");
+            const auto id = store->New();
+            store->lighting_filter_views.emplace(id, source);
+            return dx::VmValue::Int(static_cast<int>(id.value));
+        },
+        native_static);
+    result.push_back(std::move(lighting).Build());
+    auto filter = dx::IntrinsicClassBuilder::Class("Landroid/graphics/ColorFilter;");
+    filter.StaticMethod(
+        "finalizer", "(II)V",
+        [store](dx::IntrinsicContext& c) {
+            store->lighting_filters.erase(Id(c.arguments[0]));
+            store->lighting_filter_views.erase(Id(c.arguments[1]));
+            return dx::VmValue::Void();
+        },
+        native_static);
+    result.push_back(std::move(filter).Build());
     return result;
 }
 
@@ -321,7 +360,8 @@ void RegisterGraphicsStateTables(dx::Interpreter& vm, const Context& context) {
              const auto type = vm.Model().ObjectClass(object);
              const auto& descriptor = vm.Linker().Class(type).descriptor;
              if (descriptor != "Landroid/graphics/Interpolator;" && descriptor != "Landroid/graphics/LinearGradient;" &&
-                 descriptor != "Landroid/graphics/PorterDuffXfermode;")
+                 descriptor != "Landroid/graphics/PorterDuffXfermode;" &&
+                 descriptor != "Landroid/graphics/LightingColorFilter;")
                  return;
              const auto field = vm.Linker().FindFieldRecursive(type, "native_instance", "I");
              if (!field) return;
@@ -329,6 +369,12 @@ void RegisterGraphicsStateTables(dx::Interpreter& vm, const Context& context) {
              if (descriptor == "Landroid/graphics/Interpolator;") store->interpolators.erase(handle);
              if (descriptor == "Landroid/graphics/LinearGradient;") store->gradients.erase(handle);
              if (descriptor == "Landroid/graphics/PorterDuffXfermode;") store->xfermodes.erase(handle);
+             if (descriptor == "Landroid/graphics/LightingColorFilter;") {
+                 store->lighting_filters.erase(handle);
+                 if (const auto view = vm.Linker().FindFieldRecursive(type, "nativeColorFilter", "I"))
+                     store->lighting_filter_views.erase(
+                         Handle{vm.Model().InstanceSlots(object)[vm.Linker().Field(*view).slot].bits});
+             }
          },
          {}});
 }

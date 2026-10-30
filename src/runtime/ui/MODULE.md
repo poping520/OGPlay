@@ -112,6 +112,8 @@ UiTree 构造必须显式给出字体资源（独立 ASCII 测试可传 nullptr�
   其他 producer 创建的帧默认 false，消费者不得从命令数量猜测透明性。
 - `TextView/Button`：UiNode 唯一保存 text、RGBA textColor、textSize、gravity 与行数边界；
   内置 5x7 完整可打印 ASCII（0x20–0x7E）同时提供确定性 measure/raster，共用固定字体算法；空文本
+  所有固定字体消费方（TextView、Paint、Editable、measure/wrap/raster）共用 `kMaxFixedTextUnits`=65536
+  字形单位上限；换行计划另允许同等数量的换行符。128px 下宽高与光栅坐标仍在 int32 内，超限明确失败。
   控件仍保留一行字体高度。wrap_content 加入 padding，Button
   提供固定 background/padding/clickable 默认语义。compound drawables 以资源 id +
   resolved intrinsic 存于 UiNode（left/top/right/bottom）；measure 的内容宽为

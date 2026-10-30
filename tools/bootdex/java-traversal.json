@@ -27,7 +27,8 @@
     "view-skin-sources.json",
     "view-scrollbar-sources.json",
     "view-spinner-sources.json",
-    "view-progressbar-sources.json"
+    "view-progressbar-sources.json",
+    "view-colorfilter-sources.json"
   ],
   "class_additions": {
     "framework.jar": [
@@ -39,7 +40,9 @@
       "Landroid/content/res/StringBlock$StyleIDs;",
       "Landroid/content/res/StringBlock;",
       "Landroid/content/res/XmlBlock;",
+      "Landroid/graphics/ColorFilter;",
       "Landroid/graphics/Interpolator;",
+      "Landroid/graphics/LightingColorFilter;",
       "Landroid/graphics/LinearGradient;",
       "Landroid/graphics/Matrix$1;",
       "Landroid/graphics/Matrix;",

@@ -93,30 +93,30 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 13906998,
-    "sha256": "486128553c45be3d09b5efa91d2d9c2eeae1a4b588caf5534fc6cb34f1c3a8de",
+    "size": 13913187,
+    "sha256": "7d9e090b01f9918f65728a0bf05f4fb630f0e71a5e158cdb8e259cf20af4c3ed",
     "dex_entry": "classes.dex",
-    "dex_size": 6261468,
-    "dex_sha256": "e140855702e7aaf07bec8dd0ef712517479807b236cd485ad31fdd07fe31987b",
-    "class_count": 3891,
+    "dex_size": 6262052,
+    "dex_sha256": "bbaf4e36bc1318a7c9e72ed845370f6b25e1d28d9d1f4d414b6adaf1828b32b1",
+    "class_count": 3893,
     "selection_policy": "load-all",
     "notice": "notices/bootdex.jar.txt",
     "notice_sha256": "c5bf8c6efc379e6d5401a40fbf7810aedf9ee81dfa9f2deaa174faa97ded310a",
     "candidate_recipe": {
       "path": "tools/bootdex/java-traversal.json",
-      "sha256": "62be848b0d1a69cfc84628c8568f9f0cfb75cddb6a887313c58a14cc1b03301e",
+      "sha256": "7665f77a92c728c4a9c8be1e4377fdb7e5dfdc08419dae110bc1c23541dfe5ea",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "925917d81b489beb6b4c85399fed36c27ea7a447fbced6d02a26b926403a7df7"
+      "payload_sha256": "3a391a263b4698870ecd37ee7734fe3f79e507399ab5cefd4d5b9e1abf01300d"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "6e981036b35f83f79c81dd9b4c39c6fafb6a28070c3d85788f9a41de442042f8",
+      "sha256": "169f65c1133860cac80041f8ed5505b36771ba6620b86db7117c0e72eaa98294",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "4df42b7e170d55af0b1da0f50741e6f1c200ba95dc6a8334a9154b0a8f205b0a",
+      "manifest_sha256": "15e384223b167f9cca43c6d970050c302a884b7184e5fc01c95ea464f17a9128",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },

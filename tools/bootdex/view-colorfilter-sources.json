@@ -1,0 +1,103 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-colorfilter.surface.json.gz",
+      "surface_sha256": "b6e4bf433bac67cf3060b9f8a56df4521f1ffa1864398e0ff2428b172aaf9da4",
+      "owner": "Landroid/graphics/ColorFilter;",
+      "smali_sha256": "fc0385aba407a8bb8626171da8cab3ecd90a6d669a322ceba925afb2a2ef3d74",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "b3df2e62f2679c9d98ab9c1c2dc52f62c1dc7dfdf2173ceea09e39abbe2e65b7",
+          "source": "rom"
+        },
+        {
+          "signature": "finalizer(II)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-366 bounded LightingColorFilter native state for ROM constructor/finalize; button press path",
+            "inputs": "exact API19 static arguments: mul/add ints; Skia handle with matching mul/add; finalizer handle pair",
+            "outputs": "distinct monotonic per-VM handles; finalizer and GC sweep retire both; no color arithmetic",
+            "state_owner": "per-VM GraphicsStateStore lighting entries; ROM Java native_instance/nativeColorFilter fields",
+            "failure_boundary": "no ColorFilter rendering, Paint/Canvas filter consumption or other ColorFilter subclasses; unknown or mismatched Skia handle throws IAE"
+          }
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "32ee83d9fed975f67cc90bb598f71b119d6986af4761d9b4b7684cd8655ef060",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "nativeColorFilter:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "native_instance:I",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-colorfilter.surface.json.gz",
+      "surface_sha256": "b6e4bf433bac67cf3060b9f8a56df4521f1ffa1864398e0ff2428b172aaf9da4",
+      "owner": "Landroid/graphics/LightingColorFilter;",
+      "smali_sha256": "56fd3de045e7d91f241f8f70ec4ead27c20d304fd3d43b5ecb57a242842fc9c0",
+      "methods": [
+        {
+          "signature": "<init>(II)V",
+          "flags": 65537,
+          "body_sha256": "2dd9f2ef2ec215c1610d1d04fd6677bb058f349ee67c3880498cfc63697f6e3f",
+          "source": "rom"
+        },
+        {
+          "signature": "nCreateLightingFilter(III)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-366 bounded LightingColorFilter native state for ROM constructor/finalize; button press path",
+            "inputs": "exact API19 static arguments: mul/add ints; Skia handle with matching mul/add; finalizer handle pair",
+            "outputs": "distinct monotonic per-VM handles; finalizer and GC sweep retire both; no color arithmetic",
+            "state_owner": "per-VM GraphicsStateStore lighting entries; ROM Java native_instance/nativeColorFilter fields",
+            "failure_boundary": "no ColorFilter rendering, Paint/Canvas filter consumption or other ColorFilter subclasses; unknown or mismatched Skia handle throws IAE"
+          }
+        },
+        {
+          "signature": "native_CreateLightingFilter(II)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "DVM-366 bounded LightingColorFilter native state for ROM constructor/finalize; button press path",
+            "inputs": "exact API19 static arguments: mul/add ints; Skia handle with matching mul/add; finalizer handle pair",
+            "outputs": "distinct monotonic per-VM handles; finalizer and GC sweep retire both; no color arithmetic",
+            "state_owner": "per-VM GraphicsStateStore lighting entries; ROM Java native_instance/nativeColorFilter fields",
+            "failure_boundary": "no ColorFilter rendering, Paint/Canvas filter consumption or other ColorFilter subclasses; unknown or mismatched Skia handle throws IAE"
+          }
+        }
+      ],
+      "fields": []
+    }
+  ]
+}

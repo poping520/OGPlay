@@ -130,11 +130,17 @@ FixedTextMetrics MeasureFixedText(const std::u16string_view text, const float si
     if (!std::isfinite(size_px) || size_px < 1.0F || size_px > 128.0F) {
         throw std::runtime_error("fixed-font text size is outside 1..128 px");
     }
-    if (text.size() > 1024U) {
-        throw std::runtime_error("fixed-font text exceeds 1024 code units");
+    // Wrapped plans add at most one break per glyph, so breaks get the same
+    // budget again; glyph units alone carry the service bound.
+    if (text.size() > 2 * kMaxFixedTextUnits) {
+        throw std::runtime_error("fixed-font text exceeds " + std::to_string(kMaxFixedTextUnits) + " code units");
     }
+    std::size_t glyphs = 0;
     for (const auto unit : text) {
         if (unit == u'\n' || unit == u'\r') continue;
+        if (++glyphs > kMaxFixedTextUnits) {
+            throw std::runtime_error("fixed-font text exceeds " + std::to_string(kMaxFixedTextUnits) + " code units");
+        }
         RequireTextGlyph(unit, fallback);
     }
     const auto scale = std::max(1, static_cast<std::int32_t>(std::lround(size_px / 8.0F)));

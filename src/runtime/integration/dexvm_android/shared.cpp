@@ -267,7 +267,7 @@ bool ApplyTextEdit(dx::Interpreter& vm, DexVmAndroidContext& context, const dx::
         throw dx::VmJavaThrow{"Ljava/lang/IndexOutOfBoundsException;", "text replacement range is invalid"};
     }
 
-    if (state->text.size() - static_cast<std::size_t>(before_count) + replacement.size() > 1024) {
+    if (state->text.size() - static_cast<std::size_t>(before_count) + replacement.size() > ui::kMaxFixedTextUnits) {
         if (auto* ledger = vm.Ledger()) ledger->RecordUnimplemented("dexvm.text_constructor", 0);
         throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "text exceeds bounded edit service"};
     }

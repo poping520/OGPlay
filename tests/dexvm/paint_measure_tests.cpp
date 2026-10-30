@@ -128,7 +128,7 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
                           {VmValue::Ref(f.model.NewString(u"H")), VmValue::Int(-1), VmValue::Int(1)})
                   .exception.IsValid());
         CHECK(f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F",
-                          {VmValue::Ref(f.model.NewString(std::u16string(1025, u'H')))})
+                          {VmValue::Ref(f.model.NewString(std::u16string(ui::kMaxFixedTextUnits + 1, u'H')))})
                   .exception.IsValid());
         CHECK(f.context->paint_measure_states.at(paint.Value()).measurements == 0);
     }

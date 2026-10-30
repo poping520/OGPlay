@@ -4,6 +4,7 @@
 #include "ogplay/loader/apk.h"
 #include <array>
 #include <bit>
+#include <set>
 #include <tuple>
 
 using namespace ogplay::runtime;
@@ -1031,5 +1032,69 @@ TEST_CASE("DVM-363 ImageButton loads sealed btn_default and runtime selectors ke
         const auto gaps = f.ledger.Unimplemented();
         CHECK(std::any_of(gaps.begin(), gaps.end(),
                           [](const auto& gap) { return gap.id == "dexvm.view_background_draw"; }));
+    }
+}
+
+TEST_CASE("DVM-366 LightingColorFilter keeps bounded native handles across the button press path") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        constexpr auto owner_type = "Landroid/graphics/LightingColorFilter;";
+        const auto handles = [&](VmObjectRef filter) {
+            const auto type = f.model.ObjectClass(filter);
+            std::array<std::int32_t, 2> result{};
+            for (std::size_t i = 0; i < 2; ++i) {
+                const auto field =
+                    f.linker.FindFieldRecursive(type, i == 0 ? "native_instance" : "nativeColorFilter", "I");
+                REQUIRE(field);
+                result[i] = static_cast<std::int32_t>(f.model.InstanceSlots(filter)[f.linker.Field(*field).slot].bits);
+            }
+            return result;
+        };
+        const auto view_of = [&](std::int32_t native, std::int32_t mul, std::int32_t add) {
+            const auto method =
+                f.linker.FindDirectMethod(f.linker.ResolveDescriptor(owner_type), "nCreateLightingFilter", "(III)I");
+            REQUIRE(method);
+            return f.vm.Call(*method, std::array{VmValue::Int(native), VmValue::Int(mul), VmValue::Int(add)});
+        };
+        const auto type = f.linker.ResolveDescriptor(owner_type);
+        CHECK(f.linker.Class(type).is_boot_dex);
+        CHECK(f.linker.IsAssignable(f.linker.ResolveDescriptor("Landroid/graphics/ColorFilter;"), type));
+
+        // GTASA andButton ACTION_DOWN: new LightingColorFilter(-6710887, 0), then invalidate().
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto button =
+            f.New("Landroid/widget/ImageButton;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto button_root = f.vm.ProtectReferences(std::array{button});
+        std::array<std::int32_t, 2> first{};
+        const auto other = f.New(owner_type, "(II)V", {VmValue::Int(0x00ff00), VmValue::Int(0x10)});
+        const auto other_root = f.vm.ProtectReferences(std::array{other});
+        const auto second = handles(other);
+        {
+            const auto pressed = f.New(owner_type, "(II)V", {VmValue::Int(-6710887), VmValue::Int(0)});
+            const auto pressed_root = f.vm.ProtectReferences(std::array{pressed});
+            f.On(button, "invalidate", "()V");
+            first = handles(pressed);
+        }
+        CHECK(first[0] != 0);
+        CHECK(first[1] != 0);
+        CHECK(std::set<std::int32_t>{first[0], first[1], second[0], second[1]}.size() == 4);
+
+        // The HWUI view only accepts the Skia handle with its own parameters.
+        CHECK_FALSE(view_of(first[0], -6710887, 0).exception.IsValid());
+        for (const auto& [native, mul, add] :
+             {std::tuple{first[0], -6710887, 1}, std::tuple{first[0], 0x00ff00, 0x10}, std::tuple{0, 0, 0}}) {
+            const auto rejected = view_of(native, mul, add);
+            REQUIRE(rejected.exception.IsValid());
+            CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+
+        // ACTION_UP drops the filter; ROM finalize retires both handles.
+        static_cast<void>(f.vm.CollectGarbage("lighting-filter-release"));
+        f.vm.RunFinalization();
+        static_cast<void>(f.vm.CollectGarbage("lighting-filter-finalized"));
+        CHECK(view_of(first[0], -6710887, 0).exception.IsValid());
+        CHECK_FALSE(view_of(second[0], 0x00ff00, 0x10).exception.IsValid());
     }
 }

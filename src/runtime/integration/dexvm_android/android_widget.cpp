@@ -783,6 +783,22 @@ Decl ExperimentalTextView(const Context& context) {
             return dx::VmValue::Void();
         });
     }
+    // API19 TextView.onTouchEvent with null mEditor/mMovement and a non-Spannable
+    // mText (always true here) returns View.onTouchEvent. Editors need Editor,
+    // MovementMethod and IME, which stay unimplemented.
+    builder.VirtualMethod("onTouchEvent", "(Landroid/view/MotionEvent;)Z", [context](dx::IntrinsicContext& call) {
+        if (UiClassForObject(call.vm, call.receiver) == ui::UiClass::EditText ||
+            context->view_adapter_references[call.receiver.Value()].text_movement.IsValid())
+            TextInputFailure(call.vm, "editable TextView touch requires Editor/MovementMethod/IME");
+        const auto type = call.vm.Linker().ResolveDescriptor("Landroid/view/View;");
+        const auto index = call.vm.Linker().FindVtableIndex(type, "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
+        const auto result = call.vm.Call(call.vm.Linker().Class(type).vtable.at(*index),
+                                         std::array{dx::VmValue::Ref(call.receiver), call.arguments[0]});
+        if (result.exception.IsValid())
+            throw dx::VmJavaThrow{call.vm.Linker().Class(result.exception_class).descriptor, result.exception_message,
+                                  result.exception};
+        return result.value;
+    });
     const auto text_colors =
         builder.BoundInstanceField("mTextColor", "Landroid/content/res/ColorStateList;", dx::kAccPrivate);
     const auto hint_colors =
@@ -1097,7 +1113,7 @@ Decl ExperimentalTextView(const Context& context) {
             vm.Model().SetObjectElement(retained, 4, face);
         }
         const auto font_style = face.IsValid() ? CallAndroidMethod(vm, face, "getStyle", "()I").AsInt() : 0;
-        if (size < 1 || size > 128 || text.size() > 1024)
+        if (size < 1 || size > 128 || text.size() > ui::kMaxFixedTextUnits)
             TextInputFailure(vm, "text size/length outside bounded service");
         try {
             for (const auto unit : text)
@@ -1176,7 +1192,6 @@ Decl ExperimentalTextView(const Context& context) {
                 vm.Linker().Class(vm.Model().ObjectClass(refs.text_movement)).descriptor !=
                     "Landroid/text/method/ArrowKeyMovementMethod;")
                 TextInputFailure(vm, "EditText requires bounded ArrowKeyMovementMethod");
-            state->max_length = 1024;
             // ArrowKeyMovementMethod.initialize places the initial cursor at 0.
             refs.selection_start = refs.selection_end = 0;
             static_cast<void>(CallAndroidMethod(vm, c.receiver, "getText", "()Landroid/text/Editable;"));
@@ -1208,7 +1223,7 @@ Decl ExperimentalTextView(const Context& context) {
     };
     const auto validate = [](dx::IntrinsicContext& c, const ui::UiNode& node, const std::u16string& text, float size,
                              std::uint32_t style) {
-        if (text.size() > 1024 || !std::isfinite(size) || size < 1 || size > 128 || style > 3)
+        if (text.size() > ui::kMaxFixedTextUnits || !std::isfinite(size) || size < 1 || size > 128 || style > 3)
             TextInputFailure(c.vm, "text outside bounded service");
         try {
             for (const auto unit : text)

@@ -23,7 +23,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -36,7 +36,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -56,7 +56,7 @@
           "platform_seam": true,
           "review": {
             "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -94,7 +94,7 @@
           "platform_seam": true,
           "review": {
             "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -156,7 +156,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -177,7 +177,7 @@
           "platform_seam": true,
           "review": {
             "reason": "DVM-362 fixed seven-row font cell metrics with no descender",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "top/ascent=-7*scale; descent/bottom/leading=0; returned line height from MeasureFixedText; no Skia equivalence",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -274,7 +274,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -287,7 +287,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -366,7 +366,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -410,7 +410,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -429,7 +429,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -484,7 +484,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -497,7 +497,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -510,7 +510,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -523,7 +523,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -788,7 +788,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -866,7 +866,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -989,7 +989,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -1009,7 +1009,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
+            "inputs": "receiver and exact API19 arguments; ranges <=65536 UTF-16 units (shared fixed-font bound); textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -1472,7 +1472,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -2014,7 +2014,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -2232,7 +2232,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -2245,7 +2245,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -2947,7 +2947,14 @@
           "signature": "onTouchEvent(Landroid/view/MotionEvent;)Z",
           "flags": 1,
           "body_sha256": "c48a07355523fdb6025a5c1c38ae204dcb7ee6d41952a3f7804475a3d16f8533",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-366 TextView touch for the reduced API19 state: null mEditor/mMovement and non-Spannable mText",
+            "inputs": "receiver and MotionEvent; UiClass and owner-attached movement identity decide editability",
+            "outputs": "non-editable: exact View.onTouchEvent result; editable: ledger and UnsupportedOperationException",
+            "state_owner": "Java View flags/listeners/focus via View.onTouchEvent; no Editor, Layout or selection state",
+            "failure_boundary": "EditText/movement touch, cursor placement, link spans and IME stay unimplemented and fail explicitly"
+          }
         },
         {
           "signature": "onTrackballEvent(Landroid/view/MotionEvent;)Z",
@@ -3041,7 +3048,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"
@@ -3267,7 +3274,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -3330,7 +3337,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -3392,7 +3399,7 @@
           "source": "overlay",
           "review": {
             "reason": "DVM-362 bounded text state and fixed glyph measurements",
-            "inputs": "API19 receiver and arguments; plain String up to 1024 UTF-16 units; fixed font coverage; size 1..128px",
+            "inputs": "API19 receiver and arguments; plain String up to the shared 65536 UTF-16 unit fixed-font bound; fixed font coverage; size 1..128px",
             "outputs": "stable per-view TextPaint; hint and input type state; ordered real InputFilter virtual calls; fixed-font bounds",
             "state_owner": "Java mTextPaint/mHint/mFilters references; Paint size/typeface authoritative with UiNode projection; bounded input type in owner-attached adapter (no Editor)",
             "failure_boundary": "unsupported spans/glyphs fail and ledger; direct owned-Paint size/typeface/flags mutation fails; no drawing, KeyListener or IME implementation"
@@ -3701,7 +3708,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-298 bounded editing adapter",
-            "inputs": "constructed EditText; plain String <=1024 UTF-16 units; bounded selection indices; actual ROM BufferType.EDITABLE; Java mFilters in array order with ROM EMPTY_SPANNED destination",
+            "inputs": "constructed EditText; plain String <=65536 UTF-16 units (shared fixed-font bound); bounded selection indices; actual ROM BufferType.EDITABLE; Java mFilters in array order with ROM EMPTY_SPANNED destination",
             "outputs": "owner-attached Editable identity, selection or synchronous TextWatcher transaction; real Java requestLayout/invalidate; actual virtual InputFilter.filter calls with non-null replacement passed onward",
             "state_owner": "UiNode sole mutable text; existing ViewAdapterReferences owns selection, movement and Editable identities; Java owns focus/geometry",
             "failure_boundary": "no Editor, IME, Layout or complete Spannable object stack; unsupported API/glyph/style records and fails; no empty editor or fake input connection"

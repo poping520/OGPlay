@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -42,6 +43,11 @@ struct FixedTextMetrics final {
 
     constexpr auto operator<=>(const FixedTextMetrics&) const = default;
 };
+
+// Single budget for every fixed-font text consumer (TextView, Paint, Editable,
+// measurement and raster). API19 TextView has no length limit; this bound keeps
+// width/height/raster coordinates far inside int32 at the 128 px size ceiling.
+inline constexpr std::size_t kMaxFixedTextUnits = 65536;
 
 // Shared coverage check. Throws with the codepoint and the unsupported requirement.
 void RequireTextGlyph(char16_t unit, const UiFallbackFont* fallback = nullptr);

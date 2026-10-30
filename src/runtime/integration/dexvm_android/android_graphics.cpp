@@ -979,7 +979,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
                     throw dx::VmJavaThrow{chars ? "Ljava/lang/ArrayIndexOutOfBoundsException;"
                                                 : "Ljava/lang/IndexOutOfBoundsException;",
                                           "Paint text range"};
-                if (end - start > 1024) UnsupportedPaint(c, "Paint text exceeds 1024 units");
+                if (end - start > static_cast<std::int64_t>(ui::kMaxFixedTextUnits))
+                    UnsupportedPaint(c, "Paint text exceeds fixed-font service bound");
                 std::u16string text;
                 if (chars) {
                     for (auto i = start; i < end; ++i)

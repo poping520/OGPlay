@@ -107,6 +107,8 @@ add_custom_command(
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-absolute-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-progressbar-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-progressbar.surface.json.gz"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-colorfilter-sources.json"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-colorfilter.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-spinner-sources.json"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-spinner.surface.json.gz"
             "${CMAKE_CURRENT_SOURCE_DIR}/tools/bootdex/view-linear-sources.json"

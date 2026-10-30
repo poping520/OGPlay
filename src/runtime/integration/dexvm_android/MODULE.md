@@ -351,7 +351,8 @@ Resources 读取同 ROM override 与 showNavigationBar，再由现有 qemu.hw.ma
 读失败透传。固定 ARSC showNavigationBar=true，默认永久菜单键=false；无 Binder 或新快照字段。
 Display.getRealSize 使用现有真实显示配置。Interpolator native 只用参数时间维护关键帧/repeat/mirror；
 Shader/LinearGradient、Xfermode/PorterDuffXfermode 只保存强类型句柄及真实参数，Paint 的 Java 引用
-参与 GC 追踪；含 shader/xfermode 的 Canvas 绘制记账并明确失败。可见 scrollbar 仅记账不改像素，
+参与 GC 追踪；含 shader/xfermode 的 Canvas 绘制记账并明确失败。LightingColorFilter 的 Skia/HWUI 两个 native
+句柄只保存 mul/add，后者须引用参数一致的前者；ROM finalize 与 GC 清扫回收两者。不做颜色运算，不被任何绘制消费。可见 scrollbar 仅记账不改像素，
 ROM awaken/cache.run 经已有 Handler 与统一时钟推进；无 AttachInfo 时投影只向既有 ViewRoot Handler 队列转发真实 fade deadline。
 ui 不读取 Java 字段；guest measured/bounds 与遍历权威唯一归 Java。
 
@@ -616,7 +617,7 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
 measureText 重载及同源 bounds/FontMetrics/ascent/descent；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
 测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
-固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、1024单位、1..128px、flags位集0x507以外明确失败并记账；
+固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、ui::kMaxFixedTextUnits（65536）单位、1..128px、flags位集0x507以外明确失败并记账；
 完整 shaping、Paint 绘制与 Layout/Editor 保持 failure。
 FontMetrics 使用固定七行格子：top/ascent=-7×scale，descent/bottom/leading=0，无下伸部，不等价 Skia。
 TextPaint 继承 Paint 的同源 bounds，不另设度量口径。
@@ -705,12 +706,14 @@ JavaTraversal 配对保留 EditText 完整 ROM 形状；三个薄构造及默认
 EDITABLE 强制与 covariant bridge 执行 ROM。editTextStyle 与 defStyleAttr 真解析，默认
 系统皮肤仅封存 edit_text selector/ninepatch 可参与状态与 padding/叶测量，其他皮肤失败；
 应用可显式覆盖。复用同一 TextView 文本与冻结测量服务，皮肤绘制请求仍失败。
+TextView.onTouchEvent 受审 overlay：Java mEditor/mMovement 恒为 null、mText 非 Spannable，非编辑 TextView
+原样返回 View.onTouchEvent；EditText 或带 movement 的 TextView 触摸（光标、链接、IME）记账并明确失败。
 宿主 UiNode 唯一拥有可变文本；View adapter 仅保存有界 selection 与 Editable/movement 身份，
 不写 ROM mText/mEditor/mLayout，不伪造 Editor/InputConnection。Editable 复用既有的
 length/toString/clear/replace 服务；其身份从 View 强边保活，反向保活 View，循环随 GC 回收。
 编辑使用已有 ApplyTextEdit；提交接缝提交 selection、失效测量缓存并调用 Java requestLayout/
 invalidate，先全部 before、提交、全部 on、全部 after，after 可重入。
-边界为1024 UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；完整 Spannable、
+边界为与 TextView/Paint 共用的 ui::kMaxFixedTextUnits（65536）UTF-16单位、已支持固定字体字符、普通字符串与下标 selection；EditText 不另设默认长度，长度语义只来自 InputFilter；完整 Spannable、
 IME/composition、Editor、布局对象、修改键移动/删除及未支持字形请求均记账失败。
 输入按同一 Java findFocus/父链定位 EditText，消费选区替换、左右移动、删除与文本键；
 不使用 focused_edit_text 或 UiTree 焦点作owner。失败校验不改 selection；提交后回调

@@ -1,8 +1,10 @@
 #include "container_traversal_fixture.h"
 #include "ogplay/runtime/ui/ui_renderer.h"
 #include "ogplay/runtime/ui/ui_fallback_font.h"
+#include "ogplay/runtime/ui/ui_leaf_measure.h"
 #include <filesystem>
 #include <algorithm>
+#include <limits>
 
 using ogplay::test::container_traversal::ContainerVm;
 
@@ -408,5 +410,117 @@ TEST_CASE("DVM-362 TextView Paint hint input and real Java filters on both backe
             f.OnOutcome(text, "setFilters", "([Landroid/text/InputFilter;)V", {VmValue::Ref(VmObjectRef{})});
         REQUIRE(bad.exception.IsValid());
         CHECK(f.linker.Class(bad.exception_class).descriptor == "Ljava/lang/IllegalArgumentException;");
+    }
+}
+
+TEST_CASE("DVM-366 TextView Paint and Editable share one fixed-font length bound on both backends") {
+    constexpr auto bound = ui::kMaxFixedTextUnits;
+    // One glyph per wrapped line at 128 px bold-italic keeps every coordinate inside int32.
+    const std::u16string longest(bound, u'W');
+    const auto wrapped = ui::WrapFixedText(longest, 128, 3, 1, std::numeric_limits<std::int32_t>::max());
+    CHECK(wrapped.size() == 2 * bound - 1);
+    CHECK(ui::MeasureFixedText(wrapped, 128, 3) ==
+          ui::FixedTextMetrics{128, static_cast<std::int32_t>((bound * 8 - 1) * 16), 16});
+    CHECK(ui::MeasureFixedText(longest, 128, 3).width == static_cast<std::int32_t>((bound * 9 - 1) * 16));
+    CHECK_THROWS(static_cast<void>(ui::MeasureFixedText(longest + u"W", 8)));
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto text = Text(f, owner);
+        const auto root = f.vm.ProtectReferences(std::array{text});
+        const auto text_length = [&] {
+            return static_cast<int>(
+                f.model.StringValue(f.On(text, "getText", "()Ljava/lang/CharSequence;").ref).size());
+        };
+        const auto set = [&](VmObjectRef view, const std::u16string& value) {
+            return f.OnOutcome(view, "setText", "(Ljava/lang/CharSequence;)V",
+                               {VmValue::Ref(f.model.NewString(value))});
+        };
+        // GTASA's Social Club label: 1193 units, no wrapping, explicit lines.
+        std::u16string label;
+        while (label.size() < 1193)
+            label += u"SOCIAL CLUB TERMS\n";
+        label.resize(1193);
+        f.On(text, "setHorizontallyScrolling", "(Z)V", {VmValue::Int(1)});
+        REQUIRE_FALSE(set(text, label).exception.IsValid());
+        CHECK(text_length() == 1193);
+        Measure(f, text, 0, 0);
+        const auto lines = static_cast<std::int32_t>(std::count(label.begin(), label.end(), u'\n')) + 1;
+        CHECK(f.On(text, "getMeasuredHeight", "()I").AsInt() == lines * 8 - 1);
+        REQUIRE_FALSE(set(text, std::u16string(bound, u'H')).exception.IsValid());
+        CHECK(text_length() == static_cast<int>(bound));
+        const auto over = set(text, std::u16string(bound + 1, u'H'));
+        REQUIRE(over.exception.IsValid());
+        CHECK(f.linker.Class(over.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(over.exception_message == "text outside bounded service");
+        CHECK(text_length() == static_cast<int>(bound));
+
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        const auto paint_root = f.vm.ProtectReferences(std::array{paint});
+        const auto measure = [&](std::size_t size) {
+            return f.OnOutcome(paint, "measureText", "(Ljava/lang/String;)F",
+                               {VmValue::Ref(f.model.NewString(std::u16string(size, u'H')))});
+        };
+        REQUIRE_FALSE(measure(bound).exception.IsValid());
+        CHECK(measure(bound).value.AsFloat() ==
+              static_cast<float>(ui::MeasureFixedText(std::u16string(bound, u'H'), 12).width));
+        CHECK(measure(bound + 1).exception.IsValid());
+
+        const auto edit = Text(f, owner, "Landroid/widget/EditText;");
+        const auto edit_root = f.vm.ProtectReferences(std::array{edit});
+        REQUIRE_FALSE(set(edit, std::u16string(bound - 1, u'H')).exception.IsValid());
+        const auto editable = f.On(edit, "getText", "()Landroid/text/Editable;").ref;
+        const auto replace = [&](const char16_t* value) {
+            return f.OnOutcome(editable, "replace", "(IILjava/lang/CharSequence;)Landroid/text/Editable;",
+                               {VmValue::Int(0), VmValue::Int(0), VmValue::Ref(f.model.NewString(value))});
+        };
+        REQUIRE_FALSE(replace(u"H").exception.IsValid());
+        CHECK(f.On(editable, "length", "()I").AsInt() == static_cast<int>(bound));
+        const auto edit_over = replace(u"H");
+        REQUIRE(edit_over.exception.IsValid());
+        CHECK(edit_over.exception_message == "text exceeds bounded edit service");
+        CHECK(f.On(editable, "length", "()I").AsInt() == static_cast<int>(bound));
+    }
+}
+
+TEST_CASE("DVM-366 plain TextView touch returns View.onTouchEvent and editors fail explicitly on both backends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto owner = Owner(f);
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto text = Text(f, owner);
+        const auto edit = Text(f, owner, "Landroid/widget/EditText;");
+        const auto root = f.vm.ProtectReferences(std::array{text, edit});
+        const auto event = [&](int action) { return MakeMotionEvent(f.vm, action, 2, 2, 0); };
+        const auto touch = [&](VmObjectRef view, int action) {
+            return f.OnOutcome(view, "onTouchEvent", "(Landroid/view/MotionEvent;)Z", {VmValue::Ref(event(action))});
+        };
+        // GTASA andButton overlays a non-clickable label on its ImageButton: the label must not consume.
+        for (const int action : {0, 1}) {
+            const auto result = touch(text, action);
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK(result.value.AsInt() == 0);
+        }
+        // Whatever View.onTouchEvent decides is returned unchanged.
+        const auto view_type = f.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto slot = f.linker.FindVtableIndex(view_type, "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
+        REQUIRE(slot);
+        f.On(text, "setClickable", "(Z)V", {VmValue::Int(1)});
+        for (const auto& [node_clickable, expected] : {std::pair{false, 0}, std::pair{true, 1}}) {
+            f.context->ui_tree.Get(*FindViewUiNode(*f.context, text.Value()))->clickable = node_clickable;
+            const auto direct = f.vm.Call(f.linker.Class(view_type).vtable[*slot],
+                                          std::array{VmValue::Ref(text), VmValue::Ref(event(0))});
+            const auto result = touch(text, 0);
+            REQUIRE_FALSE(result.exception.IsValid());
+            CHECK(result.value.AsInt() == direct.value.AsInt());
+            CHECK(result.value.AsInt() == expected);
+        }
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto rejected = touch(edit, 0);
+        REQUIRE(rejected.exception.IsValid());
+        CHECK(f.linker.Class(rejected.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(rejected.exception_message == "editable TextView touch requires Editor/MovementMethod/IME");
+        CHECK_FALSE(f.ledger.Unimplemented().empty());
     }
 }

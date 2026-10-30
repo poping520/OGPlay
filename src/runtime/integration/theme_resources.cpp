@@ -107,6 +107,18 @@ void ThemeResources::Load(std::string_view projection) {
                 throw std::runtime_error("invalid/duplicate ROM color ID");
         }
     }
+    std::map<std::uint32_t, ThemeValue> configuration;
+    if (const auto rows = root.Member("rom_configuration")) {
+        if (!rows->IsArray() || rows->Size() > 16) throw std::runtime_error("invalid ROM configuration bounds");
+        for (std::size_t i = 0; i < rows->Size(); ++i) {
+            const auto row = *rows->Element(i);
+            const auto id = Number(Member(row, "id"));
+            const auto type = Number(Member(row, "type"));
+            if ((id >> 24U) != 1 || (type != 5 && type != 16 && type != 18) ||
+                !configuration.emplace(id, ThemeValue{type, Number(Member(row, "data")), 2, id, 0, 0, {}}).second)
+                throw std::runtime_error("invalid/duplicate ROM configuration value");
+        }
+    }
     std::vector<RomDrawable> skins;
     if (const auto rows = root.Member("rom_drawables")) {
         if (!rows->IsArray() || rows->Size() > 64) throw std::runtime_error("invalid ROM skin bounds");
@@ -283,6 +295,7 @@ void ThemeResources::Load(std::string_view projection) {
     }
     string_pool_ = std::move(string_pool);
     rom_colors_ = std::move(colors);
+    rom_configuration_ = std::move(configuration);
     rom_drawables_ = std::move(skins);
     drawable_attributes_ = std::move(drawables);
     projected_reference_ids_ = std::move(reference_ids);
@@ -516,6 +529,7 @@ std::optional<ThemeValue> ThemeResources::Attribute(ThemeToken token, std::uint3
 }
 
 ThemeValue ThemeResources::Resource(std::uint32_t resource, bool resolve, const loader::ArscTable& table) const {
+    if (const auto found = rom_configuration_.find(resource); found != rom_configuration_.end()) return found->second;
     if ((resource >> 24U) == 1) {
         if (resolve) {
             if (const auto color = Color(resource)) {

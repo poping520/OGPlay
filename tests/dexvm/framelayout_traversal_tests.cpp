@@ -1,5 +1,6 @@
 #include "container_traversal_fixture.h"
 using ogplay::test::container_traversal::ContainerVm;
+
 TEST_CASE("DVM-283 ROM FrameLayout Window bounds state RTL and match-parent remeasure") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);
@@ -52,7 +53,7 @@ TEST_CASE("DVM-283 ROM FrameLayout Window bounds state RTL and match-parent reme
         f.On(root, "setPadding", "(IIII)V", {VmValue::Int(10), VmValue::Int(8), VmValue::Int(14), VmValue::Int(12)});
         f.On(first, "setClickable", "(Z)V", {VmValue::Int(1)});
         const auto first_id = *FindViewUiNode(*f.context, first.Value());
-        f.context->ui_tree.Get(first_id)->background_color = 0x123456ff;
+        f.On(first, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
         std::vector<DexVmTraceEntry> entered;
         const auto capture = [&] {
             for (const auto& entry : f.vm.Trace("", 10000))
@@ -241,8 +242,9 @@ TEST_CASE("DVM-283 experimental unsupported containers foreground and attribute 
         ContainerVm f(backend);
         const auto owner = f.New("Landroid/app/Activity;");
         ogplay::test::AttachViewTestContext(f.vm, owner);
-        for (const auto type : {"Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;",
-                                "Landroid/widget/TableRow;", "Landroid/widget/AbsoluteLayout;"}) {
+        // AbsoluteLayout is admitted by DVM-351 and covered by its positive traversal tests.
+        for (const auto type :
+             {"Landroid/widget/ScrollView;", "Landroid/widget/TableLayout;", "Landroid/widget/TableRow;"}) {
             const auto object = f.vm.NewIntrinsicInstance(type);
             const auto ctor =
                 f.linker.FindDirectMethod(f.linker.ResolveDescriptor(type), "<init>", "(Landroid/content/Context;)V");

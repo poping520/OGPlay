@@ -1229,6 +1229,8 @@ TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic f
         const auto lp = f.On(child, "getLayoutParams", "()Landroid/view/ViewGroup$LayoutParams;").ref;
         CHECK(JavaField(f, lp, "width").bits == 40);
         CHECK(JavaField(f, lp, "height").bits == 20);
+        const auto visible = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(1)}).ref;
+        f.On(visible, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 140}));
         CHECK(JavaField(f, child, "mMeasuredWidth").bits == 40);
@@ -1236,10 +1238,8 @@ TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic f
         CHECK(JavaField(f, child, "mMinWidth").bits == 6);
         CHECK(JavaField(f, child, "mLeft").bits == 0);
         CHECK(JavaField(f, child, "mRight").bits == 40);
-        const auto visible = f.On(root, "getChildAt", "(I)Landroid/view/View;", {VmValue::Int(1)}).ref;
         f.On(visible, "setClickable", "(Z)V", {VmValue::Int(1)});
         const auto visible_id = *FindViewUiNode(*f.context, visible.Value());
-        f.context->ui_tree.Get(visible_id)->background_color = 0x123456ff;
         // Freeze draw attributes on a real View invalidation, without layout.
         f.On(visible, "invalidate", "()V");
         CHECK_FALSE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,

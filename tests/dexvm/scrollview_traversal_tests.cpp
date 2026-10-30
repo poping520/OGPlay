@@ -203,11 +203,11 @@ TEST_CASE("DVM-300 Java scroll clamp projection raster hit and CANCEL keep child
         const auto listener = f.New("Ltest/StateListener;");
         f.On(child, "setOnClickListener", "(Landroid/view/View$OnClickListener;)V", {VmValue::Ref(listener)});
         f.On(child, "setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", {VmValue::Ref(listener)});
+        f.On(child, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
         f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(scroll)});
         REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                          AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 150}));
         const auto id = *FindViewUiNode(*f.context, child.Value());
-        f.context->ui_tree.Get(id)->background_color = 0x123456ff;
         const auto bounds = f.context->ui_tree.Get(id)->frame;
         const auto measures = Field(f, child, "measures").bits, layouts = Field(f, child, "layouts").bits;
         const auto initial = f.context->ui_tree.PublishedProjection();
@@ -471,11 +471,11 @@ TEST_CASE("DVM-301 nested horizontal vertical Java scroll publishes one XY raste
             const auto listener = f.New("Ltest/StateListener;");
             f.On(child, "setOnClickListener", "(Landroid/view/View$OnClickListener;)V", {VmValue::Ref(listener)});
             f.On(child, "setOnTouchListener", "(Landroid/view/View$OnTouchListener;)V", {VmValue::Ref(listener)});
+            f.On(child, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
             f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(outer)});
             REQUIRE(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
                                              AndroidUiTraversalPhase::ResolveOnly, ui::Size{200, 150}));
             const auto id = *FindViewUiNode(*f.context, child.Value());
-            f.context->ui_tree.Get(id)->background_color = 0x123456ff;
             const auto initial = f.context->ui_tree.PublishedProjection();
             const auto bounds = initial->Get(id)->frame;
             const auto screen = initial->Get(id)->screen_frame;

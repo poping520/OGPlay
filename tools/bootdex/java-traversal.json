@@ -24,7 +24,8 @@
     "view-surface-sources.json",
     "view-observer-sources.json",
     "view-policy-sources.json",
-    "view-skin-sources.json"
+    "view-skin-sources.json",
+    "view-scrollbar-sources.json"
   ],
   "class_additions": {
     "framework.jar": [
@@ -36,13 +37,18 @@
       "Landroid/content/res/StringBlock$StyleIDs;",
       "Landroid/content/res/StringBlock;",
       "Landroid/content/res/XmlBlock;",
+      "Landroid/graphics/Interpolator;",
+      "Landroid/graphics/LinearGradient;",
       "Landroid/graphics/Matrix$1;",
       "Landroid/graphics/Matrix;",
       "Landroid/graphics/Paint;",
       "Landroid/graphics/PixelFormat;",
+      "Landroid/graphics/PorterDuffXfermode;",
       "Landroid/graphics/RectF$1;",
       "Landroid/graphics/RectF;",
+      "Landroid/graphics/Shader;",
       "Landroid/graphics/TemporaryBuffer;",
+      "Landroid/graphics/Xfermode;",
       "Landroid/graphics/drawable/BitmapDrawable;",
       "Landroid/graphics/drawable/ColorDrawable;",
       "Landroid/graphics/drawable/Drawable;",
@@ -102,6 +108,7 @@
       "Landroid/widget/RelativeLayout$1;",
       "Landroid/widget/RelativeLayout$TopToBottomLeftToRightComparator;",
       "Landroid/widget/RelativeLayout;",
+      "Landroid/widget/ScrollBarDrawable;",
       "Landroid/widget/ScrollView;",
       "Landroid/widget/TextView$1;",
       "Landroid/widget/TextView$2;",

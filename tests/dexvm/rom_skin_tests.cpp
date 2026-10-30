@@ -3,17 +3,25 @@
 #include "ogplay/runtime/integration/theme_resources.h"
 #include "ogplay/loader/apk.h"
 #include <array>
+#include <bit>
+#include <tuple>
 
 using namespace ogplay::runtime;
 using namespace ogplay::runtime::dexvm;
 using ogplay::test::container_traversal::ContainerVm;
 
 namespace {
-VmObjectRef Owner(ContainerVm& f) {
+VmObjectRef Owner(ContainerVm& f, bool managed_window = false) {
     f.context->ui_test_accessibility_disabled = true;
     const auto owner = f.New("Landroid/app/Activity;");
     ogplay::test::AttachViewTestContext(f.vm, owner);
     f.context->activity = owner;
+    if (managed_window) {
+        auto& record = f.context->activity_stack.emplace_back();
+        record.object = owner;
+        record.visible = true;
+        record.resumed = true;
+    }
     return owner;
 }
 
@@ -30,6 +38,213 @@ std::array<int, 4> Padding(ContainerVm& f, VmObjectRef object) {
     return result;
 }
 }  // namespace
+
+TEST_CASE("DVM-355 sealed scrollbar thumbs load as ninepatches with ROM identity and scaled dimensions") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (int scale = 0; scale < 3; ++scale) {
+            ContainerVm f(backend);
+            f.context->ui_density = 1.0F + static_cast<float>(scale) * 0.5F;
+            const auto owner = Owner(f, true);
+            const auto resources = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+            const auto roots = f.vm.ProtectReferences(std::array{owner, resources});
+            // Pinned PNG dimensions/densities: classic 37x13 and 13x37 at 320;
+            // Holo 30x30 at 480. Expected results at device densities 160/240/320.
+            const std::array long_side{19, 28, 37};
+            const std::array short_side{7, 10, 13};
+            const std::array holo_side{10, 15, 20};
+            for (const auto id : {0x0108052a, 0x0108052b, 0x01080528, 0x01080529}) {
+                const auto skin =
+                    f.On(resources, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(id)}).ref;
+                const auto skin_root = f.vm.ProtectReferences(std::array{skin});
+                CHECK(f.linker.Class(f.model.ObjectClass(skin)).descriptor ==
+                      "Landroid/graphics/drawable/NinePatchDrawable;");
+                CHECK(f.context->ui_drawables.at(skin.Value()).resource_id == static_cast<std::uint32_t>(id));
+                const auto at = static_cast<std::size_t>(scale);
+                const auto width = id == 0x0108052a ? long_side[at] : id == 0x0108052b ? short_side[at] : holo_side[at];
+                const auto height = id == 0x0108052a   ? short_side[at]
+                                    : id == 0x0108052b ? long_side[at]
+                                                       : holo_side[at];
+                CHECK(f.On(skin, "getIntrinsicWidth", "()I").AsInt() == width);
+                CHECK(f.On(skin, "getIntrinsicHeight", "()I").AsInt() == height);
+                const auto pixels = f.context->ui_drawables.at(skin.Value()).leaf_pixels;
+                REQUIRE(pixels);
+                CHECK(pixels->nine_patch);
+                CHECK(pixels->width == width);
+                CHECK(pixels->height == height);
+            }
+            CHECK(f.ledger.Unimplemented().empty());
+            for (const auto id : {0x01080527, 0x01080004}) {  // accelerated_anim2, btn_default
+                // Exercise the loading seam with proven ROM identities. The
+                // animated thumb is intentionally absent from theme demands;
+                // getDrawable rejects that identity even before this seam.
+                const auto value = f.New("Landroid/util/TypedValue;");
+                const auto value_root = f.vm.ProtectReferences(std::array{value});
+                for (const auto [name, bits] : {std::pair{"type", 1}, {"data", id}, {"resourceId", id}}) {
+                    const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(value), name, "I");
+                    REQUIRE(field);
+                    f.model.InstanceSlots(value)[f.linker.Field(*field).slot] = {static_cast<std::uint32_t>(bits),
+                                                                                 SlotTag::cat1};
+                }
+                const auto rejected = f.OnOutcome(resources, "loadDrawable",
+                                                  "(Landroid/util/TypedValue;I)Landroid/graphics/drawable/Drawable;",
+                                                  {VmValue::Ref(value), VmValue::Int(id)});
+                REQUIRE(rejected.exception.IsValid());
+                CHECK(rejected.exception_message == "unreviewed ROM drawable load");
+            }
+            CHECK_FALSE(f.ledger.Unimplemented().empty());
+        }
+    }
+}
+
+TEST_CASE("DVM-355 ROM scrollbar padding preserves user inputs and dispatches layout only for changes") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->target_sdk_version = 21;
+        const auto owner = Owner(f, true);
+        const auto view = f.New("Landroid/widget/ScrollView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view});
+        const auto field = [&](const char* name) -> Slot& {
+            const auto id = f.linker.FindFieldRecursive(f.model.ObjectClass(view), name, "I");
+            REQUIRE(id);
+            return f.model.InstanceSlots(view)[f.linker.Field(*id).slot];
+        };
+        const auto view_class = f.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto request =
+            f.linker.Class(view_class).vtable[*f.linker.FindVtableIndex(view_class, "requestLayout", "()V")];
+        const auto original = f.linker.Method(request).implementation;
+        REQUIRE(original);
+        int requests = 0;
+        f.linker.MutableMethod(request).implementation = [&](IntrinsicContext& c) {
+            ++requests;
+            return original(c);
+        };
+        const auto padding = [&] {
+            return std::array{field("mPaddingLeft").bits, field("mPaddingTop").bits, field("mPaddingRight").bits,
+                              field("mPaddingBottom").bits};
+        };
+        for (bool rtl : {false, true}) {
+            field("mPrivateFlags2").bits = (field("mPrivateFlags2").bits & ~0x10U) | (rtl ? 0x10U : 0U);
+            CHECK(f.On(view, "getLayoutDirection", "()I").AsInt() == (rtl ? 1 : 0));
+            for (const auto style : {0U, 0x01000000U, 0x03000000U}) {
+                field("mViewFlags").bits = (field("mViewFlags").bits & ~0x03000300U) | style | 0x300U;
+                const auto width = static_cast<std::uint32_t>(f.On(view, "getVerticalScrollbarWidth", "()I").AsInt());
+                const auto height =
+                    static_cast<std::uint32_t>(f.On(view, "getHorizontalScrollbarHeight", "()I").AsInt());
+                REQUIRE(width > 0);
+                REQUIRE(height > 0);
+                const auto inset = style != 0;
+                const auto expected = std::array{2U + (inset && rtl ? width : 0U), 3U,
+                                                 5U + (inset && !rtl ? width : 0U), 7U + (inset ? height : 0U)};
+                const auto before = padding();
+                const auto count = requests;
+                f.On(view, "setPadding", "(IIII)V",
+                     {VmValue::Int(2), VmValue::Int(3), VmValue::Int(5), VmValue::Int(7)});
+                CHECK(padding() == expected);
+                CHECK(requests == count + (before != expected ? 1 : 0));
+                CHECK(field("mUserPaddingLeft").bits == 2);
+                CHECK(field("mUserPaddingRight").bits == 5);
+                CHECK(field("mUserPaddingBottom").bits == 7);
+                const auto unchanged = requests;
+                f.On(view, "setPadding", "(IIII)V",
+                     {VmValue::Int(2), VmValue::Int(3), VmValue::Int(5), VmValue::Int(7)});
+                CHECK(requests == unchanged);
+            }
+        }
+        f.linker.MutableMethod(request).implementation = original;
+        const auto method =
+            f.linker.Class(f.model.ObjectClass(view))
+                .vtable[*f.linker.FindVtableIndex(f.model.ObjectClass(view), "internalSetPadding", "(IIII)V")];
+        CHECK(f.linker.Method(method).kind == MethodKind::interpreted);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-355 withdrawing ROM internalSetPadding makes default ScrollView construction fail") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->target_sdk_version = 21;
+        const auto owner = Owner(f, true);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x01030007)});
+        const auto type = f.linker.ResolveDescriptor("Landroid/view/View;");
+        const auto slot = f.linker.FindVtableIndex(type, "internalSetPadding", "(IIII)V");
+        REQUIRE(slot);
+        auto& disabled = f.linker.MutableMethod(f.linker.Class(type).vtable[*slot]);
+        disabled.kind = MethodKind::intrinsic;
+        disabled.implementation = {};
+        f.Checked(f.vm.EnsureClassInitialized(f.linker.ResolveDescriptor("Landroid/widget/ScrollView;")));
+        const auto object = f.vm.NewIntrinsicInstance("Landroid/widget/ScrollView;");
+        const auto roots = f.vm.ProtectReferences(std::array{owner, object});
+        const auto constructor =
+            f.linker.FindDirectMethod(f.model.ObjectClass(object), "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(constructor);
+        const auto failed = f.vm.Call(*constructor, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
+        REQUIRE(failed.exception.IsValid());
+        INFO(failed.exception_message);
+        CHECK(failed.exception_message.find("internalSetPadding") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-355 default classic and Holo Scroll constructors retain real cache and thumb identities") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto theme : {0x01030007, 0x0103006b}) {
+            ContainerVm f(backend);
+            f.context->target_sdk_version = 21;
+            const auto owner = Owner(f, true);
+            f.On(owner, "setTheme", "(I)V", {VmValue::Int(theme)});
+            const auto get = [&](VmObjectRef object, const char* name, const char* type) {
+                const auto field = f.linker.FindFieldRecursive(f.model.ObjectClass(object), name, type);
+                REQUIRE(field);
+                return f.model.InstanceSlots(object)[f.linker.Field(*field).slot].bits;
+            };
+            const auto config =
+                f.Static("Landroid/view/ViewConfiguration;", "get",
+                         "(Landroid/content/Context;)Landroid/view/ViewConfiguration;", {VmValue::Ref(owner)})
+                    .ref;
+            CHECK(f.Static("Landroid/view/ViewConfiguration;", "get",
+                           "(Landroid/content/Context;)Landroid/view/ViewConfiguration;", {VmValue::Ref(owner)})
+                      .ref == config);
+            CHECK(f.On(config, "getScaledScrollBarSize", "()I").AsInt() == 10);
+            CHECK(f.On(config, "getScaledTouchSlop", "()I").AsInt() == 8);
+            CHECK(f.On(config, "getScaledPagingTouchSlop", "()I").AsInt() == 16);
+            CHECK(f.On(config, "getScaledMinimumFlingVelocity", "()I").AsInt() == 50);
+            CHECK(f.On(config, "getScaledMaximumFlingVelocity", "()I").AsInt() == 8000);
+            CHECK(f.On(config, "hasPermanentMenuKey", "()Z").AsInt() == 0);  // ARSC 0x01110044=true.
+            for (const auto descriptor : {"Landroid/widget/ScrollView;", "Landroid/widget/HorizontalScrollView;"}) {
+                const auto view = f.New(descriptor, "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+                const auto roots = f.vm.ProtectReferences(std::array{owner, config, view});
+                const auto cache = VmObjectRef{get(view, "mScrollCache", "Landroid/view/View$ScrollabilityCache;")};
+                REQUIRE(cache.IsValid());
+                const auto bar = VmObjectRef{get(cache, "scrollBar", "Landroid/widget/ScrollBarDrawable;")};
+                REQUIRE(bar.IsValid());
+                const bool horizontal = std::string_view(descriptor).find("Horizontal") != std::string_view::npos;
+                CHECK(f.On(view, horizontal ? "isHorizontalScrollBarEnabled" : "isVerticalScrollBarEnabled", "()Z")
+                          .AsInt() == 1);
+                for (bool vertical : {false, true}) {
+                    const auto thumb = VmObjectRef{get(bar, vertical ? "mVerticalThumb" : "mHorizontalThumb",
+                                                       "Landroid/graphics/drawable/Drawable;")};
+                    REQUIRE(thumb.IsValid());
+                    CHECK(f.linker.Class(f.model.ObjectClass(thumb)).descriptor ==
+                          "Landroid/graphics/drawable/NinePatchDrawable;");
+                    CHECK(f.context->ui_drawables.at(thumb.Value()).resource_id ==
+                          static_cast<std::uint32_t>(theme == 0x01030007 ? (vertical ? 0x0108052b : 0x0108052a)
+                                                                         : 0x01080528));
+                    CHECK(get(bar, vertical ? "mVerticalTrack" : "mHorizontalTrack",
+                              "Landroid/graphics/drawable/Drawable;") == 0);
+                }
+                for (const auto [name, getter] : {std::pair{"mTouchSlop", "getScaledTouchSlop"},
+                                                  {"mMinimumVelocity", "getScaledMinimumFlingVelocity"},
+                                                  {"mMaximumVelocity", "getScaledMaximumFlingVelocity"},
+                                                  {"mOverscrollDistance", "getScaledOverscrollDistance"},
+                                                  {"mOverflingDistance", "getScaledOverflingDistance"}})
+                    CHECK(get(view, name, "I") == static_cast<std::uint32_t>(f.On(config, getter, "()I").AsInt()));
+                // ROM prefers positive intrinsic thumb thickness; config size is only a fallback.
+                CHECK(f.On(view, "getVerticalScrollbarWidth", "()I").AsInt() == (theme == 0x01030007 ? 7 : 10));
+                CHECK(get(cache, "scrollBarSize", "I") == 10);
+            }
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}
 
 TEST_CASE("DVM-326 same ROM named style flags resolve through real TypedArray on both backends") {
     for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -543,5 +758,210 @@ TEST_CASE("DVM-352 Drawable subclasses never silently inherit unsupported state 
             }
         }
         CHECK_FALSE(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-355 ViewConfiguration input seam honors ROM override and mainkeys and fails when withdrawn") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        for (const auto [mode, mainkeys, expected] :
+             {std::tuple{0, "", false}, {0, "0", false}, {0, "1", true}, {1, "0", true}, {2, "1", false}}) {
+            ContainerVm f(backend);
+            const auto bytes =
+                ogplay::loader::ReadStoredApkEntry(f.context->boot_classpath_bytes, f.context->boot_classpath_archive,
+                                                   "META-INF/ogplay/theme-projection.json");
+            std::string projection(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+            const std::string needle = "\"data\":0,\"id\":17694793";
+            const auto position = projection.find(needle);
+            REQUIRE(position != std::string::npos);
+            projection.replace(position, needle.size(), "\"data\":" + std::to_string(mode) + ",\"id\":17694793");
+            f.context->theme_resources.Load(projection);
+            f.context->theme_projection_loaded = true;
+            static_cast<void>(f.vm.SetSystemProperty("qemu.hw.mainkeys", mainkeys));
+            const auto owner = Owner(f, true);
+            const auto config =
+                f.Static("Landroid/view/ViewConfiguration;", "get",
+                         "(Landroid/content/Context;)Landroid/view/ViewConfiguration;", {VmValue::Ref(owner)})
+                    .ref;
+            CHECK(f.On(config, "hasPermanentMenuKey", "()Z").AsInt() == (expected ? 1 : 0));
+            const auto type = f.model.ObjectClass(config);
+            for (const auto name : {"sHasPermanentMenuKey", "sHasPermanentMenuKeySet"}) {
+                const auto field = f.linker.FindFieldRecursive(type, name, "Z");
+                REQUIRE(field);
+                CHECK_FALSE(f.linker.Field(*field).is_static);
+                CHECK(f.linker.Field(*field).access_flags == kAccPrivate);
+            }
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+        ContainerVm f(backend);
+        const auto owner = Owner(f, true);
+        const auto type = f.linker.ResolveDescriptor("Landroid/view/ViewConfiguration;");
+        f.Checked(f.vm.EnsureClassInitialized(type));
+        const auto method = f.linker.FindDirectMethod(type, "<init>", "(Landroid/content/Context;)V");
+        REQUIRE(method);
+        CHECK(f.linker.Method(*method).kind == MethodKind::interpreted);
+        REQUIRE(f.linker.Method(*method).constructor_inputs);
+        f.linker.MutableMethod(*method).constructor_inputs = {};
+        const auto object = f.vm.NewIntrinsicInstance("Landroid/view/ViewConfiguration;");
+        const auto roots = f.vm.ProtectReferences(std::array{owner, object});
+        const auto failed = f.vm.Call(*method, std::array{VmValue::Ref(object), VmValue::Ref(owner)});
+        REQUIRE(failed.exception.IsValid());
+        CHECK_FALSE(failed.exception_message.empty());
+        INFO(failed.exception_message);
+        CHECK(failed.exception_message.find("Landroid/os/ServiceManager;") != std::string::npos);
+    }
+}
+
+TEST_CASE("DVM-355 Interpolator samples ScrollabilityCache alpha keys repeat mirror reset and cubic blends") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto interp = f.New("Landroid/graphics/Interpolator;", "(II)V", {VmValue::Int(1), VmValue::Int(2)});
+        const auto array =
+            f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[F"), JniPrimitiveKind::float_value, 1);
+        const auto roots = f.vm.ProtectReferences(std::array{interp, array});
+        const auto key = [&](int index, int time, float value) {
+            f.model.SetPrimitiveElement(array, 0, std::bit_cast<std::uint32_t>(value));
+            f.On(interp, "setKeyFrame", "(II[F)V", {VmValue::Int(index), VmValue::Int(time), VmValue::Ref(array)});
+        };
+        const auto sample = [&](int time, float expected, int result) {
+            const auto sampled = f.On(interp, "timeToValues", "(I[F)Landroid/graphics/Interpolator$Result;",
+                                      {VmValue::Int(time), VmValue::Ref(array)})
+                                     .ref;
+            CHECK(f.On(sampled, "ordinal", "()I").AsInt() == result);
+            CHECK(std::bit_cast<float>(static_cast<std::uint32_t>(f.model.GetPrimitiveElement(array, 0))) ==
+                  doctest::Approx(expected).epsilon(0.002));
+        };
+        key(0, 1000, 255);
+        key(1, 1250, 0);
+        sample(999, 255, 1);
+        sample(1000, 255, 0);
+        sample(1125, 127.5F, 0);
+        sample(1250, 0, 0);
+        sample(1251, 0, 2);
+        f.On(interp, "setRepeatMirror", "(FZ)V", {VmValue::Float(3), VmValue::Int(1)});
+        sample(1375, 127.5F, 0);
+        sample(1500, 255, 0);
+        sample(1750, 0, 2);
+        f.On(interp, "setRepeatMirror", "(FZ)V", {VmValue::Float(1.5F), VmValue::Int(0)});
+        sample(1375, 127.5F, 2);
+        f.On(interp, "reset", "(II)V", {VmValue::Int(1), VmValue::Int(2)});
+        key(0, 2000, 10);
+        key(1, 2100, 20);
+        sample(2050, 15, 0);
+        const auto blend =
+            f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[F"), JniPrimitiveKind::float_value, 4);
+        const auto blend_root = f.vm.ProtectReferences(std::array{blend});
+        for (int i = 0; i < 4; ++i)
+            f.model.SetPrimitiveElement(blend, i, std::bit_cast<std::uint32_t>(i == 2 || i == 3 ? 1.0F : 0.0F));
+        f.model.SetPrimitiveElement(array, 0, std::bit_cast<std::uint32_t>(10.0F));
+        f.On(interp, "setKeyFrame", "(II[F[F)V",
+             {VmValue::Int(0), VmValue::Int(2000), VmValue::Ref(array), VmValue::Ref(blend)});
+        sample(2050, 15, 0);
+        CHECK(f.ledger.Unimplemented().empty());
+    }
+}
+
+TEST_CASE("DVM-355 Paint retains state objects through GC and Canvas rejects shader or xfermode drawing") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto tile_name = f.vm.NewStringUtf8("CLAMP");
+        const auto tile = f.Static("Landroid/graphics/Shader$TileMode;", "valueOf",
+                                   "(Ljava/lang/String;)Landroid/graphics/Shader$TileMode;", {VmValue::Ref(tile_name)})
+                              .ref;
+        const auto shader =
+            f.New("Landroid/graphics/LinearGradient;", "(FFFFIILandroid/graphics/Shader$TileMode;)V",
+                  {VmValue::Float(0), VmValue::Float(0), VmValue::Float(0), VmValue::Float(1),
+                   VmValue::Int(static_cast<std::int32_t>(0xff000000U)), VmValue::Int(0), VmValue::Ref(tile)});
+        const auto mode_name = f.vm.NewStringUtf8("DST_OUT");
+        const auto mode = f.Static("Landroid/graphics/PorterDuff$Mode;", "valueOf",
+                                   "(Ljava/lang/String;)Landroid/graphics/PorterDuff$Mode;", {VmValue::Ref(mode_name)})
+                              .ref;
+        const auto xfer = f.New("Landroid/graphics/PorterDuffXfermode;", "(Landroid/graphics/PorterDuff$Mode;)V",
+                                {VmValue::Ref(mode)});
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        const auto canvas = f.vm.NewIntrinsicInstance("Landroid/graphics/Canvas;");
+        const auto roots = f.vm.ProtectReferences(std::array{paint, canvas});
+        CHECK(f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", {VmValue::Ref(shader)})
+                  .ref == shader);
+        CHECK(
+            f.On(paint, "setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;", {VmValue::Ref(xfer)})
+                .ref == xfer);
+        static_cast<void>(f.vm.CollectGarbage("paint-retains-graphics-state"));
+        CHECK(f.model.IsValidRef(shader));
+        CHECK(f.model.IsValidRef(xfer));
+        CHECK(f.On(paint, "getShader", "()Landroid/graphics/Shader;").ref == shader);
+        CHECK(f.On(paint, "getXfermode", "()Landroid/graphics/Xfermode;").ref == xfer);
+        CHECK(f.ledger.Unimplemented().empty());
+        const auto draw = [&] {
+            const auto failed =
+                f.OnOutcome(canvas, "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V",
+                            {VmValue::Ref(VmObjectRef{}), VmValue::Float(0), VmValue::Float(0), VmValue::Ref(paint)});
+            REQUIRE(failed.exception.IsValid());
+            CHECK(failed.exception_message == "Canvas shader/xfermode drawing is unsupported");
+            const auto hits = f.ledger.Unimplemented();
+            REQUIRE(hits.size() == 1);
+            CHECK(hits.front().id == "dexvm.canvas_draw");
+        };
+        draw();
+        f.On(paint, "setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", {VmValue::Ref(VmObjectRef{})});
+        draw();
+        f.On(paint, "setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;",
+             {VmValue::Ref(VmObjectRef{})});
+        static_cast<void>(f.vm.CollectGarbage("paint-releases-graphics-state"));
+        f.vm.RunFinalization();
+        static_cast<void>(f.vm.CollectGarbage("paint-finalized-graphics-state"));
+        CHECK_FALSE(f.model.IsValidRef(shader));
+        CHECK_FALSE(f.model.IsValidRef(xfer));
+    }
+}
+
+TEST_CASE("DVM-355 visible scrollbar projection records the gap without changing pixels and runs ROM fade") {
+    for (auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->target_sdk_version = 21;
+        const auto owner = Owner(f, true);
+        const auto view = f.New("Landroid/widget/ScrollView;", "(Landroid/content/Context;)V", {VmValue::Ref(owner)});
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view});
+        f.On(view, "setBackgroundColor", "(I)V", {VmValue::Int(static_cast<std::int32_t>(0xff123456U))});
+        f.On(owner, "setContentView", "(Landroid/view/View;)V", {VmValue::Ref(view)});
+        // Managed windows do not fabricate AttachInfo; explicitly request the draw barrier.
+        const auto tick = [&] {
+            f.On(view, "invalidate", "()V");
+            static_cast<void>(EnsureAndroidUiTraversal(f.vm, *f.context, AndroidUiTraversalReason::OwnerTick,
+                                                       AndroidUiTraversalPhase::ResolveOnly));
+        };
+        const auto pixels = [&] {
+            return ui::RasterizeUiOverlay(ui::BuildUiRenderList(*f.context->ui_tree.PublishedProjection(), {}),
+                                          {static_cast<std::int32_t>(f.context->surface_width),
+                                           static_cast<std::int32_t>(f.context->surface_height)})
+                .rgba8;
+        };
+        tick();
+        const auto before = pixels();
+        CHECK(f.ledger.Unimplemented().empty());
+        CHECK(f.On(view, "awakenScrollBars", "()Z").AsInt() == 1);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context));
+        tick();
+        CHECK(pixels() == before);
+        auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits.front().id == "dexvm.view_scrollbar_draw");
+        const auto cache_field = f.linker.FindFieldRecursive(f.model.ObjectClass(view), "mScrollCache",
+                                                             "Landroid/view/View$ScrollabilityCache;");
+        REQUIRE(cache_field);
+        const auto cache = VmObjectRef{f.model.InstanceSlots(view)[f.linker.Field(*cache_field).slot].bits};
+        const auto state_field = f.linker.FindFieldRecursive(f.model.ObjectClass(cache), "state", "I");
+        REQUIRE(state_field);
+        const auto state = [&] { return f.model.InstanceSlots(cache)[f.linker.Field(*state_field).slot].bits; };
+        CHECK(state() == 1);
+        AdvanceAndroidClock(*f.context, 751);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context));
+        CHECK(state() == 2);
+        tick();
+        CHECK(pixels() == before);
+        AdvanceAndroidClock(*f.context, 251);
+        CHECK_FALSE(PumpJavaThreads(f.vm, *f.context));
+        tick();
+        CHECK(state() == 0);
+        CHECK(pixels() == before);
     }
 }

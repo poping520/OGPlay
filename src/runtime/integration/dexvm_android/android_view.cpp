@@ -256,6 +256,18 @@ Decl Declare_android_hardware_display_DisplayManager(const Context& context) {
 
 Decl Declare_android_view_Display(const Context& context) {
     auto builder = dx::IntrinsicClassBuilder::Class("Landroid/view/Display;", "Ljava/lang/Object;");
+    builder.FinalMethod("getRealSize", "(Landroid/graphics/Point;)V", [context](dx::IntrinsicContext& call) {
+        const auto point = call.arguments[0].ref;
+        if (!point.IsValid()) throw dx::VmJavaThrow{"Ljava/lang/NullPointerException;", "Display size output is null"};
+        const auto type = call.vm.Model().ObjectClass(point);
+        for (const auto [name, value] : {std::pair{"x", context->surface_width}, {"y", context->surface_height}}) {
+            const auto field = call.vm.Linker().FindFieldRecursive(type, name, "I");
+            if (!field) throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "Display point field missing"};
+            call.vm.RequireImplementedField(*field);
+            call.vm.Model().InstanceSlots(point)[call.vm.Linker().Field(*field).slot] = {value, dx::SlotTag::cat1};
+        }
+        return dx::VmValue::Void();
+    });
     builder.FinalMethod("getWidth", "()I", [context](dx::IntrinsicContext&) {
         return dx::VmValue::Int(static_cast<std::int32_t>(context->surface_width));
     });
@@ -1904,30 +1916,6 @@ Decl Declare_android_view_View(const Context& context) {
         }
         return dx::VmValue::Int(0);
     });
-    builder.VirtualMethod(
-        "internalSetPadding", "(IIII)V",
-        [context](dx::IntrinsicContext& call) {
-            dx::IntrinsicCall fields(call);
-            if ((fields.GetInt(context->view_java_measure_fields->view_flags) & 0x03000300) != 0) {
-                if (auto* ledger = call.vm.Ledger())
-                    ledger->RecordUnimplemented("dexvm.view_measure_scrollbar_padding", 0);
-                throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;",
-                                      "Scrollbar padding is not supported"};
-            }
-            const auto& tokens = *context->view_java_layout_fields;
-            bool changed{};
-            for (std::size_t i = 0; i < 4; ++i) {
-                const auto value = call.arguments[i].AsInt();
-                changed = changed || fields.GetInt(tokens.padding[i]) != value;
-                fields.SetInt(tokens.padding[i], value);
-            }
-            fields.SetInt(tokens.user_padding[0], call.arguments[0].AsInt());
-            fields.SetInt(tokens.user_padding[1], call.arguments[2].AsInt());
-            fields.SetInt(tokens.user_padding[2], call.arguments[3].AsInt());
-            if (changed) return CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V");
-            return dx::VmValue::Void();
-        },
-        dx::kAccNone);
     context->view_context_field =
         builder.BoundInstanceField("mContext", "Landroid/content/Context;", dx::kAccProtected);
     context->view_java_layout_fields = DexVmAndroidContext::ViewJavaLayoutFields{
@@ -2310,18 +2298,6 @@ Decl Declare_android_view_View(const Context& context) {
         }
     });
 
-    builder.VirtualMethod("setPadding", "(IIII)V", [context](dx::IntrinsicContext& call) {
-        ui::Insets padding{call.arguments[0].AsInt(), call.arguments[1].AsInt(), call.arguments[2].AsInt(),
-                           call.arguments[3].AsInt()};
-        if (padding.left < 0 || padding.top < 0 || padding.right < 0 || padding.bottom < 0) {
-            throw dx::VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "View padding cannot be negative"};
-        }
-        static_cast<void>(ViewNode(call, context));
-        const bool changed = ReadAndroidViewPadding(call.vm, *context, call.receiver) != padding;
-        WriteAndroidViewPadding(call.vm, *context, call.receiver, padding);
-        if (changed) return CallAndroidMethod(call.vm, call.receiver, "requestLayout", "()V");
-        return dx::VmValue::Void();
-    });
     const auto geometry = [context](const auto member) {
         return dx::IntrinsicHandler([context, member](dx::IntrinsicContext& call) {
             const auto node = ViewNode(call, context);

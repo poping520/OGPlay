@@ -92,6 +92,11 @@ def parse_ops(body: str) -> list:
         m = FIELD_RE.match(line)
         if m:
             ops.append(('field', m.group(1), m.group(3), m.group(4)))
+            # A field load overwrites its destination. Retaining a previous
+            # new-instance type here invents an exact receiver for the loaded
+            # value (e.g. a Paint field following a LinearGradient allocation).
+            if m.group(1).startswith(('iget', 'sget')):
+                ops.append(('write', m.group(2).split(',')[0].strip(), m.group(1)))
             continue
         m = NEW_RE.match(line)
         if m:
@@ -1000,6 +1005,24 @@ def self_test():
     assert 'Ltest/Plain;' in seeded.reachable_closure()
     assert parse_ops('instance-of v0, v1, Ltest/Const;') == [('ref', 'Ltest/Const;')]
     assert parse_ops('const-class v0, [Ltest/Const;') == [('ref', 'Ltest/Const;')]
+    # A field load replaces a previous exact allocation. Resolve the loaded
+    # receiver's real declaration; never retain the unrelated allocation type.
+    load_owner, old_type, loaded_type = 'Ltest/Load;', 'Ltest/Old;', 'Ltest/Loaded;'
+    load_text = _smali(load_owner, methods='''.method public read()V
+    new-instance v0, Ltest/Old;
+    iget-object v0, p0, Ltest/Load;->value:Ltest/Loaded;
+    invoke-virtual {v0}, Ltest/Loaded;->touch()V
+    return-void
+.end method
+''')
+    load_surface = [
+        _surface(load_owner, 'bootdex', methods=[_method('read', '()V', status='implemented', binding='bytecode')],
+                 fields=[dict(name='value', descriptor=loaded_type, static=False, status='implemented')]),
+        _surface(old_type, 'intrinsic'),
+        _surface(loaded_type, 'intrinsic', methods=[_method('touch', '()V', status='implemented')]),
+    ]
+    load_audit = Analyzer(load_surface, {load_owner: parse_smali_class(load_text)}, {}, {load_owner}, set(), set())
+    assert load_audit.summary((load_owner, 'read', '()V'))[0] == []
     payload = Analyzer(classes, smali, jar_of, set(), set(), set(), boot_smali={
         'Ltest/GuestPayload;': parse_smali_class(_smali('Ltest/GuestPayload;', methods=
             '.method public f()V\n const-class v0, Ltest/Plain;\n return-void\n.end method\n'))})

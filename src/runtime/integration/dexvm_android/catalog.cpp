@@ -317,6 +317,8 @@ std::vector<dexvm::IntrinsicClassDecl> AndroidIntrinsicCatalog(const std::shared
         result.push_back(Declare_test_AccessibilityManager(context));
         result.push_back(Declare_test_ListenerInfo(context));
     }
+    for (auto& declaration : Declare_android_graphics_StateObjects(context))
+        result.push_back(std::move(declaration));
     return result;
 }
 

@@ -14,6 +14,7 @@
 - [ADR-0167 · Locale 的 ROM Java 归属与单一设备语言地区](#adr-0167)
 
 - [ADR-0172 · Dalvik 堆默认值对齐 API19 1 GB 设备档位](#adr-0172)
+- [ADR-0173 · View scrollbar 初始化闭包与状态型图形对象准入](#adr-0173)
 
 <a id="adr-0017"></a>
 
@@ -352,3 +353,64 @@ VMRuntime.getRuntime().clearGrowthLimit()，将活动上限放开至 maximum。
 普通应用 maxMemory=96 MiB，largeHeap 为 256 MiB；getMemoryClass 始终 96，
 getLargeMemoryClass 为 256。Native guest 内存不纳入 Java 堆上限。
 跨游戏 OOM 需保留分配栈与所需大小并停止，不能静默回退旧档位；不改变 1 GiB 设备事实。
+
+<a id="adr-0173"></a>
+
+## ADR-0173 · View scrollbar 初始化闭包与状态型图形对象准入
+
+- 状态：Implemented（初始化闭包实施完成，见 [DVM-355](../tasks/dexvm/DVM-355.md)）
+- 日期：2026-10-30
+
+### 背景
+
+非零默认 scrollbars 使 View 属性构造进入此前排除的初始化闭包。
+Java 初始化需要状态型图形对象与设备配置，但不应借此引入 WMS/Binder 或完整绘制栈。
+
+### 决定
+
+1. View.initializeScrollbars/initScrollCache/resolvePadding 及 mScrollCache、完整
+   ScrollabilityCache（含 run/setFadeColor）、ScrollBarDrawable 构造/setter/getSize/
+   setParameters、ViewConfiguration.get/构造与所需 getter 使用固定 ROM。
+   进入现有主题配方并按 ADR-0158 组合审计；父成员无 native、无未准入依赖时补 ROM，
+   新 native、overlay 冲突或审计放宽需求停止报告。initializeFadingEdge 保持 failure。
+2. ViewConfiguration 每实例原构造器执行前注入 sHasPermanentMenuKey 与
+   sHasPermanentMenuKeySet=true，保留原 ROM 构造器本体。固定 ROM 两字段是 private
+   实例字段，clinit 后静态写入不可行；不改字段 flags，不创建 IWindowManager/Binder 代理。
+   先经 Resources/ARSC 读同 ROM config_overrideHasPermanentMenuKey：1 为 true，
+   2 为 false，其余值按同 ROM PhoneWindowManager 规则读 config_showNavigationBar，
+   再读现有 SystemProperties 的 qemu.hw.mainkeys；"1" 强制无导航栏、"0" 强制有导航栏，
+   其他值不覆盖，菜单键取导航栏值的反值。任一读取失败必须明确失败。
+   接缝只写这两个实例字段；不新增设备快照字段，ADR-0111 不变。
+   Display.getRealSize 取已有显示尺寸配置；撤掉接缝必须进入 WMS 分支并明确失败，
+   覆盖 config=1/2 与 mainkeys 覆盖。固定 APK 的 ARSC 0x01110044 为 true，
+   override=0、mainkeys 为空，默认菜单键为 false；源码 config.xml 基础值不覆盖 ROM 设备资源。
+3. Interpolator 的 nativeConstructor/nativeReset/nativeSetKeyFrame/nativeSetRepeatMirror/
+   nativeTimeToValues/nativeDestructor 按固定 AOSP JNI 与 SkInterpolator 完整实现关键帧、
+   repeat/mirror 与 Result；时间只取调用方参数，不读宿主时钟。
+   LinearGradient/Shader、PorterDuffXfermode/Xfermode 仅拥有强类型句柄及真实构造参数；
+   Paint 保存并追踪 shader/xfermode 引用，set/get 不得丢状态。
+   含这些状态的 Paint 实际参与 Canvas 绘制，沿既有 Canvas 路径记账并明确失败。
+   每个 native/adapter 必须封存精确签名、输入输出、状态 owner 和失败边界；
+   本决定不代替实现审查、配方 review 或动态验证。
+4. 同 ROM 皮肤封存起点为 edit_text 加四个经名称/ID 双重校验的 thumb：
+   scrollbar_handle_horizontal=0x0108052a、vertical=0x0108052b、
+   holo_dark=0x01080528、holo_light=0x01080529（后三者共用 scrollbar_handle_ 前缀）。
+   配置过滤和失败规则保持；不收录 accelerated_anim2 或其他新皮肤，不从 APK 兜底。
+   thumb/track 经 ROM TypedArray.getDrawable→既有 Resources.loadDrawable/MakeRomSkin/
+   NinePatchDrawable，复用 npTc 与源密度缩放，track 的真实 @null 保持 null。
+   缺纯 Java 成员按第1项补 ROM；需要额外 native、overlay 冲突或审计放宽则停止报告。
+   引用已投影不等于加载已准入，封存加载亦不等于 scrollbar 构造或绘制已实现。
+5. UiTree 不绘制滚动条；投影对存在 mScrollCache 且滚动条可见的节点记账
+   dexvm.view_scrollbar_draw，不抛异常，复用未审查背景的处理方式。
+   awakenScrollBars 与 cache.run 使用 ROM，经 Handler/postDelayed 和统一 Clock
+   推进淡出；不新增宿主计时，闭包引出新 native 则停止报告。
+6. ScrollView/HorizontalScrollView 的现有 init、touch、fling overlay 保持现状，
+   init 是否迁 ROM 作为后续任务；不修越过本单后的下一独立首错。
+7. 决定 C：View.internalSetPadding 与 setPadding 改为 ROM，包含真实 flags/RTL/scrollbar inset、
+   user padding 与变化时 requestLayout；getLayoutDirection 使用真实 mPrivateFlags2 和
+   ApplicationInfo.targetSdkVersion，不硬编码 LTR。原 padding overlay 与拒绝记账退役。
+
+### 后果
+
+状态对象可独立于像素绘制获得准入，但不得静默忽略 Paint 状态或伪造滚动条绘制成功。
+每项实施仍须完成双解释器、关闭即失败及真实首错路径的判据；决定本身不授予运行信用。

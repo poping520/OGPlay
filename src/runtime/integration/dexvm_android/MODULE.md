@@ -174,14 +174,16 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   对缺席池的查询仍失败，不合成空成功池。
   缺席或 @null 返回 null；仅封存清单内 View drawable 引用可惰性进入六槽，
   background 额外支持封存 edit_text 闭包的状态、测量及现有叶 bitmap 平面冻结；
-  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结，guest draw 仍失败；未开放其他系统皮肤；
-  foreground/divider/scrollbar 的其他非空值仍明确失败。
+  ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结，guest draw 仍失败；
+  foreground/divider 及未封存 scrollbar 的其他非空值仍明确失败。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。
   资源 Bitmap 不可变，像素以源 density 保存，intrinsic 按 API19 scaleFromDensity 向目标 density
   换算；ColorDrawable 状态由 Java 字段拥有，投影虚派 getColor，Java Canvas draw 不准入。
-  默认背景另允许封存同 ROM edit_text selector 与 ninepatch，DrawableContainer/StateListDrawable/
+  皮肤封存范围为同 ROM edit_text selector/ninepatch 闭包加四个 scrollbar thumb
+  （classic 横/竖、Holo 深/浅）；thumb 复用密度缩放、npTc 与 NinePatchDrawable 加载，
+  不开放其他系统皮肤。DrawableContainer/StateListDrawable/
   NinePatchDrawable 保持 ROM 形状、受审对象状态 adapter 与失败成员表。PNG 由既有服务解码，
   npTc 提供 padding，按 density 缩放；selector 按有序状态项选择，默认固定 padding 取全部子项最大值。
   不支持任意 inflateFromXml、动画/过渡或 guest 皮肤 draw。edit_text 选中叶的 ninepatch
@@ -330,8 +332,16 @@ UiNode.padding/minimum 对 guest 仅为输入投影；
 仅在真实请求/窗口变化触发遍历时导入。干净帧不比较直接字段写入；
 直接写字段或修改派生缓存不等于 Java requestLayout/invalidate。只读导入不改变几何 owner。
 getResources、上下 padding 与 minimum getter 执行 ROM；左右 absolute padding getter 和
-minimum setter 保留受审 adapter，后者真实虚派 requestLayout。完整 RTL/scrollbar padding
-解析和原版 setter 的 CHA 闭包仍未启用，相关未选成员继续明确失败。
+minimum setter 保留受审 adapter，后者真实虚派 requestLayout。setPadding/internalSetPadding、
+resolvePadding 与 scrollbar inset 执行 ROM；mPrivateFlags2、真实 ApplicationInfo.targetSdkVersion
+决定 RTL，mUserPadding 保留原输入，只有实际变化才虚派 requestLayout。未选 relative-padding API 仍失败。
+ViewConfiguration 的原 ROM Context 构造器前，受审实例输入接缝只写两个 private 菜单键字段；
+Resources 读取同 ROM override 与 showNavigationBar，再由现有 qemu.hw.mainkeys 属性覆盖，
+读失败透传。固定 ARSC showNavigationBar=true，默认永久菜单键=false；无 Binder 或新快照字段。
+Display.getRealSize 使用现有真实显示配置。Interpolator native 只用参数时间维护关键帧/repeat/mirror；
+Shader/LinearGradient、Xfermode/PorterDuffXfermode 只保存强类型句柄及真实参数，Paint 的 Java 引用
+参与 GC 追踪；含 shader/xfermode 的 Canvas 绘制记账并明确失败。可见 scrollbar 仅记账不改像素，
+ROM awaken/cache.run 经已有 Handler 与统一时钟推进；无 AttachInfo 时投影只向既有 ViewRoot Handler 队列转发真实 fade deadline。
 ui 不读取 Java 字段；guest measured/bounds 与遍历权威唯一归 Java。
 
 Window 在每实例 synthetic root 下持有稳定真实 FrameLayout，android.R.id.content/parent 保持身份且
@@ -461,8 +471,7 @@ ROM Context 没有 mOgplayInflater，catalog 不声明额外字段；基础进�
 View、具体测试 ViewGroup 与 Frame/Linear/RelativeLayout 的两/三参属性构造、五组 LP 的
 属性构造与 generateLayoutParams 执行 ROM；width/height 缺席或类型不符由 getLayoutDimension
 抛异常。宿主不补尺寸或重写属性几何，遍历仍只读 Java 输入。应用主题可显式 @null 覆盖
-基础主题 scrollbar 引用；DVM-325 允许封存引用直接投影，非零标志所需的实际加载/构造
-仍明确失败。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
+基础主题 scrollbar 引用；封存 thumb 的非零标志初始化执行 ROM，绘制仍仅记账。LinearLayout 属性构造缺席 weightSum=-1，与 Context-only 的0保持区分；
 null divider 设置沿 ROM，绘制仍失败。
 
 LayoutInflater 的 inflate 各重载、递归、include/merge、Factory/Factory2 链归原 ROM；
@@ -783,8 +792,8 @@ Surface 新 created 代次撤销旧尺寸去重事实，created 后必派 change
 不按属性名白名单发放、不预先解析目标内容。资源类型编号与 ID type 段一致，输入锁定
 同 ROM framework-res.apk 并交叉核对共享 R 常量；真实缺名、冲突仍拒绝。
 TypedArray.getResourceId/peekValue 只读取身份；实际消费者调用时检查加载支持，未支持
-目标按 ADR-0147 记账失败。不新增 drawable/动画加载；既有 ColorStateList/edit_text
-范围保持，非零 scrollbars 构造仍失败，没有 Display/Shader 等新增 adapter。
+目标按 ADR-0147 记账失败。实际 drawable 加载限既有 ColorStateList、edit_text 闭包及四个 scrollbar thumb；
+scrollbar 初始化与状态对象边界见上文；未封存资源保持关闭即失败。
 
 DVM-315：JavaTraversal 的 managed 全屏 Window 以稳定 Java 内容根同时提供 decor，
 共享窗口 observer 与真实父链坐标。Surface 回调事务以

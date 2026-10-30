@@ -1,0 +1,1592 @@
+{
+  "classes": [
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/view/View$ScrollabilityCache;",
+      "smali_sha256": "763d90949b4e6aad2fdcb1765739075cc0755e928112dadd11228c098e0e2556",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "5a20bb143e1bf4aef62eeb9a92e183b80f53c14514e5d0e2e2754e4aa1e18952",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/view/ViewConfiguration;Landroid/view/View;)V",
+          "flags": 65537,
+          "body_sha256": "11a74100bc4286a8f2518237c16fac70d327561668aa78115c0f2604ca0945c3",
+          "source": "rom"
+        },
+        {
+          "signature": "run()V",
+          "flags": 1,
+          "body_sha256": "dc1251bb1020a46fef7a4ad15e9dbfcb7d513f4ba9cc9a08afbacbddf129232e",
+          "source": "rom"
+        },
+        {
+          "signature": "setFadeColor(I)V",
+          "flags": 1,
+          "body_sha256": "625a35977db85dd9e6200ee46b6776954368b1168a08d00f741458d9a9dbf575",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "FADING:I",
+          "flags": 25,
+          "source": "rom",
+          "initialization": "rom-encoded:0x2"
+        },
+        {
+          "signature": "OFF:I",
+          "flags": 25,
+          "source": "rom",
+          "initialization": "rom-encoded:0x0"
+        },
+        {
+          "signature": "ON:I",
+          "flags": 25,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1"
+        },
+        {
+          "signature": "OPAQUE:[F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "TRANSPARENT:[F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "fadeScrollBars:Z",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "fadeStartTime:J",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "fadingEdgeLength:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "host:Landroid/view/View;",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "interpolatorValues:[F",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mLastColor:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "matrix:Landroid/graphics/Matrix;",
+          "flags": 17,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "paint:Landroid/graphics/Paint;",
+          "flags": 17,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "scrollBar:Landroid/widget/ScrollBarDrawable;",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "scrollBarDefaultDelayBeforeFade:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "scrollBarFadeDuration:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "scrollBarInterpolator:Landroid/graphics/Interpolator;",
+          "flags": 17,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "scrollBarSize:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "shader:Landroid/graphics/Shader;",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "state:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/view/ViewConfiguration;",
+      "smali_sha256": "965679707dbe4bf7f1db2b0c294064dda8d6aba5667546acb02cbf7616247bbb",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "b32fb503e588cc61fbbaccda0f4f2c155deba10255ee01fe86cbeef80fcc1aaa",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "598f5185cd5b409ac7d0498264ee4b8b3a4af9b54185f003438fc45a48af6292",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Landroid/content/Context;)V",
+          "flags": 65538,
+          "body_sha256": "9907857c0d1fae88f32a329dea96a18530289dfc477f314b173b95d11599c677",
+          "source": "rom"
+        },
+        {
+          "signature": "get(Landroid/content/Context;)Landroid/view/ViewConfiguration;",
+          "flags": 9,
+          "body_sha256": "7a67594653c542a1756360ca9bcc0b500729ec67e8ac65c236f9c549c1d814a8",
+          "source": "rom"
+        },
+        {
+          "signature": "getDoubleTapMinTime()I",
+          "flags": 9,
+          "body_sha256": "8d6a23c1bf1d6142ee2dff7261a5286ca2b17bff39a8b928a0425b97ddb9ddc8",
+          "source": "rom"
+        },
+        {
+          "signature": "getDoubleTapSlop()I",
+          "flags": 9,
+          "body_sha256": "83a1527ddbddf392597b1f48a18024754a7d20e95fc83de69d75282840acbde5",
+          "source": "rom"
+        },
+        {
+          "signature": "getDoubleTapTimeout()I",
+          "flags": 9,
+          "body_sha256": "9ad14355db465e3a87a3980f5fe693f7d063eeb441f73e9baacda5f0679771a0",
+          "source": "rom"
+        },
+        {
+          "signature": "getEdgeSlop()I",
+          "flags": 9,
+          "body_sha256": "0fbff8e468030cb6bafa4d5fd8fc9aa323b8fe337decd8d042b52f2870d917be",
+          "source": "rom"
+        },
+        {
+          "signature": "getFadingEdgeLength()I",
+          "flags": 9,
+          "body_sha256": "13db6f4e3a3e1f6470301fece408e25b08188d3e9c61305c87408000247f8193",
+          "source": "rom"
+        },
+        {
+          "signature": "getGlobalActionKeyTimeout()J",
+          "flags": 9,
+          "body_sha256": "aaa2b7e09ce0408038c3344888e066207674cd904a1eabf3556297d4094e0146",
+          "source": "rom"
+        },
+        {
+          "signature": "getHoverTapSlop()I",
+          "flags": 9,
+          "body_sha256": "fecfab11433b2e4540df75142063986bf786bc5b8512fbb94272e8e07ad64892",
+          "source": "rom"
+        },
+        {
+          "signature": "getHoverTapTimeout()I",
+          "flags": 9,
+          "body_sha256": "2bc54511240dd500b7cf16f3fb65b5d1f761e734d44320f376e2a8d0ad119d84",
+          "source": "rom"
+        },
+        {
+          "signature": "getJumpTapTimeout()I",
+          "flags": 9,
+          "body_sha256": "d4b2d2c74e49529c6ad90f76c248d7f82d03bde7feee20d5d3f89633ccd4c7cb",
+          "source": "rom"
+        },
+        {
+          "signature": "getKeyRepeatDelay()I",
+          "flags": 9,
+          "body_sha256": "221a6f82cdf0d8651212f0c8d51e51518f7ecdc163c87c9343f78af0137263ef",
+          "source": "rom"
+        },
+        {
+          "signature": "getKeyRepeatTimeout()I",
+          "flags": 9,
+          "body_sha256": "60d15f15b668bc9cad3fff997d523c00f1a06a56c4867697d76d4c891b1fccbc",
+          "source": "rom"
+        },
+        {
+          "signature": "getLongPressTimeout()I",
+          "flags": 9,
+          "body_sha256": "0acc0d7f37e16fad31399cbfeefb71d24803d49dd37e88a2d944d07a00aa6ce2",
+          "source": "rom"
+        },
+        {
+          "signature": "getMaximumDrawingCacheSize()I",
+          "flags": 9,
+          "body_sha256": "53c9ba700cfc2704bba878cd83b3aa671229690cc2d6967fc043e56556a0b8b2",
+          "source": "rom"
+        },
+        {
+          "signature": "getMaximumFlingVelocity()I",
+          "flags": 9,
+          "body_sha256": "ea2aea7afeb3fbc08f1a784469931c2b7b116fc21f6ff6c157101a8b10718d2c",
+          "source": "rom"
+        },
+        {
+          "signature": "getMinimumFlingVelocity()I",
+          "flags": 9,
+          "body_sha256": "5428a84926ffbf57895555321fb9b489624a1e2e8dd902b50900add3625e4bdb",
+          "source": "rom"
+        },
+        {
+          "signature": "getPressedStateDuration()I",
+          "flags": 9,
+          "body_sha256": "6921aae44dff4689a2d25e212ad45862a7ce7409c6bf5fd2b27fba2e181c802e",
+          "source": "rom"
+        },
+        {
+          "signature": "getScrollBarFadeDuration()I",
+          "flags": 9,
+          "body_sha256": "1b2a3ee4bf6329256697960e0228518ab6a87cb31c41583a1ad0d2286c9ffea4",
+          "source": "rom"
+        },
+        {
+          "signature": "getScrollBarSize()I",
+          "flags": 9,
+          "body_sha256": "9b53ceb9cd7bead649de5612cdc55ab0e61b73da8f85971ef580ceae175060f5",
+          "source": "rom"
+        },
+        {
+          "signature": "getScrollDefaultDelay()I",
+          "flags": 9,
+          "body_sha256": "2078013b3f394862e8f58c19c220f105738a1d47c5acc65649779128cfee74ed",
+          "source": "rom"
+        },
+        {
+          "signature": "getScrollFriction()F",
+          "flags": 9,
+          "body_sha256": "aa2666b7dc9aae080d7a95c55b286c9f53b0e911c0b5b2b33551268c8da24134",
+          "source": "rom"
+        },
+        {
+          "signature": "getSendRecurringAccessibilityEventsInterval()J",
+          "flags": 9,
+          "body_sha256": "c59731fbc5b4a434fba43a76a4da5c66303d211f686df56bbc20059e3d15abb2",
+          "source": "rom"
+        },
+        {
+          "signature": "getTapTimeout()I",
+          "flags": 9,
+          "body_sha256": "deb718b0dd23b902e095d144c68f2787b224907a869d57a2a0db66028355d515",
+          "source": "rom"
+        },
+        {
+          "signature": "getTouchSlop()I",
+          "flags": 9,
+          "body_sha256": "3de545b9069a70059f5d09745f4cfe4042a8c91ed91d946318f5c47fc34a9373",
+          "source": "rom"
+        },
+        {
+          "signature": "getWindowTouchSlop()I",
+          "flags": 9,
+          "body_sha256": "5dcd9aadb59c104a5da88d11076cf5ba8fa5bd6272928c4679c53a7d9255a38e",
+          "source": "rom"
+        },
+        {
+          "signature": "getZoomControlsTimeout()J",
+          "flags": 9,
+          "body_sha256": "7cef6d32540f37409383d9a3bdebb15b08acc271838889ad1c1352bab04dd12c",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledDoubleTapSlop()I",
+          "flags": 1,
+          "body_sha256": "5834c45b73d306460f1295c29be9332fa317a5d98e2efabbb92bf94df20db81f",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledDoubleTapTouchSlop()I",
+          "flags": 1,
+          "body_sha256": "23527292c044830cc21388081a95cb46068719078270d11c4b6864e9802b2523",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledEdgeSlop()I",
+          "flags": 1,
+          "body_sha256": "313c8687f1b3db3e7e811e5e2c1a60bc88001012f161fc8cdd2facec0958493b",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledFadingEdgeLength()I",
+          "flags": 1,
+          "body_sha256": "63d0fee0ec1d0f7f378e534b22d2150be6691c1fb43f0b5f9f7c237a641d5d85",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledMaximumDrawingCacheSize()I",
+          "flags": 1,
+          "body_sha256": "8d3ebabb8a7988734812974a7a59241be8f4a5dffa79ed027523078e18b8bec4",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledMaximumFlingVelocity()I",
+          "flags": 1,
+          "body_sha256": "15ff659383dd3bbe5b11a614efde54523a6b2a6ce55c3dbbb0af1325c999bf47",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledMinimumFlingVelocity()I",
+          "flags": 1,
+          "body_sha256": "38abef47428ec0f67a37ef0f3729ff7514d84e8bfc046cf46f90bf988d3f5f7d",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledOverflingDistance()I",
+          "flags": 1,
+          "body_sha256": "3adcbe4ce3290fade211fdf26c9a741802fd0494176f329137f59d9c2cd6510c",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledOverscrollDistance()I",
+          "flags": 1,
+          "body_sha256": "00b8cd3e827c99ef3b6ad9febf6ea709d5f68c75d9901b93982e1dc028d9d6d4",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledPagingTouchSlop()I",
+          "flags": 1,
+          "body_sha256": "57a54a971c98da437de7941222704041ca01e0c3c036c86fd11e9bfff1c12f91",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledScrollBarSize()I",
+          "flags": 1,
+          "body_sha256": "1a96b0da6539e2d02e1bb815799efa0a16c8f99cf41e9e83c245ef11f5039572",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledTouchSlop()I",
+          "flags": 1,
+          "body_sha256": "8e2b58298b6b5eb8ae643ef3d4ae773375f93771623622a4cb1d0c359a105ef0",
+          "source": "rom"
+        },
+        {
+          "signature": "getScaledWindowTouchSlop()I",
+          "flags": 1,
+          "body_sha256": "e9bc5d5d41dc02243b69bee24c751f7c94b853b49ef98119d8996dcb0eda6a56",
+          "source": "rom"
+        },
+        {
+          "signature": "hasPermanentMenuKey()Z",
+          "flags": 1,
+          "body_sha256": "37dcce105fb13af0cad413f776fe5a7de6523e3e242cabd39ddeeb9d7f7718e1",
+          "source": "rom"
+        },
+        {
+          "signature": "isFadingMarqueeEnabled()Z",
+          "flags": 1,
+          "body_sha256": "4e1e763b3c7cdd12d619c4567a2719d5652ffc77d144b1e2fa5fe3058a531c64",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "DEFAULT_LONG_PRESS_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1f4"
+        },
+        {
+          "signature": "DOUBLE_TAP_MIN_TIME:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x28"
+        },
+        {
+          "signature": "DOUBLE_TAP_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x64"
+        },
+        {
+          "signature": "DOUBLE_TAP_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x12c"
+        },
+        {
+          "signature": "DOUBLE_TAP_TOUCH_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x8"
+        },
+        {
+          "signature": "EDGE_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xc"
+        },
+        {
+          "signature": "FADING_EDGE_LENGTH:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xc"
+        },
+        {
+          "signature": "GLOBAL_ACTIONS_KEY_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1f4"
+        },
+        {
+          "signature": "HAS_PERMANENT_MENU_KEY_AUTODETECT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x0"
+        },
+        {
+          "signature": "HAS_PERMANENT_MENU_KEY_FALSE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x2"
+        },
+        {
+          "signature": "HAS_PERMANENT_MENU_KEY_TRUE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1"
+        },
+        {
+          "signature": "HOVER_TAP_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x14"
+        },
+        {
+          "signature": "HOVER_TAP_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x96"
+        },
+        {
+          "signature": "JUMP_TAP_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1f4"
+        },
+        {
+          "signature": "KEY_REPEAT_DELAY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x32"
+        },
+        {
+          "signature": "MAXIMUM_DRAWING_CACHE_SIZE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x177000"
+        },
+        {
+          "signature": "MAXIMUM_FLING_VELOCITY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1f40"
+        },
+        {
+          "signature": "MINIMUM_FLING_VELOCITY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x32"
+        },
+        {
+          "signature": "OVERFLING_DISTANCE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x6"
+        },
+        {
+          "signature": "OVERSCROLL_DISTANCE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x0"
+        },
+        {
+          "signature": "PAGING_TOUCH_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x10"
+        },
+        {
+          "signature": "PRESSED_STATE_DURATION:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x40"
+        },
+        {
+          "signature": "SCROLL_BAR_DEFAULT_DELAY:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x12c"
+        },
+        {
+          "signature": "SCROLL_BAR_FADE_DURATION:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xfa"
+        },
+        {
+          "signature": "SCROLL_BAR_SIZE:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xa"
+        },
+        {
+          "signature": "SCROLL_FRICTION:F",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0.015f"
+        },
+        {
+          "signature": "SEND_RECURRING_ACCESSIBILITY_EVENTS_INTERVAL_MILLIS:J",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x64L"
+        },
+        {
+          "signature": "TAP_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xb4"
+        },
+        {
+          "signature": "TOUCH_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x8"
+        },
+        {
+          "signature": "WINDOW_TOUCH_SLOP:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x10"
+        },
+        {
+          "signature": "ZOOM_CONTROLS_TIMEOUT:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0xbb8"
+        },
+        {
+          "signature": "mDoubleTapSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mDoubleTapTouchSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mEdgeSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFadingEdgeLength:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mFadingMarqueeEnabled:Z",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMaximumDrawingCacheSize:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMaximumFlingVelocity:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mMinimumFlingVelocity:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverflingDistance:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOverscrollDistance:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPagingTouchSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mScrollbarSize:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTouchSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mWindowTouchSlop:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "sConfigurations:Landroid/util/SparseArray;",
+          "flags": 24,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "sHasPermanentMenuKey:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "sHasPermanentMenuKeySet:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/widget/ScrollBarDrawable;",
+      "smali_sha256": "15050cb59d9db758c91d0a9ec61ec98aa700d2af661e43cd6404b041d5c24257",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "fc2e8990d213c5eec0c5fb6d789d3e51f2f159eb2f4d73e88e74dc0020b5e338",
+          "source": "rom"
+        },
+        {
+          "signature": "draw(Landroid/graphics/Canvas;)V",
+          "flags": 1,
+          "body_sha256": "6d3c2e605b560560506cc67854baaa3f663df80964856730c1f8518bc1a5dba8",
+          "source": "failure"
+        },
+        {
+          "signature": "drawThumb(Landroid/graphics/Canvas;Landroid/graphics/Rect;IIZ)V",
+          "flags": 4,
+          "body_sha256": "ad19bfcb011221047a124c7757ee1b74662072d9add2366a894eb851ae2f3fa7",
+          "source": "failure"
+        },
+        {
+          "signature": "drawTrack(Landroid/graphics/Canvas;Landroid/graphics/Rect;Z)V",
+          "flags": 4,
+          "body_sha256": "f4298ff025ca0187b495e0a235119b7cddba2b66abdd16f38db3dd81802dbb18",
+          "source": "failure"
+        },
+        {
+          "signature": "getAlpha()I",
+          "flags": 1,
+          "body_sha256": "a4315fe9267b0bf587bc781845b7fec78dc2dcd5f71221aa92715d98939a3243",
+          "source": "rom"
+        },
+        {
+          "signature": "getAlwaysDrawHorizontalTrack()Z",
+          "flags": 1,
+          "body_sha256": "378e79be0dd92cec8c0ddea3055ae4c3bf37ad9563cd4feeb9918cff2ecf9fa1",
+          "source": "rom"
+        },
+        {
+          "signature": "getAlwaysDrawVerticalTrack()Z",
+          "flags": 1,
+          "body_sha256": "862bbdb09e6cbcf1cf496806dcb2e61a53966e2610294cd6c7b67775a710debc",
+          "source": "rom"
+        },
+        {
+          "signature": "getOpacity()I",
+          "flags": 1,
+          "body_sha256": "4337ff33e4ab32afbc3f92dfb3b61315b39f8613ef3c6afeef065015721a721a",
+          "source": "rom"
+        },
+        {
+          "signature": "getSize(Z)I",
+          "flags": 1,
+          "body_sha256": "db3e2ead4022a2f5445af6fb197bf86b4d109a7042e59437b99a2643c950dcb2",
+          "source": "rom"
+        },
+        {
+          "signature": "onBoundsChange(Landroid/graphics/Rect;)V",
+          "flags": 4,
+          "body_sha256": "04b83ab40a32a165d2cb31896a4f3df578460a69fd535e1987de2d12c5eb7fe2",
+          "source": "rom"
+        },
+        {
+          "signature": "setAlpha(I)V",
+          "flags": 1,
+          "body_sha256": "ccb9c898f777573c6cca7d0a0ef1d6910386785f0aade1b1c8bf5a8e80acf378",
+          "source": "rom"
+        },
+        {
+          "signature": "setAlwaysDrawHorizontalTrack(Z)V",
+          "flags": 1,
+          "body_sha256": "b5956c61c3784144ee5f330969f0ecf0c625b8e90889083bc5e6abd50290f5fa",
+          "source": "rom"
+        },
+        {
+          "signature": "setAlwaysDrawVerticalTrack(Z)V",
+          "flags": 1,
+          "body_sha256": "9324ba4f6f1baf98984320854b356b465c3db4ea90ad232572222f9ea231debf",
+          "source": "rom"
+        },
+        {
+          "signature": "setColorFilter(Landroid/graphics/ColorFilter;)V",
+          "flags": 1,
+          "body_sha256": "7a88abee58f4d191d78afeeb97b941a8271d4dc48f1f24ebce0343525063c67a",
+          "source": "rom"
+        },
+        {
+          "signature": "setHorizontalThumbDrawable(Landroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "b4bd75bc71537f548533c796297f28bc7b3a02ee5a6311377b312254c668a185",
+          "source": "rom"
+        },
+        {
+          "signature": "setHorizontalTrackDrawable(Landroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "7923e139882b149b9677302cfa8fc5dfa0855b9b007be2dc8f6e51efb73327cd",
+          "source": "rom"
+        },
+        {
+          "signature": "setParameters(IIIZ)V",
+          "flags": 1,
+          "body_sha256": "868e919307526da1bf9f690da8aa1580af37e71e7b7340bf77d5ae0c122f9d6e",
+          "source": "rom"
+        },
+        {
+          "signature": "setVerticalThumbDrawable(Landroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "81c511dfaef0bdc191c7b5b829f68c1dc0545331623f3e3b2a7bc9fe092c9a9f",
+          "source": "rom"
+        },
+        {
+          "signature": "setVerticalTrackDrawable(Landroid/graphics/drawable/Drawable;)V",
+          "flags": 1,
+          "body_sha256": "758542ec774d174ae6bcb6bc586da0ceada46b8cff819bdb73d5e45c6ffbba2d",
+          "source": "rom"
+        },
+        {
+          "signature": "toString()Ljava/lang/String;",
+          "flags": 1,
+          "body_sha256": "dadac5aa8c56e44883b46205a3e9f4d4dcd601dfbb62acb278a7cefb45cccdfc",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mAlwaysDrawHorizontalTrack:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mAlwaysDrawVerticalTrack:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mChanged:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mExtent:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHorizontalThumb:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mHorizontalTrack:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mOffset:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRange:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mRangeChanged:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTempBounds:Landroid/graphics/Rect;",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVertical:Z",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVerticalThumb:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mVerticalTrack:Landroid/graphics/drawable/Drawable;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/Interpolator;",
+      "smali_sha256": "90405c3475e12cd58695e6cec83f8c3eb6cd23368aae00250fea6ecadecce178",
+      "methods": [
+        {
+          "signature": "<init>(I)V",
+          "flags": 65537,
+          "body_sha256": "33ec4d5d6d4da233b4872158f9daced5c9ac5a0047c5e4a11a01ec03db13cd44",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(II)V",
+          "flags": 65537,
+          "body_sha256": "e2d7a2f5376889dc7e37161b38b15f4730972819d30a2f634d1b581592c19c0c",
+          "source": "rom"
+        },
+        {
+          "signature": "nativeConstructor(II)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeDestructor(I)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeReset(III)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeSetKeyFrame(III[F[F)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeSetRepeatMirror(IFZ)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeTimeToValues(II[F)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "ca25189056e216894edf11d775c96ef35e336afc2cc7580c1c51df800cb26574",
+          "source": "rom"
+        },
+        {
+          "signature": "getKeyFrameCount()I",
+          "flags": 17,
+          "body_sha256": "33ca14ad38683b48b39fad8db48b93a38dc97034cc3be3e5186ebd60b3f180cd",
+          "source": "rom"
+        },
+        {
+          "signature": "getValueCount()I",
+          "flags": 17,
+          "body_sha256": "1008f22127521044bdcac82608a44592856223efb3bb65ab8eece0ae2690b3aa",
+          "source": "rom"
+        },
+        {
+          "signature": "reset(I)V",
+          "flags": 1,
+          "body_sha256": "9d653d0f74b82b6dd95230b2470b4825e49f233d5683e9053661ad478640825a",
+          "source": "rom"
+        },
+        {
+          "signature": "reset(II)V",
+          "flags": 1,
+          "body_sha256": "38c7596ec57aaa413f8a4399b5ceb5456cd38399f4c34fd4faa091a9c2e9f1e6",
+          "source": "rom"
+        },
+        {
+          "signature": "setKeyFrame(II[F)V",
+          "flags": 1,
+          "body_sha256": "5a44ebed5a6712add7561de5ada26d88e68783ea919b1d8ff4e700c0a310d377",
+          "source": "rom"
+        },
+        {
+          "signature": "setKeyFrame(II[F[F)V",
+          "flags": 1,
+          "body_sha256": "cbaba9b8621c8e393fd535356a24a46cf2a3ac0b2548fc70c416281c1d863fd7",
+          "source": "rom"
+        },
+        {
+          "signature": "setRepeatMirror(FZ)V",
+          "flags": 1,
+          "body_sha256": "a691d9f23aa79095e6ee544fb76971dd7e42f1ea96e7d44d2d7b44af3ef66976",
+          "source": "rom"
+        },
+        {
+          "signature": "timeToValues(I[F)Landroid/graphics/Interpolator$Result;",
+          "flags": 1,
+          "body_sha256": "9214d774697f302f558e1a58ca0a23d223837f62c4bee7d9529e96d81689f3fb",
+          "source": "rom"
+        },
+        {
+          "signature": "timeToValues([F)Landroid/graphics/Interpolator$Result;",
+          "flags": 1,
+          "body_sha256": "875a2760084de1980ccda5f54c508b048ccebdd90211646b7c8fd122dec3aeaf",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mFrameCount:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mValueCount:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "native_instance:I",
+          "flags": 18,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/Interpolator$Result;",
+      "smali_sha256": "c4ac454dc3277ae475e539cb2c2cc6ae50e98cce9310ba8db2e18bf1b544993b",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "e85153c29003dd5de70fa2a1d6f9f9c089b4bc5a0f87538cb874b5407f2c1191",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Ljava/lang/String;I)V",
+          "flags": 65538,
+          "body_sha256": "046f5e17f2147656673d9810487555d203e60a2bd8fec1e79ea8ce02306c72c4",
+          "source": "rom"
+        },
+        {
+          "signature": "valueOf(Ljava/lang/String;)Landroid/graphics/Interpolator$Result;",
+          "flags": 9,
+          "body_sha256": "0b9c2bb24a49e2253a19c3683f6bfbe46c6c82347e4e02cc6ae617664da2e0b4",
+          "source": "rom"
+        },
+        {
+          "signature": "values()[Landroid/graphics/Interpolator$Result;",
+          "flags": 9,
+          "body_sha256": "a7d1ac93f6a4b00cd4c747b4e9280a82708839e74066a5d4f024697b1cf4d12e",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "$VALUES:[Landroid/graphics/Interpolator$Result;",
+          "flags": 4122,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "FREEZE_END:Landroid/graphics/Interpolator$Result;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "FREEZE_START:Landroid/graphics/Interpolator$Result;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "NORMAL:Landroid/graphics/Interpolator$Result;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/Shader;",
+      "smali_sha256": "fd23f16ccfd4206a2c8891d8ae583e1f49635ff299990a5e3f2d124975983428",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "5c9b49a3adee8f98aefbb05140455a762b01a30ae2b6afacace09ae411cadc06",
+          "source": "rom"
+        },
+        {
+          "signature": "nativeDestructor(II)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeSetLocalMatrix(III)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "failure"
+        },
+        {
+          "signature": "copy()Landroid/graphics/Shader;",
+          "flags": 4,
+          "body_sha256": "84e2451920284526ea4caa29a5e27996183c59d4908b24acd40158b31e239e0e",
+          "source": "rom"
+        },
+        {
+          "signature": "copyLocalMatrix(Landroid/graphics/Shader;)V",
+          "flags": 4,
+          "body_sha256": "4b6ccedacf3ad2ed2e6cd3edb65c8dd38958c3891ecd1b6773340b0fec41a98c",
+          "source": "failure"
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "d2be324a9aed3bd427852f1c97dc25ef14b1d30301cc8c2961539b3d718c9fd8",
+          "source": "rom"
+        },
+        {
+          "signature": "getLocalMatrix(Landroid/graphics/Matrix;)Z",
+          "flags": 1,
+          "body_sha256": "922fb4dc718a6cd952c9aec9faf93197deab9caf18bb6f1787d377cfefba977a",
+          "source": "failure"
+        },
+        {
+          "signature": "setLocalMatrix(Landroid/graphics/Matrix;)V",
+          "flags": 1,
+          "body_sha256": "1794d9e9941a893417cf4fedc756047f2114a891a4d3bfbc550a34f91d84338a",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mLocalMatrix:Landroid/graphics/Matrix;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "native_instance:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "native_shader:I",
+          "flags": 1,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/Shader$TileMode;",
+      "smali_sha256": "4c7eb9daea7089dfc8757117a7b59d82fd6c31e5def097563e2fe1dd796cb41f",
+      "methods": [
+        {
+          "signature": "<clinit>()V",
+          "flags": 65544,
+          "body_sha256": "565210b74c8cf8fec1d7fb0ce4108afe97e15b8cd37ee936ef0f670955eaeb27",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(Ljava/lang/String;II)V",
+          "flags": 65538,
+          "body_sha256": "bb21cda50859f6cadd99cc5a4b234c4a260315336789a31cf3c43d17850b3149",
+          "source": "rom"
+        },
+        {
+          "signature": "valueOf(Ljava/lang/String;)Landroid/graphics/Shader$TileMode;",
+          "flags": 9,
+          "body_sha256": "2f4b8aff9c11b76e7a4ce35a9689fe405b55216f2fdab3762193298d583b23dd",
+          "source": "rom"
+        },
+        {
+          "signature": "values()[Landroid/graphics/Shader$TileMode;",
+          "flags": 9,
+          "body_sha256": "2a0866c451bf63a02be6c436ec3991080deab3f9063503ba32dceb4bdb61f87b",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "$VALUES:[Landroid/graphics/Shader$TileMode;",
+          "flags": 4122,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "CLAMP:Landroid/graphics/Shader$TileMode;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "MIRROR:Landroid/graphics/Shader$TileMode;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "REPEAT:Landroid/graphics/Shader$TileMode;",
+          "flags": 16409,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "nativeInt:I",
+          "flags": 16,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/LinearGradient;",
+      "smali_sha256": "9b6237db9e7bede6216e6ca97393b5de9c351afd2e1a8da162bf73951db01a3f",
+      "methods": [
+        {
+          "signature": "<init>(FFFFIILandroid/graphics/Shader$TileMode;)V",
+          "flags": 65537,
+          "body_sha256": "9998003a06c67792bef761c49afd3630c93fb568ac9da05c0ebba6bda0c2ff6e",
+          "source": "rom"
+        },
+        {
+          "signature": "<init>(FFFF[I[FLandroid/graphics/Shader$TileMode;)V",
+          "flags": 65537,
+          "body_sha256": "80ca174a4cc5a42ac9cd0145ba0dda87114dc0378b623acb9b047328e7cfe0a9",
+          "source": "rom"
+        },
+        {
+          "signature": "nativeCreate1(FFFF[I[FI)I",
+          "flags": 258,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativeCreate2(FFFFIII)I",
+          "flags": 258,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativePostCreate1(IFFFF[I[FI)I",
+          "flags": 258,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "nativePostCreate2(IFFFFIII)I",
+          "flags": 258,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "copy()Landroid/graphics/Shader;",
+          "flags": 4,
+          "body_sha256": "5d141ef06fedf4d920b0ef49f11c381a639983faa0c8dd5cbce6450d10583ee0",
+          "source": "failure"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "TYPE_COLORS_AND_POSITIONS:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x1"
+        },
+        {
+          "signature": "TYPE_COLOR_START_AND_COLOR_END:I",
+          "flags": 26,
+          "source": "rom",
+          "initialization": "rom-encoded:0x2"
+        },
+        {
+          "signature": "mColor0:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mColor1:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mColors:[I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mPositions:[F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mTileMode:Landroid/graphics/Shader$TileMode;",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mType:I",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mX0:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mX1:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mY0:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        },
+        {
+          "signature": "mY1:F",
+          "flags": 2,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/PorterDuffXfermode;",
+      "smali_sha256": "2c94d275434032590c64f591127c6e08c35763dbd86d2d905c9aef311a407051",
+      "methods": [
+        {
+          "signature": "<init>(Landroid/graphics/PorterDuff$Mode;)V",
+          "flags": 65537,
+          "body_sha256": "ac31062f623047de8e0798c75e5d5ea66a58c40028ef2a17b655410032fd9c5a",
+          "source": "rom"
+        },
+        {
+          "signature": "nativeCreateXfermode(I)I",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        }
+      ],
+      "fields": [
+        {
+          "signature": "mode:Landroid/graphics/PorterDuff$Mode;",
+          "flags": 17,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    },
+    {
+      "shape_owner": "rom",
+      "clinit_owner": "rom-absent",
+      "rom_input": ".local/aosp/framework.jar",
+      "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
+      "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
+      "surface_sha256": "79ddb8750eb0c5edc4dacebb19b83823637a02c866acc2fe96bf5a5a148e8c1d",
+      "owner": "Landroid/graphics/Xfermode;",
+      "smali_sha256": "aad23097642869b25c331689da894e9ab386ad1a54fae7563b4f91527b0313a1",
+      "methods": [
+        {
+          "signature": "<init>()V",
+          "flags": 65537,
+          "body_sha256": "93114e9d62a4820b82ee2fe7e96305e4a51d68a5a7f1bf5e09f24ae5e442e153",
+          "source": "rom"
+        },
+        {
+          "signature": "finalizer(I)V",
+          "flags": 266,
+          "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "source": "overlay",
+          "platform_seam": true,
+          "review": {
+            "reason": "ADR-0173 / DVM-355 bounded graphics state native seam; original ROM constructors and Java fields retained",
+            "inputs": "exact API19 arguments; Interpolator time supplied by caller, keyframe values and cubic blend; gradient endpoints/colors/tile or PorterDuff mode",
+            "outputs": "monotonic typed state handle, copied parameters or AOSP SkInterpolator Result/value samples; no rendering",
+            "state_owner": "per-VM GraphicsStateStore native handles; Java original handle and Paint reference fields; GC sweep and real destructor retire state",
+            "failure_boundary": "no Canvas shader/xfermode rendering; unsupported matrix shader operations remain failure; invalid sizes/arrays/handles fail, never zero-success"
+          }
+        },
+        {
+          "signature": "finalize()V",
+          "flags": 4,
+          "body_sha256": "7217eb79821b6c0d445d19bea09a4246b8d08a5a8c3788aadb242a9b2b2e3cb3",
+          "source": "rom"
+        }
+      ],
+      "fields": [
+        {
+          "signature": "native_instance:I",
+          "flags": 0,
+          "source": "rom",
+          "initialization": "vm-zero-before-selected-constructor/rom-clinit"
+        }
+      ]
+    }
+  ]
+}

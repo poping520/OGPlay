@@ -652,6 +652,7 @@ Decl Declare_android_graphics_Canvas(const Context& context) {
     }
     builder.VirtualMethod(
         "drawBitmap", "(Landroid/graphics/Bitmap;FFLandroid/graphics/Paint;)V", [context](dx::IntrinsicContext& call) {
+            RequirePlainCanvasPaint(call, call.arguments[3].ref);
             const auto canvas = context->canvases.find(call.receiver.Value());
             const auto bitmap = context->bitmaps.find(call.arguments[0].ref.Value());
             if (canvas == context->canvases.end() || !canvas->second.locked) {
@@ -821,6 +822,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
     {
         auto builder = dx::IntrinsicClassBuilder::Class("Landroid/graphics/Paint;", "Ljava/lang/Object;");
         const auto face = builder.BoundInstanceField("mTypeface", "Landroid/graphics/Typeface;", dx::kAccPrivate);
+        const auto shader = builder.BoundInstanceField("mShader", "Landroid/graphics/Shader;", dx::kAccPrivate);
+        const auto xfer = builder.BoundInstanceField("mXfermode", "Landroid/graphics/Xfermode;", dx::kAccPrivate);
         const auto state = [context](dx::IntrinsicContext& call) -> DexVmAndroidContext::PaintMeasureState& {
             const auto found = context->paint_measure_states.find(call.receiver.Value());
             if (found == context->paint_measure_states.end())
@@ -840,6 +843,15 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             return dx::VmValue::Void();
         };
         builder.Constructor("()V", init).Constructor("(I)V", init);
+        for (const auto [name, signature, field] :
+             {std::tuple{"setShader", "(Landroid/graphics/Shader;)Landroid/graphics/Shader;", shader},
+              std::tuple{"setXfermode", "(Landroid/graphics/Xfermode;)Landroid/graphics/Xfermode;", xfer}}) {
+            builder.VirtualMethod(name, signature, [state, field](dx::IntrinsicContext& c) {
+                static_cast<void>(state(c));
+                dx::IntrinsicCall(c).SetRef(field, c.arguments[0].ref);
+                return dx::VmValue::Ref(c.arguments[0].ref);
+            });
+        }
         builder.VirtualMethod(
             "finalize", "()V",
             [context](dx::IntrinsicContext& c) {

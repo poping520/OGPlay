@@ -9,6 +9,8 @@
 namespace ogplay::runtime::android_intrinsics {
 
 namespace dx = dexvm;
+void RequirePlainCanvasPaint(dx::IntrinsicContext& call, dx::VmObjectRef paint);
+void RegisterGraphicsStateTables(dx::Interpreter& vm, const std::shared_ptr<DexVmAndroidContext>& context);
 inline constexpr std::int32_t kGuestProcessId = 1;
 [[nodiscard]] dx::VmObjectRef ManagedViewTreeObserver(dx::Interpreter& vm, DexVmAndroidContext& context,
                                                       dx::VmObjectRef view);

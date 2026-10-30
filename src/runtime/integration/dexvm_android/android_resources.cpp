@@ -1403,6 +1403,12 @@ Decl Declare_android_content_res_Resources(const Context& context) {
     });
     builder.VirtualMethod("getInteger", "(I)I", [context, system_resources](dx::IntrinsicContext& call) {
         const auto id = static_cast<std::uint32_t>(call.arguments[0].AsInt());
+        if (id == 0x010e0049U)
+            return ThemeChecked(call, context, [&] {
+                const auto value = context->theme_resources.Resource(id, true, context->arsc);
+                if (value.type < 16 || value.type > 31) throw std::runtime_error("ROM integer type mismatch");
+                return dx::VmValue::Int(static_cast<std::int32_t>(value.data));
+            });
         if (const auto* resource = FindSystemResource(context, *system_resources, id);
             resource != nullptr && std::holds_alternative<std::int32_t>(*resource))
             return dx::VmValue::Int(std::get<std::int32_t>(*resource));

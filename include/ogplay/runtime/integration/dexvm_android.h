@@ -51,6 +51,8 @@ class EncodedAudioDataSource;
 }  // namespace ogplay::audio
 
 namespace ogplay::runtime {
+struct GraphicsStateStore;
+
 // Shared application-window/holder alpha rule (PixelFormat.formatHasAlpha, API19).
 [[nodiscard]] constexpr bool AndroidPixelFormatHasAlpha(std::int32_t format) {
     return format == -3 || format == -2 || format == 1 || format == 6 || format == 7 || format == 8 || format == 10;
@@ -982,6 +984,8 @@ struct DexVmAndroidContext final {
     // OGPlay has one managed ViewRoot. Its private Handler identity is shared
     // by every attached View, matching API 19 AttachInfo dispatch ownership.
     dexvm::VmObjectRef view_root_handler;
+    // Scheduling identity only; deadlines/state remain authoritative in the ROM cache.
+    std::unordered_map<std::uint32_t, std::int64_t> scrollbar_fade_deadlines;
     // API 19 ViewRootImpl keeps posts made by detached Views in a per-thread
     // RunQueue until that thread next traverses a live ViewRoot.
     std::vector<PendingViewAction> pending_view_actions;
@@ -1094,6 +1098,7 @@ struct DexVmAndroidContext final {
     };
 
     std::unordered_map<std::uint64_t, PaintMeasureState> paint_measure_states;
+    std::shared_ptr<GraphicsStateStore> graphics_state_store;
     // Real VideoView playback (ADR-0021). The factory is injected by the
     // frontend. Preparation and errors are deferred to the guest main pump;
     // listeners and the bound MediaPlayer identity are ordinary Java fields.

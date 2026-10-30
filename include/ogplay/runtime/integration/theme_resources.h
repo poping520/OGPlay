@@ -111,6 +111,7 @@ private:
     std::vector<std::byte> string_pool_;
     std::vector<RomDrawable> rom_drawables_;
     std::map<std::uint32_t, RomColor> rom_colors_;
+    std::map<std::uint32_t, ThemeValue> rom_configuration_;
     bool loaded_{}, stopped_{};
 };
 }  // namespace ogplay::runtime

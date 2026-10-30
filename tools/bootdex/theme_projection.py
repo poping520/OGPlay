@@ -129,13 +129,49 @@ def string_pool(strings):
     return struct.pack('<HH6I', 1, 28, start + len(data), len(strings), 0, 0, start, 0) + struct.pack('<%dI' % len(offsets), *offsets) + data
 
 
+def view_configuration_values():
+    """Read exact default scalar facts from the pinned APK, never source defaults."""
+    demands = {
+        'config_viewConfigurationTouchSlop': (0x01050008, 5),
+        'config_overrideHasPermanentMenuKey': (0x010e0049, 16),
+        'config_ui_enableFadingMarquee': (0x01110013, 18),
+        'config_showNavigationBar': (0x01110044, 18),
+    }
+    with zipfile.ZipFile(ROOT / rom.APK) as archive:
+        _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
+    result = []
+    for name, (ident, kind) in demands.items():
+        matches = [r for r in rows if r['name'] == name and r['id'] == ident]
+        if len(matches) != 1 or len(matches[0]['configurations']) != 1:
+            raise ValueError('unreviewed ViewConfiguration resource identity/configuration: ' + name)
+        variant = matches[0]['configurations'][0]
+        if (any(bytes.fromhex(variant['config_hex'])[4:]) or variant['complex']
+                or variant['value_type'] != kind):
+            raise ValueError('unsupported ViewConfiguration resource: ' + name)
+        result.append(dict(name=name, id=ident, type=kind, data=variant['data']))
+    return sorted(result, key=lambda r: r['id'])
+
+
 def drawable_closure():
-    """Only the reviewed same-ROM EditText selector and its nine-patch leaves."""
+    """Reviewed EditText closure and the four exact same-ROM scrollbar thumbs."""
     with zipfile.ZipFile(ROOT / rom.APK) as archive:
         _, rows = rom.ResourceTable(archive.read('resources.arsc')).parse()
         by_id = {row['id']: row for row in rows}
         root, = [row for row in rows if row['type'] == 'drawable' and row['name'] == 'edit_text']
-        pending, result = [root['id']], []
+        thumbs = {
+            'scrollbar_handle_horizontal': 0x0108052a,
+            'scrollbar_handle_vertical': 0x0108052b,
+            'scrollbar_handle_holo_dark': 0x01080528,
+            'scrollbar_handle_holo_light': 0x01080529,
+        }
+        for name, ident in thumbs.items():
+            matches = [row for row in rows if row['type'] == 'drawable' and row['name'] == name]
+            if len(matches) != 1 or matches[0]['id'] != ident:
+                raise ValueError('scrollbar thumb ROM name/ID mismatch: ' + name)
+            variants = matches[0]['configurations']
+            if len(variants) != 1 or not variants[0]['path'].endswith('.9.png'):
+                raise ValueError('scrollbar thumb requires one ninepatch leaf: ' + name)
+        pending, result = [root['id'], *thumbs.values()], []
         while pending:
             ident = pending.pop(0)
             if any(row['id'] == ident for row in result):
@@ -499,7 +535,7 @@ def generate(negative_rom_id=False):
                     styleables=report['styleable_slot_checks'], attribute_demands=attribute_demands,
                     registered=themes, style_closure=style_closure, unregistered=unregistered,
                     counts=dict(counts), attribute_count=len(attrs),
-                    rom_colors=colors, rom_drawables=drawable_closure(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
+                    rom_colors=colors, rom_drawables=drawable_closure(), rom_configuration=view_configuration_values(), strings=strings, string_pool=string_pool(strings).hex(), attribute_formats=report['attribute_formats'],
                     resource_types={r['resource_type']: r['type_id'] for r in references.values()},
                     projected_references=sorted(projected_references.values(), key=lambda r: r['resource_id']))
     return canonical(document)

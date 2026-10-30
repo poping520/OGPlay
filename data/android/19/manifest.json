@@ -93,8 +93,8 @@
         "d8_sha256": "d9e6acde0cb6f2453d6835b52c31d2066054394fb79e91115dd4978bde6afd16"
       }
     ],
-    "size": 11380638,
-    "sha256": "8ae68c60132c1ee06ba4416af095f8a4cf698ff73ed702374564de0dd6c3e94e",
+    "size": 11382448,
+    "sha256": "a04d04adab01963d9368523430cc52a849f5959c13177044a1f185d8e630792a",
     "dex_entry": "classes.dex",
     "dex_size": 6218464,
     "dex_sha256": "f0a05e9ab9f7e985031cdff06017a5d4e53c1b592e6650c4791a783bdf0f43a7",
@@ -106,17 +106,17 @@
       "path": "tools/bootdex/java-traversal.json",
       "sha256": "e900ee241199f1aba04f2d362bab1d1bad97fb003595658036da9bb7e588f589",
       "entry": "META-INF/ogplay/java-traversal-recipe.json",
-      "payload_sha256": "aeafb8a8baba71f324d990a817e5f4b574220535a62905c4b81e9da12ca67f75"
+      "payload_sha256": "d3a3abe0a17cb421ccd740c0b7072f7278d9896e2cf95956c807d8530f1cc917"
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "26453e7c860f058bcbbeecedd0ebd97938f8754dcc8912a93392516285c2edb4",
+      "sha256": "e4720995d08146fee1686dd1c73dd9d3798ccd809c230862ea2b62a578c54129",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "0f4a583ff00e65f7e2cfcc9c556089b2ae31b9fbd65bb5994a487bf0572c5d9f",
+      "manifest_sha256": "c6d2f7368936be01ce0b91b3ee66a1c968af04877b077dd7c603eba20dd2c5ee",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },

@@ -868,8 +868,8 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             return found->second;
         };
         const auto flags = [](dx::IntrinsicContext& call, std::int32_t value) {
-            // Only AA and the two API19 default text flags have defined semantics here.
-            if ((value & ~0x501) != 0) UnsupportedPaint(call, "unsupported Paint flags");
+            // AA, filter-bitmap, dither and the two API19 default text flags.
+            if ((value & ~0x507) != 0) UnsupportedPaint(call, "unsupported Paint flags");
             return value;
         };
         const auto init = [context, face, flags](dx::IntrinsicContext& call) {
@@ -917,6 +917,13 @@ Decl Declare_android_graphics_Paint(const Context& context) {
             value.flags = (value.flags & ~1) | (c.arguments[0].AsInt() != 0);
             return dx::VmValue::Void();
         });
+        for (const auto [name, bit] : {std::pair{"setFilterBitmap", 0x02}, std::pair{"setDither", 0x04}}) {
+            builder.VirtualMethod(name, "(Z)V", [state, bit](dx::IntrinsicContext& c) {
+                auto& value = state(c);
+                value.flags = (value.flags & ~bit) | (c.arguments[0].AsInt() != 0 ? bit : 0);
+                return dx::VmValue::Void();
+            });
+        }
         builder.VirtualMethod("getTextSize", "()F",
                               [state](dx::IntrinsicContext& c) { return dx::VmValue::Float(state(c).text_size); });
         builder.VirtualMethod("setTextSize", "(F)V", [state](dx::IntrinsicContext& c) {

@@ -609,8 +609,11 @@ Context 服务派发与 dump-surface 共用 platform_tables.h：未知名称返�
 Paint 完整 ROM shape/clinit 保留，逐签名 adapter 仅开放实例 flags/字号/typeface 与四种
 measureText 重载；flags/字号由每对象宿主服务状态唯一拥有，mTypeface 为 Java 唯一强边。
 测量只向纯固定字体服务传值，字体 fallback 读取 UiTree 注入事实，不写 guest 几何。
-固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、1024单位、1..128px、flags位集0x501以外明确失败并记账；
+固定 ASCII 或会话 API19 字体链覆盖的独立 BMP、1024单位、1..128px、flags位集0x507以外明确失败并记账；
 完整 shaping、Paint 绘制与 TextPaint/Layout/Editor 保持 failure。
+FILTER_BITMAP(0x02)/DITHER(0x04) setter 仅修改各自位，查询执行 ROM Java/getFlags overlay。
+现有 Canvas.drawBitmap(Bitmap,FF,Paint) 将坐标向下取整后仅做整数对齐的 1:1 像素拷贝，
+FILTER_BITMAP/DITHER/AA 位不改变结果；将来新增缩放或采样绘制时必须消费 FILTER_BITMAP 位，不得忽略。
 真实finalize及GC sweep/teardown 删除实例测量状态。
 
 ## JavaTraversal TextView 构造输入

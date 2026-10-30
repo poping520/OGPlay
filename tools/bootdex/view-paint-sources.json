@@ -6,7 +6,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
+      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
       "owner": "Landroid/graphics/Paint;",
       "smali_sha256": "a9a6e699946d088c737d1f8048f7d13cf44814b6c7e2ea67bb910cea1db6f686",
       "methods": [
@@ -23,7 +23,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -36,7 +36,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -140,7 +140,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -328,7 +328,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -372,7 +372,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -391,7 +391,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -401,7 +401,7 @@
           "signature": "isDither()Z",
           "flags": 17,
           "body_sha256": "0dff31366620537513d64193be1227a5a1feb18faedfb115afadebac0d47d65e",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isFakeBoldText()Z",
@@ -413,7 +413,7 @@
           "signature": "isFilterBitmap()Z",
           "flags": 17,
           "body_sha256": "e2dc54d01922da3a4133fe2e570414b2759d1c2becad772d07b395dba4db5ad0",
-          "source": "failure"
+          "source": "rom"
         },
         {
           "signature": "isLinearText()Z",
@@ -446,7 +446,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -459,7 +459,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -472,7 +472,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -485,7 +485,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -750,7 +750,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -791,7 +791,15 @@
           "signature": "setDither(Z)V",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-360 API19 native flag setter over the bounded Paint state; Canvas bitmap drawing currently only copies integer-aligned 1:1 pixels, unaffected by FILTER_BITMAP/DITHER/AA",
+            "inputs": "constructed Paint receiver and boolean enabled; FILTER_BITMAP=0x02, DITHER=0x04",
+            "outputs": "void; set or clear only the corresponding flag, preserving every other bit",
+            "state_owner": "existing per-object integration PaintMeasureState.flags; no new state or native SkPaint",
+            "failure_boundary": "unconstructed receiver throws existing IllegalStateException; unsupported flags still ledger and throw UOE; future scaled/sampled drawing must consume FILTER_BITMAP; no new drawing overload or ColorFilter support"
+          },
+          "platform_seam": true
         },
         {
           "signature": "setFakeBoldText(Z)V",
@@ -803,7 +811,15 @@
           "signature": "setFilterBitmap(Z)V",
           "flags": 257,
           "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "source": "failure"
+          "source": "overlay",
+          "review": {
+            "reason": "DVM-360 API19 native flag setter over the bounded Paint state; Canvas bitmap drawing currently only copies integer-aligned 1:1 pixels, unaffected by FILTER_BITMAP/DITHER/AA",
+            "inputs": "constructed Paint receiver and boolean enabled; FILTER_BITMAP=0x02, DITHER=0x04",
+            "outputs": "void; set or clear only the corresponding flag, preserving every other bit",
+            "state_owner": "existing per-object integration PaintMeasureState.flags; no new state or native SkPaint",
+            "failure_boundary": "unconstructed receiver throws existing IllegalStateException; unsupported flags still ledger and throw UOE; future scaled/sampled drawing must consume FILTER_BITMAP; no new drawing overload or ColorFilter support"
+          },
+          "platform_seam": true
         },
         {
           "signature": "setFlags(I)V",
@@ -812,7 +828,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -935,7 +951,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -955,7 +971,7 @@
           "source": "overlay",
           "review": {
             "reason": "ADR-0161 / DVM-293 bounded instance Paint measurement seam",
-            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x501",
+            "inputs": "receiver and exact API19 arguments; ranges <=1024 UTF-16 units; textSize 1..128px; flags subset 0x507",
             "outputs": "real state or MeasureFixedText width; Typeface setter returns supplied reference",
             "state_owner": "per-object integration PaintMeasureState flags/size; Java mTypeface strong field; fixed UiTree font fallback",
             "failure_boundary": "unconstructed receiver fails; unsupported flags/glyphs/shaping/features fail and ledger; no Skia/native pointer or Layout/TextPaint support"
@@ -1314,7 +1330,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
+      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
       "owner": "Landroid/widget/TextView;",
       "smali_sha256": "06b1a220e8e5b6b9e559c6c98b253c17b0cea684d8a3563a26056381873d74af",
       "methods": [
@@ -4498,7 +4514,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
+      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
       "owner": "Landroid/graphics/RectF;",
       "smali_sha256": "65034d541516dfe44c801f64a3492ce2b8cd09b0189dd97ecb4ebb298e41797c",
       "methods": [
@@ -4782,7 +4798,7 @@
       "rom_input": ".local/aosp/framework.jar",
       "rom_input_sha256": "422e232e121425268f04044f5349072ce42d7b4403267d21569e8ce70d07bc4b",
       "surface": "tools/bootdex/view-scrollbar.surface.json.gz",
-      "surface_sha256": "935a901f389bc300bde43a0edacc91976f95deca742c0968ff1cf700a9f6bbac",
+      "surface_sha256": "79f12ef3142f7940a6281b63576132d4afcbeeb2e3ccb48d512123e419088b24",
       "owner": "Landroid/graphics/RectF$1;",
       "smali_sha256": "f889e950e28f121bd482097f9ba13a76fdae40fed5ffdf91ecfd790e70f663ae",
       "methods": [

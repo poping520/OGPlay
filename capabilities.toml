@@ -2156,7 +2156,7 @@ note = "DVM-299..301：默认配对两Scroll完整ROM形状、真主题构造、
 [dexvm.paint_measure]
 status = "partial"
 test = "tests/dexvm/paint_measure_tests.cpp; tests/dexvm/rom_skin_tests.cpp#DVM-355"
-note = "DVM-293：默认配对的实例 Paint flags/antiAlias、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定 ASCII 字表与 API19 字体链覆盖的独立 BMP；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
+note = "DVM-293：默认配对的实例 Paint flags/antiAlias/filterBitmap/dither（位集0x507）、1..128px字号、Typeface及1024单位有界测量，复用固定字体纯服务；ROM TextView clinit真实执行。仅固定 ASCII 字表与 API19 字体链覆盖的独立 BMP；完整shaping、绘制特性、TextPaint/Layout/Editor明确失败。默认唯一JavaTraversal。"
 
 [dexvm.text_constructor]
 status = "partial"

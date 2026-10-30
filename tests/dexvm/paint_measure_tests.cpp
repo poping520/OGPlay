@@ -134,6 +134,66 @@ TEST_CASE("DVM-293 unsupported Paint features and invalid ranges fail explicitly
     }
 }
 
+TEST_CASE("DVM-360 ROM Paint filter-bitmap and dither flags remain independent on both backends") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        const auto type = f.linker.ResolveDescriptor("Landroid/graphics/Paint;");
+        CHECK(f.linker.Class(type).is_boot_dex);
+        const auto paint = f.New("Landroid/graphics/Paint;");
+        const auto seeded = f.New("Landroid/graphics/Paint;", "(I)V", {VmValue::Int(0x06)});
+        const auto raw = f.model.NewInstance(type, f.linker.Class(type).instance_slots);
+        const auto roots = f.vm.ProtectReferences(std::array{paint, seeded, raw});
+        const auto check = [&](int flags) {
+            CHECK(f.On(paint, "getFlags", "()I").AsInt() == flags);
+            CHECK(f.On(paint, "isAntiAlias", "()Z").AsInt() == ((flags & 1) != 0));
+            CHECK(f.On(paint, "isFilterBitmap", "()Z").AsInt() == ((flags & 2) != 0));
+            CHECK(f.On(paint, "isDither", "()Z").AsInt() == ((flags & 4) != 0));
+        };
+        check(0x500);
+        CHECK(f.On(seeded, "getFlags", "()I").AsInt() == 0x506);
+        for (const auto [setter, bit] : {std::pair{"setFilterBitmap", 2}, std::pair{"setDither", 4}}) {
+            f.On(paint, setter, "(Z)V", {VmValue::Int(1)});
+            check(0x500 | bit);
+            f.On(paint, setter, "(Z)V", {VmValue::Int(0)});
+            check(0x500);
+            const auto outcome = f.OnOutcome(raw, setter, "(Z)V", {VmValue::Int(1)});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+            CHECK(outcome.exception_message == "Paint measurement requires construction");
+        }
+        // Exercise all transitions with AA interleaved; each setter preserves every other bit.
+        int current = 0x500;
+        for (const auto bits : {1, 3, 7, 6, 2, 0, 4, 5, 7, 3, 1, 0}) {
+            for (const auto [setter, bit] :
+                 {std::pair{"setAntiAlias", 1}, std::pair{"setFilterBitmap", 2}, std::pair{"setDither", 4}}) {
+                f.On(paint, setter, "(Z)V", {VmValue::Int((bits & bit) != 0)});
+                current = (current & ~bit) | (bits & bit);
+                check(current);
+            }
+        }
+        f.On(paint, "setFlags", "(I)V", {VmValue::Int(0x507)});
+        check(0x507);
+        CHECK(f.ledger.Unimplemented().empty());
+        for (const auto invalid : {0x08, 0x10, -1}) {
+            const auto outcome = f.OnOutcome(paint, "setFlags", "(I)V", {VmValue::Int(invalid)});
+            REQUIRE(outcome.exception.IsValid());
+            CHECK(f.linker.Class(outcome.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+            check(0x507);
+        }
+        const auto hits = f.ledger.Unimplemented();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].id == "dexvm.paint_measure");
+        CHECK(hits[0].count == 3);
+        for (const auto name : {"isFilterBitmap", "isDither"}) {
+            const auto index = f.linker.FindVtableIndex(type, name, "()Z");
+            REQUIRE(index);
+            const auto& method = f.linker.Method(f.linker.Class(type).vtable[*index]);
+            CHECK(method.kind == MethodKind::interpreted);
+            CHECK(method.code.has_value());
+        }
+    }
+}
+
 TEST_CASE("DVM-356 RectF ROM value semantics and explicit failure boundaries on both backends") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ContainerVm f(backend);

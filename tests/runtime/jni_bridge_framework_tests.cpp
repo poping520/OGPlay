@@ -58,19 +58,15 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
     using namespace ogplay;
     using namespace runtime;
     using namespace runtime::dexvm;
-    for (const auto backend : {InterpreterBackend::switch_dispatch,
-                               InterpreterBackend::threaded}) {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
         ApplicationProcess fixture(backend);
         auto& bridge = *fixture.bridge;
         auto& vm = bridge.Vm();
         auto& linker = bridge.Linker();
         auto& classes = fixture.session->Classes();
         auto& fields = fixture.session->Fields();
-        const auto read = [&](JniReference ref) {
-            return vm.StringUtf8(bridge.FromReference(ref));
-        };
-        for (const auto name : {"android/os/Build", "android/os/Build$VERSION",
-                                "android/os/Build$VERSION_CODES",
+        const auto read = [&](JniReference ref) { return vm.StringUtf8(bridge.FromReference(ref)); };
+        for (const auto name : {"android/os/Build", "android/os/Build$VERSION", "android/os/Build$VERSION_CODES",
                                 "android/os/SystemProperties"}) {
             const auto owner = linker.ResolveDescriptor("L" + std::string(name) + ";");
             CHECK(linker.Class(owner).is_boot_dex);
@@ -101,8 +97,8 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
         CHECK(linker.Method(dex_get).kind != MethodKind::intrinsic);
         const auto key = vm.NewStringUtf8("ro.build.version.release");
         const std::array<JniValue, 1> args{bridge.PublishLocal(key)};
-        const auto result = std::get<JniReference>(fixture.session->Invocations().InvokeStatic(
-            1U, props, get, args, JniArgumentSource::value_array));
+        const auto result = std::get<JniReference>(
+            fixture.session->Invocations().InvokeStatic(1U, props, get, args, JniArgumentSource::value_array));
         CHECK(read(result) == "4.4.4");
         const std::array dex_args{VmValue::Ref(key)};
         const auto direct = vm.Call(dex_get, dex_args);
@@ -111,31 +107,28 @@ TEST_CASE("Build and SystemProperties JNI use the BootDex owner") {
         static_cast<void>(vm.CollectGarbage("build-jni"));
         CHECK(read(result) == "4.4.4");
         CHECK(read(std::get<JniReference>(fields.GetStatic(version, release, 1U))) == "4.4.4");
-        const auto get_default = *classes.GetMethodId(props, "get",
-            "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", true);
-        const std::array<JniValue, 2> missing{
-            bridge.PublishLocal(vm.NewStringUtf8("missing.property")),
-            bridge.PublishLocal(vm.NewStringUtf8("fallback"))};
+        const auto get_default =
+            *classes.GetMethodId(props, "get", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", true);
+        const std::array<JniValue, 2> missing{bridge.PublishLocal(vm.NewStringUtf8("missing.property")),
+                                              bridge.PublishLocal(vm.NewStringUtf8("fallback"))};
         CHECK(read(std::get<JniReference>(fixture.session->Invocations().InvokeStatic(
-            1U, props, get_default, missing, JniArgumentSource::value_array))) == "fallback");
+                  1U, props, get_default, missing, JniArgumentSource::value_array))) == "fallback");
         const auto get_int = *classes.GetMethodId(props, "getInt", "(Ljava/lang/String;I)I", true);
-        const std::array<JniValue, 2> sdk_args{
-            bridge.PublishLocal(vm.NewStringUtf8("ro.build.version.sdk")), JniInt{-1}};
-        CHECK(std::get<JniInt>(fixture.session->Invocations().InvokeStatic(
-            1U, props, get_int, sdk_args, JniArgumentSource::value_array)) == 19);
+        const std::array<JniValue, 2> sdk_args{bridge.PublishLocal(vm.NewStringUtf8("ro.build.version.sdk")),
+                                               JniInt{-1}};
+        CHECK(std::get<JniInt>(fixture.session->Invocations().InvokeStatic(1U, props, get_int, sdk_args,
+                                                                           JniArgumentSource::value_array)) == 19);
         // This validation belongs to the original Java method, before native_get.
-        const std::array<JniValue, 1> too_long{
-            bridge.PublishLocal(vm.NewStringUtf8(std::string(32, 'x')))};
-        const auto failed = std::get<JniReference>(fixture.session->Invocations().InvokeStatic(
-            1U, props, get, too_long, JniArgumentSource::value_array));
+        const std::array<JniValue, 1> too_long{bridge.PublishLocal(vm.NewStringUtf8(std::string(32, 'x')))};
+        const auto failed = std::get<JniReference>(
+            fixture.session->Invocations().InvokeStatic(1U, props, get, too_long, JniArgumentSource::value_array));
         CHECK(failed.IsNull());
         auto& environment = fixture.session->Environment();
         REQUIRE(environment.ExceptionCheck(1U));
         const auto exception_ref = environment.ExceptionOccurred(1U);
         environment.ExceptionClear(1U);
         const auto exception = bridge.FromReference(exception_ref);
-        CHECK(linker.Class(bridge.Model().ObjectClass(exception)).descriptor ==
-              "Ljava/lang/IllegalArgumentException;");
+        CHECK(linker.Class(bridge.Model().ObjectClass(exception)).descriptor == "Ljava/lang/IllegalArgumentException;");
     }
 }
 
@@ -152,13 +145,17 @@ TEST_CASE("DVM-206 JNI keyboard lookup resolves BootDex load and character queri
         REQUIRE(identity.has_value());
         const auto load = classes.GetMethodId(*identity, "load", "(I)Landroid/view/KeyCharacterMap;", true);
         const auto get = classes.GetMethodId(*identity, "get", "(II)I", false);
-        REQUIRE(load.has_value()); REQUIRE(get.has_value());
+        REQUIRE(load.has_value());
+        REQUIRE(get.has_value());
         const std::array<JniValue, 1> args{JniInt{-1}};
-        const auto map = std::get<JniReference>(invocations.InvokeStatic(1U, *identity, *load, args, JniArgumentSource::value_array));
+        const auto map = std::get<JniReference>(
+            invocations.InvokeStatic(1U, *identity, *load, args, JniArgumentSource::value_array));
         REQUIRE_FALSE(map.IsNull());
-        for (const auto& [meta, expected] : std::array<std::pair<JniInt, JniInt>, 3>{{{0, 'a'}, {1, 'A'}, {0x3000, 0}}}) {
+        for (const auto& [meta, expected] :
+             std::array<std::pair<JniInt, JniInt>, 3>{{{0, 'a'}, {1, 'A'}, {0x3000, 0}}}) {
             const std::array<JniValue, 2> key{JniInt{29}, meta};
-            CHECK(std::get<JniInt>(invocations.InvokeVirtual(1U, map, *identity, *get, key, JniArgumentSource::value_array)) == expected);
+            CHECK(std::get<JniInt>(invocations.InvokeVirtual(1U, map, *identity, *get, key,
+                                                             JniArgumentSource::value_array)) == expected);
         }
         CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
         CHECK_FALSE(bridge.Linker().Class(bridge.Model().ObjectClass(bridge.FromReference(map))).is_intrinsic);
@@ -174,8 +171,8 @@ TEST_CASE("ClassLoader findLibrary JNI method ID dispatches to the application l
         auto& vm = bridge.Vm();
         const auto identity = fixture.session->Classes().FindClass("java/lang/ClassLoader");
         REQUIRE(identity.has_value());
-        const auto method = fixture.session->Classes().GetMethodId(
-            *identity, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;", false);
+        const auto method = fixture.session->Classes().GetMethodId(*identity, "findLibrary",
+                                                                   "(Ljava/lang/String;)Ljava/lang/String;", false);
         REQUIRE(method.has_value());
         const auto app = vm.ClassLoaders().ApplicationLoader();
         const auto boot = vm.ClassLoaders().BootstrapLoader();
@@ -200,14 +197,13 @@ TEST_CASE("ClassLoader findLibrary JNI method ID dispatches to the application l
 
         fixture.context->native_libraries = nullptr;
         const auto actual = bridge.Model().ObjectClass(app);
-        const auto index = bridge.Linker().FindVtableIndex(
-            actual, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+        const auto index =
+            bridge.Linker().FindVtableIndex(actual, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
         REQUIRE(index.has_value());
         const std::array args{VmValue::Ref(app), VmValue::Ref(vm.NewStringUtf8("a"))};
         const auto unavailable = vm.Call(bridge.Linker().Class(actual).vtable[*index], args);
         REQUIRE(unavailable.exception.IsValid());
-        CHECK(bridge.Linker().Class(unavailable.exception_class).descriptor ==
-              "Ljava/lang/UnsatisfiedLinkError;");
+        CHECK(bridge.Linker().Class(unavailable.exception_class).descriptor == "Ljava/lang/UnsatisfiedLinkError;");
     }
 }
 
@@ -226,12 +222,13 @@ TEST_CASE("ClassLoader parent-first JNI lookup and app calls share bootstrap typ
         REQUIRE(identity.has_value());
         CHECK(bridge.RegisteredClassIdentity(parent) == identity);
         CHECK(vm.ClassLoaders().LoadClass(kApplicationLoader, "org.apache.commons.codec.Decoder") == parent);
-        REQUIRE(fixture.session->Classes().GetMethodId(*identity, "decode",
-            "(Ljava/lang/Object;)Ljava/lang/Object;", false).has_value());
+        REQUIRE(fixture.session->Classes()
+                    .GetMethodId(*identity, "decode", "(Ljava/lang/Object;)Ljava/lang/Object;", false)
+                    .has_value());
         const auto concrete = fixture.session->Classes().FindClass("shared/JniDecoder");
         REQUIRE(concrete.has_value());
         const auto method = fixture.session->Classes().GetMethodId(*concrete, "decode",
-            "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                                                                   "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         REQUIRE(method.has_value());
         const auto receiver = vm.NewIntrinsicInstance("Lshared/JniDecoder;");
         CHECK(linker.IsAssignable(parent, bridge.Model().ObjectClass(receiver)));
@@ -258,17 +255,14 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         auto& invocations = fixture.session->Invocations();
         fixture.context->device_id = "fixture-device";
         fixture.context->secure_settings["android_id"] = "0123456789abcdef";
-        for (const auto name : {"android/content/Context", "android/content/ContextWrapper",
-                               "android/content/ContentResolver", "android/app/Activity",
-                               "android/telephony/TelephonyManager", "android/provider/Settings$Secure",
-                               "android/os/Bundle", "android/media/AudioTrack",
-                               "android/app/ApplicationErrorReport",
-                               "android/app/ApplicationErrorReport$1",
-                               "android/app/ApplicationErrorReport$AnrInfo",
-                               "android/app/ApplicationErrorReport$BatteryInfo",
-                               "android/app/ApplicationErrorReport$CrashInfo",
-                               "android/app/ApplicationErrorReport$RunningServiceInfo",
-                               "android/graphics/SurfaceTexture", "android/view/Surface"}) {
+        for (const auto name :
+             {"android/content/Context", "android/content/ContextWrapper", "android/content/ContentResolver",
+              "android/app/Activity", "android/telephony/TelephonyManager", "android/provider/Settings$Secure",
+              "android/os/Bundle", "android/media/AudioTrack", "android/app/ApplicationErrorReport",
+              "android/app/ApplicationErrorReport$1", "android/app/ApplicationErrorReport$AnrInfo",
+              "android/app/ApplicationErrorReport$BatteryInfo", "android/app/ApplicationErrorReport$CrashInfo",
+              "android/app/ApplicationErrorReport$RunningServiceInfo", "android/graphics/SurfaceTexture",
+              "android/view/Surface"}) {
             const auto owner = linker.ResolveDescriptor("L" + std::string(name) + ";");
             const auto identity = classes.FindClass(name);
             REQUIRE(identity.has_value());
@@ -286,28 +280,30 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
             const auto identity = *bridge.RegisteredClassIdentity(vm.Model().ObjectClass(receiver));
             const auto method = classes.GetMethodId(identity, name, desc, false);
             REQUIRE(method.has_value());
-            return invocations.InvokeVirtual(1U, bridge.PublishLocal(receiver), identity, *method,
-                                              args, JniArgumentSource::value_array);
+            return invocations.InvokeVirtual(1U, bridge.PublishLocal(receiver), identity, *method, args,
+                                             JniArgumentSource::value_array);
         };
-        const auto construct = [&](const char* desc, const char* signature,
-                                   std::vector<JniValue> args = {}) {
+        const auto construct = [&](const char* desc, const char* signature, std::vector<JniValue> args = {}) {
             const auto object = vm.NewIntrinsicInstance(desc);
             const auto identity = *bridge.RegisteredClassIdentity(vm.Model().ObjectClass(object));
             const auto method = classes.GetMethodId(identity, "<init>", signature, false);
             REQUIRE(method.has_value());
-            static_cast<void>(invocations.InvokeNonvirtual(1U, bridge.PublishLocal(object), identity,
-                identity, *method, args, JniArgumentSource::value_array));
+            static_cast<void>(invocations.InvokeNonvirtual(1U, bridge.PublishLocal(object), identity, identity, *method,
+                                                           args, JniArgumentSource::value_array));
             REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
             return object;
         };
         const auto text = [&](const char* value) { return bridge.PublishLocal(vm.NewStringUtf8(value)); };
-        const auto string_value = [&](JniValue value) { return vm.StringUtf8(bridge.FromReference(std::get<JniReference>(value))); };
+        const auto string_value = [&](JniValue value) {
+            return vm.StringUtf8(bridge.FromReference(std::get<JniReference>(value)));
+        };
         const auto activity = construct("Landroid/app/Activity;", "()V");
         const auto base = vm.NewIntrinsicInstance("Landroid/content/Context;");
-        static_cast<void>(call(activity, "attachBaseContext", "(Landroid/content/Context;)V", {bridge.PublishLocal(base)}));
+        static_cast<void>(
+            call(activity, "attachBaseContext", "(Landroid/content/Context;)V", {bridge.PublishLocal(base)}));
         REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
-        const auto manager_ref = std::get<JniReference>(call(activity, "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;", {text("activity")}));
+        const auto manager_ref = std::get<JniReference>(
+            call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("activity")}));
         const auto manager = bridge.FromReference(manager_ref);
         const auto memory_info = construct("Landroid/app/ActivityManager$MemoryInfo;", "()V");
         const auto memory_ref = bridge.PublishLocal(memory_info);
@@ -316,56 +312,65 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         const auto info_class = *bridge.RegisteredClassIdentity(vm.Model().ObjectClass(memory_info));
         const auto info_identity = fixture.session->Environment().ResolveObjectForHle(1U, memory_ref);
         REQUIRE(info_identity.has_value());
-        for (const auto& [name, expected] : std::array<std::pair<const char*, std::int64_t>, 3>{{
-                {"totalMem", 1073741824}, {"availMem", 805306368}, {"threshold", 100663296}}}) {
+        for (const auto& [name, expected] : std::array<std::pair<const char*, std::int64_t>, 3>{
+                 {{"totalMem", 1073741824}, {"availMem", 805306368}, {"threshold", 100663296}}}) {
             const auto field = classes.GetFieldId(info_class, name, "J", false);
             REQUIRE(field.has_value());
-            CHECK(std::get<JniLong>(fixture.session->Fields().GetInstance(*info_identity, info_class, *field, 1U)) == expected);
+            CHECK(std::get<JniLong>(fixture.session->Fields().GetInstance(*info_identity, info_class, *field, 1U)) ==
+                  expected);
         }
         fixture.context->activity = activity;
-        const auto legacy = classes.RegisterClass({"fixture/CurrentActivity", {},
-            {{"get", "()Landroid/app/Activity;", "activity.current", true}}, {}});
+        const auto legacy = classes.RegisterClass(
+            {"fixture/CurrentActivity", {}, {{"get", "()Landroid/app/Activity;", "activity.current", true}}, {}});
         const auto current = *classes.GetMethodId(legacy, "get", "()Landroid/app/Activity;", true);
-        CHECK(bridge.FromReference(std::get<JniReference>(invocations.InvokeStatic(
-            1U, legacy, current, {}, JniArgumentSource::value_array))) == activity);
-        const auto phone = std::get<JniReference>(call(activity, "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;", {text("phone")}));
+        CHECK(bridge.FromReference(std::get<JniReference>(
+                  invocations.InvokeStatic(1U, legacy, current, {}, JniArgumentSource::value_array))) == activity);
+        const auto phone = std::get<JniReference>(
+            call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("phone")}));
         CHECK(bridge.FromReference(phone).Value() == fixture.context->singletons.at("phone").Value());
-        CHECK(string_value(call(bridge.FromReference(phone), "getDeviceId", "()Ljava/lang/String;")) == "fixture-device");
-        CHECK_FALSE(bridge.FromReference(std::get<JniReference>(call(
-            bridge.FromReference(phone), "getSubscriberId", "()Ljava/lang/String;"))).IsValid());
+        CHECK(string_value(call(bridge.FromReference(phone), "getDeviceId", "()Ljava/lang/String;")) ==
+              "fixture-device");
+        CHECK_FALSE(bridge
+                        .FromReference(std::get<JniReference>(
+                            call(bridge.FromReference(phone), "getSubscriberId", "()Ljava/lang/String;")))
+                        .IsValid());
         CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
-        const auto sensor = std::get<JniReference>(call(activity, "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;", {text("sensor")}));
+        const auto sensor = std::get<JniReference>(
+            call(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", {text("sensor")}));
         CHECK(std::get<JniInt>(call(bridge.FromReference(sensor), "getSensors", "()I")) == 0);
-        CHECK_FALSE(bridge.FromReference(std::get<JniReference>(call(bridge.FromReference(sensor),
-            "getDefaultSensor", "(I)Landroid/hardware/Sensor;", {JniInt{1}}))).IsValid());
+        CHECK_FALSE(bridge
+                        .FromReference(std::get<JniReference>(call(bridge.FromReference(sensor), "getDefaultSensor",
+                                                                   "(I)Landroid/hardware/Sensor;", {JniInt{1}})))
+                        .IsValid());
         CHECK(std::get<JniBoolean>(call(bridge.FromReference(sensor), "registerListener",
-            "(Landroid/hardware/SensorListener;I)Z", {JniReference{}, JniInt{1}})) == JniBoolean{false});
+                                        "(Landroid/hardware/SensorListener;I)Z", {JniReference{}, JniInt{1}})) ==
+              JniBoolean{false});
         CHECK_FALSE(fixture.session->Environment().ExceptionCheck(1U));
-        const auto resolver = std::get<JniReference>(call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"));
+        const auto resolver =
+            std::get<JniReference>(call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"));
         CHECK(bridge.FromReference(resolver).Value() == fixture.context->singletons.at("content_resolver").Value());
         const auto secure = *classes.FindClass("android/provider/Settings$Secure");
-        const auto get = *classes.GetMethodId(secure, "getString",
-            "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;", true);
+        const auto get = *classes.GetMethodId(
+            secure, "getString", "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;", true);
         const std::array<JniValue, 2> args{resolver, text("android_id")};
-        CHECK(string_value(invocations.InvokeStatic(1U, secure, get, args, JniArgumentSource::value_array)) == "0123456789abcdef");
+        CHECK(string_value(invocations.InvokeStatic(1U, secure, get, args, JniArgumentSource::value_array)) ==
+              "0123456789abcdef");
         const auto report = *classes.FindClass("android/app/ApplicationErrorReport");
         CHECK(linker.Class(linker.ResolveDescriptor("Landroid/app/ApplicationErrorReport;")).is_boot_dex);
-        const auto receiver = classes.GetMethodId(report, "getErrorReportReceiver",
-            "(Landroid/content/Context;Ljava/lang/String;I)Landroid/content/ComponentName;", true);
+        const auto receiver =
+            classes.GetMethodId(report, "getErrorReportReceiver",
+                                "(Landroid/content/Context;Ljava/lang/String;I)Landroid/content/ComponentName;", true);
         REQUIRE(receiver.has_value());
-        const std::array<JniValue, 3> report_args{
-            bridge.PublishLocal(activity), text("fixture.app"), JniInt{1}};
+        const std::array<JniValue, 3> report_args{bridge.PublishLocal(activity), text("fixture.app"), JniInt{1}};
         // Both an absent setting and explicit zero execute the original API19
         // early return, before any installer or external receiver query.
         for (const bool explicit_zero : {false, true}) {
             if (explicit_zero) {
-                fixture.context->preferences["__android.settings.global"]
-                    ["send_action_app_error"] = std::string("0");
+                fixture.context->preferences["__android.settings.global"]["send_action_app_error"] = std::string("0");
             }
-            CHECK(std::get<JniReference>(invocations.InvokeStatic(
-                1U, report, *receiver, report_args, JniArgumentSource::value_array)).IsNull());
+            CHECK(std::get<JniReference>(
+                      invocations.InvokeStatic(1U, report, *receiver, report_args, JniArgumentSource::value_array))
+                      .IsNull());
             REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
         }
         const auto bundle = construct("Landroid/os/Bundle;", "()V");
@@ -373,11 +378,12 @@ TEST_CASE("JNI framework services use VM methods objects and state") {
         static_cast<void>(call(bundle, "putInt", "(Ljava/lang/String;I)V", {text("answer"), JniInt{42}}));
         static_cast<void>(vm.CollectGarbage("jni-framework-state"));
         CHECK(std::get<JniInt>(call(bundle, "getInt", "(Ljava/lang/String;)I", {text("answer")})) == 42);
-        CHECK(bridge.FromReference(std::get<JniReference>(call(activity, "getContentResolver",
-            "()Landroid/content/ContentResolver;"))) == bridge.FromReference(resolver));
+        CHECK(bridge.FromReference(std::get<JniReference>(
+                  call(activity, "getContentResolver", "()Landroid/content/ContentResolver;"))) ==
+              bridge.FromReference(resolver));
         fixture.context->activity = VmObjectRef{};
-        CHECK(std::get<JniReference>(invocations.InvokeStatic(1U, legacy, current, {},
-            JniArgumentSource::value_array)).IsNull());
+        CHECK(std::get<JniReference>(invocations.InvokeStatic(1U, legacy, current, {}, JniArgumentSource::value_array))
+                  .IsNull());
     }
 }
 
@@ -399,12 +405,12 @@ TEST_CASE("JNI AudioTrack uses the VM PCM player and lifecycle") {
         const auto constructor = *classes.GetMethodId(owner, "<init>", "(IIIIII)V", false);
         const auto get_minimum = *classes.GetMethodId(owner, "getMinBufferSize", "(III)I", true);
         const std::array<JniValue, 3> format{JniInt{8000}, JniInt{12}, JniInt{2}};
-        const auto minimum = std::get<JniInt>(invocations.InvokeStatic(1U, owner, get_minimum,
-            format, JniArgumentSource::value_array));
+        const auto minimum =
+            std::get<JniInt>(invocations.InvokeStatic(1U, owner, get_minimum, format, JniArgumentSource::value_array));
         REQUIRE(minimum > 0);
         const std::array<JniValue, 6> config{JniInt{3}, JniInt{8000}, JniInt{12}, JniInt{2}, minimum, JniInt{1}};
-        static_cast<void>(invocations.InvokeNonvirtual(1U, receiver, owner, owner, constructor,
-            config, JniArgumentSource::value_array));
+        static_cast<void>(invocations.InvokeNonvirtual(1U, receiver, owner, owner, constructor, config,
+                                                       JniArgumentSource::value_array));
         REQUIRE_FALSE(fixture.session->Environment().ExceptionCheck(1U));
         const auto track = bridge.FromReference(receiver);
         REQUIRE(fixture.context->audio_tracks.contains(track.Value()));
@@ -451,8 +457,8 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         const auto for_name = *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;)Ljava/lang/Class;", true);
         const auto lookup = [&](const char* name) {
             const std::array<JniValue, 1> args{f.bridge->PublishLocal(vm.NewStringUtf8(name))};
-            return std::get<JniReference>(f.session->Invocations().InvokeStatic(
-                1, cls, for_name, args, JniArgumentSource::value_array));
+            return std::get<JniReference>(
+                f.session->Invocations().InvokeStatic(1, cls, for_name, args, JniArgumentSource::value_array));
         };
         CHECK_FALSE(lookup("fixture.SpeechCallbacks").IsNull());
         CHECK_FALSE(env.ExceptionCheck(1));
@@ -467,12 +473,11 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         CHECK(linker.Class(speech).is_boot_dex);
         CHECK_FALSE(linker.Class(speech).is_intrinsic);
         const auto class_object = vm.Model().ClassObject(callback);
-        const auto methods_slot = linker.FindVtableIndex(
-            vm.Model().ObjectClass(class_object), "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
+        const auto methods_slot = linker.FindVtableIndex(vm.Model().ObjectClass(class_object), "getDeclaredMethods",
+                                                         "()[Ljava/lang/reflect/Method;");
         REQUIRE(methods_slot.has_value());
-        const auto methods_result = vm.Call(
-            linker.Class(vm.Model().ObjectClass(class_object)).vtable[*methods_slot],
-            std::array{VmValue::Ref(class_object)});
+        const auto methods_result = vm.Call(linker.Class(vm.Model().ObjectClass(class_object)).vtable[*methods_slot],
+                                            std::array{VmValue::Ref(class_object)});
         REQUIRE_FALSE(methods_result.exception.IsValid());
         const auto methods_root = vm.ProtectReferences(std::array{methods_result.value.ref});
         CHECK(vm.Model().ArrayLength(methods_result.value.ref) == 4);
@@ -522,13 +527,85 @@ TEST_CASE("BootDex speech callbacks link and JNI diagnostics retain nested cause
         const auto probe = *classes.FindClass("fixture/ExceptionProbe");
         const auto raise = *classes.GetMethodId(probe, "raise", "(Ljava/lang/Throwable;)V", true);
         const std::array<JniValue, 1> args{f.bridge->PublishLocal(first)};
-        static_cast<void>(f.session->Invocations().InvokeStatic(
-            1, probe, raise, args, JniArgumentSource::value_array));
+        static_cast<void>(f.session->Invocations().InvokeStatic(1, probe, raise, args, JniArgumentSource::value_array));
         records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
         CHECK(records.back().message.find("cause cycle") != std::string::npos);
         CHECK(records.back().message.size() < 4096);
         CHECK(env.PendingExceptionMetadata(1)->throwable == vm.Model().ToIdentity(first));
         env.ExceptionClear(1);
+    }
+}
+
+TEST_CASE("DVM-358 JNI diagnostics expand reflection targets and initializer exceptions") {
+    using namespace ogplay;
+    using namespace runtime;
+    using namespace runtime::dexvm;
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ApplicationProcess f(backend);
+        auto& vm = f.bridge->Vm();
+        auto& linker = vm.Linker();
+        auto& classes = f.session->Classes();
+        auto& env = f.session->Environment();
+        const auto probe = *classes.FindClass("fixture/ExceptionProbe");
+        const auto raise = *classes.GetMethodId(probe, "raise", "(Ljava/lang/Throwable;)V", true);
+        for (const bool initializer : {false, true}) {
+            const auto type =
+                linker.ResolveDescriptor(initializer ? "Lfixture/AllocFailInit;" : "Lfixture/AllocThrowConstructor;");
+            const auto method = linker.FindDirectMethod(type, initializer ? "<clinit>" : "<init>", "()V");
+            REQUIRE(method);
+            auto& throwing = linker.MutableMethod(*method);
+            throwing.code.reset();
+            throwing.fast_code.reset();
+            throwing.kind = MethodKind::intrinsic;
+            throwing.implementation = [](IntrinsicContext&) -> VmValue {
+                throw VmJavaThrow{"Ljava/lang/IllegalArgumentException;", "diagnostic target"};
+            };
+            if (initializer) {
+                linker.MutableClass(type).clinit_implementation = throwing.implementation;
+                const auto cls = *classes.FindClass("java/lang/Class");
+                const auto for_name =
+                    *classes.GetMethodId(cls, "forName", "(Ljava/lang/String;)Ljava/lang/Class;", true);
+                const std::array<JniValue, 1> args{f.bridge->PublishLocal(vm.NewStringUtf8("fixture.AllocFailInit"))};
+                static_cast<void>(
+                    f.session->Invocations().InvokeStatic(1, cls, for_name, args, JniArgumentSource::value_array));
+            } else {
+                const auto meta = vm.Reflection().FindConstructor(type, {}, true);
+                REQUIRE(meta);
+                const auto ctor = vm.Reflection().MaterializeConstructor(*meta);
+                const auto root = vm.ProtectReferences(std::array{ctor});
+                const auto cls = *classes.FindClass("java/lang/reflect/Constructor");
+                const auto create =
+                    *classes.GetMethodId(cls, "newInstance", "([Ljava/lang/Object;)Ljava/lang/Object;", false);
+                const std::array<JniValue, 1> args{JniReference{}};
+                static_cast<void>(f.session->Invocations().InvokeVirtual(1, f.bridge->PublishLocal(ctor), cls, create,
+                                                                         args, JniArgumentSource::value_array));
+            }
+            REQUIRE(env.ExceptionCheck(1));
+            const auto wrapper = f.bridge->FromReference(env.ExceptionOccurred(1));
+            const auto root = vm.ProtectReferences(std::array{wrapper});
+            const auto wrapper_class = initializer ? "Ljava/lang/ExceptionInInitializerError;"
+                                                   : "Ljava/lang/reflect/InvocationTargetException;";
+            CHECK(linker.Class(vm.Model().ObjectClass(wrapper)).descriptor == wrapper_class);
+            auto records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
+            REQUIRE_FALSE(records.empty());
+            CHECK(records.back().message.find(std::string(wrapper_class) +
+                                              " | caused by Ljava/lang/IllegalArgumentException;: diagnostic target") !=
+                  std::string::npos);
+            env.ExceptionClear(1);
+            const auto outer = vm.MakeThrowable("Ljava/lang/RuntimeException;", "outer");
+            const auto outer_root = vm.ProtectReferences(std::array{outer});
+            vm.InitThrowableCause(outer, wrapper);
+            const std::array<JniValue, 1> args{f.bridge->PublishLocal(outer)};
+            static_cast<void>(
+                f.session->Invocations().InvokeStatic(1, probe, raise, args, JniArgumentSource::value_array));
+            records = f.logger.Snapshot(core::LogLevel::warn, "runtime.dexvm");
+            CHECK(records.back().message.find(std::string("caused by ") + wrapper_class +
+                                              " | caused by Ljava/lang/IllegalArgumentException;: diagnostic target") !=
+                  std::string::npos);
+            CHECK(vm.DescribeThrowableCauses(outer).find(
+                      "Caused by: Ljava/lang/IllegalArgumentException;: diagnostic target") != std::string::npos);
+            env.ExceptionClear(1);
+        }
     }
 }
 
@@ -546,8 +623,7 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
         CHECK((linker.Class(contract).access_flags & class_flags) == class_flags);
         REQUIRE(linker.Class(contract).own_virtual_methods.size() == 2);
         for (auto method : linker.Class(contract).own_virtual_methods) {
-            CHECK((linker.Method(method).access_flags & (kAccPublic | kAccAbstract)) ==
-                  (kAccPublic | kAccAbstract));
+            CHECK((linker.Method(method).access_flags & (kAccPublic | kAccAbstract)) == (kAccPublic | kAccAbstract));
         }
         auto direct = [&](const char* owner, const char* name, const char* signature, std::vector<VmValue> args) {
             const auto method = linker.FindDirectMethod(linker.ResolveDescriptor(owner), name, signature);
@@ -561,7 +637,7 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
         const auto probe = vm.NewIntrinsicInstance("Lfixture/ServiceProbe;");
         const auto roots = vm.ProtectReferences(std::array{base, intent, probe});
         direct("Landroid/content/Intent;", "<init>", "(Ljava/lang/String;)V",
-            {VmValue::Ref(intent), VmValue::Ref(vm.NewStringUtf8("example.ABSENT"))});
+               {VmValue::Ref(intent), VmValue::Ref(vm.NewStringUtf8("example.ABSENT"))});
         direct("Lfixture/ServiceProbe;", "<init>", "()V", {VmValue::Ref(probe)});
         const auto probe_class = vm.Model().ObjectClass(probe);
         CHECK(linker.IsAssignable(contract, probe_class));
@@ -569,17 +645,16 @@ TEST_CASE("DVM-112 BootDex ServiceConnection links and the shared bridge takes t
         const auto probe_identity = f.bridge->RegisteredClassIdentity(probe_class);
         REQUIRE(contract_identity.has_value());
         REQUIRE(probe_identity.has_value());
-        CHECK(f.session->Classes().GetInterfaces(*probe_identity) ==
-              std::vector{*contract_identity});
-        CHECK(f.session->Classes().IsAssignableFrom(*contract_identity,
-                                                    *probe_identity));
-        CHECK(direct("Lfixture/ServiceProbe;", "discover",
-            "(Landroid/content/Context;Landroid/content/Intent;)I",
-            {VmValue::Ref(base), VmValue::Ref(intent)}).AsInt() == 1);
+        CHECK(f.session->Classes().GetInterfaces(*probe_identity) == std::vector{*contract_identity});
+        CHECK(f.session->Classes().IsAssignableFrom(*contract_identity, *probe_identity));
+        CHECK(direct("Lfixture/ServiceProbe;", "discover", "(Landroid/content/Context;Landroid/content/Intent;)I",
+                     {VmValue::Ref(base), VmValue::Ref(intent)})
+                  .AsInt() == 1);
         CHECK(f.ledger.Unimplemented().empty());
         static_cast<void>(vm.CollectGarbage());
         CHECK(direct("Lfixture/ServiceProbe;", "exerciseCallbacks", "(Landroid/content/ServiceConnection;)I",
-            {VmValue::Ref(probe)}).AsInt() == 2);
+                     {VmValue::Ref(probe)})
+                  .AsInt() == 2);
     }
 }
 
@@ -609,14 +684,20 @@ TEST_CASE("DVM-144 application Proxy executes BootDex Binder transact and Java r
         direct("Lfixture/EchoBinder;", "<init>", "()V", {VmValue::Ref(local)});
         direct("Lfixture/ForcedProxyBinder;", "<init>", "()V", {VmValue::Ref(remote_shape)});
         const auto descriptor = vm.NewStringUtf8("fixture.echo");
-        CHECK(on(local, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", {VmValue::Ref(descriptor)}).value.ref == local);
-        CHECK_FALSE(on(remote_shape, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", {VmValue::Ref(descriptor)}).value.ref.IsValid());
+        CHECK(
+            on(local, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;", {VmValue::Ref(descriptor)})
+                .value.ref == local);
+        CHECK_FALSE(on(remote_shape, "queryLocalInterface", "(Ljava/lang/String;)Landroid/os/IInterface;",
+                       {VmValue::Ref(descriptor)})
+                        .value.ref.IsValid());
         for (const auto flags : {0, 1})
             CHECK(direct("Lfixture/EchoProxy;", "echo", "(Landroid/os/IBinder;II)I",
-                         {VmValue::Ref(remote_shape), VmValue::Int(41), VmValue::Int(flags)}).AsInt() == 42);
+                         {VmValue::Ref(remote_shape), VmValue::Int(41), VmValue::Int(flags)})
+                      .AsInt() == 42);
         CHECK_FALSE(linker.Class(linker.ResolveDescriptor("Lfixture/EchoBinder;")).is_intrinsic);
         const auto binder = linker.ResolveDescriptor("Landroid/os/Binder;");
-        const auto transact_index = linker.FindVtableIndex(binder, "transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z");
+        const auto transact_index =
+            linker.FindVtableIndex(binder, "transact", "(ILandroid/os/Parcel;Landroid/os/Parcel;I)Z");
         REQUIRE(transact_index);
         CHECK(linker.Method(linker.Class(binder).vtable[*transact_index]).code.has_value());
         const auto data = direct("Landroid/os/Parcel;", "obtain", "()Landroid/os/Parcel;", {}).ref;

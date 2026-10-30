@@ -348,6 +348,22 @@ void ThemeResources::ValidateFile(const ThemeValue& value, const loader::ArscTab
     validate_file_(*entry);
 }
 
+bool ThemeResources::CanLoadDrawable(const ThemeValue& value, const loader::ArscTable& table) const {
+    if (!value.unsupported.empty()) return false;
+    if (value.type >= 28 && value.type <= 31) return true;
+    const auto id = value.resource_id;
+    if ((id >> 24U) == 1)
+        return value.type == 1 && value.data == id && Drawable(id, value.density ? value.density : 160);
+    if (value.type != 3 || value.cookie != 1 || !id) return false;
+    const auto* entry = Entry(id, table);
+    if (!entry || entry->is_complex || entry->value_type != value.type || entry->value_data != value.data ||
+        entry->density != value.density || entry->type_name != "drawable" || !entry->string_value ||
+        !entry->string_value->starts_with("res/"))
+        return false;
+    ValidateFile(value, table);
+    return true;
+}
+
 ThemeToken ThemeResources::New() {
     if (!loaded_ || stopped_) throw std::logic_error("theme provider is unavailable");
     static std::atomic<std::uint64_t> next{1};
@@ -611,9 +627,7 @@ std::vector<ThemeValue> ThemeResources::Styled(ThemeToken token, std::uint32_t d
             value.type = 0;
             value.cookie = -1;
         }
-        if (drawable_attributes_.contains(attr) && value.type != 0 &&
-            !projected_reference_ids_.contains(value.resource_id) &&
-            !(value.type == 1 && projected_reference_ids_.contains(value.data)))
+        if (drawable_attributes_.contains(attr) && value.type != 0 && !CanLoadDrawable(value, table))
             throw std::runtime_error("requested drawable attribute is unsupported");
         cookie = value.cookie;
         result.push_back(value);

@@ -172,10 +172,12 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   结构外 XML、未知属性/引用及未登记配置明确失败，不按颜色名称白名单。
   ROM color XML 路径使用 cookie2；无 APK ARSC 时 cookie1 StringBlock 槽保持缺席，
   对缺席池的查询仍失败，不合成空成功池。
-  缺席或 @null 返回 null；仅封存清单内 View drawable 引用可惰性进入六槽，
+  缺席或 @null 返回 null；Styled 与 loadDrawable 共用 ThemeResources.CanLoadDrawable：
+  封存 ROM skin、type28–31 纯色及 cookie1/非 ROM 有效资源 ID 的 APK 位图可延迟加载；
+  APK entry 的 type/data/density、配置选择与文件验证共用既有 owner 回调，未封存 ROM 在 Styled 提前失败。
   background 额外支持封存 edit_text 闭包的状态、测量及现有叶 bitmap 平面冻结；
   ninepatch divisions/像素按目标密度缩放，选中叶及像素随共同快照冻结，guest draw 仍失败；
-  foreground/divider 及未封存 scrollbar 的其他非空值仍明确失败。
+  其他非空值（含应用 XML drawable、未封存 scrollbar）仍明确失败并记账。
   styleable 与 defStyleAttr/?attr/default-style 消费闭包从固定输入生成三态，不能删掉主题请求。
   三个 Drawable 类保留完整 ROM 形状；Drawable 原 clinit/基础构造执行 ROM，BitmapDrawable
   受审构造写 mBitmap/mTargetDensity/mBitmapWidth/Height，intrinsic/getBitmap 读取原字段。

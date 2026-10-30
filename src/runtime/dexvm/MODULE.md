@@ -350,6 +350,8 @@ Chars/Critical 按 String 身份跨线程计数并忽略 release 指针/kind；�
 VM 持有 GC 根，get/setProperty 与 getProperties 共用对象。CoreIntrinsicServices 提供
 显式来源初始化回调；guest uname、passwd、ICU 与随附元数据为默认属性来源。
 
-DVM-316：DescribeThrowableCauses 只读固定 ROM Throwable.cause、反射 target 与初始化
-exception 字段及ROM保存的首栈，不执行 guest、不改异常身份或 pending。最多16层，循环与截断
-明确标注；无 cause 返回空串。此诊断接缝不改变 ThrowableCause 的基类字段访问语义。
+DVM-316/358：DiagnosticThrowableCause 只读固定 ROM InvocationTargetException.target、
+ExceptionInInitializerError.exception、ClassNotFoundException.ex，否则读取 Throwable.cause；
+DescribeThrowableCauses 与 JNI bridge 共用，不执行 guest、不改异常身份或 pending。
+DescribeThrowableCauses 附带 ROM 保存的首栈，最多16层，循环与截断明确标注；无 cause 返回空串。
+此诊断接缝不改变 ThrowableCause 的基类字段访问语义。

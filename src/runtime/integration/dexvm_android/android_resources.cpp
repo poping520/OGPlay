@@ -1328,16 +1328,18 @@ Decl Declare_android_content_res_Resources(const Context& context) {
                     const auto data = XmlField(call.vm, value, "data");
                     const bool color = type >= 28 && type <= 31;
                     const auto id = XmlField(call.vm, value, "resourceId");
-                    if ((id >> 24) == 1 && type == 1 && data == id)
-                        return dx::VmValue::Ref(MakeRomSkin(call, context, id));
+                    const ThemeValue drawable_value{
+                        type, data, static_cast<std::int32_t>(XmlField(call.vm, value, "assetCookie")),
+                        id,   0,    XmlField(call.vm, value, "density"),
+                        {}};
+                    if (!context->theme_resources.CanLoadDrawable(drawable_value, context->arsc))
+                        throw std::runtime_error((id >> 24U) == 1
+                                                     ? "unreviewed ROM drawable load"
+                                                     : "leaf Drawable requires APK bitmap or scalar color");
+                    if ((id >> 24U) == 1 && type == 1) return dx::VmValue::Ref(MakeRomSkin(call, context, id));
                     std::shared_ptr<const ui::UiBitmap> pixels;
                     if (!color) {
-                        if (type != 3 || !id || XmlField(call.vm, value, "assetCookie") != 1)
-                            throw std::runtime_error("leaf Drawable requires APK bitmap or scalar color");
                         const auto* entry = SelectUiResourceEntry(*context, id);
-                        if (entry->value_type != type || entry->value_data != data ||
-                            entry->density != XmlField(call.vm, value, "density"))
-                            throw std::runtime_error("leaf Drawable resource facts disagree");
                         pixels = DecodeLeafBitmap(*context, *entry);
                     }
                     const auto* descriptor = color ? "Landroid/graphics/drawable/ColorDrawable;"

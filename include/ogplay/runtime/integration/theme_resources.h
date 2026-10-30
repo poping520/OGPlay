@@ -70,6 +70,9 @@ public:
         std::vector<Item> items;
     };
 
+    // Shared admission for Styled and loadDrawable; validates APK files through owner hooks.
+    [[nodiscard]] bool CanLoadDrawable(const ThemeValue& value, const loader::ArscTable& table) const;
+
     [[nodiscard]] const RomDrawable* Drawable(std::uint32_t id, std::uint32_t density) const;
 
     [[nodiscard]] const std::vector<std::byte>& Strings() const { return string_pool_; }

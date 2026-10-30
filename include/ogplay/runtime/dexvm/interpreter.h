@@ -40,30 +40,35 @@ struct VmValue final {
     VmObjectRef ref{};
 
     [[nodiscard]] static VmValue Void() { return {}; }
+
     [[nodiscard]] static VmValue Int(const std::int32_t value) {
         VmValue out;
         out.kind = Kind::cat1;
         out.cat1 = static_cast<std::uint32_t>(value);
         return out;
     }
+
     [[nodiscard]] static VmValue Float(const float value) {
         VmValue out;
         out.kind = Kind::cat1;
         out.cat1 = std::bit_cast<std::uint32_t>(value);
         return out;
     }
+
     [[nodiscard]] static VmValue Long(const std::int64_t value) {
         VmValue out;
         out.kind = Kind::wide;
         out.wide = static_cast<std::uint64_t>(value);
         return out;
     }
+
     [[nodiscard]] static VmValue Double(const double value) {
         VmValue out;
         out.kind = Kind::wide;
         out.wide = std::bit_cast<std::uint64_t>(value);
         return out;
     }
+
     [[nodiscard]] static VmValue Ref(const VmObjectRef reference) {
         VmValue out;
         out.kind = Kind::ref;
@@ -71,14 +76,13 @@ struct VmValue final {
         return out;
     }
 
-    [[nodiscard]] std::int32_t AsInt() const {
-        return static_cast<std::int32_t>(cat1);
-    }
-  [[nodiscard]] float AsFloat() const { return std::bit_cast<float>(cat1); }
-    [[nodiscard]] std::int64_t AsLong() const {
-        return static_cast<std::int64_t>(wide);
-    }
-  [[nodiscard]] double AsDouble() const { return std::bit_cast<double>(wide); }
+    [[nodiscard]] std::int32_t AsInt() const { return static_cast<std::int32_t>(cat1); }
+
+    [[nodiscard]] float AsFloat() const { return std::bit_cast<float>(cat1); }
+
+    [[nodiscard]] std::int64_t AsLong() const { return static_cast<std::int64_t>(wide); }
+
+    [[nodiscard]] double AsDouble() const { return std::bit_cast<double>(wide); }
 };
 
 // Thrown by intrinsic handlers and internal helpers to raise a Java
@@ -97,7 +101,7 @@ struct VmStackEntry final {
 
 struct VmCallOutcome final {
     VmValue value;
-    VmObjectRef exception;                 // invalid = normal completion
+    VmObjectRef exception;  // invalid = normal completion
     DexClassId exception_class;
     std::string exception_message;
     std::vector<VmStackEntry> exception_stack;
@@ -116,9 +120,8 @@ class VmThreadRuntime;
 class InterpreterExecutionContext final {
 public:
     [[nodiscard]] std::uint64_t Token() const noexcept { return token_; }
-    [[nodiscard]] bool BelongsTo(const Interpreter* interpreter) const noexcept {
-        return owner_ == interpreter;
-    }
+
+    [[nodiscard]] bool BelongsTo(const Interpreter* interpreter) const noexcept { return owner_ == interpreter; }
 
 private:
     const Interpreter* owner_{};
@@ -143,8 +146,7 @@ struct InterpreterExecutionSnapshot final {
 // every level and restore the same depth after they are resumed.
 class VmExecutionLock final {
 public:
-    using BlockingObserver =
-        void (*)(void* context, std::thread::id thread, bool blocked) noexcept;
+    using BlockingObserver = void (*)(void* context, std::thread::id thread, bool blocked) noexcept;
 
     VmExecutionLock();
     ~VmExecutionLock();
@@ -174,10 +176,10 @@ private:
 
 class VmExecutionLockScope final {
 public:
-    explicit VmExecutionLockScope(VmExecutionLock& lock) : lock_(&lock) {
-        lock_->Acquire();
-    }
+    explicit VmExecutionLockScope(VmExecutionLock& lock) : lock_(&lock) { lock_->Acquire(); }
+
     ~VmExecutionLockScope() { lock_->Release(); }
+
     VmExecutionLockScope(const VmExecutionLockScope&) = delete;
     VmExecutionLockScope& operator=(const VmExecutionLockScope&) = delete;
 
@@ -202,23 +204,22 @@ public:
 class NativeMethodBridge {
 public:
     virtual ~NativeMethodBridge() = default;
-    virtual void AttachThread(std::uint64_t guest_thread_id,
-                              std::uint64_t execution_token) {
+
+    virtual void AttachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) {
         static_cast<void>(guest_thread_id);
         static_cast<void>(execution_token);
     }
-    virtual void DetachThread(std::uint64_t guest_thread_id,
-                              std::uint64_t execution_token) noexcept {
+
+    virtual void DetachThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) noexcept {
         static_cast<void>(guest_thread_id);
         static_cast<void>(execution_token);
     }
+
     // Only resource cleanup may isolate native-side pending exceptions. The
     // scope restores the original state and roots it throughout cleanup.
-    [[nodiscard]] virtual std::unique_ptr<NativeCleanupScope> EnterResourceCleanup() {
-        return {};
-    }
-    [[nodiscard]] virtual VmValue Invoke(const LinkedMethod& method,
-                                         VmObjectRef receiver,
+    [[nodiscard]] virtual std::unique_ptr<NativeCleanupScope> EnterResourceCleanup() { return {}; }
+
+    [[nodiscard]] virtual VmValue Invoke(const LinkedMethod& method, VmObjectRef receiver,
                                          std::span<const VmValue> arguments) = 0;
 };
 
@@ -260,7 +261,8 @@ struct InterpreterStats final {
 
 struct InterpreterSnapshot final {
     InterpreterStats stats;
-    std::uint64_t heap_used{}, heap_target{}, heap_growth_limit{}, heap_maximum{}, objects{}, classes{}, linked_classes{};
+    std::uint64_t heap_used{}, heap_target{}, heap_growth_limit{}, heap_maximum{}, objects{}, classes{},
+        linked_classes{};
 };
 
 using VmRootVisitor = std::function<void(VmObjectRef)>;
@@ -273,8 +275,7 @@ struct IntrinsicStateTableHooks final {
 };
 
 struct InterpreterGcIntegration final {
-    std::function<void(const std::function<void(JniObjectIdentity)>&)>
-        visit_jni_roots;
+    std::function<void(const std::function<void(JniObjectIdentity)>&)> visit_jni_roots;
     std::function<void(JniObjectIdentity)> clear_weak_references;
     std::function<void(const VmRootVisitor&)> visit_session_roots;
 };
@@ -308,8 +309,7 @@ public:
         RootScope& operator=(RootScope&&) = delete;
 
     private:
-        RootScope(Interpreter& interpreter, std::uint64_t context_token,
-                  std::size_t base) noexcept;
+        RootScope(Interpreter& interpreter, std::uint64_t context_token, std::size_t base) noexcept;
 
         Interpreter* interpreter_{};
         std::uint64_t context_token_{};
@@ -317,8 +317,7 @@ public:
         friend class Interpreter;
     };
 
-    Interpreter(DexClassLinker& linker, JavaObjectModel& model,
-                NativeMethodBridge* bridge,
+    Interpreter(DexClassLinker& linker, JavaObjectModel& model, NativeMethodBridge* bridge,
                 core::CapabilityLedger& ledger, InterpreterConfig config = {});
     ~Interpreter();
     Interpreter(const Interpreter&) = delete;
@@ -326,11 +325,9 @@ public:
 
     // Executes a method to completion on the current host thread. Arguments
     // must match the descriptor ('this' first for instance methods).
-    [[nodiscard]] VmCallOutcome Call(VmMethodId method,
+    [[nodiscard]] VmCallOutcome Call(VmMethodId method, std::span<const VmValue> arguments);
+    [[nodiscard]] VmCallOutcome Call(const InterpreterExecutionContext& context, VmMethodId method,
                                      std::span<const VmValue> arguments);
-    [[nodiscard]] VmCallOutcome Call(
-        const InterpreterExecutionContext& context, VmMethodId method,
-        std::span<const VmValue> arguments);
     // Resolves an existing context for integration routes identified by token.
     [[nodiscard]] InterpreterExecutionContext ExecutionContext(std::uint64_t token);
 
@@ -339,8 +336,7 @@ public:
     // one directly to interleave independent calls on a single thread.
     [[nodiscard]] InterpreterExecutionContext CreateExecutionContext();
     void DiscardExecutionContext(const InterpreterExecutionContext& context);
-    [[nodiscard]] InterpreterExecutionSnapshot ExecutionSnapshot(
-        const InterpreterExecutionContext& context) const;
+    [[nodiscard]] InterpreterExecutionSnapshot ExecutionSnapshot(const InterpreterExecutionContext& context) const;
 
     // Teardown handshake: the context unwinds out of its interpreted frames
     // with DexVmErrorReason::thread_stopped instead of being killed. Checked
@@ -350,11 +346,9 @@ public:
     void BindDefaultExecutionHost();
     // Includes host-side Java callbacks surrounding a Call(), such as a
     // thread's uncaught-exception dispatcher, in that thread's own context.
-    void RunInExecutionContext(const InterpreterExecutionContext& context,
-                               const std::function<void()>& action);
+    void RunInExecutionContext(const InterpreterExecutionContext& context, const std::function<void()>& action);
     // Owner-thread scope; nested calls keep the earlier Clock wall deadline.
-    void RunWithExecutionDeadline(std::uint64_t deadline_ns,
-                                  const std::function<void()>& action);
+    void RunWithExecutionDeadline(std::uint64_t deadline_ns, const std::function<void()>& action);
     [[nodiscard]] std::uint64_t ExecutionDeadlineNs(std::uint64_t context = 0) const;
     [[nodiscard]] bool ExecutionDeadlineExpired(std::uint64_t context = 0) const;
     [[nodiscard]] bool HasExecutionDeadline(std::uint64_t context = 0) const;
@@ -369,8 +363,7 @@ public:
     // Native/A32 re-entry can observe thread_stopped below an outer Java
     // frame, so joining is the ownership proof that makes dropping those
     // unreachable frames safe. A context without a stop request is refused.
-    void UnwindStoppedExecutionContext(
-        const InterpreterExecutionContext& context);
+    void UnwindStoppedExecutionContext(const InterpreterExecutionContext& context);
 
     [[nodiscard]] VmExecutionLock& ExecutionLock() noexcept;
     // Session-wide object monitors: owner, recursion and wait set, keyed by
@@ -384,22 +377,19 @@ public:
     // boundary. Reflection uses this instead of treating Method as caller.
     [[nodiscard]] std::optional<DexClassId> CurrentCallerClass() const;
     [[nodiscard]] std::vector<DexClassId> CallingStackClasses(std::size_t skip, std::size_t limit) const;
-    void AttachNativeThread(std::uint64_t guest_thread_id,
-                            std::uint64_t execution_token);
-    void DetachNativeThread(std::uint64_t guest_thread_id,
-                            std::uint64_t execution_token) noexcept;
+    void AttachNativeThread(std::uint64_t guest_thread_id, std::uint64_t execution_token);
+    void DetachNativeThread(std::uint64_t guest_thread_id, std::uint64_t execution_token) noexcept;
     [[nodiscard]] core::CapabilityLedger* Ledger() const noexcept;
     // Shared field boundary for interpreter, reflection and JNI owner hooks.
     // In gap survey mode a hit is recorded (channel names the entry route)
     // and the access proceeds on the zero-initialised slot instead of failing.
-    void RequireImplementedField(
-        VmFieldId field, GapSurveyChannel channel = GapSurveyChannel::java);
+    void RequireImplementedField(VmFieldId field, GapSurveyChannel channel = GapSurveyChannel::java);
 
     // Ensures a class is initialized (triggers <clinit>); returns a Java
     // exception outcome if initialization fails.
     [[nodiscard]] VmCallOutcome EnsureClassInitialized(DexClassId java_class);
-    [[nodiscard]] VmCallOutcome EnsureClassInitialized(
-        const InterpreterExecutionContext& context, DexClassId java_class);
+    [[nodiscard]] VmCallOutcome EnsureClassInitialized(const InterpreterExecutionContext& context,
+                                                       DexClassId java_class);
     // API-19 Enum substrate: initialize the enum and return its constants in
     // ordinal order. The cached array is a VM root, matching libcore's shared
     // constants contract.
@@ -418,13 +408,10 @@ public:
     // DVM-52 diagnostics. Filtering and descriptor formatting happen only
     // at query time; StackSnapshot uses the execution lock as a safe point.
     [[nodiscard]] bool DiagnosticsEnabled() const noexcept;
-    [[nodiscard]] std::vector<DexVmTraceEntry> Trace(
-        std::string_view filter = {}, std::size_t limit = 100) const;
+    [[nodiscard]] std::vector<DexVmTraceEntry> Trace(std::string_view filter = {}, std::size_t limit = 100) const;
     [[nodiscard]] std::vector<DexVmThreadStack> StackSnapshot() const;
-    [[nodiscard]] std::optional<std::vector<DexVmTraceEntry>> TryTrace(
-        std::size_t limit = 100) const;
-    [[nodiscard]] std::optional<std::vector<DexVmThreadStack>>
-    TryStackSnapshot() const;
+    [[nodiscard]] std::optional<std::vector<DexVmTraceEntry>> TryTrace(std::size_t limit = 100) const;
+    [[nodiscard]] std::optional<std::vector<DexVmThreadStack>> TryStackSnapshot() const;
 
     // GC root surface. The execution lock is the stop-the-world boundary;
     // callers may inspect this deterministically while it is held.
@@ -439,8 +426,7 @@ public:
     // Cleanup is queued during sweep and executed through JNI after GC finishes.
     void TrackGuestNativeResource(VmObjectRef owner, VmMethodId cleanup, std::int64_t token);
     // Resource ownership follows an ordinary mutable Java long field, including clones.
-    void TrackGuestNativeResourceField(VmFieldId field, VmMethodId cleanup,
-                                       std::int64_t invalid_token = 0);
+    void TrackGuestNativeResourceField(VmFieldId field, VmMethodId cleanup, std::int64_t invalid_token = 0);
     void ReleaseGuestNativeResources(bool all = false);
     [[nodiscard]] std::size_t GuestNativeResourceCount() const;
 
@@ -450,16 +436,14 @@ public:
     void RegisterFinalizable(VmObjectRef object);
     void EnsureFinalizerDaemons();
     void RunFinalization();
-    [[nodiscard]] GcSweepResult CollectGarbage(
-        std::string_view trigger = "explicit_test", bool clear_soft_references = false);
-    [[nodiscard]] RootScope ProtectReferences(
-        std::span<const VmObjectRef> references);
+    [[nodiscard]] GcSweepResult CollectGarbage(std::string_view trigger = "explicit_test",
+                                               bool clear_soft_references = false);
+    [[nodiscard]] RootScope ProtectReferences(std::span<const VmObjectRef> references);
 
     // Helpers shared with intrinsic handlers.
     [[nodiscard]] VmObjectRef NewStringUtf8(std::string_view utf8);
     [[nodiscard]] std::string StringUtf8(VmObjectRef string_ref) const;
-    [[nodiscard]] VmObjectRef MakeThrowable(std::string_view descriptor,
-                                            std::string_view message);
+    [[nodiscard]] VmObjectRef MakeThrowable(std::string_view descriptor, std::string_view message);
     // Intrinsic-only propagation path for an already materialized guest
     // throwable. Preserves its object identity and side-table state.
     void SetPendingException(VmObjectRef throwable);
@@ -471,6 +455,8 @@ public:
     [[nodiscard]] VmObjectRef CaptureThrowableStack();
     [[nodiscard]] VmObjectRef MaterializeThrowableStack(VmObjectRef snapshot);
     [[nodiscard]] VmObjectRef ThrowableCause(VmObjectRef throwable) const;
+    // Read-only ROM override fields, then Throwable.cause; never invokes guest getCause.
+    [[nodiscard]] VmObjectRef DiagnosticThrowableCause(VmObjectRef throwable) const;
     // Diagnostic-only ROM cause/target fields and captured first frames; no guest calls.
     [[nodiscard]] std::string DescribeThrowableCauses(VmObjectRef throwable) const;
     void SetThrowableMessage(VmObjectRef throwable, VmObjectRef message);
@@ -505,23 +491,18 @@ public:
 
     // Writes a reference into a static field slot. Links the owner on demand
     // so BootDex classes can receive clinit-time stores; does not run <clinit>.
-    void SetIntrinsicStaticRef(std::string_view class_descriptor,
-                               std::string_view field_name,
-                               std::string_view field_descriptor,
-                               VmObjectRef value);
+    void SetIntrinsicStaticRef(std::string_view class_descriptor, std::string_view field_name,
+                               std::string_view field_descriptor, VmObjectRef value);
     // Applies a conclusion-level Profile preset after the guest class has
     // completed initialization. bits contains the exact Dalvik slot bits
     // (wide values use all 64 bits; references use the low 32 bits).
-    void SetStaticFieldBits(std::string_view class_descriptor,
-                            std::string_view field_name,
-                            std::string_view field_descriptor,
-                            std::uint64_t bits);
+    void SetStaticFieldBits(std::string_view class_descriptor, std::string_view field_name,
+                            std::string_view field_descriptor, std::uint64_t bits);
     // API19 JNI raw allocation: class initialization, zero fields, no <init>.
     // Java failures are returned in the outcome; select the caller context first.
     [[nodiscard]] VmCallOutcome AllocateJniObject(DexClassId java_class);
     // Allocates an intrinsic-class instance (vm_instance form).
-  [[nodiscard]] VmObjectRef
-  NewIntrinsicInstance(std::string_view class_descriptor);
+    [[nodiscard]] VmObjectRef NewIntrinsicInstance(std::string_view class_descriptor);
     // Java equality used by collections: string content equality when both
     // sides are strings, reference identity otherwise.
     [[nodiscard]] bool JavaEquals(VmObjectRef left, VmObjectRef right) const;
@@ -531,19 +512,17 @@ public:
     // as Boolean.getBoolean/Integer.getInteger/Long.getLong.
     [[nodiscard]] std::optional<std::string> GetSystemProperty(std::string_view key);
     [[nodiscard]] VmObjectRef SystemProperties();
-    [[nodiscard]] std::optional<std::string> SetSystemProperty(
-        std::string key, std::string value);
+    [[nodiscard]] std::optional<std::string> SetSystemProperty(std::string key, std::string value);
 
-  // Object.notify/notifyAll: validates that the calling context owns the
-  // receiver monitor, then moves waiters out of its wait set.
-  void NotifyMonitor(VmObjectRef receiver, bool all) const;
-  // Object.wait: parks on the receiver monitor and throws
-  // InterruptedException when the wait ended in an interrupt.
-  void WaitOnMonitor(VmObjectRef receiver, std::int64_t timeout_millis) const;
+    // Object.notify/notifyAll: validates that the calling context owns the
+    // receiver monitor, then moves waiters out of its wait set.
+    void NotifyMonitor(VmObjectRef receiver, bool all) const;
+    // Object.wait: parks on the receiver monitor and throws
+    // InterruptedException when the wait ended in an interrupt.
+    void WaitOnMonitor(VmObjectRef receiver, std::int64_t timeout_millis) const;
 
 private:
-    [[nodiscard]] RootScope ProtectIntrinsicCall(
-        VmObjectRef receiver, std::span<const VmValue> arguments);
+    [[nodiscard]] RootScope ProtectIntrinsicCall(VmObjectRef receiver, std::span<const VmValue> arguments);
     class Impl;
     std::unique_ptr<Impl> impl_;
     friend class InterpreterAccess;

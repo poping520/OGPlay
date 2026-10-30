@@ -930,10 +930,10 @@ TEST_CASE("DVM-289 missing dimensions unsupported drawables and themes explicitl
         const auto parser = OpenAttributeXml(f, owner,
                                              AttributeXml({{},
                                                            {{0x010100f4, 3, 0}, {0x010100f5, 16, 10}},
-                                                           {{0x010100d4, 28, 0xff123456}},
-                                                           {{0x01010109, 28, 0xff123456}},
-                                                           {{0x01010129, 28, 0xff123456}},
-                                                           {{0x01010064, 28, 0xff123456}},
+                                                           {{0x010100d4, 16, 42}},
+                                                           {{0x01010109, 16, 42}},
+                                                           {{0x01010129, 16, 42}},
+                                                           {{0x01010064, 16, 42}},
                                                            {{0x010100de, 16, 1}}}));
         const auto roots = f.vm.ProtectReferences(std::array{owner, parser});
         // AOSP getLayoutDimension(index,name) requires both dimensions and a valid type.
@@ -978,7 +978,8 @@ struct InflateNode {
 };
 
 std::vector<std::byte> InflateXml(const InflateNode& root) {
-    std::vector<std::string> strings{"layout_width", "layout_height", "layout", "padding", "id", "scaleType"};
+    std::vector<std::string> strings{"layout_width", "layout_height", "layout",    "padding",
+                                     "id",           "scaleType",     "background"};
     const auto intern = [&](const std::string& name) {
         auto it = std::ranges::find(strings, name);
         if (it == strings.end()) {
@@ -1001,8 +1002,8 @@ std::vector<std::byte> InflateXml(const InflateNode& root) {
     bytes.insert(bytes.end(), pool.begin(), pool.end());
     Append16(bytes, 0x0180);
     Append16(bytes, 8);
-    Append32(bytes, 32);
-    for (auto id : {0x010100f4U, 0x010100f5U, 0U, 0x010100d5U, 0x010100d0U, 0x0101011dU})
+    Append32(bytes, 36);
+    for (auto id : {0x010100f4U, 0x010100f5U, 0U, 0x010100d5U, 0x010100d0U, 0x0101011dU, 0x010100d4U})
         Append32(bytes, id);
     const auto emit = [&](const auto& self, const InflateNode& node) -> void {
         const auto tag = intern(node.tag);
@@ -1025,6 +1026,7 @@ std::vector<std::byte> InflateXml(const InflateNode& root) {
                                : attr.id == 0          ? 2U
                                : attr.id == 0x010100d5 ? 3U
                                : attr.id == 0x0101011d ? 5U
+                               : attr.id == 0x010100d4 ? 6U
                                                        : 4U;
             Append32(bytes, 0xffffffffU);
             Append32(bytes, index);
@@ -1056,7 +1058,7 @@ std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& tab
         if (entry.string_value) values.push_back(*entry.string_value);
     }
     std::vector<std::byte> chunks;
-    for (const auto type : {2U, 3U, 4U}) {
+    for (const auto type : {2U, 3U, 4U, 5U, 6U}) {
         std::uint32_t count{};
         for (const auto& entry : table.entries)
             if (((entry.resource_id >> 16U) & 0xffU) == type)
@@ -1105,7 +1107,8 @@ std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& tab
         chunk.insert(chunk.end(), data.begin(), data.end());
         chunks.insert(chunks.end(), chunk.begin(), chunk.end());
     }
-    auto global = StringPool(values, true), types = StringPool({"attr", "style", "layout", "id"}, true),
+    auto global = StringPool(values, true),
+         types = StringPool({"attr", "style", "layout", "id", "drawable", "color"}, true),
          names = StringPool(keys, true);
     std::vector<std::byte> package;
     Append16(package, 0x0200);
@@ -1131,8 +1134,8 @@ std::vector<std::byte> InflateResourceTable(const ogplay::loader::ArscTable& tab
     return bytes;
 }
 
-void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layouts) {
-    std::vector<std::pair<std::string, std::vector<std::byte>>> files;
+void InstallInflateLayouts(ContainerVm& f, const std::vector<InflateNode>& layouts,
+                           std::vector<std::pair<std::string, std::vector<std::byte>>> files = {}) {
     std::erase_if(f.context->arsc.entries, [](const auto& entry) { return entry.type_name == "layout"; });
     for (std::size_t i = 0; i < layouts.size(); ++i) {
         const auto path = "res/layout/inflate" + std::to_string(i) + ".xml";
@@ -1193,6 +1196,111 @@ std::vector<XmlValue> InflateSize(std::uint32_t width, std::uint32_t height) {
     return {{0x010100f4, 16, width}, {0x010100f5, 16, height}};
 }
 }  // namespace
+
+TEST_CASE("DVM-358 ROM inflater color backgrounds and bitmap admission preserve failure boundaries") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        ContainerVm f(backend);
+        f.context->ui_test_accessibility_disabled = true;
+        f.context->arsc = Table({Style(0x7f020004, theme_id,
+                                       {{0x01010064, 1, 0, {}}, {0x01010065, 1, 0, {}}, {0x0101013f, 5, 0x601, {}}})});
+        f.context->application_theme = 0x7f020004;
+        constexpr std::uint32_t color = 0x7f060001, image = 0x7f050001, shape = 0x7f050002;
+        f.context->arsc.entries.push_back({.resource_id = color,
+                                           .type_name = "color",
+                                           .entry_name = "black",
+                                           .value_type = 28,
+                                           .value_data = 0xff000000});
+        f.context->arsc.entries.push_back({.resource_id = image,
+                                           .type_name = "drawable",
+                                           .entry_name = "bitmap",
+                                           .string_value = "res/drawable/fixture.png",
+                                           .value_type = 3});
+        f.context->arsc.entries.push_back({.resource_id = shape,
+                                           .type_name = "drawable",
+                                           .entry_name = "shape",
+                                           .string_value = "res/drawable/shape.xml",
+                                           .value_type = 3});
+        std::vector<InflateNode> layouts;
+        for (const auto background : std::vector<XmlValue>{{0x010100d4, 1, color},
+                                                           {0x010100d4, 28, 0xff000000},
+                                                           {0x010100d4, 1, image},
+                                                           {0x010100d4, 1, 0x01080004},
+                                                           {0x010100d4, 1, shape}}) {
+            auto attrs = InflateSize(20, 10);
+            attrs.push_back(background);
+            layouts.push_back({"LinearLayout", attrs, {}});
+        }
+        InstallInflateLayouts(f, layouts,
+                              {{"res/drawable/fixture.png", ogplay::test::BitmapDecodePng()},
+                               {"res/drawable/shape.xml", InflateXml({"shape", {}, {}})}});
+        // Publish the complete APK before Resources creates its immutable StringBlock pool.
+        const auto owner = f.New("Landroid/app/Activity;");
+        f.context->activity = owner;
+        ogplay::test::AttachViewTestContext(f.vm, owner);
+        f.On(owner, "setTheme", "(I)V", {VmValue::Int(0x7f020004)});
+        const auto owner_root = f.vm.ProtectReferences(std::array{owner});
+        const auto inflater = f.On(owner, "getLayoutInflater", "()Landroid/view/LayoutInflater;").ref;
+        const auto inflater_root = f.vm.ProtectReferences(std::array{inflater});
+        for (int i = 0; i < 5; ++i) {
+            if (i == 2) {
+                const auto res = f.On(owner, "getResources", "()Landroid/content/res/Resources;").ref;
+                const auto background =
+                    f.On(res, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(image)}).ref;
+                const auto root = f.vm.ProtectReferences(std::array{background});
+                CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
+                      "Landroid/graphics/drawable/BitmapDrawable;");
+                CHECK(f.On(background, "getIntrinsicWidth", "()I").AsInt() == 2);
+                CHECK(f.On(background, "getIntrinsicHeight", "()I").AsInt() == 1);
+                const auto bitmap = f.On(background, "getBitmap", "()Landroid/graphics/Bitmap;").ref;
+                REQUIRE(bitmap.IsValid());
+                CHECK(f.On(bitmap, "getWidth", "()I").AsInt() == 2);
+                CHECK(f.On(bitmap, "getHeight", "()I").AsInt() == 1);
+                CHECK(f.On(bitmap, "getDensity", "()I").AsInt() == 160);
+                const auto& pixels = f.context->ui_drawables.at(background.Value()).leaf_pixels;
+                REQUIRE(pixels);
+                CHECK(pixels->rgba8 == std::vector<std::uint8_t>{255, 0, 0, 255, 0, 0, 255, 255});
+                CHECK(f.ledger.Unimplemented().empty());
+            }
+            const auto result =
+                f.OnOutcome(inflater, "inflate", "(ILandroid/view/ViewGroup;Z)Landroid/view/View;",
+                            {VmValue::Int(0x7f030001 + i), VmValue::Ref(VmObjectRef{}), VmValue::Int(0)});
+            INFO(i, result.exception_message, f.vm.DescribeThrowableCauses(result.exception));
+            if (i >= 2) {
+                REQUIRE(result.exception.IsValid());
+                const auto wrapper = f.vm.DiagnosticThrowableCause(result.exception);
+                REQUIRE(wrapper.IsValid());
+                const auto target = f.vm.DiagnosticThrowableCause(wrapper);
+                REQUIRE(target.IsValid());
+                CHECK(f.linker.Class(f.model.ObjectClass(target)).descriptor ==
+                      "Ljava/lang/UnsupportedOperationException;");
+                if (i == 3)
+                    CHECK(f.vm.StringUtf8(f.vm.ThrowableMessage(target)) ==
+                          "requested drawable attribute is unsupported");
+                REQUIRE_FALSE(f.ledger.Unimplemented().empty());
+                if (i == 2) {
+                    // Admission/loading succeeds; the pre-existing getOpacity boundary
+                    // in View.computeOpaqueFlags still prevents bitmap background inflation.
+                    CHECK(f.vm.StringUtf8(f.vm.ThrowableMessage(target)) == "Drawable state is not admitted");
+                    CHECK(f.vm.DescribeThrowableCauses(result.exception).find("View;.computeOpaqueFlags (pc 8)") !=
+                          std::string::npos);
+                    CHECK(f.ledger.Unimplemented().back().id == "dexvm.drawable_resource");
+                } else
+                    CHECK(f.ledger.Unimplemented().back().id == "dexvm.theme.unsupported");
+                continue;
+            }
+            CHECK_FALSE(result.exception.IsValid());
+            if (result.exception.IsValid()) continue;
+            const auto view_root = f.vm.ProtectReferences(std::array{result.value.ref});
+            const auto background =
+                f.On(result.value.ref, "getBackground", "()Landroid/graphics/drawable/Drawable;").ref;
+            REQUIRE(background.IsValid());
+            CHECK(f.linker.Class(f.model.ObjectClass(background)).descriptor ==
+                  "Landroid/graphics/drawable/ColorDrawable;");
+            CHECK(static_cast<std::uint32_t>(f.On(background, "getColor", "()I").AsInt()) == 0xff000000);
+            CHECK(f.ledger.Unimplemented().empty());
+        }
+    }
+}
 
 TEST_CASE("DVM-290 ROM inflater setContentView nested include merge and atomic failure") {
     for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
@@ -2222,16 +2330,14 @@ TEST_CASE("DVM-325 scrollbar references project without loading and reject unreg
         f.On(theme, "applyStyle", "(IZ)V", {VmValue::Int(0x7f020005), VmValue::Int(1)});
         const auto attrs = f.model.NewPrimitiveArray(f.linker.ResolveDescriptor("[I"), JniPrimitiveKind::integer, 1);
         f.model.SetPrimitiveElement(attrs, 0, 0x010100d4);
-        const auto array =
-            f.On(owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)}).ref;
-        const auto roots = f.vm.ProtectReferences(std::array{owner, view, theme, attrs, array});
-        CHECK(f.On(array, "getResourceId", "(II)I", {VmValue::Int(0), VmValue::Int(0)}).AsInt() == 0x01080004);
-        CHECK(f.context->ui_drawables.empty());
-        CHECK(f.ledger.Unimplemented().empty());
+        const auto roots = f.vm.ProtectReferences(std::array{owner, view, theme, attrs});
         const auto failed =
-            f.OnOutcome(array, "getDrawable", "(I)Landroid/graphics/drawable/Drawable;", {VmValue::Int(0)});
+            f.OnOutcome(owner, "obtainStyledAttributes", "([I)Landroid/content/res/TypedArray;", {VmValue::Ref(attrs)});
         REQUIRE(failed.exception.IsValid());
-        CHECK_FALSE(failed.exception_message.empty());
+        CHECK(f.linker.Class(failed.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        CHECK(failed.exception_message == "requested drawable attribute is unsupported");
+        CHECK(f.context->ui_drawables.empty());
+        CHECK(f.ledger.Unimplemented().back().id == "dexvm.theme.unsupported");
     }
 }
 

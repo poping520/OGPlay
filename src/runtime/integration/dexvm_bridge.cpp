@@ -1214,15 +1214,7 @@ public:
                     rendered.resize(4096);
                     return rendered + " [truncated]";
                 }
-                // API19 ClassNotFoundException overrides getCause using its own 'ex' field.
-                const auto cnfe = linker.FindClass("Ljava/lang/ClassNotFoundException;");
-                if (cnfe && linker.IsAssignable(*cnfe, type)) {
-                    const auto field = linker.FindFieldRecursive(*cnfe, "ex", "Ljava/lang/Throwable;");
-                    if (!field) return rendered + " [cause unavailable]";
-                    throwable = dx::VmObjectRef(model->InstanceSlots(throwable)[linker.Field(*field).slot].bits);
-                } else {
-                    throwable = vm->ThrowableCause(throwable);
-                }
+                throwable = vm->DiagnosticThrowableCause(throwable);
             }
             if (throwable.IsValid()) rendered += " | cause depth limit";
         } catch (...) {

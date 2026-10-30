@@ -224,7 +224,9 @@ openFileOutput 共用单文件名校验，前者不创建，后者 PRIVATE 覆�
   仅 getEventType/next/getName/getText/close，其他完整 XmlPullParser 方法 UnsatisfiedLinkError；文本 XML 用 KXml。
 - Bitmap/getPixels/setPixels/Canvas.drawBitmap/GLUtils/JNI/UI 共用 BitmapPixels；首个 NDK lock
   转移权威至 guest 格式，末次 unlock 回写/退役地址，API19 四格式/stride/预乘/低位量化同源。
-  recycle 禁止新访问、旧锁存活至 unlock/退出；布局/呈现前投影不可变 UiBitmap，native 锁期间
+  getRowBytes 按 API19 四格式紧密行计算；getByteCount 为 Java int 行字节数×高度，
+  无复用/重配置时 getAllocationByteCount 等于内容大小。三项查询及 isRecycled 在 recycle 后仍可读；
+  未登记 receiver 失败，未知 config 记账 UOE。recycle 禁止新像素访问、旧锁存活至 unlock/退出；布局/呈现前投影不可变 UiBitmap，native 锁期间
   读当前像素，不建第二份可变权威；无完整 Skia/颜色管理/未同步并发裸写。
 - StatFs 字段/构造/restat/getter 归 Java，Posix.statvfs 只查 VFS 沙盒配额卷，其他卷失败、无 host
   空间采样，见 [ADR-0122](../../../../docs/adr/runtime.md#adr-0122)。SQLite 固定真实引擎，只经 VFS

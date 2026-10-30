@@ -332,3 +332,4 @@ Scenario gate 与 profile 迁移）以 [`docs/state/CURRENT.md`](../../state/CUR
 - [DVM-357 · 恢复 View.post/postDelayed（ADR-0162 回归）](DVM-357.md)
 
 - [DVM-358 · XML drawable 共用准入与 JNI 反射异常链](DVM-358.md)
+- [DVM-359 · Bitmap 元数据查询](DVM-359.md)

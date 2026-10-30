@@ -2051,7 +2051,7 @@ note = "Java/NativeActivity/NDK 共用 manager 与 APK 来源；read 保持有�
 [dexvm.bitmap_decode]
 status = "partial"
 test = "tools/bootdex/compose_bootdex.py check; tools.android_payload_current; tests/dexvm/android_resources_bitmap_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-244; tests/runtime/jni_android_platform_tests.cpp#DVM-221"
-note = "DVM-244/ADR-0123：有界 BitmapFactory 与原版 Options，resource/stream/array 解码共用 codec 与 BitmapPixels，openRawResource 复用 ARSC 解析与 density；支持 ARGB8888、bounds、inMutable 与密度缩放。输入不超过 16 MiB、宽高不超过 8192，超限 OOME；reuse、inSampleSize>1、其他 config、资源 NinePatch 记账抛 UOE。不宣称与 Skia 像素一致。"
+note = "DVM-244/359：BitmapFactory Options，resource/stream/array 共用 codec/BitmapPixels 与资源密度；支持 ARGB8888、bounds、inMutable、密度缩放。Bitmap 四格式 getRowBytes/getByteCount/getAllocationByteCount/isRecycled，Java 行不对齐，回收后元数据保留。输入≤16 MiB、宽高≤8192，超限 OOME；reuse、inSampleSize>1、其他解码 config、资源 NinePatch 记账 UOE。不宣称 Skia 像素一致。"
 
 [runtime.bitmap_ndk]
 status = "partial"

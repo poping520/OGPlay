@@ -94,7 +94,7 @@
       }
     ],
     "size": 11380638,
-    "sha256": "131afffe91f05e9ee64b85fc4d832f0454dc403272efb38d100c5f0c8a813ef4",
+    "sha256": "8ae68c60132c1ee06ba4416af095f8a4cf698ff73ed702374564de0dd6c3e94e",
     "dex_entry": "classes.dex",
     "dex_size": 6218464,
     "dex_sha256": "f0a05e9ab9f7e985031cdff06017a5d4e53c1b592e6650c4791a783bdf0f43a7",
@@ -110,13 +110,13 @@
     },
     "vm_pairing": {
       "entry": "META-INF/ogplay/vm-pairing.json",
-      "sha256": "4b4e58697c32b0767f0095d3fbe9a3ffd5fa5bffbea8b9e73826d3a03b277bc8",
+      "sha256": "26453e7c860f058bcbbeecedd0ebd97938f8754dcc8912a93392516285c2edb4",
       "mode": "java-traversal",
       "version": 1
     },
     "member_sources": {
       "entry": "META-INF/ogplay/member-sources.json",
-      "manifest_sha256": "ff2402b5abb2b2d09ea99c152d279b79a293d4d1697265873d7957fa9c71387b",
+      "manifest_sha256": "0f4a583ff00e65f7e2cfcc9c556089b2ae31b9fbd65bb5994a487bf0572c5d9f",
       "composer": "tools/bootdex/compose_bootdex.py",
       "composer_sha256": "ec80fb35b63ae38e42f574d246e9749a0cafba0e764e7ba6925abeea5f11d614"
     },

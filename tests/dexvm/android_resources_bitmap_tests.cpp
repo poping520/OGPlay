@@ -342,6 +342,8 @@ TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel 
         REQUIRE(bitmap.IsValid());
         CHECK(closed == 0);
         CHECK(f.On(bitmap, "getWidth", "()I").AsInt() == 2);
+        CHECK(f.On(bitmap, "getByteCount", "()I").AsInt() ==
+              f.On(bitmap, "getWidth", "()I").AsInt() * f.On(bitmap, "getHeight", "()I").AsInt() * 4);
         resource_source = source;
         const auto res = f.vm.NewIntrinsicInstance("Ltest/ImageResources;");
         const auto res_root = f.vm.ProtectReferences(std::array{res});
@@ -367,6 +369,8 @@ TEST_CASE("DVM-244 byte stream decode preserves null errors ownership and pixel 
         const auto decoded_root = f.vm.ProtectReferences(std::array{decoded});
         REQUIRE(decoded.IsValid());
         CHECK(f.On(decoded, "getWidth", "()I").AsInt() == 2);
+        CHECK(f.On(decoded, "getByteCount", "()I").AsInt() ==
+              f.On(decoded, "getWidth", "()I").AsInt() * f.On(decoded, "getHeight", "()I").AsInt() * 4);
         const auto bad =
             f.StaticOutcome("Landroid/graphics/BitmapFactory;", "decodeByteArray", "([BII)Landroid/graphics/Bitmap;",
                             {VmValue::Ref(array), VmValue::Int(-1), VmValue::Int(1)});
@@ -422,6 +426,62 @@ TEST_CASE("DVM-86 graphics value classes keep geometry and path state") {
     fixture.On(path, "lineTo", "(FF)V", {VmValue::Float(3), VmValue::Float(4)});
     CHECK(fixture.context->paths.at(path.Value()).commands.size() == 2U);
     CHECK(fixture.On(path, "isEmpty", "()Z").AsInt() == 0);
+}
+
+TEST_CASE("DVM-359 Bitmap metadata uses packed API19 rows and survives recycle") {
+    for (const auto backend : {InterpreterBackend::switch_dispatch, InterpreterBackend::threaded}) {
+        AndroidValueVm f(backend);
+        constexpr auto config_type = "Landroid/graphics/Bitmap$Config;";
+        const auto configs = f.Static(config_type, "values", "()[Landroid/graphics/Bitmap$Config;").ref;
+        const auto roots = f.vm.ProtectReferences(std::array{configs});
+        const std::array bytes_per_pixel{1, 2, 2, 4};
+        for (JniSize index = 0; index < 4; ++index) {
+            for (const auto width : {3, 4}) {
+                CAPTURE(index);
+                CAPTURE(width);
+                const auto bitmap = f.Static("Landroid/graphics/Bitmap;", "createBitmap",
+                                             "(IILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;",
+                                             {VmValue::Int(width), VmValue::Int(2),
+                                              VmValue::Ref(f.model.GetObjectElement(configs, index))})
+                                        .ref;
+                const auto bitmap_root = f.vm.ProtectReferences(std::array{bitmap});
+                const auto row_bytes = width * bytes_per_pixel[static_cast<std::size_t>(index)];
+                CHECK(f.On(bitmap, "isRecycled", "()Z").AsInt() == 0);
+                for (const bool recycled : {false, true}) {
+                    if (recycled) f.On(bitmap, "recycle", "()V");
+                    CHECK(f.On(bitmap, "isRecycled", "()Z").AsInt() == recycled);
+                    // On dispatches via the vtable, matching LruCache.sizeOf's call shape.
+                    CHECK(f.On(bitmap, "getRowBytes", "()I").AsInt() == row_bytes);
+                    CHECK(f.On(bitmap, "getByteCount", "()I").AsInt() == row_bytes * 2);
+                    CHECK(f.On(bitmap, "getAllocationByteCount", "()I").AsInt() == row_bytes * 2);
+                }
+            }
+        }
+        const auto unregistered = f.vm.NewIntrinsicInstance("Landroid/graphics/Bitmap;");
+        const auto unregistered_root = f.vm.ProtectReferences(std::array{unregistered});
+        for (const auto name : {"getRowBytes", "getByteCount", "getAllocationByteCount", "isRecycled"}) {
+            const auto result = f.OnOutcome(unregistered, name, std::string_view(name) == "isRecycled" ? "()Z" : "()I");
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/IllegalStateException;");
+        }
+        // Synthetic metadata exercises int wrap without allocating gigabytes of pixels.
+        auto& state = f.context->bitmaps[unregistered.Value()];
+        state.width = 0x10000001;
+        state.height = 4;
+        state.config = 5;
+        CHECK(f.On(unregistered, "getRowBytes", "()I").AsInt() == 1073741828);
+        CHECK(f.On(unregistered, "getByteCount", "()I").AsInt() == 16);
+        CHECK(f.On(unregistered, "getAllocationByteCount", "()I").AsInt() == 16);
+        state.config = 2;
+        for (const auto name : {"getRowBytes", "getByteCount", "getAllocationByteCount"}) {
+            const auto result = f.OnOutcome(unregistered, name, "()I");
+            REQUIRE(result.exception.IsValid());
+            CHECK(f.linker.Class(result.exception_class).descriptor == "Ljava/lang/UnsupportedOperationException;");
+        }
+        const auto hits = f.ledger.Unimplemented();
+        CHECK(std::any_of(hits.begin(), hits.end(),
+                          [](const auto& hit) { return hit.id == "dexvm.bitmap_decode" && hit.count == 3; }));
+    }
 }
 
 TEST_CASE("Bitmap Config matches the API 19 enum and native mapping") {

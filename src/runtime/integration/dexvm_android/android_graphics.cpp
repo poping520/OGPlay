@@ -113,12 +113,35 @@ namespace ogplay::runtime::android_intrinsics {
 
 namespace {
 
-[[nodiscard]] DexVmAndroidContext::BitmapState& BitmapOf(dx::IntrinsicContext& call, const Context& context) {
+[[nodiscard]] DexVmAndroidContext::BitmapState& BitmapOf(dx::IntrinsicContext& call, const Context& context,
+                                                         const bool allow_recycled = false) {
     const auto found = context->bitmaps.find(call.receiver.Value());
-    if (found == context->bitmaps.end() || found->second.recycled) {
+    if (found == context->bitmaps.end() || (!allow_recycled && found->second.recycled)) {
         throw dx::VmJavaThrow{"Ljava/lang/IllegalStateException;", "bitmap is recycled or was never created"};
     }
     return found->second;
+}
+
+// KitKat SkBitmap::ComputeRowBytes packs rows without the NDK backing's alignment.
+[[nodiscard]] std::uint32_t BitmapRowBytes(dx::IntrinsicContext& call, const DexVmAndroidContext::BitmapState& state) {
+    std::uint32_t bytes_per_pixel;
+    switch (state.config) {
+    case 1: bytes_per_pixel = 1; break;
+    case 3:
+    case 4: bytes_per_pixel = 2; break;
+    case 5: bytes_per_pixel = 4; break;
+    default:
+        if (auto* ledger = call.vm.Ledger()) ledger->RecordUnimplemented("dexvm.bitmap_decode", 0);
+        throw dx::VmJavaThrow{"Ljava/lang/UnsupportedOperationException;", "unsupported Bitmap rowBytes config"};
+    }
+    return static_cast<std::uint32_t>(state.width) * bytes_per_pixel;
+}
+
+[[nodiscard]] dx::VmValue BitmapByteCount(dx::IntrinsicContext& call, const Context& context) {
+    const auto& state = BitmapOf(call, context, true);
+    // Java int multiplication wraps modulo 2^32; avoid signed C++ overflow.
+    return dx::VmValue::Int(
+        std::bit_cast<std::int32_t>(BitmapRowBytes(call, state) * static_cast<std::uint32_t>(state.height)));
 }
 
 // Builds a Bitmap intrinsic instance from pixels copied out of a guest int
@@ -210,6 +233,20 @@ Decl Declare_android_graphics_Bitmap(const Context& context) {
     });
     builder.FinalMethod("getHeight", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(BitmapOf(call, context).height);
+    });
+    builder.FinalMethod("getRowBytes", "()I", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(std::bit_cast<std::int32_t>(BitmapRowBytes(call, BitmapOf(call, context, true))));
+    });
+    builder.FinalMethod("getByteCount", "()I",
+                        [context](dx::IntrinsicContext& call) { return BitmapByteCount(call, context); });
+    builder.FinalMethod("getAllocationByteCount", "()I", [context](dx::IntrinsicContext& call) {
+        // API19 mBuffer holds content bytes; native-backed (null mBuffer) bitmaps
+        // cannot reconfigure. We reject inBitmap and expose no reconfiguration,
+        // so allocation size always equals content size for either backing.
+        return BitmapByteCount(call, context);
+    });
+    builder.FinalMethod("isRecycled", "()Z", [context](dx::IntrinsicContext& call) {
+        return dx::VmValue::Int(BitmapOf(call, context, true).recycled);
     });
     builder.VirtualMethod("getDensity", "()I", [context](dx::IntrinsicContext& call) {
         return dx::VmValue::Int(BitmapOf(call, context).density);
